@@ -1,0 +1,4 @@
+interface:
+  display_name: "Midnight Trust Registry"
+  short_description: "Trust-registry scope, DID/VC policy boundaries, and workspace integration"
+  default_prompt: "Use this for midnight-trust-registry planning, governance boundary work, and workspace integration tasks."
