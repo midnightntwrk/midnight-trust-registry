@@ -40,6 +40,8 @@ problems: list[str] = []
 for path in markdown_files:
     text = path.read_text(encoding="utf-8")
     rel = path.relative_to(root)
+    # TR docs should not need machine-local paths. If a future guide must show
+    # one as an example, update this heuristic with an explicit allowlist.
     if re.search(r"(^|[\s`'\"])(/Users/|/home/[A-Za-z0-9._-]+/|[A-Za-z]:\\\\Users\\\\)", text):
         problems.append(f"{rel}: contains machine-local absolute path")
     if "obsidian" in text.lower():
@@ -48,6 +50,8 @@ for path in markdown_files:
     # license-header placeholder for source files.
     if "TODO - New Repo Owner" in text or "REPLACE WITH REPO-NAME" in text:
         problems.append(f"{rel}: contains template placeholder")
+    # Supported subset: inline Markdown links only. Reference-style links and
+    # URLs containing literal parentheses should move to a parser if docs grow.
     for match in link_re.finditer(text):
         raw_target = match.group(1).strip()
         if not raw_target or raw_target.startswith("#"):

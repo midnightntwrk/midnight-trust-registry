@@ -76,6 +76,8 @@ Minimum validation for docs-only changes:
 git diff --check
 ```
 
+`./scripts/check-docs.sh` requires `python3`.
+
 If `just` is available:
 
 ```bash
