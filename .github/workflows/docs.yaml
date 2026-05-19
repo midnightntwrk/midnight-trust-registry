@@ -45,6 +45,8 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             git diff --check "origin/${{ github.base_ref }}"...HEAD
-          else
+          elif [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
             git diff --check HEAD~1..HEAD
+          else
+            git diff --check "${{ github.event.before }}".."${{ github.event.after }}"
           fi

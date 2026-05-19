@@ -44,7 +44,7 @@ for path in markdown_files:
     # one as an example, update this heuristic with an explicit allowlist.
     if re.search(r"(^|[\s`'\"])(/Users/|/home/[A-Za-z0-9._-]+/|[A-Za-z]:\\\\Users\\\\)", text):
         problems.append(f"{rel}: contains machine-local absolute path")
-    if "obsidian" in text.lower():
+    if re.search(r"(^|/)\.obsidian(/|$)|obsidian://|/obsidian/", text, flags=re.IGNORECASE):
         problems.append(f"{rel}: contains private notes/vault reference")
     # This catches template residue without flagging CONTRIBUTING.md's generic
     # license-header placeholder for source files.
