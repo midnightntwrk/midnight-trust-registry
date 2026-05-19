@@ -48,6 +48,13 @@ git diff --check
 
 Follow-up PRs will add repository-local validation commands before source packages are introduced.
 
+## Project Files
+
+- [Contributing guide](CONTRIBUTING.md) describes the contribution process.
+- [Security policy](SECURITY.md) describes responsible disclosure.
+- [License](LICENSE) is Apache-2.0.
+- [Code owners](CODEOWNERS) defines repository ownership.
+
 ## Expected Package Direction
 
 The planned package layout is intentionally narrow:

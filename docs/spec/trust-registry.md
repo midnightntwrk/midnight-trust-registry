@@ -42,7 +42,7 @@ The v1 registry does not:
 
 - Midnight DID is the default identifier surface for registries, maintainers, issuers, and verifiers.
 - Non-Midnight DID methods are allowed only when a governance policy explicitly admits them.
-- JubJub-compatible registry control keys are the default contract-facing signature primitive for v1.
+- Schnorr signatures over JubJub-compatible registry control keys are the default contract-facing authorization primitive for v1.
 - secp256k1, secp256r1, and Ed25519 are extension paths. They can be represented in policy and off-chain evidence before native on-chain verification exists.
 
 ## 5. Core Resources
@@ -65,6 +65,11 @@ Required fields:
 - `status`
 - `createdAt`
 - `updatedAt`
+- `suspendedAt`
+- `revokedAt`
+- `supersededAt`
+- `archivedAt`
+- `lifecycleEventRoot`
 
 ### Governance Policy
 
@@ -76,12 +81,16 @@ Required fields:
 - `registryId`
 - `version`
 - `policyUri`
+- `status`
 - `effectiveFrom`
 - `effectiveUntil`
 - `decisionRules`
 - `disputeRules`
 - `retentionRules`
 - `emergencyRules`
+- `supersededAt`
+- `archivedAt`
+- `lifecycleEventRoot`
 
 ### Participant
 
@@ -100,6 +109,11 @@ Required fields:
 - `status`
 - `effectiveFrom`
 - `effectiveUntil`
+- `suspendedAt`
+- `revokedAt`
+- `supersededAt`
+- `archivedAt`
+- `lifecycleEventRoot`
 
 ### Authorization
 
@@ -126,6 +140,8 @@ Required fields:
 - `archivedAt`
 - `evidenceHash`
 - `lifecycleEventRoot`
+
+`trustLevel` is policy-defined in v1. The registry record stores the value selected by the governing policy, and the evidence bundle must include the policy version that defines the scale. A later schema pass should decide whether common scales become enums or remain policy-local strings.
 
 ### Recognition
 
@@ -274,6 +290,6 @@ The v1 implementation is acceptable when:
 - A registry can be initialized with maintainers and a governance policy URI.
 - Issuer authorization can be created, suspended, revoked, and queried with historical evidence.
 - Verifier request-profile authorization can be created, suspended, revoked, and queried.
-- Recognition records can be created separately from local authorization.
+- Recognition records can be created, revoked, archived, and verified separately from local authorization.
 - Epoch commitments can bind the registry state used by a verifier.
 - DID and VC integration tests prove that an authorized issuer/verifier path succeeds and a wrong-registry or revoked authorization path fails.

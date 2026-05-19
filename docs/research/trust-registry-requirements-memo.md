@@ -16,6 +16,8 @@ Note: the two academic sources above are the registry-focused papers used for th
 
 ## Reusable Terminology
 
+The memo preserves source terminology such as `policy_uri`; normative repository specs use camelCase field names such as `policyUri`.
+
 - `initial trust registry`
 - `trust registry DID`
 - `credential definition DID`

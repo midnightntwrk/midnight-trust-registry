@@ -11,28 +11,28 @@ Updated: 2026-05-20
 
 ## Current Backlog
 
-| ID | Priority | Item | Acceptance |
-| --- | --- | --- | --- |
-| TR-001 | P0 | Move trust-registry spec, plan, research memo, and decisions into this repository. | `docs/spec`, `docs/plans`, `docs/research`, and `docs/decisions` contain public TR source material. |
-| TR-002 | P0 | Replace template README with project-specific scope. | README explains scope, non-scope, repo boundaries, and documentation map. |
-| TR-003 | P0 | Add repository-local agent guidance. | `AGENT.md`, `.codex`, and `.claude` point engineers to the same TR rules. |
-| TR-004 | P0 | Add lightweight docs validation. | A local command checks markdown links and required docs without requiring a package manager. |
-| TR-005 | P0 | Make CI target `develop`. | Pull requests into `develop` run available validation. |
-| TR-006 | P1 | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
-| TR-007 | P1 | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
-| TR-008 | P1 | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
-| TR-009 | P1 | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
-| TR-010 | P1 | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
-| TR-011 | P1 | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
-| TR-012 | P1 | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
-| TR-013 | P1 | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
-| TR-014 | P1 | Add TypeScript client. | Apps can query current and historical authorization state. |
-| TR-015 | P1 | Add DID integration test. | `did:midnight` references resolve through DID repo APIs or fixtures without copying DID logic. |
-| TR-016 | P1 | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
-| TR-017 | P2 | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
-| TR-018 | P2 | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
-| TR-019 | P2 | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
-| TR-020 | P2 | Add audit report generator. | A command emits human-readable authorization and policy history. |
+| ID | Priority | Status | Item | Acceptance |
+| --- | --- | --- | --- | --- |
+| TR-001 | P0 | Done in docs foundation | Move trust registry spec, plan, research memo, and decisions into this repository. | `docs/spec`, `docs/plans`, `docs/research`, and `docs/decisions` contain public TR source material. |
+| TR-002 | P0 | Done in docs foundation | Replace template README with project-specific scope. | README explains scope, non-scope, repo boundaries, and documentation map. |
+| TR-003 | P0 | Stacked workflow PR | Add repository-local agent guidance. | `AGENT.md`, `.codex`, and `.claude` point engineers to the same TR rules. |
+| TR-004 | P0 | Stacked workflow PR | Add lightweight docs validation. | `./scripts/check-docs.sh` checks markdown links and required docs without requiring a package manager. |
+| TR-005 | P0 | Stacked workflow PR | Make CI target `develop`. | Docs and scan workflows run for pull requests into `develop`. |
+| TR-006 | P1 | Open | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
+| TR-007 | P1 | Open | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
+| TR-008 | P1 | Open | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
+| TR-009 | P1 | Open | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
+| TR-010 | P1 | Open | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
+| TR-011 | P1 | Open | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
+| TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
+| TR-013 | P1 | Open | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
+| TR-014 | P1 | Open | Add TypeScript client. | Apps can query current and historical authorization state. |
+| TR-015 | P1 | Open | Add DID integration test. | `did:midnight` references resolve through DID repo APIs or fixtures without copying DID logic. |
+| TR-016 | P1 | Open | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
+| TR-017 | P2 | Open | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
+| TR-018 | P2 | Open | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
+| TR-019 | P2 | Open | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
+| TR-020 | P2 | Open | Add audit report generator. | A command emits human-readable authorization and policy history. |
 
 ## First PR Stack
 

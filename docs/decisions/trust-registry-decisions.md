@@ -6,7 +6,7 @@ Date: 2026-05-20
 
 - Use Midnight DID by default for party and registry identifiers.
 - Use Midnight VC and VP packages as the default application evidence surface.
-- Keep JubJub-compatible registry control keys as the default contract-facing signature primitive for v1.
+- Keep Schnorr signatures over JubJub-compatible registry control keys as the default contract-facing authorization primitive for v1.
 - Admit non-Midnight DID methods only through explicit governance policy.
 - Treat secp256k1, secp256r1, and Ed25519 as planned extension paths, not mandatory v1 contract features.
 - Treat authorization and recognition as separate statement types.
@@ -14,7 +14,7 @@ Date: 2026-05-20
 - Keep this repository as the owner of trust-registry governance and implementation.
 - Target long-term package placement under contract, package, adapter, and example directories once source work begins.
 - Treat `midnight-did` as a downstream consumer and integration point, not the owner of the registry contract.
-- Reuse `credentials-status-registry` for status and revocation instead of cloning those concerns.
+- Reuse the VC status registry for status and revocation instead of cloning those concerns.
 
 ## Pending Decisions
 
