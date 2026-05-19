@@ -1,72 +1,65 @@
-# Midnight Template Repository
+# Midnight Trust Registry
 
-This GitHub repository should be used as a template when creating a new Midnight GitHub repository.
-The template is configured with default repository settings and a set of default files that are expected to exist in all Midnight GitHub repositories.
+`midnight-trust-registry` owns the trust-policy and registry-governance workstream for Midnight identity. It defines how issuers, verifiers, credential resources, and external authorities become trusted without moving DID resolution or verifiable credential issuance into this repository.
 
-### LICENSE
+The repository is intentionally documentation-first while the contract and package boundaries are being finalized. The first implementation target is a registry that works with `midnight-did` and `midnight-verifiable-credentials` without duplicating their responsibilities.
 
-Apache 2.0.
+## Scope
 
-### README.md
+This repository owns:
 
-Provides a brief description for users and developers who want to understand the purpose, setup, and usage of the repository.
+- Trust registry governance and policy records.
+- Issuer, verifier, schema, and credential-definition authorization state.
+- Recognition of external authorities and registries.
+- Historical evidence needed for long-term credential verification.
+- Query and evidence surfaces that applications can consume.
+- Future Compact and TypeScript packages for registry contracts, clients, and adapters.
 
-### SECURITY.md
+This repository does not own:
 
-Provides a brief description of the Midnight Foundation's security policy and how to properly disclose security issues.
+- DID document resolution or DID CRUD operations. Those belong in `midnight-did`.
+- VC, VP, claim, holder-binding, or credential-status semantics. Those belong in `midnight-verifiable-credentials`.
+- Revocation/status registries. The first TR implementation should integrate with the VC status registry instead of cloning it.
 
-### CONTRIBUTING.md
+## Documentation Map
 
-Provides guidelines for how people can contribute to the Midnight project.
+- [Trusted registry specification](docs/spec/trusted-registry.md) defines the v1 product and protocol scope.
+- [Implementation plan](docs/plans/trusted-registry-implementation-plan.md) breaks execution into reviewable slices.
+- [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.
+- [Requirements memo](docs/research/trusted-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
+- [Architecture boundaries](docs/architecture/trust-registry-boundaries.md) describes how TR integrates with DID and VC repositories.
+- [Decisions](docs/decisions/trusted-registry-decisions.md) records current design decisions and unresolved questions.
 
-### CODEOWNERS
+## Development Baseline
 
-Defines repository ownership rules.
+Target branch is `develop`.
 
-### ISSUE_TEMPLATE
+Use signed DCO commits for repository-facing changes:
 
-Provides templates for reporting various types of issues, such as: bug report, documentation improvement and feature request.
+```bash
+git commit -S --signoff -m "<type>: <subject>"
+```
 
-### PULL_REQUEST_TEMPLATE
+For now, documentation-only changes are validated with:
 
-Provides a template for a pull request.
+```bash
+git diff --check
+```
 
-### CLA Assistant
+Follow-up PRs will add repository-local validation commands before source packages are introduced.
 
-The Midnight Foundation appreciates contributions, and like many other open source projects asks contributors to sign a contributor
-License Agreement before accepting contributions. We use CLA assistant (https://github.com/cla-assistant/cla-assistant) to streamline the CLA
-signing process, enabling contributors to sign our CLAs directly within a GitHub pull request.
+## Expected Package Direction
 
-### Dependabot
+The planned package layout is intentionally narrow:
 
-The Midnight Foundation uses GitHub Dependabot feature to keep our projects dependencies up-to-date and address potential security vulnerabilities.
+```text
+contracts/trusted-registry/       Compact contract surface for governance and authorization state
+packages/trust-registry-domain/   TypeScript domain model, codecs, and policy validators
+packages/trust-registry-client/   Read/write client adapters for apps and tests
+packages/trust-registry-testing/  Fixtures and conformance helpers
+adapters/trqp/                    ToIP TRQP-compatible query adapter
+adapters/openid-federation/       OpenID Federation metadata/trust-chain adapter
+examples/                         DID/VC integration examples
+```
 
-### Checkmarx
-
-The Midnight Foundation uses Checkmarx for application security (AppSec) to identify and fix security vulnerabilities.
-All repositories are scanned with Checkmarx's suite of tools including: Static Application Security Testing (SAST), Infrastructure as Code (IaC), Software Composition Analysis (SCA), API Security, Container Security and Supply Chain Scans (SCS).
-
-### Unito
-
-Facilitates two-way data synchronization, automated workflows and streamline processes between: Jira, GitHub issues and Github project Kanban board.
-
-# TODO - New Repo Owner
-
-### Software Package Data Exchange (SPDX)
-Include the following Software Package Data Exchange (SPDX) short-form identifier in a comment at the top headers of each source code file.
-
-
- <I>// This file is part of <B>REPLACE WITH REPO-NAME</B>.<BR>
- // Copyright (C) Midnight Foundation<BR>
- // SPDX-License-Identifier: Apache-2.0<BR>
- // Licensed under the Apache License, Version 2.0 (the "License");<BR>
- // You may not use this file except in compliance with the License.<BR>
- // You may obtain a copy of the License at<BR>
- //<BR>
- //	https://www.apache.org/licenses/LICENSE-2.0<BR>
- //<BR>
- // Unless required by applicable law or agreed to in writing, software<BR>
- // distributed under the License is distributed on an "AS IS" BASIS,<BR>
- // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.<BR>
- // See the License for the specific language governing permissions and<BR>
- // limitations under the License.</I>
+Do not create these directories until the corresponding backlog item is implemented with tests and docs.
