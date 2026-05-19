@@ -42,7 +42,7 @@ Note: the two academic sources above are the registry-focused papers used for th
 - Model the system as separate contract surfaces, not one monolith: `root governance registry`, `issuer/schema authorization registry`, `status/revocation registry`, `proposal/voting contract`, and optionally a `public anchor/commitment contract` for private or off-chain state.
 - Keep high-churn status data separate from slow-moving governance data. The sources consistently treat authorization, metadata, and revocation as different operational loads.
 - Preserve historical state in append-only form where it affects later verification: prior keys, prior authorized DIDs, authorization timestamps, revocation timestamps, and archival records all matter after issuance.
-- Prefer privacy-preserving verification patterns that do not require issuer """calling home""" during presentation verification.
+- Prefer privacy-preserving verification patterns that do not require issuer "calling home" during presentation verification.
 
 ## Functional Requirements
 
@@ -72,20 +72,20 @@ Note: the two academic sources above are the registry-focused papers used for th
 - `GR-6` Governance must define `periodic reviews` for issuer records, including review criteria and expected processing times. Source: MIT governance PDF.
 - `GR-7` Governance must define key-compromise and planned/emergency key-rotation procedures, including audit and notification requirements. Sources: MIT governance PDF, Kanon.
 - `GR-8` Governance must define retention, archival, closure, merger, voluntary exit, non-renewal, payment-default, and removal policies for registry participants. Source: MIT governance PDF.
-- `GR-9` Governance must define fairness and anti-capture expectations. Dunphy""™s design-space analysis makes this explicit: decentralization alone does not ensure fairness, so the system needs governance rules and non-compliance penalties that remain credible over time. Source: Dunphy.
-- `GR-10` Governance must define the registry""™s adversarial stance: who is trusted to write, who may audit, what failures are tolerated, and whether Byzantine fault tolerance, multisig approval, or challenge windows are required for critical updates. Sources: Dunphy, Bottom-up Trust Registry.
-- `GR-11` Governance should minimize storage of private individuals""™ data and should explicitly prevent privacy leaks such as issuer """calling home""" during verification. Sources: MIT governance PDF, Kanon.
+- `GR-9` Governance must define fairness and anti-capture expectations. Dunphy's design-space analysis makes this explicit: decentralization alone does not ensure fairness, so the system needs governance rules and non-compliance penalties that remain credible over time. Source: Dunphy.
+- `GR-10` Governance must define the registry's adversarial stance: who is trusted to write, who may audit, what failures are tolerated, and whether Byzantine fault tolerance, multisig approval, or challenge windows are required for critical updates. Sources: Dunphy, Bottom-up Trust Registry.
+- `GR-11` Governance should minimize storage of private individuals' data and should explicitly prevent privacy leaks such as issuer "calling home" during verification. Sources: MIT governance PDF, Kanon.
 - `GR-12` Governance must specify funding and fee structure because fee volatility or high per-transaction cost is an explicit adoption risk in the Kanon requirements. Sources: Kanon, MIT governance PDF.
 
 ## Lifecycle and State-Machine Requirements
 
 - `LR-1` Every registry object should have explicit lifecycle states. Minimum practical states are `proposed`, `authorized`, `active`, `suspended`, `revoked`, `superseded`, and `archived`. This is an inference from the combined sources, not a direct quotation.
 - `LR-2` DID documents need historical key state, not only current state. Key rotation therefore needs a state transition that preserves prior keys for later signature verification. Sources: Kanon, MIT governance PDF.
-- `LR-3` Schema lifecycle should separate authoring from publication. A schema should not become usable for credential definitions until the governing trust registry authorizes it. Sources: Kanon, Dunphy""™s emphasis on actionable state.
+- `LR-3` Schema lifecycle should separate authoring from publication. A schema should not become usable for credential definitions until the governing trust registry authorizes it. Sources: Kanon, Dunphy's emphasis on actionable state.
 - `LR-4` Credential definition lifecycle should require a valid issuer DID, a referenced schema, a linked status method if revocable, and governance approval before issuance begins. Source: Kanon.
 - `LR-5` Registry membership records need explicit transitions for authorize, revoke, suspend, reinstate, and expire, all timestamped. Source: Kanon.
 - `LR-6` Proposal and voting workflows must be first-class if governance is on-chain. Proposal states should include at least `tabled`, `open`, `closed`, `accepted`, `rejected`, and `executed`. Source: Kanon.
-- `LR-7` Critical state used in real-world decisions must have strong finality semantics. Dunphy""™s `actionable state` requirement means a verifier cannot depend on a state that may be displaced later by latent updates, especially revocation. Source: Dunphy.
+- `LR-7` Critical state used in real-world decisions must have strong finality semantics. Dunphy's `actionable state` requirement means a verifier cannot depend on a state that may be displaced later by latent updates, especially revocation. Source: Dunphy.
 - `LR-8` If private or off-chain trust data is used, it should be committed on a predictable `epoch` schedule so verifiers know which commitment, timestamp, and proof window they are validating against. Source: Bottom-up Trust Registry.
 - `LR-9` Revocation or negative trust events should support challenge and evidence workflows, not just unilateral deletion. Bottom-up Trust Registry uses staking and challenge-based penalties; even if the economics differ, the state machine should preserve the notion of contested updates. Source: Bottom-up Trust Registry.
 - `LR-10` The system should anticipate transaction hot spots up front, especially revocation and mass onboarding. Dunphy shows that status updates and accumulator operations can dominate latency and should shape the state machine and batching strategy. Source: Dunphy.
@@ -97,9 +97,9 @@ Note: the two academic sources above are the registry-focused papers used for th
 - `ER-3` Revocation evidence must be non-correlatable. Kanon explicitly rejects designs that create holder-correlating identifiers and calls for a Merkle tree, ZKP, or similar method. Source: Kanon.
 - `ER-4` If private trust relationships are used, verifiers should receive a bounded proof package: the relevant path or authorization evidence, inclusion proofs, the anchored root or registry signature, and the epoch/timestamp that binds the proof to a stable view of state. Source: Bottom-up Trust Registry.
 - `ER-5` Reader/verifier authorization evidence should include what data can be requested, not only who is authorized. That means allowed attributes, allowed predicates, and disclosure level should be part of the verifiable policy record. Source: Kanon.
-- `ER-6` Trust evaluations should be evidentiary, not purely discretionary. MIT""™s governance framework explicitly points toward `trust levels or scales` and evidence-based ratings; if those are used, the criteria and resulting level should be inspectable. Source: MIT governance PDF.
+- `ER-6` Trust evaluations should be evidentiary, not purely discretionary. MIT's governance framework explicitly points toward `trust levels or scales` and evidence-based ratings; if those are used, the criteria and resulting level should be inspectable. Source: MIT governance PDF.
 - `ER-7` Long-term verification requires `retention and archival` of issuer metadata, key history, and governance state. Otherwise an old credential may become unverifiable after issuer exit, merger, or key rollover. Source: MIT governance PDF.
-- `ER-8` Where live revocation is operationally expensive, short-lived credentials are a viable design mitigation. This is an architectural inference grounded in Dunphy""™s finding that revocation freshness and throughput limits can undermine non-repudiation. Source: Dunphy.
+- `ER-8` Where live revocation is operationally expensive, short-lived credentials are a viable design mitigation. This is an architectural inference grounded in Dunphy's finding that revocation freshness and throughput limits can undermine non-repudiation. Source: Dunphy.
 
 ## Highest-Priority Design Decisions For Smart Contracts
 
