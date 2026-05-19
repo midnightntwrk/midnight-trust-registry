@@ -8,11 +8,11 @@ required_files=(
   "README.md"
   "AGENT.md"
   "docs/README.md"
-  "docs/spec/trusted-registry.md"
-  "docs/plans/trusted-registry-implementation-plan.md"
+  "docs/spec/trust-registry.md"
+  "docs/plans/trust-registry-implementation-plan.md"
   "docs/plans/trust-registry-backlog.md"
-  "docs/research/trusted-registry-requirements-memo.md"
-  "docs/decisions/trusted-registry-decisions.md"
+  "docs/research/trust-registry-requirements-memo.md"
+  "docs/decisions/trust-registry-decisions.md"
   "docs/architecture/trust-registry-boundaries.md"
 )
 

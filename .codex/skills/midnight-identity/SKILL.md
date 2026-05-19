@@ -16,7 +16,7 @@ Use this skill from `midnight-trust-registry` when shaping the trust-registry wo
 ## Defaults
 
 - Target branch is `develop` unless instructed otherwise.
-- Use DCO/GPG for repository-facing commits: `git commit -S --signoff -m "<type>: <subject>"`.
+- Use DCO/GPG for repository-facing commits: `git commit -S -s -m "<type>: <subject>"`.
 - Keep changes documentation-first until the package or contract slice has explicit validation.
 - Run `./scripts/check-docs.sh` for docs-only changes.
 

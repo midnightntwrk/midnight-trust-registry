@@ -40,7 +40,7 @@ scripts/            Local validation helpers
 Planned source layout, not yet created:
 
 ```text
-contracts/trusted-registry/
+contracts/trust-registry/
 packages/trust-registry-domain/
 packages/trust-registry-client/
 packages/trust-registry-testing/
@@ -64,7 +64,7 @@ Create planned directories only when implementing the corresponding backlog slic
 Commit form:
 
 ```bash
-git commit -S --signoff -m "<type>: <subject>"
+git commit -S -s -m "<type>: <subject>"
 ```
 
 ## Validation
