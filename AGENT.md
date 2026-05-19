@@ -54,7 +54,7 @@ Create planned directories only when implementing the corresponding backlog slic
 ## Working Cycle
 
 1. Sync from `origin/develop`.
-2. Create a `codex/` branch unless the user asks for a different prefix.
+2. Create a `codex/` branch for agent-authored work unless the user asks for a different prefix. Human contributors can keep following the contributor guide's personal-prefix convention.
 3. Keep PRs large enough to deliver a real improvement and narrow enough to review.
 4. Run local validation before commit.
 5. Commit with DCO and GPG.
@@ -86,7 +86,7 @@ When packages are added, extend `just check` before treating package PRs as comp
 
 ## Midnight MCP
 
-For MCP-capable clients, configure the Midnight MCP server at user level. Do not commit personal MCP configuration or tokens.
+For MCP-capable clients, configure the Midnight MCP server at user level. Do not commit personal MCP configuration or tokens. The example below uses Codex TOML syntax; adapt the same command and args for clients that use JSON configuration.
 
 ```toml
 [mcp_servers.midnight]

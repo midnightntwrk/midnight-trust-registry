@@ -40,10 +40,12 @@ problems: list[str] = []
 for path in markdown_files:
     text = path.read_text(encoding="utf-8")
     rel = path.relative_to(root)
-    if "/Users/" in text or "\\Users\\" in text:
+    if re.search(r"(^|[\s`'\"])(/Users/|/home/[A-Za-z0-9._-]+/|[A-Za-z]:\\\\Users\\\\)", text):
         problems.append(f"{rel}: contains machine-local absolute path")
     if "obsidian" in text.lower():
         problems.append(f"{rel}: contains private notes/vault reference")
+    # This catches template residue without flagging CONTRIBUTING.md's generic
+    # license-header placeholder for source files.
     if "TODO - New Repo Owner" in text or "REPLACE WITH REPO-NAME" in text:
         problems.append(f"{rel}: contains template placeholder")
     for match in link_re.finditer(text):

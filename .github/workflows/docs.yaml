@@ -4,17 +4,30 @@ permissions: {}
 on:
   push:
     branches: [develop, main]
+    paths:
+      - "**/*.md"
+      - "scripts/check-docs.sh"
+      - ".github/workflows/docs.yaml"
   pull_request:
     branches: [develop, main]
+    paths:
+      - "**/*.md"
+      - "scripts/check-docs.sh"
+      - ".github/workflows/docs.yaml"
   workflow_dispatch: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -23,3 +36,6 @@ jobs:
 
       - name: Check documentation
         run: ./scripts/check-docs.sh
+
+      - name: Check whitespace
+        run: git diff --check
