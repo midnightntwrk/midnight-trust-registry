@@ -4,12 +4,12 @@ This documentation set is the source of truth for the initial `midnight-trust-re
 
 ## Reading Order
 
-1. [Specification](spec/trusted-registry.md)
+1. [Specification](spec/trust-registry.md)
 2. [Architecture boundaries](architecture/trust-registry-boundaries.md)
-3. [Implementation plan](plans/trusted-registry-implementation-plan.md)
+3. [Implementation plan](plans/trust-registry-implementation-plan.md)
 4. [Execution backlog](plans/trust-registry-backlog.md)
-5. [Research requirements memo](research/trusted-registry-requirements-memo.md)
-6. [Decisions and open questions](decisions/trusted-registry-decisions.md)
+5. [Research requirements memo](research/trust-registry-requirements-memo.md)
+6. [Decisions and open questions](decisions/trust-registry-decisions.md)
 
 ## Repository Boundary
 

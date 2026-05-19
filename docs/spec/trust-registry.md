@@ -1,12 +1,12 @@
-# Trusted Registry Specification
+# Trust Registry Specification
 
-Status: draft v0.1  
-Target branch: `develop`  
+Status: draft v0.1
+Target branch: `develop`
 Owner repository: `midnight-trust-registry`
 
 ## 1. Purpose
 
-A Midnight trusted registry is a governance and policy system that lets applications answer four questions without contacting an issuer at presentation time:
+A Midnight trust registry is a governance and policy system that lets applications answer four questions without contacting an issuer at presentation time:
 
 1. Is this issuer authorized for this credential family, schema, or credential definition?
 2. Is this verifier authorized to request this presentation profile or disclosure class?
@@ -116,10 +116,16 @@ Required fields:
 - `policyId`
 - `trustLevel`
 - `status`
+- `proposedAt`
+- `authorizedAt`
+- `activeFrom`
 - `issuedAt`
 - `suspendedAt`
 - `revokedAt`
+- `supersededAt`
+- `archivedAt`
 - `evidenceHash`
+- `lifecycleEventRoot`
 
 ### Recognition
 
@@ -138,6 +144,13 @@ Required fields:
 - `effectiveUntil`
 - `evidenceHash`
 - `status`
+- `proposedAt`
+- `authorizedAt`
+- `suspendedAt`
+- `revokedAt`
+- `supersededAt`
+- `archivedAt`
+- `lifecycleEventRoot`
 
 ### Resource Authorization
 
@@ -187,6 +200,8 @@ Registry objects use an explicit lifecycle:
 - `archived`
 
 State transitions must be append-only. Current state can be indexed for fast reads, but prior authorizations, keys, policy versions, revocation timestamps, suspension windows, and archived evidence commitments must remain verifiable.
+
+Every object that carries a lifecycle status must either expose explicit transition timestamps for the known states or expose a `lifecycleEventRoot` that commits to the append-only transition log. Query APIs can return a current-state projection, but evidence bundles must be able to prove the transition history used for a verification decision.
 
 ## 7. Contract Surfaces
 

@@ -1,4 +1,4 @@
-# Trusted Registry Decisions
+# Trust Registry Decisions
 
 Date: 2026-05-20
 
@@ -10,7 +10,7 @@ Date: 2026-05-20
 - Admit non-Midnight DID methods only through explicit governance policy.
 - Treat secp256k1, secp256r1, and Ed25519 as planned extension paths, not mandatory v1 contract features.
 - Treat authorization and recognition as separate statement types.
-- Preserve historical state instead of overwriting it away.
+- Preserve historical state instead of overwriting it.
 - Keep this repository as the owner of trust-registry governance and implementation.
 - Target long-term package placement under contract, package, adapter, and example directories once source work begins.
 - Treat `midnight-did` as a downstream consumer and integration point, not the owner of the registry contract.

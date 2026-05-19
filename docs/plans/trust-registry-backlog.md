@@ -1,6 +1,6 @@
 # Trust Registry Execution Backlog
 
-Status: active  
+Status: active
 Updated: 2026-05-20
 
 ## Priority Model
@@ -13,7 +13,7 @@ Updated: 2026-05-20
 
 | ID | Priority | Item | Acceptance |
 | --- | --- | --- | --- |
-| TR-001 | P0 | Move trusted-registry spec, plan, research memo, and decisions into this repository. | `docs/spec`, `docs/plans`, `docs/research`, and `docs/decisions` contain public TR source material. |
+| TR-001 | P0 | Move trust-registry spec, plan, research memo, and decisions into this repository. | `docs/spec`, `docs/plans`, `docs/research`, and `docs/decisions` contain public TR source material. |
 | TR-002 | P0 | Replace template README with project-specific scope. | README explains scope, non-scope, repo boundaries, and documentation map. |
 | TR-003 | P0 | Add repository-local agent guidance. | `AGENT.md`, `.codex`, and `.claude` point engineers to the same TR rules. |
 | TR-004 | P0 | Add lightweight docs validation. | A local command checks markdown links and required docs without requiring a package manager. |

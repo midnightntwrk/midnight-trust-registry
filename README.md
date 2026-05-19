@@ -23,12 +23,12 @@ This repository does not own:
 
 ## Documentation Map
 
-- [Trusted registry specification](docs/spec/trusted-registry.md) defines the v1 product and protocol scope.
-- [Implementation plan](docs/plans/trusted-registry-implementation-plan.md) breaks execution into reviewable slices.
+- [Trust registry specification](docs/spec/trust-registry.md) defines the v1 product and protocol scope.
+- [Implementation plan](docs/plans/trust-registry-implementation-plan.md) breaks execution into reviewable slices.
 - [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.
-- [Requirements memo](docs/research/trusted-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
+- [Requirements memo](docs/research/trust-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
 - [Architecture boundaries](docs/architecture/trust-registry-boundaries.md) describes how TR integrates with DID and VC repositories.
-- [Decisions](docs/decisions/trusted-registry-decisions.md) records current design decisions and unresolved questions.
+- [Decisions](docs/decisions/trust-registry-decisions.md) records current design decisions and unresolved questions.
 
 ## Development Baseline
 
@@ -37,7 +37,7 @@ Target branch is `develop`.
 Use signed DCO commits for repository-facing changes:
 
 ```bash
-git commit -S --signoff -m "<type>: <subject>"
+git commit -S -s -m "<type>: <subject>"
 ```
 
 For now, documentation-only changes are validated with:
@@ -53,7 +53,7 @@ Follow-up PRs will add repository-local validation commands before source packag
 The planned package layout is intentionally narrow:
 
 ```text
-contracts/trusted-registry/       Compact contract surface for governance and authorization state
+contracts/trust-registry/       Compact contract surface for governance and authorization state
 packages/trust-registry-domain/   TypeScript domain model, codecs, and policy validators
 packages/trust-registry-client/   Read/write client adapters for apps and tests
 packages/trust-registry-testing/  Fixtures and conformance helpers

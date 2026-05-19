@@ -1,6 +1,6 @@
-# Trusted Registry Implementation Plan
+# Trust Registry Implementation Plan
 
-Status: draft  
+Status: draft
 Base branch: `develop`
 
 ## Execution Strategy
@@ -14,7 +14,7 @@ Goal: make the project concrete enough for engineers to work in it safely.
 Deliverables:
 
 - Replace template README with project-specific scope and boundaries.
-- Move the trusted registry spec, plan, research memo, and backlog into `docs/`.
+- Move the trust registry spec, plan, research memo, and backlog into `docs/`.
 - Add `AGENT.md` and local skill guidance for TR work.
 - Add lightweight docs validation before code packages exist.
 - Make CI run against `develop` pull requests.
@@ -48,7 +48,7 @@ Goal: create a minimal on-chain governance and authorization surface.
 
 Deliverables:
 
-- `contracts/trusted-registry` Compact package.
+- `contracts/trust-registry` Compact package.
 - Registry initialization circuit.
 - Maintainer authorization and threshold checks.
 - Issuer/verifier authorization create, suspend, revoke, and archive circuits.
