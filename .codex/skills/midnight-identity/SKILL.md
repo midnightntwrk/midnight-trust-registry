@@ -9,19 +9,16 @@ Use this skill from `midnight-trust-registry` when shaping the trust-registry wo
 
 ## Required Context
 
-1. Read `README.md`, `CONTRIBUTING.md`, and `SECURITY.md` first; this repo is still template-like and should be made concrete carefully.
+1. Read `AGENT.md`, `README.md`, `CONTRIBUTING.md`, and `SECURITY.md` first.
 2. If inside `midnight-identity-workspace`, read the workspace-root `AGENT.md` for submodule rules.
-3. Align trust-registry changes with DID and VC integration boundaries: DID owns identifier resolution, VC owns credential/status semantics, this repo should own trust-policy and registry governance surfaces.
+3. Align trust-registry changes with DID and VC integration boundaries: DID owns identifier resolution, VC owns credential/status semantics, this repo owns trust-policy and registry governance surfaces.
 
 ## Defaults
 
 - Target branch is `develop` unless instructed otherwise.
 - Use DCO/GPG for repository-facing commits: `git commit -S --signoff -m "<type>: <subject>"`.
-- Avoid introducing source/package layout before the registry scope and validation targets are explicit.
-
-## Current State
-
-The repo currently has template community-health files and no package manifest. Keep changes documentation-first unless the task explicitly asks for implementation scaffolding.
+- Keep changes documentation-first until the package or contract slice has explicit validation.
+- Run `./scripts/check-docs.sh` for docs-only changes.
 
 ## MCP
 
