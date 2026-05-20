@@ -33,6 +33,10 @@ Date: 2026-05-21
 - For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.
 - Keep VC-backed integration evidence-first: verify TR authorization bundles through `@midnight-ntwrk/trust-registry-client`, then verify VC status through the official status-registry helpers using the status-registry reference exported by the issuer bundle.
 - Keep the Turbo workspace graph acyclic: `@midnight-ntwrk/trust-registry-client` test coverage may consume integration fixtures by source import, but the client package manifest must not depend on `@midnight-ntwrk/trust-registry-integration`.
+- Implement the first TRQP slice as a dedicated read-only adapter workspace under `adapters/trqp`, backed by an abstract source interface instead of direct contract or simulator coupling.
+- Use `registryDid` as the canonical TRQP `authority_id`; keep the local `registryId` as a Midnight profile field in metadata responses.
+- Keep the standard TRQP v2 surface limited to authorization and recognition queries. Registry metadata and evidence-bundle export are explicit Midnight profile extensions because TRQP v2 defers metadata/description query types.
+- For the first TRQP recognition mapping, interpret the local recognition `scope.resourceType` as the TRQP `action` field and use `context.recognized_registry_id` as the disambiguating extension for external registry matches.
 
 ## Pending Decisions
 

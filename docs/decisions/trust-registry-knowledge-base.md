@@ -139,6 +139,25 @@ Completed in the current implementation wave:
   - mismatched status registries fail with deterministic `unknownRegistry`
     errors
   - revoked credentials fail with deterministic `revoked` errors
+- first adapter workspace:
+  - `adapters/trqp`
+- TRQP adapter package with:
+  - strict TRQP authorization request/response schemas
+  - strict TRQP recognition request/response schemas
+  - RFC 7807-style problem-details mapping
+  - explicit Midnight profile extensions for registry metadata and
+    evidence-bundle export
+- TRQP adapter design constraints:
+  - `registryDid` is the canonical `authority_id`
+  - the adapter is read-only and source-driven, not simulator-bound
+  - metadata and evidence remain extensions because TRQP v2 standardizes
+    authorization and recognition, not description/metadata queries
+- focused TRQP adapter tests that verify:
+  - active issuer and verifier authorization responses
+  - revoked authorization mapping to `authorized: false` while preserving
+    evidence access
+  - active recognition mapping plus registry metadata export
+  - problem-details responses for unknown authorities and unmatched tuples
 
 ## Current Branch And PR State
 
@@ -211,8 +230,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- TRQP and OpenID Federation adapter slices beyond the current core contract,
-  client, and DID/VC integration baseline
+- OpenID Federation adapter and later operator tooling beyond the current core
+  contract, client, DID/VC integration, and TRQP baseline
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -230,11 +249,12 @@ Still intentionally deferred inside the current Compact slice:
 2. `TR-011` to `TR-014`
    - retarget and finish the stacked verifier, simulator-integration,
      recognition, epoch, and client branch after `TR-010`
-3. `TR-017`
-   - add the first TRQP-style read adapter on top of the client/query surface
-4. `TR-018`
+3. `TR-018`
    - add the OpenID Federation adapter experiment once the TRQP read surface is
      stable
+4. `TR-019`
+   - add the first operator CLI on top of the stabilized read adapters and
+     client surface
 
 ## Knowledge Synchronization Rule
 

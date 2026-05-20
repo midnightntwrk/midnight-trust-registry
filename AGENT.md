@@ -47,13 +47,12 @@ packages/trust-registry-domain/
 packages/trust-registry-client/
 packages/trust-registry-integration/
 contracts/trust-registry/
+adapters/trqp/
 ```
 
 Planned follow-on layout:
 
 ```text
-packages/trust-registry-testing/
-adapters/trqp/
 adapters/openid-federation/
 examples/
 ```

@@ -237,6 +237,8 @@ Status and revocation stay in the VC status registry. TR records can require a s
 
 The query layer should align with ToIP TRQP concepts while staying implementation-neutral in v1.
 
+The first TRQP-compatible slice should expose standard authorization and recognition queries. Registry metadata and evidence-bundle retrieval should be documented as Midnight profile extensions until TRQP standardizes description or metadata query types.
+
 Minimum query answers:
 
 - Registry metadata by `registryId` or `registryDid`.

@@ -29,7 +29,7 @@ Updated: 2026-05-21
 | TR-014 | P1 | Current top branch | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
 | TR-015 | P1 | Current top branch | Add DID integration test. | `did:midnight` references resolve through `midnight-did` helpers and `MidnightDIDResolver` fixtures without copying DID logic. |
 | TR-016 | P1 | Current top branch | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
-| TR-017 | P2 | Open | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
+| TR-017 | P2 | Current top branch | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
 | TR-018 | P2 | Open | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
 | TR-019 | P2 | Open | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
 | TR-020 | P2 | Open | Add audit report generator. | A command emits human-readable authorization and policy history. |
