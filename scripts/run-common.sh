@@ -87,7 +87,7 @@ Targets:
   full        Run the standard repository validation lane (default)
   core        Run the repository code-validation lane
   docs        Run documentation validation only
-  integration Placeholder target for future integration validation
+  integration Run integration scenarios
   lint        Run docs + lint checks
   typecheck   Run TypeScript checks
   build       Build package outputs
