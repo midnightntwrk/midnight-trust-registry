@@ -173,6 +173,23 @@ export const computeCreateRecognitionPayloadHash = (
     ensure32Bytes(evidenceHash),
   );
 
+export const computeCreateEpochCommitmentPayloadHash = (
+  epochId: Uint8Array,
+  stateRoot: Uint8Array,
+  eventRoot: Uint8Array,
+  policyRoot: Uint8Array,
+  validFromSequence: bigint,
+  validUntilSequence: bigint,
+): Uint8Array =>
+  pureCircuits.createEpochCommitmentPayloadHash(
+    ensure32Bytes(epochId),
+    ensure32Bytes(stateRoot),
+    ensure32Bytes(eventRoot),
+    ensure32Bytes(policyRoot),
+    validFromSequence,
+    validUntilSequence,
+  );
+
 export const computeUpdateVerifierAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   previousLifecycleEventHash: Uint8Array,

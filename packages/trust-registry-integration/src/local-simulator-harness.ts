@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateEpochCommitmentPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
@@ -8,13 +9,17 @@ import {
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
   createMaintainerFixture,
+  decodeJubjubSignature,
   deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
   labelToBytes32,
   signMaintainerActionFromSeed,
   TrustRegistrySimulator,
+  verifyMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
+  type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
   type RecognitionRecord as ContractRecognitionRecord,
@@ -22,6 +27,8 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
+  EpochCommitmentSchema,
+  type EpochCommitment,
   GovernancePolicyRecordSchema,
   RecognitionRecordSchema,
   type RegistryRecord,
@@ -54,11 +61,15 @@ const CREATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:create");
 const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
 const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
 const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
+const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 
 const bytes32Hex = (value: Uint8Array): string =>
   `0x${Buffer.from(value).toString("hex")}`;
+
+const hashHexToBytes32 = (value: string): Uint8Array =>
+  Buffer.from(value.replace(/^0x/, ""), "hex");
 
 const timestampForSequence = (sequence: bigint): string =>
   new Date(BASE_TIMESTAMP_MS + Number(sequence) * 60_000).toISOString();
@@ -374,7 +385,9 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.resourceType,
       fixture.resourceIdCommitment,
     );
-    return this.buildIssuerHistoricalEvidence(fixture);
+    const bundle = this.buildIssuerHistoricalEvidence(fixture);
+    this.assertPublishedEpochEvidence(bundle);
+    return bundle;
   }
 
   buildIssuerHistoricalEvidence(
@@ -404,7 +417,9 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
     );
-    return this.buildVerifierHistoricalEvidence(fixture);
+    const bundle = this.buildVerifierHistoricalEvidence(fixture);
+    this.assertPublishedEpochEvidence(bundle);
+    return bundle;
   }
 
   buildVerifierHistoricalEvidence(
@@ -433,7 +448,83 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.scopeResourceTypeCommitment,
       fixture.scopeResourceIdCommitment,
     );
-    return this.buildRecognitionHistoricalEvidence(fixture);
+    const bundle = this.buildRecognitionHistoricalEvidence(fixture);
+    this.assertPublishedEpochEvidence(bundle);
+    return bundle;
+  }
+
+  assertPublishedEpochEvidence(
+    bundle: TrustRegistryEvidenceBundle,
+    options: { evaluationTime?: string } = {},
+  ): void {
+    this.assertRegistryId(bundle.registryId);
+    const epochRecord = this.simulator.getEpochCommitment(
+      bytes32Commitment(bundle.epoch.epochId),
+    );
+    const expectedStateRoot = bytes32Hex(epochRecord.stateRoot);
+    const expectedEventRoot = bytes32Hex(epochRecord.eventRoot);
+    const expectedPolicyRoot = bytes32Hex(epochRecord.policyRoot);
+
+    if (bundle.epoch.stateRoot !== expectedStateRoot) {
+      throw new Error(
+        `Epoch state root mismatch: expected ${expectedStateRoot}, got ${bundle.epoch.stateRoot}`,
+      );
+    }
+    if (bundle.epoch.eventRoot !== expectedEventRoot) {
+      throw new Error(
+        `Epoch event root mismatch: expected ${expectedEventRoot}, got ${bundle.epoch.eventRoot}`,
+      );
+    }
+    if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
+      throw new Error(
+        `Epoch policy root mismatch: expected ${expectedPolicyRoot}, got ${bundle.epoch.policyRoot}`,
+      );
+    }
+    if (bundle.epoch.registryId !== this.registryId) {
+      throw new Error(
+        `Epoch registry mismatch: expected ${this.registryId}, got ${bundle.epoch.registryId}`,
+      );
+    }
+
+    const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
+    if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
+      throw new Error("Epoch is not yet valid for this evidence bundle");
+    }
+    if (evaluationTime > Date.parse(bundle.epoch.validUntil)) {
+      throw new Error("Epoch is stale for this evidence bundle");
+    }
+
+    const maintainerSignature = bundle.epoch.maintainerSignatures.at(0);
+    if (maintainerSignature === undefined) {
+      throw new Error("Epoch commitment must include at least one maintainer signature");
+    }
+    const encodedSignature = Buffer.from(
+      maintainerSignature.signature.replace(/^0x/, ""),
+      "hex",
+    );
+    const signature = decodeJubjubSignature(encodedSignature);
+    const payloadHash = computeCreateEpochCommitmentPayloadHash(
+      bytes32Commitment(bundle.epoch.epochId),
+      hashHexToBytes32(bundle.epoch.stateRoot),
+      hashHexToBytes32(bundle.epoch.eventRoot),
+      hashHexToBytes32(bundle.epoch.policyRoot),
+      epochRecord.validFromSequence,
+      epochRecord.validUntilSequence,
+    );
+    const maintainerRecord = this.simulator
+      .getLedger()
+      .maintainerRecords.lookup(epochRecord.maintainerKeyId);
+    const verified = verifyMaintainerAction(
+      maintainerRecord.publicKey,
+      this.registryIdCommitment,
+      CREATE_EPOCH_ACTION_KIND,
+      payloadHash,
+      epochRecord.publishedAtSequence,
+      signature,
+    );
+    if (!verified) {
+      throw new Error("Epoch maintainer signature is invalid");
+    }
   }
 
   buildRecognitionHistoricalEvidence(
@@ -711,6 +802,99 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
+  private ensurePublishedEpochCommitment(input: {
+    statementId: string;
+    lastStatusSequence: bigint;
+    lifecycleEventRoot: string;
+    statementStatus: string;
+  }): EpochCommitment {
+    const epochId = createScopedIdentifier(
+      "epoch",
+      this.registryId,
+      `seq-${input.lastStatusSequence.toString()}`,
+    );
+    const epochIdCommitment = bytes32Commitment(epochId);
+    const epochValidFromSequence = input.lastStatusSequence;
+    const epochValidUntilSequence = input.lastStatusSequence + 60n;
+    const stateRoot = sha256Hex(
+      JSON.stringify({
+        registryId: this.registryId,
+        statementId: input.statementId,
+        status: input.statementStatus,
+        lifecycleEventRoot: input.lifecycleEventRoot,
+      }),
+    );
+    const eventRoot = input.lifecycleEventRoot;
+    const policyRoot = bytes32Hex(this.governancePolicyCommitment);
+
+    let record: ContractEpochCommitmentRecord;
+    try {
+      record = this.simulator.getEpochCommitment(epochIdCommitment);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!/not registered/i.test(message)) {
+        throw error;
+      }
+
+      const actionSequence = this.simulator.getLedger().governanceActionCount;
+      const signature = signMaintainerActionFromSeed(
+        this.bootstrapMaintainer.seed,
+        this.registryIdCommitment,
+        CREATE_EPOCH_ACTION_KIND,
+        computeCreateEpochCommitmentPayloadHash(
+          epochIdCommitment,
+          hashHexToBytes32(stateRoot),
+          hashHexToBytes32(eventRoot),
+          hashHexToBytes32(policyRoot),
+          epochValidFromSequence,
+          epochValidUntilSequence,
+        ),
+        actionSequence,
+      );
+      this.simulator.publishEpochCommitment(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        epochIdCommitment,
+        hashHexToBytes32(stateRoot),
+        hashHexToBytes32(eventRoot),
+        hashHexToBytes32(policyRoot),
+        epochValidFromSequence,
+        epochValidUntilSequence,
+      );
+      record = this.simulator.getEpochCommitment(epochIdCommitment);
+    }
+
+    return this.buildEpochCommitment(epochId, record);
+  }
+
+  private buildEpochCommitment(
+    epochId: string,
+    record: ContractEpochCommitmentRecord,
+  ): EpochCommitment {
+    return EpochCommitmentSchema.parse({
+      epochId,
+      registryId: this.registryId,
+      stateRoot: bytes32Hex(record.stateRoot),
+      eventRoot: bytes32Hex(record.eventRoot),
+      policyRoot: bytes32Hex(record.policyRoot),
+      validFrom: timestampForSequence(record.validFromSequence),
+      validUntil: timestampForSequence(record.validUntilSequence),
+      maintainerSignatures: [
+        {
+          keyId: `${this.maintainerDid}#key-1`,
+          algorithm: "jubjub-schnorr",
+          signature: bytes32Hex(
+            encodeJubjubSignature({
+              announcement: record.signatureAnnouncement,
+              response: record.signatureResponse,
+            }),
+          ),
+        },
+      ],
+    });
+  }
+
   private buildEvidenceBundle(input: {
     subjectDid: string;
     lastStatusSequence: bigint;
@@ -726,25 +910,12 @@ export class LocalTrustRegistryIntegrationHarness {
     const lifecycleEventRoot =
       input.authorization?.lifecycleEventRoot
       ?? input.recognition?.lifecycleEventRoot;
-    const epochId = createScopedIdentifier(
-      "epoch",
-      this.registryId,
-      `seq-${input.lastStatusSequence.toString()}`,
-    );
-    const epochValidFrom = timestampForSequence(input.lastStatusSequence);
-    const epochValidUntil = new Date(
-      Date.parse(epochValidFrom) + 60 * 60 * 1000,
-    ).toISOString();
-    const stateRoot = sha256Hex(
-      JSON.stringify({
-        registryId: this.registryId,
-        statementId: bundleSubjectId,
-        status: statementStatus,
-        lifecycleEventRoot,
-      }),
-    );
-    const eventRoot = lifecycleEventRoot;
-    const policyRoot = sha256Hex(this.policyId);
+    const epoch = this.ensurePublishedEpochCommitment({
+      statementId: bundleSubjectId ?? "missing",
+      lastStatusSequence: input.lastStatusSequence,
+      lifecycleEventRoot: lifecycleEventRoot ?? sha256Hex("missing"),
+      statementStatus: statementStatus ?? "unknown",
+    });
 
     return TrustRegistryEvidenceBundleSchema.parse({
       bundleId: createScopedIdentifier(
@@ -752,34 +923,19 @@ export class LocalTrustRegistryIntegrationHarness {
         bundleRole,
         bundleSubjectId ?? "missing",
       ),
-      generatedAt: epochValidFrom,
+      generatedAt: epoch.validFrom,
       registryId: this.registryId,
       subjectDid: input.subjectDid,
       policy: this.policyRecord,
-      epoch: {
-        epochId,
-        registryId: this.registryId,
-        stateRoot,
-        eventRoot,
-        policyRoot,
-        validFrom: epochValidFrom,
-        validUntil: epochValidUntil,
-        maintainerSignatures: [
-          {
-            keyId: `${this.maintainerDid}#key-1`,
-            algorithm: "jubjub-schnorr",
-            signature: bytes32Hex(this.simulator.getLedger().lastGovernanceEventHash),
-          },
-        ],
-      },
+      epoch,
       inclusionProof: {
         proofType: "signed-statement",
-        root: eventRoot,
+        root: epoch.eventRoot,
         leafHash:
           input.authorization !== undefined
             ? bundleLeafHash(input.authorization)
             : recognitionLeafHash(input.recognition!),
-        path: [stateRoot],
+        path: [epoch.stateRoot],
         leafIndex: 0,
       },
       ...(input.authorization !== undefined

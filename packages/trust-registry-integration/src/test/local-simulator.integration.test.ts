@@ -24,6 +24,7 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(issuer.subjectDid);
     expect(bundle.registryId).toBe(harness.registryId);
     expect(bundle.referencedStatusRegistryId).toBe(issuer.referencedStatusRegistryId);
+    expect(bundle.epoch.maintainerSignatures).toHaveLength(1);
   });
 
   it("rejects current issuer trust after suspension and revocation but preserves historical evidence through archival", () => {
@@ -170,5 +171,51 @@ describe("trust registry local simulator integration", () => {
     );
     const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
     expect(revokedBundle.recognition?.status).toBe("revoked");
+  });
+
+  it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("university");
+
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const originalSignature = bundle.epoch.maintainerSignatures[0];
+    if (originalSignature === undefined) {
+      throw new Error("expected an epoch maintainer signature");
+    }
+
+    expect(() =>
+      harness.assertPublishedEpochEvidence({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          stateRoot: bundle.epoch.eventRoot,
+        },
+      }),
+    ).toThrow(/state root mismatch/i);
+
+    expect(() =>
+      harness.assertPublishedEpochEvidence(bundle, {
+        evaluationTime: new Date(
+          Date.parse(bundle.epoch.validUntil) + 60_000,
+        ).toISOString(),
+      }),
+    ).toThrow(/stale/i);
+
+    expect(() =>
+      harness.assertPublishedEpochEvidence({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: [
+            {
+              keyId: originalSignature.keyId,
+              algorithm: originalSignature.algorithm,
+              signature: `${originalSignature.signature.slice(0, -1)}0`,
+            },
+          ],
+        },
+      }),
+    ).toThrow(/invalid/i);
   });
 });

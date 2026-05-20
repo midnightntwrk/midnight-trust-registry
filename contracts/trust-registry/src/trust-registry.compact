@@ -93,6 +93,20 @@ export struct RecognitionRecord {
   lifecycleEventHash: Bytes<32>,
 }
 
+export struct EpochCommitmentRecord {
+  epochId: Bytes<32>,
+  stateRoot: Bytes<32>,
+  eventRoot: Bytes<32>,
+  policyRoot: Bytes<32>,
+  validFromSequence: Uint<64>,
+  validUntilSequence: Uint<64>,
+  publishedAtSequence: Uint<64>,
+  maintainerKeyId: Bytes<32>,
+  signatureAnnouncement: JubjubPoint,
+  signatureResponse: Field,
+  publicationEventHash: Bytes<32>,
+}
+
 export struct JubjubSignature {
   announcement: JubjubPoint,
   response: Field,
@@ -136,6 +150,10 @@ export ledger activeRecognitionCount: Uint<64>;
 export ledger recognitionIds: Set<Bytes<32>>;
 export ledger recognitionRecords: Map<Bytes<32>, RecognitionRecord>;
 export ledger currentRecognitionIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
+export ledger epochCommitmentCount: Counter;
+export ledger epochCommitmentIds: Set<Bytes<32>>;
+export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
+export ledger latestEpochCommitmentId: Bytes<32>;
 
 constructor() {
   contractVersion = 1;
@@ -147,6 +165,7 @@ constructor() {
   activeIssuerAuthorizationCount = 0;
   activeVerifierAuthorizationCount = 0;
   activeRecognitionCount = 0;
+  latestEpochCommitmentId = pad(32, "midnight:tr:epoch:none");
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
@@ -350,6 +369,24 @@ pure circuit assertRecognitionFields(
   );
 }
 
+pure circuit assertEpochCommitmentFields(
+  epochIdValue: Bytes<32>,
+  stateRootValue: Bytes<32>,
+  eventRootValue: Bytes<32>,
+  policyRootValue: Bytes<32>,
+  validFromSequenceValue: Uint<64>,
+  validUntilSequenceValue: Uint<64>
+): [] {
+  assert(epochIdValue != pad(32, ""), "Epoch id must be set");
+  assert(stateRootValue != pad(32, ""), "Epoch state root must be set");
+  assert(eventRootValue != pad(32, ""), "Epoch event root must be set");
+  assert(policyRootValue != pad(32, ""), "Epoch policy root must be set");
+  assert(
+    validUntilSequenceValue > validFromSequenceValue,
+    "Epoch valid until must be later than valid from"
+  );
+}
+
 pure circuit registryInitializationPayloadHash(
   registryDidCommitmentValue: Bytes<32>,
   governancePolicyCommitmentValue: Bytes<32>,
@@ -542,6 +579,32 @@ export pure circuit createRecognitionPayloadHash(
     policyId,
     trustLevel,
     evidenceHash
+  ]);
+}
+
+export pure circuit createEpochCommitmentPayloadHash(
+  epochId: Bytes<32>,
+  stateRoot: Bytes<32>,
+  eventRoot: Bytes<32>,
+  policyRoot: Bytes<32>,
+  validFromSequence: Uint<64>,
+  validUntilSequence: Uint<64>
+): Bytes<32> {
+  assertEpochCommitmentFields(
+    epochId,
+    stateRoot,
+    eventRoot,
+    policyRoot,
+    validFromSequence,
+    validUntilSequence
+  );
+  return persistentHash<Vector<6, Bytes<32>>>([
+    epochId,
+    stateRoot,
+    eventRoot,
+    policyRoot,
+    ((validFromSequence as Field) as Bytes<32>),
+    ((validUntilSequence as Field) as Bytes<32>)
   ]);
 }
 
@@ -892,6 +955,17 @@ circuit currentRecognitionRecord(
   return recognitionRecords.lookup(
     currentRecognitionIdsByScopeKey.lookup(scopeKey)
   );
+}
+
+circuit requireEpochCommitmentRecord(
+  epochId: Bytes<32>
+): EpochCommitmentRecord {
+  assert(epochId != pad(32, ""), "Epoch id must be set");
+  assert(
+    epochCommitmentIds.member(epochId),
+    "Epoch commitment is not registered"
+  );
+  return epochCommitmentRecords.lookup(epochId);
 }
 
 export circuit authorizeMaintainerAction(
@@ -1869,4 +1943,82 @@ export circuit assertRecognitionActive(
     currentRecord.status == AuthorizationStatus.active,
     "Recognition is not active"
   );
+}
+
+export circuit publishEpochCommitment(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  epochId: Bytes<32>,
+  stateRoot: Bytes<32>,
+  eventRoot: Bytes<32>,
+  policyRoot: Bytes<32>,
+  validFromSequence: Uint<64>,
+  validUntilSequence: Uint<64>
+): Bytes<32> {
+  const disclosedEpochId = disclose(epochId);
+  const disclosedStateRoot = disclose(stateRoot);
+  const disclosedEventRoot = disclose(eventRoot);
+  const disclosedPolicyRoot = disclose(policyRoot);
+  const disclosedValidFromSequence = disclose(validFromSequence);
+  const disclosedValidUntilSequence = disclose(validUntilSequence);
+  const actionPayloadHash = disclose(
+    createEpochCommitmentPayloadHash(
+      disclosedEpochId,
+      disclosedStateRoot,
+      disclosedEventRoot,
+      disclosedPolicyRoot,
+      disclosedValidFromSequence,
+      disclosedValidUntilSequence
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:epoch:publish"),
+    actionPayloadHash
+  );
+
+  assert(
+    !epochCommitmentIds.member(disclosedEpochId),
+    "Epoch commitment already exists"
+  );
+
+  epochCommitmentIds.insert(disclosedEpochId);
+  epochCommitmentRecords.insert(
+    disclosedEpochId,
+    EpochCommitmentRecord {
+      epochId: disclosedEpochId,
+      stateRoot: disclosedStateRoot,
+      eventRoot: disclosedEventRoot,
+      policyRoot: disclosedPolicyRoot,
+      validFromSequence: disclosedValidFromSequence,
+      validUntilSequence: disclosedValidUntilSequence,
+      publishedAtSequence: authorizedAction.actionSequence,
+      maintainerKeyId: authorizedAction.maintainerKeyId,
+      signatureAnnouncement: disclose(signature.announcement),
+      signatureResponse: disclose(signature.response),
+      publicationEventHash: authorizedAction.eventHash
+    }
+  );
+  epochCommitmentCount.increment(1);
+  latestEpochCommitmentId = disclosedEpochId;
+  return authorizedAction.eventHash;
+}
+
+export circuit getEpochCommitment(
+  epochId: Bytes<32>
+): EpochCommitmentRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireEpochCommitmentRecord(disclose(epochId));
+}
+
+export circuit getCurrentEpochCommitment(): EpochCommitmentRecord {
+  assert(initialized, "Trust registry is not initialized");
+  assert(
+    epochCommitmentCount.read() > 0,
+    "No epoch commitment has been published"
+  );
+  return epochCommitmentRecords.lookup(latestEpochCommitmentId);
 }

@@ -10,6 +10,7 @@ import {
 } from "@midnight-ntwrk/compact-runtime";
 
 import {
+  type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
@@ -477,6 +478,52 @@ export class TrustRegistrySimulator {
         recognizedRegistryId,
         scopeResourceType,
         scopeResourceId,
+      ),
+    );
+  }
+
+  publishEpochCommitment(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    epochId: Uint8Array,
+    stateRoot: Uint8Array,
+    eventRoot: Uint8Array,
+    policyRoot: Uint8Array,
+    validFromSequence: bigint,
+    validUntilSequence: bigint,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.publishEpochCommitment(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        epochId,
+        stateRoot,
+        eventRoot,
+        policyRoot,
+        validFromSequence,
+        validUntilSequence,
+      ),
+    );
+  }
+
+  getEpochCommitment(
+    epochId: Uint8Array,
+  ): EpochCommitmentRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getEpochCommitment(
+        this.circuitContext,
+        epochId,
+      ),
+    );
+  }
+
+  getCurrentEpochCommitment(): EpochCommitmentRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentEpochCommitment(
+        this.circuitContext,
       ),
     );
   }

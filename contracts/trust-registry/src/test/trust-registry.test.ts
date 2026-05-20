@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateEpochCommitmentPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
@@ -37,6 +38,7 @@ const CREATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:create");
 const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
 const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
 const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
+const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const createInitializedRegistryFixture = (seedByte: number) => {
   const simulator = new TrustRegistrySimulator();
@@ -100,6 +102,15 @@ const createRecognitionFixture = (label: string) => ({
   policyId: labelToBytes32("policy:kanon:v1"),
   trustLevel: labelToBytes32("peer-approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
+});
+
+const createEpochCommitmentFixture = (label: string) => ({
+  epochId: labelToBytes32(`epoch:${label}`),
+  stateRoot: labelToBytes32(`state-root:${label}`),
+  eventRoot: labelToBytes32(`event-root:${label}`),
+  policyRoot: labelToBytes32(`policy-root:${label}`),
+  validFromSequence: 1n,
+  validUntilSequence: 61n,
 });
 
 describe("trust registry contract", () => {
@@ -1450,5 +1461,170 @@ describe("trust registry contract", () => {
         labelToBytes32("evidence:gaia-net:revoke"),
       ),
     ).toThrow(/active or suspended/i);
+  });
+
+  it("publishes and queries an epoch commitment by id and latest pointer", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(59);
+    const epoch = createEpochCommitmentFixture("seq-1");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      computeCreateEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+      actionSequence,
+    );
+
+    const eventHash = simulator.publishEpochCommitment(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+    const state = simulator.getLedger();
+    const recordById = simulator.getEpochCommitment(epoch.epochId);
+    const recordByLatest = simulator.getCurrentEpochCommitment();
+
+    expect(state.epochCommitmentCount).toEqual(1n);
+    expect(Buffer.from(state.latestEpochCommitmentId)).toEqual(
+      Buffer.from(epoch.epochId),
+    );
+    expect(Buffer.from(recordById.epochId)).toEqual(Buffer.from(epoch.epochId));
+    expect(Buffer.from(recordById.stateRoot)).toEqual(Buffer.from(epoch.stateRoot));
+    expect(Buffer.from(recordById.eventRoot)).toEqual(Buffer.from(epoch.eventRoot));
+    expect(Buffer.from(recordById.policyRoot)).toEqual(
+      Buffer.from(epoch.policyRoot),
+    );
+    expect(recordById.validFromSequence).toEqual(epoch.validFromSequence);
+    expect(recordById.validUntilSequence).toEqual(epoch.validUntilSequence);
+    expect(Buffer.from(recordById.publicationEventHash)).toEqual(
+      Buffer.from(eventHash),
+    );
+    expect(Buffer.from(recordByLatest.epochId)).toEqual(Buffer.from(epoch.epochId));
+    expect(recordByLatest.signatureResponse).toEqual(signature.response);
+  });
+
+  it("rejects missing epoch queries, invalid epoch windows, tampered signatures, and duplicate epoch ids", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(61);
+    const epoch = createEpochCommitmentFixture("seq-2");
+
+    expect(() => simulator.getCurrentEpochCommitment()).toThrow(
+      /no epoch commitment/i,
+    );
+    expect(() =>
+      simulator.getEpochCommitment(labelToBytes32("epoch:missing")),
+    ).toThrow(/not registered/i);
+
+    expect(() =>
+      pureCircuits.createEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        10n,
+        9n,
+      ),
+    ).toThrow(/later than valid from/i);
+
+    const createPayloadHash = computeCreateEpochCommitmentPayloadHash(
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+    const tamperedSignature = {
+      ...signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        CREATE_EPOCH_ACTION_KIND,
+        createPayloadHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      response: 0n,
+    };
+
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        tamperedSignature,
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      createPayloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.publishEpochCommitment(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          CREATE_EPOCH_ACTION_KIND,
+          computeCreateEpochCommitmentPayloadHash(
+            epoch.epochId,
+            labelToBytes32("state-root:duplicate"),
+            epoch.eventRoot,
+            epoch.policyRoot,
+            epoch.validFromSequence,
+            epoch.validUntilSequence,
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        epoch.epochId,
+        labelToBytes32("state-root:duplicate"),
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+    ).toThrow(/already exists/i);
   });
 });
