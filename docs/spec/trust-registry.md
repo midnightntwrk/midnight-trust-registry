@@ -239,6 +239,8 @@ The query layer should align with ToIP TRQP concepts while staying implementatio
 
 The first TRQP-compatible slice should expose standard authorization and recognition queries. Registry metadata and evidence-bundle retrieval should be documented as Midnight profile extensions until TRQP standardizes description or metadata query types.
 
+The first OpenID Federation-compatible slice should authenticate the registry as publisher and carry TR-native evidence bundles inside custom metadata, instead of reinterpreting local authorization state as native OIDC role metadata.
+
 Minimum query answers:
 
 - Registry metadata by `registryId` or `registryDid`.

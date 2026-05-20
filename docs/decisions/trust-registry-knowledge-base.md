@@ -158,6 +158,25 @@ Completed in the current implementation wave:
     evidence access
   - active recognition mapping plus registry metadata export
   - problem-details responses for unknown authorities and unmatched tuples
+- second adapter workspace:
+  - `adapters/openid-federation`
+- OpenID Federation adapter package with:
+  - signed registry entity configuration payloads
+  - signed subordinate statements from a fixture trust anchor to the registry
+  - simple trust-chain verification over static JWT arrays
+  - embedded canonical TR evidence bundles inside custom registry publication
+    metadata
+- OpenID Federation adapter boundaries:
+  - federation authenticates the registry publisher, not each authorized DID
+  - `serviceEndpoint` is the federation entity identifier in the current
+    experiment
+  - `registryDid` and `registryId` remain custom trust-registry metadata
+  - live fetch, resolve, list, and `.well-known` publication stay out of scope
+- focused OpenID Federation adapter tests that verify:
+  - signed registry entity configuration projection
+  - trust-anchor-to-registry chains with embedded authorization bundles
+  - trust-anchor-to-registry chains with embedded recognition bundles
+  - malformed authority-hint linkage rejection
 
 ## Current Branch And PR State
 
@@ -230,8 +249,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- OpenID Federation adapter and later operator tooling beyond the current core
-  contract, client, DID/VC integration, and TRQP baseline
+- operator tooling beyond the current core contract, client, DID/VC
+  integration, TRQP, and OpenID Federation baselines
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -249,12 +268,12 @@ Still intentionally deferred inside the current Compact slice:
 2. `TR-011` to `TR-014`
    - retarget and finish the stacked verifier, simulator-integration,
      recognition, epoch, and client branch after `TR-010`
-3. `TR-018`
-   - add the OpenID Federation adapter experiment once the TRQP read surface is
-     stable
-4. `TR-019`
+3. `TR-019`
    - add the first operator CLI on top of the stabilized read adapters and
      client surface
+4. `TR-020`
+   - add the audit report generator after the operator CLI establishes the
+     inspection path
 
 ## Knowledge Synchronization Rule
 

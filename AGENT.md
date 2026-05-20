@@ -48,12 +48,12 @@ packages/trust-registry-client/
 packages/trust-registry-integration/
 contracts/trust-registry/
 adapters/trqp/
+adapters/openid-federation/
 ```
 
 Planned follow-on layout:
 
 ```text
-adapters/openid-federation/
 examples/
 ```
 

@@ -37,6 +37,9 @@ Date: 2026-05-21
 - Use `registryDid` as the canonical TRQP `authority_id`; keep the local `registryId` as a Midnight profile field in metadata responses.
 - Keep the standard TRQP v2 surface limited to authorization and recognition queries. Registry metadata and evidence-bundle export are explicit Midnight profile extensions because TRQP v2 defers metadata/description query types.
 - For the first TRQP recognition mapping, interpret the local recognition `scope.resourceType` as the TRQP `action` field and use `context.recognized_registry_id` as the disambiguating extension for external registry matches.
+- Implement the first OpenID Federation slice as an offline, fixture-only adapter workspace under `adapters/openid-federation`; do not claim live fetch, resolve, or `.well-known` publication support yet.
+- Use the registry `serviceEndpoint` URL as the federation entity identifier and keep `registryDid` and `registryId` inside custom trust-registry metadata, because the federation experiment authenticates the registry publisher rather than replacing DID-native identifiers.
+- Keep OpenID Federation as a publisher-authentication layer only: the signed federation chain proves who published the registry metadata, while embedded TR evidence bundles remain the source-of-truth for authorization and recognition semantics.
 
 ## Pending Decisions
 
