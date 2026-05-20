@@ -18,9 +18,51 @@ export struct MaintainerRecord {
   lastStatusSequence: Uint<64>,
 }
 
+export enum AuthorizationStatus {
+  active,
+  suspended,
+  revoked,
+  archived
+}
+
+export enum IssuerResourceType {
+  credentialFamily,
+  schema,
+  schemaVersion,
+  credentialDefinition,
+  statusMethodRequirement
+}
+
+export struct IssuerAuthorizationRecord {
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  status: AuthorizationStatus,
+  proposedAtSequence: Uint<64>,
+  authorizedAtSequence: Uint<64>,
+  activeFromSequence: Uint<64>,
+  suspendedAtSequence: Uint<64>,
+  revokedAtSequence: Uint<64>,
+  archivedAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  evidenceHash: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
+}
+
 export struct JubjubSignature {
   announcement: JubjubPoint,
   response: Field,
+}
+
+struct AuthorizedMaintainerAction {
+  actionSequence: Uint<64>,
+  eventHash: Bytes<32>,
+  maintainerKeyId: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
 }
 
 export ledger contractVersion: Uint<32>;
@@ -38,6 +80,11 @@ export ledger lastGovernanceEventHash: Bytes<32>;
 export ledger lastAuthorizedActionKind: Bytes<32>;
 export ledger lastAuthorizedActionPayloadHash: Bytes<32>;
 export ledger lastAuthorizedMaintainerKeyId: Bytes<32>;
+export ledger issuerAuthorizationCount: Counter;
+export ledger activeIssuerAuthorizationCount: Uint<64>;
+export ledger issuerAuthorizationIds: Set<Bytes<32>>;
+export ledger issuerAuthorizationRecords: Map<Bytes<32>, IssuerAuthorizationRecord>;
+export ledger currentIssuerAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 
 constructor() {
   contractVersion = 1;
@@ -46,6 +93,7 @@ constructor() {
   registryDidCommitment = pad(32, "midnight:tr:unset");
   governancePolicyCommitment = pad(32, "midnight:tr:unset");
   maintainerThreshold = 0;
+  activeIssuerAuthorizationCount = 0;
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
@@ -106,6 +154,56 @@ pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
   return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
 }
 
+pure circuit issuerResourceTypeLabel(
+  resourceType: IssuerResourceType
+): Bytes<32> {
+  if (resourceType == IssuerResourceType.credentialFamily) {
+    return pad(32, "credential-family");
+  } else if (resourceType == IssuerResourceType.schema) {
+    return pad(32, "schema");
+  } else if (resourceType == IssuerResourceType.schemaVersion) {
+    return pad(32, "schema-version");
+  } else if (resourceType == IssuerResourceType.credentialDefinition) {
+    return pad(32, "credential-definition");
+  } else {
+    return pad(32, "status-method-requirement");
+  }
+}
+
+pure circuit assertIssuerAuthorizationFields(
+  authorizationIdValue: Bytes<32>,
+  subjectDidCommitmentValue: Bytes<32>,
+  resourceIdValue: Bytes<32>,
+  policyIdValue: Bytes<32>,
+  trustLevelValue: Bytes<32>,
+  evidenceHashValue: Bytes<32>
+): [] {
+  assert(
+    authorizationIdValue != pad(32, ""),
+    "Issuer authorization id must be set"
+  );
+  assert(
+    subjectDidCommitmentValue != pad(32, ""),
+    "Issuer subject DID commitment must be set"
+  );
+  assert(
+    resourceIdValue != pad(32, ""),
+    "Issuer authorization resource id must be set"
+  );
+  assert(
+    policyIdValue != pad(32, ""),
+    "Issuer authorization policy id must be set"
+  );
+  assert(
+    trustLevelValue != pad(32, ""),
+    "Issuer authorization trust level must be set"
+  );
+  assert(
+    evidenceHashValue != pad(32, ""),
+    "Issuer authorization evidence hash must be set"
+  );
+}
+
 pure circuit registryInitializationPayloadHash(
   registryDidCommitmentValue: Bytes<32>,
   governancePolicyCommitmentValue: Bytes<32>,
@@ -117,6 +215,78 @@ pure circuit registryInitializationPayloadHash(
     governancePolicyCommitmentValue,
     bootstrapMaintainerKeyId,
     maintainerPublicKeyCommitment(bootstrapMaintainerPublicKey)
+  ]);
+}
+
+export pure circuit issuerAuthorizationScopeKey(
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>
+): Bytes<32> {
+  assert(
+    subjectDidCommitment != pad(32, ""),
+    "Issuer subject DID commitment must be set"
+  );
+  assert(
+    resourceId != pad(32, ""),
+    "Issuer authorization resource id must be set"
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    subjectDidCommitment,
+    issuerResourceTypeLabel(resourceType),
+    resourceId
+  ]);
+}
+
+export pure circuit createIssuerAuthorizationPayloadHash(
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assertIssuerAuthorizationFields(
+    authorizationId,
+    subjectDidCommitment,
+    resourceId,
+    policyId,
+    trustLevel,
+    evidenceHash
+  );
+  return persistentHash<Vector<7, Bytes<32>>>([
+    authorizationId,
+    subjectDidCommitment,
+    issuerResourceTypeLabel(resourceType),
+    resourceId,
+    policyId,
+    trustLevel,
+    evidenceHash
+  ]);
+}
+
+export pure circuit updateIssuerAuthorizationPayloadHash(
+  authorizationId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assert(
+    authorizationId != pad(32, ""),
+    "Issuer authorization id must be set"
+  );
+  assert(
+    previousLifecycleEventHash != pad(32, ""),
+    "Issuer authorization lifecycle event hash must be set"
+  );
+  assert(
+    evidenceHash != pad(32, ""),
+    "Issuer authorization evidence hash must be set"
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    authorizationId,
+    previousLifecycleEventHash,
+    evidenceHash
   ]);
 }
 
@@ -214,13 +384,13 @@ export circuit initializeRegistry(
   initialized = true;
 }
 
-export circuit authorizeMaintainerAction(
+circuit performAuthorizedMaintainerAction(
   maintainerKeyId: Bytes<32>,
   maintainerPublicKey: JubjubPoint,
   signature: JubjubSignature,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>
-): Bytes<32> {
+): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
   assert(
     maintainerKeyId != pad(32, ""),
@@ -283,5 +453,365 @@ export circuit authorizeMaintainerAction(
   lastAuthorizedActionKind = disclosedActionKind;
   lastAuthorizedActionPayloadHash = disclosedActionPayloadHash;
   lastAuthorizedMaintainerKeyId = disclosedMaintainerKeyId;
-  return eventHash;
+  return AuthorizedMaintainerAction {
+    actionSequence: actionSequence,
+    eventHash: eventHash,
+    maintainerKeyId: disclosedMaintainerKeyId,
+    actionKind: disclosedActionKind,
+    actionPayloadHash: disclosedActionPayloadHash
+  };
+}
+
+circuit requireIssuerAuthorizationRecord(
+  authorizationId: Bytes<32>
+): IssuerAuthorizationRecord {
+  assert(
+    authorizationId != pad(32, ""),
+    "Issuer authorization id must be set"
+  );
+  assert(
+    issuerAuthorizationIds.member(authorizationId),
+    "Issuer authorization is not registered"
+  );
+  return issuerAuthorizationRecords.lookup(authorizationId);
+}
+
+circuit currentIssuerAuthorizationRecord(
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>
+): IssuerAuthorizationRecord {
+  const scopeKey = disclose(
+    issuerAuthorizationScopeKey(
+      disclose(subjectDidCommitment),
+      disclose(resourceType),
+      disclose(resourceId)
+    )
+  );
+  assert(
+    currentIssuerAuthorizationIdsByScopeKey.member(scopeKey),
+    "Issuer authorization scope is not registered"
+  );
+  return issuerAuthorizationRecords.lookup(
+    currentIssuerAuthorizationIdsByScopeKey.lookup(scopeKey)
+  );
+}
+
+export circuit authorizeMaintainerAction(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    actionKind,
+    actionPayloadHash
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit createIssuerAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
+  const disclosedResourceType = disclose(resourceType);
+  const disclosedResourceId = disclose(resourceId);
+  const disclosedPolicyId = disclose(policyId);
+  const disclosedTrustLevel = disclose(trustLevel);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const scopeKey = disclose(
+    issuerAuthorizationScopeKey(
+      disclosedSubjectDidCommitment,
+      disclosedResourceType,
+      disclosedResourceId
+    )
+  );
+  const actionPayloadHash = disclose(
+    createIssuerAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      disclosedSubjectDidCommitment,
+      disclosedResourceType,
+      disclosedResourceId,
+      disclosedPolicyId,
+      disclosedTrustLevel,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:issuer:create"),
+    actionPayloadHash
+  );
+
+  assert(
+    !issuerAuthorizationIds.member(disclosedAuthorizationId),
+    "Issuer authorization already exists"
+  );
+  if (currentIssuerAuthorizationIdsByScopeKey.member(scopeKey)) {
+    const currentRecord = issuerAuthorizationRecords.lookup(
+      currentIssuerAuthorizationIdsByScopeKey.lookup(scopeKey)
+    );
+    assert(
+      currentRecord.status == AuthorizationStatus.revoked
+        || currentRecord.status == AuthorizationStatus.archived,
+      "Issuer authorization scope already has a live authorization"
+    );
+  }
+
+  issuerAuthorizationIds.insert(disclosedAuthorizationId);
+  issuerAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    IssuerAuthorizationRecord {
+      authorizationId: disclosedAuthorizationId,
+      subjectDidCommitment: disclosedSubjectDidCommitment,
+      resourceType: disclosedResourceType,
+      resourceId: disclosedResourceId,
+      policyId: disclosedPolicyId,
+      trustLevel: disclosedTrustLevel,
+      status: AuthorizationStatus.active,
+      proposedAtSequence: authorizedAction.actionSequence,
+      authorizedAtSequence: authorizedAction.actionSequence,
+      activeFromSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      archivedAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentIssuerAuthorizationIdsByScopeKey.insert(scopeKey, disclosedAuthorizationId);
+  issuerAuthorizationCount.increment(1);
+  activeIssuerAuthorizationCount = disclose(
+    (activeIssuerAuthorizationCount + (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit suspendIssuerAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireIssuerAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Issuer authorization must be active to suspend"
+  );
+  const actionPayloadHash = disclose(
+    updateIssuerAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:issuer:suspend"),
+    actionPayloadHash
+  );
+
+  issuerAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    IssuerAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      resourceType: currentRecord.resourceType,
+      resourceId: currentRecord.resourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  activeIssuerAuthorizationCount = disclose(
+    (activeIssuerAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeIssuerAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireIssuerAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended,
+    "Issuer authorization must be active or suspended to revoke"
+  );
+  const actionPayloadHash = disclose(
+    updateIssuerAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:issuer:revoke"),
+    actionPayloadHash
+  );
+
+  issuerAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    IssuerAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      resourceType: currentRecord.resourceType,
+      resourceId: currentRecord.resourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.revoked,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: authorizedAction.actionSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeIssuerAuthorizationCount = disclose(
+      (activeIssuerAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit archiveIssuerAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireIssuerAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+      || currentRecord.status == AuthorizationStatus.revoked,
+    "Issuer authorization must be active, suspended, or revoked to archive"
+  );
+  const actionPayloadHash = disclose(
+    updateIssuerAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:issuer:archive"),
+    actionPayloadHash
+  );
+
+  issuerAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    IssuerAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      resourceType: currentRecord.resourceType,
+      resourceId: currentRecord.resourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.archived,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeIssuerAuthorizationCount = disclose(
+      (activeIssuerAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit getIssuerAuthorization(
+  authorizationId: Bytes<32>
+): IssuerAuthorizationRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireIssuerAuthorizationRecord(disclose(authorizationId));
+}
+
+export circuit getCurrentIssuerAuthorization(
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>
+): IssuerAuthorizationRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return currentIssuerAuthorizationRecord(
+    subjectDidCommitment,
+    resourceType,
+    resourceId
+  );
+}
+
+export circuit assertIssuerAuthorized(
+  subjectDidCommitment: Bytes<32>,
+  resourceType: IssuerResourceType,
+  resourceId: Bytes<32>
+): [] {
+  assert(initialized, "Trust registry is not initialized");
+  const currentRecord = currentIssuerAuthorizationRecord(
+    subjectDidCommitment,
+    resourceType,
+    resourceId
+  );
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Issuer authorization is not active"
+  );
 }

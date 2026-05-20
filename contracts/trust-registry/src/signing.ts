@@ -19,7 +19,10 @@ import {
   verifyJubjubDigest,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
-import { pureCircuits } from "./managed/trust-registry/contract/index.js";
+import {
+  type IssuerResourceType,
+  pureCircuits,
+} from "./managed/trust-registry/contract/index.js";
 
 export {
   computeJubjubDigestChallenge,
@@ -56,6 +59,47 @@ export const computeMaintainerActionDigest = (
     ensure32Bytes(actionPayloadHash),
     actionSequence,
   ) as TrustRegistryActionDigest;
+
+export const computeIssuerAuthorizationScopeKey = (
+  subjectDidCommitment: Uint8Array,
+  resourceType: IssuerResourceType,
+  resourceId: Uint8Array,
+): Uint8Array =>
+  pureCircuits.issuerAuthorizationScopeKey(
+    ensure32Bytes(subjectDidCommitment),
+    resourceType,
+    ensure32Bytes(resourceId),
+  );
+
+export const computeCreateIssuerAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  subjectDidCommitment: Uint8Array,
+  resourceType: IssuerResourceType,
+  resourceId: Uint8Array,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createIssuerAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
+    ensure32Bytes(subjectDidCommitment),
+    resourceType,
+    ensure32Bytes(resourceId),
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateIssuerAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateIssuerAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
 
 export const signMaintainerActionDigest = (
   secretScalar: bigint,

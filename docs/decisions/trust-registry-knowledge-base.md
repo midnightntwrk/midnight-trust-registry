@@ -58,32 +58,26 @@ Completed in the current implementation wave:
 - generic threshold validation plus explicit single-signer guard for v1
 - append-only governance event hashing and event-count progression
 - first Compact contract tests and package-surface tests
+- issuer authorization record and current-scope index in the Compact contract
+- issuer authorization create, suspend, revoke, archive, and query circuits
+- issuer authorization payload-hash helpers for maintainer signatures
+- focused positive and negative issuer authorization contract tests
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
-- `codex/trust-registry-compact-skeleton`
+- `codex/trust-registry-issuer-authorization`
 
-Baseline branch for the current stacked slice:
+Merged baseline now on `origin/develop`:
 
-- `codex/trust-registry-domain-foundation`
-- draft PR:
-  - `#4`
-  - title:
-    - `feat: add trust registry domain foundation`
-
-Current stacked draft PR:
-
-- `#5`
-- title:
-  - `feat: add trust registry compact skeleton`
+- domain foundation
+- compact skeleton
 
 Branch handling note:
 
-- the current Compact slice is intentionally stacked on the validated domain
-  foundation branch
-- once the lower branch merges, this branch should be rebased onto live
+- the earlier stacked branches were merged and collapsed into `develop`
+- the current issuer-authorization slice is a fresh branch from live
   `origin/develop`
 
 ## Validation Baseline
@@ -126,7 +120,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- issuer authorization circuits
 - verifier authorization circuits
 - recognition circuits
 - epoch anchor contract surface
@@ -137,18 +130,17 @@ Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
 - maintainer onboarding and removal flows
-- issuer, verifier, and recognition state machines
+- issuer, verifier, and recognition application state machines
+- separate `proposed` and `authorized` on-chain authorization phases
 - epoch-root publication and historical inclusion proofs
 
 ## Next Recommended Slices
 
-1. `TR-009`
-   - review and merge the Compact skeleton stack
-2. `TR-010`
-   - issuer authorization circuits
-3. `TR-011`
+1. `TR-010`
+   - finish the issuer authorization branch and merge it to `develop`
+2. `TR-011`
    - verifier authorization circuits
-4. `TR-012` and `TR-013`
+3. `TR-012` and `TR-013`
    - recognition and epoch-anchor surfaces
 
 ## Knowledge Synchronization Rule

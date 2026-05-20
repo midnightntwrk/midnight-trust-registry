@@ -10,6 +10,8 @@ import {
 } from "@midnight-ntwrk/compact-runtime";
 
 import {
+  type IssuerAuthorizationRecord,
+  type IssuerResourceType,
   Contract,
   type Ledger,
   ledger,
@@ -110,6 +112,133 @@ export class TrustRegistrySimulator {
         signature,
         actionKind,
         actionPayloadHash,
+      ),
+    );
+  }
+
+  createIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    subjectDidCommitment: Uint8Array,
+    resourceType: IssuerResourceType,
+    resourceId: Uint8Array,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.createIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        subjectDidCommitment,
+        resourceType,
+        resourceId,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  suspendIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  revokeIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  archiveIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.archiveIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  getIssuerAuthorization(
+    authorizationId: Uint8Array,
+  ): IssuerAuthorizationRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getIssuerAuthorization(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
+  getCurrentIssuerAuthorization(
+    subjectDidCommitment: Uint8Array,
+    resourceType: IssuerResourceType,
+    resourceId: Uint8Array,
+  ): IssuerAuthorizationRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentIssuerAuthorization(
+        this.circuitContext,
+        subjectDidCommitment,
+        resourceType,
+        resourceId,
+      ),
+    );
+  }
+
+  assertIssuerAuthorized(
+    subjectDidCommitment: Uint8Array,
+    resourceType: IssuerResourceType,
+    resourceId: Uint8Array,
+  ): void {
+    this.executeCircuit(() =>
+      this.contract.impureCircuits.assertIssuerAuthorized(
+        this.circuitContext,
+        subjectDidCommitment,
+        resourceType,
+        resourceId,
       ),
     );
   }

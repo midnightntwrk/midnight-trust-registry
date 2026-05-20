@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateIssuerAuthorizationPayloadHash,
+  computeUpdateIssuerAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   signMaintainerActionFromSeed,
   verifyMaintainerAction,
@@ -11,11 +13,57 @@ import {
   TrustRegistrySimulator,
 } from "../testing.js";
 import {
+  AuthorizationStatus,
+  IssuerResourceType,
   MaintainerStatus,
   pureCircuits,
 } from "../managed/trust-registry/contract/index.js";
 
 import { describe, expect, it } from "vitest";
+
+const CREATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:create");
+const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
+const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
+const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
+
+const createInitializedRegistryFixture = (seedByte: number) => {
+  const simulator = new TrustRegistrySimulator();
+  const registryId = labelToBytes32("registry:kanon");
+  const registryDidCommitment = labelToBytes32("did:midnight:registry");
+  const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
+  const bootstrapMaintainer = createMaintainerFixture("bootstrap", seedByte);
+  const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
+    bootstrapMaintainer.seed,
+  );
+
+  simulator.initializeRegistry(
+    registryId,
+    registryDidCommitment,
+    governancePolicyCommitment,
+    bootstrapMaintainer.keyId,
+    bootstrapPublicKey,
+    1n,
+  );
+
+  return {
+    simulator,
+    registryId,
+    registryDidCommitment,
+    governancePolicyCommitment,
+    bootstrapMaintainer,
+    bootstrapPublicKey,
+  };
+};
+
+const createIssuerAuthorizationFixture = (label: string) => ({
+  authorizationId: labelToBytes32(`issuer-auth:${label}`),
+  subjectDidCommitment: labelToBytes32(`did:midnight:issuer:${label}`),
+  resourceType: IssuerResourceType.credentialFamily,
+  resourceId: labelToBytes32(`vc-type:${label}:v1`),
+  policyId: labelToBytes32("policy:kanon:v1"),
+  trustLevel: labelToBytes32("approved"),
+  evidenceHash: labelToBytes32(`evidence:${label}:create`),
+});
 
 describe("trust registry contract", () => {
   it("accepts valid threshold rules and rejects invalid ones", () => {
@@ -278,5 +326,354 @@ describe("trust registry contract", () => {
         actionPayloadHash,
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
+  });
+
+  it("creates and queries an active issuer authorization by id and scope", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(17);
+    const issuerAuthorization = createIssuerAuthorizationFixture("birth");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_ISSUER_ACTION_KIND,
+      computeCreateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        issuerAuthorization.evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    const eventHash = simulator.createIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      issuerAuthorization.authorizationId,
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+      issuerAuthorization.policyId,
+      issuerAuthorization.trustLevel,
+      issuerAuthorization.evidenceHash,
+    );
+    const state = simulator.getLedger();
+    const recordById = simulator.getIssuerAuthorization(
+      issuerAuthorization.authorizationId,
+    );
+    const recordByScope = simulator.getCurrentIssuerAuthorization(
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+    );
+
+    expect(state.issuerAuthorizationCount).toEqual(1n);
+    expect(state.activeIssuerAuthorizationCount).toEqual(1n);
+    expect(recordById.status).toEqual(AuthorizationStatus.active);
+    expect(recordById.resourceType).toEqual(
+      IssuerResourceType.credentialFamily,
+    );
+    expect(Buffer.from(recordById.authorizationId)).toEqual(
+      Buffer.from(issuerAuthorization.authorizationId),
+    );
+    expect(Buffer.from(recordById.lifecycleEventHash)).toEqual(
+      Buffer.from(eventHash),
+    );
+    expect(Buffer.from(recordByScope.authorizationId)).toEqual(
+      Buffer.from(issuerAuthorization.authorizationId),
+    );
+    expect(() =>
+      simulator.assertIssuerAuthorized(
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+      ),
+    ).not.toThrow();
+  });
+
+  it("suspends, revokes, and archives issuer authorizations while preserving append-only scope state", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(23);
+    const issuerAuthorization = createIssuerAuthorizationFixture("degree");
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_ISSUER_ACTION_KIND,
+      computeCreateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        issuerAuthorization.evidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      issuerAuthorization.authorizationId,
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+      issuerAuthorization.policyId,
+      issuerAuthorization.trustLevel,
+      issuerAuthorization.evidenceHash,
+    );
+
+    const createdRecord = simulator.getIssuerAuthorization(
+      issuerAuthorization.authorizationId,
+    );
+    const suspendEvidenceHash = labelToBytes32("evidence:degree:suspend");
+    const suspendSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        createdRecord.lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.suspendIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      suspendSignature,
+      issuerAuthorization.authorizationId,
+      suspendEvidenceHash,
+    );
+
+    const suspendedRecord = simulator.getCurrentIssuerAuthorization(
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+    );
+    expect(suspendedRecord.status).toEqual(AuthorizationStatus.suspended);
+    expect(simulator.getLedger().activeIssuerAuthorizationCount).toEqual(0n);
+    expect(() =>
+      simulator.assertIssuerAuthorized(
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+      ),
+    ).toThrow(/not active/i);
+
+    const revokeEvidenceHash = labelToBytes32("evidence:degree:revoke");
+    const revokeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      REVOKE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        suspendedRecord.lifecycleEventHash,
+        revokeEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.revokeIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      revokeSignature,
+      issuerAuthorization.authorizationId,
+      revokeEvidenceHash,
+    );
+
+    const revokedRecord = simulator.getIssuerAuthorization(
+      issuerAuthorization.authorizationId,
+    );
+    expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
+
+    const archiveEvidenceHash = labelToBytes32("evidence:degree:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        revokedRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      issuerAuthorization.authorizationId,
+      archiveEvidenceHash,
+    );
+
+    const archivedRecord = simulator.getCurrentIssuerAuthorization(
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+    );
+    expect(archivedRecord.status).toEqual(AuthorizationStatus.archived);
+    expect(simulator.getLedger().activeIssuerAuthorizationCount).toEqual(0n);
+  });
+
+  it("rejects duplicate issuer scope creation, invalid transitions, tampered signatures, and missing queries", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(29);
+    const issuerAuthorization = createIssuerAuthorizationFixture("license");
+
+    expect(() =>
+      simulator.getIssuerAuthorization(labelToBytes32("issuer-auth:missing")),
+    ).toThrow(/not registered/i);
+    expect(() =>
+      simulator.getCurrentIssuerAuthorization(
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+      ),
+    ).toThrow(/scope is not registered/i);
+
+    const createPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
+      issuerAuthorization.authorizationId,
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+      issuerAuthorization.policyId,
+      issuerAuthorization.trustLevel,
+      issuerAuthorization.evidenceHash,
+    );
+    const tamperedCreateSignature = {
+      ...signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        CREATE_ISSUER_ACTION_KIND,
+        createPayloadHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      response: 0n,
+    };
+
+    expect(() =>
+      simulator.createIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        tamperedCreateSignature,
+        issuerAuthorization.authorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        issuerAuthorization.evidenceHash,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_ISSUER_ACTION_KIND,
+      createPayloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      issuerAuthorization.authorizationId,
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+      issuerAuthorization.policyId,
+      issuerAuthorization.trustLevel,
+      issuerAuthorization.evidenceHash,
+    );
+
+    expect(() =>
+      simulator.createIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          CREATE_ISSUER_ACTION_KIND,
+          computeCreateIssuerAuthorizationPayloadHash(
+            labelToBytes32("issuer-auth:license:duplicate"),
+            issuerAuthorization.subjectDidCommitment,
+            issuerAuthorization.resourceType,
+            issuerAuthorization.resourceId,
+            issuerAuthorization.policyId,
+            issuerAuthorization.trustLevel,
+            labelToBytes32("evidence:license:duplicate"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        labelToBytes32("issuer-auth:license:duplicate"),
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        labelToBytes32("evidence:license:duplicate"),
+      ),
+    ).toThrow(/live authorization/i);
+
+    const createdRecord = simulator.getIssuerAuthorization(
+      issuerAuthorization.authorizationId,
+    );
+    const archiveEvidenceHash = labelToBytes32("evidence:license:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        createdRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      issuerAuthorization.authorizationId,
+      archiveEvidenceHash,
+    );
+
+    expect(() =>
+      simulator.revokeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          REVOKE_ISSUER_ACTION_KIND,
+          computeUpdateIssuerAuthorizationPayloadHash(
+            issuerAuthorization.authorizationId,
+            simulator.getIssuerAuthorization(issuerAuthorization.authorizationId)
+              .lifecycleEventHash,
+            labelToBytes32("evidence:license:revoke"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        issuerAuthorization.authorizationId,
+        labelToBytes32("evidence:license:revoke"),
+      ),
+    ).toThrow(/active or suspended/i);
   });
 });
