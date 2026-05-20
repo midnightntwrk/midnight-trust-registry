@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "contracts/*",
-    "packages/*"
+    "packages/*",
+    "adapters/*"
   ],
   "scripts": {
     "clean": "turbo run clean --continue",
