@@ -1,6 +1,11 @@
 import { Buffer } from "node:buffer";
 
 import {
+  createMidnightDIDString,
+  MidnightNetwork,
+  parseContractAddress,
+} from "@midnight-ntwrk/midnight-did";
+import {
   createScopedIdentifier,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -12,7 +17,10 @@ export const bytes32Commitment = (value: string): Uint8Array =>
   Buffer.from(sha256Hex(value).slice(2), "hex");
 
 export const createMidnightDid = (label: string): string =>
-  `did:midnight:undeployed:${sha256Hex(`midnight-did:${label}`).slice(2)}`;
+  createMidnightDIDString(
+    parseContractAddress(sha256Hex(`midnight-did:${label}`).slice(2)),
+    MidnightNetwork.Undeployed,
+  );
 
 export const createWebDid = (label: string): string =>
   `did:web:${label

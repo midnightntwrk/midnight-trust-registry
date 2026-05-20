@@ -23,6 +23,9 @@
     "integration": "vitest run --dir src/test"
   },
   "dependencies": {
+    "@midnight-ntwrk/midnight-did": "file:../../libs/midnight-did/did",
+    "@midnight-ntwrk/midnight-did-contract": "file:../../libs/midnight-did/contract",
+    "@midnight-ntwrk/midnight-did-domain": "file:../../libs/midnight-did/domain",
     "@midnight-ntwrk/trust-registry-contract": "0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "0.1.0"
   }

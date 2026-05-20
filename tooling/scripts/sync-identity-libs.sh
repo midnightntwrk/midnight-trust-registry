@@ -6,6 +6,9 @@ LIBS_DIR="${1:-$ROOT_DIR/libs}"
 DID_ROOT="${MIDNIGHT_DID_ROOT:-$ROOT_DIR/../midnight-did}"
 VC_ROOT="${MIDNIGHT_VC_ROOT:-$ROOT_DIR/../midnight-verifiable-credentials}"
 KNOWN_PACKAGES=(
+  "@midnight-ntwrk/midnight-did"
+  "@midnight-ntwrk/midnight-did-contract"
+  "@midnight-ntwrk/midnight-did-domain"
   "@midnight-ntwrk/midnight-did-jubjub-schnorr"
   "@midnight-ntwrk/midnight-did-credentials"
   "@midnight-ntwrk/midnight-did-credentials-openid"
@@ -33,6 +36,9 @@ array_contains() {
 
 package_source_root() {
   case "$1" in
+    "@midnight-ntwrk/midnight-did"|\
+    "@midnight-ntwrk/midnight-did-contract"|\
+    "@midnight-ntwrk/midnight-did-domain"|\
     "@midnight-ntwrk/midnight-did-jubjub-schnorr")
       printf '%s\n' "$DID_ROOT"
       ;;
@@ -46,6 +52,15 @@ package_source_root() {
 
 package_workspace() {
   case "$1" in
+    "@midnight-ntwrk/midnight-did")
+      printf '%s\n' "did"
+      ;;
+    "@midnight-ntwrk/midnight-did-contract")
+      printf '%s\n' "contract"
+      ;;
+    "@midnight-ntwrk/midnight-did-domain")
+      printf '%s\n' "domain"
+      ;;
     "@midnight-ntwrk/midnight-did-jubjub-schnorr")
       printf '%s\n' "jubjub-schnorr"
       ;;
@@ -63,6 +78,9 @@ package_workspace() {
 
 package_namespace_dir() {
   case "$1" in
+    "@midnight-ntwrk/midnight-did"|\
+    "@midnight-ntwrk/midnight-did-contract"|\
+    "@midnight-ntwrk/midnight-did-domain"|\
     "@midnight-ntwrk/midnight-did-jubjub-schnorr")
       printf '%s\n' "midnight-did"
       ;;
