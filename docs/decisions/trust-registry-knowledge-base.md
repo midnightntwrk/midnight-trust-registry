@@ -75,6 +75,15 @@ Completed in the current implementation wave:
 - verifier authorization create, suspend, revoke, archive, and query circuits
 - verifier authorization payload-hash helpers for maintainer signatures
 - focused positive and negative verifier authorization contract tests
+- simulator-first integration workspace:
+  - `packages/trust-registry-integration`
+- dedicated integration entrypoint:
+  - `./run.sh integration`
+- local end-to-end scenarios that combine:
+  - contract simulator state transitions
+  - domain authorization records
+  - evidence bundle generation
+  - wrong-registry and inactive-authorization rejections
 
 ## Current Branch And PR State
 
@@ -97,8 +106,9 @@ Merged baseline now on `origin/develop`:
 Branch handling note:
 
 - the earlier stacked branches were merged and collapsed into `develop`
-- the current verifier-authorization slice is stacked on top of the issuer
-  branch while that draft PR is still open
+- the current branch now carries verifier authorization plus the simulator-first
+  integration harness on top of the issuer branch while that draft PR is still
+  open
 
 ## Validation Baseline
 
@@ -108,6 +118,7 @@ Current required local gate for code-bearing TR changes:
 npm install
 ./upgrade-libs.sh --destination .
 ./run.sh --light
+./run.sh integration
 git diff --check
 ```
 
@@ -118,6 +129,11 @@ What `./run.sh --light` currently covers:
 - typecheck
 - build
 - test
+
+What still runs separately:
+
+- `./run.sh integration`
+  - simulator-first end-to-end trust-registry scenarios
 
 It does not yet cover:
 
@@ -143,7 +159,7 @@ Still missing for the first usable prototype:
 - recognition circuits
 - epoch anchor contract surface
 - TypeScript client package
-- DID and VC integration tests
+- DID- and VC-backed integration tests beyond the local simulator lane
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -158,10 +174,12 @@ Still intentionally deferred inside the current Compact slice:
 1. `TR-010`
    - finish the issuer authorization branch and merge it to `develop`
 2. `TR-011`
-   - finish the stacked verifier authorization branch and merge it after
-     `TR-010`
+   - retarget and finish the stacked verifier plus simulator-integration branch
+     after `TR-010`
 3. `TR-012` and `TR-013`
    - recognition and epoch-anchor surfaces
+4. `TR-015` and `TR-016`
+   - DID- and VC-backed scenarios on top of the new local integration harness
 
 ## Knowledge Synchronization Rule
 

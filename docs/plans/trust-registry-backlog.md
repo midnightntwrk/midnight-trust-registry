@@ -43,6 +43,8 @@ Updated: 2026-05-20
 
 - Keep status and revocation in VC status registry packages.
 - Keep DID CRUD and resolver behavior in DID packages.
+- Start integration coverage with an in-process simulator lane before binding TR
+  to DID and VC runtime dependencies.
 - Use append-only state for decisions that affect long-term verification.
 - Keep holder data out of TR state and query logs.
 - Keep recognition separate from authorization.
