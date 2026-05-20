@@ -21,7 +21,7 @@ Updated: 2026-05-20
 | TR-006 | P1 | Stacked domain foundation PR | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
 | TR-007 | P1 | Stacked domain foundation PR | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
 | TR-008 | P1 | Stacked domain foundation PR | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
-| TR-009 | P1 | In progress on `codex/trust-registry-compact-skeleton` | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
+| TR-009 | P1 | Stacked compact skeleton PR | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
 | TR-010 | P1 | Open | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
 | TR-011 | P1 | Open | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
 | TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |

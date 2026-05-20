@@ -61,6 +61,12 @@ Baseline branch for the current stacked slice:
   - title:
     - `feat: add trust registry domain foundation`
 
+Current stacked draft PR:
+
+- `#5`
+- title:
+  - `feat: add trust registry compact skeleton`
+
 Branch handling note:
 
 - the current Compact slice is intentionally stacked on the validated domain
@@ -120,7 +126,7 @@ Still intentionally deferred inside the current Compact slice:
 ## Next Recommended Slices
 
 1. `TR-009`
-   - finish branch publication and review of the Compact skeleton
+   - review and merge the Compact skeleton stack
 2. `TR-010`
    - issuer authorization circuits
 3. `TR-011`
