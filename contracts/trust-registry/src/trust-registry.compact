@@ -1,0 +1,287 @@
+pragma language_version >= 0.20;
+
+import CompactStandardLibrary;
+import "../../../libs/midnight-did/jubjub-schnorr/src/schnorr" prefix Schnorr_;
+
+export enum MaintainerStatus {
+  active,
+  suspended,
+  revoked,
+  archived
+}
+
+export struct MaintainerRecord {
+  keyId: Bytes<32>,
+  publicKey: JubjubPoint,
+  status: MaintainerStatus,
+  joinedAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+}
+
+export struct JubjubSignature {
+  announcement: JubjubPoint,
+  response: Field,
+}
+
+export ledger contractVersion: Uint<32>;
+export ledger initialized: Boolean;
+export ledger registryId: Bytes<32>;
+export ledger registryDidCommitment: Bytes<32>;
+export ledger governancePolicyCommitment: Bytes<32>;
+export ledger maintainerThreshold: Uint<64>;
+export ledger activeMaintainerCount: Counter;
+export ledger governanceActionCount: Counter;
+export ledger maintainerKeyIds: Set<Bytes<32>>;
+export ledger maintainerRecords: Map<Bytes<32>, MaintainerRecord>;
+export ledger governanceEventHashes: Set<Bytes<32>>;
+export ledger lastGovernanceEventHash: Bytes<32>;
+export ledger lastAuthorizedActionKind: Bytes<32>;
+export ledger lastAuthorizedActionPayloadHash: Bytes<32>;
+export ledger lastAuthorizedMaintainerKeyId: Bytes<32>;
+
+constructor() {
+  contractVersion = 1;
+  initialized = false;
+  registryId = pad(32, "midnight:tr:unset");
+  registryDidCommitment = pad(32, "midnight:tr:unset");
+  governancePolicyCommitment = pad(32, "midnight:tr:unset");
+  maintainerThreshold = 0;
+  lastGovernanceEventHash = pad(32, "midnight:tr:none");
+  lastAuthorizedActionKind = pad(32, "midnight:tr:none");
+  lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
+  lastAuthorizedMaintainerKeyId = pad(32, "midnight:tr:none");
+}
+
+export pure circuit assertValidMaintainerThreshold(
+  activeCount: Uint<64>,
+  threshold: Uint<64>
+): [] {
+  assert(activeCount > 0, "Maintainer count must be at least 1");
+  assert(threshold > 0, "Maintainer threshold must be at least 1");
+  assert(
+    threshold <= activeCount,
+    "Maintainer threshold may not exceed active maintainer count"
+  );
+}
+
+export pure circuit assertSingleSignatureMaintainerThreshold(
+  activeCount: Uint<64>,
+  threshold: Uint<64>
+): [] {
+  assertValidMaintainerThreshold(activeCount, threshold);
+  assert(
+    threshold == 1,
+    "Single-signature maintainer authorization requires threshold 1"
+  );
+}
+
+export pure circuit maintainerActionDigest(
+  registryIdValue: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(actionKind != pad(32, ""), "Action kind must be set");
+  assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(actionKind),
+    transientHash<Bytes<32>>(actionPayloadHash),
+    actionSequence as Field
+  ];
+}
+
+export pure circuit schnorrChallengeDigest(
+  ann_x: Field,
+  ann_y: Field,
+  pk_x: Field,
+  pk_y: Field,
+  digest: Vector<4, Field>
+): Field {
+  return Schnorr_schnorrChallengeDigest(ann_x, ann_y, pk_x, pk_y, digest);
+}
+
+pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
+  return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
+}
+
+pure circuit registryInitializationPayloadHash(
+  registryDidCommitmentValue: Bytes<32>,
+  governancePolicyCommitmentValue: Bytes<32>,
+  bootstrapMaintainerKeyId: Bytes<32>,
+  bootstrapMaintainerPublicKey: JubjubPoint
+): Bytes<32> {
+  return persistentHash<Vector<4, Bytes<32>>>([
+    registryDidCommitmentValue,
+    governancePolicyCommitmentValue,
+    bootstrapMaintainerKeyId,
+    maintainerPublicKeyCommitment(bootstrapMaintainerPublicKey)
+  ]);
+}
+
+export pure circuit governanceEventHash(
+  registryIdValue: Bytes<32>,
+  maintainerKeyId: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Bytes<32> {
+  return persistentHash<Vector<5, Bytes<32>>>([
+    registryIdValue,
+    maintainerKeyId,
+    actionKind,
+    actionPayloadHash,
+    ((actionSequence as Field) as Bytes<32>)
+  ]);
+}
+
+export circuit initializeRegistry(
+  nextRegistryId: Bytes<32>,
+  nextRegistryDidCommitment: Bytes<32>,
+  nextGovernancePolicyCommitment: Bytes<32>,
+  bootstrapMaintainerKeyId: Bytes<32>,
+  bootstrapMaintainerPublicKey: JubjubPoint,
+  nextMaintainerThreshold: Uint<64>
+): [] {
+  assert(!initialized, "Trust registry has already been initialized");
+  assert(nextRegistryId != pad(32, ""), "Registry id must be set");
+  assert(
+    nextRegistryId != pad(32, "midnight:tr:unset"),
+    "Registry id must not reuse the unset sentinel"
+  );
+  assert(
+    nextRegistryDidCommitment != pad(32, ""),
+    "Registry DID commitment must be set"
+  );
+  assert(
+    nextGovernancePolicyCommitment != pad(32, ""),
+    "Governance policy commitment must be set"
+  );
+  assert(
+    bootstrapMaintainerKeyId != pad(32, ""),
+    "Bootstrap maintainer key id must be set"
+  );
+  assertValidMaintainerThreshold(1, nextMaintainerThreshold);
+
+  const disclosedRegistryId = disclose(nextRegistryId);
+  const disclosedRegistryDidCommitment = disclose(nextRegistryDidCommitment);
+  const disclosedGovernancePolicyCommitment = disclose(
+    nextGovernancePolicyCommitment
+  );
+  const disclosedMaintainerKeyId = disclose(bootstrapMaintainerKeyId);
+  const disclosedMaintainerPublicKey = disclose(bootstrapMaintainerPublicKey);
+  const initializationPayloadHash = disclose(
+    registryInitializationPayloadHash(
+      disclosedRegistryDidCommitment,
+      disclosedGovernancePolicyCommitment,
+      disclosedMaintainerKeyId,
+      disclosedMaintainerPublicKey
+    )
+  );
+  const initializationEventHash = disclose(
+    governanceEventHash(
+      disclosedRegistryId,
+      disclosedMaintainerKeyId,
+      pad(32, "midnight:tr:init"),
+      initializationPayloadHash,
+      0
+    )
+  );
+
+  registryId = disclosedRegistryId;
+  registryDidCommitment = disclosedRegistryDidCommitment;
+  governancePolicyCommitment = disclosedGovernancePolicyCommitment;
+  maintainerThreshold = disclose(nextMaintainerThreshold);
+  maintainerKeyIds.insert(disclosedMaintainerKeyId);
+  maintainerRecords.insert(
+    disclosedMaintainerKeyId,
+    MaintainerRecord {
+      keyId: disclosedMaintainerKeyId,
+      publicKey: disclosedMaintainerPublicKey,
+      status: MaintainerStatus.active,
+      joinedAtSequence: 0,
+      lastStatusSequence: 0
+    }
+  );
+  governanceEventHashes.insert(initializationEventHash);
+  activeMaintainerCount.increment(1);
+  governanceActionCount.increment(1);
+  lastGovernanceEventHash = initializationEventHash;
+  lastAuthorizedActionKind = pad(32, "midnight:tr:init");
+  lastAuthorizedActionPayloadHash = initializationPayloadHash;
+  lastAuthorizedMaintainerKeyId = disclosedMaintainerKeyId;
+  initialized = true;
+}
+
+export circuit authorizeMaintainerAction(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  assert(
+    maintainerKeyId != pad(32, ""),
+    "Maintainer key id must be set"
+  );
+
+  const disclosedMaintainerKeyId = disclose(maintainerKeyId);
+  const disclosedMaintainerPublicKey = disclose(maintainerPublicKey);
+  const disclosedActionKind = disclose(actionKind);
+  const disclosedActionPayloadHash = disclose(actionPayloadHash);
+  const actionSequence = governanceActionCount.read();
+  const digest = maintainerActionDigest(
+    registryId,
+    disclosedActionKind,
+    disclosedActionPayloadHash,
+    actionSequence
+  );
+  const eventHash = disclose(
+    governanceEventHash(
+      registryId,
+      disclosedMaintainerKeyId,
+      disclosedActionKind,
+      disclosedActionPayloadHash,
+      actionSequence
+    )
+  );
+
+  assert(
+    maintainerKeyIds.member(disclosedMaintainerKeyId),
+    "Maintainer key id is not registered"
+  );
+  const record = maintainerRecords.lookup(disclosedMaintainerKeyId);
+  assert(
+    record.status == MaintainerStatus.active,
+    "Maintainer must be active"
+  );
+  assertSingleSignatureMaintainerThreshold(
+    activeMaintainerCount.read(),
+    maintainerThreshold
+  );
+  assert(
+    jubjubPointX(record.publicKey) == jubjubPointX(disclosedMaintainerPublicKey)
+      && jubjubPointY(record.publicKey)
+        == jubjubPointY(disclosedMaintainerPublicKey),
+    "Maintainer public key does not match the registered key"
+  );
+
+  Schnorr_schnorrVerifyDigest(
+    digest,
+    Schnorr_SchnorrSignature {
+      announcement: signature.announcement,
+      response: signature.response
+    },
+    disclosedMaintainerPublicKey
+  );
+
+  governanceEventHashes.insert(eventHash);
+  governanceActionCount.increment(1);
+  lastGovernanceEventHash = eventHash;
+  lastAuthorizedActionKind = disclosedActionKind;
+  lastAuthorizedActionPayloadHash = disclosedActionPayloadHash;
+  lastAuthorizedMaintainerKeyId = disclosedMaintainerKeyId;
+  return eventHash;
+}

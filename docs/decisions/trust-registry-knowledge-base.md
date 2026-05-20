@@ -34,32 +34,65 @@ Completed in the current implementation wave:
   - evidence bundles
 - lifecycle transition helpers and chronology guards
 - first unit tests for domain and evidence paths
+- first Compact package:
+  - `contracts/trust-registry`
+- DID-backed JubJub Schnorr dependency from:
+  - `midnight-did`
+  - synced into `libs/midnight-did/jubjub-schnorr/`
+- local identity dependency refresh helper:
+  - `./upgrade-libs.sh --destination .`
+- manifest-driven identity dependency sync:
+  - reads TR workspace package manifests
+  - syncs only mapped local packages required from `midnight-did` or
+    `midnight-verifiable-credentials`
+  - current required package:
+    - `@midnight-ntwrk/midnight-did-jubjub-schnorr`
+  - VC package mappings are prepared but not yet required by the current TR
+    code surface
+- registry initialization circuit with:
+  - registry id commitment
+  - registry DID commitment
+  - governance policy commitment
+  - bootstrap maintainer registration
+- generic maintainer-signed action authorization circuit
+- generic threshold validation plus explicit single-signer guard for v1
+- append-only governance event hashing and event-count progression
+- first Compact contract tests and package-surface tests
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
+- `codex/trust-registry-compact-skeleton`
+
+Baseline branch for the current stacked slice:
+
 - `codex/trust-registry-domain-foundation`
+- draft PR:
+  - `#4`
+  - title:
+    - `feat: add trust registry domain foundation`
 
-Current draft PR:
+Current stacked draft PR:
 
-- `#4`
+- `#5`
 - title:
-  - `feat: add trust registry domain foundation`
+  - `feat: add trust registry compact skeleton`
 
 Branch handling note:
 
-- the original workflow branch was already effectively integrated into
+- the current Compact slice is intentionally stacked on the validated domain
+  foundation branch
+- once the lower branch merges, this branch should be rebased onto live
   `origin/develop`
-- the current implementation branch was rebased onto live `origin/develop`
-  before opening the PR
 
 ## Validation Baseline
 
 Current required local gate for code-bearing TR changes:
 
 ```bash
-npm ci
+npm install
+./upgrade-libs.sh --destination .
 ./run.sh --light
 git diff --check
 ```
@@ -74,10 +107,10 @@ What `./run.sh --light` currently covers:
 
 It does not yet cover:
 
-- Compact compilation
 - DID integration
 - VC integration
 - external adapters
+- stale upstream package drift outside the synced `libs/` copy
 
 ## Current Architectural Position
 
@@ -93,8 +126,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- Compact contract skeleton
-- maintainer quorum and threshold enforcement
 - issuer authorization circuits
 - verifier authorization circuits
 - recognition circuits
@@ -102,13 +133,22 @@ Still missing for the first usable prototype:
 - TypeScript client package
 - DID and VC integration tests
 
+Still intentionally deferred inside the current Compact slice:
+
+- stateful multi-maintainer threshold execution above `1-of-N`
+- maintainer onboarding and removal flows
+- issuer, verifier, and recognition state machines
+- epoch-root publication and historical inclusion proofs
+
 ## Next Recommended Slices
 
 1. `TR-009`
-   - first Compact contract skeleton
+   - review and merge the Compact skeleton stack
 2. `TR-010`
    - issuer authorization circuits
-3. `TR-012` and `TR-013`
+3. `TR-011`
+   - verifier authorization circuits
+4. `TR-012` and `TR-013`
    - recognition and epoch-anchor surfaces
 
 ## Knowledge Synchronization Rule
@@ -122,4 +162,3 @@ When a meaningful TR slice lands or materially changes direction, update:
 
 Do not put private notes, local machine-only state, or unpublished secrets into
 this file.
-

@@ -9,6 +9,7 @@
     "npm": ">=11"
   },
   "workspaces": [
+    "contracts/*",
     "packages/*"
   ],
   "scripts": {
