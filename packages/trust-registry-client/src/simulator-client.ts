@@ -20,6 +20,11 @@ import {
 } from "./evidence.js";
 import { bytes32Commitment } from "./utils.js";
 
+type SimulatorBundleVerificationOptions = Omit<
+  BundleVerificationOptions,
+  "epochRecord" | "maintainerPublicKey" | "registryIdCommitment"
+>;
+
 export class TrustRegistrySimulatorClient {
   constructor(readonly simulator: TrustRegistrySimulator) {}
 
@@ -91,7 +96,7 @@ export class TrustRegistrySimulatorClient {
 
   verifyIssuerAuthorizationBundle(
     bundle: TrustRegistryEvidenceBundle,
-    options: Omit<BundleVerificationOptions, "epochRecord" | "maintainerPublicKey">,
+    options: SimulatorBundleVerificationOptions,
   ): TrustRegistryEvidenceBundle {
     return verifyIssuerAuthorizationBundle(bundle, {
       ...options,
@@ -101,7 +106,7 @@ export class TrustRegistrySimulatorClient {
 
   verifyVerifierAuthorizationBundle(
     bundle: TrustRegistryEvidenceBundle,
-    options: Omit<BundleVerificationOptions, "epochRecord" | "maintainerPublicKey">,
+    options: SimulatorBundleVerificationOptions,
   ): TrustRegistryEvidenceBundle {
     return verifyVerifierAuthorizationBundle(bundle, {
       ...options,
@@ -111,7 +116,7 @@ export class TrustRegistrySimulatorClient {
 
   verifyRecognitionBundle(
     bundle: TrustRegistryEvidenceBundle,
-    options: Omit<BundleVerificationOptions, "epochRecord" | "maintainerPublicKey">,
+    options: SimulatorBundleVerificationOptions,
   ): TrustRegistryEvidenceBundle {
     return verifyRecognitionBundle(bundle, {
       ...options,
@@ -127,7 +132,7 @@ export class TrustRegistrySimulatorClient {
 
   private buildEpochContext(bundle: TrustRegistryEvidenceBundle): Pick<
     BundleVerificationOptions,
-    "epochRecord" | "maintainerPublicKey"
+    "epochRecord" | "maintainerPublicKey" | "registryIdCommitment"
   > {
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const maintainerRecord = this.getMaintainerRecordByKeyId(
@@ -137,6 +142,7 @@ export class TrustRegistrySimulatorClient {
     return {
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: this.asBytes32(bundle.registryId),
     };
   }
 

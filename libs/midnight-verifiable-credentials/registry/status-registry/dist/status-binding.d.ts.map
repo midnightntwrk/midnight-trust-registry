@@ -1,0 +1,1 @@
+{"version":3,"file":"status-binding.d.ts","sourceRoot":"","sources":["../src/status-binding.ts"],"names":[],"mappings":"AAAA,OAAO,EAEL,KAAK,0BAA0B,EAC/B,KAAK,iBAAiB,EAEvB,MAAM,0CAA0C,CAAC;AAElD,eAAO,MAAM,+BAA+B,GAAI,0CAG7C;IACD,QAAQ,CAAC,WAAW,EAAE,iBAAiB,CAAC;IACxC,QAAQ,CAAC,sBAAsB,EAAE,UAAU,CAAC;CAC7C,KAAG,0BAQH,CAAC"}

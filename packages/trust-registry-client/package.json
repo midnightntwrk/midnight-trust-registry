@@ -26,8 +26,5 @@
     "@midnight-ntwrk/compact-runtime": "^0.15.0",
     "@midnight-ntwrk/trust-registry-contract": "0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "0.1.0"
-  },
-  "devDependencies": {
-    "@midnight-ntwrk/trust-registry-integration": "0.1.0"
   }
 }

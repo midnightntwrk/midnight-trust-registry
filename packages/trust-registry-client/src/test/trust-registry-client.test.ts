@@ -5,7 +5,7 @@ import {
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "../../../trust-registry-integration/src/index.js";
 
 import { TrustRegistrySimulatorClient } from "../index.js";
 
@@ -43,14 +43,12 @@ describe("trust registry client", () => {
         expectedRegistryId: harness.registryId,
         expectedSubjectDid: issuer.subjectDid,
         expectedResourceId: issuer.resourceId,
-        registryIdCommitment: harness.registryIdCommitment,
       }),
     ).not.toThrow();
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(activeBundle, {
         expectedRegistryId: "registry:other:trusted",
-        registryIdCommitment: harness.registryIdCommitment,
       }),
     ).toThrow(/mismatch/i);
 
@@ -59,7 +57,6 @@ describe("trust registry client", () => {
     expect(() =>
       client.verifyIssuerAuthorizationBundle(revokedBundle, {
         expectedRegistryId: harness.registryId,
-        registryIdCommitment: harness.registryIdCommitment,
       }),
     ).toThrow(/not active/i);
   });
@@ -77,7 +74,6 @@ describe("trust registry client", () => {
         expectedRegistryId: harness.registryId,
         expectedSubjectDid: verifier.subjectDid,
         expectedResourceId: verifier.scopeResourceId,
-        registryIdCommitment: harness.registryIdCommitment,
       }),
     ).not.toThrow();
 
@@ -89,7 +85,6 @@ describe("trust registry client", () => {
         expectedSubjectDid: recognition.recognizedAuthorityDid,
         expectedResourceId: recognition.scopeResourceId,
         expectedRecognizedRegistryId: recognition.recognizedRegistryId,
-        registryIdCommitment: harness.registryIdCommitment,
       }),
     ).not.toThrow();
   });
@@ -104,7 +99,6 @@ describe("trust registry client", () => {
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(bundle, {
-        registryIdCommitment: harness.registryIdCommitment,
         evaluationTime: new Date(
           Date.parse(bundle.epoch.validUntil) + 60_000,
         ).toISOString(),
@@ -132,7 +126,6 @@ describe("trust registry client", () => {
           },
         },
         {
-          registryIdCommitment: harness.registryIdCommitment,
         },
       ),
     ).toThrow(/invalid/i);
