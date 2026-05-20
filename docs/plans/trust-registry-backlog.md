@@ -23,8 +23,8 @@ Updated: 2026-05-20
 | TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
 | TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
 | TR-010 | P1 | Draft PR `#6` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
-| TR-011 | P1 | Stacked branch | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
-| TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
+| TR-011 | P1 | Current top branch | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
+| TR-012 | P1 | Current top branch | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
 | TR-013 | P1 | Open | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
 | TR-014 | P1 | Open | Add TypeScript client. | Apps can query current and historical authorization state. |
 | TR-015 | P1 | Open | Add DID integration test. | `did:midnight` references resolve through DID repo APIs or fixtures without copying DID logic. |

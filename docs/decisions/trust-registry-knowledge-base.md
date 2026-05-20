@@ -75,6 +75,10 @@ Completed in the current implementation wave:
 - verifier authorization create, suspend, revoke, archive, and query circuits
 - verifier authorization payload-hash helpers for maintainer signatures
 - focused positive and negative verifier authorization contract tests
+- recognition record and current-scope index in the Compact contract
+- recognition create, suspend, revoke, archive, and query circuits
+- recognition payload-hash helpers for maintainer signatures
+- focused positive and negative recognition contract tests
 - simulator-first integration workspace:
   - `packages/trust-registry-integration`
 - dedicated integration entrypoint:
@@ -82,6 +86,7 @@ Completed in the current implementation wave:
 - local end-to-end scenarios that combine:
   - contract simulator state transitions
   - domain authorization records
+  - domain recognition records
   - evidence bundle generation
   - wrong-registry and inactive-authorization rejections
 
@@ -106,9 +111,9 @@ Merged baseline now on `origin/develop`:
 Branch handling note:
 
 - the earlier stacked branches were merged and collapsed into `develop`
-- the current branch now carries verifier authorization plus the simulator-first
-  integration harness on top of the issuer branch while that draft PR is still
-  open
+- the current branch now carries verifier authorization, the simulator-first
+  integration harness, and recognition on top of the issuer branch while that
+  draft PR is still open
 
 ## Validation Baseline
 
@@ -156,7 +161,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- recognition circuits
 - epoch anchor contract surface
 - TypeScript client package
 - DID- and VC-backed integration tests beyond the local simulator lane
@@ -174,10 +178,10 @@ Still intentionally deferred inside the current Compact slice:
 1. `TR-010`
    - finish the issuer authorization branch and merge it to `develop`
 2. `TR-011`
-   - retarget and finish the stacked verifier plus simulator-integration branch
-     after `TR-010`
-3. `TR-012` and `TR-013`
-   - recognition and epoch-anchor surfaces
+   - retarget and finish the stacked verifier, simulator-integration, and
+     recognition branch after `TR-010`
+3. `TR-013` and `TR-014`
+   - epoch-anchor and client surfaces
 4. `TR-015` and `TR-016`
    - DID- and VC-backed scenarios on top of the new local integration harness
 
