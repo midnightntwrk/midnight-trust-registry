@@ -71,15 +71,20 @@ Completed in the current implementation wave:
   - `Scan` concurrency keys now stay branch-specific for manual dispatch runs
 - `turbo typecheck` now builds workspace dependencies first so fresh-checkout
   CI runs do not depend on stale local artifacts
+- verifier authorization record and current-scope index in the Compact contract
+- verifier authorization create, suspend, revoke, archive, and query circuits
+- verifier authorization payload-hash helpers for maintainer signatures
+- focused positive and negative verifier authorization contract tests
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
+- `codex/trust-registry-verifier-authorization`
+
+Stacked base branch:
+
 - `codex/trust-registry-issuer-authorization`
-
-Current draft PR:
-
 - `#6`
 - title:
   - `feat: add issuer authorization circuits`
@@ -92,8 +97,8 @@ Merged baseline now on `origin/develop`:
 Branch handling note:
 
 - the earlier stacked branches were merged and collapsed into `develop`
-- the current issuer-authorization slice is a fresh branch from live
-  `origin/develop`
+- the current verifier-authorization slice is stacked on top of the issuer
+  branch while that draft PR is still open
 
 ## Validation Baseline
 
@@ -135,7 +140,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- verifier authorization circuits
 - recognition circuits
 - epoch anchor contract surface
 - TypeScript client package
@@ -154,7 +158,8 @@ Still intentionally deferred inside the current Compact slice:
 1. `TR-010`
    - finish the issuer authorization branch and merge it to `develop`
 2. `TR-011`
-   - verifier authorization circuits
+   - finish the stacked verifier authorization branch and merge it after
+     `TR-010`
 3. `TR-012` and `TR-013`
    - recognition and epoch-anchor surfaces
 

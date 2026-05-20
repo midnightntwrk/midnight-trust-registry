@@ -17,11 +17,12 @@ Date: 2026-05-20
 - Reuse the VC status registry for status and revocation instead of cloning those concerns.
 - For the first issuer-authorization slice, maintainer-approved create lands directly in `active` state; the separate application/proposal workflow remains a later slice.
 - Keep the issuer authorization lookup split between a primary `authorizationId` record and a current-scope index keyed by `(subject DID commitment, resource type, resource id)`.
+- For the first verifier-authorization slice, keep the authorization lookup split between a primary `authorizationId` record and a current-scope index keyed by `(subject DID commitment, request profile id, allowed attribute set commitment, allowed predicate set commitment, disclosure level commitment)`.
 
 ## Pending Decisions
 
 - Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
-- Resource granularity for verifier authorization: request profile only, or request profile plus disclosure and predicate commitments.
+- Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
 - Minimum maintainer threshold for admin onboarding, member onboarding, policy updates, and emergency suspension.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
