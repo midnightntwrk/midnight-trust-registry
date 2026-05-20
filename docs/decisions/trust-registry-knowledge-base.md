@@ -36,7 +36,11 @@ Completed in the current implementation wave:
 - first unit tests for domain and evidence paths
 - first Compact package:
   - `contracts/trust-registry`
-- shared local JubJub Schnorr helper for contract authorization
+- DID-backed JubJub Schnorr dependency from:
+  - `midnight-did`
+  - vendored in `tooling/vendor/midnight-did/`
+- local DID vendor refresh helper:
+  - `./upgrade-libs.sh --destination .`
 - registry initialization circuit with:
   - registry id commitment
   - registry DID commitment
@@ -91,6 +95,9 @@ What `./run.sh --light` currently covers:
 - typecheck
 - build
 - test
+
+It does not yet cover:
+
 - DID integration
 - VC integration
 - external adapters
