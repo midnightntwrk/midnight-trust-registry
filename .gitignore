@@ -3,4 +3,5 @@ dist/
 .turbo/
 coverage/
 *.tsbuildinfo
-
+src/managed/
+**/src/managed/
