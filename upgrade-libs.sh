@@ -8,22 +8,21 @@ usage() {
   cat >&2 <<USAGE
 Usage: $0 --destination <path>
 
-Refresh local packed DID dependencies from the midnight-did repository.
+Refresh local DID and VC dependency copies from sibling Midnight identity
+repositories into the target repo `libs/` tree, grouped by source repo.
 
 Arguments:
-  --destination <path>  Target repo root, vendor root, legacy libs root, or concrete output dir
+  --destination <path>  Target repo root, libs root, or concrete output dir
 USAGE
 }
 
 resolve_dest_dir() {
   local destination="$1"
 
-  if [[ -d "$destination/tooling/vendor" ]] || [[ -f "$destination/package.json" ]]; then
-    printf '%s/tooling/vendor/midnight-did\n' "$destination"
-  elif [[ "$(basename "$destination")" == "vendor" ]] || [[ "$(basename "$destination")" == "libs" ]]; then
-    printf '%s/midnight-did\n' "$destination"
-  elif [[ "$(basename "$destination")" == "artifacts" ]]; then
-    printf '%s/npm\n' "$destination"
+  if [[ -d "$destination/libs" ]] || [[ -f "$destination/package.json" ]]; then
+    printf '%s/libs\n' "$destination"
+  elif [[ "$(basename "$destination")" == "libs" ]]; then
+    printf '%s\n' "$destination"
   else
     printf '%s\n' "$destination"
   fi
@@ -53,6 +52,6 @@ if [[ -z "$DESTINATION" ]]; then
   exit 1
 fi
 
-DID_DEST="$(resolve_dest_dir "$DESTINATION")"
-"$ROOT_DIR/tooling/scripts/pack-midnight-did-libs.sh" "$DID_DEST"
-echo "[upgrade-libs] DID tarballs refreshed in $DID_DEST"
+LIBS_DEST="$(resolve_dest_dir "$DESTINATION")"
+"$ROOT_DIR/tooling/scripts/sync-identity-libs.sh" "$LIBS_DEST"
+echo "[upgrade-libs] Identity library copies refreshed in $LIBS_DEST"

@@ -38,9 +38,17 @@ Completed in the current implementation wave:
   - `contracts/trust-registry`
 - DID-backed JubJub Schnorr dependency from:
   - `midnight-did`
-  - vendored in `tooling/vendor/midnight-did/`
-- local DID vendor refresh helper:
+  - synced into `libs/midnight-did/jubjub-schnorr/`
+- local identity dependency refresh helper:
   - `./upgrade-libs.sh --destination .`
+- manifest-driven identity dependency sync:
+  - reads TR workspace package manifests
+  - syncs only mapped local packages required from `midnight-did` or
+    `midnight-verifiable-credentials`
+  - current required package:
+    - `@midnight-ntwrk/midnight-did-jubjub-schnorr`
+  - VC package mappings are prepared but not yet required by the current TR
+    code surface
 - registry initialization circuit with:
   - registry id commitment
   - registry DID commitment
@@ -83,7 +91,8 @@ Branch handling note:
 Current required local gate for code-bearing TR changes:
 
 ```bash
-npm ci
+npm install
+./upgrade-libs.sh --destination .
 ./run.sh --light
 git diff --check
 ```
@@ -101,6 +110,7 @@ It does not yet cover:
 - DID integration
 - VC integration
 - external adapters
+- stale upstream package drift outside the synced `libs/` copy
 
 ## Current Architectural Position
 

@@ -5,3 +5,5 @@ coverage/
 *.tsbuildinfo
 src/managed/
 **/src/managed/
+!libs/**/dist/
+!libs/**/dist/**

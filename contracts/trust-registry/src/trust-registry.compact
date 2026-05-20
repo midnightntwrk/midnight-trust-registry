@@ -1,7 +1,7 @@
 pragma language_version >= 0.20;
 
 import CompactStandardLibrary;
-import "../../../node_modules/@midnight-ntwrk/midnight-did-jubjub-schnorr/src/schnorr" prefix Schnorr_;
+import "../../../libs/midnight-did/jubjub-schnorr/src/schnorr" prefix Schnorr_;
 
 export enum MaintainerStatus {
   active,
