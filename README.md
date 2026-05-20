@@ -40,13 +40,19 @@ Use signed DCO commits for repository-facing changes:
 git commit -S -s -m "<type>: <subject>"
 ```
 
-For now, documentation-only changes are validated with:
+Current local validation baseline:
 
 ```bash
-git diff --check
+npm ci
+./run.sh --light
 ```
 
-Follow-up PRs will add repository-local validation commands before source packages are introduced.
+For docs-only edits, the minimum fallback remains:
+
+```bash
+./scripts/check-docs.sh
+git diff --check
+```
 
 ## Project Files
 
@@ -55,13 +61,20 @@ Follow-up PRs will add repository-local validation commands before source packag
 - [License](LICENSE) is Apache-2.0.
 - [Code owners](CODEOWNERS) defines repository ownership.
 
-## Expected Package Direction
+## Current Package Surface
 
-The planned package layout is intentionally narrow:
+Implemented now:
+
+```text
+packages/trust-registry-domain/  TypeScript domain records, lifecycle validators, and evidence schemas
+```
+
+## Planned Additions
+
+The next package layout is intentionally narrow:
 
 ```text
 contracts/trust-registry/       Compact contract surface for governance and authorization state
-packages/trust-registry-domain/   TypeScript domain model, codecs, and policy validators
 packages/trust-registry-client/   Read/write client adapters for apps and tests
 packages/trust-registry-testing/  Fixtures and conformance helpers
 adapters/trqp/                    ToIP TRQP-compatible query adapter
@@ -69,4 +82,4 @@ adapters/openid-federation/       OpenID Federation metadata/trust-chain adapter
 examples/                         DID/VC integration examples
 ```
 
-Do not create these directories until the corresponding backlog item is implemented with tests and docs.
+Do not create the remaining directories until the corresponding backlog item is implemented with tests and docs.

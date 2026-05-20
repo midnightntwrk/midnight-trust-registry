@@ -34,14 +34,21 @@ docs/plans/         Execution plans and backlog
 docs/research/      Public research-derived requirements
 docs/decisions/     Design decisions and open questions
 docs/architecture/  Repo boundaries and integration diagrams
+packages/           TypeScript workspaces for registry domain and clients
 scripts/            Local validation helpers
+run.sh              Repository entrypoint for light/full validation
 ```
 
-Planned source layout, not yet created:
+Current source layout:
+
+```text
+packages/trust-registry-domain/
+```
+
+Planned follow-on layout:
 
 ```text
 contracts/trust-registry/
-packages/trust-registry-domain/
 packages/trust-registry-client/
 packages/trust-registry-testing/
 adapters/trqp/
@@ -84,7 +91,12 @@ If `just` is available:
 just check
 ```
 
-When packages are added, extend `just check` before treating package PRs as complete.
+Current code baseline:
+
+```bash
+npm ci
+./run.sh --light
+```
 
 ## Midnight MCP
 
