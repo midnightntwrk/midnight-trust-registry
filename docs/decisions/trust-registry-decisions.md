@@ -1,6 +1,6 @@
 # Trust Registry Decisions
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Current Decisions
 
@@ -25,6 +25,9 @@ Date: 2026-05-20
 - Store the maintainer key id and raw JubJub signature components in the epoch record so evidence bundles can export a real registry signature instead of a synthetic placeholder.
 - Keep epoch selection by explicit `epochId` or latest pointer in the contract; richer historical selection by timestamp remains a later client concern.
 - Start integration coverage with a simulator-first workspace package and a dedicated `./run.sh integration` lane; keep it separate from `./run.sh --light` until DID- and VC-backed scenarios justify the extra CI cost.
+- For the first client slice, add a dedicated `packages/trust-registry-client` workspace instead of embedding client helpers into the integration harness.
+- Keep the first client slice evidence-first: verify published epoch roots, maintainer signatures, and bundle scope expectations directly from canonical contract records before adding higher-level transport adapters.
+- Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
 
 ## Pending Decisions
 

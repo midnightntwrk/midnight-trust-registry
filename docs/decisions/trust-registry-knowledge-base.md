@@ -96,6 +96,25 @@ Completed in the current implementation wave:
   - evidence bundle generation
   - anchored epoch validation against stored roots and signatures
   - wrong-registry and inactive-authorization rejections
+- first client workspace:
+  - `packages/trust-registry-client`
+- simulator-backed query helpers for:
+  - issuer authorization by id and current scope
+  - verifier authorization by id and current scope
+  - recognition by id and current scope
+  - epoch commitments by id and latest pointer
+- evidence verification helpers for:
+  - issuer authorization bundles
+  - verifier authorization bundles
+  - recognition bundles
+- client-side validation of:
+  - published epoch roots
+  - maintainer signatures over epoch publication payloads
+  - statement scope expectations
+  - stale and not-yet-valid epoch windows
+  - wrong-registry and tampered-evidence failures
+- focused client tests that exercise current and historical queries plus
+  anchored bundle verification against the local simulator
 
 ## Current Branch And PR State
 
@@ -117,10 +136,11 @@ Merged baseline now on `origin/develop`:
 
 Branch handling note:
 
-- the earlier stacked branches were merged and collapsed into `develop`
+- the docs/workflow baseline plus domain foundation and compact skeleton are on
+  `develop`
 - the current branch now carries verifier authorization, the simulator-first
-  integration harness, recognition, and epoch anchoring on top of the issuer
-  branch while that draft PR is still open
+  integration harness, recognition, epoch anchoring, and the TypeScript client
+  on top of the issuer branch while that draft PR is still open
 
 ## Validation Baseline
 
@@ -168,7 +188,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- TypeScript client package
 - DID- and VC-backed integration tests beyond the local simulator lane
 
 Still intentionally deferred inside the current Compact slice:
@@ -184,13 +203,14 @@ Still intentionally deferred inside the current Compact slice:
 
 1. `TR-010`
    - finish the issuer authorization branch and merge it to `develop`
-2. `TR-011`
+2. `TR-011` to `TR-014`
    - retarget and finish the stacked verifier, simulator-integration,
-     recognition, and epoch branch after `TR-010`
-3. `TR-014`
-   - client surface for current and historical trust decisions
-4. `TR-015` and `TR-016`
-   - DID- and VC-backed scenarios on top of the new local integration harness
+     recognition, epoch, and client branch after `TR-010`
+3. `TR-015`
+   - DID-backed integration using `did:midnight` resolution without copying
+     DID logic into TR
+4. `TR-016`
+   - VC-backed integration that combines TR evidence with VC status evidence
 
 ## Knowledge Synchronization Rule
 

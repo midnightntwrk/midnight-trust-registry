@@ -47,6 +47,12 @@ npm ci
 ./run.sh --light
 ```
 
+Integration scenarios currently run separately:
+
+```bash
+./run.sh integration
+```
+
 For docs-only edits, the minimum fallback remains:
 
 ```bash
@@ -67,6 +73,9 @@ Implemented now:
 
 ```text
 packages/trust-registry-domain/  TypeScript domain records, lifecycle validators, and evidence schemas
+contracts/trust-registry/        Compact governance, authorization, recognition, and epoch contract
+packages/trust-registry-integration/  Local simulator harness and end-to-end trust scenarios
+packages/trust-registry-client/  TypeScript query and evidence-verification client
 ```
 
 ## Planned Additions
@@ -74,8 +83,6 @@ packages/trust-registry-domain/  TypeScript domain records, lifecycle validators
 The next package layout is intentionally narrow:
 
 ```text
-contracts/trust-registry/       Compact contract surface for governance and authorization state
-packages/trust-registry-client/   Read/write client adapters for apps and tests
 packages/trust-registry-testing/  Fixtures and conformance helpers
 adapters/trqp/                    ToIP TRQP-compatible query adapter
 adapters/openid-federation/       OpenID Federation metadata/trust-chain adapter

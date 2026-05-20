@@ -1,7 +1,7 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-05-20
+Updated: 2026-05-21
 
 ## Priority Model
 
@@ -26,7 +26,7 @@ Updated: 2026-05-20
 | TR-011 | P1 | Current top branch | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
 | TR-012 | P1 | Current top branch | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
 | TR-013 | P1 | Current top branch | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
-| TR-014 | P1 | Open | Add TypeScript client. | Apps can query current and historical authorization state. |
+| TR-014 | P1 | Current top branch | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
 | TR-015 | P1 | Open | Add DID integration test. | `did:midnight` references resolve through DID repo APIs or fixtures without copying DID logic. |
 | TR-016 | P1 | Open | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
 | TR-017 | P2 | Open | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
@@ -48,3 +48,6 @@ Updated: 2026-05-20
 - Use append-only state for decisions that affect long-term verification.
 - Keep holder data out of TR state and query logs.
 - Keep recognition separate from authorization.
+- Keep the first client package evidence-first: query raw contract state, then
+  validate anchored bundles against published epoch records before adding richer
+  adapters.
