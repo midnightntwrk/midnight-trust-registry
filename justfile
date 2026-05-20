@@ -5,7 +5,7 @@ default: check
 status:
     git status --short --branch
 
-check: docs-check whitespace-check
+check: docs-check whitespace-check light-check
 
 whitespace-check:
     git diff --check
@@ -13,3 +13,6 @@ whitespace-check:
 
 docs-check:
     ./scripts/check-docs.sh
+
+light-check:
+    ./run.sh --light
