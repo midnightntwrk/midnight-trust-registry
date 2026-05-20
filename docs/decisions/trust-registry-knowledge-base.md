@@ -45,7 +45,10 @@ Completed in the current implementation wave:
   - reads TR workspace package manifests
   - syncs only mapped local packages required from `midnight-did` or
     `midnight-verifiable-credentials`
-  - current required package:
+  - current required packages:
+    - `@midnight-ntwrk/midnight-did`
+    - `@midnight-ntwrk/midnight-did-contract`
+    - `@midnight-ntwrk/midnight-did-domain`
     - `@midnight-ntwrk/midnight-did-jubjub-schnorr`
   - VC package mappings are prepared but not yet required by the current TR
     code surface
@@ -115,6 +118,14 @@ Completed in the current implementation wave:
   - wrong-registry and tampered-evidence failures
 - focused client tests that exercise current and historical queries plus
   anchored bundle verification against the local simulator
+- DID-backed integration helpers that:
+  - construct `did:midnight` identifiers with official `midnight-did` helpers
+  - resolve trusted issuer and verifier subject DIDs through
+    `MidnightDIDResolver`
+  - use fixture ledger state instead of copied DID parsing or resolver logic
+- DID-backed integration tests that verify:
+  - active issuer and verifier bundle subjects resolve to DID documents
+  - missing DID fixture state resolves to `null`
 
 ## Current Branch And PR State
 
@@ -139,8 +150,9 @@ Branch handling note:
 - the docs/workflow baseline plus domain foundation and compact skeleton are on
   `develop`
 - the current branch now carries verifier authorization, the simulator-first
-  integration harness, recognition, epoch anchoring, and the TypeScript client
-  on top of the issuer branch while that draft PR is still open
+  integration harness, recognition, epoch anchoring, the TypeScript client,
+  and DID-backed integration on top of the issuer branch while that draft PR is
+  still open
 
 ## Validation Baseline
 
@@ -165,11 +177,10 @@ What `./run.sh --light` currently covers:
 What still runs separately:
 
 - `./run.sh integration`
-  - simulator-first end-to-end trust-registry scenarios
+  - simulator-first and DID-backed trust-registry scenarios
 
 It does not yet cover:
 
-- DID integration
 - VC integration
 - external adapters
 - stale upstream package drift outside the synced `libs/` copy
@@ -188,7 +199,7 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- DID- and VC-backed integration tests beyond the local simulator lane
+- VC-backed integration tests beyond the current DID-backed lane
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -207,8 +218,7 @@ Still intentionally deferred inside the current Compact slice:
    - retarget and finish the stacked verifier, simulator-integration,
      recognition, epoch, and client branch after `TR-010`
 3. `TR-015`
-   - DID-backed integration using `did:midnight` resolution without copying
-     DID logic into TR
+   - finish and record the DID-backed integration slice on the current branch
 4. `TR-016`
    - VC-backed integration that combines TR evidence with VC status evidence
 
