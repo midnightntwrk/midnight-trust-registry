@@ -66,14 +66,15 @@
     "test:ci": "vitest run",
     "prepack": "npm run build",
     "clean": "rm -rf dist && rm -rf coverage && rm -rf reports && rm -rf src/managed && rm -f tsconfig.build.tsbuildinfo",
-    "build": "npm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./src/schnorr.compact ./dist",
+    "build": "npm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
     "lint": "eslint src --ext .ts --ignore-pattern 'src/managed/**'",
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
     "typecheck": "npm run compact && tsc -p tsconfig.json --noEmit",
     "all": "npm run compact && npm run build && npm run test:ci"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.15.0"
+    "@midnight-ntwrk/compact-runtime": "^0.15.0",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:../../tooling/vendor/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.1.0.tgz"
   },
   "files": [
     "dist/**",
