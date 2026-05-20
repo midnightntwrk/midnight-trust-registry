@@ -79,6 +79,11 @@ Completed in the current implementation wave:
 - recognition create, suspend, revoke, archive, and query circuits
 - recognition payload-hash helpers for maintainer signatures
 - focused positive and negative recognition contract tests
+- epoch commitment records keyed by `epochId`
+- latest-epoch pointer in the Compact contract
+- epoch publication payload-hash helper for maintainer signatures
+- epoch publication circuit plus current/by-id epoch query circuits
+- focused positive and negative epoch contract tests
 - simulator-first integration workspace:
   - `packages/trust-registry-integration`
 - dedicated integration entrypoint:
@@ -87,7 +92,9 @@ Completed in the current implementation wave:
   - contract simulator state transitions
   - domain authorization records
   - domain recognition records
+  - published epoch commitments
   - evidence bundle generation
+  - anchored epoch validation against stored roots and signatures
   - wrong-registry and inactive-authorization rejections
 
 ## Current Branch And PR State
@@ -112,8 +119,8 @@ Branch handling note:
 
 - the earlier stacked branches were merged and collapsed into `develop`
 - the current branch now carries verifier authorization, the simulator-first
-  integration harness, and recognition on top of the issuer branch while that
-  draft PR is still open
+  integration harness, recognition, and epoch anchoring on top of the issuer
+  branch while that draft PR is still open
 
 ## Validation Baseline
 
@@ -161,7 +168,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- epoch anchor contract surface
 - TypeScript client package
 - DID- and VC-backed integration tests beyond the local simulator lane
 
@@ -171,17 +177,18 @@ Still intentionally deferred inside the current Compact slice:
 - maintainer onboarding and removal flows
 - issuer, verifier, and recognition application state machines
 - separate `proposed` and `authorized` on-chain authorization phases
-- epoch-root publication and historical inclusion proofs
+- historical epoch selection by timestamp
+- Merkle-style inclusion proofs beyond the current signed-statement anchor
 
 ## Next Recommended Slices
 
 1. `TR-010`
    - finish the issuer authorization branch and merge it to `develop`
 2. `TR-011`
-   - retarget and finish the stacked verifier, simulator-integration, and
-     recognition branch after `TR-010`
-3. `TR-013` and `TR-014`
-   - epoch-anchor and client surfaces
+   - retarget and finish the stacked verifier, simulator-integration,
+     recognition, and epoch branch after `TR-010`
+3. `TR-014`
+   - client surface for current and historical trust decisions
 4. `TR-015` and `TR-016`
    - DID- and VC-backed scenarios on top of the new local integration harness
 

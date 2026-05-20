@@ -21,6 +21,9 @@ Date: 2026-05-20
 - For the first recognition slice, maintainer-approved create lands directly in `active` state, but recognition remains a separate record family from local authorization.
 - Keep the recognition lookup split between a primary `recognitionId` record and a current-scope index keyed by `(recognized authority DID commitment, recognized registry id, scope resource type, scope resource id)`.
 - Store recognition scope resource type as an opaque `Bytes<32>` label in the contract so external trust domains are not forced into the issuer/verifier resource enums.
+- For the first epoch-anchor slice, publish epochs as append-only records keyed by `epochId`, plus a latest-epoch pointer for the current verifier view.
+- Store the maintainer key id and raw JubJub signature components in the epoch record so evidence bundles can export a real registry signature instead of a synthetic placeholder.
+- Keep epoch selection by explicit `epochId` or latest pointer in the contract; richer historical selection by timestamp remains a later client concern.
 - Start integration coverage with a simulator-first workspace package and a dedicated `./run.sh integration` lane; keep it separate from `./run.sh --light` until DID- and VC-backed scenarios justify the extra CI cost.
 
 ## Pending Decisions
