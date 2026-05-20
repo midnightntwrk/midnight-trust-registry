@@ -11,6 +11,7 @@ import {
 
 import {
   type IssuerAuthorizationRecord,
+  type VerifierAuthorizationRecord,
   type IssuerResourceType,
   Contract,
   type Ledger,
@@ -239,6 +240,145 @@ export class TrustRegistrySimulator {
         subjectDidCommitment,
         resourceType,
         resourceId,
+      ),
+    );
+  }
+
+  createVerifierAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    subjectDidCommitment: Uint8Array,
+    requestProfileId: Uint8Array,
+    allowedAttributeSetCommitment: Uint8Array,
+    allowedPredicateSetCommitment: Uint8Array,
+    disclosureLevelCommitment: Uint8Array,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.createVerifierAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        subjectDidCommitment,
+        requestProfileId,
+        allowedAttributeSetCommitment,
+        allowedPredicateSetCommitment,
+        disclosureLevelCommitment,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  suspendVerifierAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendVerifierAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  revokeVerifierAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeVerifierAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  archiveVerifierAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.archiveVerifierAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  getVerifierAuthorization(
+    authorizationId: Uint8Array,
+  ): VerifierAuthorizationRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getVerifierAuthorization(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
+  getCurrentVerifierAuthorization(
+    subjectDidCommitment: Uint8Array,
+    requestProfileId: Uint8Array,
+    allowedAttributeSetCommitment: Uint8Array,
+    allowedPredicateSetCommitment: Uint8Array,
+    disclosureLevelCommitment: Uint8Array,
+  ): VerifierAuthorizationRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentVerifierAuthorization(
+        this.circuitContext,
+        subjectDidCommitment,
+        requestProfileId,
+        allowedAttributeSetCommitment,
+        allowedPredicateSetCommitment,
+        disclosureLevelCommitment,
+      ),
+    );
+  }
+
+  assertVerifierAuthorized(
+    subjectDidCommitment: Uint8Array,
+    requestProfileId: Uint8Array,
+    allowedAttributeSetCommitment: Uint8Array,
+    allowedPredicateSetCommitment: Uint8Array,
+    disclosureLevelCommitment: Uint8Array,
+  ): void {
+    this.executeCircuit(() =>
+      this.contract.impureCircuits.assertVerifierAuthorized(
+        this.circuitContext,
+        subjectDidCommitment,
+        requestProfileId,
+        allowedAttributeSetCommitment,
+        allowedPredicateSetCommitment,
+        disclosureLevelCommitment,
       ),
     );
   }

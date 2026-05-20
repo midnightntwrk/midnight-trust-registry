@@ -52,6 +52,27 @@ export struct IssuerAuthorizationRecord {
   lifecycleEventHash: Bytes<32>,
 }
 
+export struct VerifierAuthorizationRecord {
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  status: AuthorizationStatus,
+  proposedAtSequence: Uint<64>,
+  authorizedAtSequence: Uint<64>,
+  activeFromSequence: Uint<64>,
+  suspendedAtSequence: Uint<64>,
+  revokedAtSequence: Uint<64>,
+  archivedAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  evidenceHash: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
+}
+
 export struct JubjubSignature {
   announcement: JubjubPoint,
   response: Field,
@@ -85,6 +106,11 @@ export ledger activeIssuerAuthorizationCount: Uint<64>;
 export ledger issuerAuthorizationIds: Set<Bytes<32>>;
 export ledger issuerAuthorizationRecords: Map<Bytes<32>, IssuerAuthorizationRecord>;
 export ledger currentIssuerAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
+export ledger verifierAuthorizationCount: Counter;
+export ledger activeVerifierAuthorizationCount: Uint<64>;
+export ledger verifierAuthorizationIds: Set<Bytes<32>>;
+export ledger verifierAuthorizationRecords: Map<Bytes<32>, VerifierAuthorizationRecord>;
+export ledger currentVerifierAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 
 constructor() {
   contractVersion = 1;
@@ -94,6 +120,7 @@ constructor() {
   governancePolicyCommitment = pad(32, "midnight:tr:unset");
   maintainerThreshold = 0;
   activeIssuerAuthorizationCount = 0;
+  activeVerifierAuthorizationCount = 0;
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
@@ -204,6 +231,55 @@ pure circuit assertIssuerAuthorizationFields(
   );
 }
 
+pure circuit assertVerifierAuthorizationFields(
+  authorizationIdValue: Bytes<32>,
+  subjectDidCommitmentValue: Bytes<32>,
+  requestProfileIdValue: Bytes<32>,
+  allowedAttributeSetCommitmentValue: Bytes<32>,
+  allowedPredicateSetCommitmentValue: Bytes<32>,
+  disclosureLevelCommitmentValue: Bytes<32>,
+  policyIdValue: Bytes<32>,
+  trustLevelValue: Bytes<32>,
+  evidenceHashValue: Bytes<32>
+): [] {
+  assert(
+    authorizationIdValue != pad(32, ""),
+    "Verifier authorization id must be set"
+  );
+  assert(
+    subjectDidCommitmentValue != pad(32, ""),
+    "Verifier subject DID commitment must be set"
+  );
+  assert(
+    requestProfileIdValue != pad(32, ""),
+    "Verifier request profile id must be set"
+  );
+  assert(
+    allowedAttributeSetCommitmentValue != pad(32, ""),
+    "Verifier allowed attribute set commitment must be set"
+  );
+  assert(
+    allowedPredicateSetCommitmentValue != pad(32, ""),
+    "Verifier allowed predicate set commitment must be set"
+  );
+  assert(
+    disclosureLevelCommitmentValue != pad(32, ""),
+    "Verifier disclosure level commitment must be set"
+  );
+  assert(
+    policyIdValue != pad(32, ""),
+    "Verifier authorization policy id must be set"
+  );
+  assert(
+    trustLevelValue != pad(32, ""),
+    "Verifier authorization trust level must be set"
+  );
+  assert(
+    evidenceHashValue != pad(32, ""),
+    "Verifier authorization evidence hash must be set"
+  );
+}
+
 pure circuit registryInitializationPayloadHash(
   registryDidCommitmentValue: Bytes<32>,
   governancePolicyCommitmentValue: Bytes<32>,
@@ -238,6 +314,42 @@ export pure circuit issuerAuthorizationScopeKey(
   ]);
 }
 
+export pure circuit verifierAuthorizationScopeKey(
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>
+): Bytes<32> {
+  assert(
+    subjectDidCommitment != pad(32, ""),
+    "Verifier subject DID commitment must be set"
+  );
+  assert(
+    requestProfileId != pad(32, ""),
+    "Verifier request profile id must be set"
+  );
+  assert(
+    allowedAttributeSetCommitment != pad(32, ""),
+    "Verifier allowed attribute set commitment must be set"
+  );
+  assert(
+    allowedPredicateSetCommitment != pad(32, ""),
+    "Verifier allowed predicate set commitment must be set"
+  );
+  assert(
+    disclosureLevelCommitment != pad(32, ""),
+    "Verifier disclosure level commitment must be set"
+  );
+  return persistentHash<Vector<5, Bytes<32>>>([
+    subjectDidCommitment,
+    requestProfileId,
+    allowedAttributeSetCommitment,
+    allowedPredicateSetCommitment,
+    disclosureLevelCommitment
+  ]);
+}
+
 export pure circuit createIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
@@ -266,6 +378,41 @@ export pure circuit createIssuerAuthorizationPayloadHash(
   ]);
 }
 
+export pure circuit createVerifierAuthorizationPayloadHash(
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assertVerifierAuthorizationFields(
+    authorizationId,
+    subjectDidCommitment,
+    requestProfileId,
+    allowedAttributeSetCommitment,
+    allowedPredicateSetCommitment,
+    disclosureLevelCommitment,
+    policyId,
+    trustLevel,
+    evidenceHash
+  );
+  return persistentHash<Vector<9, Bytes<32>>>([
+    authorizationId,
+    subjectDidCommitment,
+    requestProfileId,
+    allowedAttributeSetCommitment,
+    allowedPredicateSetCommitment,
+    disclosureLevelCommitment,
+    policyId,
+    trustLevel,
+    evidenceHash
+  ]);
+}
+
 export pure circuit updateIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   previousLifecycleEventHash: Bytes<32>,
@@ -282,6 +429,30 @@ export pure circuit updateIssuerAuthorizationPayloadHash(
   assert(
     evidenceHash != pad(32, ""),
     "Issuer authorization evidence hash must be set"
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    authorizationId,
+    previousLifecycleEventHash,
+    evidenceHash
+  ]);
+}
+
+export pure circuit updateVerifierAuthorizationPayloadHash(
+  authorizationId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assert(
+    authorizationId != pad(32, ""),
+    "Verifier authorization id must be set"
+  );
+  assert(
+    previousLifecycleEventHash != pad(32, ""),
+    "Verifier authorization lifecycle event hash must be set"
+  );
+  assert(
+    evidenceHash != pad(32, ""),
+    "Verifier authorization evidence hash must be set"
   );
   return persistentHash<Vector<3, Bytes<32>>>([
     authorizationId,
@@ -494,6 +665,45 @@ circuit currentIssuerAuthorizationRecord(
   );
   return issuerAuthorizationRecords.lookup(
     currentIssuerAuthorizationIdsByScopeKey.lookup(scopeKey)
+  );
+}
+
+circuit requireVerifierAuthorizationRecord(
+  authorizationId: Bytes<32>
+): VerifierAuthorizationRecord {
+  assert(
+    authorizationId != pad(32, ""),
+    "Verifier authorization id must be set"
+  );
+  assert(
+    verifierAuthorizationIds.member(authorizationId),
+    "Verifier authorization is not registered"
+  );
+  return verifierAuthorizationRecords.lookup(authorizationId);
+}
+
+circuit currentVerifierAuthorizationRecord(
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>
+): VerifierAuthorizationRecord {
+  const scopeKey = disclose(
+    verifierAuthorizationScopeKey(
+      disclose(subjectDidCommitment),
+      disclose(requestProfileId),
+      disclose(allowedAttributeSetCommitment),
+      disclose(allowedPredicateSetCommitment),
+      disclose(disclosureLevelCommitment)
+    )
+  );
+  assert(
+    currentVerifierAuthorizationIdsByScopeKey.member(scopeKey),
+    "Verifier authorization scope is not registered"
+  );
+  return verifierAuthorizationRecords.lookup(
+    currentVerifierAuthorizationIdsByScopeKey.lookup(scopeKey)
   );
 }
 
@@ -813,5 +1023,343 @@ export circuit assertIssuerAuthorized(
   assert(
     currentRecord.status == AuthorizationStatus.active,
     "Issuer authorization is not active"
+  );
+}
+
+export circuit createVerifierAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
+  const disclosedRequestProfileId = disclose(requestProfileId);
+  const disclosedAllowedAttributeSetCommitment = disclose(
+    allowedAttributeSetCommitment
+  );
+  const disclosedAllowedPredicateSetCommitment = disclose(
+    allowedPredicateSetCommitment
+  );
+  const disclosedDisclosureLevelCommitment = disclose(
+    disclosureLevelCommitment
+  );
+  const disclosedPolicyId = disclose(policyId);
+  const disclosedTrustLevel = disclose(trustLevel);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const scopeKey = disclose(
+    verifierAuthorizationScopeKey(
+      disclosedSubjectDidCommitment,
+      disclosedRequestProfileId,
+      disclosedAllowedAttributeSetCommitment,
+      disclosedAllowedPredicateSetCommitment,
+      disclosedDisclosureLevelCommitment
+    )
+  );
+  const actionPayloadHash = disclose(
+    createVerifierAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      disclosedSubjectDidCommitment,
+      disclosedRequestProfileId,
+      disclosedAllowedAttributeSetCommitment,
+      disclosedAllowedPredicateSetCommitment,
+      disclosedDisclosureLevelCommitment,
+      disclosedPolicyId,
+      disclosedTrustLevel,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:verifier:create"),
+    actionPayloadHash
+  );
+
+  assert(
+    !verifierAuthorizationIds.member(disclosedAuthorizationId),
+    "Verifier authorization already exists"
+  );
+  if (currentVerifierAuthorizationIdsByScopeKey.member(scopeKey)) {
+    const currentRecord = verifierAuthorizationRecords.lookup(
+      currentVerifierAuthorizationIdsByScopeKey.lookup(scopeKey)
+    );
+    assert(
+      currentRecord.status == AuthorizationStatus.revoked
+        || currentRecord.status == AuthorizationStatus.archived,
+      "Verifier authorization scope already has a live authorization"
+    );
+  }
+
+  verifierAuthorizationIds.insert(disclosedAuthorizationId);
+  verifierAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    VerifierAuthorizationRecord {
+      authorizationId: disclosedAuthorizationId,
+      subjectDidCommitment: disclosedSubjectDidCommitment,
+      requestProfileId: disclosedRequestProfileId,
+      allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
+      allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
+      disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
+      policyId: disclosedPolicyId,
+      trustLevel: disclosedTrustLevel,
+      status: AuthorizationStatus.active,
+      proposedAtSequence: authorizedAction.actionSequence,
+      authorizedAtSequence: authorizedAction.actionSequence,
+      activeFromSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      archivedAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentVerifierAuthorizationIdsByScopeKey.insert(
+    scopeKey,
+    disclosedAuthorizationId
+  );
+  verifierAuthorizationCount.increment(1);
+  activeVerifierAuthorizationCount = disclose(
+    (activeVerifierAuthorizationCount + (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit suspendVerifierAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireVerifierAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Verifier authorization must be active to suspend"
+  );
+  const actionPayloadHash = disclose(
+    updateVerifierAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:verifier:suspend"),
+    actionPayloadHash
+  );
+
+  verifierAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    VerifierAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      requestProfileId: currentRecord.requestProfileId,
+      allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
+      allowedPredicateSetCommitment:
+        currentRecord.allowedPredicateSetCommitment,
+      disclosureLevelCommitment: currentRecord.disclosureLevelCommitment,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  activeVerifierAuthorizationCount = disclose(
+    (activeVerifierAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeVerifierAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireVerifierAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended,
+    "Verifier authorization must be active or suspended to revoke"
+  );
+  const actionPayloadHash = disclose(
+    updateVerifierAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:verifier:revoke"),
+    actionPayloadHash
+  );
+
+  verifierAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    VerifierAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      requestProfileId: currentRecord.requestProfileId,
+      allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
+      allowedPredicateSetCommitment:
+        currentRecord.allowedPredicateSetCommitment,
+      disclosureLevelCommitment: currentRecord.disclosureLevelCommitment,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.revoked,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: authorizedAction.actionSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeVerifierAuthorizationCount = disclose(
+      (activeVerifierAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit archiveVerifierAuthorization(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(authorizationId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireVerifierAuthorizationRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+      || currentRecord.status == AuthorizationStatus.revoked,
+    "Verifier authorization must be active, suspended, or revoked to archive"
+  );
+  const actionPayloadHash = disclose(
+    updateVerifierAuthorizationPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:verifier:archive"),
+    actionPayloadHash
+  );
+
+  verifierAuthorizationRecords.insert(
+    disclosedAuthorizationId,
+    VerifierAuthorizationRecord {
+      authorizationId: currentRecord.authorizationId,
+      subjectDidCommitment: currentRecord.subjectDidCommitment,
+      requestProfileId: currentRecord.requestProfileId,
+      allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
+      allowedPredicateSetCommitment:
+        currentRecord.allowedPredicateSetCommitment,
+      disclosureLevelCommitment: currentRecord.disclosureLevelCommitment,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.archived,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeVerifierAuthorizationCount = disclose(
+      (activeVerifierAuthorizationCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit getVerifierAuthorization(
+  authorizationId: Bytes<32>
+): VerifierAuthorizationRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireVerifierAuthorizationRecord(disclose(authorizationId));
+}
+
+export circuit getCurrentVerifierAuthorization(
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>
+): VerifierAuthorizationRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return currentVerifierAuthorizationRecord(
+    subjectDidCommitment,
+    requestProfileId,
+    allowedAttributeSetCommitment,
+    allowedPredicateSetCommitment,
+    disclosureLevelCommitment
+  );
+}
+
+export circuit assertVerifierAuthorized(
+  subjectDidCommitment: Bytes<32>,
+  requestProfileId: Bytes<32>,
+  allowedAttributeSetCommitment: Bytes<32>,
+  allowedPredicateSetCommitment: Bytes<32>,
+  disclosureLevelCommitment: Bytes<32>
+): [] {
+  assert(initialized, "Trust registry is not initialized");
+  const currentRecord = currentVerifierAuthorizationRecord(
+    subjectDidCommitment,
+    requestProfileId,
+    allowedAttributeSetCommitment,
+    allowedPredicateSetCommitment,
+    disclosureLevelCommitment
+  );
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Verifier authorization is not active"
   );
 }
