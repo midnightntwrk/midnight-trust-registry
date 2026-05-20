@@ -10,6 +10,7 @@ This documentation set is the source of truth for the initial `midnight-trust-re
 4. [Execution backlog](plans/trust-registry-backlog.md)
 5. [Research requirements memo](research/trust-registry-requirements-memo.md)
 6. [Decisions and open questions](decisions/trust-registry-decisions.md)
+7. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 

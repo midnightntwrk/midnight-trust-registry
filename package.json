@@ -1,0 +1,40 @@
+{
+  "name": "midnight-trust-registry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.9.0",
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "clean": "turbo run clean --continue",
+    "clean:artifacts": "npm run clean",
+    "docs-check": "./scripts/check-docs.sh",
+    "lint": "turbo run lint --continue",
+    "typecheck": "turbo run typecheck --continue",
+    "typecheck:light": "npm run typecheck",
+    "build": "turbo run build --continue",
+    "build:light": "npm run build",
+    "test": "turbo run test --continue",
+    "test:light": "npm run test",
+    "ci:lint": "npm run docs-check && npm run lint",
+    "ci:build:light": "npm run ci:lint && npm run typecheck:light && npm run build:light && npm run test:light",
+    "ci:build": "npm run ci:build:light"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/node": "^24.0.10",
+    "@typescript-eslint/eslint-plugin": "^8.35.1",
+    "@typescript-eslint/parser": "^8.35.1",
+    "eslint": "^9.29.0",
+    "eslint-config-prettier": "^10.1.5",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

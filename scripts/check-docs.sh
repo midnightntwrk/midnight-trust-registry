@@ -33,6 +33,9 @@ root = Path.cwd()
 markdown_files = sorted(
     path for path in root.rglob("*.md")
     if ".git" not in path.parts
+    and "node_modules" not in path.parts
+    and "dist" not in path.parts
+    and ".turbo" not in path.parts
 )
 
 link_re = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
