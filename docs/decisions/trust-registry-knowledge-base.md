@@ -50,8 +50,8 @@ Completed in the current implementation wave:
     - `@midnight-ntwrk/midnight-did-contract`
     - `@midnight-ntwrk/midnight-did-domain`
     - `@midnight-ntwrk/midnight-did-jubjub-schnorr`
-  - VC package mappings are prepared but not yet required by the current TR
-    code surface
+    - `@midnight-ntwrk/midnight-did-credentials`
+    - `@midnight-ntwrk/midnight-did-credentials-status-registry`
 - registry initialization circuit with:
   - registry id commitment
   - registry DID commitment
@@ -118,6 +118,11 @@ Completed in the current implementation wave:
   - wrong-registry and tampered-evidence failures
 - focused client tests that exercise current and historical queries plus
   anchored bundle verification against the local simulator
+- acyclic workspace graph for CI:
+  - `@midnight-ntwrk/trust-registry-client` does not declare a manifest
+    dependency on `@midnight-ntwrk/trust-registry-integration`
+  - client tests consume shared integration fixtures by direct source import so
+    `turbo` root lanes do not reintroduce a client/integration build cycle
 - DID-backed integration helpers that:
   - construct `did:midnight` identifiers with official `midnight-did` helpers
   - resolve trusted issuer and verifier subject DIDs through
@@ -126,6 +131,14 @@ Completed in the current implementation wave:
 - DID-backed integration tests that verify:
   - active issuer and verifier bundle subjects resolve to DID documents
   - missing DID fixture state resolves to `null`
+- VC-backed integration tests that verify:
+  - active issuer and verifier TR bundles are accepted before VC status
+    verification proceeds
+  - issuer bundle status-registry references are consumed by the official VC
+    status-registry helpers
+  - mismatched status registries fail with deterministic `unknownRegistry`
+    errors
+  - revoked credentials fail with deterministic `revoked` errors
 
 ## Current Branch And PR State
 
@@ -177,11 +190,10 @@ What `./run.sh --light` currently covers:
 What still runs separately:
 
 - `./run.sh integration`
-  - simulator-first and DID-backed trust-registry scenarios
+  - simulator-first, DID-backed, and VC-backed trust-registry scenarios
 
 It does not yet cover:
 
-- VC integration
 - external adapters
 - stale upstream package drift outside the synced `libs/` copy
 
@@ -199,7 +211,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- VC-backed integration tests beyond the current DID-backed lane
+- TRQP and OpenID Federation adapter slices beyond the current core contract,
+  client, and DID/VC integration baseline
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -217,10 +230,11 @@ Still intentionally deferred inside the current Compact slice:
 2. `TR-011` to `TR-014`
    - retarget and finish the stacked verifier, simulator-integration,
      recognition, epoch, and client branch after `TR-010`
-3. `TR-015`
-   - finish and record the DID-backed integration slice on the current branch
-4. `TR-016`
-   - VC-backed integration that combines TR evidence with VC status evidence
+3. `TR-017`
+   - add the first TRQP-style read adapter on top of the client/query surface
+4. `TR-018`
+   - add the OpenID Federation adapter experiment once the TRQP read surface is
+     stable
 
 ## Knowledge Synchronization Rule
 

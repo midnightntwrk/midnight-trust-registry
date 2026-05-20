@@ -30,6 +30,9 @@ Date: 2026-05-21
 - Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
 - For the first DID-backed integration slice, sync the official `@midnight-ntwrk/midnight-did`, `@midnight-ntwrk/midnight-did-domain`, and `@midnight-ntwrk/midnight-did-contract` packages into `libs/` instead of depending on sibling-repo paths at runtime.
 - Use official `midnight-did` helpers to construct fixture `did:midnight` identifiers and `MidnightDIDResolver` to resolve bundle subject DIDs from fixture ledger state; do not duplicate DID parsing or resolution logic inside TR tests.
+- For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.
+- Keep VC-backed integration evidence-first: verify TR authorization bundles through `@midnight-ntwrk/trust-registry-client`, then verify VC status through the official status-registry helpers using the status-registry reference exported by the issuer bundle.
+- Keep the Turbo workspace graph acyclic: `@midnight-ntwrk/trust-registry-client` test coverage may consume integration fixtures by source import, but the client package manifest must not depend on `@midnight-ntwrk/trust-registry-integration`.
 
 ## Pending Decisions
 
