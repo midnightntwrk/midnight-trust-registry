@@ -22,7 +22,7 @@ Updated: 2026-05-20
 | TR-007 | P1 | Done on develop | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
 | TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
 | TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
-| TR-010 | P1 | Active branch `codex/trust-registry-issuer-authorization` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
+| TR-010 | P1 | Draft PR `#6` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
 | TR-011 | P1 | Open | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
 | TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
 | TR-013 | P1 | Open | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |

@@ -69,6 +69,12 @@ Active implementation branch:
 
 - `codex/trust-registry-issuer-authorization`
 
+Current draft PR:
+
+- `#6`
+- title:
+  - `feat: add issuer authorization circuits`
+
 Merged baseline now on `origin/develop`:
 
 - domain foundation
