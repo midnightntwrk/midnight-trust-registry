@@ -1,0 +1,33 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.15.0",
+    "@midnight-ntwrk/trust-registry-contract": "0.1.0",
+    "@midnight-ntwrk/trust-registry-domain": "0.1.0"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/trust-registry-integration": "0.1.0"
+  }
+}
