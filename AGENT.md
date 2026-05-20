@@ -33,6 +33,7 @@ docs/spec/          Product and protocol specifications
 docs/plans/         Execution plans and backlog
 docs/research/      Public research-derived requirements
 docs/decisions/     Design decisions and open questions
+                     plus repo-local execution knowledge
 docs/architecture/  Repo boundaries and integration diagrams
 packages/           TypeScript workspaces for registry domain and clients
 scripts/            Local validation helpers
@@ -116,3 +117,17 @@ Use MCP as a navigation helper for Compact and TypeScript package surfaces, but 
 - Convert research notes into public requirements and cite public references where available.
 - Keep authorization and recognition separate in docs and code.
 - Keep status/revocation separate from trust-governance state.
+
+## Knowledge Base Maintenance
+
+Maintain TR knowledge at three levels:
+
+1. repo-local:
+   - `docs/decisions/trust-registry-knowledge-base.md`
+2. workspace-root:
+   - `midnight-identity-workspace/research/`
+3. global:
+   - the `trusted-registry` Obsidian vault
+
+Update all three when a meaningful implementation slice lands, a branch/PR
+strategy changes, or the architectural direction materially changes.
