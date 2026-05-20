@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createIssuerScenarioFixture,
+  createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
@@ -90,5 +91,84 @@ describe("trust registry local simulator integration", () => {
     );
     const revokedBundle = harness.buildVerifierHistoricalEvidence(verifier);
     expect(revokedBundle.authorization?.status).toBe("revoked");
+  });
+
+  it("authorizes an external recognition and emits a valid active evidence bundle", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("gaia-x");
+
+    harness.authorizeRecognition(recognition);
+
+    const bundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+      expectedRegistryId: harness.registryId,
+    });
+
+    expect(bundle.recognition?.status).toBe("active");
+    expect(bundle.recognition?.recognizedAuthorityDid).toBe(
+      recognition.recognizedAuthorityDid,
+    );
+    expect(bundle.recognition?.recognizedRegistryId).toBe(
+      recognition.recognizedRegistryId,
+    );
+    expect(bundle.recognition?.scope.resourceType).toBe(
+      recognition.scopeResourceType,
+    );
+    expect(bundle.recognition?.scope.resourceId).toBe(recognition.scopeResourceId);
+    expect(bundle.subjectDid).toBe(recognition.recognizedAuthorityDid);
+    expect(bundle.authorization).toBeUndefined();
+  });
+
+  it("rejects current recognition after suspension and revocation but preserves historical evidence through archival", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("eidas");
+
+    harness.authorizeRecognition(recognition);
+    harness.suspendRecognition(recognition);
+
+    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+      /not active/i,
+    );
+    const suspendedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(suspendedBundle.recognition?.status).toBe("suspended");
+
+    harness.revokeRecognition(recognition);
+    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+      /not active/i,
+    );
+    const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(revokedBundle.recognition?.status).toBe("revoked");
+
+    harness.archiveRecognition(recognition);
+    const archivedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(archivedBundle.recognition?.status).toBe("archived");
+    expect(archivedBundle.recognition?.archivedAt).toBeDefined();
+  });
+
+  it("rejects recognition trust for wrong registry, mismatched scope, and revoked lifecycle state", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("ebsi");
+
+    harness.authorizeRecognition(recognition);
+
+    expect(() =>
+      harness.evaluateCurrentRecognitionDecision(recognition, {
+        expectedRegistryId: "registry:other:trusted",
+      }),
+    ).toThrow(/registry mismatch/i);
+
+    const mismatchedScope = {
+      ...recognition,
+      scopeResourceIdCommitment: recognition.scopeResourceTypeCommitment,
+    };
+    expect(() => harness.evaluateCurrentRecognitionDecision(mismatchedScope)).toThrow(
+      /scope is not registered/i,
+    );
+
+    harness.revokeRecognition(recognition);
+    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+      /not active/i,
+    );
+    const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(revokedBundle.recognition?.status).toBe("revoked");
   });
 });

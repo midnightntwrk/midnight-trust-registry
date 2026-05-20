@@ -8,6 +8,10 @@ Current scope:
 - bootstrap maintainer registration
 - generic maintainer-signed action authorization
 - threshold validation for later multi-maintainer governance work
+- issuer authorization lifecycle and scope queries
+- verifier authorization lifecycle and scope queries
+- recognition lifecycle and scope queries
 
-This slice intentionally stops short of issuer, verifier, recognition, and
-epoch-anchor flows. Those surfaces stack on top of this package.
+This slice intentionally still stops short of epoch-anchor flows and
+multi-maintainer threshold execution. Those surfaces stack on top of this
+package.

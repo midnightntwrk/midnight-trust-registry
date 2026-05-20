@@ -1,8 +1,10 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
+  computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
   createMaintainerFixture,
@@ -15,16 +17,19 @@ import {
   AuthorizationStatus as ContractAuthorizationStatus,
   IssuerResourceType,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
+  type RecognitionRecord as ContractRecognitionRecord,
   type VerifierAuthorizationRecord as ContractVerifierAuthorizationRecord,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
   GovernancePolicyRecordSchema,
+  RecognitionRecordSchema,
   type RegistryRecord,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   type AuthorizationRecord,
   type GovernancePolicyRecord,
+  type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
   createScopedIdentifier,
   sha256Hex,
@@ -33,6 +38,7 @@ import {
   bytes32Commitment,
   createMidnightDid,
   type IssuerScenarioFixture,
+  type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
 } from "./fixtures.js";
 
@@ -44,6 +50,10 @@ const CREATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:create");
 const SUSPEND_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:suspend");
 const REVOKE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:revoke");
 const ARCHIVE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:archive");
+const CREATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:create");
+const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
+const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
+const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 
@@ -98,6 +108,17 @@ const bundleLeafHash = (authorization: AuthorizationRecord): string =>
       status: authorization.status,
       subjectDid: authorization.subjectDid,
       resourceId: authorization.resourceId,
+    }),
+  );
+
+const recognitionLeafHash = (recognition: RecognitionRecord): string =>
+  sha256Hex(
+    JSON.stringify({
+      recognitionId: recognition.recognitionId,
+      status: recognition.status,
+      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+      recognizedRegistryId: recognition.recognizedRegistryId,
+      scope: recognition.scope,
     }),
   );
 
@@ -284,6 +305,65 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
+  authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:create`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      CREATE_RECOGNITION_ACTION_KIND,
+      computeCreateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment,
+        fixture.recognizedAuthorityDidCommitment,
+        fixture.recognizedRegistryIdCommitment,
+        fixture.scopeResourceTypeCommitment,
+        fixture.scopeResourceIdCommitment,
+        this.governancePolicyCommitment,
+        bytes32Commitment(fixture.trustLevel),
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    return this.simulator.createRecognition(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.recognitionIdCommitment,
+      fixture.recognizedAuthorityDidCommitment,
+      fixture.recognizedRegistryIdCommitment,
+      fixture.scopeResourceTypeCommitment,
+      fixture.scopeResourceIdCommitment,
+      this.governancePolicyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      evidenceHash,
+    );
+  }
+
+  suspendRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    return this.updateRecognitionLifecycle(
+      fixture,
+      "suspend",
+      SUSPEND_RECOGNITION_ACTION_KIND,
+    );
+  }
+
+  revokeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    return this.updateRecognitionLifecycle(
+      fixture,
+      "revoke",
+      REVOKE_RECOGNITION_ACTION_KIND,
+    );
+  }
+
+  archiveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    return this.updateRecognitionLifecycle(
+      fixture,
+      "archive",
+      ARCHIVE_RECOGNITION_ACTION_KIND,
+    );
+  }
+
   evaluateCurrentIssuerDecision(
     fixture: IssuerScenarioFixture,
     options: { expectedRegistryId?: string } = {},
@@ -304,12 +384,12 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const authorization = this.buildIssuerAuthorizationRecord(fixture, record);
-    return this.buildEvidenceBundle(
+    return this.buildEvidenceBundle({
       authorization,
-      fixture.subjectDid,
-      fixture.referencedStatusRegistryId,
-      record.lastStatusSequence,
-    );
+      subjectDid: fixture.subjectDid,
+      referencedStatusRegistryId: fixture.referencedStatusRegistryId,
+      lastStatusSequence: record.lastStatusSequence,
+    });
   }
 
   evaluateCurrentVerifierDecision(
@@ -334,12 +414,38 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const authorization = this.buildVerifierAuthorizationRecord(fixture, record);
-    return this.buildEvidenceBundle(
+    return this.buildEvidenceBundle({
       authorization,
-      fixture.subjectDid,
-      fixture.referencedStatusRegistryId,
-      record.lastStatusSequence,
+      subjectDid: fixture.subjectDid,
+      referencedStatusRegistryId: fixture.referencedStatusRegistryId,
+      lastStatusSequence: record.lastStatusSequence,
+    });
+  }
+
+  evaluateCurrentRecognitionDecision(
+    fixture: RecognitionScenarioFixture,
+    options: { expectedRegistryId?: string } = {},
+  ): TrustRegistryEvidenceBundle {
+    this.assertRegistryId(options.expectedRegistryId);
+    this.simulator.assertRecognitionActive(
+      fixture.recognizedAuthorityDidCommitment,
+      fixture.recognizedRegistryIdCommitment,
+      fixture.scopeResourceTypeCommitment,
+      fixture.scopeResourceIdCommitment,
     );
+    return this.buildRecognitionHistoricalEvidence(fixture);
+  }
+
+  buildRecognitionHistoricalEvidence(
+    fixture: RecognitionScenarioFixture,
+  ): TrustRegistryEvidenceBundle {
+    const record = this.simulator.getRecognition(fixture.recognitionIdCommitment);
+    const recognition = this.buildRecognitionRecord(fixture, record);
+    return this.buildEvidenceBundle({
+      subjectDid: fixture.recognizedAuthorityDid,
+      lastStatusSequence: record.lastStatusSequence,
+      recognition,
+    });
   }
 
   private updateIssuerLifecycle(
@@ -444,6 +550,57 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
+  private updateRecognitionLifecycle(
+    fixture: RecognitionScenarioFixture,
+    actionName: "suspend" | "revoke" | "archive",
+    actionKind: Uint8Array,
+  ): Uint8Array {
+    const evidenceHash = bytes32Commitment(
+      `${fixture.recognitionId}:${actionName}`,
+    );
+    const currentRecord = this.simulator.getRecognition(
+      fixture.recognitionIdCommitment,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      actionKind,
+      computeUpdateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment,
+        currentRecord.lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    if (actionName === "suspend") {
+      return this.simulator.suspendRecognition(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.recognitionIdCommitment,
+        evidenceHash,
+      );
+    }
+    if (actionName === "revoke") {
+      return this.simulator.revokeRecognition(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.recognitionIdCommitment,
+        evidenceHash,
+      );
+    }
+    return this.simulator.archiveRecognition(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.recognitionIdCommitment,
+      evidenceHash,
+    );
+  }
+
   private assertRegistryId(expectedRegistryId?: string): void {
     if (expectedRegistryId !== undefined && expectedRegistryId !== this.registryId) {
       throw new Error(
@@ -479,6 +636,39 @@ export class LocalTrustRegistryIntegrationHarness {
       resourceId: fixture.scopeResourceId,
       trustLevel: fixture.trustLevel,
       record,
+    });
+  }
+
+  private buildRecognitionRecord(
+    fixture: RecognitionScenarioFixture,
+    record: ContractRecognitionRecord,
+  ): RecognitionRecord {
+    const status = contractStatusName(record.status);
+
+    return RecognitionRecordSchema.parse({
+      recognitionId: fixture.recognitionId,
+      registryId: this.registryId,
+      recognizedAuthorityDid: fixture.recognizedAuthorityDid,
+      recognizedRegistryId: fixture.recognizedRegistryId,
+      scope: {
+        resourceType: fixture.scopeResourceType,
+        resourceId: fixture.scopeResourceId,
+      },
+      policyId: this.policyId,
+      trustLevel: fixture.trustLevel,
+      status,
+      proposedAt: timestampForSequence(record.proposedAtSequence),
+      ...(record.authorizedAtSequence > 0n
+        ? { authorizedAt: timestampForSequence(record.authorizedAtSequence) }
+        : {}),
+      ...(record.effectiveFromSequence > 0n
+        ? { effectiveFrom: timestampForSequence(record.effectiveFromSequence) }
+        : {}),
+      ...optionalSequenceTimestamp(record.suspendedAtSequence, "suspendedAt"),
+      ...optionalSequenceTimestamp(record.revokedAtSequence, "revokedAt"),
+      ...optionalSequenceTimestamp(record.archivedAtSequence, "archivedAt"),
+      evidenceHash: bytes32Hex(record.evidenceHash),
+      lifecycleEventRoot: bytes32Hex(record.lifecycleEventHash),
     });
   }
 
@@ -521,41 +711,50 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  private buildEvidenceBundle(
-    authorization: AuthorizationRecord,
-    subjectDid: string,
-    referencedStatusRegistryId: string,
-    lastStatusSequence: bigint,
-  ): TrustRegistryEvidenceBundle {
+  private buildEvidenceBundle(input: {
+    subjectDid: string;
+    lastStatusSequence: bigint;
+    authorization?: AuthorizationRecord;
+    recognition?: RecognitionRecord;
+    referencedStatusRegistryId?: string;
+  }): TrustRegistryEvidenceBundle {
+    const bundleRole = input.authorization?.role ?? "recognition";
+    const bundleSubjectId =
+      input.authorization?.authorizationId ?? input.recognition?.recognitionId;
+    const statementStatus =
+      input.authorization?.status ?? input.recognition?.status;
+    const lifecycleEventRoot =
+      input.authorization?.lifecycleEventRoot
+      ?? input.recognition?.lifecycleEventRoot;
     const epochId = createScopedIdentifier(
       "epoch",
       this.registryId,
-      `seq-${lastStatusSequence.toString()}`,
+      `seq-${input.lastStatusSequence.toString()}`,
     );
-    const epochValidFrom = timestampForSequence(lastStatusSequence);
+    const epochValidFrom = timestampForSequence(input.lastStatusSequence);
     const epochValidUntil = new Date(
       Date.parse(epochValidFrom) + 60 * 60 * 1000,
     ).toISOString();
     const stateRoot = sha256Hex(
       JSON.stringify({
         registryId: this.registryId,
-        authorizationId: authorization.authorizationId,
-        status: authorization.status,
-        lifecycleEventRoot: authorization.lifecycleEventRoot,
+        statementId: bundleSubjectId,
+        status: statementStatus,
+        lifecycleEventRoot,
       }),
     );
-    const eventRoot = authorization.lifecycleEventRoot;
+    const eventRoot = lifecycleEventRoot;
     const policyRoot = sha256Hex(this.policyId);
 
     return TrustRegistryEvidenceBundleSchema.parse({
       bundleId: createScopedIdentifier(
         "bundle",
-        authorization.role,
-        authorization.authorizationId,
+        bundleRole,
+        bundleSubjectId ?? "missing",
       ),
       generatedAt: epochValidFrom,
       registryId: this.registryId,
-      subjectDid,
+      subjectDid: input.subjectDid,
       policy: this.policyRecord,
       epoch: {
         epochId,
@@ -576,13 +775,25 @@ export class LocalTrustRegistryIntegrationHarness {
       inclusionProof: {
         proofType: "signed-statement",
         root: eventRoot,
-        leafHash: bundleLeafHash(authorization),
+        leafHash:
+          input.authorization !== undefined
+            ? bundleLeafHash(input.authorization)
+            : recognitionLeafHash(input.recognition!),
         path: [stateRoot],
         leafIndex: 0,
       },
-      authorization,
-      referencedStatusRegistryId,
-      referencedStatusPolicyUri: "https://registry.example/status-policy",
+      ...(input.authorization !== undefined
+        ? {
+            authorization: input.authorization,
+            referencedStatusRegistryId: input.referencedStatusRegistryId,
+            referencedStatusPolicyUri: "https://registry.example/status-policy",
+          }
+        : {}),
+      ...(input.recognition !== undefined
+        ? {
+            recognition: input.recognition,
+          }
+        : {}),
     });
   }
 }

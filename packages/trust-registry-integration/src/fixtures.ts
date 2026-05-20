@@ -14,6 +14,13 @@ export const bytes32Commitment = (value: string): Uint8Array =>
 export const createMidnightDid = (label: string): string =>
   `did:midnight:undeployed:${sha256Hex(`midnight-did:${label}`).slice(2)}`;
 
+export const createWebDid = (label: string): string =>
+  `did:web:${label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, "-")
+    .replace(/-+/g, "-")}.example`;
+
 export type IssuerScenarioFixture = {
   authorizationId: string;
   authorizationIdCommitment: Uint8Array;
@@ -44,6 +51,20 @@ export type VerifierScenarioFixture = {
   referencedStatusRegistryId: string;
 };
 
+export type RecognitionScenarioFixture = {
+  recognitionId: string;
+  recognitionIdCommitment: Uint8Array;
+  recognizedAuthorityDid: string;
+  recognizedAuthorityDidCommitment: Uint8Array;
+  recognizedRegistryId: string;
+  recognizedRegistryIdCommitment: Uint8Array;
+  scopeResourceType: string;
+  scopeResourceTypeCommitment: Uint8Array;
+  scopeResourceId: string;
+  scopeResourceIdCommitment: Uint8Array;
+  trustLevel: string;
+};
+
 export const createIssuerScenarioFixture = (
   label: string,
 ): IssuerScenarioFixture => {
@@ -65,6 +86,35 @@ export const createIssuerScenarioFixture = (
       label,
       "v1",
     ),
+  };
+};
+
+export const createRecognitionScenarioFixture = (
+  label: string,
+): RecognitionScenarioFixture => {
+  const recognitionId = createScopedIdentifier("recognition", "authority", label, "v1");
+  const recognizedAuthorityDid = createWebDid(`${label}.authority`);
+  const recognizedRegistryId = createScopedIdentifier(
+    "registry",
+    "external",
+    label,
+    "v1",
+  );
+  const scopeResourceType = "recognized-scope";
+  const scopeResourceId = createScopedIdentifier("credential-family", label, "v1");
+
+  return {
+    recognitionId,
+    recognitionIdCommitment: bytes32Commitment(recognitionId),
+    recognizedAuthorityDid,
+    recognizedAuthorityDidCommitment: bytes32Commitment(recognizedAuthorityDid),
+    recognizedRegistryId,
+    recognizedRegistryIdCommitment: bytes32Commitment(recognizedRegistryId),
+    scopeResourceType,
+    scopeResourceTypeCommitment: bytes32Commitment(scopeResourceType),
+    scopeResourceId,
+    scopeResourceIdCommitment: bytes32Commitment(scopeResourceId),
+    trustLevel: "peer-approved",
   };
 };
 

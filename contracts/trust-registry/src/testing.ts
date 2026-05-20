@@ -11,6 +11,7 @@ import {
 
 import {
   type IssuerAuthorizationRecord,
+  type RecognitionRecord,
   type VerifierAuthorizationRecord,
   type IssuerResourceType,
   Contract,
@@ -360,6 +361,139 @@ export class TrustRegistrySimulator {
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
+      ),
+    );
+  }
+
+  createRecognition(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    recognitionId: Uint8Array,
+    recognizedAuthorityDidCommitment: Uint8Array,
+    recognizedRegistryId: Uint8Array,
+    scopeResourceType: Uint8Array,
+    scopeResourceId: Uint8Array,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.createRecognition(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        recognitionId,
+        recognizedAuthorityDidCommitment,
+        recognizedRegistryId,
+        scopeResourceType,
+        scopeResourceId,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  suspendRecognition(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    recognitionId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendRecognition(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        recognitionId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  revokeRecognition(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    recognitionId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeRecognition(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        recognitionId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  archiveRecognition(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    recognitionId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.archiveRecognition(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        recognitionId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  getRecognition(
+    recognitionId: Uint8Array,
+  ): RecognitionRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getRecognition(
+        this.circuitContext,
+        recognitionId,
+      ),
+    );
+  }
+
+  getCurrentRecognition(
+    recognizedAuthorityDidCommitment: Uint8Array,
+    recognizedRegistryId: Uint8Array,
+    scopeResourceType: Uint8Array,
+    scopeResourceId: Uint8Array,
+  ): RecognitionRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentRecognition(
+        this.circuitContext,
+        recognizedAuthorityDidCommitment,
+        recognizedRegistryId,
+        scopeResourceType,
+        scopeResourceId,
+      ),
+    );
+  }
+
+  assertRecognitionActive(
+    recognizedAuthorityDidCommitment: Uint8Array,
+    recognizedRegistryId: Uint8Array,
+    scopeResourceType: Uint8Array,
+    scopeResourceId: Uint8Array,
+  ): void {
+    this.executeCircuit(() =>
+      this.contract.impureCircuits.assertRecognitionActive(
+        this.circuitContext,
+        recognizedAuthorityDidCommitment,
+        recognizedRegistryId,
+        scopeResourceType,
+        scopeResourceId,
       ),
     );
   }

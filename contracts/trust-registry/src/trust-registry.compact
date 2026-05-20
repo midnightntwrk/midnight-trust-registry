@@ -73,6 +73,26 @@ export struct VerifierAuthorizationRecord {
   lifecycleEventHash: Bytes<32>,
 }
 
+export struct RecognitionRecord {
+  recognitionId: Bytes<32>,
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  status: AuthorizationStatus,
+  proposedAtSequence: Uint<64>,
+  authorizedAtSequence: Uint<64>,
+  effectiveFromSequence: Uint<64>,
+  suspendedAtSequence: Uint<64>,
+  revokedAtSequence: Uint<64>,
+  archivedAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  evidenceHash: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
+}
+
 export struct JubjubSignature {
   announcement: JubjubPoint,
   response: Field,
@@ -111,6 +131,11 @@ export ledger activeVerifierAuthorizationCount: Uint<64>;
 export ledger verifierAuthorizationIds: Set<Bytes<32>>;
 export ledger verifierAuthorizationRecords: Map<Bytes<32>, VerifierAuthorizationRecord>;
 export ledger currentVerifierAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
+export ledger recognitionCount: Counter;
+export ledger activeRecognitionCount: Uint<64>;
+export ledger recognitionIds: Set<Bytes<32>>;
+export ledger recognitionRecords: Map<Bytes<32>, RecognitionRecord>;
+export ledger currentRecognitionIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 
 constructor() {
   contractVersion = 1;
@@ -121,6 +146,7 @@ constructor() {
   maintainerThreshold = 0;
   activeIssuerAuthorizationCount = 0;
   activeVerifierAuthorizationCount = 0;
+  activeRecognitionCount = 0;
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
@@ -280,6 +306,50 @@ pure circuit assertVerifierAuthorizationFields(
   );
 }
 
+pure circuit assertRecognitionFields(
+  recognitionIdValue: Bytes<32>,
+  recognizedAuthorityDidCommitmentValue: Bytes<32>,
+  recognizedRegistryIdValue: Bytes<32>,
+  scopeResourceTypeValue: Bytes<32>,
+  scopeResourceIdValue: Bytes<32>,
+  policyIdValue: Bytes<32>,
+  trustLevelValue: Bytes<32>,
+  evidenceHashValue: Bytes<32>
+): [] {
+  assert(
+    recognitionIdValue != pad(32, ""),
+    "Recognition id must be set"
+  );
+  assert(
+    recognizedAuthorityDidCommitmentValue != pad(32, ""),
+    "Recognition authority DID commitment must be set"
+  );
+  assert(
+    recognizedRegistryIdValue != pad(32, ""),
+    "Recognition registry id must be set"
+  );
+  assert(
+    scopeResourceTypeValue != pad(32, ""),
+    "Recognition scope resource type must be set"
+  );
+  assert(
+    scopeResourceIdValue != pad(32, ""),
+    "Recognition scope resource id must be set"
+  );
+  assert(
+    policyIdValue != pad(32, ""),
+    "Recognition policy id must be set"
+  );
+  assert(
+    trustLevelValue != pad(32, ""),
+    "Recognition trust level must be set"
+  );
+  assert(
+    evidenceHashValue != pad(32, ""),
+    "Recognition evidence hash must be set"
+  );
+}
+
 pure circuit registryInitializationPayloadHash(
   registryDidCommitmentValue: Bytes<32>,
   governancePolicyCommitmentValue: Bytes<32>,
@@ -350,6 +420,36 @@ export pure circuit verifierAuthorizationScopeKey(
   ]);
 }
 
+export pure circuit recognitionScopeKey(
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>
+): Bytes<32> {
+  assert(
+    recognizedAuthorityDidCommitment != pad(32, ""),
+    "Recognition authority DID commitment must be set"
+  );
+  assert(
+    recognizedRegistryId != pad(32, ""),
+    "Recognition registry id must be set"
+  );
+  assert(
+    scopeResourceType != pad(32, ""),
+    "Recognition scope resource type must be set"
+  );
+  assert(
+    scopeResourceId != pad(32, ""),
+    "Recognition scope resource id must be set"
+  );
+  return persistentHash<Vector<4, Bytes<32>>>([
+    recognizedAuthorityDidCommitment,
+    recognizedRegistryId,
+    scopeResourceType,
+    scopeResourceId
+  ]);
+}
+
 export pure circuit createIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
@@ -413,6 +513,38 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   ]);
 }
 
+export pure circuit createRecognitionPayloadHash(
+  recognitionId: Bytes<32>,
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assertRecognitionFields(
+    recognitionId,
+    recognizedAuthorityDidCommitment,
+    recognizedRegistryId,
+    scopeResourceType,
+    scopeResourceId,
+    policyId,
+    trustLevel,
+    evidenceHash
+  );
+  return persistentHash<Vector<8, Bytes<32>>>([
+    recognitionId,
+    recognizedAuthorityDidCommitment,
+    recognizedRegistryId,
+    scopeResourceType,
+    scopeResourceId,
+    policyId,
+    trustLevel,
+    evidenceHash
+  ]);
+}
+
 export pure circuit updateIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   previousLifecycleEventHash: Bytes<32>,
@@ -456,6 +588,27 @@ export pure circuit updateVerifierAuthorizationPayloadHash(
   );
   return persistentHash<Vector<3, Bytes<32>>>([
     authorizationId,
+    previousLifecycleEventHash,
+    evidenceHash
+  ]);
+}
+
+export pure circuit updateRecognitionPayloadHash(
+  recognitionId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assert(recognitionId != pad(32, ""), "Recognition id must be set");
+  assert(
+    previousLifecycleEventHash != pad(32, ""),
+    "Recognition lifecycle event hash must be set"
+  );
+  assert(
+    evidenceHash != pad(32, ""),
+    "Recognition evidence hash must be set"
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    recognitionId,
     previousLifecycleEventHash,
     evidenceHash
   ]);
@@ -704,6 +857,40 @@ circuit currentVerifierAuthorizationRecord(
   );
   return verifierAuthorizationRecords.lookup(
     currentVerifierAuthorizationIdsByScopeKey.lookup(scopeKey)
+  );
+}
+
+circuit requireRecognitionRecord(
+  recognitionId: Bytes<32>
+): RecognitionRecord {
+  assert(recognitionId != pad(32, ""), "Recognition id must be set");
+  assert(
+    recognitionIds.member(recognitionId),
+    "Recognition is not registered"
+  );
+  return recognitionRecords.lookup(recognitionId);
+}
+
+circuit currentRecognitionRecord(
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>
+): RecognitionRecord {
+  const scopeKey = disclose(
+    recognitionScopeKey(
+      disclose(recognizedAuthorityDidCommitment),
+      disclose(recognizedRegistryId),
+      disclose(scopeResourceType),
+      disclose(scopeResourceId)
+    )
+  );
+  assert(
+    currentRecognitionIdsByScopeKey.member(scopeKey),
+    "Recognition scope is not registered"
+  );
+  return recognitionRecords.lookup(
+    currentRecognitionIdsByScopeKey.lookup(scopeKey)
   );
 }
 
@@ -1361,5 +1548,325 @@ export circuit assertVerifierAuthorized(
   assert(
     currentRecord.status == AuthorizationStatus.active,
     "Verifier authorization is not active"
+  );
+}
+
+export circuit createRecognition(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  recognitionId: Bytes<32>,
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedRecognitionId = disclose(recognitionId);
+  const disclosedRecognizedAuthorityDidCommitment = disclose(
+    recognizedAuthorityDidCommitment
+  );
+  const disclosedRecognizedRegistryId = disclose(recognizedRegistryId);
+  const disclosedScopeResourceType = disclose(scopeResourceType);
+  const disclosedScopeResourceId = disclose(scopeResourceId);
+  const disclosedPolicyId = disclose(policyId);
+  const disclosedTrustLevel = disclose(trustLevel);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const scopeKey = disclose(
+    recognitionScopeKey(
+      disclosedRecognizedAuthorityDidCommitment,
+      disclosedRecognizedRegistryId,
+      disclosedScopeResourceType,
+      disclosedScopeResourceId
+    )
+  );
+  const actionPayloadHash = disclose(
+    createRecognitionPayloadHash(
+      disclosedRecognitionId,
+      disclosedRecognizedAuthorityDidCommitment,
+      disclosedRecognizedRegistryId,
+      disclosedScopeResourceType,
+      disclosedScopeResourceId,
+      disclosedPolicyId,
+      disclosedTrustLevel,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:recognition:create"),
+    actionPayloadHash
+  );
+
+  assert(
+    !recognitionIds.member(disclosedRecognitionId),
+    "Recognition already exists"
+  );
+  if (currentRecognitionIdsByScopeKey.member(scopeKey)) {
+    const currentRecord = recognitionRecords.lookup(
+      currentRecognitionIdsByScopeKey.lookup(scopeKey)
+    );
+    assert(
+      currentRecord.status == AuthorizationStatus.revoked
+        || currentRecord.status == AuthorizationStatus.archived,
+      "Recognition scope already has a live recognition"
+    );
+  }
+
+  recognitionIds.insert(disclosedRecognitionId);
+  recognitionRecords.insert(
+    disclosedRecognitionId,
+    RecognitionRecord {
+      recognitionId: disclosedRecognitionId,
+      recognizedAuthorityDidCommitment:
+        disclosedRecognizedAuthorityDidCommitment,
+      recognizedRegistryId: disclosedRecognizedRegistryId,
+      scopeResourceType: disclosedScopeResourceType,
+      scopeResourceId: disclosedScopeResourceId,
+      policyId: disclosedPolicyId,
+      trustLevel: disclosedTrustLevel,
+      status: AuthorizationStatus.active,
+      proposedAtSequence: authorizedAction.actionSequence,
+      authorizedAtSequence: authorizedAction.actionSequence,
+      effectiveFromSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      archivedAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentRecognitionIdsByScopeKey.insert(scopeKey, disclosedRecognitionId);
+  recognitionCount.increment(1);
+  activeRecognitionCount = disclose(
+    (activeRecognitionCount + (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit suspendRecognition(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  recognitionId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedRecognitionId = disclose(recognitionId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireRecognitionRecord(disclosedRecognitionId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Recognition must be active to suspend"
+  );
+  const actionPayloadHash = disclose(
+    updateRecognitionPayloadHash(
+      disclosedRecognitionId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:recognition:suspend"),
+    actionPayloadHash
+  );
+
+  recognitionRecords.insert(
+    disclosedRecognitionId,
+    RecognitionRecord {
+      recognitionId: currentRecord.recognitionId,
+      recognizedAuthorityDidCommitment:
+        currentRecord.recognizedAuthorityDidCommitment,
+      recognizedRegistryId: currentRecord.recognizedRegistryId,
+      scopeResourceType: currentRecord.scopeResourceType,
+      scopeResourceId: currentRecord.scopeResourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      effectiveFromSequence: currentRecord.effectiveFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  activeRecognitionCount = disclose(
+    (activeRecognitionCount - (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeRecognition(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  recognitionId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedRecognitionId = disclose(recognitionId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireRecognitionRecord(disclosedRecognitionId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended,
+    "Recognition must be active or suspended to revoke"
+  );
+  const actionPayloadHash = disclose(
+    updateRecognitionPayloadHash(
+      disclosedRecognitionId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:recognition:revoke"),
+    actionPayloadHash
+  );
+
+  recognitionRecords.insert(
+    disclosedRecognitionId,
+    RecognitionRecord {
+      recognitionId: currentRecord.recognitionId,
+      recognizedAuthorityDidCommitment:
+        currentRecord.recognizedAuthorityDidCommitment,
+      recognizedRegistryId: currentRecord.recognizedRegistryId,
+      scopeResourceType: currentRecord.scopeResourceType,
+      scopeResourceId: currentRecord.scopeResourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.revoked,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      effectiveFromSequence: currentRecord.effectiveFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: authorizedAction.actionSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeRecognitionCount = disclose(
+      (activeRecognitionCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit archiveRecognition(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  recognitionId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedRecognitionId = disclose(recognitionId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireRecognitionRecord(disclosedRecognitionId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+      || currentRecord.status == AuthorizationStatus.revoked,
+    "Recognition must be active, suspended, or revoked to archive"
+  );
+  const actionPayloadHash = disclose(
+    updateRecognitionPayloadHash(
+      disclosedRecognitionId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:recognition:archive"),
+    actionPayloadHash
+  );
+
+  recognitionRecords.insert(
+    disclosedRecognitionId,
+    RecognitionRecord {
+      recognitionId: currentRecord.recognitionId,
+      recognizedAuthorityDidCommitment:
+        currentRecord.recognizedAuthorityDidCommitment,
+      recognizedRegistryId: currentRecord.recognizedRegistryId,
+      scopeResourceType: currentRecord.scopeResourceType,
+      scopeResourceId: currentRecord.scopeResourceId,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.archived,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      effectiveFromSequence: currentRecord.effectiveFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeRecognitionCount = disclose(
+      (activeRecognitionCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit getRecognition(
+  recognitionId: Bytes<32>
+): RecognitionRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireRecognitionRecord(disclose(recognitionId));
+}
+
+export circuit getCurrentRecognition(
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>
+): RecognitionRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return currentRecognitionRecord(
+    recognizedAuthorityDidCommitment,
+    recognizedRegistryId,
+    scopeResourceType,
+    scopeResourceId
+  );
+}
+
+export circuit assertRecognitionActive(
+  recognizedAuthorityDidCommitment: Bytes<32>,
+  recognizedRegistryId: Bytes<32>,
+  scopeResourceType: Bytes<32>,
+  scopeResourceId: Bytes<32>
+): [] {
+  assert(initialized, "Trust registry is not initialized");
+  const currentRecord = currentRecognitionRecord(
+    recognizedAuthorityDidCommitment,
+    recognizedRegistryId,
+    scopeResourceType,
+    scopeResourceId
+  );
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Recognition is not active"
   );
 }

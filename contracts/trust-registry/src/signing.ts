@@ -116,6 +116,19 @@ export const computeVerifierAuthorizationScopeKey = (
     ensure32Bytes(disclosureLevelCommitment),
   );
 
+export const computeRecognitionScopeKey = (
+  recognizedAuthorityDidCommitment: Uint8Array,
+  recognizedRegistryId: Uint8Array,
+  scopeResourceType: Uint8Array,
+  scopeResourceId: Uint8Array,
+): Uint8Array =>
+  pureCircuits.recognitionScopeKey(
+    ensure32Bytes(recognizedAuthorityDidCommitment),
+    ensure32Bytes(recognizedRegistryId),
+    ensure32Bytes(scopeResourceType),
+    ensure32Bytes(scopeResourceId),
+  );
+
 export const computeCreateVerifierAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   subjectDidCommitment: Uint8Array,
@@ -139,6 +152,27 @@ export const computeCreateVerifierAuthorizationPayloadHash = (
     ensure32Bytes(evidenceHash),
   );
 
+export const computeCreateRecognitionPayloadHash = (
+  recognitionId: Uint8Array,
+  recognizedAuthorityDidCommitment: Uint8Array,
+  recognizedRegistryId: Uint8Array,
+  scopeResourceType: Uint8Array,
+  scopeResourceId: Uint8Array,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createRecognitionPayloadHash(
+    ensure32Bytes(recognitionId),
+    ensure32Bytes(recognizedAuthorityDidCommitment),
+    ensure32Bytes(recognizedRegistryId),
+    ensure32Bytes(scopeResourceType),
+    ensure32Bytes(scopeResourceId),
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
 export const computeUpdateVerifierAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   previousLifecycleEventHash: Uint8Array,
@@ -146,6 +180,17 @@ export const computeUpdateVerifierAuthorizationPayloadHash = (
 ): Uint8Array =>
   pureCircuits.updateVerifierAuthorizationPayloadHash(
     ensure32Bytes(authorizationId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateRecognitionPayloadHash = (
+  recognitionId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateRecognitionPayloadHash(
+    ensure32Bytes(recognitionId),
     ensure32Bytes(previousLifecycleEventHash),
     ensure32Bytes(evidenceHash),
   );
