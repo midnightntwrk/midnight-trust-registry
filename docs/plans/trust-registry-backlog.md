@@ -34,7 +34,7 @@ Updated: 2026-05-22
 | TR-019 | P2 | Draft PR `#8` | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
 | TR-020 | P2 | Draft PR `#9` | Add audit report generator. | A command emits human-readable authorization and policy history. |
 | TR-021 | P1 | Current top branch | Add issuer application-state workflow. | Issuer authorization supports explicit `proposed`, `authorized`, and `active` states with positive and negative tests plus historical evidence. |
-| TR-022 | P1 | Planned stack | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
+| TR-022 | P1 | Current top branch | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
 | TR-023 | P1 | Planned stack | Add maintainer membership lifecycle. | Admin onboarding/removal is modeled explicitly, and no new maintainer can self-approve into the registry. |
 | TR-024 | P1 | Planned stack | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
 | TR-025 | P1 | Planned stack | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |

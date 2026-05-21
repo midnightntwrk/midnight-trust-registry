@@ -48,6 +48,8 @@ Date: 2026-05-21
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
 - Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
 - Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.
+- Apply the same governed application-state pattern to verifier and recognition records before adding mutable operator/API submission surfaces: `proposed` claims scope, `authorized` records approval, and `active` is the only state accepted by authorization assertions.
+- Model auditor onboarding as a dedicated authorization family that mirrors the verifier composite scope shape instead of overloading verifier records or recognition. This keeps auditor evidence role-specific while reusing the same request-profile, attribute, predicate, and disclosure commitments.
 - Sequence the next stack after operator reporting around the missing governance seams: issuer application workflow, then verifier/recognition/auditor application flows, then maintainer membership and multi-maintainer quorum execution before operator/API mutation surfaces.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
@@ -63,4 +65,3 @@ Date: 2026-05-21
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.
-- Exact auditor scope model: dedicated authorization family, verifier extension, or governed recognition subtype.

@@ -188,6 +188,14 @@ Verifier-scoped resources:
 - Disclosure level
 - Presentation purpose
 
+Auditor-scoped resources:
+
+- Audit request profile
+- Allowed audit attributes
+- Allowed audit predicates
+- Disclosure level
+- Audit purpose or mandate identifier
+
 ### Epoch Commitment
 
 An epoch commitment gives verifiers a stable view of public or permissioned registry state.
