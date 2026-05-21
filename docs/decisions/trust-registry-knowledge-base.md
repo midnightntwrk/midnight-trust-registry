@@ -201,7 +201,9 @@ Active implementation branch:
 Stacked base branch:
 
 - `codex/trust-registry-verifier-authorization`
-- pending PR for the operator CLI slice
+- `#8`
+- title:
+  - `feat: add trust registry operator cli`
 - `codex/trust-registry-issuer-authorization`
 - `#6`
 - title:
