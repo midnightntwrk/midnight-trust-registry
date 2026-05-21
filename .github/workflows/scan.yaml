@@ -5,7 +5,6 @@ on:
   push:
     branches: [develop, main]
   pull_request:
-    branches: [develop, main]
   workflow_dispatch: {}   # so you can still run it manually
   schedule:
     - cron: '0 0 * * *'   # run daily at midnight UTC
