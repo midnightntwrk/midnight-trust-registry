@@ -279,7 +279,7 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   activateIssuer(fixture: IssuerScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:create`);
+    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const signature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,

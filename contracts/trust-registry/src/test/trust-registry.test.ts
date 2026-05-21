@@ -916,24 +916,114 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
 
+    const proposalAuthorizationId = labelToBytes32("issuer-auth:license:proposal");
+    const proposalEvidenceHash = labelToBytes32("evidence:license:proposal");
+    const proposalSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_ISSUER_ACTION_KIND,
+      computeCreateIssuerAuthorizationPayloadHash(
+        proposalAuthorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        proposalEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.proposeIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      proposalSignature,
+      proposalAuthorizationId,
+      issuerAuthorization.subjectDidCommitment,
+      issuerAuthorization.resourceType,
+      issuerAuthorization.resourceId,
+      issuerAuthorization.policyId,
+      issuerAuthorization.trustLevel,
+      proposalEvidenceHash,
+    );
+
+    expect(() =>
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          PROPOSE_ISSUER_ACTION_KIND,
+          computeCreateIssuerAuthorizationPayloadHash(
+            labelToBytes32("issuer-auth:license:proposal:duplicate"),
+            issuerAuthorization.subjectDidCommitment,
+            issuerAuthorization.resourceType,
+            issuerAuthorization.resourceId,
+            issuerAuthorization.policyId,
+            issuerAuthorization.trustLevel,
+            labelToBytes32("evidence:license:proposal:duplicate"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        labelToBytes32("issuer-auth:license:proposal:duplicate"),
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        issuerAuthorization.trustLevel,
+        labelToBytes32("evidence:license:proposal:duplicate"),
+      ),
+    ).toThrow(/live authorization/i);
+
+    expect(() =>
+      simulator.activateIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          ACTIVATE_ISSUER_ACTION_KIND,
+          computeUpdateIssuerAuthorizationPayloadHash(
+            proposalAuthorizationId,
+            simulator.getIssuerAuthorization(proposalAuthorizationId)
+              .lifecycleEventHash,
+            labelToBytes32("evidence:license:activate"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        proposalAuthorizationId,
+        labelToBytes32("evidence:license:activate"),
+      ),
+    ).toThrow(/must be authorized/i);
+
+    const directIssuerAuthorization =
+      createIssuerAuthorizationFixture("license-direct");
     const createSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       CREATE_ISSUER_ACTION_KIND,
-      createPayloadHash,
+      computeCreateIssuerAuthorizationPayloadHash(
+        directIssuerAuthorization.authorizationId,
+        directIssuerAuthorization.subjectDidCommitment,
+        directIssuerAuthorization.resourceType,
+        directIssuerAuthorization.resourceId,
+        directIssuerAuthorization.policyId,
+        directIssuerAuthorization.trustLevel,
+        directIssuerAuthorization.evidenceHash,
+      ),
       simulator.getLedger().governanceActionCount,
     );
     simulator.createIssuerAuthorization(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       createSignature,
-      issuerAuthorization.authorizationId,
-      issuerAuthorization.subjectDidCommitment,
-      issuerAuthorization.resourceType,
-      issuerAuthorization.resourceId,
-      issuerAuthorization.policyId,
-      issuerAuthorization.trustLevel,
-      issuerAuthorization.evidenceHash,
+      directIssuerAuthorization.authorizationId,
+      directIssuerAuthorization.subjectDidCommitment,
+      directIssuerAuthorization.resourceType,
+      directIssuerAuthorization.resourceId,
+      directIssuerAuthorization.policyId,
+      directIssuerAuthorization.trustLevel,
+      directIssuerAuthorization.evidenceHash,
     );
 
     expect(() =>
@@ -945,28 +1035,50 @@ describe("trust registry contract", () => {
           registryId,
           CREATE_ISSUER_ACTION_KIND,
           computeCreateIssuerAuthorizationPayloadHash(
-            labelToBytes32("issuer-auth:license:duplicate"),
-            issuerAuthorization.subjectDidCommitment,
-            issuerAuthorization.resourceType,
-            issuerAuthorization.resourceId,
-            issuerAuthorization.policyId,
-            issuerAuthorization.trustLevel,
-            labelToBytes32("evidence:license:duplicate"),
+            labelToBytes32("issuer-auth:license-direct:duplicate"),
+            directIssuerAuthorization.subjectDidCommitment,
+            directIssuerAuthorization.resourceType,
+            directIssuerAuthorization.resourceId,
+            directIssuerAuthorization.policyId,
+            directIssuerAuthorization.trustLevel,
+            labelToBytes32("evidence:license-direct:duplicate"),
           ),
           simulator.getLedger().governanceActionCount,
         ),
-        labelToBytes32("issuer-auth:license:duplicate"),
-        issuerAuthorization.subjectDidCommitment,
-        issuerAuthorization.resourceType,
-        issuerAuthorization.resourceId,
-        issuerAuthorization.policyId,
-        issuerAuthorization.trustLevel,
-        labelToBytes32("evidence:license:duplicate"),
+        labelToBytes32("issuer-auth:license-direct:duplicate"),
+        directIssuerAuthorization.subjectDidCommitment,
+        directIssuerAuthorization.resourceType,
+        directIssuerAuthorization.resourceId,
+        directIssuerAuthorization.policyId,
+        directIssuerAuthorization.trustLevel,
+        labelToBytes32("evidence:license-direct:duplicate"),
       ),
     ).toThrow(/live authorization/i);
 
+    expect(() =>
+      simulator.authorizeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          AUTHORIZE_ISSUER_ACTION_KIND,
+          computeUpdateIssuerAuthorizationPayloadHash(
+            directIssuerAuthorization.authorizationId,
+            simulator.getIssuerAuthorization(
+              directIssuerAuthorization.authorizationId,
+            ).lifecycleEventHash,
+            labelToBytes32("evidence:license-direct:authorize"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        directIssuerAuthorization.authorizationId,
+        labelToBytes32("evidence:license-direct:authorize"),
+      ),
+    ).toThrow(/must be proposed/i);
+
     const createdRecord = simulator.getIssuerAuthorization(
-      issuerAuthorization.authorizationId,
+      directIssuerAuthorization.authorizationId,
     );
     const archiveEvidenceHash = labelToBytes32("evidence:license:archive");
     const archiveSignature = signMaintainerActionFromSeed(
@@ -974,7 +1086,7 @@ describe("trust registry contract", () => {
       registryId,
       ARCHIVE_ISSUER_ACTION_KIND,
       computeUpdateIssuerAuthorizationPayloadHash(
-        issuerAuthorization.authorizationId,
+        directIssuerAuthorization.authorizationId,
         createdRecord.lifecycleEventHash,
         archiveEvidenceHash,
       ),
@@ -984,7 +1096,7 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       archiveSignature,
-      issuerAuthorization.authorizationId,
+      directIssuerAuthorization.authorizationId,
       archiveEvidenceHash,
     );
 
@@ -997,14 +1109,15 @@ describe("trust registry contract", () => {
           registryId,
           REVOKE_ISSUER_ACTION_KIND,
           computeUpdateIssuerAuthorizationPayloadHash(
-            issuerAuthorization.authorizationId,
-            simulator.getIssuerAuthorization(issuerAuthorization.authorizationId)
-              .lifecycleEventHash,
+            directIssuerAuthorization.authorizationId,
+            simulator.getIssuerAuthorization(
+              directIssuerAuthorization.authorizationId,
+            ).lifecycleEventHash,
             labelToBytes32("evidence:license:revoke"),
           ),
           simulator.getLedger().governanceActionCount,
         ),
-        issuerAuthorization.authorizationId,
+        directIssuerAuthorization.authorizationId,
         labelToBytes32("evidence:license:revoke"),
       ),
     ).toThrow(/authorized, active, or suspended/i);
