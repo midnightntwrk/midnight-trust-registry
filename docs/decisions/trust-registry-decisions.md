@@ -47,6 +47,9 @@ Date: 2026-05-21
 - Keep the first audit-report slice deterministic and read-only: render human-readable registry, policy, authorization, recognition, and epoch history from saved snapshots without introducing mutable operator flows.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
+- Make `turbo typecheck` depend on the package's own `build` task as well as `^build` so fresh-runner typecheck cannot race missing generated artifacts.
+- Treat `src/managed/**` as a real build output for the contract package so Turbo cache replay restores generated Compact surfaces needed by typecheck and tests.
+- For adapter package tests, prefer the built integration workspace package over direct source imports when the tests rely on generated contract surfaces; this preserves fresh-checkout task ordering without introducing a contract rebuild inside the adapter lanes.
 
 ## Pending Decisions
 

@@ -77,6 +77,15 @@ Completed in the current implementation wave:
   - `Scan` concurrency keys now stay branch-specific for manual dispatch runs
 - `turbo typecheck` now builds workspace dependencies first so fresh-checkout
   CI runs do not depend on stale local artifacts
+- `turbo typecheck` now depends on each package's own `build` task as well as
+  `^build`, so fresh-runner typecheck does not race missing local generated
+  artifacts
+- contract build cache now restores:
+  - `src/managed/**`
+  - `dist/**`
+  - `tsconfig.build.tsbuildinfo`
+  so cached builds remain usable for contract typecheck and test lanes after
+  clean checkout paths
 - verifier authorization record and current-scope index in the Compact contract
 - verifier authorization create, suspend, revoke, archive, and query circuits
 - verifier authorization payload-hash helpers for maintainer signatures
