@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-05-20
+Updated: 2026-05-21
 
 ## Purpose
 
@@ -62,6 +62,15 @@ Completed in the current implementation wave:
 - issuer authorization create, suspend, revoke, archive, and query circuits
 - issuer authorization payload-hash helpers for maintainer signatures
 - focused positive and negative issuer authorization contract tests
+- CI workflow repair for stacked PRs and manual dispatch:
+  - `pull_request` workflows no longer require `develop` as the base branch
+  - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
+    all `scripts/**`
+  - GitHub runners now install the Compact compiler before `./run.sh --light`
+  - `Docs` whitespace checks now handle `workflow_dispatch` safely
+  - `Scan` concurrency keys now stay branch-specific for manual dispatch runs
+- `turbo typecheck` now builds workspace dependencies first so fresh-checkout
+  CI runs do not depend on stale local artifacts
 
 ## Current Branch And PR State
 
