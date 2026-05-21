@@ -60,6 +60,7 @@ Examples:
   trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind epoch
   trust-registry export-evidence --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
+  trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
 `;
 
 const parseKind = (value: string | undefined): SnapshotRecordKind => {
@@ -115,6 +116,19 @@ const requireStringOption = (
   }
 
   return value;
+};
+
+const validateReportIdUsage = (
+  kind: AuditReportKind,
+  id: string | undefined,
+): void => {
+  if (id === undefined) {
+    return;
+  }
+
+  if (kind === "full" || kind === "registry" || kind === "policy") {
+    throw new Error(`--id is not supported for ${kind} reports`);
+  }
 };
 
 const isHelpRequest = (value: string | undefined): boolean =>
@@ -308,12 +322,15 @@ const runReport = async (argv: readonly string[], io: CliIo): Promise<number> =>
   const snapshot = await loadSnapshotFromFile(
     requireStringOption(parsed.values.snapshot, "--snapshot"),
   );
+  const kind = parseAuditReportKind(
+    typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
+  );
+  const id = typeof parsed.values.id === "string" ? parsed.values.id : undefined;
+  validateReportIdUsage(kind, id);
   const report = renderAuditReport(
     snapshot,
-    parseAuditReportKind(
-      typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
-    ),
-    typeof parsed.values.id === "string" ? parsed.values.id : undefined,
+    kind,
+    id,
   );
 
   if (typeof parsed.values.output === "string") {

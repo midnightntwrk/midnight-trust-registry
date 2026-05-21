@@ -200,4 +200,26 @@ describe("trust registry operator CLI", () => {
     expect(report).toContain("proposedAt:");
     expect(report).toContain("archivedAt:");
   });
+
+  it("fails when a focused report targets an unknown issuer authorization", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const snapshotPath = join(directory, "demo-snapshot.json");
+
+    await captureCli(["init-demo", "--output", snapshotPath]);
+
+    const reportResult = await captureCli([
+      "report",
+      "--snapshot",
+      snapshotPath,
+      "--kind",
+      "issuer",
+      "--id",
+      "auth:issuer:missing:v1",
+    ]);
+
+    expect(reportResult.exitCode).toBe(1);
+    expect(reportResult.stderr).toContain(
+      "unknown issuer authorization: auth:issuer:missing:v1",
+    );
+  });
 });

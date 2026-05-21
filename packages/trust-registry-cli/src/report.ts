@@ -1,8 +1,6 @@
 import type {
-  AuthorizationRecord,
   EpochCommitment,
   GovernancePolicyRecord,
-  RecognitionRecord,
   RegistryRecord,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -11,7 +9,14 @@ import type {
   TrustRegistryOperatorSnapshot,
   TrustRegistryRecognitionSnapshotEntry,
 } from "./model.js";
-import { buildSnapshotSummary } from "./snapshot.js";
+import {
+  buildSnapshotSummary,
+  findEpoch,
+  findIssuerEntry,
+  findRecognitionEntry,
+  findVerifierEntry,
+  renderStatusCounts,
+} from "./snapshot.js";
 
 export type AuditReportKind =
   | "full"
@@ -203,25 +208,13 @@ const renderSummarySection = (
   snapshot: TrustRegistryOperatorSnapshot,
 ): string => {
   const summary = buildSnapshotSummary(snapshot);
-  const countsToLine = (
-    counts: Record<AuthorizationRecord["status"] | RecognitionRecord["status"], number>,
-  ): string =>
-    [
-      `${counts.proposed} proposed`,
-      `${counts.authorized} authorized`,
-      `${counts.active} active`,
-      `${counts.suspended} suspended`,
-      `${counts.revoked} revoked`,
-      `${counts.superseded} superseded`,
-      `${counts.archived} archived`,
-    ].join(", ");
 
   return joinSections([
     "Summary",
     renderLines([
-      `Issuers: ${countsToLine(summary.issuerCounts)}`,
-      `Verifiers: ${countsToLine(summary.verifierCounts)}`,
-      `Recognitions: ${countsToLine(summary.recognitionCounts)}`,
+      `Issuers: ${renderStatusCounts(summary.issuerCounts)}`,
+      `Verifiers: ${renderStatusCounts(summary.verifierCounts)}`,
+      `Recognitions: ${renderStatusCounts(summary.recognitionCounts)}`,
       `Epoch count: ${summary.epochCount}`,
     ]),
   ]);
@@ -313,16 +306,9 @@ export const renderAuditReport = (
         ]);
       }
 
-      const entry = snapshot.issuerEntries.find(
-        (candidate) => candidate.authorization.authorizationId === id,
-      );
-      if (entry === undefined) {
-        throw new Error(`unknown issuer authorization: ${id}`);
-      }
-
       return joinSections([
         renderHeader(snapshot, "Trust Registry Issuer Authorization Audit"),
-        renderAuthorizationEntry("Issuer Authorization", entry),
+        renderAuthorizationEntry("Issuer Authorization", findIssuerEntry(snapshot, id)),
       ]);
     }
     case "verifier": {
@@ -336,16 +322,12 @@ export const renderAuditReport = (
         ]);
       }
 
-      const entry = snapshot.verifierEntries.find(
-        (candidate) => candidate.authorization.authorizationId === id,
-      );
-      if (entry === undefined) {
-        throw new Error(`unknown verifier authorization: ${id}`);
-      }
-
       return joinSections([
         renderHeader(snapshot, "Trust Registry Verifier Authorization Audit"),
-        renderAuthorizationEntry("Verifier Authorization", entry),
+        renderAuthorizationEntry(
+          "Verifier Authorization",
+          findVerifierEntry(snapshot, id),
+        ),
       ]);
     }
     case "recognition": {
@@ -356,16 +338,9 @@ export const renderAuditReport = (
         ]);
       }
 
-      const entry = snapshot.recognitionEntries.find(
-        (candidate) => candidate.recognition.recognitionId === id,
-      );
-      if (entry === undefined) {
-        throw new Error(`unknown recognition: ${id}`);
-      }
-
       return joinSections([
         renderHeader(snapshot, "Trust Registry Recognition Audit"),
-        renderRecognitionEntry("Recognition", entry),
+        renderRecognitionEntry("Recognition", findRecognitionEntry(snapshot, id)),
       ]);
     }
     case "epoch": {
@@ -380,14 +355,9 @@ export const renderAuditReport = (
         ]);
       }
 
-      const epoch = snapshot.epochs.find((candidate) => candidate.epochId === id);
-      if (epoch === undefined) {
-        throw new Error(`unknown epoch: ${id}`);
-      }
-
       return joinSections([
         renderHeader(snapshot, "Trust Registry Epoch Audit"),
-        renderEpochEntry(epoch, snapshot.currentEpoch.epochId),
+        renderEpochEntry(findEpoch(snapshot, id), snapshot.currentEpoch.epochId),
       ]);
     }
   }

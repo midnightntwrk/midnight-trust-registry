@@ -236,7 +236,7 @@ export const buildSnapshotSummary = (
   snapshot: TrustRegistryOperatorSnapshot,
 ): TrustRegistrySummary => buildSummary(snapshot);
 
-const renderStatusCounts = (
+export const renderStatusCounts = (
   counts: Record<
     AuthorizationRecord["status"] | RecognitionRecord["status"],
     number
