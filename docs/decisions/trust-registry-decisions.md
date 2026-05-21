@@ -43,6 +43,10 @@ Date: 2026-05-21
 - Implement the first operator slice as a dedicated `packages/trust-registry-cli` workspace instead of embedding ad hoc scripts into `scripts/` or the client package.
 - Keep the first operator CLI simulator-first and file-backed: initialize a deterministic local snapshot, inspect typed records from that snapshot, and export anchored evidence bundles without requiring direct simulator spelunking.
 - Keep the first operator CLI read-heavy: local initialization, inspection, and evidence export land before mutable maintainer workflows or audit/report generation.
+- Implement the first audit-report slice on top of the existing CLI snapshot surface instead of creating a separate reporting workspace.
+- Keep the first audit-report slice deterministic and read-only: render human-readable registry, policy, authorization, recognition, and epoch history from saved snapshots without introducing mutable operator flows.
+- Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
+- Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
 
 ## Pending Decisions
 

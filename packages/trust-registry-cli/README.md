@@ -8,6 +8,7 @@ Current scope:
 - inspect registry, policy, authorization, recognition, and epoch records from a
   saved snapshot
 - export anchored issuer, verifier, and recognition evidence bundles as JSON
+- render deterministic human-readable audit reports from a saved snapshot
 
 Build the workspace first from the repo root:
 
@@ -29,4 +30,14 @@ node packages/trust-registry-cli/bin/trust-registry.mjs export-evidence \
   --kind issuer \
   --id auth:issuer:passport:v1 \
   --output ./artifacts/trust-registry/passport-issuer-evidence.json
+
+node packages/trust-registry-cli/bin/trust-registry.mjs report \
+  --snapshot ./artifacts/trust-registry/demo-snapshot.json \
+  --kind full
+
+node packages/trust-registry-cli/bin/trust-registry.mjs report \
+  --snapshot ./artifacts/trust-registry/demo-snapshot.json \
+  --kind issuer \
+  --id auth:issuer:passport:v1 \
+  --output ./artifacts/trust-registry/passport-issuer-audit.txt
 ```

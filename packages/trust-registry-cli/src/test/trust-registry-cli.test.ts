@@ -143,4 +143,61 @@ describe("trust registry operator CLI", () => {
       snapshot.epochs.some((epoch) => epoch.epochId === bundle.epoch.epochId),
     ).toBe(true);
   });
+
+  it("emits a full human-readable audit report from the saved snapshot", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const snapshotPath = join(directory, "demo-snapshot.json");
+
+    await captureCli(["init-demo", "--output", snapshotPath, "--label", "audit"]);
+
+    const reportResult = await captureCli([
+      "report",
+      "--snapshot",
+      snapshotPath,
+      "--kind",
+      "full",
+    ]);
+    expect(reportResult.exitCode).toBe(0);
+    expect(reportResult.stdout).toContain("Trust Registry Audit Report");
+    expect(reportResult.stdout).toContain("Registry: registry:audit:trusted");
+    expect(reportResult.stdout).toContain("Policy");
+    expect(reportResult.stdout).toContain("Issuer Authorizations");
+    expect(reportResult.stdout).toContain("Verifier Authorizations");
+    expect(reportResult.stdout).toContain("Recognitions");
+    expect(reportResult.stdout).toContain("Epoch History");
+  });
+
+  it("writes a focused issuer audit report to disk", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const snapshotPath = join(directory, "demo-snapshot.json");
+    const reportPath = join(directory, "issuer-report.txt");
+
+    await captureCli(["init-demo", "--output", snapshotPath]);
+    const snapshot = await loadSnapshotFromFile(snapshotPath);
+    const issuerId = snapshot.issuerEntries[1]?.authorization.authorizationId;
+    if (issuerId === undefined) {
+      throw new Error("expected issuer authorization in demo snapshot");
+    }
+
+    const reportResult = await captureCli([
+      "report",
+      "--snapshot",
+      snapshotPath,
+      "--kind",
+      "issuer",
+      "--id",
+      issuerId,
+      "--output",
+      reportPath,
+    ]);
+    expect(reportResult.exitCode).toBe(0);
+
+    const report = await readFile(reportPath, "utf8");
+    expect(report).toContain("Trust Registry Issuer Authorization Audit");
+    expect(report).toContain(`Authorization ID: ${issuerId}`);
+    expect(report).toContain("Status: archived");
+    expect(report).toContain("Timeline:");
+    expect(report).toContain("proposedAt:");
+    expect(report).toContain("archivedAt:");
+  });
 });

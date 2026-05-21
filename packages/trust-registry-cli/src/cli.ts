@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 
 import { createDemoSnapshot } from "./demo-snapshot.js";
 import { serializeJson } from "./model.js";
+import { renderAuditReport, type AuditReportKind } from "./report.js";
 import {
   buildSnapshotSummary,
   exportEvidenceBundle,
@@ -29,6 +30,7 @@ type CommandName =
   | "list"
   | "inspect"
   | "export-evidence"
+  | "report"
   | "help";
 
 type CliIo = {
@@ -49,6 +51,7 @@ Commands:
   list             List issuer, verifier, recognition, or epoch records
   inspect          Print a specific snapshot record as JSON
   export-evidence  Export an anchored evidence bundle as JSON
+  report           Emit a human-readable audit report from a saved snapshot
 
 Examples:
   trust-registry init-demo --output ./artifacts/trust-registry/demo.json
@@ -56,6 +59,7 @@ Examples:
   trust-registry list --snapshot ./artifacts/trust-registry/demo.json --kind issuer
   trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind epoch
   trust-registry export-evidence --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
+  trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
 `;
 
 const parseKind = (value: string | undefined): SnapshotRecordKind => {
@@ -81,6 +85,25 @@ const parseEvidenceKind = (
   }
 
   return kind;
+};
+
+const parseAuditReportKind = (
+  value: string | undefined,
+): AuditReportKind => {
+  switch (value) {
+    case undefined:
+    case "full":
+      return "full";
+    case "registry":
+    case "policy":
+    case "issuer":
+    case "verifier":
+    case "recognition":
+    case "epoch":
+      return value;
+    default:
+      throw new Error(`unsupported report kind: ${value}`);
+  }
 };
 
 const requireStringOption = (
@@ -270,6 +293,40 @@ const runExportEvidence = async (
   return 0;
 };
 
+const runReport = async (argv: readonly string[], io: CliIo): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      snapshot: { type: "string" },
+      kind: { type: "string" },
+      id: { type: "string" },
+      output: { type: "string" },
+    },
+    strict: true,
+  });
+  const snapshot = await loadSnapshotFromFile(
+    requireStringOption(parsed.values.snapshot, "--snapshot"),
+  );
+  const report = renderAuditReport(
+    snapshot,
+    parseAuditReportKind(
+      typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
+    ),
+    typeof parsed.values.id === "string" ? parsed.values.id : undefined,
+  );
+
+  if (typeof parsed.values.output === "string") {
+    await mkdir(dirname(parsed.values.output), { recursive: true });
+    await writeFile(parsed.values.output, report, "utf8");
+    io.stdout(`Wrote audit report to ${parsed.values.output}\n`);
+    return 0;
+  }
+
+  io.stdout(report);
+  return 0;
+};
+
 export const runCli = async (
   argv: readonly string[],
   io: CliIo = defaultIo,
@@ -292,6 +349,8 @@ export const runCli = async (
         return await runInspect(rest, io);
       case "export-evidence":
         return await runExportEvidence(rest, io);
+      case "report":
+        return await runReport(rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;
