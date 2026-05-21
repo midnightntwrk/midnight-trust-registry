@@ -4,6 +4,7 @@ import {
   type IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type {
+  AuditorAuthorizationRecord,
   EpochCommitmentRecord,
   IssuerAuthorizationRecord,
   MaintainerRecord,
@@ -13,6 +14,7 @@ import type {
 import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
+  verifyAuditorAuthorizationBundle,
   verifyIssuerAuthorizationBundle,
   verifyRecognitionBundle,
   verifyVerifierAuthorizationBundle,
@@ -68,6 +70,28 @@ export class TrustRegistrySimulatorClient {
     );
   }
 
+  getAuditorAuthorizationById(
+    authorizationId: string | Uint8Array,
+  ): AuditorAuthorizationRecord {
+    return this.simulator.getAuditorAuthorization(this.asBytes32(authorizationId));
+  }
+
+  getCurrentAuditorAuthorization(input: {
+    subjectDid: string | Uint8Array;
+    requestProfileId: string | Uint8Array;
+    allowedAttributeSetCommitment: string | Uint8Array;
+    allowedPredicateSetCommitment: string | Uint8Array;
+    disclosureLevelCommitment: string | Uint8Array;
+  }): AuditorAuthorizationRecord {
+    return this.simulator.getCurrentAuditorAuthorization(
+      this.asBytes32(input.subjectDid),
+      this.asBytes32(input.requestProfileId),
+      this.asBytes32(input.allowedAttributeSetCommitment),
+      this.asBytes32(input.allowedPredicateSetCommitment),
+      this.asBytes32(input.disclosureLevelCommitment),
+    );
+  }
+
   getRecognitionById(recognitionId: string | Uint8Array): RecognitionRecord {
     return this.simulator.getRecognition(this.asBytes32(recognitionId));
   }
@@ -109,6 +133,16 @@ export class TrustRegistrySimulatorClient {
     options: SimulatorBundleVerificationOptions,
   ): TrustRegistryEvidenceBundle {
     return verifyVerifierAuthorizationBundle(bundle, {
+      ...options,
+      ...this.buildEpochContext(bundle),
+    });
+  }
+
+  verifyAuditorAuthorizationBundle(
+    bundle: TrustRegistryEvidenceBundle,
+    options: SimulatorBundleVerificationOptions,
+  ): TrustRegistryEvidenceBundle {
+    return verifyAuditorAuthorizationBundle(bundle, {
       ...options,
       ...this.buildEpochContext(bundle),
     });

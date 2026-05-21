@@ -178,4 +178,26 @@ describe("record schemas", () => {
       }),
     ).toThrow(/authorizedAt is required/);
   });
+
+  it("allows pre-activation recognition records without effectiveFrom", () => {
+    expect(() =>
+      RecognitionRecordSchema.parse({
+        recognitionId: "rec:gaia-x:issuer",
+        registryId: "registry:midnight:university",
+        recognizedAuthorityDid: "did:web:gaia-x.example",
+        recognizedRegistryId: "registry:gaia-x:edu",
+        scope: {
+          resourceType: "recognized-scope",
+          resourceId: "vc-type:degree:v1",
+        },
+        policyId: "policy:university:v1",
+        trustLevel: "peer-approved",
+        status: "authorized",
+        proposedAt: "2026-05-20T00:00:00Z",
+        authorizedAt: "2026-05-20T01:00:00Z",
+        evidenceHash: HASH_D,
+        lifecycleEventRoot: HASH_B,
+      }),
+    ).not.toThrow();
+  });
 });

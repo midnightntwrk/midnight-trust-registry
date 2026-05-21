@@ -236,7 +236,7 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
   scope: RecognitionScopeSchema,
   policyId: ScopedIdentifierSchema,
   trustLevel: TrustLevelSchema,
-  effectiveFrom: TimestampSchema,
+  effectiveFrom: TimestampSchema.optional(),
   effectiveUntil: TimestampSchema.optional(),
   evidenceHash: HashHexSchema,
   proposedAt: TimestampSchema,
@@ -251,6 +251,16 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
       code: "custom",
       message: "authorizedAt is required once a recognition leaves proposed state",
       path: ["authorizedAt"],
+    });
+  }
+  if (
+    ["active", "suspended", "revoked", "superseded", "archived"].includes(record.status)
+    && record.effectiveFrom === undefined
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "effectiveFrom is required for active or historical recognitions",
+      path: ["effectiveFrom"],
     });
   }
   refineEffectiveWindow(

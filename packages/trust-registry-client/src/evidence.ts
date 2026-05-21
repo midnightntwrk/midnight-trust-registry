@@ -284,6 +284,31 @@ export const verifyVerifierAuthorizationBundle = (
   return bundle;
 };
 
+export const verifyAuditorAuthorizationBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = verifyTrustRegistryEvidenceBundle(bundleInput, options);
+  const authorization = bundle.authorization;
+
+  if (authorization === undefined || authorization.role !== "auditor") {
+    throw new Error("Evidence bundle does not contain auditor authorization");
+  }
+  if ((options.requireActive ?? true) && authorization.status !== "active") {
+    throw new Error("Auditor authorization is not active");
+  }
+  if (
+    options.expectedResourceId !== undefined
+    && authorization.resourceId !== options.expectedResourceId
+  ) {
+    throw new Error(
+      `Auditor authorization resource mismatch: expected ${options.expectedResourceId}, got ${authorization.resourceId}`,
+    );
+  }
+
+  return bundle;
+};
+
 export const verifyRecognitionBundle = (
   bundleInput: TrustRegistryEvidenceBundle,
   options: BundleVerificationOptions,

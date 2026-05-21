@@ -1,10 +1,12 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateAuditorAuthorizationPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
+  computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -19,6 +21,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
+  type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
   type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
@@ -42,6 +45,7 @@ import {
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
+  type AuditorScenarioFixture,
   bytes32Commitment,
   createMidnightDid,
   type IssuerScenarioFixture,
@@ -55,14 +59,24 @@ const ACTIVATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:activate");
 const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
 const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
 const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
-const CREATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:create");
+const PROPOSE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:propose");
+const AUTHORIZE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:authorize");
+const ACTIVATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:activate");
 const SUSPEND_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:suspend");
 const REVOKE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:revoke");
 const ARCHIVE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:archive");
-const CREATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:create");
+const PROPOSE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:propose");
+const AUTHORIZE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:authorize");
+const ACTIVATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:activate");
 const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
 const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
 const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
+const PROPOSE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:propose");
+const AUTHORIZE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:authorize");
+const ACTIVATE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:activate");
+const SUSPEND_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:suspend");
+const REVOKE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:revoke");
+const ARCHIVE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:archive");
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
@@ -327,13 +341,15 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  authorizeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:create`);
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+  proposeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+    const proposedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:propose`,
+    );
+    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
-      CREATE_VERIFIER_ACTION_KIND,
+      PROPOSE_VERIFIER_ACTION_KIND,
       computeCreateVerifierAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
@@ -343,15 +359,14 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.disclosureLevelCommitment,
         this.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
-        evidenceHash,
+        proposedEvidenceHash,
       ),
-      actionSequence,
+      proposeActionSequence,
     );
-
-    return this.simulator.createVerifierAuthorization(
+    return this.simulator.proposeVerifierAuthorization(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      signature,
+      proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.requestProfileIdCommitment,
@@ -360,8 +375,65 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.disclosureLevelCommitment,
       this.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
+  }
+
+  approveVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+    const authorizedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:authorize`,
+    );
+    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      AUTHORIZE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        authorizedEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+    return this.simulator.authorizeVerifierAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      authorizeSignature,
+      fixture.authorizationIdCommitment,
+      authorizedEvidenceHash,
+    );
+  }
+
+  activateVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      ACTIVATE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    return this.simulator.activateVerifierAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.authorizationIdCommitment,
       evidenceHash,
     );
+  }
+
+  authorizeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+    this.proposeVerifier(fixture);
+    this.approveVerifier(fixture);
+    return this.activateVerifier(fixture);
   }
 
   suspendVerifier(fixture: VerifierScenarioFixture): Uint8Array {
@@ -388,13 +460,15 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:create`);
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+  proposeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    const proposedEvidenceHash = bytes32Commitment(
+      `${fixture.recognitionId}:propose`,
+    );
+    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
-      CREATE_RECOGNITION_ACTION_KIND,
+      PROPOSE_RECOGNITION_ACTION_KIND,
       computeCreateRecognitionPayloadHash(
         fixture.recognitionIdCommitment,
         fixture.recognizedAuthorityDidCommitment,
@@ -403,15 +477,15 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.scopeResourceIdCommitment,
         this.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
-        evidenceHash,
+        proposedEvidenceHash,
       ),
-      actionSequence,
+      proposeActionSequence,
     );
 
-    return this.simulator.createRecognition(
+    return this.simulator.proposeRecognition(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      signature,
+      proposeSignature,
       fixture.recognitionIdCommitment,
       fixture.recognizedAuthorityDidCommitment,
       fixture.recognizedRegistryIdCommitment,
@@ -419,7 +493,182 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.scopeResourceIdCommitment,
       this.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
+  }
+
+  approveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    const authorizedEvidenceHash = bytes32Commitment(
+      `${fixture.recognitionId}:authorize`,
+    );
+    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      AUTHORIZE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment,
+        this.simulator.getRecognition(fixture.recognitionIdCommitment)
+          .lifecycleEventHash,
+        authorizedEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+    return this.simulator.authorizeRecognition(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      authorizeSignature,
+      fixture.recognitionIdCommitment,
+      authorizedEvidenceHash,
+    );
+  }
+
+  activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:activate`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      ACTIVATE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment,
+        this.simulator.getRecognition(fixture.recognitionIdCommitment)
+          .lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    return this.simulator.activateRecognition(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.recognitionIdCommitment,
       evidenceHash,
+    );
+  }
+
+  authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    this.proposeRecognition(fixture);
+    this.approveRecognition(fixture);
+    return this.activateRecognition(fixture);
+  }
+
+  proposeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    const proposedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:propose`,
+    );
+    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      PROPOSE_AUDITOR_ACTION_KIND,
+      computeCreateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        fixture.subjectDidCommitment,
+        fixture.requestProfileIdCommitment,
+        fixture.allowedAttributeSetCommitment,
+        fixture.allowedPredicateSetCommitment,
+        fixture.disclosureLevelCommitment,
+        this.governancePolicyCommitment,
+        bytes32Commitment(fixture.trustLevel),
+        proposedEvidenceHash,
+      ),
+      proposeActionSequence,
+    );
+    return this.simulator.proposeAuditorAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      proposeSignature,
+      fixture.authorizationIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.requestProfileIdCommitment,
+      fixture.allowedAttributeSetCommitment,
+      fixture.allowedPredicateSetCommitment,
+      fixture.disclosureLevelCommitment,
+      this.governancePolicyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
+  }
+
+  approveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    const authorizedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:authorize`,
+    );
+    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      AUTHORIZE_AUDITOR_ACTION_KIND,
+      computeUpdateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        authorizedEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+    return this.simulator.authorizeAuditorAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      authorizeSignature,
+      fixture.authorizationIdCommitment,
+      authorizedEvidenceHash,
+    );
+  }
+
+  activateAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      ACTIVATE_AUDITOR_ACTION_KIND,
+      computeUpdateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+    return this.simulator.activateAuditorAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.authorizationIdCommitment,
+      evidenceHash,
+    );
+  }
+
+  authorizeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    this.proposeAuditor(fixture);
+    this.approveAuditor(fixture);
+    return this.activateAuditor(fixture);
+  }
+
+  suspendAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    return this.updateAuditorLifecycle(
+      fixture,
+      "suspend",
+      SUSPEND_AUDITOR_ACTION_KIND,
+    );
+  }
+
+  revokeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    return this.updateAuditorLifecycle(
+      fixture,
+      "revoke",
+      REVOKE_AUDITOR_ACTION_KIND,
+    );
+  }
+
+  archiveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+    return this.updateAuditorLifecycle(
+      fixture,
+      "archive",
+      ARCHIVE_AUDITOR_ACTION_KIND,
     );
   }
 
@@ -507,6 +756,23 @@ export class LocalTrustRegistryIntegrationHarness {
       referencedStatusRegistryId: fixture.referencedStatusRegistryId,
       lastStatusSequence: record.lastStatusSequence,
     });
+  }
+
+  evaluateCurrentAuditorDecision(
+    fixture: AuditorScenarioFixture,
+    options: { expectedRegistryId?: string } = {},
+  ): TrustRegistryEvidenceBundle {
+    this.assertRegistryId(options.expectedRegistryId);
+    this.simulator.assertAuditorAuthorized(
+      fixture.subjectDidCommitment,
+      fixture.requestProfileIdCommitment,
+      fixture.allowedAttributeSetCommitment,
+      fixture.allowedPredicateSetCommitment,
+      fixture.disclosureLevelCommitment,
+    );
+    const bundle = this.buildAuditorHistoricalEvidence(fixture);
+    this.assertPublishedEpochEvidence(bundle);
+    return bundle;
   }
 
   evaluateCurrentRecognitionDecision(
@@ -608,6 +874,20 @@ export class LocalTrustRegistryIntegrationHarness {
       subjectDid: fixture.recognizedAuthorityDid,
       lastStatusSequence: record.lastStatusSequence,
       recognition,
+    });
+  }
+
+  buildAuditorHistoricalEvidence(
+    fixture: AuditorScenarioFixture,
+  ): TrustRegistryEvidenceBundle {
+    const record = this.simulator.getAuditorAuthorization(
+      fixture.authorizationIdCommitment,
+    );
+    const authorization = this.buildAuditorAuthorizationRecord(fixture, record);
+    return this.buildEvidenceBundle({
+      authorization,
+      subjectDid: fixture.subjectDid,
+      lastStatusSequence: record.lastStatusSequence,
     });
   }
 
@@ -713,6 +993,57 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
+  private updateAuditorLifecycle(
+    fixture: AuditorScenarioFixture,
+    actionName: "suspend" | "revoke" | "archive",
+    actionKind: Uint8Array,
+  ): Uint8Array {
+    const evidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:${actionName}`,
+    );
+    const currentRecord = this.simulator.getAuditorAuthorization(
+      fixture.authorizationIdCommitment,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      actionKind,
+      computeUpdateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        currentRecord.lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    if (actionName === "suspend") {
+      return this.simulator.suspendAuditorAuthorization(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.authorizationIdCommitment,
+        evidenceHash,
+      );
+    }
+    if (actionName === "revoke") {
+      return this.simulator.revokeAuditorAuthorization(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.authorizationIdCommitment,
+        evidenceHash,
+      );
+    }
+    return this.simulator.archiveAuditorAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.authorizationIdCommitment,
+      evidenceHash,
+    );
+  }
+
   private updateRecognitionLifecycle(
     fixture: RecognitionScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
@@ -802,6 +1133,21 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
+  private buildAuditorAuthorizationRecord(
+    fixture: AuditorScenarioFixture,
+    record: ContractAuditorAuthorizationRecord,
+  ): AuthorizationRecord {
+    return this.buildAuthorizationRecord({
+      authorizationId: fixture.authorizationId,
+      subjectDid: fixture.subjectDid,
+      role: "auditor",
+      resourceType: "request-profile",
+      resourceId: fixture.scopeResourceId,
+      trustLevel: fixture.trustLevel,
+      record,
+    });
+  }
+
   private buildRecognitionRecord(
     fixture: RecognitionScenarioFixture,
     record: ContractRecognitionRecord,
@@ -844,7 +1190,8 @@ export class LocalTrustRegistryIntegrationHarness {
     trustLevel: string;
     record:
       | ContractIssuerAuthorizationRecord
-      | ContractVerifierAuthorizationRecord;
+      | ContractVerifierAuthorizationRecord
+      | ContractAuditorAuthorizationRecord;
   }): AuthorizationRecord {
     const { record } = input;
     const status = contractStatusName(record.status);

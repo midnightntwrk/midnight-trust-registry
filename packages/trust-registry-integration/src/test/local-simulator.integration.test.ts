@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
@@ -95,6 +96,35 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(verifier.subjectDid);
   });
 
+  it("preserves verifier application history before activation", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const verifier = createVerifierScenarioFixture("employment-application");
+
+    harness.proposeVerifier(verifier);
+
+    expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/not active/i);
+    const proposedBundle = harness.buildVerifierHistoricalEvidence(verifier);
+    expect(proposedBundle.authorization?.status).toBe("proposed");
+    expect(proposedBundle.authorization?.authorizedAt).toBeUndefined();
+    expect(proposedBundle.authorization?.activeFrom).toBeUndefined();
+
+    harness.approveVerifier(verifier);
+
+    expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/not active/i);
+    const authorizedBundle = harness.buildVerifierHistoricalEvidence(verifier);
+    expect(authorizedBundle.authorization?.status).toBe("authorized");
+    expect(authorizedBundle.authorization?.authorizedAt).toBeDefined();
+    expect(authorizedBundle.authorization?.activeFrom).toBeUndefined();
+
+    harness.activateVerifier(verifier);
+
+    const activeBundle = harness.evaluateCurrentVerifierDecision(verifier, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.authorization?.status).toBe("active");
+    expect(activeBundle.authorization?.activeFrom).toBeDefined();
+  });
+
   it("rejects verifier trust for wrong registry, mismatched scope, and revoked lifecycle state", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("employment");
@@ -146,6 +176,39 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.recognition?.scope.resourceId).toBe(recognition.scopeResourceId);
     expect(bundle.subjectDid).toBe(recognition.recognizedAuthorityDid);
     expect(bundle.authorization).toBeUndefined();
+  });
+
+  it("preserves recognition application history before activation", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("gaia-x-application");
+
+    harness.proposeRecognition(recognition);
+
+    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+      /not active/i,
+    );
+    const proposedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(proposedBundle.recognition?.status).toBe("proposed");
+    expect(proposedBundle.recognition?.authorizedAt).toBeUndefined();
+    expect(proposedBundle.recognition?.effectiveFrom).toBeUndefined();
+
+    harness.approveRecognition(recognition);
+
+    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+      /not active/i,
+    );
+    const authorizedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    expect(authorizedBundle.recognition?.status).toBe("authorized");
+    expect(authorizedBundle.recognition?.authorizedAt).toBeDefined();
+    expect(authorizedBundle.recognition?.effectiveFrom).toBeUndefined();
+
+    harness.activateRecognition(recognition);
+
+    const activeBundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.recognition?.status).toBe("active");
+    expect(activeBundle.recognition?.effectiveFrom).toBeDefined();
   });
 
   it("rejects current recognition after suspension and revocation but preserves historical evidence through archival", () => {
@@ -200,6 +263,45 @@ describe("trust registry local simulator integration", () => {
     );
     const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
     expect(revokedBundle.recognition?.status).toBe("revoked");
+  });
+
+  it("authorizes a trusted auditor and emits a valid active evidence bundle", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const auditor = createAuditorScenarioFixture("iso-27001");
+
+    harness.authorizeAuditor(auditor);
+
+    const bundle = harness.evaluateCurrentAuditorDecision(auditor, {
+      expectedRegistryId: harness.registryId,
+    });
+
+    expect(bundle.authorization?.role).toBe("auditor");
+    expect(bundle.authorization?.status).toBe("active");
+    expect(bundle.authorization?.resourceType).toBe("request-profile");
+    expect(bundle.authorization?.resourceId).toBe(auditor.scopeResourceId);
+    expect(bundle.subjectDid).toBe(auditor.subjectDid);
+  });
+
+  it("rejects current auditor trust after suspension and revocation but preserves historical evidence through archival", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const auditor = createAuditorScenarioFixture("gdpr");
+
+    harness.authorizeAuditor(auditor);
+    harness.suspendAuditor(auditor);
+
+    expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/not active/i);
+    const suspendedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    expect(suspendedBundle.authorization?.status).toBe("suspended");
+
+    harness.revokeAuditor(auditor);
+    expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/not active/i);
+    const revokedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    expect(revokedBundle.authorization?.status).toBe("revoked");
+
+    harness.archiveAuditor(auditor);
+    const archivedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    expect(archivedBundle.authorization?.status).toBe("archived");
+    expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {

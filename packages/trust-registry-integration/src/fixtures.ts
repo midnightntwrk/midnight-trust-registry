@@ -73,6 +73,23 @@ export type RecognitionScenarioFixture = {
   trustLevel: string;
 };
 
+export type AuditorScenarioFixture = {
+  authorizationId: string;
+  authorizationIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  requestProfileId: string;
+  requestProfileIdCommitment: Uint8Array;
+  allowedAttributeSetId: string;
+  allowedAttributeSetCommitment: Uint8Array;
+  allowedPredicateSetId: string;
+  allowedPredicateSetCommitment: Uint8Array;
+  disclosureLevelId: string;
+  disclosureLevelCommitment: Uint8Array;
+  scopeResourceId: string;
+  trustLevel: string;
+};
+
 export const createIssuerScenarioFixture = (
   label: string,
 ): IssuerScenarioFixture => {
@@ -181,5 +198,62 @@ export const createVerifierScenarioFixture = (
       label,
       "v1",
     ),
+  };
+};
+
+export const createAuditorScenarioFixture = (
+  label: string,
+): AuditorScenarioFixture => {
+  const authorizationId = createScopedIdentifier(
+    "auth",
+    "auditor",
+    label,
+    "v1",
+  );
+  const subjectDid = createMidnightDid(`auditor:${label}`);
+  const requestProfileId = createScopedIdentifier(
+    "audit-request-profile",
+    label,
+    "v1",
+  );
+  const allowedAttributeSetId = createScopedIdentifier(
+    "audit-attribute-set",
+    label,
+    "minimal",
+  );
+  const allowedPredicateSetId = createScopedIdentifier(
+    "audit-predicate-set",
+    label,
+    "compliance",
+  );
+  const disclosureLevelId = createScopedIdentifier(
+    "audit-disclosure-level",
+    label,
+    "restricted",
+  );
+  const scopeResourceId = createScopedIdentifier(
+    "audit-request-scope",
+    label,
+    "v1",
+    "minimal",
+    "compliance",
+    "restricted",
+  );
+
+  return {
+    authorizationId,
+    authorizationIdCommitment: bytes32Commitment(authorizationId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    requestProfileId,
+    requestProfileIdCommitment: bytes32Commitment(requestProfileId),
+    allowedAttributeSetId,
+    allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
+    allowedPredicateSetId,
+    allowedPredicateSetCommitment: bytes32Commitment(allowedPredicateSetId),
+    disclosureLevelId,
+    disclosureLevelCommitment: bytes32Commitment(disclosureLevelId),
+    scopeResourceId,
+    trustLevel: "audit-approved",
   };
 };
