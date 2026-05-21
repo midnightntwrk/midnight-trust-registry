@@ -148,6 +148,73 @@ export class TrustRegistrySimulator {
     );
   }
 
+  proposeIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    subjectDidCommitment: Uint8Array,
+    resourceType: IssuerResourceType,
+    resourceId: Uint8Array,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.proposeIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        subjectDidCommitment,
+        resourceType,
+        resourceId,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  authorizeIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.authorizeIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  activateIssuerAuthorization(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.activateIssuerAuthorization(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        authorizationId,
+        evidenceHash,
+      ),
+    );
+  }
+
   suspendIssuerAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,

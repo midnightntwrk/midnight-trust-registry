@@ -61,6 +61,40 @@ describe("trust registry client", () => {
     ).toThrow(/not active/i);
   });
 
+  it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("application");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+
+    harness.proposeIssuer(issuer);
+    const proposedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(proposedBundle, {
+        expectedRegistryId: harness.registryId,
+      }),
+    ).toThrow(/not active/i);
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(proposedBundle, {
+        expectedRegistryId: harness.registryId,
+        requireActive: false,
+      }),
+    ).not.toThrow();
+
+    harness.approveIssuer(issuer);
+    const authorizedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(authorizedBundle, {
+        expectedRegistryId: harness.registryId,
+      }),
+    ).toThrow(/not active/i);
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(authorizedBundle, {
+        expectedRegistryId: harness.registryId,
+        requireActive: false,
+      }),
+    ).not.toThrow();
+  });
+
   it("verifies active verifier and recognition bundles", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("age-gate");

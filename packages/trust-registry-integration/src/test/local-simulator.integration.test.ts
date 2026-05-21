@@ -8,6 +8,35 @@ import {
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("trust registry local simulator integration", () => {
+  it("preserves issuer application history before activation", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("application");
+
+    harness.proposeIssuer(issuer);
+
+    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
+    const proposedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(proposedBundle.authorization?.status).toBe("proposed");
+    expect(proposedBundle.authorization?.authorizedAt).toBeUndefined();
+    expect(proposedBundle.authorization?.activeFrom).toBeUndefined();
+
+    harness.approveIssuer(issuer);
+
+    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
+    const authorizedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(authorizedBundle.authorization?.status).toBe("authorized");
+    expect(authorizedBundle.authorization?.authorizedAt).toBeDefined();
+    expect(authorizedBundle.authorization?.activeFrom).toBeUndefined();
+
+    harness.activateIssuer(issuer);
+
+    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.authorization?.status).toBe("active");
+    expect(activeBundle.authorization?.activeFrom).toBeDefined();
+  });
+
   it("authorizes an issuer and emits a valid active evidence bundle", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");
