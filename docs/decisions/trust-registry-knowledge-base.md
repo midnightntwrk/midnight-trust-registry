@@ -207,6 +207,9 @@ Completed in the current implementation wave:
 Active implementation branch:
 
 - `codex/trust-registry-audit-report`
+- `#9`
+- title:
+  - `feat: add trust registry audit reports`
 
 Stacked base branch:
 

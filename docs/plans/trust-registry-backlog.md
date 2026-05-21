@@ -32,7 +32,7 @@ Updated: 2026-05-21
 | TR-017 | P2 | Current top branch | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
 | TR-018 | P2 | Current top branch | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
 | TR-019 | P2 | Draft PR `#8` | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
-| TR-020 | P2 | Current top branch | Add audit report generator. | A command emits human-readable authorization and policy history. |
+| TR-020 | P2 | Draft PR `#9` | Add audit report generator. | A command emits human-readable authorization and policy history. |
 
 ## First PR Stack
 
