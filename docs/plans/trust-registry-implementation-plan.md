@@ -130,3 +130,53 @@ Acceptance:
 - A new engineer can run a local registry flow from README instructions.
 - Maintainers can inspect state and evidence without reading raw contract state.
 - CI validates the demo flow.
+
+## Phase 7: Governed Application Workflows
+
+Goal: stop treating trust decisions as direct-to-active writes and model governed proposal, approval, activation, and membership flows explicitly.
+
+Deliverables:
+
+- Issuer authorization proposal, approval, and activation workflow.
+- Matching verifier, recognition, and auditor application workflows.
+- Maintainer onboarding, suspension, revocation, and archival lifecycle.
+- Quorum-aware maintainer execution above the current `1-of-N` shortcut.
+
+Acceptance:
+
+- Applications and approvals preserve historical evidence before activation.
+- New maintainers cannot self-authorize into the registry.
+- Policy rules can distinguish onboarding, emergency action, and archival thresholds.
+
+## Phase 8: Mutable Operator And Service Surfaces
+
+Goal: expose real operational flows to maintainers, applicants, and relying parties without forcing raw simulator or contract access.
+
+Deliverables:
+
+- CLI commands for submit, approve, activate, suspend, revoke, and epoch publication.
+- REST API for applicant submission and public trust/evidence queries.
+- Local admin/applicant UI scaffold on top of the client and API packages.
+
+Acceptance:
+
+- An applicant can submit a scoped request without editing fixtures manually.
+- A maintainer can review and approve a request through stable operator surfaces.
+- Query consumers can fetch current and historical trust evidence over HTTP.
+
+## Phase 9: Historical Proof Hardening And Release
+
+Goal: strengthen long-term verification and make the repo shippable as a reusable reference implementation.
+
+Deliverables:
+
+- Historical query helpers by timestamp in addition to explicit epoch id.
+- Stronger inclusion-proof export beyond the current signed-statement anchor.
+- Reproducible demo registry flow and packaged artifacts.
+- CI validation for the documented demo and release path.
+
+Acceptance:
+
+- Verifiers can answer "what was trusted at time T" deterministically.
+- Demo and package instructions work from a clean checkout.
+- Release artifacts match the documented package boundaries.
