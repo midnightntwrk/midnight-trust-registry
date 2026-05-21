@@ -76,6 +76,9 @@ packages/trust-registry-domain/  TypeScript domain records, lifecycle validators
 contracts/trust-registry/        Compact governance, authorization, recognition, and epoch contract
 packages/trust-registry-integration/  Local simulator harness and end-to-end trust scenarios
 packages/trust-registry-client/  TypeScript query and evidence-verification client
+packages/trust-registry-cli/     Operator CLI for local snapshot initialization, inspection, and evidence export
+adapters/trqp/                   TRQP-style read adapter
+adapters/openid-federation/      OpenID Federation publication experiment
 ```
 
 ## Planned Additions
@@ -83,10 +86,8 @@ packages/trust-registry-client/  TypeScript query and evidence-verification clie
 The next package layout is intentionally narrow:
 
 ```text
-packages/trust-registry-testing/  Fixtures and conformance helpers
-adapters/trqp/                    ToIP TRQP-compatible query adapter
-adapters/openid-federation/       OpenID Federation metadata/trust-chain adapter
 examples/                         DID/VC integration examples
+reporting/                        Audit-oriented operator and history output
 ```
 
 Do not create the remaining directories until the corresponding backlog item is implemented with tests and docs.

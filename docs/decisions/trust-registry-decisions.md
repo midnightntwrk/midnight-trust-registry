@@ -40,6 +40,9 @@ Date: 2026-05-21
 - Implement the first OpenID Federation slice as an offline, fixture-only adapter workspace under `adapters/openid-federation`; do not claim live fetch, resolve, or `.well-known` publication support yet.
 - Use the registry `serviceEndpoint` URL as the federation entity identifier and keep `registryDid` and `registryId` inside custom trust-registry metadata, because the federation experiment authenticates the registry publisher rather than replacing DID-native identifiers.
 - Keep OpenID Federation as a publisher-authentication layer only: the signed federation chain proves who published the registry metadata, while embedded TR evidence bundles remain the source-of-truth for authorization and recognition semantics.
+- Implement the first operator slice as a dedicated `packages/trust-registry-cli` workspace instead of embedding ad hoc scripts into `scripts/` or the client package.
+- Keep the first operator CLI simulator-first and file-backed: initialize a deterministic local snapshot, inspect typed records from that snapshot, and export anchored evidence bundles without requiring direct simulator spelunking.
+- Keep the first operator CLI read-heavy: local initialization, inspection, and evidence export land before mutable maintainer workflows or audit/report generation.
 
 ## Pending Decisions
 
