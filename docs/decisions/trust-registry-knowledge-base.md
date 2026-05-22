@@ -180,15 +180,30 @@ Completed in the current implementation wave:
 - adapter-package typecheck now consumes the built integration workspace
   package in tests instead of direct source imports so fresh-runner CI cannot
   race generated contract surfaces
+- operator CLI workspace:
+  - `packages/trust-registry-cli`
+- operator CLI surface for:
+  - deterministic demo snapshot initialization from the local simulator harness
+  - local registry, policy, authorization, recognition, and epoch inspection
+  - anchored evidence-bundle export for issuer, verifier, and recognition
+    records
+- focused operator CLI tests that verify:
+  - demo snapshot creation and typed reload from disk
+  - summary, list, and inspect flows over the saved snapshot
+  - evidence export for operator-facing JSON handoff
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
-- `codex/trust-registry-verifier-authorization`
+- `codex/trust-registry-operator-cli`
 
 Stacked base branch:
 
+- `codex/trust-registry-verifier-authorization`
+- `#8`
+- title:
+  - `feat: add trust registry operator cli`
 - `codex/trust-registry-issuer-authorization`
 - `#6`
 - title:
@@ -203,10 +218,9 @@ Branch handling note:
 
 - the docs/workflow baseline plus domain foundation and compact skeleton are on
   `develop`
-- the current branch now carries verifier authorization, the simulator-first
-  integration harness, recognition, epoch anchoring, the TypeScript client,
-  and DID-backed integration on top of the issuer branch while that draft PR is
-  still open
+- the current branch stacks the operator CLI on top of the verifier,
+  recognition, epoch, client, DID/VC integration, TRQP, and OpenID
+  Federation slices while the lower draft PRs are still open
 
 ## Validation Baseline
 
@@ -252,8 +266,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- operator tooling beyond the current core contract, client, DID/VC
-  integration, TRQP, and OpenID Federation baselines
+- audit-oriented operator reporting beyond the current CLI snapshot,
+  inspection, and evidence-export baseline
 
 Still intentionally deferred inside the current Compact slice:
 
