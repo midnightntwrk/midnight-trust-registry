@@ -23,14 +23,33 @@ import {
   writeSnapshotToFile,
   type SnapshotRecordKind,
 } from "./snapshot.js";
+import {
+  applyWorkspaceOperation,
+  createOperatorWorkspace,
+  loadWorkspaceFromFile,
+  resolveWorkspaceOperationRecord,
+  writeWorkspaceToFile,
+} from "./workspace.js";
+import type {
+  MutableSnapshotTarget,
+  TrustRegistryOperatorWorkspaceOperation,
+} from "./model.js";
 
 type CommandName =
   | "init-demo"
+  | "init-workspace"
   | "summary"
   | "list"
   | "inspect"
   | "export-evidence"
   | "report"
+  | "submit"
+  | "approve"
+  | "activate"
+  | "suspend"
+  | "revoke"
+  | "archive"
+  | "publish-epoch"
   | "help";
 
 type CliIo = {
@@ -47,20 +66,34 @@ const HELP_TEXT = `Trust Registry operator CLI
 
 Commands:
   init-demo        Create a deterministic local snapshot from the simulator harness
+  init-workspace   Create a mutable local operator workspace backed by governed CLI actions
   summary          Summarize a saved snapshot
   list             List issuer, verifier, recognition, or epoch records
   inspect          Print a specific snapshot record as JSON
   export-evidence  Export an anchored evidence bundle as JSON
   report           Emit a human-readable audit report from a saved snapshot
+  submit           Submit an issuer, verifier, or recognition application into a workspace
+  approve          Approve a submitted workspace application
+  activate         Activate an approved workspace application
+  suspend          Suspend an active workspace record
+  revoke           Revoke a suspended or active workspace record
+  archive          Archive a revoked or historical workspace record
+  publish-epoch    Publish the current workspace registry epoch anchor
 
 Examples:
   trust-registry init-demo --output ./artifacts/trust-registry/demo.json
+  trust-registry init-workspace --workspace ./artifacts/trust-registry/workspace.json
   trust-registry summary --snapshot ./artifacts/trust-registry/demo.json
+  trust-registry summary --workspace ./artifacts/trust-registry/workspace.json
   trust-registry list --snapshot ./artifacts/trust-registry/demo.json --kind issuer
+  trust-registry submit --workspace ./artifacts/trust-registry/workspace.json --kind issuer --label passport
+  trust-registry approve --workspace ./artifacts/trust-registry/workspace.json --kind issuer --id auth:issuer:passport:v1
+  trust-registry activate --workspace ./artifacts/trust-registry/workspace.json --kind issuer --id auth:issuer:passport:v1
   trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind epoch
   trust-registry export-evidence --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
+  trust-registry publish-epoch --workspace ./artifacts/trust-registry/workspace.json
 `;
 
 const parseKind = (value: string | undefined): SnapshotRecordKind => {
@@ -86,6 +119,17 @@ const parseEvidenceKind = (
   }
 
   return kind;
+};
+
+const parseMutableTarget = (value: string | undefined): MutableSnapshotTarget => {
+  switch (value) {
+    case "issuer":
+    case "verifier":
+    case "recognition":
+      return value;
+    default:
+      throw new Error(`unsupported mutable --kind value: ${value ?? "<missing>"}`);
+  }
 };
 
 const parseAuditReportKind = (
@@ -138,6 +182,27 @@ const writeJson = (io: CliIo, value: unknown): void => {
   io.stdout(serializeJson(value));
 };
 
+const loadSnapshotState = async (input: {
+  snapshot: string | boolean | undefined;
+  workspace: string | boolean | undefined;
+}) => {
+  const snapshotPath = typeof input.snapshot === "string" ? input.snapshot : undefined;
+  const workspacePath =
+    typeof input.workspace === "string" ? input.workspace : undefined;
+
+  if (snapshotPath !== undefined && workspacePath !== undefined) {
+    throw new Error("use either --snapshot or --workspace, not both");
+  }
+  if (snapshotPath !== undefined) {
+    return await loadSnapshotFromFile(snapshotPath);
+  }
+  if (workspacePath !== undefined) {
+    return (await loadWorkspaceFromFile(workspacePath)).snapshot;
+  }
+
+  throw new Error("one of --snapshot or --workspace is required");
+};
+
 const runInitDemo = async (argv: readonly string[], io: CliIo): Promise<number> => {
   const parsed = parseArgs({
     args: [...argv],
@@ -160,19 +225,46 @@ const runInitDemo = async (argv: readonly string[], io: CliIo): Promise<number> 
   return 0;
 };
 
+const runInitWorkspace = async (
+  argv: readonly string[],
+  io: CliIo,
+): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      workspace: { type: "string" },
+      label: { type: "string" },
+    },
+    strict: true,
+  });
+  const workspacePath = requireStringOption(parsed.values.workspace, "--workspace");
+  const workspace = createOperatorWorkspace(
+    typeof parsed.values.label === "string"
+      ? { label: parsed.values.label }
+      : {},
+  );
+
+  await writeWorkspaceToFile(workspacePath, workspace);
+  io.stdout(`Wrote operator workspace to ${workspacePath}\n`);
+  return 0;
+};
+
 const runSummary = async (argv: readonly string[], io: CliIo): Promise<number> => {
   const parsed = parseArgs({
     args: [...argv],
     allowPositionals: false,
     options: {
       snapshot: { type: "string" },
+      workspace: { type: "string" },
       json: { type: "boolean" },
     },
     strict: true,
   });
-  const snapshot = await loadSnapshotFromFile(
-    requireStringOption(parsed.values.snapshot, "--snapshot"),
-  );
+  const snapshot = await loadSnapshotState({
+    snapshot: parsed.values.snapshot,
+    workspace: parsed.values.workspace,
+  });
   const summary = buildSnapshotSummary(snapshot);
 
   if (parsed.values.json) {
@@ -190,14 +282,16 @@ const runList = async (argv: readonly string[], io: CliIo): Promise<number> => {
     allowPositionals: false,
     options: {
       snapshot: { type: "string" },
+      workspace: { type: "string" },
       kind: { type: "string" },
       json: { type: "boolean" },
     },
     strict: true,
   });
-  const snapshot = await loadSnapshotFromFile(
-    requireStringOption(parsed.values.snapshot, "--snapshot"),
-  );
+  const snapshot = await loadSnapshotState({
+    snapshot: parsed.values.snapshot,
+    workspace: parsed.values.workspace,
+  });
   const kind = parseKind(
     typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
   );
@@ -251,14 +345,16 @@ const runInspect = async (argv: readonly string[], io: CliIo): Promise<number> =
     allowPositionals: false,
     options: {
       snapshot: { type: "string" },
+      workspace: { type: "string" },
       kind: { type: "string" },
       id: { type: "string" },
     },
     strict: true,
   });
-  const snapshot = await loadSnapshotFromFile(
-    requireStringOption(parsed.values.snapshot, "--snapshot"),
-  );
+  const snapshot = await loadSnapshotState({
+    snapshot: parsed.values.snapshot,
+    workspace: parsed.values.workspace,
+  });
   const kind = parseKind(
     typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
   );
@@ -277,15 +373,17 @@ const runExportEvidence = async (
     allowPositionals: false,
     options: {
       snapshot: { type: "string" },
+      workspace: { type: "string" },
       kind: { type: "string" },
       id: { type: "string" },
       output: { type: "string" },
     },
     strict: true,
   });
-  const snapshot = await loadSnapshotFromFile(
-    requireStringOption(parsed.values.snapshot, "--snapshot"),
-  );
+  const snapshot = await loadSnapshotState({
+    snapshot: parsed.values.snapshot,
+    workspace: parsed.values.workspace,
+  });
   const kind = parseEvidenceKind(
     typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
   );
@@ -313,15 +411,17 @@ const runReport = async (argv: readonly string[], io: CliIo): Promise<number> =>
     allowPositionals: false,
     options: {
       snapshot: { type: "string" },
+      workspace: { type: "string" },
       kind: { type: "string" },
       id: { type: "string" },
       output: { type: "string" },
     },
     strict: true,
   });
-  const snapshot = await loadSnapshotFromFile(
-    requireStringOption(parsed.values.snapshot, "--snapshot"),
-  );
+  const snapshot = await loadSnapshotState({
+    snapshot: parsed.values.snapshot,
+    workspace: parsed.values.workspace,
+  });
   const kind = parseAuditReportKind(
     typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
   );
@@ -344,6 +444,121 @@ const runReport = async (argv: readonly string[], io: CliIo): Promise<number> =>
   return 0;
 };
 
+const runWorkspaceMutation = async (
+  workspacePath: string,
+  operation: TrustRegistryOperatorWorkspaceOperation,
+  io: CliIo,
+  json = false,
+): Promise<number> => {
+  const workspace = await loadWorkspaceFromFile(workspacePath);
+  const updatedWorkspace = applyWorkspaceOperation(workspace, operation);
+  await writeWorkspaceToFile(workspacePath, updatedWorkspace);
+  const result = resolveWorkspaceOperationRecord(updatedWorkspace, operation);
+
+  if (json) {
+    writeJson(io, result);
+    return 0;
+  }
+
+  switch (operation.operation) {
+    case "publish-epoch":
+      io.stdout(`Published workspace epoch ${updatedWorkspace.snapshot.currentEpoch.epochId}\n`);
+      return 0;
+    default:
+      io.stdout(`Updated workspace ${workspacePath}\n`);
+      return 0;
+  }
+};
+
+const runSubmit = async (argv: readonly string[], io: CliIo): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      workspace: { type: "string" },
+      kind: { type: "string" },
+      label: { type: "string" },
+      json: { type: "boolean" },
+    },
+    strict: true,
+  });
+
+  return await runWorkspaceMutation(
+    requireStringOption(parsed.values.workspace, "--workspace"),
+    {
+      operation: "submit",
+      target: parseMutableTarget(
+        typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
+      ),
+      label: requireStringOption(parsed.values.label, "--label"),
+    },
+    io,
+    Boolean(parsed.values.json),
+  );
+};
+
+const runWorkspaceTargetOperation = async (
+  argv: readonly string[],
+  io: CliIo,
+  operation:
+    | "approve"
+    | "activate"
+    | "suspend"
+    | "revoke"
+    | "archive",
+): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      workspace: { type: "string" },
+      kind: { type: "string" },
+      id: { type: "string" },
+      json: { type: "boolean" },
+    },
+    strict: true,
+  });
+
+  return await runWorkspaceMutation(
+    requireStringOption(parsed.values.workspace, "--workspace"),
+    {
+      operation,
+      target: parseMutableTarget(
+        typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
+      ),
+      id: requireStringOption(parsed.values.id, "--id"),
+    },
+    io,
+    Boolean(parsed.values.json),
+  );
+};
+
+const runPublishEpoch = async (
+  argv: readonly string[],
+  io: CliIo,
+): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      workspace: { type: "string" },
+      label: { type: "string" },
+      json: { type: "boolean" },
+    },
+    strict: true,
+  });
+
+  return await runWorkspaceMutation(
+    requireStringOption(parsed.values.workspace, "--workspace"),
+    {
+      operation: "publish-epoch",
+      ...(typeof parsed.values.label === "string" ? { label: parsed.values.label } : {}),
+    },
+    io,
+    Boolean(parsed.values.json),
+  );
+};
+
 export const runCli = async (
   argv: readonly string[],
   io: CliIo = defaultIo,
@@ -358,6 +573,8 @@ export const runCli = async (
     switch (command as CommandName) {
       case "init-demo":
         return await runInitDemo(rest, io);
+      case "init-workspace":
+        return await runInitWorkspace(rest, io);
       case "summary":
         return await runSummary(rest, io);
       case "list":
@@ -368,6 +585,20 @@ export const runCli = async (
         return await runExportEvidence(rest, io);
       case "report":
         return await runReport(rest, io);
+      case "submit":
+        return await runSubmit(rest, io);
+      case "approve":
+        return await runWorkspaceTargetOperation(rest, io, "approve");
+      case "activate":
+        return await runWorkspaceTargetOperation(rest, io, "activate");
+      case "suspend":
+        return await runWorkspaceTargetOperation(rest, io, "suspend");
+      case "revoke":
+        return await runWorkspaceTargetOperation(rest, io, "revoke");
+      case "archive":
+        return await runWorkspaceTargetOperation(rest, io, "archive");
+      case "publish-epoch":
+        return await runPublishEpoch(rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;

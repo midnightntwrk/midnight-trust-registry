@@ -238,4 +238,190 @@ describe("trust registry operator CLI", () => {
       "unknown issuer authorization: auth:issuer:missing:v1",
     );
   }, CLI_TEST_TIMEOUT_MS);
+
+  it(
+    "manages an issuer workflow inside a mutable operator workspace",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+      const workspacePath = join(directory, "workspace.json");
+
+      const initResult = await captureCli([
+        "init-workspace",
+        "--workspace",
+        workspacePath,
+        "--label",
+        "mutable",
+      ]);
+      expect(initResult.exitCode).toBe(0);
+
+      const submitResult = await captureCli([
+        "submit",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "issuer",
+        "--label",
+        "passport",
+        "--json",
+      ]);
+      expect(submitResult.exitCode).toBe(0);
+      const submitted = JSON.parse(submitResult.stdout) as {
+        authorization: { authorizationId: string; status: string };
+      };
+      expect(submitted.authorization.status).toBe("proposed");
+
+      const authorizationId = submitted.authorization.authorizationId;
+      for (const command of ["approve", "activate"] as const) {
+        const result = await captureCli([
+          command,
+          "--workspace",
+          workspacePath,
+          "--kind",
+          "issuer",
+          "--id",
+          authorizationId,
+          "--json",
+        ]);
+        expect(result.exitCode).toBe(0);
+      }
+
+      const summaryResult = await captureCli([
+        "summary",
+        "--workspace",
+        workspacePath,
+        "--json",
+      ]);
+      expect(summaryResult.exitCode).toBe(0);
+      const summary = JSON.parse(summaryResult.stdout) as {
+        issuerCounts: { active: number };
+        epochCount: number;
+      };
+      expect(summary.issuerCounts.active).toBe(1);
+      expect(summary.epochCount).toBeGreaterThanOrEqual(1);
+
+      const evidenceResult = await captureCli([
+        "export-evidence",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "issuer",
+        "--id",
+        authorizationId,
+      ]);
+      expect(evidenceResult.exitCode).toBe(0);
+      const evidence = JSON.parse(evidenceResult.stdout) as {
+        authorization: { status: string };
+      };
+      expect(evidence.authorization.status).toBe("active");
+
+      const epochResult = await captureCli([
+        "publish-epoch",
+        "--workspace",
+        workspacePath,
+        "--json",
+      ]);
+      expect(epochResult.exitCode).toBe(0);
+      const epoch = JSON.parse(epochResult.stdout) as { epochId: string };
+      expect(epoch.epochId).toContain("epoch:");
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "manages verifier and recognition workflows inside a mutable operator workspace",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+      const workspacePath = join(directory, "workspace.json");
+
+      await captureCli(["init-workspace", "--workspace", workspacePath]);
+
+      const verifierSubmit = await captureCli([
+        "submit",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "verifier",
+        "--label",
+        "employment",
+        "--json",
+      ]);
+      const verifierId = (
+        JSON.parse(verifierSubmit.stdout) as {
+          authorization: { authorizationId: string };
+        }
+      ).authorization.authorizationId;
+
+      for (const command of ["approve", "activate", "suspend", "revoke", "archive"] as const) {
+        const result = await captureCli([
+          command,
+          "--workspace",
+          workspacePath,
+          "--kind",
+          "verifier",
+          "--id",
+          verifierId,
+          "--json",
+        ]);
+        expect(result.exitCode).toBe(0);
+      }
+
+      const recognitionSubmit = await captureCli([
+        "submit",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "recognition",
+        "--label",
+        "gaia-x",
+        "--json",
+      ]);
+      const recognitionId = (
+        JSON.parse(recognitionSubmit.stdout) as {
+          recognition: { recognitionId: string };
+        }
+      ).recognition.recognitionId;
+
+      for (const command of ["approve", "activate"] as const) {
+        const result = await captureCli([
+          command,
+          "--workspace",
+          workspacePath,
+          "--kind",
+          "recognition",
+          "--id",
+          recognitionId,
+          "--json",
+        ]);
+        expect(result.exitCode).toBe(0);
+      }
+
+      const listResult = await captureCli([
+        "list",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "recognition",
+        "--json",
+      ]);
+      expect(listResult.exitCode).toBe(0);
+      const recognitions = JSON.parse(listResult.stdout) as Array<{
+        recognition: { recognitionId: string; status: string };
+      }>;
+      expect(recognitions[0]?.recognition.recognitionId).toBe(recognitionId);
+      expect(recognitions[0]?.recognition.status).toBe("active");
+
+      const reportResult = await captureCli([
+        "report",
+        "--workspace",
+        workspacePath,
+        "--kind",
+        "full",
+      ]);
+      expect(reportResult.exitCode).toBe(0);
+      expect(reportResult.stdout).toContain("Policy templates:");
+      expect(reportResult.stdout).toContain("Decision bindings:");
+      expect(reportResult.stdout).toContain("template=policy-template:");
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
 });

@@ -1821,6 +1821,15 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEpochCommitment(epochId, record);
   }
 
+  publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    return this.ensurePublishedEpochCommitment({
+      statementId: createScopedIdentifier("registry-snapshot", this.registryId, label),
+      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      statementStatus: this.registryRecord.status,
+    });
+  }
+
   private buildEpochCommitment(
     epochId: string,
     record: ContractEpochCommitmentRecord,
