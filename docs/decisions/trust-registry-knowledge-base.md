@@ -277,6 +277,18 @@ Completed in the current implementation wave:
   - TRQP routes from a snapshot file
   - workspace reload between requests
   - structured problem-details errors for invalid or missing input
+- governed application API routes for:
+  - applicant submission of issuer, verifier, and recognition requests
+  - maintainer approval, activation, suspension, revocation, and archival actions
+  - registry epoch publication from the workspace-backed API surface
+- mutation-source rule for the API:
+  - writes require a mutable operator workspace source
+  - snapshot and in-memory API modes stay read-only and reject mutation routes
+- focused mutation API tests that verify:
+  - submit -> approve -> activate issuer flow through HTTP
+  - governed recognition approval through HTTP
+  - epoch publication through HTTP
+  - mutation rejection for snapshot-backed API servers
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output
@@ -362,7 +374,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- applicant-facing submission and governed approval HTTP surfaces
 - maintainer-facing web UX above the existing client and CLI/API packages
 
 Still intentionally deferred inside the current Compact slice:
