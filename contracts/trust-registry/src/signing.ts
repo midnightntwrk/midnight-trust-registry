@@ -291,6 +291,17 @@ export const computeUpdateMaintainerMembershipPayloadHash = (
     ensure32Bytes(evidenceHash),
   );
 
+export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
+  defaultThreshold: bigint,
+  emergencyThreshold: bigint,
+  archivalThreshold: bigint,
+): Uint8Array =>
+  pureCircuits.updateMaintainerThresholdPolicyPayloadHash(
+    defaultThreshold,
+    emergencyThreshold,
+    archivalThreshold,
+  );
+
 export const signMaintainerActionDigest = (
   secretScalar: bigint,
   digest: TrustRegistryActionDigest,

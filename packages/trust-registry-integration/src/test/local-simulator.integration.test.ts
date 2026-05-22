@@ -83,6 +83,32 @@ describe("trust registry local simulator integration", () => {
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
+  it("enforces scoped maintainer quorum rules for issuer onboarding and emergency action", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const secondMaintainer = createMaintainerScenarioFixture("quorum-second");
+    const issuer = createIssuerScenarioFixture("quorum-onboarding");
+
+    harness.authorizeMaintainer(secondMaintainer);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 1n);
+
+    expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.proposeIssuer(issuer, [secondMaintainer]);
+    harness.approveIssuer(issuer, [secondMaintainer]);
+    harness.activateIssuer(issuer, [secondMaintainer]);
+
+    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.authorization?.status).toBe("active");
+
+    harness.suspendIssuer(issuer);
+
+    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
+    const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(suspendedBundle.authorization?.status).toBe("suspended");
+  });
+
   it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("age-gate");
@@ -366,7 +392,7 @@ describe("trust registry local simulator integration", () => {
     };
 
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
-      /violate the maintainer threshold/i,
+      /threshold policy/i,
     );
   });
 
