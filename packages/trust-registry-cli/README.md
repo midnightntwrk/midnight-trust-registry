@@ -7,7 +7,7 @@ Current scope:
 - create a deterministic demo snapshot backed by the local simulator harness
 - create a mutable operator workspace backed by an append-only CLI action journal
 - inspect registry, policy, authorization, recognition, and epoch records from a
-  a saved snapshot or a saved operator workspace
+  saved snapshot or a saved operator workspace
 - submit, approve, activate, suspend, revoke, and archive issuer, verifier, and
   recognition records without raw simulator access
 - publish a registry epoch anchor from the local operator workspace
