@@ -1,14 +1,18 @@
 import type {
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiApplicationTarget,
+  TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
-import type {
-  TrustRegistryAuthorizationSnapshotEntry,
-  TrustRegistryRecognitionSnapshotEntry,
-} from "@midnight-ntwrk/trust-registry-cli";
 
 export type ApplicantTarget = TrustRegistryApiApplicationTarget;
+export type PublicIssuerEntry =
+  TrustRegistryApiAuthorizationListResponse["entries"][number];
+export type PublicVerifierEntry =
+  TrustRegistryApiAuthorizationListResponse["entries"][number];
+export type PublicRecognitionEntry =
+  TrustRegistryApiRecognitionListResponse["entries"][number];
 
 export type InspectionCard = {
   id: string;
@@ -21,9 +25,9 @@ export type InspectionCard = {
 };
 
 export type PublicInspection = {
-  activeIssuers: readonly TrustRegistryAuthorizationSnapshotEntry[];
-  activeRecognitions: readonly TrustRegistryRecognitionSnapshotEntry[];
-  activeVerifiers: readonly TrustRegistryAuthorizationSnapshotEntry[];
+  activeIssuers: readonly PublicIssuerEntry[];
+  activeRecognitions: readonly PublicRecognitionEntry[];
+  activeVerifiers: readonly PublicVerifierEntry[];
   summary: TrustRegistryApiSummary;
 };
 

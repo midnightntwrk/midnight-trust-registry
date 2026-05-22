@@ -27,7 +27,19 @@ const parseJson = async <T>(
   response: Response,
 ): Promise<T> => {
   const raw = await response.text();
-  const payload = raw.length === 0 ? null : JSON.parse(raw);
+  const payload = raw.length === 0
+    ? null
+    : (() => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {
+            title: response.ok ? "invalid response" : "request failed",
+            detail: raw,
+            status: response.status,
+          };
+        }
+      })();
   if (!response.ok) {
     throw new TrustRegistryApplicantPortalApiError(
       (payload ?? {}) as Partial<TrustRegistryApiProblemDetails>,

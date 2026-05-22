@@ -318,18 +318,18 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-admin-console`
+- `codex/trust-registry-applicant-portal`
 - stacked on:
-  - `codex/trust-registry-api-application-surface`
+  - `codex/trust-registry-admin-console`
 - current slice:
   - `TR-028`
-  - admin console scaffold
+  - applicant portal scaffold
 
 Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#18`
+  - `#12` through `#19`
   - `TR-023` through `TR-028`
 
 Merged baseline now on `origin/develop`:
@@ -398,11 +398,12 @@ Still intentionally deferred inside the current Compact slice:
 
 ## Next Recommended Slices
 
-1. second `TR-027` slice
-   - add applicant submission and governed approval API routes
-2. `TR-028` to `TR-030`
-   - execute the remaining stack from UI through historical proof hardening
-     and release/demo flow
+1. second `TR-028` slice
+   - finish the applicant portal and keep it aligned with the admin console
+2. first `TR-029` slice
+   - add timestamp-based historical queries across snapshot, client, CLI, and HTTP surfaces
+3. remaining `TR-029` and `TR-030` slices
+   - harden proof export, expose historical evidence through adapters, then package the demo and release flow
 
 ## Knowledge Synchronization Rule
 

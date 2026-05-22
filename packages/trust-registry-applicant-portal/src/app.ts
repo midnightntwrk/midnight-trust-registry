@@ -12,7 +12,7 @@ type AppState = {
   submitting: boolean;
 };
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -40,6 +40,8 @@ export const createApplicantPortalApp = (
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  // An explicit query parameter is a one-off override for local testing and
+  // should not silently replace the persisted default.
   const queryBase = initialUrl.searchParams.get("apiBase");
 
   const state: AppState = {

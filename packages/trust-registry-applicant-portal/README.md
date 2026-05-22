@@ -28,3 +28,6 @@ npm run serve -w @midnight-ntwrk/trust-registry-applicant-portal -- --port 4175
 Open:
 
 - `http://127.0.0.1:4175/?apiBase=http%3A%2F%2F127.0.0.1%3A4400`
+
+The `apiBase` query parameter is a session-only override for local testing. It
+does not replace the saved default URL in browser storage.
