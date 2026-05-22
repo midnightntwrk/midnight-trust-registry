@@ -195,7 +195,11 @@ describe("trust registry operator CLI", () => {
       );
       expect(inspected.statusAtTime).toBe("active");
       expect(inspected.trustedAtTime).toBe(true);
-      expect(inspected.epoch?.epochId).toContain("epoch:");
+      const expectedEpoch = snapshot.epochs.find((epoch) =>
+        epoch.validFrom <= archivedIssuer.authorization.activeFrom!
+        && archivedIssuer.authorization.activeFrom! <= epoch.validUntil
+      );
+      expect(inspected.epoch?.epochId).toBe(expectedEpoch?.epochId);
 
       const epochResult = await captureCli([
         "inspect",
@@ -212,7 +216,7 @@ describe("trust registry operator CLI", () => {
         epoch: { epochId: string } | null;
       };
       expect(epoch.evaluatedAt).toBe(archivedIssuer.authorization.activeFrom);
-      expect(epoch.epoch?.epochId).toContain("epoch:");
+      expect(epoch.epoch?.epochId).toBe(expectedEpoch?.epochId);
     },
     CLI_TEST_TIMEOUT_MS,
   );

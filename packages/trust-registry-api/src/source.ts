@@ -118,6 +118,21 @@ const sortRecognitionEntries = (
     ),
   );
 
+const matchesAuthorizationRequest = (
+  entry: TrustRegistryAuthorizationSnapshotEntry,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+): boolean =>
+  entry.authorization.subjectDid === request.subjectDid
+  && entry.authorization.resourceId === request.resourceId
+  && (
+    request.resourceType === undefined
+    || entry.authorization.resourceType === request.resourceType
+  )
+  && (
+    request.trustLevel === undefined
+    || entry.authorization.trustLevel === request.trustLevel
+  );
+
 const authorizationEntriesForRole = (
   snapshot: TrustRegistryOperatorSnapshot,
   role: TrustRegistryApiAuthorizationRole,
@@ -296,17 +311,7 @@ export const resolveAuthorizationEntry = async (
 ): Promise<TrustRegistryAuthorizationSnapshotEntry | null> => {
   const snapshot = await source.loadSnapshot();
   const matches = authorizationEntriesForRole(snapshot, request.role).filter(
-    (entry) =>
-      entry.authorization.subjectDid === request.subjectDid
-      && entry.authorization.resourceId === request.resourceId
-      && (
-        request.resourceType === undefined
-        || entry.authorization.resourceType === request.resourceType
-      )
-      && (
-        request.trustLevel === undefined
-        || entry.authorization.trustLevel === request.trustLevel
-      ),
+    (entry) => matchesAuthorizationRequest(entry, request),
   );
 
   return sortAuthorizationEntries(matches).at(0) ?? null;
@@ -323,34 +328,14 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
     return resolveIssuerEntryAtTimestamp(
       snapshot,
       evaluatedAt,
-      (entry) =>
-        entry.authorization.subjectDid === request.subjectDid
-        && entry.authorization.resourceId === request.resourceId
-        && (
-          request.resourceType === undefined
-          || entry.authorization.resourceType === request.resourceType
-        )
-        && (
-          request.trustLevel === undefined
-          || entry.authorization.trustLevel === request.trustLevel
-        ),
+      (entry) => matchesAuthorizationRequest(entry, request),
     );
   }
 
   return resolveVerifierEntryAtTimestamp(
     snapshot,
     evaluatedAt,
-    (entry) =>
-      entry.authorization.subjectDid === request.subjectDid
-      && entry.authorization.resourceId === request.resourceId
-      && (
-        request.resourceType === undefined
-        || entry.authorization.resourceType === request.resourceType
-      )
-      && (
-        request.trustLevel === undefined
-        || entry.authorization.trustLevel === request.trustLevel
-      ),
+    (entry) => matchesAuthorizationRequest(entry, request),
   );
 };
 

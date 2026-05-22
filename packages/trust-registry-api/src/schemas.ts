@@ -15,7 +15,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
-const TimestampSchema = z.string().datetime({ offset: true });
+export const TimestampSchema = z.string().datetime({ offset: true });
 
 export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
   "issuer",

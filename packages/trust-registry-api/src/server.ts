@@ -53,6 +53,7 @@ import {
   TrustRegistryApiResolveRecognitionRequestSchema,
   TrustRegistryApiSummarySchema,
   TrustRegistryApiAuthorizationRoleSchema,
+  TimestampSchema,
   type TrustRegistryApiProblemDetails,
 } from "./schemas.js";
 
@@ -346,6 +347,35 @@ const parseApplicationIdentifier = (
   return parsed.data;
 };
 
+const parseTimestampQueryParameter = (
+  value: string | null,
+  name: string,
+  problemBaseUri: string,
+) => {
+  if (value === null) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} is required.`,
+    );
+  }
+
+  const parsed = TimestampSchema.safeParse(value);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} must be an RFC 3339 timestamp with offset.`,
+    );
+  }
+
+  return parsed.data;
+};
+
 const mapMutationError = (
   error: unknown,
   problemBaseUri: string,
@@ -501,16 +531,11 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "epochs"
         && segments[2] === "resolve"
       ) {
-        const evaluatedAt = url.searchParams.get("at");
-        if (evaluatedAt === null) {
-          throw jsonProblem(
-            problemBaseUri,
-            "invalid-request",
-            400,
-            "invalid request",
-            "Query parameter at is required.",
-          );
-        }
+        const evaluatedAt = parseTimestampQueryParameter(
+          url.searchParams.get("at"),
+          "at",
+          problemBaseUri,
+        );
         const epoch = await loadEpochAtTimestamp(options.source, evaluatedAt);
         if (epoch === null) {
           throw jsonProblem(

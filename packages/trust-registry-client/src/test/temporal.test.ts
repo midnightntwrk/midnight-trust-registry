@@ -11,6 +11,7 @@ import {
   evaluateRecognitionRecordAtTime,
   selectAuthorizationEntryAtTime,
   selectEpochCommitmentAtTime,
+  selectRecognitionEntryAtTime,
 } from "../temporal.js";
 
 const HASH_A = `0x${"1".repeat(64)}`;
@@ -137,6 +138,50 @@ describe("trust registry temporal helpers", () => {
     });
   });
 
+  it("honors effectiveUntil and suspended authorization states", () => {
+    const timeBoundRecord: AuthorizationRecord = {
+      ...authorizationRecord,
+      authorizationId: "auth:issuer:degree:time-bound",
+      status: "suspended",
+      effectiveUntil: "2026-05-20T00:29:59Z",
+      suspendedAt: "2026-05-20T00:35:00Z",
+      revokedAt: undefined,
+    };
+
+    expect(
+      evaluateAuthorizationRecordAtTime(
+        timeBoundRecord,
+        "2026-05-20T00:29:00Z",
+      ),
+    ).toEqual({
+      evaluatedAt: "2026-05-20T00:29:00Z",
+      statusAtTime: "active",
+      trustedAtTime: true,
+    });
+
+    expect(
+      evaluateAuthorizationRecordAtTime(
+        timeBoundRecord,
+        "2026-05-20T00:31:00Z",
+      ),
+    ).toEqual({
+      evaluatedAt: "2026-05-20T00:31:00Z",
+      statusAtTime: "active",
+      trustedAtTime: false,
+    });
+
+    expect(
+      evaluateAuthorizationRecordAtTime(
+        timeBoundRecord,
+        "2026-05-20T00:36:00Z",
+      ),
+    ).toEqual({
+      evaluatedAt: "2026-05-20T00:36:00Z",
+      statusAtTime: "suspended",
+      trustedAtTime: false,
+    });
+  });
+
   it("derives recognition lifecycle status and trust by timestamp", () => {
     expect(
       evaluateRecognitionRecordAtTime(
@@ -185,5 +230,35 @@ describe("trust registry temporal helpers", () => {
       selectEpochCommitmentAtTime(epochs, "2026-05-20T00:35:00Z")?.epochId,
     ).toBe("epoch:002");
     expect(selectEpochCommitmentAtTime(epochs, "2026-05-21T00:00:00Z")).toBeNull();
+  });
+
+  it("selects the latest visible recognition entry for a timestamp", () => {
+    const olderRecognition: RecognitionRecord = {
+      ...recognitionRecord,
+      recognitionId: "recognition:gaia-x:v0",
+      proposedAt: "2026-05-19T00:00:00Z",
+      authorizedAt: "2026-05-19T00:05:00Z",
+      effectiveFrom: "2026-05-19T00:10:00Z",
+      archivedAt: "2026-05-19T00:50:00Z",
+      status: "archived",
+      suspendedAt: undefined,
+    };
+
+    const selected = selectRecognitionEntryAtTime(
+      [
+        { recognition: olderRecognition, label: "gaia-x-v0" },
+        { recognition: recognitionRecord, label: "gaia-x-v1" },
+      ],
+      "2026-05-20T00:12:00Z",
+      (entry) => entry.recognition.scope.resourceId === "gaia-x",
+    );
+
+    expect(selected?.recognition.recognitionId).toBe("recognition:gaia-x:v1");
+  });
+
+  it("rejects invalid timestamps", () => {
+    expect(() =>
+      evaluateAuthorizationRecordAtTime(authorizationRecord, "not-a-date")
+    ).toThrow("invalid timestamp: not-a-date");
   });
 });

@@ -241,6 +241,13 @@ describe("trust registry api", () => {
       const resolvedEpoch = await epochResolveResponse.json();
       expect(resolvedEpoch.epochId).toBe(evidence.epoch.epochId);
 
+      const invalidEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("not-a-date")}`,
+      );
+      expect(invalidEpochResolveResponse.status).toBe(400);
+      const invalidEpochResolveProblem = await invalidEpochResolveResponse.json();
+      expect(invalidEpochResolveProblem.type).toMatch(/invalid-request$/);
+
       const trqpAuthorizationResponse = await fetch(
         `${server.url}/v1/trqp/authorizations/query`,
         {
@@ -278,6 +285,13 @@ describe("trust registry api", () => {
       expect(trqpEvidenceResponse.status).toBe(200);
       const trqpEvidence = await trqpEvidenceResponse.json();
       expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
+
+      const missingEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
+      );
+      expect(missingEpochResolveResponse.status).toBe(404);
+      const missingEpochResolveProblem = await missingEpochResolveResponse.json();
+      expect(missingEpochResolveProblem.type).toMatch(/epoch-not-found$/);
     } finally {
       await server.close();
     }

@@ -55,6 +55,8 @@ export const evaluateAuthorizationRecordAtTime = (
   }
 
   let statusAtTime: AuthorizationRecord["status"] = "proposed";
+  // Authorization lifecycle timestamps are monotonic in the domain model.
+  // This ordered cascade mirrors that invariant to recover the visible status.
 
   if (happenedBy(record.authorizedAt, evaluatedAtMs)) {
     statusAtTime = "authorized";
@@ -103,6 +105,8 @@ export const evaluateRecognitionRecordAtTime = (
   }
 
   let statusAtTime: RecognitionRecord["status"] = "proposed";
+  // Recognition lifecycle timestamps are monotonic in the domain model.
+  // This ordered cascade mirrors that invariant to recover the visible status.
 
   if (happenedBy(record.authorizedAt, evaluatedAtMs)) {
     statusAtTime = "authorized";
