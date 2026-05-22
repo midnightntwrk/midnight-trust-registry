@@ -54,6 +54,11 @@ Date: 2026-05-21
 - Implement the first maintainer-governance slice as a dedicated `MaintainerMembershipRecord` family, separate from the active signer key table. This keeps append-only maintainer onboarding history explicit while preserving a narrow active-key surface for contract authorization checks.
 - Keep bootstrap maintainer initialization as a special-case active membership created by `initializeRegistry`, but require every non-bootstrap maintainer to pass through `proposed -> authorized -> active`.
 - Refuse duplicate live maintainer identity enrollment and refuse maintainer deactivation when it would drop the registry below the configured maintainer threshold.
+- Implement quorum execution with a fixed-capacity signer bundle instead of a dynamic signer list. The v1 contract supports up to `5` approving maintainers per governed action so the core registry can cover `3-of-5` and `5-of-7` governance patterns without introducing dynamic Compact arrays into the authorization surface.
+- Keep maintainer quorum policy explicit and stateful: bootstrap starts at `1-of-1`, then the registry lifts thresholds through a governed `tr:policy:thresholds:update` action after additional maintainers are activated.
+- Scope maintainer quorum rules by action family before the richer policy-template slice lands: use the default threshold for onboarding and ordinary governance actions, a dedicated emergency threshold for suspend/revoke actions, and a dedicated archival threshold for archive actions.
+- Keep simulator-generated epoch publication quorum-aware once thresholds rise above `1`: internal evidence publication may auto-select active co-maintainers to satisfy the live default threshold, but operator-facing harness calls must still pass explicit co-authorizers when the action itself is governed.
+- Treat quorum execution as the current Compact cost boundary: as of `2026-05-22`, a fresh cache-miss `./run.sh --light` path compiles `54` circuits and spent about `19` minutes inside the contract build during `typecheck:light`, so any further signer-bundle expansion or duplicate build wiring needs explicit review.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
 - Make `turbo typecheck` depend on the package's own `build` task as well as `^build` so fresh-runner typecheck cannot race missing generated artifacts.
@@ -64,7 +69,6 @@ Date: 2026-05-21
 
 - Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
 - Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
-- Minimum maintainer threshold for admin onboarding, member onboarding, policy updates, and emergency suspension.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.

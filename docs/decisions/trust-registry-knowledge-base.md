@@ -85,6 +85,17 @@ Completed in the current implementation wave:
   - duplicate live maintainer identity rejection
   - last-active-maintainer threshold protection on deactivation paths
   - local contract and simulator integration coverage
+- governed quorum execution foundation with:
+  - fixed-capacity maintainer authorization bundles for up to `5` approving signers
+  - signer-set commitments recorded in governance event state
+  - scoped maintainer thresholds for default, emergency, and archival actions
+  - governed threshold-policy updates so registries can move from bootstrap `1-of-1` to real `N-of-M` operation after new maintainers activate
+  - contract and local simulator coverage for `2-of-N` onboarding flows plus duplicate-signer rejection
+  - internal epoch publication in the simulator now auto-selects active co-maintainers when the default threshold is above `1`, so evidence export remains valid after quorum policy changes
+- fresh cache-miss validation observation for the quorum slice:
+  - `./run.sh --light` now compiles `54` circuits through the contract build path
+  - `typecheck:light` spent about `18m56s` on `2026-05-22` when the contract build cache missed
+  - further quorum-surface growth should be treated as a CI/runtime review event, not just a feature addition
 - CI workflow repair for stacked PRs and manual dispatch:
   - `pull_request` workflows no longer require `develop` as the base branch
   - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
@@ -132,6 +143,7 @@ Completed in the current implementation wave:
   - proposed issuer evidence before activation
   - authorized issuer evidence before activation
   - active issuer evidence after explicit activation
+  - quorum-gated issuer onboarding once maintainer thresholds are raised above `1`
 - first client workspace:
   - `packages/trust-registry-client`
 - simulator-backed query helpers for:
