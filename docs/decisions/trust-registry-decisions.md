@@ -45,6 +45,8 @@ Date: 2026-05-21
 - Keep the first operator CLI read-heavy: local initialization, inspection, and evidence export land before mutable maintainer workflows or audit/report generation.
 - Implement the first audit-report slice on top of the existing CLI snapshot surface instead of creating a separate reporting workspace.
 - Keep the first audit-report slice deterministic and read-only: render human-readable registry, policy, authorization, recognition, and epoch history from saved snapshots without introducing mutable operator flows.
+- For `TR-026`, implement mutable CLI state as an append-only operator workspace journal plus a derived snapshot. Do not persist or mutate raw simulator state directly on disk.
+- For `TR-026`, scope the first mutable CLI workflows to issuer, verifier, and recognition actions plus registry epoch publication. Defer mutable auditor, maintainer, and threshold-governance commands to later slices.
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
 - Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
 - Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.

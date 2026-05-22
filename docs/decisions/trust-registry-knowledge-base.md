@@ -239,12 +239,20 @@ Completed in the current implementation wave:
   - `packages/trust-registry-cli`
 - operator CLI surface for:
   - deterministic demo snapshot initialization from the local simulator harness
+  - mutable operator workspace initialization backed by an append-only CLI
+    action journal
   - local registry, policy, authorization, recognition, and epoch inspection
+  - governed issuer, verifier, and recognition submit, approve, activate,
+    suspend, revoke, and archive flows without direct simulator access
+  - registry epoch publication from the mutable workspace model
   - anchored evidence-bundle export for issuer, verifier, and recognition
     records
 - focused operator CLI tests that verify:
   - demo snapshot creation and typed reload from disk
   - summary, list, and inspect flows over the saved snapshot
+  - mutable issuer workflow from submission through activation
+  - mutable verifier and recognition workflows from submission through later
+    lifecycle transitions
   - evidence export for operator-facing JSON handoff
 - snapshot-backed audit reporting for:
   - full registry audit output
@@ -258,12 +266,12 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-application-foundation`
+- `codex/trust-registry-mutable-operator-cli`
 - stacked on:
-  - `codex/trust-registry-audit-report`
+  - `codex/trust-registry-governance-policy-bindings`
 - current slice:
-  - `TR-021`
-  - issuer application-state workflow
+  - `TR-026`
+  - mutable operator CLI workflows
 
 Current stacked base branch:
 
@@ -335,8 +343,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- mutable operator workflows on top of the current CLI snapshot, evidence, and
-  reporting baseline
 - applicant-facing submission and public query HTTP surfaces
 - maintainer-facing web UX above the existing client and CLI packages
 
@@ -348,8 +354,8 @@ Still intentionally deferred inside the current Compact slice:
 
 ## Next Recommended Slices
 
-1. `TR-026` to `TR-030`
-   - execute the current 10-PR stack plan from mutable operator CLI through
+1. `TR-027` to `TR-030`
+   - execute the current 10-PR stack plan from API surfaces through
      API, UI, historical proof hardening, and release/demo flow
 
 ## Knowledge Synchronization Rule

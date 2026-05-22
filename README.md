@@ -76,7 +76,7 @@ packages/trust-registry-domain/  TypeScript domain records, lifecycle validators
 contracts/trust-registry/        Compact governance, authorization, recognition, and epoch contract
 packages/trust-registry-integration/  Local simulator harness and end-to-end trust scenarios
 packages/trust-registry-client/  TypeScript query and evidence-verification client
-packages/trust-registry-cli/     Operator CLI for local snapshot initialization, inspection, evidence export, and audit reports
+packages/trust-registry-cli/     Operator CLI for local workspace initialization, governed participant workflows, snapshot inspection, evidence export, and audit reports
 adapters/trqp/                   TRQP-style read adapter
 adapters/openid-federation/      OpenID Federation publication experiment
 ```
