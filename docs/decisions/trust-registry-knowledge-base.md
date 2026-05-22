@@ -305,6 +305,11 @@ Completed in the current implementation wave:
   - permissive local CORS headers on the API
   - preflight handling for `OPTIONS` requests
   - preview-server smoke coverage against a seeded operator workspace
+- first applicant portal package:
+  - `packages/trust-registry-applicant-portal`
+  - static local UI for issuer/verifier/recognition submission
+  - public inspection lanes for active issuer, verifier, and recognition entries
+  - reuse of the existing governed application API instead of a second backend
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output
