@@ -740,11 +740,16 @@ describe("trust registry contract", () => {
     );
 
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
+    const thresholdPolicyPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      2n,
+      1n,
+      2n,
+    );
     const thresholdPolicySignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-      computeUpdateMaintainerThresholdPolicyPayloadHash(2n, 1n, 1n),
+      thresholdPolicyPayloadHash,
       thresholdPolicySequence,
     );
     simulator.updateMaintainerThresholdPolicy(
@@ -753,12 +758,12 @@ describe("trust registry contract", () => {
       thresholdPolicySignature,
       2n,
       1n,
-      1n,
+      2n,
     );
 
     expect(simulator.getLedger().maintainerThreshold).toEqual(2n);
     expect(simulator.getLedger().emergencyMaintainerThreshold).toEqual(1n);
-    expect(simulator.getLedger().archivalMaintainerThreshold).toEqual(1n);
+    expect(simulator.getLedger().archivalMaintainerThreshold).toEqual(2n);
 
     const issuer = createIssuerAuthorizationFixture("quorum");
     const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
@@ -913,6 +918,52 @@ describe("trust registry contract", () => {
 
     expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
       AuthorizationStatus.suspended,
+    );
+
+    const archivedIssuerEvidenceHash = labelToBytes32(
+      "evidence:quorum:issuer:archive",
+    );
+    const archiveIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+      archivedIssuerEvidenceHash,
+    );
+    const archiveIssuerSequence = simulator.getLedger().governanceActionCount;
+    const archiveIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      archiveIssuerPayloadHash,
+      archiveIssuerSequence,
+    );
+    expect(() =>
+      simulator.archiveIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        archiveIssuerSignature,
+        issuer.authorizationId,
+        archivedIssuerEvidenceHash,
+      ),
+    ).toThrow(/must satisfy the action threshold/i);
+
+    const secondIssuerArchiver = createMaintainerCoAuthorizer(
+      secondMaintainer,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      archiveIssuerPayloadHash,
+      archiveIssuerSequence,
+    );
+    simulator.archiveIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveIssuerSignature,
+      issuer.authorizationId,
+      archivedIssuerEvidenceHash,
+      [secondIssuerArchiver],
+    );
+
+    expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
+      AuthorizationStatus.archived,
     );
   });
 

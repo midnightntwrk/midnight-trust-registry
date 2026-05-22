@@ -69,6 +69,8 @@ Date: 2026-05-21
 
 - Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
 - Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
+- Whether signer-set commitments should become canonicalized independent of submitter order, or remain order-sensitive because the first disclosed signer acts as the submitter of record in epoch evidence.
+- Whether `tr:policy:thresholds:update` should keep using the default maintainer threshold or move to a dedicated governance-policy quorum in the `TR-025` slice.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.

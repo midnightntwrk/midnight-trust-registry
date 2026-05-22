@@ -83,13 +83,13 @@ describe("trust registry local simulator integration", () => {
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
-  it("enforces scoped maintainer quorum rules for issuer onboarding and emergency action", () => {
+  it("enforces scoped maintainer quorum rules for issuer onboarding, emergency action, and archival action", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const secondMaintainer = createMaintainerScenarioFixture("quorum-second");
     const issuer = createIssuerScenarioFixture("quorum-onboarding");
 
     harness.authorizeMaintainer(secondMaintainer);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 1n);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
     expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
 
@@ -107,6 +107,13 @@ describe("trust registry local simulator integration", () => {
     expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
     const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(suspendedBundle.authorization?.status).toBe("suspended");
+
+    expect(() => harness.archiveIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.archiveIssuer(issuer, [secondMaintainer]);
+
+    const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(archivedBundle.authorization?.status).toBe("archived");
   });
 
   it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {

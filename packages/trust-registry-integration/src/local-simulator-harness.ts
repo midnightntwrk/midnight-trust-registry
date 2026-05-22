@@ -101,6 +101,9 @@ const bytes32Hex = (value: Uint8Array): string =>
 const hashHexToBytes32 = (value: string): Uint8Array =>
   Buffer.from(value.replace(/^0x/, ""), "hex");
 
+const sameBytes = (left: Uint8Array, right: Uint8Array): boolean =>
+  Buffer.from(left).equals(Buffer.from(right));
+
 const timestampForSequence = (sequence: bigint): string =>
   new Date(BASE_TIMESTAMP_MS + Number(sequence) * 60_000).toISOString();
 
@@ -244,7 +247,7 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyRules: ["maintainer may suspend compromised participants immediately"],
       lifecycleEventRoot: sha256Hex(this.policyId),
     });
-    this.knownMaintainers.set(this.maintainerId, {
+    this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
       subjectDid: this.maintainerDid,
@@ -309,7 +312,12 @@ export class LocalTrustRegistryIntegrationHarness {
 
     const activeCoMaintainers = [...this.knownMaintainers.values()].filter(
       (maintainer) => {
-        if (maintainer.maintainerId === this.maintainerId) {
+        if (
+          sameBytes(
+            maintainer.maintainerIdCommitment,
+            this.maintainerIdCommitment,
+          )
+        ) {
           return false;
         }
 
@@ -453,7 +461,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.maintainerIdCommitment,
       evidenceHash,
     );
-    this.knownMaintainers.set(fixture.maintainerId, fixture);
+    this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
     return result;
   }
 
@@ -593,27 +601,39 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  suspendIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+  suspendIssuer(
+    fixture: IssuerScenarioFixture,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
     return this.updateIssuerLifecycle(
       fixture,
       "suspend",
       SUSPEND_ISSUER_ACTION_KIND,
+      additionalMaintainers,
     );
   }
 
-  revokeIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+  revokeIssuer(
+    fixture: IssuerScenarioFixture,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
     return this.updateIssuerLifecycle(
       fixture,
       "revoke",
       REVOKE_ISSUER_ACTION_KIND,
+      additionalMaintainers,
     );
   }
 
-  archiveIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+  archiveIssuer(
+    fixture: IssuerScenarioFixture,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
     return this.updateIssuerLifecycle(
       fixture,
       "archive",
       ARCHIVE_ISSUER_ACTION_KIND,
+      additionalMaintainers,
     );
   }
 
@@ -1224,6 +1244,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
     const evidenceHash = bytes32Commitment(
       `${fixture.authorizationId}:${actionName}`,
@@ -1232,15 +1253,16 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      fixture.authorizationIdCommitment,
+      currentRecord.lifecycleEventHash,
+      evidenceHash,
+    );
     const signature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
-      computeUpdateIssuerAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        currentRecord.lifecycleEventHash,
-        evidenceHash,
-      ),
+      actionPayloadHash,
       actionSequence,
     );
 
@@ -1251,6 +1273,12 @@ export class LocalTrustRegistryIntegrationHarness {
         signature,
         fixture.authorizationIdCommitment,
         evidenceHash,
+        this.maintainerCoAuthorizers(
+          additionalMaintainers,
+          actionKind,
+          actionPayloadHash,
+          actionSequence,
+        ),
       );
     }
     if (actionName === "revoke") {
@@ -1260,6 +1288,12 @@ export class LocalTrustRegistryIntegrationHarness {
         signature,
         fixture.authorizationIdCommitment,
         evidenceHash,
+        this.maintainerCoAuthorizers(
+          additionalMaintainers,
+          actionKind,
+          actionPayloadHash,
+          actionSequence,
+        ),
       );
     }
     return this.simulator.archiveIssuerAuthorization(
@@ -1268,6 +1302,12 @@ export class LocalTrustRegistryIntegrationHarness {
       signature,
       fixture.authorizationIdCommitment,
       evidenceHash,
+      this.maintainerCoAuthorizers(
+        additionalMaintainers,
+        actionKind,
+        actionPayloadHash,
+        actionSequence,
+      ),
     );
   }
 
