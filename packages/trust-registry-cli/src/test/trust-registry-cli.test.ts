@@ -424,4 +424,74 @@ describe("trust registry operator CLI", () => {
     },
     CLI_TEST_TIMEOUT_MS,
   );
+
+  it("rejects duplicate workspace submissions for the same label", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const workspacePath = join(directory, "workspace.json");
+
+    await captureCli(["init-workspace", "--workspace", workspacePath]);
+
+    const firstSubmit = await captureCli([
+      "submit",
+      "--workspace",
+      workspacePath,
+      "--kind",
+      "issuer",
+      "--label",
+      "passport",
+    ]);
+    expect(firstSubmit.exitCode).toBe(0);
+
+    const duplicateSubmit = await captureCli([
+      "submit",
+      "--workspace",
+      workspacePath,
+      "--kind",
+      "issuer",
+      "--label",
+      "passport",
+    ]);
+    expect(duplicateSubmit.exitCode).toBe(1);
+    expect(duplicateSubmit.stderr).toContain("issuer label already submitted: passport");
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it("rejects unknown workspace record identifiers for mutable commands", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const workspacePath = join(directory, "workspace.json");
+
+    await captureCli(["init-workspace", "--workspace", workspacePath]);
+
+    const approveResult = await captureCli([
+      "approve",
+      "--workspace",
+      workspacePath,
+      "--kind",
+      "issuer",
+      "--id",
+      "auth:issuer:missing:v1",
+    ]);
+    expect(approveResult.exitCode).toBe(1);
+    expect(approveResult.stderr).toContain("unknown issuer authorization: auth:issuer:missing:v1");
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it("rejects mixed snapshot and workspace state sources", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+    const snapshotPath = join(directory, "demo-snapshot.json");
+    const workspacePath = join(directory, "workspace.json");
+
+    await captureCli(["init-demo", "--output", snapshotPath]);
+    await captureCli(["init-workspace", "--workspace", workspacePath]);
+
+    const summaryResult = await captureCli([
+      "summary",
+      "--snapshot",
+      snapshotPath,
+      "--workspace",
+      workspacePath,
+    ]);
+    expect(summaryResult.exitCode).toBe(1);
+    expect(summaryResult.stderr).toContain(
+      "use either --snapshot or --workspace, not both",
+    );
+  }, CLI_TEST_TIMEOUT_MS);
 });

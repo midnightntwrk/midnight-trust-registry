@@ -89,6 +89,9 @@ Examples:
   trust-registry submit --workspace ./artifacts/trust-registry/workspace.json --kind issuer --label passport
   trust-registry approve --workspace ./artifacts/trust-registry/workspace.json --kind issuer --id auth:issuer:passport:v1
   trust-registry activate --workspace ./artifacts/trust-registry/workspace.json --kind issuer --id auth:issuer:passport:v1
+  trust-registry suspend --workspace ./artifacts/trust-registry/workspace.json --kind verifier --id auth:verifier:employment:v1
+  trust-registry revoke --workspace ./artifacts/trust-registry/workspace.json --kind verifier --id auth:verifier:employment:v1
+  trust-registry archive --workspace ./artifacts/trust-registry/workspace.json --kind verifier --id auth:verifier:employment:v1
   trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind epoch
   trust-registry export-evidence --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full

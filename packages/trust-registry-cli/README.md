@@ -12,8 +12,8 @@ Current scope:
   recognition records without raw simulator access
 - publish a registry epoch anchor from the local operator workspace
 - export anchored issuer, verifier, and recognition evidence bundles as JSON
-- render deterministic human-readable audit reports from a saved snapshot or
-  workspace
+- render deterministic human-readable audit reports from a saved snapshot or a
+  saved operator workspace
 
 Build the workspace first from the repo root:
 

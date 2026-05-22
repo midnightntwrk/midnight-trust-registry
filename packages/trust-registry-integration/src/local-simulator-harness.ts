@@ -1158,6 +1158,14 @@ export class LocalTrustRegistryIntegrationHarness {
     return bundle;
   }
 
+  readIssuerAuthorizationStatus(
+    fixture: IssuerScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
+    );
+  }
+
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
@@ -1188,6 +1196,14 @@ export class LocalTrustRegistryIntegrationHarness {
     const bundle = this.buildVerifierHistoricalEvidence(fixture);
     this.assertPublishedEpochEvidence(bundle);
     return bundle;
+  }
+
+  readVerifierAuthorizationStatus(
+    fixture: VerifierScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
+    );
   }
 
   buildVerifierHistoricalEvidence(
@@ -1322,6 +1338,14 @@ export class LocalTrustRegistryIntegrationHarness {
       lastStatusSequence: record.lastStatusSequence,
       recognition,
     });
+  }
+
+  readRecognitionStatus(
+    fixture: RecognitionScenarioFixture,
+  ): RecognitionRecord["status"] {
+    return contractStatusName(
+      this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
+    );
   }
 
   buildAuditorHistoricalEvidence(

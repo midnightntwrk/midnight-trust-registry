@@ -46,6 +46,10 @@ type TrackedFixtures = {
   verifiers: Map<string, TrackedVerifierFixture>;
 };
 
+const assertNever = (value: never): never => {
+  throw new Error(`unexpected mutable target: ${String(value)}`);
+};
+
 const createTrackedFixtures = (): TrackedFixtures => ({
   issuers: new Map<string, TrackedIssuerFixture>(),
   recognitions: new Map<string, TrackedRecognitionFixture>(),
@@ -75,45 +79,33 @@ const currentOrHistoricalIssuerEvidence = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: IssuerScenarioFixture,
 ): TrustRegistryEvidenceBundle => {
-  try {
+  if (harness.readIssuerAuthorizationStatus(fixture) === "active") {
     return harness.evaluateCurrentIssuerDecision(fixture);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/not active/i.test(message)) {
-      return harness.buildIssuerHistoricalEvidence(fixture);
-    }
-    throw error;
   }
+
+  return harness.buildIssuerHistoricalEvidence(fixture);
 };
 
 const currentOrHistoricalVerifierEvidence = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: VerifierScenarioFixture,
 ): TrustRegistryEvidenceBundle => {
-  try {
+  if (harness.readVerifierAuthorizationStatus(fixture) === "active") {
     return harness.evaluateCurrentVerifierDecision(fixture);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/not active/i.test(message)) {
-      return harness.buildVerifierHistoricalEvidence(fixture);
-    }
-    throw error;
   }
+
+  return harness.buildVerifierHistoricalEvidence(fixture);
 };
 
 const currentOrHistoricalRecognitionEvidence = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: RecognitionScenarioFixture,
 ): TrustRegistryEvidenceBundle => {
-  try {
+  if (harness.readRecognitionStatus(fixture) === "active") {
     return harness.evaluateCurrentRecognitionDecision(fixture);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/not active/i.test(message)) {
-      return harness.buildRecognitionHistoricalEvidence(fixture);
-    }
-    throw error;
   }
+
+  return harness.buildRecognitionHistoricalEvidence(fixture);
 };
 
 const issuerEntryFromFixture = (
@@ -288,8 +280,9 @@ const applyMutableOperation = (
           });
           return;
         }
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "approve": {
       switch (operation.target) {
@@ -304,8 +297,9 @@ const applyMutableOperation = (
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "activate": {
       switch (operation.target) {
@@ -320,8 +314,9 @@ const applyMutableOperation = (
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "suspend": {
       switch (operation.target) {
@@ -336,8 +331,9 @@ const applyMutableOperation = (
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "revoke": {
       switch (operation.target) {
@@ -352,8 +348,9 @@ const applyMutableOperation = (
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "archive": {
       switch (operation.target) {
@@ -368,8 +365,9 @@ const applyMutableOperation = (
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
+        default:
+          return assertNever(operation.target);
       }
-      return;
     }
     case "publish-epoch":
       harness.publishRegistryEpoch(operation.label ?? "workspace-current");
@@ -500,6 +498,8 @@ export const resolveWorkspaceOperationRecord = (
           }
           return entry;
         }
+        default:
+          return assertNever(operation.target);
       }
   }
 };
