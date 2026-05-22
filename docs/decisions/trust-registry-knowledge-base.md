@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-05-20
+Updated: 2026-05-21
 
 ## Purpose
 
@@ -58,32 +58,41 @@ Completed in the current implementation wave:
 - generic threshold validation plus explicit single-signer guard for v1
 - append-only governance event hashing and event-count progression
 - first Compact contract tests and package-surface tests
+- issuer authorization record and current-scope index in the Compact contract
+- issuer authorization create, suspend, revoke, archive, and query circuits
+- issuer authorization payload-hash helpers for maintainer signatures
+- focused positive and negative issuer authorization contract tests
+- CI workflow repair for stacked PRs and manual dispatch:
+  - `pull_request` workflows no longer require `develop` as the base branch
+  - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
+    all `scripts/**`
+  - GitHub runners now install the Compact compiler before `./run.sh --light`
+  - `Docs` whitespace checks now handle `workflow_dispatch` safely
+  - `Scan` concurrency keys now stay branch-specific for manual dispatch runs
+- `turbo typecheck` now builds workspace dependencies first so fresh-checkout
+  CI runs do not depend on stale local artifacts
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
-- `codex/trust-registry-compact-skeleton`
+- `codex/trust-registry-issuer-authorization`
 
-Baseline branch for the current stacked slice:
+Current draft PR:
 
-- `codex/trust-registry-domain-foundation`
-- draft PR:
-  - `#4`
-  - title:
-    - `feat: add trust registry domain foundation`
-
-Current stacked draft PR:
-
-- `#5`
+- `#6`
 - title:
-  - `feat: add trust registry compact skeleton`
+  - `feat: add issuer authorization circuits`
+
+Merged baseline now on `origin/develop`:
+
+- domain foundation
+- compact skeleton
 
 Branch handling note:
 
-- the current Compact slice is intentionally stacked on the validated domain
-  foundation branch
-- once the lower branch merges, this branch should be rebased onto live
+- the earlier stacked branches were merged and collapsed into `develop`
+- the current issuer-authorization slice is a fresh branch from live
   `origin/develop`
 
 ## Validation Baseline
@@ -126,7 +135,6 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- issuer authorization circuits
 - verifier authorization circuits
 - recognition circuits
 - epoch anchor contract surface
@@ -137,18 +145,17 @@ Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
 - maintainer onboarding and removal flows
-- issuer, verifier, and recognition state machines
+- issuer, verifier, and recognition application state machines
+- separate `proposed` and `authorized` on-chain authorization phases
 - epoch-root publication and historical inclusion proofs
 
 ## Next Recommended Slices
 
-1. `TR-009`
-   - review and merge the Compact skeleton stack
-2. `TR-010`
-   - issuer authorization circuits
-3. `TR-011`
+1. `TR-010`
+   - finish the issuer authorization branch and merge it to `develop`
+2. `TR-011`
    - verifier authorization circuits
-4. `TR-012` and `TR-013`
+3. `TR-012` and `TR-013`
    - recognition and epoch-anchor surfaces
 
 ## Knowledge Synchronization Rule

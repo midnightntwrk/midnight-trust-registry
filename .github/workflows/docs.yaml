@@ -10,7 +10,6 @@ on:
       - "scripts/check-docs.sh"
       - ".github/workflows/docs.yaml"
   pull_request:
-    branches: [develop, main]
     paths:
       - "**/*.md"
       - "justfile"
@@ -42,11 +41,23 @@ jobs:
         run: ./scripts/check-docs.sh
 
       - name: Check whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git diff --check "origin/${{ github.base_ref }}"...HEAD
-          elif [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            git fetch origin "${BASE_REF}" --depth=1
+            git diff --check "origin/${BASE_REF}"...HEAD
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+              git diff --check HEAD~1..HEAD
+            else
+              git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+            fi
+          elif [[ -z "${BEFORE_SHA}" || "${BEFORE_SHA}" =~ ^0+$ ]]; then
             git diff --check HEAD~1..HEAD
           else
-            git diff --check "${{ github.event.before }}".."${{ github.event.after }}"
+            git diff --check "${BEFORE_SHA}".."${AFTER_SHA}"
           fi

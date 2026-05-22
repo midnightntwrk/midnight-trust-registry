@@ -18,11 +18,11 @@ Updated: 2026-05-20
 | TR-003 | P0 | Stacked workflow PR | Add repository-local agent guidance. | `AGENT.md`, `.codex`, and `.claude` point engineers to the same TR rules. |
 | TR-004 | P0 | Stacked workflow PR | Add lightweight docs validation. | `./scripts/check-docs.sh` checks markdown links and required docs without requiring a package manager. |
 | TR-005 | P0 | Stacked workflow PR | Make CI target `develop`. | Docs and scan workflows run for pull requests into `develop`. |
-| TR-006 | P1 | Stacked domain foundation PR | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
-| TR-007 | P1 | Stacked domain foundation PR | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
-| TR-008 | P1 | Stacked domain foundation PR | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
-| TR-009 | P1 | Stacked compact skeleton PR | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
-| TR-010 | P1 | Open | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
+| TR-006 | P1 | Done on develop | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
+| TR-007 | P1 | Done on develop | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
+| TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
+| TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
+| TR-010 | P1 | Draft PR `#6` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
 | TR-011 | P1 | Open | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
 | TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
 | TR-013 | P1 | Open | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |

@@ -15,6 +15,8 @@ Date: 2026-05-20
 - Target long-term package placement under contract, package, adapter, and example directories once source work begins.
 - Treat `midnight-did` as a downstream consumer and integration point, not the owner of the registry contract.
 - Reuse the VC status registry for status and revocation instead of cloning those concerns.
+- For the first issuer-authorization slice, maintainer-approved create lands directly in `active` state; the separate application/proposal workflow remains a later slice.
+- Keep the issuer authorization lookup split between a primary `authorizationId` record and a current-scope index keyed by `(subject DID commitment, resource type, resource id)`.
 
 ## Pending Decisions
 
@@ -24,3 +26,4 @@ Date: 2026-05-20
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.
+- When to introduce the separate on-chain application state machine for issuer, verifier, and admin onboarding flows.
