@@ -155,6 +155,69 @@ describe("trust registry operator CLI", () => {
   }, CLI_TEST_TIMEOUT_MS);
 
   it(
+    "inspects issuer and epoch state at a historical timestamp",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+      const snapshotPath = join(directory, "demo-snapshot.json");
+
+      await captureCli(["init-demo", "--output", snapshotPath]);
+      const snapshot = await loadSnapshotFromFile(snapshotPath);
+      const archivedIssuer = snapshot.issuerEntries.find(
+        (entry) => entry.authorization.status === "archived",
+      );
+      if (
+        archivedIssuer === undefined
+        || archivedIssuer.authorization.activeFrom === undefined
+      ) {
+        throw new Error("expected archived issuer with activeFrom in demo snapshot");
+      }
+
+      const inspectResult = await captureCli([
+        "inspect",
+        "--snapshot",
+        snapshotPath,
+        "--kind",
+        "issuer",
+        "--id",
+        archivedIssuer.authorization.authorizationId,
+        "--at",
+        archivedIssuer.authorization.activeFrom,
+      ]);
+      expect(inspectResult.exitCode).toBe(0);
+      const inspected = JSON.parse(inspectResult.stdout) as {
+        entry: { authorization: { authorizationId: string } };
+        statusAtTime: string;
+        trustedAtTime: boolean;
+        epoch: { epochId: string } | null;
+      };
+      expect(inspected.entry.authorization.authorizationId).toBe(
+        archivedIssuer.authorization.authorizationId,
+      );
+      expect(inspected.statusAtTime).toBe("active");
+      expect(inspected.trustedAtTime).toBe(true);
+      expect(inspected.epoch?.epochId).toContain("epoch:");
+
+      const epochResult = await captureCli([
+        "inspect",
+        "--snapshot",
+        snapshotPath,
+        "--kind",
+        "epoch",
+        "--at",
+        archivedIssuer.authorization.activeFrom,
+      ]);
+      expect(epochResult.exitCode).toBe(0);
+      const epoch = JSON.parse(epochResult.stdout) as {
+        evaluatedAt: string;
+        epoch: { epochId: string } | null;
+      };
+      expect(epoch.evaluatedAt).toBe(archivedIssuer.authorization.activeFrom);
+      expect(epoch.epoch?.epochId).toContain("epoch:");
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "emits a full human-readable audit report from the saved snapshot",
     async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));

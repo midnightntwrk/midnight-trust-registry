@@ -89,6 +89,11 @@ export const TrustRegistryApiResolveAuthorizationRequestSchema = z.object({
   trustLevel: NonEmptyStringSchema.optional(),
 });
 
+export const TrustRegistryApiEvaluateAuthorizationRequestSchema =
+  TrustRegistryApiResolveAuthorizationRequestSchema.extend({
+    at: TimestampSchema,
+  });
+
 export const TrustRegistryApiRecognitionListQuerySchema = z.object({
   status: RecognitionRecordSchema.shape.status.optional(),
 });
@@ -105,6 +110,29 @@ export const TrustRegistryApiResolveRecognitionRequestSchema = z.object({
   scopeResourceId: NonEmptyStringSchema,
   trustLevel: NonEmptyStringSchema.optional(),
 });
+
+export const TrustRegistryApiEvaluateRecognitionRequestSchema =
+  TrustRegistryApiResolveRecognitionRequestSchema.extend({
+    at: TimestampSchema,
+  });
+
+const TrustRegistryApiTemporalEvaluationBaseSchema = z.object({
+  evaluatedAt: TimestampSchema,
+  trustedAtTime: z.boolean(),
+  epoch: EpochCommitmentSchema.nullable(),
+});
+
+export const TrustRegistryApiAuthorizationEvaluationResponseSchema =
+  TrustRegistryApiTemporalEvaluationBaseSchema.extend({
+    statusAtTime: AuthorizationRecordSchema.shape.status.nullable(),
+    entry: TrustRegistryAuthorizationSnapshotEntrySchema,
+  });
+
+export const TrustRegistryApiRecognitionEvaluationResponseSchema =
+  TrustRegistryApiTemporalEvaluationBaseSchema.extend({
+    statusAtTime: RecognitionRecordSchema.shape.status.nullable(),
+    entry: TrustRegistryRecognitionSnapshotEntrySchema,
+  });
 
 export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
 export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
@@ -176,6 +204,9 @@ export type TrustRegistryApiAuthorizationListResponse = z.infer<
 export type TrustRegistryApiResolveAuthorizationRequest = z.infer<
   typeof TrustRegistryApiResolveAuthorizationRequestSchema
 >;
+export type TrustRegistryApiEvaluateAuthorizationRequest = z.infer<
+  typeof TrustRegistryApiEvaluateAuthorizationRequestSchema
+>;
 export type TrustRegistryApiRecognitionListQuery = z.infer<
   typeof TrustRegistryApiRecognitionListQuerySchema
 >;
@@ -185,6 +216,9 @@ export type TrustRegistryApiRecognitionListResponse = z.infer<
 export type TrustRegistryApiResolveRecognitionRequest = z.infer<
   typeof TrustRegistryApiResolveRecognitionRequestSchema
 >;
+export type TrustRegistryApiEvaluateRecognitionRequest = z.infer<
+  typeof TrustRegistryApiEvaluateRecognitionRequestSchema
+>;
 export type TrustRegistryApiApplicationSubmitRequest = z.infer<
   typeof TrustRegistryApiApplicationSubmitRequestSchema
 >;
@@ -193,4 +227,10 @@ export type TrustRegistryApiEpochPublishRequest = z.infer<
 >;
 export type TrustRegistryApiApplicationMutationResponse = z.infer<
   typeof TrustRegistryApiApplicationMutationResponseSchema
+>;
+export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvaluationResponseSchema
 >;

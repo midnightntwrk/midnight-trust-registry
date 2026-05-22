@@ -28,6 +28,8 @@ Date: 2026-05-23
 - For the first client slice, add a dedicated `packages/trust-registry-client` workspace instead of embedding client helpers into the integration harness.
 - Keep the first client slice evidence-first: verify published epoch roots, maintainer signatures, and bundle scope expectations directly from canonical contract records before adding higher-level transport adapters.
 - Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
+- For the first `TR-029` slice, derive timestamp-based trust answers from the explicit lifecycle timestamps already present on authorization, recognition, and epoch records instead of introducing a second history store.
+- Expose timestamp evaluation through client helpers first, then wrap those helpers in snapshot/CLI and HTTP evaluation surfaces.
 - For the first DID-backed integration slice, sync the official `@midnight-ntwrk/midnight-did`, `@midnight-ntwrk/midnight-did-domain`, and `@midnight-ntwrk/midnight-did-contract` packages into `libs/` instead of depending on sibling-repo paths at runtime.
 - Use official `midnight-did` helpers to construct fixture `did:midnight` identifiers and `MidnightDIDResolver` to resolve bundle subject DIDs from fixture ledger state; do not duplicate DID parsing or resolution logic inside TR tests.
 - For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.

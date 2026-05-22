@@ -12,6 +12,8 @@ Current scope:
   recognition records without raw simulator access
 - publish a registry epoch anchor from the local operator workspace
 - export anchored issuer, verifier, and recognition evidence bundles as JSON
+- inspect historical issuer, verifier, recognition, and epoch state at a
+  specific timestamp
 - render deterministic human-readable audit reports from a saved snapshot or a
   saved operator workspace
 
@@ -54,6 +56,12 @@ node packages/trust-registry-cli/bin/trust-registry.mjs export-evidence \
   --kind issuer \
   --id auth:issuer:passport:v1 \
   --output ./artifacts/trust-registry/passport-issuer-evidence.json
+
+node packages/trust-registry-cli/bin/trust-registry.mjs inspect \
+  --snapshot ./artifacts/trust-registry/demo-snapshot.json \
+  --kind issuer \
+  --id auth:issuer:passport:v1 \
+  --at 2026-05-20T00:30:00Z
 
 node packages/trust-registry-cli/bin/trust-registry.mjs report \
   --workspace ./artifacts/trust-registry/workspace.json \

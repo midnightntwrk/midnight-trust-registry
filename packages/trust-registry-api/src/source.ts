@@ -1,10 +1,16 @@
 import {
   applyWorkspaceOperation,
   buildSnapshotSummary,
+  findEpochAtTimestamp,
   loadSnapshotFromFile,
   loadWorkspaceFromFile,
+  resolveIssuerEntryAtTimestamp,
+  resolveRecognitionEntryAtTimestamp,
+  resolveVerifierEntryAtTimestamp,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
+  type SnapshotTemporalAuthorizationInspection,
+  type SnapshotTemporalRecognitionInspection,
   type TrustRegistryOperatorWorkspace,
   type TrustRegistryOperatorWorkspaceOperation,
   type TrustRegistryAuthorizationSnapshotEntry,
@@ -252,6 +258,12 @@ export const loadEpochById = async (
   return snapshot.epochs.find((entry) => entry.epochId === epochId) ?? null;
 };
 
+export const loadEpochAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  evaluatedAt: string,
+): Promise<EpochCommitment | null> =>
+  findEpochAtTimestamp(await source.loadSnapshot(), evaluatedAt);
+
 export const listAuthorizationEntries = async (
   source: TrustRegistryApiStateSource,
   role: TrustRegistryApiAuthorizationRole,
@@ -298,6 +310,48 @@ export const resolveAuthorizationEntry = async (
   );
 
   return sortAuthorizationEntries(matches).at(0) ?? null;
+};
+
+export const evaluateAuthorizationEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalAuthorizationInspection | null> => {
+  const snapshot = await source.loadSnapshot();
+
+  if (request.role === "issuer") {
+    return resolveIssuerEntryAtTimestamp(
+      snapshot,
+      evaluatedAt,
+      (entry) =>
+        entry.authorization.subjectDid === request.subjectDid
+        && entry.authorization.resourceId === request.resourceId
+        && (
+          request.resourceType === undefined
+          || entry.authorization.resourceType === request.resourceType
+        )
+        && (
+          request.trustLevel === undefined
+          || entry.authorization.trustLevel === request.trustLevel
+        ),
+    );
+  }
+
+  return resolveVerifierEntryAtTimestamp(
+    snapshot,
+    evaluatedAt,
+    (entry) =>
+      entry.authorization.subjectDid === request.subjectDid
+      && entry.authorization.resourceId === request.resourceId
+      && (
+        request.resourceType === undefined
+        || entry.authorization.resourceType === request.resourceType
+      )
+      && (
+        request.trustLevel === undefined
+        || entry.authorization.trustLevel === request.trustLevel
+      ),
+  );
 };
 
 export const listRecognitionEntries = async (
@@ -349,6 +403,31 @@ export const resolveRecognitionEntry = async (
 
   return sortRecognitionEntries(matches).at(0) ?? null;
 };
+
+export const evaluateRecognitionEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveRecognitionRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalRecognitionInspection | null> =>
+  resolveRecognitionEntryAtTimestamp(
+    await source.loadSnapshot(),
+    evaluatedAt,
+    (entry) =>
+      entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
+      && entry.recognition.scope.resourceId === request.scopeResourceId
+      && (
+        request.recognizedRegistryId === undefined
+        || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
+      )
+      && (
+        request.scopeResourceType === undefined
+        || entry.recognition.scope.resourceType === request.scopeResourceType
+      )
+      && (
+        request.trustLevel === undefined
+        || entry.recognition.trustLevel === request.trustLevel
+      ),
+  );
 
 export const createTrqpSourceFromStateSource = (
   source: TrustRegistryApiStateSource,
