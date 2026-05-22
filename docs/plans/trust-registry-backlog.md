@@ -22,27 +22,27 @@ Updated: 2026-05-22
 | TR-007 | P1 | Done on develop | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
 | TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
 | TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
-| TR-010 | P1 | Draft PR `#6` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
-| TR-011 | P1 | Current top branch | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
-| TR-012 | P1 | Current top branch | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
-| TR-013 | P1 | Current top branch | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
-| TR-014 | P1 | Current top branch | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
-| TR-015 | P1 | Current top branch | Add DID integration test. | `did:midnight` references resolve through `midnight-did` helpers and `MidnightDIDResolver` fixtures without copying DID logic. |
-| TR-016 | P1 | Current top branch | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
-| TR-017 | P2 | Current top branch | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
-| TR-018 | P2 | Current top branch | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
-| TR-019 | P2 | Draft PR `#8` | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
-| TR-020 | P2 | Draft PR `#9` | Add audit report generator. | A command emits human-readable authorization and policy history. |
-| TR-021 | P1 | Current top branch | Add issuer application-state workflow. | Issuer authorization supports explicit `proposed`, `authorized`, and `active` states with positive and negative tests plus historical evidence. |
-| TR-022 | P1 | Current top branch | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
-| TR-023 | P1 | Planned stack | Add maintainer membership lifecycle. | Admin onboarding/removal is modeled explicitly, and no new maintainer can self-approve into the registry. |
-| TR-024 | P1 | Planned stack | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
-| TR-025 | P1 | Planned stack | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |
-| TR-026 | P2 | Planned stack | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
-| TR-027 | P2 | Planned stack | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
-| TR-028 | P2 | Planned stack | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
-| TR-029 | P2 | Planned stack | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export stronger inclusion-proof material than the current signed-statement anchor. |
-| TR-030 | P2 | Planned stack | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
+| TR-010 | P1 | Done on develop | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
+| TR-011 | P1 | Done on develop | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
+| TR-012 | P1 | Done on develop | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
+| TR-013 | P1 | Done on develop | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
+| TR-014 | P1 | Done on develop | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
+| TR-015 | P1 | Done on develop | Add DID integration test. | `did:midnight` references resolve through `midnight-did` helpers and `MidnightDIDResolver` fixtures without copying DID logic. |
+| TR-016 | P1 | Done on develop | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
+| TR-017 | P2 | Done on develop | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
+| TR-018 | P2 | Done on develop | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
+| TR-019 | P2 | Done on develop | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
+| TR-020 | P2 | Done on develop | Add audit report generator. | A command emits human-readable authorization and policy history. |
+| TR-021 | P1 | Done on develop | Add issuer application-state workflow. | Issuer authorization supports explicit `proposed`, `authorized`, and `active` states with positive and negative tests plus historical evidence. |
+| TR-022 | P1 | Done on develop | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
+| TR-023 | P1 | Current branch `codex/trust-registry-maintainer-membership-lifecycle` | Add maintainer membership lifecycle. | Admin onboarding/removal is modeled explicitly, and no new maintainer can self-approve into the registry. |
+| TR-024 | P1 | Planned stack `codex/trust-registry-quorum-execution` | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
+| TR-025 | P1 | Planned stack `codex/trust-registry-governance-policy-bindings` | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |
+| TR-026 | P2 | Planned stack `codex/trust-registry-mutable-operator-cli` | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
+| TR-027 | P2 | Planned stack `codex/trust-registry-api-query-surface` | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
+| TR-028 | P2 | Planned stack `codex/trust-registry-admin-console` | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
+| TR-029 | P2 | Planned stack `codex/trust-registry-historical-proof-hardening` | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export stronger inclusion-proof material than the current signed-statement anchor. |
+| TR-030 | P2 | Planned stack `codex/trust-registry-release-demo-flow` | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
 
 ## First PR Stack
 
@@ -64,3 +64,36 @@ Updated: 2026-05-22
 - Keep DID-backed scenarios on the shared integration lane by consuming the
   official `midnight-did` package surface and fixture ledger state rather than
   re-implementing DID parsing or resolution logic inside TR.
+
+## Next 10 PR Stack
+
+1. `codex/trust-registry-maintainer-membership-lifecycle`
+   - `TR-023`
+   - add governed maintainer onboarding, activation, suspension, revocation, and archival
+2. `codex/trust-registry-quorum-execution`
+   - `TR-024`
+   - replace the current single-signature maintainer shortcut with policy-aware quorum execution
+3. `codex/trust-registry-governance-policy-bindings`
+   - `TR-025`
+   - bind maintainer, member, emergency, and auditor actions to typed governance policy templates
+4. `codex/trust-registry-mutable-operator-cli`
+   - `TR-026`
+   - add operator commands for submit, approve, activate, suspend, revoke, archive, and epoch publication
+5. `codex/trust-registry-api-query-surface`
+   - first `TR-027` slice
+   - expose stable read/query HTTP endpoints over the client and adapter surfaces
+6. `codex/trust-registry-api-application-surface`
+   - second `TR-027` slice
+   - expose applicant submission and maintainer approval endpoints with governed workflow semantics
+7. `codex/trust-registry-admin-console`
+   - first `TR-028` slice
+   - add admin review and approval UI flows on top of the API
+8. `codex/trust-registry-applicant-portal`
+   - second `TR-028` slice
+   - add applicant submission and public registry inspection UI flows
+9. `codex/trust-registry-historical-proof-hardening`
+   - `TR-029`
+   - add timestamp-based trust queries and stronger inclusion-proof export
+10. `codex/trust-registry-release-demo-flow`
+    - `TR-030`
+    - package the demo flow, release artifacts, and CI-backed reproducibility checks

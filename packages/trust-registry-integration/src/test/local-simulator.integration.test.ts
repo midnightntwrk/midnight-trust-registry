@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AuthorizationStatus as ContractAuthorizationStatus,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
 } from "../fixtures.js";
@@ -302,6 +306,68 @@ describe("trust registry local simulator integration", () => {
     const archivedBundle = harness.buildAuditorHistoricalEvidence(auditor);
     expect(archivedBundle.authorization?.status).toBe("archived");
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
+  });
+
+  it("governs maintainer membership through proposal, approval, activation, and lifecycle state changes", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const candidate = createMaintainerScenarioFixture("governed");
+
+    harness.proposeMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.proposed);
+
+    harness.approveMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.authorized);
+
+    harness.activateMaintainer(candidate);
+    const activeMembership = harness.simulator.getCurrentMaintainerMembership(
+      candidate.subjectDidCommitment,
+    );
+    expect(activeMembership.status).toBe(ContractAuthorizationStatus.active);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
+
+    harness.suspendMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.suspended);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(1n);
+
+    harness.revokeMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.revoked);
+
+    harness.archiveMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.archived);
+  });
+
+  it("rejects duplicate live maintainer identity enrollment and refuses to deactivate the last active maintainer", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const candidate = createMaintainerScenarioFixture("self");
+    candidate.subjectDidCommitment = harness.maintainerDidCommitment;
+
+    expect(() => harness.proposeMaintainer(candidate)).toThrow(
+      /already has a live membership/i,
+    );
+
+    const bootstrapMembership = {
+      maintainerIdCommitment: harness.maintainerIdCommitment,
+      maintainerId: harness.maintainerId,
+      subjectDidCommitment: harness.maintainerDidCommitment,
+      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      seed: new Uint8Array(32),
+      subjectDid: harness.maintainerDid,
+      trustLevel: "bootstrap-maintainer",
+    };
+
+    expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
+      /violate the maintainer threshold/i,
+    );
   });
 
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {

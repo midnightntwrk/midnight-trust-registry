@@ -3,10 +3,12 @@ import { Buffer } from "node:buffer";
 import {
   computeCreateAuditorAuthorizationPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
+  computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
+  computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -49,6 +51,7 @@ import {
   bytes32Commitment,
   createMidnightDid,
   type IssuerScenarioFixture,
+  type MaintainerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
 } from "./fixtures.js";
@@ -77,6 +80,12 @@ const ACTIVATE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:activate");
 const SUSPEND_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:suspend");
 const REVOKE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:revoke");
 const ARCHIVE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:archive");
+const PROPOSE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:propose");
+const AUTHORIZE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:authorize");
+const ACTIVATE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:activate");
+const SUSPEND_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:suspend");
+const REVOKE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:revoke");
+const ARCHIVE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:archive");
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
@@ -171,7 +180,10 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly governancePolicyCommitment: Uint8Array;
   readonly registryRecord: RegistryRecord;
   readonly policyRecord: GovernancePolicyRecord;
+  readonly maintainerId: string;
+  readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
+  readonly maintainerDidCommitment: Uint8Array;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
   private readonly bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
@@ -186,7 +198,15 @@ export class LocalTrustRegistryIntegrationHarness {
     this.registryDidCommitment = bytes32Commitment(this.registryDid);
     this.policyId = createScopedIdentifier("policy", label, "v1");
     this.governancePolicyCommitment = bytes32Commitment(this.policyId);
+    this.maintainerId = createScopedIdentifier(
+      "participant",
+      "maintainer",
+      label,
+      "bootstrap",
+    );
+    this.maintainerIdCommitment = bytes32Commitment(this.maintainerId);
     this.maintainerDid = createMidnightDid(`maintainer:${label}:bootstrap`);
+    this.maintainerDidCommitment = bytes32Commitment(this.maintainerDid);
     this.registryRecord = RegistryRecordSchema.parse({
       registryId: this.registryId,
       registryDid: this.registryDid,
@@ -220,9 +240,129 @@ export class LocalTrustRegistryIntegrationHarness {
       this.registryIdCommitment,
       this.registryDidCommitment,
       this.governancePolicyCommitment,
+      this.maintainerIdCommitment,
+      this.maintainerDidCommitment,
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
       1n,
+    );
+  }
+
+  authorizeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    this.proposeMaintainer(fixture);
+    this.approveMaintainer(fixture);
+    return this.activateMaintainer(fixture);
+  }
+
+  proposeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
+    const proposedEvidenceHash = bytes32Commitment(
+      `${fixture.maintainerId}:propose`,
+    );
+    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      PROPOSE_MAINTAINER_ACTION_KIND,
+      computeCreateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment,
+        fixture.subjectDidCommitment,
+        fixture.keyId,
+        candidatePublicKey,
+        this.governancePolicyCommitment,
+        bytes32Commitment(fixture.trustLevel),
+        proposedEvidenceHash,
+      ),
+      proposeActionSequence,
+    );
+
+    return this.simulator.proposeMaintainerMembership(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      proposeSignature,
+      fixture.maintainerIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.keyId,
+      candidatePublicKey,
+      this.governancePolicyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
+  }
+
+  approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    const authorizedEvidenceHash = bytes32Commitment(
+      `${fixture.maintainerId}:authorize`,
+    );
+    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      AUTHORIZE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment,
+        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
+          .lifecycleEventHash,
+        authorizedEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+
+    return this.simulator.authorizeMaintainerMembership(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      authorizeSignature,
+      fixture.maintainerIdCommitment,
+      authorizedEvidenceHash,
+    );
+  }
+
+  activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.maintainerId}:activate`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      ACTIVATE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment,
+        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
+          .lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    return this.simulator.activateMaintainerMembership(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.maintainerIdCommitment,
+      evidenceHash,
+    );
+  }
+
+  suspendMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    return this.updateMaintainerLifecycle(
+      fixture,
+      "suspend",
+      SUSPEND_MAINTAINER_ACTION_KIND,
+    );
+  }
+
+  revokeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    return this.updateMaintainerLifecycle(
+      fixture,
+      "revoke",
+      REVOKE_MAINTAINER_ACTION_KIND,
+    );
+  }
+
+  archiveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    return this.updateMaintainerLifecycle(
+      fixture,
+      "archive",
+      ARCHIVE_MAINTAINER_ACTION_KIND,
     );
   }
 
@@ -889,6 +1029,59 @@ export class LocalTrustRegistryIntegrationHarness {
       subjectDid: fixture.subjectDid,
       lastStatusSequence: record.lastStatusSequence,
     });
+  }
+
+  private updateMaintainerLifecycle(
+    fixture: MaintainerScenarioFixture,
+    actionName: "suspend" | "revoke" | "archive",
+    actionKind: Uint8Array,
+  ): Uint8Array {
+    const evidenceHash = bytes32Commitment(
+      `${fixture.maintainerId}:${actionName}`,
+    );
+    const currentRecord = this.simulator.getMaintainerMembership(
+      fixture.maintainerIdCommitment,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      actionKind,
+      computeUpdateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment,
+        currentRecord.lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    if (actionName === "suspend") {
+      return this.simulator.suspendMaintainerMembership(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.maintainerIdCommitment,
+        evidenceHash,
+      );
+    }
+
+    if (actionName === "revoke") {
+      return this.simulator.revokeMaintainerMembership(
+        this.bootstrapMaintainer.keyId,
+        this.bootstrapPublicKey,
+        signature,
+        fixture.maintainerIdCommitment,
+        evidenceHash,
+      );
+    }
+
+    return this.simulator.archiveMaintainerMembership(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.maintainerIdCommitment,
+      evidenceHash,
+    );
   }
 
   private updateIssuerLifecycle(

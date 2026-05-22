@@ -11,6 +11,8 @@ export enum MaintainerStatus {
 }
 
 export struct MaintainerRecord {
+  maintainerId: Bytes<32>,
+  didCommitment: Bytes<32>,
   keyId: Bytes<32>,
   publicKey: JubjubPoint,
   status: MaintainerStatus,
@@ -25,6 +27,25 @@ export enum AuthorizationStatus {
   suspended,
   revoked,
   archived
+}
+
+export struct MaintainerMembershipRecord {
+  maintainerId: Bytes<32>,
+  maintainerDidCommitment: Bytes<32>,
+  keyId: Bytes<32>,
+  publicKey: JubjubPoint,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  status: AuthorizationStatus,
+  proposedAtSequence: Uint<64>,
+  authorizedAtSequence: Uint<64>,
+  activeFromSequence: Uint<64>,
+  suspendedAtSequence: Uint<64>,
+  revokedAtSequence: Uint<64>,
+  archivedAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  evidenceHash: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
 }
 
 export enum IssuerResourceType {
@@ -149,10 +170,15 @@ export ledger registryId: Bytes<32>;
 export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
 export ledger maintainerThreshold: Uint<64>;
-export ledger activeMaintainerCount: Counter;
+export ledger activeMaintainerCount: Uint<64>;
 export ledger governanceActionCount: Counter;
 export ledger maintainerKeyIds: Set<Bytes<32>>;
 export ledger maintainerRecords: Map<Bytes<32>, MaintainerRecord>;
+export ledger maintainerMembershipCount: Counter;
+export ledger maintainerMembershipIds: Set<Bytes<32>>;
+export ledger maintainerMembershipRecords: Map<Bytes<32>, MaintainerMembershipRecord>;
+export ledger currentMaintainerMembershipIdsByDidCommitment: Map<Bytes<32>, Bytes<32>>;
+export ledger currentMaintainerMembershipIdsByKeyId: Map<Bytes<32>, Bytes<32>>;
 export ledger governanceEventHashes: Set<Bytes<32>>;
 export ledger lastGovernanceEventHash: Bytes<32>;
 export ledger lastAuthorizedActionKind: Bytes<32>;
@@ -190,6 +216,7 @@ constructor() {
   registryDidCommitment = pad(32, "midnight:tr:unset");
   governancePolicyCommitment = pad(32, "midnight:tr:unset");
   maintainerThreshold = 0;
+  activeMaintainerCount = 0;
   activeIssuerAuthorizationCount = 0;
   activeVerifierAuthorizationCount = 0;
   activeAuditorAuthorizationCount = 0;
@@ -465,17 +492,90 @@ pure circuit assertEpochCommitmentFields(
   );
 }
 
+pure circuit assertMaintainerMembershipFields(
+  maintainerIdValue: Bytes<32>,
+  maintainerDidCommitmentValue: Bytes<32>,
+  keyIdValue: Bytes<32>,
+  policyIdValue: Bytes<32>,
+  trustLevelValue: Bytes<32>,
+  evidenceHashValue: Bytes<32>
+): [] {
+  assert(
+    maintainerIdValue != pad(32, ""),
+    "Maintainer id must be set"
+  );
+  assert(
+    maintainerDidCommitmentValue != pad(32, ""),
+    "Maintainer DID commitment must be set"
+  );
+  assert(
+    keyIdValue != pad(32, ""),
+    "Maintainer key id must be set"
+  );
+  assert(
+    policyIdValue != pad(32, ""),
+    "Maintainer policy id must be set"
+  );
+  assert(
+    trustLevelValue != pad(32, ""),
+    "Maintainer trust level must be set"
+  );
+  assert(
+    evidenceHashValue != pad(32, ""),
+    "Maintainer evidence hash must be set"
+  );
+}
+
+pure circuit assertMaintainerRemovalKeepsThreshold(
+  currentActiveMaintainerCount: Uint<64>,
+  currentMaintainerThreshold: Uint<64>
+): [] {
+  assertValidMaintainerThreshold(
+    currentActiveMaintainerCount,
+    currentMaintainerThreshold
+  );
+  assert(
+    currentActiveMaintainerCount > currentMaintainerThreshold,
+    "Maintainer removal would violate the maintainer threshold"
+  );
+}
+
 pure circuit registryInitializationPayloadHash(
+  bootstrapMaintainerId: Bytes<32>,
+  bootstrapMaintainerDidCommitmentValue: Bytes<32>,
   registryDidCommitmentValue: Bytes<32>,
   governancePolicyCommitmentValue: Bytes<32>,
   bootstrapMaintainerKeyId: Bytes<32>,
   bootstrapMaintainerPublicKey: JubjubPoint
 ): Bytes<32> {
-  return persistentHash<Vector<4, Bytes<32>>>([
+  return persistentHash<Vector<6, Bytes<32>>>([
+    bootstrapMaintainerId,
+    bootstrapMaintainerDidCommitmentValue,
     registryDidCommitmentValue,
     governancePolicyCommitmentValue,
     bootstrapMaintainerKeyId,
     maintainerPublicKeyCommitment(bootstrapMaintainerPublicKey)
+  ]);
+}
+
+export pure circuit maintainerMembershipScopeKey(
+  maintainerDidCommitment: Bytes<32>
+): Bytes<32> {
+  assert(
+    maintainerDidCommitment != pad(32, ""),
+    "Maintainer DID commitment must be set"
+  );
+  return persistentHash<Vector<1, Bytes<32>>>([
+    maintainerDidCommitment
+  ]);
+}
+
+export pure circuit maintainerMembershipKeyScopeKey(
+  keyId: Bytes<32>
+): Bytes<32> {
+  assert(keyId != pad(32, ""), "Maintainer key id must be set");
+  return persistentHash<Vector<1, Bytes<32>>>([
+    keyId
   ]);
 }
 
@@ -757,6 +857,34 @@ export pure circuit createEpochCommitmentPayloadHash(
   ]);
 }
 
+export pure circuit createMaintainerMembershipPayloadHash(
+  maintainerId: Bytes<32>,
+  maintainerDidCommitment: Bytes<32>,
+  keyId: Bytes<32>,
+  publicKey: JubjubPoint,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assertMaintainerMembershipFields(
+    maintainerId,
+    maintainerDidCommitment,
+    keyId,
+    policyId,
+    trustLevel,
+    evidenceHash
+  );
+  return persistentHash<Vector<7, Bytes<32>>>([
+    maintainerId,
+    maintainerDidCommitment,
+    keyId,
+    maintainerPublicKeyCommitment(publicKey),
+    policyId,
+    trustLevel,
+    evidenceHash
+  ]);
+}
+
 export pure circuit updateIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   previousLifecycleEventHash: Bytes<32>,
@@ -850,6 +978,27 @@ export pure circuit updateRecognitionPayloadHash(
   ]);
 }
 
+export pure circuit updateMaintainerMembershipPayloadHash(
+  maintainerId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  assert(maintainerId != pad(32, ""), "Maintainer id must be set");
+  assert(
+    previousLifecycleEventHash != pad(32, ""),
+    "Maintainer lifecycle event hash must be set"
+  );
+  assert(
+    evidenceHash != pad(32, ""),
+    "Maintainer evidence hash must be set"
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    maintainerId,
+    previousLifecycleEventHash,
+    evidenceHash
+  ]);
+}
+
 export pure circuit governanceEventHash(
   registryIdValue: Bytes<32>,
   maintainerKeyId: Bytes<32>,
@@ -870,6 +1019,8 @@ export circuit initializeRegistry(
   nextRegistryId: Bytes<32>,
   nextRegistryDidCommitment: Bytes<32>,
   nextGovernancePolicyCommitment: Bytes<32>,
+  bootstrapMaintainerId: Bytes<32>,
+  bootstrapMaintainerDidCommitment: Bytes<32>,
   bootstrapMaintainerKeyId: Bytes<32>,
   bootstrapMaintainerPublicKey: JubjubPoint,
   nextMaintainerThreshold: Uint<64>
@@ -889,6 +1040,14 @@ export circuit initializeRegistry(
     "Governance policy commitment must be set"
   );
   assert(
+    bootstrapMaintainerId != pad(32, ""),
+    "Bootstrap maintainer id must be set"
+  );
+  assert(
+    bootstrapMaintainerDidCommitment != pad(32, ""),
+    "Bootstrap maintainer DID commitment must be set"
+  );
+  assert(
     bootstrapMaintainerKeyId != pad(32, ""),
     "Bootstrap maintainer key id must be set"
   );
@@ -899,10 +1058,16 @@ export circuit initializeRegistry(
   const disclosedGovernancePolicyCommitment = disclose(
     nextGovernancePolicyCommitment
   );
+  const disclosedBootstrapMaintainerId = disclose(bootstrapMaintainerId);
+  const disclosedBootstrapMaintainerDidCommitment = disclose(
+    bootstrapMaintainerDidCommitment
+  );
   const disclosedMaintainerKeyId = disclose(bootstrapMaintainerKeyId);
   const disclosedMaintainerPublicKey = disclose(bootstrapMaintainerPublicKey);
   const initializationPayloadHash = disclose(
     registryInitializationPayloadHash(
+      disclosedBootstrapMaintainerId,
+      disclosedBootstrapMaintainerDidCommitment,
       disclosedRegistryDidCommitment,
       disclosedGovernancePolicyCommitment,
       disclosedMaintainerKeyId,
@@ -927,6 +1092,8 @@ export circuit initializeRegistry(
   maintainerRecords.insert(
     disclosedMaintainerKeyId,
     MaintainerRecord {
+      maintainerId: disclosedBootstrapMaintainerId,
+      didCommitment: disclosedBootstrapMaintainerDidCommitment,
       keyId: disclosedMaintainerKeyId,
       publicKey: disclosedMaintainerPublicKey,
       status: MaintainerStatus.active,
@@ -934,8 +1101,45 @@ export circuit initializeRegistry(
       lastStatusSequence: 0
     }
   );
+  const bootstrapMaintainerScopeKey = disclose(
+    maintainerMembershipScopeKey(disclosedBootstrapMaintainerDidCommitment)
+  );
+  const bootstrapMaintainerKeyScopeKey = disclose(
+    maintainerMembershipKeyScopeKey(disclosedMaintainerKeyId)
+  );
+  maintainerMembershipIds.insert(disclosedBootstrapMaintainerId);
+  maintainerMembershipRecords.insert(
+    disclosedBootstrapMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: disclosedBootstrapMaintainerId,
+      maintainerDidCommitment: disclosedBootstrapMaintainerDidCommitment,
+      keyId: disclosedMaintainerKeyId,
+      publicKey: disclosedMaintainerPublicKey,
+      policyId: disclosedGovernancePolicyCommitment,
+      trustLevel: pad(32, "bootstrap-maintainer"),
+      status: AuthorizationStatus.active,
+      proposedAtSequence: 0,
+      authorizedAtSequence: 0,
+      activeFromSequence: 0,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      archivedAtSequence: 0,
+      lastStatusSequence: 0,
+      evidenceHash: initializationPayloadHash,
+      lifecycleEventHash: initializationEventHash
+    }
+  );
+  currentMaintainerMembershipIdsByDidCommitment.insert(
+    bootstrapMaintainerScopeKey,
+    disclosedBootstrapMaintainerId
+  );
+  currentMaintainerMembershipIdsByKeyId.insert(
+    bootstrapMaintainerKeyScopeKey,
+    disclosedBootstrapMaintainerId
+  );
   governanceEventHashes.insert(initializationEventHash);
-  activeMaintainerCount.increment(1);
+  maintainerMembershipCount.increment(1);
+  activeMaintainerCount = 1;
   governanceActionCount.increment(1);
   lastGovernanceEventHash = initializationEventHash;
   lastAuthorizedActionKind = pad(32, "midnight:tr:init");
@@ -988,7 +1192,7 @@ circuit performAuthorizedMaintainerAction(
     "Maintainer must be active"
   );
   assertSingleSignatureMaintainerThreshold(
-    activeMaintainerCount.read(),
+    activeMaintainerCount,
     maintainerThreshold
   );
   assert(
@@ -1020,6 +1224,37 @@ circuit performAuthorizedMaintainerAction(
     actionKind: disclosedActionKind,
     actionPayloadHash: disclosedActionPayloadHash
   };
+}
+
+circuit requireMaintainerMembershipRecord(
+  maintainerId: Bytes<32>
+): MaintainerMembershipRecord {
+  assert(
+    maintainerId != pad(32, ""),
+    "Maintainer id must be set"
+  );
+  assert(
+    maintainerMembershipIds.member(maintainerId),
+    "Maintainer membership is not registered"
+  );
+  return maintainerMembershipRecords.lookup(maintainerId);
+}
+
+circuit currentMaintainerMembershipRecord(
+  maintainerDidCommitment: Bytes<32>
+): MaintainerMembershipRecord {
+  const scopeKey = disclose(
+    maintainerMembershipScopeKey(
+      disclose(maintainerDidCommitment)
+    )
+  );
+  assert(
+    currentMaintainerMembershipIdsByDidCommitment.member(scopeKey),
+    "Maintainer membership scope is not registered"
+  );
+  return maintainerMembershipRecords.lookup(
+    currentMaintainerMembershipIdsByDidCommitment.lookup(scopeKey)
+  );
 }
 
 circuit requireIssuerAuthorizationRecord(
@@ -1195,6 +1430,507 @@ export circuit authorizeMaintainerAction(
     actionPayloadHash
   );
   return authorizedAction.eventHash;
+}
+
+export circuit proposeMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  maintainerDidCommitment: Bytes<32>,
+  candidateKeyId: Bytes<32>,
+  candidatePublicKey: JubjubPoint,
+  policyId: Bytes<32>,
+  trustLevel: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedMaintainerDidCommitment = disclose(maintainerDidCommitment);
+  const disclosedCandidateKeyId = disclose(candidateKeyId);
+  const disclosedCandidatePublicKey = disclose(candidatePublicKey);
+  const disclosedPolicyId = disclose(policyId);
+  const disclosedTrustLevel = disclose(trustLevel);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const didScopeKey = disclose(
+    maintainerMembershipScopeKey(disclosedMaintainerDidCommitment)
+  );
+  const keyScopeKey = disclose(
+    maintainerMembershipKeyScopeKey(disclosedCandidateKeyId)
+  );
+  const actionPayloadHash = disclose(
+    createMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      disclosedMaintainerDidCommitment,
+      disclosedCandidateKeyId,
+      disclosedCandidatePublicKey,
+      disclosedPolicyId,
+      disclosedTrustLevel,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:propose"),
+    actionPayloadHash
+  );
+
+  assert(
+    !maintainerMembershipIds.member(disclosedMaintainerId),
+    "Maintainer membership already exists"
+  );
+  if (currentMaintainerMembershipIdsByDidCommitment.member(didScopeKey)) {
+    const currentDidRecord = maintainerMembershipRecords.lookup(
+      currentMaintainerMembershipIdsByDidCommitment.lookup(didScopeKey)
+    );
+    assert(
+      currentDidRecord.status == AuthorizationStatus.revoked
+        || currentDidRecord.status == AuthorizationStatus.archived,
+      "Maintainer DID already has a live membership"
+    );
+  }
+  if (currentMaintainerMembershipIdsByKeyId.member(keyScopeKey)) {
+    const currentKeyRecord = maintainerMembershipRecords.lookup(
+      currentMaintainerMembershipIdsByKeyId.lookup(keyScopeKey)
+    );
+    assert(
+      currentKeyRecord.status == AuthorizationStatus.revoked
+        || currentKeyRecord.status == AuthorizationStatus.archived,
+      "Maintainer key already has a live membership"
+    );
+  }
+  assert(
+    !maintainerKeyIds.member(disclosedCandidateKeyId),
+    "Maintainer key is already active or historical"
+  );
+
+  maintainerMembershipIds.insert(disclosedMaintainerId);
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: disclosedMaintainerId,
+      maintainerDidCommitment: disclosedMaintainerDidCommitment,
+      keyId: disclosedCandidateKeyId,
+      publicKey: disclosedCandidatePublicKey,
+      policyId: disclosedPolicyId,
+      trustLevel: disclosedTrustLevel,
+      status: AuthorizationStatus.proposed,
+      proposedAtSequence: authorizedAction.actionSequence,
+      authorizedAtSequence: 0,
+      activeFromSequence: 0,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      archivedAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentMaintainerMembershipIdsByDidCommitment.insert(
+    didScopeKey,
+    disclosedMaintainerId
+  );
+  currentMaintainerMembershipIdsByKeyId.insert(
+    keyScopeKey,
+    disclosedMaintainerId
+  );
+  maintainerMembershipCount.increment(1);
+  return authorizedAction.eventHash;
+}
+
+export circuit authorizeMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.proposed,
+    "Maintainer membership must be proposed to authorize"
+  );
+  const actionPayloadHash = disclose(
+    updateMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:authorize"),
+    actionPayloadHash
+  );
+  const signerRecord = maintainerRecords.lookup(authorizedAction.maintainerKeyId);
+  assert(
+    signerRecord.didCommitment != currentRecord.maintainerDidCommitment,
+    "Maintainer candidates may not self-authorize into the registry"
+  );
+
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.authorized,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: authorizedAction.actionSequence,
+      activeFromSequence: 0,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit activateMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.authorized,
+    "Maintainer membership must be authorized to activate"
+  );
+  const actionPayloadHash = disclose(
+    updateMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:activate"),
+    actionPayloadHash
+  );
+  const signerRecord = maintainerRecords.lookup(authorizedAction.maintainerKeyId);
+  assert(
+    signerRecord.didCommitment != currentRecord.maintainerDidCommitment,
+    "Maintainer candidates may not self-activate into the registry"
+  );
+  assert(
+    !maintainerKeyIds.member(currentRecord.keyId),
+    "Maintainer key is already active or historical"
+  );
+
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.active,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  maintainerKeyIds.insert(currentRecord.keyId);
+  maintainerRecords.insert(
+    currentRecord.keyId,
+    MaintainerRecord {
+      maintainerId: currentRecord.maintainerId,
+      didCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      status: MaintainerStatus.active,
+      joinedAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence
+    }
+  );
+  activeMaintainerCount = disclose(
+    (activeMaintainerCount + (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit suspendMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Maintainer membership must be active to suspend"
+  );
+  const actionPayloadHash = disclose(
+    updateMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:suspend"),
+    actionPayloadHash
+  );
+  assertMaintainerRemovalKeepsThreshold(
+    activeMaintainerCount,
+    maintainerThreshold
+  );
+  const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  maintainerRecords.insert(
+    currentRecord.keyId,
+    MaintainerRecord {
+      maintainerId: currentMaintainerRecord.maintainerId,
+      didCommitment: currentMaintainerRecord.didCommitment,
+      keyId: currentMaintainerRecord.keyId,
+      publicKey: currentMaintainerRecord.publicKey,
+      status: MaintainerStatus.suspended,
+      joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence
+    }
+  );
+  activeMaintainerCount = disclose(
+    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.authorized
+      || currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended,
+    "Maintainer membership must be authorized, active, or suspended to revoke"
+  );
+  const actionPayloadHash = disclose(
+    updateMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:revoke"),
+    actionPayloadHash
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    assertMaintainerRemovalKeepsThreshold(
+      activeMaintainerCount,
+      maintainerThreshold
+    );
+  }
+
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.revoked,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: authorizedAction.actionSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+  ) {
+    const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+    maintainerRecords.insert(
+      currentRecord.keyId,
+      MaintainerRecord {
+        maintainerId: currentMaintainerRecord.maintainerId,
+        didCommitment: currentMaintainerRecord.didCommitment,
+        keyId: currentMaintainerRecord.keyId,
+        publicKey: currentMaintainerRecord.publicKey,
+        status: MaintainerStatus.revoked,
+        joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
+        lastStatusSequence: authorizedAction.actionSequence
+      }
+    );
+  }
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeMaintainerCount = disclose(
+      (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit archiveMaintainerMembership(
+  maintainerKeyId: Bytes<32>,
+  maintainerPublicKey: JubjubPoint,
+  signature: JubjubSignature,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.proposed
+      || currentRecord.status == AuthorizationStatus.authorized
+      || currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+      || currentRecord.status == AuthorizationStatus.revoked,
+    "Maintainer membership must be proposed, authorized, active, suspended, or revoked to archive"
+  );
+  const actionPayloadHash = disclose(
+    updateMaintainerMembershipPayloadHash(
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    maintainerKeyId,
+    maintainerPublicKey,
+    signature,
+    pad(32, "tr:maintainer:archive"),
+    actionPayloadHash
+  );
+  if (currentRecord.status == AuthorizationStatus.active) {
+    assertMaintainerRemovalKeepsThreshold(
+      activeMaintainerCount,
+      maintainerThreshold
+    );
+  }
+
+  maintainerMembershipRecords.insert(
+    disclosedMaintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.archived,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: disclosedEvidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  if (
+    currentRecord.status == AuthorizationStatus.active
+      || currentRecord.status == AuthorizationStatus.suspended
+      || currentRecord.status == AuthorizationStatus.revoked
+  ) {
+    const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+    maintainerRecords.insert(
+      currentRecord.keyId,
+      MaintainerRecord {
+        maintainerId: currentMaintainerRecord.maintainerId,
+        didCommitment: currentMaintainerRecord.didCommitment,
+        keyId: currentMaintainerRecord.keyId,
+        publicKey: currentMaintainerRecord.publicKey,
+        status: MaintainerStatus.archived,
+        joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
+        lastStatusSequence: authorizedAction.actionSequence
+      }
+    );
+  }
+  if (currentRecord.status == AuthorizationStatus.active) {
+    activeMaintainerCount = disclose(
+      (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+    );
+  }
+  return authorizedAction.eventHash;
+}
+
+export circuit getMaintainerMembership(
+  maintainerId: Bytes<32>
+): MaintainerMembershipRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireMaintainerMembershipRecord(disclose(maintainerId));
+}
+
+export circuit getCurrentMaintainerMembership(
+  maintainerDidCommitment: Bytes<32>
+): MaintainerMembershipRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return currentMaintainerMembershipRecord(maintainerDidCommitment);
 }
 
 export circuit proposeIssuerAuthorization(

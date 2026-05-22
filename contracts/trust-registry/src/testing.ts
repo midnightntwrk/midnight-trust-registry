@@ -13,6 +13,7 @@ import {
   type AuditorAuthorizationRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
+  type MaintainerMembershipRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
   type IssuerResourceType,
@@ -33,6 +34,8 @@ export const labelToBytes32 = (label: string): Uint8Array => {
 
 export type MaintainerFixture = {
   seed: Uint8Array;
+  maintainerId: Uint8Array;
+  didCommitment: Uint8Array;
   keyId: Uint8Array;
 };
 
@@ -41,6 +44,8 @@ export const createMaintainerFixture = (
   seedByte: number,
 ): MaintainerFixture => ({
   seed: new Uint8Array(32).fill(seedByte),
+  maintainerId: labelToBytes32(`maintainer-id:${label}`),
+  didCommitment: labelToBytes32(`did:midnight:maintainer:${label}`),
   keyId: labelToBytes32(`maintainer:${label}`),
 });
 
@@ -84,6 +89,8 @@ export class TrustRegistrySimulator {
     registryId: Uint8Array,
     registryDidCommitment: Uint8Array,
     governancePolicyCommitment: Uint8Array,
+    maintainerId: Uint8Array,
+    maintainerDidCommitment: Uint8Array,
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
     maintainerThreshold: bigint,
@@ -94,6 +101,8 @@ export class TrustRegistrySimulator {
         registryId,
         registryDidCommitment,
         governancePolicyCommitment,
+        maintainerId,
+        maintainerDidCommitment,
         maintainerKeyId,
         maintainerPublicKey,
         maintainerThreshold,
@@ -116,6 +125,152 @@ export class TrustRegistrySimulator {
         signature,
         actionKind,
         actionPayloadHash,
+      ),
+    );
+  }
+
+  proposeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    candidateDidCommitment: Uint8Array,
+    candidateKeyId: Uint8Array,
+    candidatePublicKey: JubjubPoint,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.proposeMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        candidateDidCommitment,
+        candidateKeyId,
+        candidatePublicKey,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  authorizeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.authorizeMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  activateMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.activateMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  suspendMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  revokeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  archiveMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.archiveMaintainerMembership(
+        this.circuitContext,
+        maintainerKeyId,
+        maintainerPublicKey,
+        signature,
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  getMaintainerMembership(
+    maintainerId: Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getMaintainerMembership(
+        this.circuitContext,
+        maintainerId,
+      ),
+    );
+  }
+
+  getCurrentMaintainerMembership(
+    maintainerDidCommitment: Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentMaintainerMembership(
+        this.circuitContext,
+        maintainerDidCommitment,
       ),
     );
   }

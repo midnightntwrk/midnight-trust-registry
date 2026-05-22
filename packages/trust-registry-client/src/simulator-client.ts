@@ -7,6 +7,7 @@ import type {
   AuditorAuthorizationRecord,
   EpochCommitmentRecord,
   IssuerAuthorizationRecord,
+  MaintainerMembershipRecord,
   MaintainerRecord,
   RecognitionRecord,
   VerifierAuthorizationRecord,
@@ -116,6 +117,18 @@ export class TrustRegistrySimulatorClient {
 
   getCurrentEpochCommitment(): EpochCommitmentRecord {
     return this.simulator.getCurrentEpochCommitment();
+  }
+
+  getMaintainerMembershipById(
+    maintainerId: string | Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.simulator.getMaintainerMembership(this.asBytes32(maintainerId));
+  }
+
+  getCurrentMaintainerMembership(
+    subjectDid: string | Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.simulator.getCurrentMaintainerMembership(this.asBytes32(subjectDid));
   }
 
   verifyIssuerAuthorizationBundle(

@@ -3,10 +3,12 @@ import { Buffer } from "node:buffer";
 import {
   computeCreateAuditorAuthorizationPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
+  computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
+  computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -54,6 +56,12 @@ const AUTHORIZE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:authorize");
 const ACTIVATE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:activate");
 const REVOKE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:revoke");
 const ARCHIVE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:archive");
+const PROPOSE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:propose");
+const AUTHORIZE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:authorize");
+const ACTIVATE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:activate");
+const SUSPEND_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:suspend");
+const REVOKE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:revoke");
+const ARCHIVE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:archive");
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const createInitializedRegistryFixture = (seedByte: number) => {
@@ -70,6 +78,8 @@ const createInitializedRegistryFixture = (seedByte: number) => {
     registryId,
     registryDidCommitment,
     governancePolicyCommitment,
+    bootstrapMaintainer.maintainerId,
+    bootstrapMaintainer.didCommitment,
     bootstrapMaintainer.keyId,
     bootstrapPublicKey,
     1n,
@@ -132,6 +142,20 @@ const createAuditorAuthorizationFixture = (label: string) => ({
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
 
+const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
+  const candidate = createMaintainerFixture(label, seedByte);
+  return {
+    maintainerId: candidate.maintainerId,
+    maintainerDidCommitment: candidate.didCommitment,
+    keyId: candidate.keyId,
+    publicKey: deriveJubjubPublicKeyFromSeed(candidate.seed),
+    policyId: labelToBytes32("policy:kanon:v1"),
+    trustLevel: labelToBytes32("governance-approved"),
+    evidenceHash: labelToBytes32(`evidence:${label}:propose`),
+    seed: candidate.seed,
+  };
+};
+
 const createEpochCommitmentFixture = (label: string) => ({
   epochId: labelToBytes32(`epoch:${label}`),
   stateRoot: labelToBytes32(`state-root:${label}`),
@@ -169,6 +193,8 @@ describe("trust registry contract", () => {
       registryId,
       registryDidCommitment,
       governancePolicyCommitment,
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       1n,
@@ -209,6 +235,8 @@ describe("trust registry contract", () => {
         new Uint8Array(32),
         labelToBytes32("did:midnight:registry"),
         labelToBytes32("policy:kanon:v1"),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         1n,
@@ -220,6 +248,8 @@ describe("trust registry contract", () => {
         labelToBytes32("registry:kanon"),
         labelToBytes32("did:midnight:registry"),
         labelToBytes32("policy:kanon:v1"),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         0n,
@@ -231,6 +261,8 @@ describe("trust registry contract", () => {
         labelToBytes32("registry:kanon"),
         labelToBytes32("did:midnight:registry"),
         labelToBytes32("policy:kanon:v1"),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         2n,
@@ -241,6 +273,8 @@ describe("trust registry contract", () => {
       labelToBytes32("registry:kanon"),
       labelToBytes32("did:midnight:registry"),
       labelToBytes32("policy:kanon:v1"),
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       1n,
@@ -251,11 +285,273 @@ describe("trust registry contract", () => {
         labelToBytes32("registry:kanon:second"),
         labelToBytes32("did:midnight:registry:second"),
         labelToBytes32("policy:kanon:v2"),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         1n,
       ),
     ).toThrow(/already been initialized/i);
+  });
+
+  it("governs maintainer membership through proposal, approval, activation, suspension, revocation, and archival", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(11);
+    const candidate = createMaintainerMembershipFixture("governed", 12);
+
+    const proposeActionSequence = simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_MAINTAINER_ACTION_KIND,
+      computeCreateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        candidate.maintainerDidCommitment,
+        candidate.keyId,
+        candidate.publicKey,
+        candidate.policyId,
+        candidate.trustLevel,
+        candidate.evidenceHash,
+      ),
+      proposeActionSequence,
+    );
+
+    simulator.proposeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      proposeSignature,
+      candidate.maintainerId,
+      candidate.maintainerDidCommitment,
+      candidate.keyId,
+      candidate.publicKey,
+      candidate.policyId,
+      candidate.trustLevel,
+      candidate.evidenceHash,
+    );
+
+    const proposedMembership = simulator.getMaintainerMembership(
+      candidate.maintainerId,
+    );
+    expect(proposedMembership.status).toEqual(AuthorizationStatus.proposed);
+
+    const authorizeEvidenceHash = labelToBytes32("evidence:governed:authorize");
+    const authorizeActionSequence = simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      AUTHORIZE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        proposedMembership.lifecycleEventHash,
+        authorizeEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+
+    simulator.authorizeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      authorizeSignature,
+      candidate.maintainerId,
+      authorizeEvidenceHash,
+    );
+
+    const authorizedMembership = simulator.getMaintainerMembership(
+      candidate.maintainerId,
+    );
+    expect(authorizedMembership.status).toEqual(AuthorizationStatus.authorized);
+
+    const activateEvidenceHash = labelToBytes32("evidence:governed:activate");
+    const activateActionSequence = simulator.getLedger().governanceActionCount;
+    const activateSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ACTIVATE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        authorizedMembership.lifecycleEventHash,
+        activateEvidenceHash,
+      ),
+      activateActionSequence,
+    );
+
+    simulator.activateMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      activateSignature,
+      candidate.maintainerId,
+      activateEvidenceHash,
+    );
+
+    const activeMembership = simulator.getCurrentMaintainerMembership(
+      candidate.maintainerDidCommitment,
+    );
+    const activeMaintainer = simulator.getLedger().maintainerRecords.lookup(
+      candidate.keyId,
+    );
+    expect(activeMembership.status).toEqual(AuthorizationStatus.active);
+    expect(activeMaintainer.status).toEqual(MaintainerStatus.active);
+    expect(simulator.getLedger().activeMaintainerCount).toEqual(2n);
+
+    const suspendEvidenceHash = labelToBytes32("evidence:governed:suspend");
+    const suspendActionSequence = simulator.getLedger().governanceActionCount;
+    const suspendSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        activeMembership.lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      suspendActionSequence,
+    );
+
+    simulator.suspendMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      suspendSignature,
+      candidate.maintainerId,
+      suspendEvidenceHash,
+    );
+
+    const suspendedMembership = simulator.getMaintainerMembership(
+      candidate.maintainerId,
+    );
+    expect(suspendedMembership.status).toEqual(AuthorizationStatus.suspended);
+    expect(simulator.getLedger().activeMaintainerCount).toEqual(1n);
+
+    const revokeEvidenceHash = labelToBytes32("evidence:governed:revoke");
+    const revokeActionSequence = simulator.getLedger().governanceActionCount;
+    const revokeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      REVOKE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        suspendedMembership.lifecycleEventHash,
+        revokeEvidenceHash,
+      ),
+      revokeActionSequence,
+    );
+
+    simulator.revokeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      revokeSignature,
+      candidate.maintainerId,
+      revokeEvidenceHash,
+    );
+
+    const revokedMembership = simulator.getMaintainerMembership(
+      candidate.maintainerId,
+    );
+    expect(revokedMembership.status).toEqual(AuthorizationStatus.revoked);
+    expect(
+      simulator.getLedger().maintainerRecords.lookup(candidate.keyId).status,
+    ).toEqual(MaintainerStatus.revoked);
+
+    const archiveEvidenceHash = labelToBytes32("evidence:governed:archive");
+    const archiveActionSequence = simulator.getLedger().governanceActionCount;
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        revokedMembership.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      archiveActionSequence,
+    );
+
+    simulator.archiveMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      candidate.maintainerId,
+      archiveEvidenceHash,
+    );
+
+    const archivedMembership = simulator.getMaintainerMembership(
+      candidate.maintainerId,
+    );
+    expect(archivedMembership.status).toEqual(AuthorizationStatus.archived);
+    expect(
+      simulator.getLedger().maintainerRecords.lookup(candidate.keyId).status,
+    ).toEqual(MaintainerStatus.archived);
+  });
+
+  it("rejects duplicate live maintainer identity enrollment and protects the last active maintainer from deactivation", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(13);
+    const selfCandidate = createMaintainerMembershipFixture("self", 14);
+    selfCandidate.maintainerDidCommitment = bootstrapMaintainer.didCommitment;
+
+    const proposeActionSequence = simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_MAINTAINER_ACTION_KIND,
+      computeCreateMaintainerMembershipPayloadHash(
+        selfCandidate.maintainerId,
+        selfCandidate.maintainerDidCommitment,
+        selfCandidate.keyId,
+        selfCandidate.publicKey,
+        selfCandidate.policyId,
+        selfCandidate.trustLevel,
+        selfCandidate.evidenceHash,
+      ),
+      proposeActionSequence,
+    );
+
+    expect(() =>
+      simulator.proposeMaintainerMembership(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        proposeSignature,
+        selfCandidate.maintainerId,
+        selfCandidate.maintainerDidCommitment,
+        selfCandidate.keyId,
+        selfCandidate.publicKey,
+        selfCandidate.policyId,
+        selfCandidate.trustLevel,
+        selfCandidate.evidenceHash,
+      ),
+    ).toThrow(/already has a live membership/i);
+
+    const suspendEvidenceHash = labelToBytes32("evidence:bootstrap:suspend");
+    const suspendActionSequence = simulator.getLedger().governanceActionCount;
+    const suspendSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        bootstrapMaintainer.maintainerId,
+        simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId)
+          .lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      suspendActionSequence,
+    );
+
+    expect(() =>
+      simulator.suspendMaintainerMembership(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        suspendSignature,
+        bootstrapMaintainer.maintainerId,
+        suspendEvidenceHash,
+      ),
+    ).toThrow(/violate the maintainer threshold/i);
   });
 
   it("authorizes a signed maintainer action for the bootstrap maintainer", () => {
@@ -272,6 +568,8 @@ describe("trust registry contract", () => {
       registryId,
       registryDidCommitment,
       governancePolicyCommitment,
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       1n,
@@ -355,6 +653,8 @@ describe("trust registry contract", () => {
       registryId,
       labelToBytes32("did:midnight:registry"),
       labelToBytes32("policy:kanon:v1"),
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       1n,

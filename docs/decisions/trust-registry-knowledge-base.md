@@ -78,6 +78,13 @@ Completed in the current implementation wave:
   - a dedicated auditor authorization family that mirrors verifier composite scope
   - positive integration coverage for verifier and recognition application history
   - active and historical integration coverage for auditor authorization
+- governed maintainer membership workflow with:
+  - dedicated maintainer membership records separate from the active signer key table
+  - bootstrap maintainer mirrored into append-only membership history at initialization
+  - proposal, approval, activation, suspension, revocation, and archival circuits
+  - duplicate live maintainer identity rejection
+  - last-active-maintainer threshold protection on deactivation paths
+  - local contract and simulator integration coverage
 - CI workflow repair for stacked PRs and manual dispatch:
   - `pull_request` workflows no longer require `develop` as the base branch
   - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
@@ -318,22 +325,20 @@ Still missing for the first usable prototype:
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
-- maintainer onboarding and removal flows
-- maintainer application and approval flows
 - historical epoch selection by timestamp
 - Merkle-style inclusion proofs beyond the current signed-statement anchor
 
 ## Next Recommended Slices
 
-1. `TR-021`
-   - finish the issuer application-state branch and publish it as the next
-     stacked PR
-2. `TR-023` and `TR-024`
-   - add maintainer membership lifecycle and real multi-maintainer quorum
-     execution
-3. `TR-026` to `TR-028`
-   - add mutable CLI, REST API, and UI surfaces after governance workflows are
-     explicit
+1. `TR-024`
+   - replace the current single-signature maintainer shortcut with real
+     multi-maintainer quorum execution
+2. `TR-025`
+   - bind maintainer, member, emergency, and auditor decisions to typed
+     governance policy templates
+3. `TR-026` to `TR-030`
+   - execute the current 10-PR stack plan from mutable operator CLI through
+     API, UI, historical proof hardening, and release/demo flow
 
 ## Knowledge Synchronization Rule
 
