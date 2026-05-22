@@ -668,8 +668,15 @@ describe("trust registry api", () => {
     const workspace = createOperatorWorkspace({ label: "kanon-memory" });
     const server = await startServer(createInMemorySource(workspace.snapshot));
     try {
+      const preflightResponse = await fetch(`${server.url}/v1/applications`, {
+        method: "OPTIONS",
+      });
+      expect(preflightResponse.status).toBe(204);
+      expect(preflightResponse.headers.get("access-control-allow-origin")).toBe("*");
+
       const healthResponse = await fetch(`${server.url}/health`);
       expect(healthResponse.status).toBe(200);
+      expect(healthResponse.headers.get("access-control-allow-origin")).toBe("*");
       const health = await healthResponse.json();
       expect(health.sourceMode).toBe("memory");
 

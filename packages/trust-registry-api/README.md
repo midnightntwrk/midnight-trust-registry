@@ -62,6 +62,8 @@ Workspace-backed mutation routes:
   - run the server on loopback or behind an explicit local proxy
 - serialize writes per workspace file inside the process, but do not provide
   cross-process locking for multi-writer deployments
+- return permissive local CORS headers plus `OPTIONS` preflight responses so the
+  admin console can call the same loopback API from a separate port
 
 Example applicant submission:
 

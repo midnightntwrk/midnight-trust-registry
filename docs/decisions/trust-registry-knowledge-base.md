@@ -296,6 +296,15 @@ Completed in the current implementation wave:
   - epoch publication with and without a request body
   - invalid target and unknown-id problem responses
   - mutation rejection for snapshot-backed API servers
+- first admin console package:
+  - `packages/trust-registry-admin-console`
+  - static local UI over the existing API
+  - review boards grouped by lifecycle state for issuer, verifier, and recognition records
+  - maintainer actions for approve, activate, suspend, revoke, archive, and epoch publication
+- API/browser interoperability support for the admin console:
+  - permissive local CORS headers on the API
+  - preflight handling for `OPTIONS` requests
+  - preview-server smoke coverage against a seeded operator workspace
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output

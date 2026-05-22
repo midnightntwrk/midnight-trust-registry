@@ -144,8 +144,21 @@ const writeJson = (
   payload: unknown,
 ): void => {
   response.statusCode = status;
+  response.setHeader("access-control-allow-origin", "*");
+  response.setHeader("access-control-allow-headers", "content-type");
+  response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
+};
+
+const writeNoContent = (
+  response: ServerResponse,
+): void => {
+  response.statusCode = 204;
+  response.setHeader("access-control-allow-origin", "*");
+  response.setHeader("access-control-allow-headers", "content-type");
+  response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  response.end();
 };
 
 const asProblem = (
@@ -404,6 +417,11 @@ export const createTrustRegistryApiServer = (
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const segments = routeSegments(url.pathname);
+
+      if (method === "OPTIONS") {
+        writeNoContent(response);
+        return;
+      }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "health") {
         const summary = await loadRegistrySummary(options.source);
