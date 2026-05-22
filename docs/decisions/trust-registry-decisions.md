@@ -45,6 +45,10 @@ Date: 2026-05-21
 - Keep the first operator CLI read-heavy: local initialization, inspection, and evidence export land before mutable maintainer workflows or audit/report generation.
 - Implement the first audit-report slice on top of the existing CLI snapshot surface instead of creating a separate reporting workspace.
 - Keep the first audit-report slice deterministic and read-only: render human-readable registry, policy, authorization, recognition, and epoch history from saved snapshots without introducing mutable operator flows.
+- Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
+- Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
+- Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.
+- Sequence the next stack after operator reporting around the missing governance seams: issuer application workflow, then verifier/recognition/auditor application flows, then maintainer membership and multi-maintainer quorum execution before operator/API mutation surfaces.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
 - Make `turbo typecheck` depend on the package's own `build` task as well as `^build` so fresh-runner typecheck cannot race missing generated artifacts.
@@ -59,4 +63,4 @@ Date: 2026-05-21
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.
-- When to introduce the separate on-chain application state machine for issuer, verifier, and admin onboarding flows.
+- Exact auditor scope model: dedicated authorization family, verifier extension, or governed recognition subtype.

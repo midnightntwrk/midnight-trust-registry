@@ -68,6 +68,10 @@ Completed in the current implementation wave:
 - issuer authorization create, suspend, revoke, archive, and query circuits
 - issuer authorization payload-hash helpers for maintainer signatures
 - focused positive and negative issuer authorization contract tests
+- issuer application-state foundation with:
+  - explicit `proposed`, `authorized`, and `active` issuer lifecycle states
+  - issuer proposal, approval, and activation circuits
+  - archive-from-proposed and revoke-from-authorized coverage
 - CI workflow repair for stacked PRs and manual dispatch:
   - `pull_request` workflows no longer require `develop` as the base branch
   - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
@@ -111,6 +115,10 @@ Completed in the current implementation wave:
   - evidence bundle generation
   - anchored epoch validation against stored roots and signatures
   - wrong-registry and inactive-authorization rejections
+- simulator-first issuer application coverage with:
+  - proposed issuer evidence before activation
+  - authorized issuer evidence before activation
+  - active issuer evidence after explicit activation
 - first client workspace:
   - `packages/trust-registry-client`
 - simulator-backed query helpers for:
@@ -130,6 +138,10 @@ Completed in the current implementation wave:
   - wrong-registry and tampered-evidence failures
 - focused client tests that exercise current and historical queries plus
   anchored bundle verification against the local simulator
+- client verification coverage for:
+  - non-active issuer proposal and approval bundles with `requireActive: false`
+  - default rejection of proposed or authorized issuer bundles when active trust
+    is required
 - acyclic workspace graph for CI:
   - `@midnight-ntwrk/trust-registry-client` does not declare a manifest
     dependency on `@midnight-ntwrk/trust-registry-integration`
@@ -215,24 +227,25 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
+- `codex/trust-registry-application-foundation`
+- stacked on:
+  - `codex/trust-registry-audit-report`
+- current slice:
+  - `TR-021`
+  - issuer application-state workflow
+
+Current stacked base branch:
+
 - `codex/trust-registry-audit-report`
 - `#9`
 - title:
   - `feat: add trust registry audit reports`
-
-Stacked base branch:
-
-- `codex/trust-registry-operator-cli`
-- `#8`
-- title:
-  - `feat: add trust registry operator cli`
 - lower stacked base:
+  - `codex/trust-registry-operator-cli`
+  - `#8`
+  - contains the operator CLI slice
   - `codex/trust-registry-verifier-authorization`
   - contains TR-011 through TR-018 on the current stack
-- `codex/trust-registry-issuer-authorization`
-- `#6`
-- title:
-  - `feat: add issuer authorization circuits`
 
 Merged baseline now on `origin/develop`:
 
@@ -243,10 +256,8 @@ Branch handling note:
 
 - the docs/workflow baseline plus domain foundation and compact skeleton are on
   `develop`
-- the current branch stacks audit reporting on top of the operator CLI branch,
-  which in turn stacks on the verifier, recognition, epoch, client, DID/VC
-  integration, TRQP, and OpenID Federation slices while the lower draft PRs are
-  still open
+- the current branch stacks issuer application-state work on top of the audit
+  report branch while the lower PR queue is still open
 
 ## Validation Baseline
 
@@ -294,29 +305,32 @@ Still missing for the first usable prototype:
 
 - mutable operator workflows on top of the current CLI snapshot, evidence, and
   reporting baseline
+- applicant-facing submission and public query HTTP surfaces
+- maintainer-facing web UX above the existing client and CLI packages
 
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
 - maintainer onboarding and removal flows
-- issuer, verifier, and recognition application state machines
-- separate `proposed` and `authorized` on-chain authorization phases
+- verifier, recognition, and auditor application state machines
+- maintainer application and approval flows
 - historical epoch selection by timestamp
 - Merkle-style inclusion proofs beyond the current signed-statement anchor
 
 ## Next Recommended Slices
 
-1. `TR-010`
-   - finish the issuer authorization branch and merge it to `develop`
-2. `TR-011` to `TR-014`
-   - retarget and finish the stacked verifier, simulator-integration,
-     recognition, epoch, and client branch after `TR-010`
-3. `TR-019`
-   - add the first operator CLI on top of the stabilized read adapters and
-     client surface
-4. `TR-020`
-   - add the audit report generator after the operator CLI establishes the
-     inspection path
+1. `TR-021`
+   - finish the issuer application-state branch and publish it as the next
+     stacked PR
+2. `TR-022`
+   - widen proposal and approval workflows to verifier, recognition, and
+     auditor state
+3. `TR-023` and `TR-024`
+   - add maintainer membership lifecycle and real multi-maintainer quorum
+     execution
+4. `TR-026` to `TR-028`
+   - add mutable CLI, REST API, and UI surfaces after governance workflows are
+     explicit
 
 ## Knowledge Synchronization Rule
 

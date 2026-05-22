@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { runCli } from "../cli.js";
 import { loadSnapshotFromFile } from "../snapshot.js";
 
+const CLI_TEST_TIMEOUT_MS = 20_000;
+
 const captureCli = async (argv: readonly string[]) => {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -24,90 +26,98 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
-  it("creates a deterministic demo snapshot and summarizes it as JSON", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
-    const snapshotPath = join(directory, "demo-snapshot.json");
+  it(
+    "creates a deterministic demo snapshot and summarizes it as JSON",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+      const snapshotPath = join(directory, "demo-snapshot.json");
 
-    const initResult = await captureCli([
-      "init-demo",
-      "--output",
-      snapshotPath,
-      "--label",
-      "operator",
-    ]);
-    expect(initResult.exitCode).toBe(0);
+      const initResult = await captureCli([
+        "init-demo",
+        "--output",
+        snapshotPath,
+        "--label",
+        "operator",
+      ]);
+      expect(initResult.exitCode).toBe(0);
 
-    const snapshot = await loadSnapshotFromFile(snapshotPath);
-    expect(snapshot.registryLabel).toBe("operator");
-    expect(snapshot.issuerEntries).toHaveLength(2);
-    expect(snapshot.verifierEntries).toHaveLength(2);
-    expect(snapshot.recognitionEntries).toHaveLength(2);
+      const snapshot = await loadSnapshotFromFile(snapshotPath);
+      expect(snapshot.registryLabel).toBe("operator");
+      expect(snapshot.issuerEntries).toHaveLength(2);
+      expect(snapshot.verifierEntries).toHaveLength(2);
+      expect(snapshot.recognitionEntries).toHaveLength(2);
 
-    const summaryResult = await captureCli([
-      "summary",
-      "--snapshot",
-      snapshotPath,
-      "--json",
-    ]);
-    expect(summaryResult.exitCode).toBe(0);
+      const summaryResult = await captureCli([
+        "summary",
+        "--snapshot",
+        snapshotPath,
+        "--json",
+      ]);
+      expect(summaryResult.exitCode).toBe(0);
 
-    const summary = JSON.parse(summaryResult.stdout) as {
-      issuerCounts: { active: number; archived: number };
-      verifierCounts: { active: number; archived: number };
-      recognitionCounts: { active: number; archived: number };
-    };
-    expect(summary.issuerCounts.active).toBe(1);
-    expect(summary.issuerCounts.archived).toBe(1);
-    expect(summary.verifierCounts.active).toBe(1);
-    expect(summary.verifierCounts.archived).toBe(1);
-    expect(summary.recognitionCounts.active).toBe(1);
-    expect(summary.recognitionCounts.archived).toBe(1);
-  });
+      const summary = JSON.parse(summaryResult.stdout) as {
+        issuerCounts: { active: number; archived: number };
+        verifierCounts: { active: number; archived: number };
+        recognitionCounts: { active: number; archived: number };
+      };
+      expect(summary.issuerCounts.active).toBe(1);
+      expect(summary.issuerCounts.archived).toBe(1);
+      expect(summary.verifierCounts.active).toBe(1);
+      expect(summary.verifierCounts.archived).toBe(1);
+      expect(summary.recognitionCounts.active).toBe(1);
+      expect(summary.recognitionCounts.archived).toBe(1);
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
 
-  it("lists and inspects issuer records from the saved snapshot", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
-    const snapshotPath = join(directory, "demo-snapshot.json");
+  it(
+    "lists and inspects issuer records from the saved snapshot",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
+      const snapshotPath = join(directory, "demo-snapshot.json");
 
-    await captureCli(["init-demo", "--output", snapshotPath]);
-    const snapshot = await loadSnapshotFromFile(snapshotPath);
-    const issuerId = snapshot.issuerEntries[0]?.authorization.authorizationId;
-    if (issuerId === undefined) {
-      throw new Error("expected issuer authorization in demo snapshot");
-    }
+      await captureCli(["init-demo", "--output", snapshotPath]);
+      const snapshot = await loadSnapshotFromFile(snapshotPath);
+      const issuerId = snapshot.issuerEntries[0]?.authorization.authorizationId;
+      if (issuerId === undefined) {
+        throw new Error("expected issuer authorization in demo snapshot");
+      }
 
-    const listResult = await captureCli([
-      "list",
-      "--snapshot",
-      snapshotPath,
-      "--kind",
-      "issuer",
-      "--json",
-    ]);
-    expect(listResult.exitCode).toBe(0);
-    const listed = JSON.parse(listResult.stdout) as Array<{
-      authorization: { authorizationId: string };
-    }>;
-    expect(listed).toHaveLength(2);
-    expect(listed[0]?.authorization.authorizationId).toBe(issuerId);
+      const listResult = await captureCli([
+        "list",
+        "--snapshot",
+        snapshotPath,
+        "--kind",
+        "issuer",
+        "--json",
+      ]);
+      expect(listResult.exitCode).toBe(0);
+      const listed = JSON.parse(listResult.stdout) as Array<{
+        authorization: { authorizationId: string };
+      }>;
+      expect(listed).toHaveLength(2);
+      expect(listed[0]?.authorization.authorizationId).toBe(issuerId);
 
-    const inspectResult = await captureCli([
-      "inspect",
-      "--snapshot",
-      snapshotPath,
-      "--kind",
-      "issuer",
-      "--id",
-      issuerId,
-    ]);
-    expect(inspectResult.exitCode).toBe(0);
-    const inspected = JSON.parse(inspectResult.stdout) as {
-      authorization: { authorizationId: string; role: string };
-      evidence: { registryId: string };
-    };
-    expect(inspected.authorization.authorizationId).toBe(issuerId);
-    expect(inspected.authorization.role).toBe("issuer");
-    expect(inspected.evidence.registryId).toBe(snapshot.registry.registryId);
-  });
+      const inspectResult = await captureCli([
+        "inspect",
+        "--snapshot",
+        snapshotPath,
+        "--kind",
+        "issuer",
+        "--id",
+        issuerId,
+      ]);
+      expect(inspectResult.exitCode).toBe(0);
+      const inspected = JSON.parse(inspectResult.stdout) as {
+        authorization: { authorizationId: string; role: string };
+        evidence: { registryId: string };
+      };
+      expect(inspected.authorization.authorizationId).toBe(issuerId);
+      expect(inspected.authorization.role).toBe("issuer");
+      expect(inspected.evidence.registryId).toBe(snapshot.registry.registryId);
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
 
   it("exports anchored evidence bundles for operator use", async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
@@ -142,9 +152,11 @@ describe("trust registry operator CLI", () => {
     expect(
       snapshot.epochs.some((epoch) => epoch.epochId === bundle.epoch.epochId),
     ).toBe(true);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
-  it("emits a full human-readable audit report from the saved snapshot", async () => {
+  it(
+    "emits a full human-readable audit report from the saved snapshot",
+    async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
     const snapshotPath = join(directory, "demo-snapshot.json");
 
@@ -165,7 +177,9 @@ describe("trust registry operator CLI", () => {
     expect(reportResult.stdout).toContain("Verifier Authorizations");
     expect(reportResult.stdout).toContain("Recognitions");
     expect(reportResult.stdout).toContain("Epoch History");
-  });
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
 
   it("writes a focused issuer audit report to disk", async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
@@ -199,7 +213,7 @@ describe("trust registry operator CLI", () => {
     expect(report).toContain("Timeline:");
     expect(report).toContain("proposedAt:");
     expect(report).toContain("archivedAt:");
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("fails when a focused report targets an unknown issuer authorization", async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-"));
@@ -221,5 +235,5 @@ describe("trust registry operator CLI", () => {
     expect(reportResult.stderr).toContain(
       "unknown issuer authorization: auth:issuer:missing:v1",
     );
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 });

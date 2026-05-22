@@ -49,7 +49,9 @@ import {
   type VerifierScenarioFixture,
 } from "./fixtures.js";
 
-const CREATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:create");
+const PROPOSE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:propose");
+const AUTHORIZE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:authorize");
+const ACTIVATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:activate");
 const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
 const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
 const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
@@ -107,6 +109,10 @@ const contractStatusName = (
   status: ContractAuthorizationStatus,
 ): AuthorizationRecord["status"] => {
   switch (status) {
+    case ContractAuthorizationStatus.proposed:
+      return "proposed";
+    case ContractAuthorizationStatus.authorized:
+      return "authorized";
     case ContractAuthorizationStatus.active:
       return "active";
     case ContractAuthorizationStatus.suspended:
@@ -207,12 +213,20 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   authorizeIssuer(fixture: IssuerScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:create`);
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    this.proposeIssuer(fixture);
+    this.approveIssuer(fixture);
+    return this.activateIssuer(fixture);
+  }
+
+  proposeIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+    const proposedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:propose`,
+    );
+    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
-      CREATE_ISSUER_ACTION_KIND,
+      PROPOSE_ISSUER_ACTION_KIND,
       computeCreateIssuerAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
@@ -220,21 +234,71 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.resourceIdCommitment,
         this.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
-        evidenceHash,
+        proposedEvidenceHash,
       ),
-      actionSequence,
+      proposeActionSequence,
     );
-
-    return this.simulator.createIssuerAuthorization(
+    return this.simulator.proposeIssuerAuthorization(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      signature,
+      proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
       this.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
+  }
+
+  approveIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+    const authorizedEvidenceHash = bytes32Commitment(
+      `${fixture.authorizationId}:authorize`,
+    );
+    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const authorizeSignature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      AUTHORIZE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        authorizedEvidenceHash,
+      ),
+      authorizeActionSequence,
+    );
+    return this.simulator.authorizeIssuerAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      authorizeSignature,
+      fixture.authorizationIdCommitment,
+      authorizedEvidenceHash,
+    );
+  }
+
+  activateIssuer(fixture: IssuerScenarioFixture): Uint8Array {
+    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      this.bootstrapMaintainer.seed,
+      this.registryIdCommitment,
+      ACTIVATE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)
+          .lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    return this.simulator.activateIssuerAuthorization(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      signature,
+      fixture.authorizationIdCommitment,
       evidenceHash,
     );
   }
