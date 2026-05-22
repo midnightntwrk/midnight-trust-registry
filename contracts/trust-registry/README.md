@@ -18,3 +18,7 @@ action bundle so the contract can cover `3-of-5` and `5-of-7` governance
 shapes without dynamic arrays. Historical lookup by timestamp, richer
 governance policy bindings, and client-facing mutation/query adapters still
 stack on top of this package.
+
+For v1 epoch publication, the epoch record persists the submitter
+(`signer1`) key id and signature, while the full approving quorum is bound into
+the governance-event chain through the signer-set hash.

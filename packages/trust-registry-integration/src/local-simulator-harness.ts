@@ -327,6 +327,9 @@ export class LocalTrustRegistryIntegrationHarness {
         );
       },
     );
+    activeCoMaintainers.sort((left, right) =>
+      bytes32Hex(left.keyId).localeCompare(bytes32Hex(right.keyId)),
+    );
 
     if (activeCoMaintainers.length < requiredCoMaintainers) {
       throw new Error(

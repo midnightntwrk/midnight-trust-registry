@@ -739,6 +739,25 @@ describe("trust registry contract", () => {
       activateMaintainerEvidenceHash,
     );
 
+    const invalidThresholdPolicySequence = simulator.getLedger().governanceActionCount;
+    const invalidThresholdPolicySignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(3n, 1n, 1n),
+      invalidThresholdPolicySequence,
+    );
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        invalidThresholdPolicySignature,
+        3n,
+        1n,
+        1n,
+      ),
+    ).toThrow(/may not exceed active maintainer count/i);
+
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const thresholdPolicyPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
       2n,
