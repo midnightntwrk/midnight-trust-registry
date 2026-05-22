@@ -91,6 +91,8 @@ const authorizationEntriesForRole = (
 const actionToAuthorizationRole = (
   action: string,
 ): TrustRegistryApiAuthorizationRole | undefined => {
+  // The first HTTP slice intentionally exposes only the issuer/verifier
+  // TRQP actions already modeled by the adapter package.
   switch (action) {
     case "issue":
       return "issuer";

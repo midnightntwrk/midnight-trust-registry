@@ -15,7 +15,11 @@ import {
   type TrustRegistryOperatorWorkspace,
 } from "@midnight-ntwrk/trust-registry-cli";
 
-import { createSnapshotFileSource, createWorkspaceFileSource } from "../source.js";
+import {
+  createInMemorySource,
+  createSnapshotFileSource,
+  createWorkspaceFileSource,
+} from "../source.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
 type ServerHarness = {
@@ -166,6 +170,16 @@ describe("trust registry api", () => {
       expect(summary.issuerCounts.active).toBe(1);
       expect(summary.verifierCounts.active).toBe(1);
 
+      const registryResponse = await fetch(`${server.url}/v1/registry`);
+      expect(registryResponse.status).toBe(200);
+      const registry = await registryResponse.json();
+      expect(registry.registryId).toBe(workspace.snapshot.registry.registryId);
+
+      const healthResponse = await fetch(`${server.url}/health`);
+      expect(healthResponse.status).toBe(200);
+      const health = await healthResponse.json();
+      expect(health.sourceMode).toBe("workspace");
+
       const listResponse = await fetch(
         `${server.url}/v1/authorizations/issuer?status=active`,
       );
@@ -198,6 +212,44 @@ describe("trust registry api", () => {
       expect(evidenceResponse.status).toBe(200);
       const evidence = await evidenceResponse.json();
       expect(evidence.authorization.authorizationId).toBe(issuerId);
+
+      const trqpAuthorizationResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/query`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+          }),
+        },
+      );
+      expect(trqpAuthorizationResponse.status).toBe(200);
+      const trqpAuthorization = await trqpAuthorizationResponse.json();
+      expect(trqpAuthorization.authorized).toBe(true);
+
+      const trqpEvidenceResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/evidence`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+          }),
+        },
+      );
+      expect(trqpEvidenceResponse.status).toBe(200);
+      const trqpEvidence = await trqpEvidenceResponse.json();
+      expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
     } finally {
       await server.close();
     }
@@ -236,6 +288,18 @@ describe("trust registry api", () => {
 
     const server = await startServer(createSnapshotFileSource(snapshotPath));
     try {
+      const currentEpochResponse = await fetch(`${server.url}/v1/epochs/current`);
+      expect(currentEpochResponse.status).toBe(200);
+      const currentEpoch = await currentEpochResponse.json();
+      expect(currentEpoch.epochId).toBe(workspace.snapshot.currentEpoch.epochId);
+
+      const epochByIdResponse = await fetch(
+        `${server.url}/v1/epochs/${workspace.snapshot.currentEpoch.epochId}`,
+      );
+      expect(epochByIdResponse.status).toBe(200);
+      const epochById = await epochByIdResponse.json();
+      expect(epochById.epochId).toBe(workspace.snapshot.currentEpoch.epochId);
+
       const recognitionResponse = await fetch(
         `${server.url}/v1/recognitions/${recognitionId}`,
       );
@@ -358,6 +422,21 @@ describe("trust registry api", () => {
       expect(badRequest.status).toBe(400);
       const badProblem = await badRequest.json();
       expect(badProblem.title).toMatch(/invalid request/i);
+      expect(badProblem.type).toMatch(/invalid-request$/);
+
+      const invalidJson = await fetch(
+        `${server.url}/v1/trqp/authorizations/query`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: "{",
+        },
+      );
+      expect(invalidJson.status).toBe(400);
+      const invalidJsonProblem = await invalidJson.json();
+      expect(invalidJsonProblem.type).toMatch(/invalid-json$/);
 
       const missingResponse = await fetch(
         `${server.url}/v1/recognitions/unknown-recognition`,
@@ -365,6 +444,25 @@ describe("trust registry api", () => {
       expect(missingResponse.status).toBe(404);
       const missingProblem = await missingResponse.json();
       expect(missingProblem.title).toMatch(/recognition not found/i);
+      expect(missingProblem.type).toMatch(/recognition-not-found$/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves the same routes from an in-memory source", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-memory" });
+    const server = await startServer(createInMemorySource(workspace.snapshot));
+    try {
+      const healthResponse = await fetch(`${server.url}/health`);
+      expect(healthResponse.status).toBe(200);
+      const health = await healthResponse.json();
+      expect(health.sourceMode).toBe("memory");
+
+      const summaryResponse = await fetch(`${server.url}/v1/registry/summary`);
+      expect(summaryResponse.status).toBe(200);
+      const summary = await summaryResponse.json();
+      expect(summary.registryLabel).toBe("kanon-memory");
     } finally {
       await server.close();
     }

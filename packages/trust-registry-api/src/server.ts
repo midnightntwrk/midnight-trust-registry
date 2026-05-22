@@ -42,6 +42,7 @@ import {
 } from "./schemas.js";
 
 const DEFAULT_PROBLEM_BASE = "https://midnight.network/problems/trust-registry-api";
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 class HttpProblem extends Error {
   constructor(
@@ -59,13 +60,14 @@ export type TrustRegistryApiServerOptions = {
 
 const jsonProblem = (
   problemBaseUri: string,
+  typeSlug: string,
   status: number,
   title: string,
   detail?: string,
 ): HttpProblem =>
   new HttpProblem(
     TrustRegistryApiProblemDetailsSchema.parse({
-      type: `${problemBaseUri}/${title.replace(/\s+/g, "-").toLowerCase()}`,
+      type: `${problemBaseUri}/${typeSlug}`,
       title,
       status,
       detail,
@@ -74,23 +76,56 @@ const jsonProblem = (
 
 const readRequestBody = async (
   request: IncomingMessage,
+  problemBaseUri: string,
 ): Promise<string> =>
   new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalSize = 0;
+    let settled = false;
     request.on("data", (chunk) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (settled) {
+        return;
+      }
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalSize += buffer.byteLength;
+      if (totalSize > MAX_REQUEST_BODY_BYTES) {
+        settled = true;
+        reject(
+          jsonProblem(
+            problemBaseUri,
+            "payload-too-large",
+            413,
+            "payload too large",
+            `Request body exceeds ${MAX_REQUEST_BODY_BYTES.toString()} bytes.`,
+          ),
+        );
+        request.destroy();
+        return;
+      }
+      chunks.push(buffer);
     });
     request.on("end", () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
-    request.on("error", reject);
+    request.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    });
   });
 
 const parseJsonBody = async <T>(
   request: IncomingMessage,
   parse: (value: unknown) => T,
+  problemBaseUri: string,
 ): Promise<T> => {
-  const raw = await readRequestBody(request);
+  const raw = await readRequestBody(request, problemBaseUri);
   const payload = raw.length === 0 ? {} : JSON.parse(raw);
   return parse(payload);
 };
@@ -154,6 +189,7 @@ const requireAuthorizationEntry = async (
   if (entry === null) {
     throw jsonProblem(
       problemBaseUri,
+      "authorization-not-found",
       404,
       "authorization not found",
       `No ${role} authorization exists for id ${authorizationId}.`,
@@ -172,6 +208,7 @@ const requireRecognitionEntry = async (
   if (entry === null) {
     throw jsonProblem(
       problemBaseUri,
+      "recognition-not-found",
       404,
       "recognition not found",
       `No recognition exists for id ${recognitionId}.`,
@@ -264,6 +301,7 @@ export const createTrustRegistryApiServer = (
         if (epoch === null) {
           throw jsonProblem(
             problemBaseUri,
+            "epoch-not-found",
             404,
             "epoch not found",
             `No epoch exists for id ${segments[2]}.`,
@@ -283,11 +321,13 @@ export const createTrustRegistryApiServer = (
         const body = await parseJsonBody(
           request,
           (value) => TrustRegistryApiResolveAuthorizationRequestSchema.parse(value),
+          problemBaseUri,
         );
         const entry = await resolveAuthorizationEntry(options.source, body);
         if (entry === null) {
           throw jsonProblem(
             problemBaseUri,
+            "authorization-not-found",
             404,
             "authorization not found",
             "No authorization matches the requested scope.",
@@ -370,11 +410,13 @@ export const createTrustRegistryApiServer = (
         const body = await parseJsonBody(
           request,
           (value) => TrustRegistryApiResolveRecognitionRequestSchema.parse(value),
+          problemBaseUri,
         );
         const entry = await resolveRecognitionEntry(options.source, body);
         if (entry === null) {
           throw jsonProblem(
             problemBaseUri,
+            "recognition-not-found",
             404,
             "recognition not found",
             "No recognition matches the requested scope.",
@@ -469,6 +511,7 @@ export const createTrustRegistryApiServer = (
         const body = await parseJsonBody(
           request,
           (value) => TrqpAuthorizationRequestSchema.parse(value),
+          problemBaseUri,
         );
         const result = segments[3] === "query"
           ? await trqpAdapter.queryAuthorization(body)
@@ -478,6 +521,7 @@ export const createTrustRegistryApiServer = (
         if (result === null) {
           throw jsonProblem(
             problemBaseUri,
+            "route-not-found",
             404,
             "route not found",
             `Unknown authorization route ${url.pathname}.`,
@@ -501,6 +545,7 @@ export const createTrustRegistryApiServer = (
         const body = await parseJsonBody(
           request,
           (value) => TrqpRecognitionRequestSchema.parse(value),
+          problemBaseUri,
         );
         const result = segments[3] === "query"
           ? await trqpAdapter.queryRecognition(body)
@@ -510,6 +555,7 @@ export const createTrustRegistryApiServer = (
         if (result === null) {
           throw jsonProblem(
             problemBaseUri,
+            "route-not-found",
             404,
             "route not found",
             `Unknown recognition route ${url.pathname}.`,
@@ -525,6 +571,7 @@ export const createTrustRegistryApiServer = (
 
       throw jsonProblem(
         problemBaseUri,
+        "route-not-found",
         404,
         "route not found",
         `No trust-registry API route matches ${method} ${url.pathname}.`,

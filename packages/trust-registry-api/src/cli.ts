@@ -122,15 +122,30 @@ export const runTrustRegistryApiCli = async (
   );
 
   const shutdown = async (): Promise<void> => {
-    server.close();
-    await once(server, "close");
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error !== undefined) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
   };
 
   process.once("SIGINT", () => {
-    void shutdown();
+    void shutdown().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`${message}\n`);
+      process.exitCode = 1;
+    });
   });
   process.once("SIGTERM", () => {
-    void shutdown();
+    void shutdown().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`${message}\n`);
+      process.exitCode = 1;
+    });
   });
 
   await once(server, "close");
