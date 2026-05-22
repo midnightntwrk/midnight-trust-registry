@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   TrustRegistryEvidenceBundleJsonSchema,
   TrustRegistryEvidenceBundleSchema,
+  computeAuthorizationStatementLeafHash,
+  computeMerkleRootFromProof,
+  computeRecognitionStatementLeafHash,
+  computeSingleStatementStateRoot,
 } from "../index.js";
 
 const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -169,5 +173,72 @@ describe("trust registry evidence bundle", () => {
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("inclusionProof");
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization).toBeDefined();
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.recognition).toBeDefined();
+  });
+
+  it("hashes the full statement payload and reconstructs the anchored state root", () => {
+    const authorizationLeaf = computeAuthorizationStatementLeafHash({
+      authorizationId: "auth:issuer:birth:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: "vc-type:birth:v1",
+      policyId: "policy:university:v1",
+      trustLevel: "approved",
+      status: "active",
+      lifecycleEventRoot: HASH_A,
+      proposedAt: "2026-05-20T00:00:00Z",
+      authorizedAt: "2026-05-20T01:00:00Z",
+      activeFrom: "2026-05-20T01:00:00Z",
+      evidenceHash: HASH_D,
+    });
+    const changedAuthorizationLeaf = computeAuthorizationStatementLeafHash({
+      authorizationId: "auth:issuer:birth:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: "vc-type:birth:v1",
+      policyId: "policy:university:v1",
+      trustLevel: "silver",
+      status: "active",
+      lifecycleEventRoot: HASH_A,
+      proposedAt: "2026-05-20T00:00:00Z",
+      authorizedAt: "2026-05-20T01:00:00Z",
+      activeFrom: "2026-05-20T01:00:00Z",
+      evidenceHash: HASH_D,
+    });
+
+    expect(changedAuthorizationLeaf).not.toBe(authorizationLeaf);
+    expect(
+      computeSingleStatementStateRoot(authorizationLeaf, HASH_B),
+    ).toBe(
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], 0),
+    );
+
+    const recognitionLeaf = computeRecognitionStatementLeafHash({
+      recognitionId: "recognition:gaia-x:v1",
+      registryId: "registry:midnight:university",
+      recognizedAuthorityDid: "did:midnight:issuer:1",
+      recognizedRegistryId: "registry:gaia-x",
+      scope: {
+        resourceType: "recognized-scope",
+        resourceId: "gaia-x",
+        context: {
+          jurisdiction: "eu",
+          assurance: "high",
+        },
+      },
+      policyId: "policy:university:v1",
+      trustLevel: "observer",
+      status: "active",
+      lifecycleEventRoot: HASH_C,
+      proposedAt: "2026-05-20T00:00:00Z",
+      authorizedAt: "2026-05-20T00:05:00Z",
+      effectiveFrom: "2026-05-20T00:10:00Z",
+      evidenceHash: HASH_D,
+    });
+
+    expect(recognitionLeaf).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });

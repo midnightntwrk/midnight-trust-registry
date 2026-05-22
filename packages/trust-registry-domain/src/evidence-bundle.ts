@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { DidSchema, HashHexSchema, ScopedIdentifierSchema, UriSchema } from "./ids.js";
+import {
+  DidSchema,
+  HashHexSchema,
+  ScopedIdentifierSchema,
+  UriSchema,
+  sha256Hex,
+} from "./ids.js";
 import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
@@ -9,6 +15,130 @@ import {
 } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
+
+const normalizeOptional = <T>(value: T | undefined): T | null => value ?? null;
+
+const sortStringRecord = (
+  value: Record<string, string> | undefined,
+): Record<string, string> | null => (
+  value === undefined
+    ? null
+    : Object.fromEntries(
+        Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+      )
+);
+
+export const computeAuthorizationStatementLeafHash = (
+  authorization: z.infer<typeof AuthorizationRecordSchema>,
+): string =>
+  sha256Hex(
+    JSON.stringify({
+      recordType: "authorization",
+      authorizationId: authorization.authorizationId,
+      registryId: authorization.registryId,
+      subjectDid: authorization.subjectDid,
+      role: authorization.role,
+      resourceType: authorization.resourceType,
+      resourceId: authorization.resourceId,
+      policyId: authorization.policyId,
+      trustLevel: authorization.trustLevel,
+      status: authorization.status,
+      lifecycleEventRoot: authorization.lifecycleEventRoot,
+      proposedAt: authorization.proposedAt,
+      authorizedAt: normalizeOptional(authorization.authorizedAt),
+      activeFrom: normalizeOptional(authorization.activeFrom),
+      issuedAt: normalizeOptional(authorization.issuedAt),
+      effectiveUntil: normalizeOptional(authorization.effectiveUntil),
+      suspendedAt: normalizeOptional(authorization.suspendedAt),
+      revokedAt: normalizeOptional(authorization.revokedAt),
+      supersededAt: normalizeOptional(authorization.supersededAt),
+      archivedAt: normalizeOptional(authorization.archivedAt),
+      evidenceHash: authorization.evidenceHash,
+    }),
+  );
+
+export const computeRecognitionStatementLeafHash = (
+  recognition: z.infer<typeof RecognitionRecordSchema>,
+): string =>
+  sha256Hex(
+    JSON.stringify({
+      recordType: "recognition",
+      recognitionId: recognition.recognitionId,
+      registryId: recognition.registryId,
+      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+      recognizedRegistryId: recognition.recognizedRegistryId,
+      scope: {
+        resourceType: recognition.scope.resourceType,
+        resourceId: recognition.scope.resourceId,
+        context: sortStringRecord(recognition.scope.context),
+      },
+      policyId: recognition.policyId,
+      trustLevel: recognition.trustLevel,
+      status: recognition.status,
+      lifecycleEventRoot: recognition.lifecycleEventRoot,
+      proposedAt: recognition.proposedAt,
+      authorizedAt: normalizeOptional(recognition.authorizedAt),
+      effectiveFrom: normalizeOptional(recognition.effectiveFrom),
+      effectiveUntil: normalizeOptional(recognition.effectiveUntil),
+      suspendedAt: normalizeOptional(recognition.suspendedAt),
+      revokedAt: normalizeOptional(recognition.revokedAt),
+      supersededAt: normalizeOptional(recognition.supersededAt),
+      archivedAt: normalizeOptional(recognition.archivedAt),
+      evidenceHash: recognition.evidenceHash,
+    }),
+  );
+
+export const computeRegistryStatementLeafHash = (input: {
+  registryId: string;
+  statementId: string;
+  statementStatus: string;
+  lifecycleEventRoot: string;
+}): string =>
+  sha256Hex(
+    JSON.stringify({
+      recordType: "registry-statement",
+      registryId: input.registryId,
+      statementId: input.statementId,
+      statementStatus: input.statementStatus,
+      lifecycleEventRoot: input.lifecycleEventRoot,
+    }),
+  );
+
+export const computeMerkleNodeHash = (
+  left: string,
+  right: string,
+): string =>
+  sha256Hex(
+    JSON.stringify({
+      left,
+      right,
+    }),
+  );
+
+export const computeMerkleRootFromProof = (
+  leafHash: string,
+  path: readonly string[],
+  leafIndex: number,
+): string => {
+  let computed = leafHash;
+  let currentIndex = leafIndex;
+
+  for (const siblingHash of path) {
+    computed =
+      currentIndex % 2 === 0
+        ? computeMerkleNodeHash(computed, siblingHash)
+        : computeMerkleNodeHash(siblingHash, computed);
+    currentIndex = Math.floor(currentIndex / 2);
+  }
+
+  return computed;
+};
+
+export const computeSingleStatementStateRoot = (
+  leafHash: string,
+  eventRoot: string,
+): string =>
+  computeMerkleRootFromProof(leafHash, [eventRoot], 0);
 
 export const InclusionProofSchema = z.object({
   proofType: z.enum(["signed-statement", "merkle-inclusion", "event-membership"]),

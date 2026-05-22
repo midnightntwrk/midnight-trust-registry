@@ -46,6 +46,9 @@ describe("trust registry client", () => {
         expectedResourceId: issuer.resourceId,
       }),
     ).not.toThrow();
+    expect(activeBundle.inclusionProof.proofType).toBe("merkle-inclusion");
+    expect(activeBundle.inclusionProof.root).toBe(activeBundle.epoch.stateRoot);
+    expect(activeBundle.inclusionProof.path[0]).toBe(activeBundle.epoch.eventRoot);
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(activeBundle, {
@@ -60,6 +63,36 @@ describe("trust registry client", () => {
         expectedRegistryId: harness.registryId,
       }),
     ).toThrow(/not active/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...activeBundle,
+          inclusionProof: {
+            ...activeBundle.inclusionProof,
+            leafHash: `${activeBundle.inclusionProof.leafHash.slice(0, -1)}0`,
+          },
+        },
+        {
+          expectedRegistryId: harness.registryId,
+        },
+      ),
+    ).toThrow(/leaf hash/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...activeBundle,
+          inclusionProof: {
+            ...activeBundle.inclusionProof,
+            path: [`${activeBundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+          },
+        },
+        {
+          expectedRegistryId: harness.registryId,
+        },
+      ),
+    ).toThrow(/event sibling/i);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
@@ -155,6 +188,9 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
+    const tamperedSignature = `0x${
+      originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
+    }${originalSignature.signature.slice(3)}`;
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(
@@ -166,7 +202,7 @@ describe("trust registry client", () => {
               {
                 keyId: originalSignature.keyId,
                 algorithm: originalSignature.algorithm,
-                signature: `${originalSignature.signature.slice(0, -1)}0`,
+                signature: tamperedSignature,
               },
             ],
           },
@@ -175,5 +211,18 @@ describe("trust registry client", () => {
         },
       ),
     ).toThrow(/invalid/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          policy: {
+            ...bundle.policy,
+            policyId: "policy:other:v1",
+          },
+        },
+        {},
+      ),
+    ).toThrow(/policy root/i);
   });
 });
