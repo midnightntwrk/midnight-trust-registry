@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { resolveGovernancePolicyTemplate } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
@@ -90,6 +91,17 @@ describe("trust registry local simulator integration", () => {
 
     harness.authorizeMaintainer(secondMaintainer);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "member")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
+    expect(
+      resolveGovernancePolicyTemplate(harness.policyRecord, "emergency"),
+    ).toMatchObject({
+      requiredMaintainerThreshold: 1,
+    });
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "archival")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
 
     expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
 

@@ -108,6 +108,11 @@ domain and evidence surfaces first. The Compact contract still anchors a single
 policy commitment plus scoped threshold state, and off-chain clients interpret
 typed bindings from the published policy record.
 
+The exported JSON Schema for trust-registry evidence is intentionally
+structural. Semantic checks such as unique template families, unique binding
+families, and binding-to-template integrity are enforced by the domain parser
+and validation logic, not by the JSON Schema alone.
+
 ### Participant
 
 A participant is a DID-identified issuer, verifier, maintainer, or authority.
