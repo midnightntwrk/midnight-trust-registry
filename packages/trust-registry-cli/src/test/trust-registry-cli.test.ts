@@ -173,6 +173,8 @@ describe("trust registry operator CLI", () => {
     expect(reportResult.stdout).toContain("Trust Registry Audit Report");
     expect(reportResult.stdout).toContain("Registry: registry:audit:trusted");
     expect(reportResult.stdout).toContain("Policy");
+    expect(reportResult.stdout).toContain("Policy templates:");
+    expect(reportResult.stdout).toContain("Decision bindings:");
     expect(reportResult.stdout).toContain("Issuer Authorizations");
     expect(reportResult.stdout).toContain("Verifier Authorizations");
     expect(reportResult.stdout).toContain("Recognitions");

@@ -91,7 +91,16 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
     policy: {
       type: "object",
       description: "Policy snapshot used to interpret trust level and decision rules.",
-      required: ["policyId", "registryId", "version", "policyUri", "status", "effectiveFrom"],
+      required: [
+        "policyId",
+        "registryId",
+        "version",
+        "policyUri",
+        "status",
+        "effectiveFrom",
+        "policyTemplates",
+        "decisionBindings",
+      ],
       properties: {
         policyId: { type: "string" },
         registryId: { type: "string" },
@@ -100,6 +109,69 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
         status: { type: "string" },
         effectiveFrom: { type: "string", format: "date-time" },
         effectiveUntil: { type: "string", format: "date-time" },
+        policyTemplates: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: [
+              "templateId",
+              "family",
+              "name",
+              "description",
+              "requiredMaintainerThreshold",
+              "applicableRoles",
+              "applicableActionKinds",
+              "evidenceRules",
+            ],
+            properties: {
+              templateId: { type: "string" },
+              family: {
+                enum: ["maintainer", "member", "emergency", "archival", "auditor"],
+              },
+              name: { type: "string" },
+              description: { type: "string" },
+              requiredMaintainerThreshold: { type: "integer", minimum: 1 },
+              applicableRoles: {
+                type: "array",
+                minItems: 1,
+                items: {
+                  enum: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+                },
+              },
+              applicableActionKinds: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+              evidenceRules: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+            },
+          },
+        },
+        decisionBindings: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: ["bindingId", "family", "templateId", "actionScopes"],
+            properties: {
+              bindingId: { type: "string" },
+              family: {
+                enum: ["maintainer", "member", "emergency", "archival", "auditor"],
+              },
+              templateId: { type: "string" },
+              actionScopes: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+            },
+          },
+        },
       },
     },
     epoch: {
@@ -249,4 +321,3 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
 
 export type TrustRegistryEvidenceBundle = z.infer<typeof TrustRegistryEvidenceBundleSchema>;
 export type InclusionProof = z.infer<typeof InclusionProofSchema>;
-

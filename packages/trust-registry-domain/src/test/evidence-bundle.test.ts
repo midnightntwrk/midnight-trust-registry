@@ -24,6 +24,26 @@ describe("trust registry evidence bundle", () => {
         policyUri: "https://registry.example/policy/v1",
         status: "active",
         effectiveFrom: "2026-05-20T00:00:00Z",
+        policyTemplates: [
+          {
+            templateId: "policy-template:university:member:v1",
+            family: "member",
+            name: "Member Governance",
+            description: "Issuer and verifier onboarding",
+            requiredMaintainerThreshold: 2,
+            applicableRoles: ["issuer", "verifier"],
+            applicableActionKinds: ["tr:issuer:propose", "tr:verifier:propose"],
+            evidenceRules: ["application bundle", "quorum signatures"],
+          },
+        ],
+        decisionBindings: [
+          {
+            bindingId: "policy-binding:university:member:v1",
+            family: "member",
+            templateId: "policy-template:university:member:v1",
+            actionScopes: ["issuer-authorization"],
+          },
+        ],
         decisionRules: ["majority maintainers"],
         disputeRules: ["formal appeal"],
         retentionRules: ["retain 10 years"],
@@ -90,6 +110,26 @@ describe("trust registry evidence bundle", () => {
           policyUri: "https://registry.example/policy/v1",
           status: "active",
           effectiveFrom: "2026-05-20T00:00:00Z",
+          policyTemplates: [
+            {
+              templateId: "policy-template:university:member:v1",
+              family: "member",
+              name: "Member Governance",
+              description: "Issuer and verifier onboarding",
+              requiredMaintainerThreshold: 2,
+              applicableRoles: ["issuer", "verifier"],
+              applicableActionKinds: ["tr:issuer:propose", "tr:verifier:propose"],
+              evidenceRules: ["application bundle", "quorum signatures"],
+            },
+          ],
+          decisionBindings: [
+            {
+              bindingId: "policy-binding:university:member:v1",
+              family: "member",
+              templateId: "policy-template:university:member:v1",
+              actionScopes: ["issuer-authorization"],
+            },
+          ],
           decisionRules: ["majority maintainers"],
           disputeRules: ["formal appeal"],
           retentionRules: ["retain 10 years"],

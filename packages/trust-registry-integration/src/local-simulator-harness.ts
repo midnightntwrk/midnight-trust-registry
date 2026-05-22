@@ -187,7 +187,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly policyId: string;
   readonly governancePolicyCommitment: Uint8Array;
   readonly registryRecord: RegistryRecord;
-  readonly policyRecord: GovernancePolicyRecord;
+  policyRecord: GovernancePolicyRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
@@ -231,22 +231,7 @@ export class LocalTrustRegistryIntegrationHarness {
       updatedAt: timestampForSequence(0n),
       lifecycleEventRoot: sha256Hex(this.registryId),
     });
-    this.policyRecord = GovernancePolicyRecordSchema.parse({
-      policyId: this.policyId,
-      registryId: this.registryId,
-      version: "v1",
-      policyUri: "https://registry.example/policies/kanon-v1",
-      status: "active",
-      effectiveFrom: timestampForSequence(0n),
-      decisionRules: [
-        "bootstrap starts at 1-of-1 approval in simulator mode",
-        "maintainer threshold policy may raise default, emergency, and archival quorum after additional maintainers activate",
-      ],
-      disputeRules: ["manual operator review"],
-      retentionRules: ["retain historical trust evidence for long-term verification"],
-      emergencyRules: ["maintainer may suspend compromised participants immediately"],
-      lifecycleEventRoot: sha256Hex(this.policyId),
-    });
+    this.policyRecord = this.buildPolicyRecord(1n, 1n, 1n);
     this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
@@ -267,6 +252,151 @@ export class LocalTrustRegistryIntegrationHarness {
       this.bootstrapPublicKey,
       1n,
     );
+  }
+
+  private buildPolicyRecord(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+  ): GovernancePolicyRecord {
+    return GovernancePolicyRecordSchema.parse({
+      policyId: this.policyId,
+      registryId: this.registryId,
+      version: "v1",
+      policyUri: "https://registry.example/policies/kanon-v1",
+      status: "active",
+      effectiveFrom: timestampForSequence(0n),
+      policyTemplates: [
+        {
+          templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
+          family: "maintainer",
+          name: "Maintainer Governance",
+          description: "Maintainer onboarding and membership changes",
+          requiredMaintainerThreshold: Number(defaultThreshold),
+          applicableRoles: ["maintainer"],
+          applicableActionKinds: [
+            "tr:maintainer:propose",
+            "tr:maintainer:authorize",
+            "tr:maintainer:activate",
+            "tr:policy:thresholds:update",
+          ],
+          evidenceRules: ["governance evidence hash", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "member", "v1"),
+          family: "member",
+          name: "Member Governance",
+          description: "Issuer, verifier, and recognition onboarding decisions",
+          requiredMaintainerThreshold: Number(defaultThreshold),
+          applicableRoles: ["issuer", "verifier", "authority"],
+          applicableActionKinds: [
+            "tr:issuer:propose",
+            "tr:issuer:authorize",
+            "tr:issuer:activate",
+            "tr:verifier:propose",
+            "tr:verifier:authorize",
+            "tr:verifier:activate",
+            "tr:recognition:propose",
+            "tr:recognition:authorize",
+            "tr:recognition:activate",
+          ],
+          evidenceRules: ["application evidence", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "emergency", "v1"),
+          family: "emergency",
+          name: "Emergency Governance",
+          description: "Emergency suspension and revocation decisions",
+          requiredMaintainerThreshold: Number(emergencyThreshold),
+          applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+          applicableActionKinds: [
+            "tr:issuer:suspend",
+            "tr:issuer:revoke",
+            "tr:verifier:suspend",
+            "tr:verifier:revoke",
+            "tr:maintainer:suspend",
+            "tr:maintainer:revoke",
+            "tr:recognition:suspend",
+            "tr:recognition:revoke",
+            "tr:auditor:suspend",
+            "tr:auditor:revoke",
+          ],
+          evidenceRules: ["incident evidence", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "archival", "v1"),
+          family: "archival",
+          name: "Archival Governance",
+          description: "Historical archival and closure decisions",
+          requiredMaintainerThreshold: Number(archivalThreshold),
+          applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+          applicableActionKinds: [
+            "tr:issuer:archive",
+            "tr:verifier:archive",
+            "tr:maintainer:archive",
+            "tr:recognition:archive",
+            "tr:auditor:archive",
+          ],
+          evidenceRules: ["archival justification", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "auditor", "v1"),
+          family: "auditor",
+          name: "Auditor Governance",
+          description: "Auditor onboarding and oversight decisions",
+          requiredMaintainerThreshold: Number(defaultThreshold),
+          applicableRoles: ["auditor"],
+          applicableActionKinds: [
+            "tr:auditor:propose",
+            "tr:auditor:authorize",
+            "tr:auditor:activate",
+          ],
+          evidenceRules: ["audit mandate evidence", "maintainer quorum signatures"],
+        },
+      ],
+      decisionBindings: [
+        {
+          bindingId: createScopedIdentifier("policy-binding", "maintainer", "v1"),
+          family: "maintainer",
+          templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
+          actionScopes: ["maintainer-membership", "threshold-policy"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "member", "v1"),
+          family: "member",
+          templateId: createScopedIdentifier("policy-template", "member", "v1"),
+          actionScopes: ["issuer-authorization", "verifier-authorization", "recognition"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "emergency", "v1"),
+          family: "emergency",
+          templateId: createScopedIdentifier("policy-template", "emergency", "v1"),
+          actionScopes: ["participant-emergency"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "archival", "v1"),
+          family: "archival",
+          templateId: createScopedIdentifier("policy-template", "archival", "v1"),
+          actionScopes: ["participant-archival"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "auditor", "v1"),
+          family: "auditor",
+          templateId: createScopedIdentifier("policy-template", "auditor", "v1"),
+          actionScopes: ["auditor-authorization"],
+        },
+      ],
+      decisionRules: [
+        `member governance starts at ${defaultThreshold.toString()}-of-active-maintainers`,
+        "maintainer threshold policy may raise default, emergency, and archival quorum after additional maintainers activate",
+      ],
+      disputeRules: ["manual operator review"],
+      retentionRules: ["retain historical trust evidence for long-term verification"],
+      emergencyRules: [
+        `emergency governance requires ${emergencyThreshold.toString()} approving maintainers`,
+      ],
+      lifecycleEventRoot: sha256Hex(this.policyId),
+    });
   }
 
   private bootstrapActionSignature(
@@ -352,7 +482,7 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
     );
-    return this.simulator.updateMaintainerThresholdPolicy(
+    const result = this.simulator.updateMaintainerThresholdPolicy(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
       this.bootstrapActionSignature(
@@ -370,6 +500,12 @@ export class LocalTrustRegistryIntegrationHarness {
         actionSequence,
       ),
     );
+    this.policyRecord = this.buildPolicyRecord(
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    return result;
   }
 
   authorizeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {

@@ -8,6 +8,7 @@ import {
   ParticipantRecordSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
+  resolveGovernancePolicyTemplate,
   sha256Hex,
 } from "../index.js";
 
@@ -15,6 +16,100 @@ const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+const createPolicyTemplates = () => [
+  {
+    templateId: "policy-template:university:maintainer:v1",
+    family: "maintainer" as const,
+    name: "Maintainer Governance",
+    description: "Maintainer onboarding and membership changes",
+    requiredMaintainerThreshold: 2,
+    applicableRoles: ["maintainer"] as const,
+    applicableActionKinds: [
+      "tr:maintainer:propose",
+      "tr:maintainer:authorize",
+      "tr:maintainer:activate",
+    ],
+    evidenceRules: ["quorum signatures", "membership evidence"],
+  },
+  {
+    templateId: "policy-template:university:member:v1",
+    family: "member" as const,
+    name: "Member Governance",
+    description: "Issuer, verifier, and recognition onboarding decisions",
+    requiredMaintainerThreshold: 2,
+    applicableRoles: ["issuer", "verifier", "authority"] as const,
+    applicableActionKinds: [
+      "tr:issuer:propose",
+      "tr:verifier:propose",
+      "tr:recognition:propose",
+    ],
+    evidenceRules: ["application bundle", "quorum signatures"],
+  },
+  {
+    templateId: "policy-template:university:emergency:v1",
+    family: "emergency" as const,
+    name: "Emergency Governance",
+    description: "Compromise response and emergency suspensions",
+    requiredMaintainerThreshold: 1,
+    applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"] as const,
+    applicableActionKinds: ["tr:issuer:suspend", "tr:verifier:revoke"],
+    evidenceRules: ["incident evidence", "quorum signatures"],
+  },
+  {
+    templateId: "policy-template:university:archival:v1",
+    family: "archival" as const,
+    name: "Archival Governance",
+    description: "Historical archival and closure decisions",
+    requiredMaintainerThreshold: 2,
+    applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"] as const,
+    applicableActionKinds: ["tr:issuer:archive", "tr:maintainer:archive"],
+    evidenceRules: ["archival justification", "quorum signatures"],
+  },
+  {
+    templateId: "policy-template:university:auditor:v1",
+    family: "auditor" as const,
+    name: "Auditor Governance",
+    description: "Auditor onboarding and oversight decisions",
+    requiredMaintainerThreshold: 2,
+    applicableRoles: ["auditor"] as const,
+    applicableActionKinds: ["tr:auditor:propose", "tr:auditor:activate"],
+    evidenceRules: ["audit mandate", "quorum signatures"],
+  },
+];
+
+const createDecisionBindings = () => [
+  {
+    bindingId: "policy-binding:university:maintainer:v1",
+    family: "maintainer" as const,
+    templateId: "policy-template:university:maintainer:v1",
+    actionScopes: ["maintainer-membership"],
+  },
+  {
+    bindingId: "policy-binding:university:member:v1",
+    family: "member" as const,
+    templateId: "policy-template:university:member:v1",
+    actionScopes: ["issuer-authorization", "verifier-authorization", "recognition"],
+  },
+  {
+    bindingId: "policy-binding:university:emergency:v1",
+    family: "emergency" as const,
+    templateId: "policy-template:university:emergency:v1",
+    actionScopes: ["participant-emergency"],
+  },
+  {
+    bindingId: "policy-binding:university:archival:v1",
+    family: "archival" as const,
+    templateId: "policy-template:university:archival:v1",
+    actionScopes: ["participant-archival"],
+  },
+  {
+    bindingId: "policy-binding:university:auditor:v1",
+    family: "auditor" as const,
+    templateId: "policy-template:university:auditor:v1",
+    actionScopes: ["auditor-authorization"],
+  },
+];
 
 describe("identifier helpers", () => {
   it("creates stable scoped identifiers", () => {
@@ -70,6 +165,8 @@ describe("record schemas", () => {
         policyUri: "https://registry.example/policy/v1",
         status: "active",
         effectiveFrom: "2026-05-20T00:00:00Z",
+        policyTemplates: createPolicyTemplates(),
+        decisionBindings: createDecisionBindings(),
         decisionRules: ["majority maintainers"],
         disputeRules: ["formal appeal"],
         retentionRules: ["retain 10 years"],
@@ -136,6 +233,29 @@ describe("record schemas", () => {
     expect(recognition.scope.resourceId).toBe("vc-type:degree:v1");
   });
 
+  it("resolves a typed governance template from a decision binding", () => {
+    const policy = GovernancePolicyRecordSchema.parse({
+      policyId: "policy:university:v1",
+      registryId: "registry:midnight:university",
+      version: "v1",
+      policyUri: "https://registry.example/policy/v1",
+      status: "active",
+      effectiveFrom: "2026-05-20T00:00:00Z",
+      policyTemplates: createPolicyTemplates(),
+      decisionBindings: createDecisionBindings(),
+      decisionRules: ["majority maintainers"],
+      disputeRules: ["formal appeal"],
+      retentionRules: ["retain 10 years"],
+      emergencyRules: ["emergency suspension allowed"],
+      lifecycleEventRoot: HASH_A,
+    });
+
+    const template = resolveGovernancePolicyTemplate(policy, "emergency");
+
+    expect(template.family).toBe("emergency");
+    expect(template.requiredMaintainerThreshold).toBe(1);
+  });
+
   it("rejects invalid authorization chronology", () => {
     expect(() =>
       AuthorizationRecordSchema.parse({
@@ -199,5 +319,32 @@ describe("record schemas", () => {
         lifecycleEventRoot: HASH_B,
       }),
     ).not.toThrow();
+  });
+
+  it("rejects governance policies with bindings that do not resolve to typed templates", () => {
+    expect(() =>
+      GovernancePolicyRecordSchema.parse({
+        policyId: "policy:university:v1",
+        registryId: "registry:midnight:university",
+        version: "v1",
+        policyUri: "https://registry.example/policy/v1",
+        status: "active",
+        effectiveFrom: "2026-05-20T00:00:00Z",
+        policyTemplates: createPolicyTemplates(),
+        decisionBindings: [
+          {
+            bindingId: "policy-binding:broken:v1",
+            family: "member",
+            templateId: "policy-template:missing:v1",
+            actionScopes: ["issuer-authorization"],
+          },
+        ],
+        decisionRules: ["majority maintainers"],
+        disputeRules: ["formal appeal"],
+        retentionRules: ["retain 10 years"],
+        emergencyRules: ["emergency suspension allowed"],
+        lifecycleEventRoot: HASH_A,
+      }),
+    ).toThrow(/existing policy template/i);
   });
 });
