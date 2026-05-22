@@ -240,5 +240,32 @@ describe("trust registry evidence bundle", () => {
     });
 
     expect(recognitionLeaf).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(
+      computeRecognitionStatementLeafHash({
+        recognitionId: "recognition:gaia-x:v1",
+        registryId: "registry:midnight:university",
+        recognizedAuthorityDid: "did:midnight:issuer:1",
+        recognizedRegistryId: "registry:gaia-x",
+        scope: {
+          resourceType: "recognized-scope",
+          resourceId: "gaia-x",
+          context: {
+            assurance: "high",
+            jurisdiction: "eu",
+          },
+        },
+        policyId: "policy:university:v1",
+        trustLevel: "observer",
+        status: "active",
+        lifecycleEventRoot: HASH_C,
+        proposedAt: "2026-05-20T00:00:00Z",
+        authorizedAt: "2026-05-20T00:05:00Z",
+        effectiveFrom: "2026-05-20T00:10:00Z",
+        evidenceHash: HASH_D,
+      }),
+    ).toBe(recognitionLeaf);
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], 2),
+    ).toThrow(/out of range/i);
   });
 });

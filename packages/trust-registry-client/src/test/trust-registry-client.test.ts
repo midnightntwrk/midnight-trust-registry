@@ -93,6 +93,51 @@ describe("trust registry client", () => {
         },
       ),
     ).toThrow(/event sibling/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...activeBundle,
+          inclusionProof: {
+            ...activeBundle.inclusionProof,
+            root: activeBundle.epoch.eventRoot,
+          },
+        },
+        {
+          expectedRegistryId: harness.registryId,
+        },
+      ),
+    ).toThrow(/anchored state root/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...activeBundle,
+          inclusionProof: {
+            ...activeBundle.inclusionProof,
+            leafIndex: 1,
+          },
+        },
+        {
+          expectedRegistryId: harness.registryId,
+        },
+      ),
+    ).toThrow(/reconstructed state root/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...activeBundle,
+          inclusionProof: {
+            ...activeBundle.inclusionProof,
+            proofType: "signed-statement" as "merkle-inclusion",
+          },
+        },
+        {
+          expectedRegistryId: harness.registryId,
+        },
+      ),
+    ).toThrow(/invalid literal|merkle-inclusion/i);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {

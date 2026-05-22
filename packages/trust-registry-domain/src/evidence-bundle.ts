@@ -120,6 +120,12 @@ export const computeMerkleRootFromProof = (
   path: readonly string[],
   leafIndex: number,
 ): string => {
+  if (leafIndex >= 2 ** path.length) {
+    throw new Error(
+      `leafIndex ${leafIndex.toString()} is out of range for proof path length ${path.length.toString()}`,
+    );
+  }
+
   let computed = leafHash;
   let currentIndex = leafIndex;
 
@@ -141,7 +147,7 @@ export const computeSingleStatementStateRoot = (
   computeMerkleRootFromProof(leafHash, [eventRoot], 0);
 
 export const InclusionProofSchema = z.object({
-  proofType: z.enum(["signed-statement", "merkle-inclusion", "event-membership"]),
+  proofType: z.literal("merkle-inclusion"),
   root: HashHexSchema,
   leafHash: HashHexSchema,
   path: z.array(HashHexSchema).min(1),
@@ -348,7 +354,7 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
       required: ["proofType", "root", "leafHash", "path", "leafIndex"],
       properties: {
         proofType: {
-          enum: ["signed-statement", "merkle-inclusion", "event-membership"],
+          enum: ["merkle-inclusion"],
         },
         root: { type: "string" },
         leafHash: { type: "string" },
