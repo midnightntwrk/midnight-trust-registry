@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-05-22
+Updated: 2026-05-23
 
 ## Purpose
 
@@ -258,6 +258,25 @@ Completed in the current implementation wave:
   - full registry audit output
   - focused issuer, verifier, recognition, and epoch history output
   - deterministic file or stdout rendering from saved snapshots
+- read-only HTTP query workspace:
+  - `packages/trust-registry-api`
+- native API routes for:
+  - registry metadata and summary
+  - current and historical epoch export
+  - issuer and verifier listing, by-id lookup, scoped resolution, and evidence export
+  - recognition listing, by-id lookup, scoped resolution, and evidence export
+- TRQP-over-HTTP routes for:
+  - registry metadata
+  - authorization query and evidence
+  - recognition query and evidence
+- file-backed API source modes for:
+  - saved snapshots
+  - mutable operator workspaces reloaded on each request
+- focused API tests that verify:
+  - native query and evidence routes from a workspace file
+  - TRQP routes from a snapshot file
+  - workspace reload between requests
+  - structured problem-details errors for invalid or missing input
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output
@@ -343,8 +362,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- applicant-facing submission and public query HTTP surfaces
-- maintainer-facing web UX above the existing client and CLI packages
+- applicant-facing submission and governed approval HTTP surfaces
+- maintainer-facing web UX above the existing client and CLI/API packages
 
 Still intentionally deferred inside the current Compact slice:
 
@@ -354,9 +373,11 @@ Still intentionally deferred inside the current Compact slice:
 
 ## Next Recommended Slices
 
-1. `TR-027` to `TR-030`
-   - execute the current 10-PR stack plan from API surfaces through
-     API, UI, historical proof hardening, and release/demo flow
+1. second `TR-027` slice
+   - add applicant submission and governed approval API routes
+2. `TR-028` to `TR-030`
+   - execute the remaining stack from UI through historical proof hardening
+     and release/demo flow
 
 ## Knowledge Synchronization Rule
 

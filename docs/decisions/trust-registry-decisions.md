@@ -1,6 +1,6 @@
 # Trust Registry Decisions
 
-Date: 2026-05-21
+Date: 2026-05-23
 
 ## Current Decisions
 
@@ -48,6 +48,8 @@ Date: 2026-05-21
 - For `TR-026`, implement mutable CLI state as an append-only operator workspace journal plus a derived snapshot. Do not persist or mutate raw simulator state directly on disk.
 - For `TR-026`, scope the first mutable CLI workflows to issuer, verifier, and recognition actions plus registry epoch publication. Defer mutable auditor, maintainer, and threshold-governance commands to later slices.
 - Accept replay-first workspace performance for `TR-026`: every mutable CLI command may rebuild the simulator and derived snapshot from the full journal. Favor auditability and deterministic reconstruction now; optimize compaction or incremental replay only if real operator usage makes the local workflow too slow.
+- Implement the first REST query slice as a dedicated `packages/trust-registry-api` workspace instead of extending the CLI package into an ad hoc HTTP entrypoint.
+- Keep the first REST query slice read-only and file-backed: serve native registry/epoch/authorization/recognition/evidence routes plus TRQP-compatible routes from saved snapshots or mutable operator workspaces; defer applicant submission and maintainer approval endpoints to the second `TR-027` slice.
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
 - Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
 - Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.
