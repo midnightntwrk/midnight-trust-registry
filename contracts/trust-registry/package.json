@@ -69,7 +69,7 @@
     "build": "npm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
     "lint": "eslint src --ext .ts --ignore-pattern 'src/managed/**'",
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
-    "typecheck": "npm run compact && tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "all": "npm run compact && npm run build && npm run test:ci"
   },
   "dependencies": {

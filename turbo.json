@@ -17,6 +17,7 @@
       ],
       "outputs": [
         "dist/**",
+        "src/managed/**",
         "tsconfig.build.tsbuildinfo"
       ]
     },

@@ -45,6 +45,9 @@ Completed in the current implementation wave:
   - reads TR workspace package manifests
   - syncs only mapped local packages required from `midnight-did` or
     `midnight-verifiable-credentials`
+  - resolves current sibling source workspaces from `packages/...` paths
+  - falls back to existing compiled sibling `dist/` artifacts when a rebuild
+    fails but reusable outputs already exist
   - current required packages:
     - `@midnight-ntwrk/midnight-did`
     - `@midnight-ntwrk/midnight-did-contract`
@@ -74,6 +77,15 @@ Completed in the current implementation wave:
   - `Scan` concurrency keys now stay branch-specific for manual dispatch runs
 - `turbo typecheck` now builds workspace dependencies first so fresh-checkout
   CI runs do not depend on stale local artifacts
+- `turbo typecheck` now depends on each package's own `build` task as well as
+  `^build`, so fresh-runner typecheck does not race missing local generated
+  artifacts
+- contract build cache now restores:
+  - `src/managed/**`
+  - `dist/**`
+  - `tsconfig.build.tsbuildinfo`
+  so cached builds remain usable for contract typecheck and test lanes after
+  clean checkout paths
 - verifier authorization record and current-scope index in the Compact contract
 - verifier authorization create, suspend, revoke, archive, and query circuits
 - verifier authorization payload-hash helpers for maintainer signatures
@@ -191,19 +203,32 @@ Completed in the current implementation wave:
   - demo snapshot creation and typed reload from disk
   - summary, list, and inspect flows over the saved snapshot
   - evidence export for operator-facing JSON handoff
+- snapshot-backed audit reporting for:
+  - full registry audit output
+  - focused issuer, verifier, recognition, and epoch history output
+  - deterministic file or stdout rendering from saved snapshots
+- focused operator CLI report tests that verify:
+  - full human-readable report generation
+  - focused report export with stable timeline output
 
 ## Current Branch And PR State
 
 Active implementation branch:
 
-- `codex/trust-registry-operator-cli`
+- `codex/trust-registry-audit-report`
+- `#9`
+- title:
+  - `feat: add trust registry audit reports`
 
 Stacked base branch:
 
-- `codex/trust-registry-verifier-authorization`
+- `codex/trust-registry-operator-cli`
 - `#8`
 - title:
   - `feat: add trust registry operator cli`
+- lower stacked base:
+  - `codex/trust-registry-verifier-authorization`
+  - contains TR-011 through TR-018 on the current stack
 - `codex/trust-registry-issuer-authorization`
 - `#6`
 - title:
@@ -218,9 +243,10 @@ Branch handling note:
 
 - the docs/workflow baseline plus domain foundation and compact skeleton are on
   `develop`
-- the current branch stacks the operator CLI on top of the verifier,
-  recognition, epoch, client, DID/VC integration, TRQP, and OpenID
-  Federation slices while the lower draft PRs are still open
+- the current branch stacks audit reporting on top of the operator CLI branch,
+  which in turn stacks on the verifier, recognition, epoch, client, DID/VC
+  integration, TRQP, and OpenID Federation slices while the lower draft PRs are
+  still open
 
 ## Validation Baseline
 
@@ -266,8 +292,8 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- audit-oriented operator reporting beyond the current CLI snapshot,
-  inspection, and evidence-export baseline
+- mutable operator workflows on top of the current CLI snapshot, evidence, and
+  reporting baseline
 
 Still intentionally deferred inside the current Compact slice:
 

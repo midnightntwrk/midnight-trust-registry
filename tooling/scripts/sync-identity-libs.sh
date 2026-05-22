@@ -50,7 +50,33 @@ package_source_root() {
   esac
 }
 
-package_workspace() {
+package_source_path() {
+  case "$1" in
+    "@midnight-ntwrk/midnight-did")
+      printf '%s\n' "packages/did"
+      ;;
+    "@midnight-ntwrk/midnight-did-contract")
+      printf '%s\n' "packages/contract"
+      ;;
+    "@midnight-ntwrk/midnight-did-domain")
+      printf '%s\n' "packages/domain"
+      ;;
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr")
+      printf '%s\n' "packages/jubjub-schnorr"
+      ;;
+    "@midnight-ntwrk/midnight-did-credentials")
+      printf '%s\n' "packages/core/primitives/credentials"
+      ;;
+    "@midnight-ntwrk/midnight-did-credentials-openid")
+      printf '%s\n' "packages/protocols/openid"
+      ;;
+    "@midnight-ntwrk/midnight-did-credentials-status-registry")
+      printf '%s\n' "packages/registry/status-registry"
+      ;;
+  esac
+}
+
+package_dest_subdir() {
   case "$1" in
     "@midnight-ntwrk/midnight-did")
       printf '%s\n' "did"
@@ -177,12 +203,14 @@ sync_package() {
   local package_name="$1"
   local source_root
   source_root="$(package_source_root "$package_name")"
-  local workspace
-  workspace="$(package_workspace "$package_name")"
+  local source_path
+  source_path="$(package_source_path "$package_name")"
+  local dest_subdir
+  dest_subdir="$(package_dest_subdir "$package_name")"
   local namespace_dir
   namespace_dir="$(package_namespace_dir "$package_name")"
 
-  if [[ -z "$source_root" ]] || [[ -z "$workspace" ]] || [[ -z "$namespace_dir" ]]; then
+  if [[ -z "$source_root" ]] || [[ -z "$source_path" ]] || [[ -z "$dest_subdir" ]] || [[ -z "$namespace_dir" ]]; then
     return 0
   fi
 
@@ -191,18 +219,25 @@ sync_package() {
     exit 1
   fi
 
-  local build_key="$source_root::$workspace"
+  local build_key="$source_root::$package_name"
   if ! array_contains "$build_key" "${BUILT_WORKSPACES[@]-}"; then
-    echo "[sync-identity-libs] Building $package_name ($workspace) from $source_root"
-    (
+    echo "[sync-identity-libs] Building $package_name ($source_path) from $source_root"
+    if ! (
       cd "$source_root"
-      npm run build -w "$workspace"
-    )
+      npm run build -w "$package_name"
+    ); then
+      local prebuilt_dir="$source_root/$source_path/dist"
+      if [[ -d "$prebuilt_dir" ]]; then
+        echo "[sync-identity-libs] warning: build failed for $package_name; reusing existing artifacts from $prebuilt_dir" >&2
+      else
+        exit 1
+      fi
+    fi
     BUILT_WORKSPACES+=("$build_key")
   fi
 
-  local source_dir="$source_root/$workspace/"
-  local dest_dir="$LIBS_DIR/$namespace_dir/$workspace/"
+  local source_dir="$source_root/$source_path/"
+  local dest_dir="$LIBS_DIR/$namespace_dir/$dest_subdir/"
 
   echo "[sync-identity-libs] Syncing $package_name -> $dest_dir"
   rm -rf "$dest_dir"
@@ -224,7 +259,7 @@ sync_package() {
 This directory is a repository-local copy of \`$package_name\`, synced from:
 
 - source repo: \`$(basename "$source_root")\`
-- workspace: \`$workspace\`
+- workspace: \`$source_path\`
 
 Refresh it with:
 
@@ -241,7 +276,7 @@ EOF
 enqueue_required_package() {
   local package_name="$1"
 
-  if [[ -z "$(package_workspace "$package_name")" ]]; then
+  if [[ -z "$(package_source_path "$package_name")" ]]; then
     return 0
   fi
 
@@ -249,19 +284,19 @@ enqueue_required_package() {
     return 0
   fi
 
-  sync_package "$package_name"
-  SYNCED_PACKAGES+=("$package_name")
-
   local source_root
   source_root="$(package_source_root "$package_name")"
-  local workspace
-  workspace="$(package_workspace "$package_name")"
-  local package_manifest="$source_root/$workspace/package.json"
+  local source_path
+  source_path="$(package_source_path "$package_name")"
+  local package_manifest="$source_root/$source_path/package.json"
 
   while IFS= read -r local_dependency; do
     [[ -z "$local_dependency" ]] && continue
     enqueue_required_package "$local_dependency"
   done < <(list_local_package_dependencies "$package_manifest")
+
+  sync_package "$package_name"
+  SYNCED_PACKAGES+=("$package_name")
 }
 
 remove_stale_synced_packages() {
@@ -274,9 +309,9 @@ remove_stale_synced_packages() {
 
     local namespace_dir
     namespace_dir="$(package_namespace_dir "$package_name")"
-    local workspace
-    workspace="$(package_workspace "$package_name")"
-    local stale_dir="$LIBS_DIR/$namespace_dir/$workspace"
+    local dest_subdir
+    dest_subdir="$(package_dest_subdir "$package_name")"
+    local stale_dir="$LIBS_DIR/$namespace_dir/$dest_subdir"
     rm -rf "$stale_dir"
   done
 }
