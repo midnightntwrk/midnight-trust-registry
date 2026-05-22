@@ -313,19 +313,19 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-api-application-surface`
+- `codex/trust-registry-admin-console`
 - stacked on:
-  - `codex/trust-registry-api-query-surface`
+  - `codex/trust-registry-api-application-surface`
 - current slice:
-  - `TR-027`
-  - governed application API surface
+  - `TR-028`
+  - admin console scaffold
 
 Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#17`
-  - `TR-023` through `TR-027`
+  - `#12` through `#18`
+  - `TR-023` through `TR-028`
 
 Merged baseline now on `origin/develop`:
 
