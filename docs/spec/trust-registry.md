@@ -81,6 +81,8 @@ Required fields:
 - `registryId`
 - `version`
 - `policyUri`
+- `policyTemplates`
+- `decisionBindings`
 - `status`
 - `effectiveFrom`
 - `effectiveUntil`
@@ -91,6 +93,20 @@ Required fields:
 - `supersededAt`
 - `archivedAt`
 - `lifecycleEventRoot`
+
+In v1, the governance policy record should carry typed templates and typed
+decision-family bindings for at least:
+
+- Maintainer governance.
+- Member onboarding and authorization governance.
+- Emergency suspension and revocation governance.
+- Archival governance.
+- Auditor governance.
+
+The current reference implementation keeps these templates and bindings in the
+domain and evidence surfaces first. The Compact contract still anchors a single
+policy commitment plus scoped threshold state, and off-chain clients interpret
+typed bindings from the published policy record.
 
 ### Participant
 

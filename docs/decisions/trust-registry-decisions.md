@@ -60,6 +60,7 @@ Date: 2026-05-21
 - Keep `lastAuthorizedMaintainerKeyId` and epoch publication signatures submitter-oriented in v1: they record `signer1`, while the full approving quorum is bound into the governance-event chain via `signerSetHash`.
 - Keep simulator-generated epoch publication quorum-aware once thresholds rise above `1`: internal evidence publication may auto-select active co-maintainers to satisfy the live default threshold, but operator-facing harness calls must still pass explicit co-authorizers when the action itself is governed.
 - Treat quorum execution as the current Compact cost boundary: as of `2026-05-22`, a fresh cache-miss `./run.sh --light` path compiles `54` circuits and spent about `19` minutes inside the contract build during `typecheck:light`, so any further signer-bundle expansion or duplicate build wiring needs explicit review.
+- Implement the first governance-policy template slice in the domain, evidence, simulator, and operator-report surfaces before widening the Compact contract. The v1 contract continues to anchor one policy commitment plus threshold state, while typed policy templates and decision-family bindings explain how maintainer, member, emergency, archival, and auditor decisions should be interpreted off-chain.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
 - Make `turbo typecheck` depend on the package's own `build` task as well as `^build` so fresh-runner typecheck cannot race missing generated artifacts.
@@ -72,6 +73,7 @@ Date: 2026-05-21
 - Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
 - Whether signer-set commitments should become canonicalized independent of submitter order, or remain order-sensitive because the first disclosed signer acts as the submitter of record in epoch evidence.
 - Whether `tr:policy:thresholds:update` should keep using the default maintainer threshold or move to a dedicated governance-policy quorum in the `TR-025` slice.
+- Whether typed governance-policy bindings should stay domain-first or later receive explicit per-family commitments in Compact state.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.

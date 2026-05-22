@@ -92,6 +92,12 @@ Completed in the current implementation wave:
   - governed threshold-policy updates so registries can move from bootstrap `1-of-1` to real `N-of-M` operation after new maintainers activate
   - contract and local simulator coverage for `2-of-N` onboarding flows plus duplicate-signer rejection
   - internal epoch publication in the simulator now auto-selects active co-maintainers when the default threshold is above `1`, so evidence export remains valid after quorum policy changes
+- typed governance-policy binding foundation with:
+  - typed policy templates for maintainer, member, emergency, archival, and auditor decision families
+  - typed decision bindings that resolve each decision family to a concrete policy template
+  - schema validation that rejects duplicate policy families or bindings that reference missing templates
+  - simulator policy fixtures that keep template thresholds aligned with the current default, emergency, and archival maintainer thresholds
+  - operator audit reports that render policy templates and decision bindings instead of only free-form rule text
 - fresh cache-miss validation observation for the quorum slice:
   - `./run.sh --light` now compiles `54` circuits through the contract build path
   - `typecheck:light` spent about `18m56s` on `2026-05-22` when the contract build cache missed
@@ -342,13 +348,7 @@ Still intentionally deferred inside the current Compact slice:
 
 ## Next Recommended Slices
 
-1. `TR-024`
-   - replace the current single-signature maintainer shortcut with real
-     multi-maintainer quorum execution
-2. `TR-025`
-   - bind maintainer, member, emergency, and auditor decisions to typed
-     governance policy templates
-3. `TR-026` to `TR-030`
+1. `TR-026` to `TR-030`
    - execute the current 10-PR stack plan from mutable operator CLI through
      API, UI, historical proof hardening, and release/demo flow
 
