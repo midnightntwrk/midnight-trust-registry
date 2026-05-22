@@ -25,5 +25,8 @@
   "dependencies": {
     "@midnight-ntwrk/trust-registry-domain": "0.1.0",
     "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/trust-registry-integration": "0.1.0"
   }
 }

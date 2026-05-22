@@ -13,7 +13,7 @@ import {
   type IssuerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
-} from "../../../../packages/trust-registry-integration/src/index.js";
+} from "@midnight-ntwrk/trust-registry-integration";
 import {
   TrustRegistryTrqpAdapter,
   type TrqpAdapterResult,

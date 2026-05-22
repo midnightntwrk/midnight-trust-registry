@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-05-21
+Updated: 2026-05-22
 
 ## Purpose
 
@@ -177,6 +177,9 @@ Completed in the current implementation wave:
   - trust-anchor-to-registry chains with embedded authorization bundles
   - trust-anchor-to-registry chains with embedded recognition bundles
   - malformed authority-hint linkage rejection
+- adapter-package typecheck now consumes the built integration workspace
+  package in tests instead of direct source imports so fresh-runner CI cannot
+  race generated contract surfaces
 
 ## Current Branch And PR State
 

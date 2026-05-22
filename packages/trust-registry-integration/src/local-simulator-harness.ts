@@ -80,6 +80,10 @@ const optionalSequenceTimestamp = (
 ): Partial<Record<string, string>> =>
   sequence > 0n ? { [fieldName]: timestampForSequence(sequence) } : {};
 
+const assertUnreachable = (value: never): never => {
+  throw new Error(`unexpected enum value: ${String(value)}`);
+};
+
 const issuerResourceTypeName = (
   resourceType: IssuerResourceType,
 ): AuthorizationRecord["resourceType"] => {
@@ -95,6 +99,8 @@ const issuerResourceTypeName = (
     case IssuerResourceType.statusMethodRequirement:
       return "status-method-requirement";
   }
+
+  return assertUnreachable(resourceType);
 };
 
 const contractStatusName = (
@@ -110,6 +116,8 @@ const contractStatusName = (
     case ContractAuthorizationStatus.archived:
       return "archived";
   }
+
+  return assertUnreachable(status);
 };
 
 const bundleLeafHash = (authorization: AuthorizationRecord): string =>

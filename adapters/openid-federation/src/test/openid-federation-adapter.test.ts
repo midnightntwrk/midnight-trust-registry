@@ -19,7 +19,7 @@ import {
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-} from "../../../../packages/trust-registry-integration/src/index.js";
+} from "@midnight-ntwrk/trust-registry-integration";
 
 const createSigningFixture = async (kid: string): Promise<{
   alg: string;
