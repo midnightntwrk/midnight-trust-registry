@@ -238,12 +238,15 @@ input {
 }
 
 .card {
+  width: 100%;
   padding: 1rem;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--panel);
   box-shadow: 0 10px 28px rgba(24, 33, 39, 0.08);
   cursor: pointer;
+  color: inherit;
+  text-align: left;
   transition: transform 140ms ease, border-color 140ms ease;
 }
 

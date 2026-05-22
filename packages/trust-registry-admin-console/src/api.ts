@@ -28,7 +28,16 @@ const parseJson = async <T>(
   response: Response,
 ): Promise<T> => {
   const raw = await response.text();
-  const payload = raw.length === 0 ? null : JSON.parse(raw);
+  let payload: unknown;
+  try {
+    payload = raw.length === 0 ? null : JSON.parse(raw);
+  } catch {
+    payload = {
+      title: response.statusText,
+      detail: raw,
+      status: response.status,
+    } satisfies Partial<TrustRegistryApiProblemDetails>;
+  }
   if (!response.ok) {
     throw new TrustRegistryAdminConsoleApiError(
       (payload ?? {}) as Partial<TrustRegistryApiProblemDetails>,

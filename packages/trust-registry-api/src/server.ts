@@ -144,20 +144,24 @@ const writeJson = (
   payload: unknown,
 ): void => {
   response.statusCode = status;
+  setCorsHeaders(response);
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(`${JSON.stringify(payload, null, 2)}\n`);
+};
+
+const setCorsHeaders = (
+  response: ServerResponse,
+): void => {
   response.setHeader("access-control-allow-origin", "*");
   response.setHeader("access-control-allow-headers", "content-type");
   response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
-  response.setHeader("content-type", "application/json; charset=utf-8");
-  response.end(`${JSON.stringify(payload, null, 2)}\n`);
 };
 
 const writeNoContent = (
   response: ServerResponse,
 ): void => {
   response.statusCode = 204;
-  response.setHeader("access-control-allow-origin", "*");
-  response.setHeader("access-control-allow-headers", "content-type");
-  response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  setCorsHeaders(response);
   response.end();
 };
 

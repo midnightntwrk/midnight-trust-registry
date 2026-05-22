@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { access } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
@@ -40,7 +40,7 @@ const server = createServer(async (request, response) => {
   const requestedPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const filePath = normalize(join(distDir, requestedPath));
 
-  if (!filePath.startsWith(distDir)) {
+  if (filePath !== distDir && !filePath.startsWith(`${distDir}${sep}`)) {
     response.statusCode = 403;
     response.end("forbidden\n");
     return;

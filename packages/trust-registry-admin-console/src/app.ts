@@ -217,7 +217,7 @@ export const createAdminConsoleApp = (
   `;
 
   const renderCard = (card: ReviewCard): string => `
-    <article class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}">
+    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}">
       <div class="card-top">
         <div>
           <h3>${escapeHtml(card.label)}</h3>
@@ -235,7 +235,7 @@ export const createAdminConsoleApp = (
       <div class="meta-row">
         <span>Updated ${escapeHtml(card.updatedAt)}</span>
       </div>
-    </article>
+    </button>
   `;
 
   const renderColumn = (
