@@ -72,6 +72,12 @@ Completed in the current implementation wave:
   - explicit `proposed`, `authorized`, and `active` issuer lifecycle states
   - issuer proposal, approval, and activation circuits
   - archive-from-proposed and revoke-from-authorized coverage
+- governed verifier, recognition, and auditor workflows with:
+  - explicit verifier `proposed`, `authorized`, and `active` lifecycle support
+  - explicit recognition `proposed`, `authorized`, and `active` lifecycle support
+  - a dedicated auditor authorization family that mirrors verifier composite scope
+  - positive integration coverage for verifier and recognition application history
+  - active and historical integration coverage for auditor authorization
 - CI workflow repair for stacked PRs and manual dispatch:
   - `pull_request` workflows no longer require `develop` as the base branch
   - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
@@ -256,8 +262,9 @@ Branch handling note:
 
 - the docs/workflow baseline plus domain foundation and compact skeleton are on
   `develop`
-- the current branch stacks issuer application-state work on top of the audit
-  report branch while the lower PR queue is still open
+- the current branch stacks governed verifier, recognition, and auditor
+  workflows on top of the issuer application-state branch while the lower PR
+  queue is still open
 
 ## Validation Baseline
 
@@ -312,7 +319,6 @@ Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
 - maintainer onboarding and removal flows
-- verifier, recognition, and auditor application state machines
 - maintainer application and approval flows
 - historical epoch selection by timestamp
 - Merkle-style inclusion proofs beyond the current signed-statement anchor
@@ -322,13 +328,10 @@ Still intentionally deferred inside the current Compact slice:
 1. `TR-021`
    - finish the issuer application-state branch and publish it as the next
      stacked PR
-2. `TR-022`
-   - widen proposal and approval workflows to verifier, recognition, and
-     auditor state
-3. `TR-023` and `TR-024`
+2. `TR-023` and `TR-024`
    - add maintainer membership lifecycle and real multi-maintainer quorum
      execution
-4. `TR-026` to `TR-028`
+3. `TR-026` to `TR-028`
    - add mutable CLI, REST API, and UI surfaces after governance workflows are
      explicit
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createAuditorScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
@@ -95,9 +96,10 @@ describe("trust registry client", () => {
     ).not.toThrow();
   });
 
-  it("verifies active verifier and recognition bundles", () => {
+  it("verifies active verifier, auditor, and recognition bundles", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("age-gate");
+    const auditor = createAuditorScenarioFixture("iso-27001");
     const recognition = createRecognitionScenarioFixture("gaia-x");
     const client = new TrustRegistrySimulatorClient(harness.simulator);
 
@@ -108,6 +110,16 @@ describe("trust registry client", () => {
         expectedRegistryId: harness.registryId,
         expectedSubjectDid: verifier.subjectDid,
         expectedResourceId: verifier.scopeResourceId,
+      }),
+    ).not.toThrow();
+
+    harness.authorizeAuditor(auditor);
+    const auditorBundle = harness.evaluateCurrentAuditorDecision(auditor);
+    expect(() =>
+      client.verifyAuditorAuthorizationBundle(auditorBundle, {
+        expectedRegistryId: harness.registryId,
+        expectedSubjectDid: auditor.subjectDid,
+        expectedResourceId: auditor.scopeResourceId,
       }),
     ).not.toThrow();
 

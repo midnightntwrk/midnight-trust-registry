@@ -116,6 +116,21 @@ export const computeVerifierAuthorizationScopeKey = (
     ensure32Bytes(disclosureLevelCommitment),
   );
 
+export const computeAuditorAuthorizationScopeKey = (
+  subjectDidCommitment: Uint8Array,
+  requestProfileId: Uint8Array,
+  allowedAttributeSetCommitment: Uint8Array,
+  allowedPredicateSetCommitment: Uint8Array,
+  disclosureLevelCommitment: Uint8Array,
+): Uint8Array =>
+  pureCircuits.auditorAuthorizationScopeKey(
+    ensure32Bytes(subjectDidCommitment),
+    ensure32Bytes(requestProfileId),
+    ensure32Bytes(allowedAttributeSetCommitment),
+    ensure32Bytes(allowedPredicateSetCommitment),
+    ensure32Bytes(disclosureLevelCommitment),
+  );
+
 export const computeRecognitionScopeKey = (
   recognizedAuthorityDidCommitment: Uint8Array,
   recognizedRegistryId: Uint8Array,
@@ -173,6 +188,29 @@ export const computeCreateRecognitionPayloadHash = (
     ensure32Bytes(evidenceHash),
   );
 
+export const computeCreateAuditorAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  subjectDidCommitment: Uint8Array,
+  requestProfileId: Uint8Array,
+  allowedAttributeSetCommitment: Uint8Array,
+  allowedPredicateSetCommitment: Uint8Array,
+  disclosureLevelCommitment: Uint8Array,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createAuditorAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
+    ensure32Bytes(subjectDidCommitment),
+    ensure32Bytes(requestProfileId),
+    ensure32Bytes(allowedAttributeSetCommitment),
+    ensure32Bytes(allowedPredicateSetCommitment),
+    ensure32Bytes(disclosureLevelCommitment),
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
 export const computeCreateEpochCommitmentPayloadHash = (
   epochId: Uint8Array,
   stateRoot: Uint8Array,
@@ -208,6 +246,17 @@ export const computeUpdateRecognitionPayloadHash = (
 ): Uint8Array =>
   pureCircuits.updateRecognitionPayloadHash(
     ensure32Bytes(recognitionId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateAuditorAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateAuditorAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
     ensure32Bytes(previousLifecycleEventHash),
     ensure32Bytes(evidenceHash),
   );
