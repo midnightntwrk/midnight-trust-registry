@@ -1,16 +1,19 @@
 # Trust Registry API
 
-HTTP query surface for the local Midnight trust-registry reference
+HTTP query and governed-application surface for the local Midnight
+trust-registry reference
 implementation.
 
 Current scope:
 
-- serve read-only registry, epoch, authorization, recognition, and evidence
-  endpoints from a saved operator snapshot or mutable operator workspace
+- serve registry, epoch, authorization, recognition, and evidence endpoints
+  from a saved operator snapshot or mutable operator workspace
 - expose TRQP-compatible authorization and recognition routes by reusing the
   existing adapter package
-- keep the first service slice file-backed and local-first instead of introducing
-  a separate database or runtime persistence layer
+- expose governed applicant submission and maintainer action routes backed by
+  the existing mutable operator workspace journal
+- keep the first service slices file-backed and local-first instead of
+  introducing a separate database or runtime persistence layer
 
 Current route set:
 
@@ -32,6 +35,13 @@ Current route set:
 - `POST /v1/trqp/authorizations/evidence`
 - `POST /v1/trqp/recognitions/query`
 - `POST /v1/trqp/recognitions/evidence`
+- `POST /v1/applications`
+- `POST /v1/applications/:target/:id/approve`
+- `POST /v1/applications/:target/:id/activate`
+- `POST /v1/applications/:target/:id/suspend`
+- `POST /v1/applications/:target/:id/revoke`
+- `POST /v1/applications/:target/:id/archive`
+- `POST /v1/epochs/publish`
 
 Run locally against a saved workspace:
 
@@ -40,5 +50,25 @@ npm run build -w @midnight-ntwrk/trust-registry-api
 npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
 ```
 
-This package is intentionally read-only for the first API slice. Governed
-application submission and approval endpoints remain a follow-on backlog item.
+Workspace-backed mutation routes:
+
+- require `--workspace`, not `--snapshot`
+- reuse the CLI workspace replay model instead of maintaining separate server
+  state
+- currently support issuer, verifier, and recognition workflows plus registry
+  epoch publication
+
+Example applicant submission:
+
+```bash
+curl -sS http://127.0.0.1:4400/v1/applications \
+  -H 'content-type: application/json' \
+  -d '{"target":"issuer","label":"degree"}'
+```
+
+Example maintainer approval:
+
+```bash
+curl -sS -X POST \
+  http://127.0.0.1:4400/v1/applications/issuer/<authorization-id>/approve
+```

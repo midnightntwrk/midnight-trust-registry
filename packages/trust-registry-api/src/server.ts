@@ -9,9 +9,11 @@ import {
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
 
 import {
+  applyMutationOperation,
   createTrqpSourceFromStateSource,
   getAuthorizationEntryById,
   getRecognitionEntryById,
+  isMutableStateSource,
   listAuthorizationEntries,
   listRecognitionEntries,
   loadCurrentEpoch,
@@ -23,10 +25,15 @@ import {
   type TrustRegistryApiStateSource,
 } from "./source.js";
 import {
+  TrustRegistryApiApplicationActionSchema,
+  TrustRegistryApiApplicationMutationResponseSchema,
+  TrustRegistryApiApplicationSubmitRequestSchema,
+  TrustRegistryApiApplicationTargetSchema,
   TrustRegistryApiAuthorizationListQuerySchema,
   TrustRegistryApiAuthorizationListResponseSchema,
   TrustRegistryApiAuthorizationResponseSchema,
   TrustRegistryApiEpochResponseSchema,
+  TrustRegistryApiEpochPublishRequestSchema,
   TrustRegistryApiEvidenceResponseSchema,
   TrustRegistryApiHealthResponseSchema,
   TrustRegistryApiProblemDetailsSchema,
@@ -218,6 +225,31 @@ const requireRecognitionEntry = async (
   return TrustRegistryApiRecognitionResponseSchema.parse(entry);
 };
 
+const requireMutableSource = (
+  source: TrustRegistryApiStateSource,
+  problemBaseUri: string,
+) => {
+  if (!isMutableStateSource(source)) {
+    throw jsonProblem(
+      problemBaseUri,
+      "workspace-source-required",
+      409,
+      "workspace source required",
+      "This route requires a mutable operator workspace source.",
+    );
+  }
+
+  return source;
+};
+
+const parseApplicationTarget = (
+  targetInput: string,
+) => TrustRegistryApiApplicationTargetSchema.parse(targetInput);
+
+const parseApplicationAction = (
+  actionInput: string,
+) => TrustRegistryApiApplicationActionSchema.parse(actionInput);
+
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
 ): Server => {
@@ -308,6 +340,142 @@ export const createTrustRegistryApiServer = (
           );
         }
         writeJson(response, 200, TrustRegistryApiEpochResponseSchema.parse(epoch));
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 2
+        && segments[0] === "v1"
+        && segments[1] === "applications"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiApplicationSubmitRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const result = await applyMutationOperation(source, {
+          operation: "submit",
+          target: body.target,
+          label: body.label,
+        });
+        writeJson(
+          response,
+          201,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            sourceMode: "workspace",
+            workspaceVersion: result.workspace.workspaceVersion,
+            workspaceUpdatedAt: result.workspace.updatedAt,
+            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
+            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
+            operation: result.operation,
+            ...(result.record.recordKind === "authorization"
+              ? {
+                  recordKind: "authorization",
+                  entry: result.record.entry,
+                }
+              : result.record.recordKind === "recognition"
+                ? {
+                    recordKind: "recognition",
+                    entry: result.record.entry,
+                  }
+                : {
+                    recordKind: "epoch",
+                    epoch: result.record.epoch,
+                  }),
+          }),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 5
+        && segments[0] === "v1"
+        && segments[1] === "applications"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const target = parseApplicationTarget(segments[2]!);
+        const id = segments[3]!;
+        const action = parseApplicationAction(segments[4]!);
+        const result = await applyMutationOperation(source, {
+          operation: action,
+          target,
+          id,
+        });
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            sourceMode: "workspace",
+            workspaceVersion: result.workspace.workspaceVersion,
+            workspaceUpdatedAt: result.workspace.updatedAt,
+            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
+            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
+            operation: result.operation,
+            ...(result.record.recordKind === "authorization"
+              ? {
+                  recordKind: "authorization",
+                  entry: result.record.entry,
+                }
+              : result.record.recordKind === "recognition"
+                ? {
+                    recordKind: "recognition",
+                    entry: result.record.entry,
+                  }
+                : {
+                    recordKind: "epoch",
+                    epoch: result.record.epoch,
+                  }),
+          }),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "epochs"
+        && segments[2] === "publish"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEpochPublishRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const result = await applyMutationOperation(source, {
+          operation: "publish-epoch",
+          ...(body.label === undefined ? {} : { label: body.label }),
+        });
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            sourceMode: "workspace",
+            workspaceVersion: result.workspace.workspaceVersion,
+            workspaceUpdatedAt: result.workspace.updatedAt,
+            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
+            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
+            operation: result.operation,
+            ...(result.record.recordKind === "authorization"
+              ? {
+                  recordKind: "authorization",
+                  entry: result.record.entry,
+                }
+              : result.record.recordKind === "recognition"
+                ? {
+                    recordKind: "recognition",
+                    entry: result.record.entry,
+                  }
+                : {
+                    recordKind: "epoch",
+                    epoch: result.record.epoch,
+                  }),
+          }),
+        );
         return;
       }
 

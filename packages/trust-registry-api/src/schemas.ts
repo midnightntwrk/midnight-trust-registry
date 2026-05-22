@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import {
+  MutableSnapshotTargetSchema,
+  TrustRegistryOperatorWorkspaceOperationSchema,
   TrustRegistryAuthorizationSnapshotEntrySchema,
   TrustRegistryRecognitionSnapshotEntrySchema,
 } from "@midnight-ntwrk/trust-registry-cli";
@@ -18,6 +20,17 @@ const TimestampSchema = z.string().datetime({ offset: true });
 export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
   "issuer",
   "verifier",
+]);
+
+export const TrustRegistryApiApplicationTargetSchema =
+  MutableSnapshotTargetSchema;
+
+export const TrustRegistryApiApplicationActionSchema = z.enum([
+  "approve",
+  "activate",
+  "suspend",
+  "revoke",
+  "archive",
 ]);
 
 export const TrustRegistryApiProblemDetailsSchema = z.object({
@@ -102,8 +115,48 @@ export const TrustRegistryApiRecognitionResponseSchema =
 export const TrustRegistryApiEvidenceResponseSchema =
   TrustRegistryEvidenceBundleSchema;
 
+export const TrustRegistryApiApplicationSubmitRequestSchema = z.object({
+  target: TrustRegistryApiApplicationTargetSchema,
+  label: NonEmptyStringSchema,
+});
+
+export const TrustRegistryApiEpochPublishRequestSchema = z.object({
+  label: NonEmptyStringSchema.optional(),
+});
+
+const TrustRegistryApiMutationResponseBaseSchema = z.object({
+  sourceMode: z.literal("workspace"),
+  workspaceVersion: z.literal("1"),
+  workspaceUpdatedAt: TimestampSchema,
+  snapshotGeneratedAt: TimestampSchema,
+  currentEpochId: NonEmptyStringSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
+
+export const TrustRegistryApiApplicationMutationResponseSchema =
+  z.discriminatedUnion("recordKind", [
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("authorization"),
+      entry: TrustRegistryAuthorizationSnapshotEntrySchema,
+    }),
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("recognition"),
+      entry: TrustRegistryRecognitionSnapshotEntrySchema,
+    }),
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("epoch"),
+      epoch: EpochCommitmentSchema,
+    }),
+  ]);
+
 export type TrustRegistryApiAuthorizationRole = z.infer<
   typeof TrustRegistryApiAuthorizationRoleSchema
+>;
+export type TrustRegistryApiApplicationTarget = z.infer<
+  typeof TrustRegistryApiApplicationTargetSchema
+>;
+export type TrustRegistryApiApplicationAction = z.infer<
+  typeof TrustRegistryApiApplicationActionSchema
 >;
 export type TrustRegistryApiProblemDetails = z.infer<
   typeof TrustRegistryApiProblemDetailsSchema
@@ -131,4 +184,13 @@ export type TrustRegistryApiRecognitionListResponse = z.infer<
 >;
 export type TrustRegistryApiResolveRecognitionRequest = z.infer<
   typeof TrustRegistryApiResolveRecognitionRequestSchema
+>;
+export type TrustRegistryApiApplicationSubmitRequest = z.infer<
+  typeof TrustRegistryApiApplicationSubmitRequestSchema
+>;
+export type TrustRegistryApiEpochPublishRequest = z.infer<
+  typeof TrustRegistryApiEpochPublishRequestSchema
+>;
+export type TrustRegistryApiApplicationMutationResponse = z.infer<
+  typeof TrustRegistryApiApplicationMutationResponseSchema
 >;

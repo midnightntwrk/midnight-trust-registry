@@ -255,6 +255,110 @@ describe("trust registry api", () => {
     }
   });
 
+  it("submits and governs application workflows through workspace-backed write routes", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-write-api" });
+    const workspacePath = join(tempDir, "write-workspace.json");
+    await writeWorkspaceToFile(workspacePath, workspace);
+
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const issuerSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(issuerSubmitResponse.status).toBe(201);
+      const issuerSubmit = await issuerSubmitResponse.json();
+      expect(issuerSubmit.recordKind).toBe("authorization");
+      expect(issuerSubmit.entry.authorization.status).toBe("proposed");
+      const issuerId = issuerSubmit.entry.authorization.authorizationId;
+
+      const issuerApproveResponse = await fetch(
+        `${server.url}/v1/applications/issuer/${issuerId}/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(issuerApproveResponse.status).toBe(200);
+      const issuerApprove = await issuerApproveResponse.json();
+      expect(issuerApprove.entry.authorization.status).toBe("authorized");
+
+      const issuerActivateResponse = await fetch(
+        `${server.url}/v1/applications/issuer/${issuerId}/activate`,
+        {
+          method: "POST",
+        },
+      );
+      expect(issuerActivateResponse.status).toBe(200);
+      const issuerActivate = await issuerActivateResponse.json();
+      expect(issuerActivate.entry.authorization.status).toBe("active");
+
+      const recognitionSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "recognition",
+            label: "gaia-x",
+          }),
+        },
+      );
+      expect(recognitionSubmitResponse.status).toBe(201);
+      const recognitionSubmit = await recognitionSubmitResponse.json();
+      expect(recognitionSubmit.recordKind).toBe("recognition");
+      expect(recognitionSubmit.entry.recognition.status).toBe("proposed");
+      const recognitionId = recognitionSubmit.entry.recognition.recognitionId;
+
+      const recognitionApproveResponse = await fetch(
+        `${server.url}/v1/applications/recognition/${recognitionId}/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(recognitionApproveResponse.status).toBe(200);
+      const recognitionApprove = await recognitionApproveResponse.json();
+      expect(recognitionApprove.entry.recognition.status).toBe("authorized");
+
+      const epochPublishResponse = await fetch(
+        `${server.url}/v1/epochs/publish`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "governed-epoch",
+          }),
+        },
+      );
+      expect(epochPublishResponse.status).toBe(200);
+      const epochPublish = await epochPublishResponse.json();
+      expect(epochPublish.recordKind).toBe("epoch");
+      expect(epochPublish.epoch.epochId).toBe(epochPublish.currentEpochId);
+
+      const activeIssuerListResponse = await fetch(
+        `${server.url}/v1/authorizations/issuer?status=active`,
+      );
+      expect(activeIssuerListResponse.status).toBe(200);
+      const activeIssuerList = await activeIssuerListResponse.json();
+      expect(activeIssuerList.total).toBe(1);
+      expect(activeIssuerList.entries[0].authorization.authorizationId).toBe(issuerId);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves recognition and TRQP routes from a snapshot file", async () => {
     let workspace = createOperatorWorkspace({ label: "kanon-trqp" });
 
@@ -463,6 +567,31 @@ describe("trust registry api", () => {
       expect(summaryResponse.status).toBe(200);
       const summary = await summaryResponse.json();
       expect(summary.registryLabel).toBe("kanon-memory");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects workspace mutation routes for non-workspace sources", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-readonly" });
+    const snapshotPath = join(tempDir, "readonly-snapshot.json");
+    await writeSnapshotToFile(snapshotPath, workspace.snapshot);
+
+    const server = await startServer(createSnapshotFileSource(snapshotPath));
+    try {
+      const response = await fetch(`${server.url}/v1/applications`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          target: "issuer",
+          label: "degree",
+        }),
+      });
+      expect(response.status).toBe(409);
+      const problem = await response.json();
+      expect(problem.type).toMatch(/workspace-source-required$/);
     } finally {
       await server.close();
     }

@@ -1,7 +1,12 @@
 import {
+  applyWorkspaceOperation,
   buildSnapshotSummary,
   loadSnapshotFromFile,
   loadWorkspaceFromFile,
+  resolveWorkspaceOperationRecord,
+  writeWorkspaceToFile,
+  type TrustRegistryOperatorWorkspace,
+  type TrustRegistryOperatorWorkspaceOperation,
   type TrustRegistryAuthorizationSnapshotEntry,
   type TrustRegistryOperatorSnapshot,
   type TrustRegistryRecognitionSnapshotEntry,
@@ -31,6 +36,32 @@ export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory";
 export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
+};
+
+export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
+  readonly mode: "workspace";
+  loadWorkspace(): Promise<TrustRegistryOperatorWorkspace>;
+  writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void>;
+};
+
+export type TrustRegistryApiMutationRecord =
+  | {
+      recordKind: "authorization";
+      entry: TrustRegistryAuthorizationSnapshotEntry;
+    }
+  | {
+      recordKind: "recognition";
+      entry: TrustRegistryRecognitionSnapshotEntry;
+    }
+  | {
+      recordKind: "epoch";
+      epoch: TrustRegistryOperatorSnapshot["currentEpoch"];
+    };
+
+export type TrustRegistryApiMutationResult = {
+  operation: TrustRegistryOperatorWorkspaceOperation;
+  record: TrustRegistryApiMutationRecord;
+  workspace: TrustRegistryOperatorWorkspace;
 };
 
 const latestAuthorizationTimestamp = (
@@ -114,10 +145,16 @@ export const createSnapshotFileSource = (
 
 export const createWorkspaceFileSource = (
   workspacePath: string,
-): TrustRegistryApiStateSource => ({
+): TrustRegistryApiMutableStateSource => ({
   mode: "workspace",
   async loadSnapshot(): Promise<TrustRegistryOperatorSnapshot> {
     return (await loadWorkspaceFromFile(workspacePath)).snapshot;
+  },
+  async loadWorkspace(): Promise<TrustRegistryOperatorWorkspace> {
+    return loadWorkspaceFromFile(workspacePath);
+  },
+  async writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void> {
+    await writeWorkspaceToFile(workspacePath, workspace);
   },
 });
 
@@ -129,6 +166,52 @@ export const createInMemorySource = (
     return snapshot;
   },
 });
+
+export const isMutableStateSource = (
+  source: TrustRegistryApiStateSource,
+): source is TrustRegistryApiMutableStateSource =>
+  source.mode === "workspace";
+
+const toMutationRecord = (
+  record:
+    | TrustRegistryAuthorizationSnapshotEntry
+    | TrustRegistryRecognitionSnapshotEntry
+    | TrustRegistryOperatorSnapshot["currentEpoch"],
+): TrustRegistryApiMutationRecord => {
+  if ("authorization" in record) {
+    return {
+      recordKind: "authorization",
+      entry: record,
+    };
+  }
+  if ("recognition" in record) {
+    return {
+      recordKind: "recognition",
+      entry: record,
+    };
+  }
+
+  return {
+    recordKind: "epoch",
+    epoch: record,
+  };
+};
+
+export const applyMutationOperation = async (
+  source: TrustRegistryApiMutableStateSource,
+  operation: TrustRegistryOperatorWorkspaceOperation,
+): Promise<TrustRegistryApiMutationResult> => {
+  const workspace = await source.loadWorkspace();
+  const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+  await source.writeWorkspace(nextWorkspace);
+  const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
+
+  return {
+    operation,
+    record: toMutationRecord(record),
+    workspace: nextWorkspace,
+  };
+};
 
 export const loadRegistryRecord = async (
   source: TrustRegistryApiStateSource,
