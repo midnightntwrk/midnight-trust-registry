@@ -6,6 +6,7 @@
     },
     "typecheck": {
       "dependsOn": [
+        "build",
         "^build"
       ],
       "outputs": []
@@ -20,6 +21,12 @@
       ]
     },
     "test": {
+      "dependsOn": [
+        "build"
+      ],
+      "outputs": []
+    },
+    "integration": {
       "dependsOn": [
         "build"
       ],

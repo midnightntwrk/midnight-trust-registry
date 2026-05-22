@@ -10,12 +10,14 @@
   },
   "workspaces": [
     "contracts/*",
-    "packages/*"
+    "packages/*",
+    "adapters/*"
   ],
   "scripts": {
     "clean": "turbo run clean --continue",
     "clean:artifacts": "npm run clean",
     "docs-check": "./scripts/check-docs.sh",
+    "integration": "turbo run integration --continue",
     "lint": "turbo run lint --continue",
     "typecheck": "turbo run typecheck --continue",
     "typecheck:light": "npm run typecheck",
@@ -23,6 +25,7 @@
     "build:light": "npm run build",
     "test": "turbo run test --continue",
     "test:light": "npm run test",
+    "ci:integration": "npm run integration",
     "ci:lint": "npm run docs-check && npm run lint",
     "ci:build:light": "npm run ci:lint && npm run typecheck:light && npm run build:light && npm run test:light",
     "ci:build": "npm run ci:build:light"

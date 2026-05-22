@@ -44,16 +44,16 @@ Current source layout:
 
 ```text
 packages/trust-registry-domain/
+packages/trust-registry-client/
+packages/trust-registry-integration/
+contracts/trust-registry/
+adapters/trqp/
+adapters/openid-federation/
 ```
 
 Planned follow-on layout:
 
 ```text
-contracts/trust-registry/
-packages/trust-registry-client/
-packages/trust-registry-testing/
-adapters/trqp/
-adapters/openid-federation/
 examples/
 ```
 

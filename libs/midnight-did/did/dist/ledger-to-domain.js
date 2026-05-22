@@ -1,0 +1,267 @@
+import { DIDContract } from "@midnight-ntwrk/midnight-did-contract";
+import { createService, createVerificationMethod, CurveType, encodeFieldElement, KeyType, normalizeServiceEndpoint, ServiceEndpointSchema, VerificationMethodRelationType, VerificationMethodType, } from "@midnight-ntwrk/midnight-did-domain";
+import { createMidnightDIDString, } from "./midnight.js";
+import { createMidnightDIDDocument, } from "./midnight-did-document.js";
+const bytesToHex = (bytes) => {
+    let hex = "";
+    for (const byte of bytes) {
+        hex += Number(byte).toString(16).padStart(2, "0");
+    }
+    return hex;
+};
+const LedgerCurveType = DIDContract.CurveType;
+const LedgerKeyType = DIDContract.KeyType;
+const LedgerVerificationMethodType = DIDContract.VerificationMethodType;
+const LedgerVerificationMethodRelation = DIDContract.VerificationMethodRelation;
+export class LedgerToDomain {
+    static KeyTypeMap = {
+        [LedgerKeyType.EC]: KeyType.EC,
+        [LedgerKeyType.RSA]: KeyType.RSA,
+        [LedgerKeyType.oct]: KeyType.oct,
+        [LedgerKeyType.OKP]: KeyType.OKP,
+    };
+    static CurveTypeMap = {
+        [LedgerCurveType.Ed25519]: CurveType.Ed25519,
+        [LedgerCurveType.Jubjub]: CurveType.Jubjub,
+        [LedgerCurveType.P256]: CurveType.P256,
+    };
+    static VerificationMethodTypeMap = {
+        [LedgerVerificationMethodType.Undefined]: VerificationMethodType.Undefined,
+        [LedgerVerificationMethodType.JsonWebKey]: VerificationMethodType.JsonWebKey,
+    };
+    static VerificationMethodRelationMap = {
+        [LedgerVerificationMethodRelation.Undefined]: VerificationMethodRelationType.Undefined,
+        [LedgerVerificationMethodRelation.Authentication]: VerificationMethodRelationType.Authentication,
+        [LedgerVerificationMethodRelation.AssertionMethod]: VerificationMethodRelationType.AssertionMethod,
+        [LedgerVerificationMethodRelation.KeyAgreement]: VerificationMethodRelationType.KeyAgreement,
+        [LedgerVerificationMethodRelation.CapabilityInvocation]: VerificationMethodRelationType.CapabilityInvocation,
+        [LedgerVerificationMethodRelation.CapabilityDelegation]: VerificationMethodRelationType.CapabilityDelegation,
+    };
+    static publicKeyJwk(publicKeyJwk) {
+        const kty = this.KeyTypeMap[publicKeyJwk.kty];
+        const crv = this.CurveTypeMap[publicKeyJwk.crv];
+        const x = encodeFieldElement(publicKeyJwk.x);
+        const y = encodeFieldElement(publicKeyJwk.y);
+        if (kty === KeyType.OKP &&
+            crv === CurveType.Ed25519 &&
+            publicKeyJwk.y === 0n)
+            return { kty, crv, x };
+        return { kty, crv, x, y };
+    }
+    static service(service) {
+        const rawId = service.id.trim();
+        const needsFragmentPrefix = rawId.startsWith("//") ||
+            (!rawId.startsWith("did:") &&
+                !rawId.startsWith("#") &&
+                !rawId.startsWith("/") &&
+                !rawId.startsWith(".") &&
+                !rawId.startsWith("?"));
+        const serviceId = needsFragmentPrefix ? `#${rawId}` : rawId;
+        const serviceEndpoint = this.parseServiceEndpoint(service.serviceEndpoint);
+        const serviceType = this.parseServiceType(service.typ ??
+            service.type ??
+            "");
+        return {
+            id: serviceId,
+            type: serviceType,
+            serviceEndpoint,
+        };
+    }
+    static parseServiceType(raw) {
+        const value = raw.trim();
+        if (value.length === 0) {
+            throw new Error("Invalid service type: empty value");
+        }
+        if (value.startsWith("[")) {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed) &&
+                    parsed.length > 0 &&
+                    parsed.every((entry) => typeof entry === "string" && entry.trim().length > 0) &&
+                    new Set(parsed.map((entry) => entry.trim())).size === parsed.length) {
+                    return parsed.map((entry) => entry.trim());
+                }
+            }
+            catch {
+                throw new Error("Invalid service type: malformed JSON array");
+            }
+            throw new Error("Invalid service type: expected non-empty unique strings");
+        }
+        return value;
+    }
+    static parseServiceEndpoint(endpoint) {
+        const normalize = (value) => normalizeServiceEndpoint(value);
+        if (Array.isArray(endpoint)) {
+            const filtered = endpoint
+                .map((value) => (typeof value === "string" ? value.trim() : ""))
+                .filter((value) => value !== "");
+            if (filtered.length === 0) {
+                throw new Error("Invalid serviceEndpoint: empty legacy endpoint array");
+            }
+            if (filtered.length === 1)
+                return normalize(filtered[0]);
+            return normalize(filtered);
+        }
+        if (typeof endpoint === "string") {
+            const raw = endpoint.trim();
+            if (raw === "") {
+                throw new Error("Invalid serviceEndpoint: empty value");
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                return normalize(ServiceEndpointSchema.parse(parsed));
+            }
+            catch {
+                const direct = ServiceEndpointSchema.safeParse(raw);
+                if (direct.success) {
+                    return normalize(direct.data);
+                }
+                throw new Error("Invalid serviceEndpoint: malformed JSON payload");
+            }
+        }
+        const parsed = ServiceEndpointSchema.safeParse(endpoint);
+        if (parsed.success) {
+            return normalize(parsed.data);
+        }
+        throw new Error("Invalid serviceEndpoint: unsupported endpoint shape");
+    }
+    static verificationMethodId(id) {
+        const rawId = id.trim();
+        if (rawId.startsWith("did:")) {
+            if (rawId.includes("#"))
+                return rawId;
+            return `${rawId}#${rawId.slice(rawId.lastIndexOf(":") + 1)}`;
+        }
+        const needsFragmentPrefix = !rawId.startsWith("#") &&
+            !rawId.startsWith("/") &&
+            !rawId.startsWith(".") &&
+            !rawId.startsWith("?");
+        return needsFragmentPrefix ? `#${rawId}` : rawId;
+    }
+    static absoluteDidUrlReference(did, id) {
+        const normalized = this.verificationMethodId(id);
+        if (normalized.startsWith("did:"))
+            return normalized;
+        return `${did}${normalized}`;
+    }
+    static toJSON(ledger) {
+        const created = this.timestampToIsoString(ledger.created);
+        const updated = this.timestampToIsoString(ledger.updated);
+        return {
+            id: bytesToHex(ledger.id.bytes),
+            version: Number(ledger.version.toString()),
+            active: ledger.active,
+            operationCount: Number(ledger.operationCount.toString()),
+            created,
+            updated,
+            deactivated: ledger.deactivated,
+            alsoKnownAs: Array.from(ledger.alsoKnownAs),
+            verificationMethods: Array.from(ledger.verificationMethods, ([id, method]) => ({
+                id: this.verificationMethodId(id),
+                type: method.typ,
+                publicKeyJwk: this.publicKeyJwk(method.publicKeyJwk),
+            })),
+            authenticationRelation: Array.from(ledger.authenticationRelation, (value) => this.verificationMethodId(value)),
+            assertionMethodRelation: Array.from(ledger.assertionMethodRelation, (value) => this.verificationMethodId(value)),
+            keyAgreementRelation: Array.from(ledger.keyAgreementRelation, (value) => this.verificationMethodId(value)),
+            capabilityInvocationRelation: Array.from(ledger.capabilityInvocationRelation, (value) => this.verificationMethodId(value)),
+            capabilityDelegationRelation: Array.from(ledger.capabilityDelegationRelation, (value) => this.verificationMethodId(value)),
+            services: Array.from(ledger.services, ([, service]) => this.service(service)),
+        };
+    }
+    static ledgerStateToDIDDocument(ledger, network, contractAddress) {
+        const did = createMidnightDIDString(contractAddress, network);
+        const verificationMethod = [];
+        const verificationMethodIds = new Set();
+        for (const [id, method] of ledger.verificationMethods) {
+            const verificationMethodType = LedgerToDomain.VerificationMethodTypeMap[method.typ];
+            if (verificationMethodType !== VerificationMethodType.JsonWebKey) {
+                throw new Error(`Unsupported verification method type for id '${id}': ${verificationMethodType}`);
+            }
+            verificationMethod.push(createVerificationMethod({
+                id: this.absoluteDidUrlReference(did, id),
+                type: verificationMethodType,
+                controller: did,
+                publicKeyJwk: this.publicKeyJwk(method.publicKeyJwk),
+            }));
+            verificationMethodIds.add(id);
+        }
+        const assertRelationTargetsExist = (relationName, relation) => {
+            if (relation.isEmpty())
+                return;
+            for (const methodId of relation) {
+                if (!verificationMethodIds.has(methodId)) {
+                    throw new Error(`${relationName} references missing verification method '${this.absoluteDidUrlReference(did, methodId)}'`);
+                }
+            }
+        };
+        assertRelationTargetsExist("authentication", ledger.authenticationRelation);
+        assertRelationTargetsExist("assertionMethod", ledger.assertionMethodRelation);
+        assertRelationTargetsExist("keyAgreement", ledger.keyAgreementRelation);
+        assertRelationTargetsExist("capabilityInvocation", ledger.capabilityInvocationRelation);
+        assertRelationTargetsExist("capabilityDelegation", ledger.capabilityDelegationRelation);
+        const mapRelation = (relation) => relation.isEmpty()
+            ? undefined
+            : Array.from(relation, (value) => this.verificationMethodId(value));
+        const assertionMethod = mapRelation(ledger.assertionMethodRelation);
+        const authentication = mapRelation(ledger.authenticationRelation);
+        const capabilityDelegation = mapRelation(ledger.capabilityDelegationRelation);
+        const capabilityInvocation = mapRelation(ledger.capabilityInvocationRelation);
+        const keyAgreement = mapRelation(ledger.keyAgreementRelation);
+        const service = ledger.services.isEmpty()
+            ? undefined
+            : Array.from(ledger.services, ([, s]) => {
+                const parsed = this.service(s);
+                return createService({
+                    id: this.absoluteDidUrlReference(did, s.id),
+                    type: parsed.type,
+                    serviceEndpoint: parsed.serviceEndpoint,
+                });
+            });
+        const alsoKnownAs = ledger.alsoKnownAs.isEmpty()
+            ? undefined
+            : Array.from(ledger.alsoKnownAs);
+        return createMidnightDIDDocument({
+            id: did,
+            verificationMethod,
+            authentication,
+            assertionMethod,
+            keyAgreement,
+            capabilityInvocation,
+            capabilityDelegation,
+            service,
+            alsoKnownAs,
+        });
+    }
+    static ledgerStateToMetadata(ledger) {
+        const created = this.timestampToIsoString(ledger.created);
+        const updated = this.timestampToIsoString(ledger.updated);
+        const deactivatedAt = ledger.deactivated
+            ? this.timestampToIsoString(ledger.updated)
+            : undefined;
+        const isDeactivated = ledger.deactivated || !ledger.active;
+        const metadata = {
+            created,
+            updated,
+            deactivated: isDeactivated ? true : undefined,
+            versionId: ledger.version.toString(),
+        };
+        if (isDeactivated && deactivatedAt !== undefined) {
+            metadata.updated = deactivatedAt;
+        }
+        return metadata;
+    }
+    static timestampToIsoString(timestamp) {
+        if (timestamp === 0n)
+            return undefined;
+        const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+        if (timestamp > maxSafe || timestamp < 0n)
+            return undefined;
+        const milliseconds = Number(timestamp);
+        if (Number.isNaN(milliseconds))
+            return undefined;
+        const iso = new Date(milliseconds).toISOString();
+        return iso.replace(/\.\d{3}Z$/, "Z");
+    }
+}
+//# sourceMappingURL=ledger-to-domain.js.map

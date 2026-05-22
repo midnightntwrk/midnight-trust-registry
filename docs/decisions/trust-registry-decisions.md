@@ -1,6 +1,6 @@
 # Trust Registry Decisions
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Current Decisions
 
@@ -17,11 +17,34 @@ Date: 2026-05-20
 - Reuse the VC status registry for status and revocation instead of cloning those concerns.
 - For the first issuer-authorization slice, maintainer-approved create lands directly in `active` state; the separate application/proposal workflow remains a later slice.
 - Keep the issuer authorization lookup split between a primary `authorizationId` record and a current-scope index keyed by `(subject DID commitment, resource type, resource id)`.
+- For the first verifier-authorization slice, keep the authorization lookup split between a primary `authorizationId` record and a current-scope index keyed by `(subject DID commitment, request profile id, allowed attribute set commitment, allowed predicate set commitment, disclosure level commitment)`.
+- For the first recognition slice, maintainer-approved create lands directly in `active` state, but recognition remains a separate record family from local authorization.
+- Keep the recognition lookup split between a primary `recognitionId` record and a current-scope index keyed by `(recognized authority DID commitment, recognized registry id, scope resource type, scope resource id)`.
+- Store recognition scope resource type as an opaque `Bytes<32>` label in the contract so external trust domains are not forced into the issuer/verifier resource enums.
+- For the first epoch-anchor slice, publish epochs as append-only records keyed by `epochId`, plus a latest-epoch pointer for the current verifier view.
+- Store the maintainer key id and raw JubJub signature components in the epoch record so evidence bundles can export a real registry signature instead of a synthetic placeholder.
+- Keep epoch selection by explicit `epochId` or latest pointer in the contract; richer historical selection by timestamp remains a later client concern.
+- Start integration coverage with a simulator-first workspace package and a dedicated `./run.sh integration` lane; keep it separate from `./run.sh --light` until DID- and VC-backed scenarios justify the extra CI cost.
+- For the first client slice, add a dedicated `packages/trust-registry-client` workspace instead of embedding client helpers into the integration harness.
+- Keep the first client slice evidence-first: verify published epoch roots, maintainer signatures, and bundle scope expectations directly from canonical contract records before adding higher-level transport adapters.
+- Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
+- For the first DID-backed integration slice, sync the official `@midnight-ntwrk/midnight-did`, `@midnight-ntwrk/midnight-did-domain`, and `@midnight-ntwrk/midnight-did-contract` packages into `libs/` instead of depending on sibling-repo paths at runtime.
+- Use official `midnight-did` helpers to construct fixture `did:midnight` identifiers and `MidnightDIDResolver` to resolve bundle subject DIDs from fixture ledger state; do not duplicate DID parsing or resolution logic inside TR tests.
+- For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.
+- Keep VC-backed integration evidence-first: verify TR authorization bundles through `@midnight-ntwrk/trust-registry-client`, then verify VC status through the official status-registry helpers using the status-registry reference exported by the issuer bundle.
+- Keep the Turbo workspace graph acyclic: `@midnight-ntwrk/trust-registry-client` test coverage may consume integration fixtures by source import, but the client package manifest must not depend on `@midnight-ntwrk/trust-registry-integration`.
+- Implement the first TRQP slice as a dedicated read-only adapter workspace under `adapters/trqp`, backed by an abstract source interface instead of direct contract or simulator coupling.
+- Use `registryDid` as the canonical TRQP `authority_id`; keep the local `registryId` as a Midnight profile field in metadata responses.
+- Keep the standard TRQP v2 surface limited to authorization and recognition queries. Registry metadata and evidence-bundle export are explicit Midnight profile extensions because TRQP v2 defers metadata/description query types.
+- For the first TRQP recognition mapping, interpret the local recognition `scope.resourceType` as the TRQP `action` field and use `context.recognized_registry_id` as the disambiguating extension for external registry matches.
+- Implement the first OpenID Federation slice as an offline, fixture-only adapter workspace under `adapters/openid-federation`; do not claim live fetch, resolve, or `.well-known` publication support yet.
+- Use the registry `serviceEndpoint` URL as the federation entity identifier and keep `registryDid` and `registryId` inside custom trust-registry metadata, because the federation experiment authenticates the registry publisher rather than replacing DID-native identifiers.
+- Keep OpenID Federation as a publisher-authentication layer only: the signed federation chain proves who published the registry metadata, while embedded TR evidence bundles remain the source-of-truth for authorization and recognition semantics.
 
 ## Pending Decisions
 
 - Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
-- Resource granularity for verifier authorization: request profile only, or request profile plus disclosure and predicate commitments.
+- Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
 - Minimum maintainer threshold for admin onboarding, member onboarding, policy updates, and emergency suspension.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.

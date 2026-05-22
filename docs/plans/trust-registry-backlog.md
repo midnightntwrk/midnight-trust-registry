@@ -1,7 +1,7 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-05-20
+Updated: 2026-05-21
 
 ## Priority Model
 
@@ -23,14 +23,14 @@ Updated: 2026-05-20
 | TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
 | TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
 | TR-010 | P1 | Draft PR `#6` | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
-| TR-011 | P1 | Open | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
-| TR-012 | P1 | Open | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
-| TR-013 | P1 | Open | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
-| TR-014 | P1 | Open | Add TypeScript client. | Apps can query current and historical authorization state. |
-| TR-015 | P1 | Open | Add DID integration test. | `did:midnight` references resolve through DID repo APIs or fixtures without copying DID logic. |
-| TR-016 | P1 | Open | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
-| TR-017 | P2 | Open | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
-| TR-018 | P2 | Open | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
+| TR-011 | P1 | Current top branch | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
+| TR-012 | P1 | Current top branch | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
+| TR-013 | P1 | Current top branch | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
+| TR-014 | P1 | Current top branch | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
+| TR-015 | P1 | Current top branch | Add DID integration test. | `did:midnight` references resolve through `midnight-did` helpers and `MidnightDIDResolver` fixtures without copying DID logic. |
+| TR-016 | P1 | Current top branch | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
+| TR-017 | P2 | Current top branch | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
+| TR-018 | P2 | Current top branch | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
 | TR-019 | P2 | Open | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
 | TR-020 | P2 | Open | Add audit report generator. | A command emits human-readable authorization and policy history. |
 
@@ -43,6 +43,14 @@ Updated: 2026-05-20
 
 - Keep status and revocation in VC status registry packages.
 - Keep DID CRUD and resolver behavior in DID packages.
+- Start integration coverage with an in-process simulator lane before binding TR
+  to DID and VC runtime dependencies.
 - Use append-only state for decisions that affect long-term verification.
 - Keep holder data out of TR state and query logs.
 - Keep recognition separate from authorization.
+- Keep the first client package evidence-first: query raw contract state, then
+  validate anchored bundles against published epoch records before adding richer
+  adapters.
+- Keep DID-backed scenarios on the shared integration lane by consuming the
+  official `midnight-did` package surface and fixture ledger state rather than
+  re-implementing DID parsing or resolution logic inside TR.

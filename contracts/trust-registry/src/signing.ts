@@ -101,6 +101,117 @@ export const computeUpdateIssuerAuthorizationPayloadHash = (
     ensure32Bytes(evidenceHash),
   );
 
+export const computeVerifierAuthorizationScopeKey = (
+  subjectDidCommitment: Uint8Array,
+  requestProfileId: Uint8Array,
+  allowedAttributeSetCommitment: Uint8Array,
+  allowedPredicateSetCommitment: Uint8Array,
+  disclosureLevelCommitment: Uint8Array,
+): Uint8Array =>
+  pureCircuits.verifierAuthorizationScopeKey(
+    ensure32Bytes(subjectDidCommitment),
+    ensure32Bytes(requestProfileId),
+    ensure32Bytes(allowedAttributeSetCommitment),
+    ensure32Bytes(allowedPredicateSetCommitment),
+    ensure32Bytes(disclosureLevelCommitment),
+  );
+
+export const computeRecognitionScopeKey = (
+  recognizedAuthorityDidCommitment: Uint8Array,
+  recognizedRegistryId: Uint8Array,
+  scopeResourceType: Uint8Array,
+  scopeResourceId: Uint8Array,
+): Uint8Array =>
+  pureCircuits.recognitionScopeKey(
+    ensure32Bytes(recognizedAuthorityDidCommitment),
+    ensure32Bytes(recognizedRegistryId),
+    ensure32Bytes(scopeResourceType),
+    ensure32Bytes(scopeResourceId),
+  );
+
+export const computeCreateVerifierAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  subjectDidCommitment: Uint8Array,
+  requestProfileId: Uint8Array,
+  allowedAttributeSetCommitment: Uint8Array,
+  allowedPredicateSetCommitment: Uint8Array,
+  disclosureLevelCommitment: Uint8Array,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createVerifierAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
+    ensure32Bytes(subjectDidCommitment),
+    ensure32Bytes(requestProfileId),
+    ensure32Bytes(allowedAttributeSetCommitment),
+    ensure32Bytes(allowedPredicateSetCommitment),
+    ensure32Bytes(disclosureLevelCommitment),
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeCreateRecognitionPayloadHash = (
+  recognitionId: Uint8Array,
+  recognizedAuthorityDidCommitment: Uint8Array,
+  recognizedRegistryId: Uint8Array,
+  scopeResourceType: Uint8Array,
+  scopeResourceId: Uint8Array,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createRecognitionPayloadHash(
+    ensure32Bytes(recognitionId),
+    ensure32Bytes(recognizedAuthorityDidCommitment),
+    ensure32Bytes(recognizedRegistryId),
+    ensure32Bytes(scopeResourceType),
+    ensure32Bytes(scopeResourceId),
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeCreateEpochCommitmentPayloadHash = (
+  epochId: Uint8Array,
+  stateRoot: Uint8Array,
+  eventRoot: Uint8Array,
+  policyRoot: Uint8Array,
+  validFromSequence: bigint,
+  validUntilSequence: bigint,
+): Uint8Array =>
+  pureCircuits.createEpochCommitmentPayloadHash(
+    ensure32Bytes(epochId),
+    ensure32Bytes(stateRoot),
+    ensure32Bytes(eventRoot),
+    ensure32Bytes(policyRoot),
+    validFromSequence,
+    validUntilSequence,
+  );
+
+export const computeUpdateVerifierAuthorizationPayloadHash = (
+  authorizationId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateVerifierAuthorizationPayloadHash(
+    ensure32Bytes(authorizationId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateRecognitionPayloadHash = (
+  recognitionId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateRecognitionPayloadHash(
+    ensure32Bytes(recognitionId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
+
 export const signMaintainerActionDigest = (
   secretScalar: bigint,
   digest: TrustRegistryActionDigest,

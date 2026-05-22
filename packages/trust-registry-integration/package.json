@@ -1,0 +1,35 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "integration": "vitest run --dir src/test"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/midnight-did": "file:../../libs/midnight-did/did",
+    "@midnight-ntwrk/midnight-did-credentials": "file:../../libs/midnight-verifiable-credentials/core/primitives/credentials",
+    "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:../../libs/midnight-verifiable-credentials/registry/status-registry",
+    "@midnight-ntwrk/midnight-did-contract": "file:../../libs/midnight-did/contract",
+    "@midnight-ntwrk/midnight-did-domain": "file:../../libs/midnight-did/domain",
+    "@midnight-ntwrk/trust-registry-client": "0.1.0",
+    "@midnight-ntwrk/trust-registry-contract": "0.1.0",
+    "@midnight-ntwrk/trust-registry-domain": "0.1.0"
+  }
+}

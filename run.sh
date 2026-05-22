@@ -68,8 +68,7 @@ case "${RUN_COMMON_TARGET}" in
     npm run clean:artifacts
     ;;
   integration)
-    echo "[run] No integration lane is defined yet for this repository."
-    exit 0
+    npm run integration
     ;;
   *)
     echo "[run] Unknown target: ${RUN_COMMON_TARGET}" >&2

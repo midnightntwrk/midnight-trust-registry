@@ -1,8 +1,13 @@
 import { Buffer } from "node:buffer";
 
 import {
+  computeCreateEpochCommitmentPayloadHash,
+  computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateVerifierAuthorizationPayloadHash,
+  computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
+  computeUpdateVerifierAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   signMaintainerActionFromSeed,
   verifyMaintainerAction,
@@ -25,6 +30,15 @@ const CREATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:create");
 const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
 const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
 const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
+const CREATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:create");
+const SUSPEND_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:suspend");
+const REVOKE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:revoke");
+const ARCHIVE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:archive");
+const CREATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:create");
+const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
+const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
+const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
+const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const createInitializedRegistryFixture = (seedByte: number) => {
   const simulator = new TrustRegistrySimulator();
@@ -63,6 +77,40 @@ const createIssuerAuthorizationFixture = (label: string) => ({
   policyId: labelToBytes32("policy:kanon:v1"),
   trustLevel: labelToBytes32("approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
+});
+
+const createVerifierAuthorizationFixture = (label: string) => ({
+  authorizationId: labelToBytes32(`verifier-auth:${label}`),
+  subjectDidCommitment: labelToBytes32(`did:midnight:verifier:${label}`),
+  requestProfileId: labelToBytes32(`request-profile:${label}:v1`),
+  allowedAttributeSetCommitment: labelToBytes32(`attr-set:${label}:minimal`),
+  allowedPredicateSetCommitment: labelToBytes32(`pred-set:${label}:adult`),
+  disclosureLevelCommitment: labelToBytes32(`disclosure:${label}:selective`),
+  policyId: labelToBytes32("policy:kanon:v1"),
+  trustLevel: labelToBytes32("approved"),
+  evidenceHash: labelToBytes32(`evidence:${label}:create`),
+});
+
+const createRecognitionFixture = (label: string) => ({
+  recognitionId: labelToBytes32(`recognition:${label}`),
+  recognizedAuthorityDidCommitment: labelToBytes32(
+    `did:web:${label}.authority.example`,
+  ),
+  recognizedRegistryId: labelToBytes32(`registry:external:${label}:v1`),
+  scopeResourceType: labelToBytes32("recognized-scope"),
+  scopeResourceId: labelToBytes32(`credential-family:${label}:v1`),
+  policyId: labelToBytes32("policy:kanon:v1"),
+  trustLevel: labelToBytes32("peer-approved"),
+  evidenceHash: labelToBytes32(`evidence:${label}:create`),
+});
+
+const createEpochCommitmentFixture = (label: string) => ({
+  epochId: labelToBytes32(`epoch:${label}`),
+  stateRoot: labelToBytes32(`state-root:${label}`),
+  eventRoot: labelToBytes32(`event-root:${label}`),
+  policyRoot: labelToBytes32(`policy-root:${label}`),
+  validFromSequence: 1n,
+  validUntilSequence: 61n,
 });
 
 describe("trust registry contract", () => {
@@ -675,5 +723,908 @@ describe("trust registry contract", () => {
         labelToBytes32("evidence:license:revoke"),
       ),
     ).toThrow(/active or suspended/i);
+  });
+
+  it("creates and queries an active verifier authorization with predicate and disclosure scoped lookups", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(31);
+    const verifierAuthorization = createVerifierAuthorizationFixture("age-gate");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_VERIFIER_ACTION_KIND,
+      computeCreateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+        verifierAuthorization.policyId,
+        verifierAuthorization.trustLevel,
+        verifierAuthorization.evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    const eventHash = simulator.createVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      verifierAuthorization.authorizationId,
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+      verifierAuthorization.policyId,
+      verifierAuthorization.trustLevel,
+      verifierAuthorization.evidenceHash,
+    );
+    const state = simulator.getLedger();
+    const recordById = simulator.getVerifierAuthorization(
+      verifierAuthorization.authorizationId,
+    );
+    const recordByScope = simulator.getCurrentVerifierAuthorization(
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+    );
+
+    expect(state.verifierAuthorizationCount).toEqual(1n);
+    expect(state.activeVerifierAuthorizationCount).toEqual(1n);
+    expect(recordById.status).toEqual(AuthorizationStatus.active);
+    expect(Buffer.from(recordById.authorizationId)).toEqual(
+      Buffer.from(verifierAuthorization.authorizationId),
+    );
+    expect(Buffer.from(recordById.lifecycleEventHash)).toEqual(
+      Buffer.from(eventHash),
+    );
+    expect(Buffer.from(recordByScope.authorizationId)).toEqual(
+      Buffer.from(verifierAuthorization.authorizationId),
+    );
+    expect(() =>
+      simulator.assertVerifierAuthorized(
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      simulator.getCurrentVerifierAuthorization(
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        labelToBytes32("pred-set:age-gate:different"),
+        verifierAuthorization.disclosureLevelCommitment,
+      ),
+    ).toThrow(/scope is not registered/i);
+  });
+
+  it("suspends, revokes, and archives verifier authorizations while preserving scope-sensitive state", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(37);
+    const verifierAuthorization = createVerifierAuthorizationFixture("university");
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_VERIFIER_ACTION_KIND,
+      computeCreateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+        verifierAuthorization.policyId,
+        verifierAuthorization.trustLevel,
+        verifierAuthorization.evidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      verifierAuthorization.authorizationId,
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+      verifierAuthorization.policyId,
+      verifierAuthorization.trustLevel,
+      verifierAuthorization.evidenceHash,
+    );
+
+    const createdRecord = simulator.getVerifierAuthorization(
+      verifierAuthorization.authorizationId,
+    );
+    const suspendEvidenceHash = labelToBytes32("evidence:university:suspend");
+    const suspendSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        createdRecord.lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.suspendVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      suspendSignature,
+      verifierAuthorization.authorizationId,
+      suspendEvidenceHash,
+    );
+
+    const suspendedRecord = simulator.getCurrentVerifierAuthorization(
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+    );
+    expect(suspendedRecord.status).toEqual(AuthorizationStatus.suspended);
+    expect(simulator.getLedger().activeVerifierAuthorizationCount).toEqual(0n);
+    expect(() =>
+      simulator.assertVerifierAuthorized(
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+      ),
+    ).toThrow(/not active/i);
+
+    const revokeEvidenceHash = labelToBytes32("evidence:university:revoke");
+    const revokeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      REVOKE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        suspendedRecord.lifecycleEventHash,
+        revokeEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.revokeVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      revokeSignature,
+      verifierAuthorization.authorizationId,
+      revokeEvidenceHash,
+    );
+
+    const revokedRecord = simulator.getVerifierAuthorization(
+      verifierAuthorization.authorizationId,
+    );
+    expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
+
+    const archiveEvidenceHash = labelToBytes32("evidence:university:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        revokedRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      verifierAuthorization.authorizationId,
+      archiveEvidenceHash,
+    );
+
+    const archivedRecord = simulator.getCurrentVerifierAuthorization(
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+    );
+    expect(archivedRecord.status).toEqual(AuthorizationStatus.archived);
+    expect(simulator.getLedger().activeVerifierAuthorizationCount).toEqual(0n);
+  });
+
+  it("rejects duplicate verifier scopes, invalid transitions, tampered signatures, and missing verifier queries", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(41);
+    const verifierAuthorization = createVerifierAuthorizationFixture("passport");
+
+    expect(() =>
+      simulator.getVerifierAuthorization(labelToBytes32("verifier-auth:missing")),
+    ).toThrow(/not registered/i);
+    expect(() =>
+      simulator.getCurrentVerifierAuthorization(
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+      ),
+    ).toThrow(/scope is not registered/i);
+
+    const createPayloadHash = computeCreateVerifierAuthorizationPayloadHash(
+      verifierAuthorization.authorizationId,
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+      verifierAuthorization.policyId,
+      verifierAuthorization.trustLevel,
+      verifierAuthorization.evidenceHash,
+    );
+    const tamperedCreateSignature = {
+      ...signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        CREATE_VERIFIER_ACTION_KIND,
+        createPayloadHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      response: 0n,
+    };
+
+    expect(() =>
+      simulator.createVerifierAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        tamperedCreateSignature,
+        verifierAuthorization.authorizationId,
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+        verifierAuthorization.policyId,
+        verifierAuthorization.trustLevel,
+        verifierAuthorization.evidenceHash,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_VERIFIER_ACTION_KIND,
+      createPayloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      verifierAuthorization.authorizationId,
+      verifierAuthorization.subjectDidCommitment,
+      verifierAuthorization.requestProfileId,
+      verifierAuthorization.allowedAttributeSetCommitment,
+      verifierAuthorization.allowedPredicateSetCommitment,
+      verifierAuthorization.disclosureLevelCommitment,
+      verifierAuthorization.policyId,
+      verifierAuthorization.trustLevel,
+      verifierAuthorization.evidenceHash,
+    );
+
+    expect(() =>
+      simulator.createVerifierAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          CREATE_VERIFIER_ACTION_KIND,
+          computeCreateVerifierAuthorizationPayloadHash(
+            labelToBytes32("verifier-auth:passport:duplicate"),
+            verifierAuthorization.subjectDidCommitment,
+            verifierAuthorization.requestProfileId,
+            verifierAuthorization.allowedAttributeSetCommitment,
+            verifierAuthorization.allowedPredicateSetCommitment,
+            verifierAuthorization.disclosureLevelCommitment,
+            verifierAuthorization.policyId,
+            verifierAuthorization.trustLevel,
+            labelToBytes32("evidence:passport:duplicate"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        labelToBytes32("verifier-auth:passport:duplicate"),
+        verifierAuthorization.subjectDidCommitment,
+        verifierAuthorization.requestProfileId,
+        verifierAuthorization.allowedAttributeSetCommitment,
+        verifierAuthorization.allowedPredicateSetCommitment,
+        verifierAuthorization.disclosureLevelCommitment,
+        verifierAuthorization.policyId,
+        verifierAuthorization.trustLevel,
+        labelToBytes32("evidence:passport:duplicate"),
+      ),
+    ).toThrow(/live authorization/i);
+
+    const createdRecord = simulator.getVerifierAuthorization(
+      verifierAuthorization.authorizationId,
+    );
+    const archiveEvidenceHash = labelToBytes32("evidence:passport:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        createdRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveVerifierAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      verifierAuthorization.authorizationId,
+      archiveEvidenceHash,
+    );
+
+    expect(() =>
+      simulator.revokeVerifierAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          REVOKE_VERIFIER_ACTION_KIND,
+          computeUpdateVerifierAuthorizationPayloadHash(
+            verifierAuthorization.authorizationId,
+            simulator.getVerifierAuthorization(verifierAuthorization.authorizationId)
+              .lifecycleEventHash,
+            labelToBytes32("evidence:passport:revoke"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        verifierAuthorization.authorizationId,
+        labelToBytes32("evidence:passport:revoke"),
+      ),
+    ).toThrow(/active or suspended/i);
+  });
+
+  it("creates and queries an active recognition by id and scope", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(43);
+    const recognition = createRecognitionFixture("gaia-x");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_RECOGNITION_ACTION_KIND,
+      computeCreateRecognitionPayloadHash(
+        recognition.recognitionId,
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+        recognition.policyId,
+        recognition.trustLevel,
+        recognition.evidenceHash,
+      ),
+      actionSequence,
+    );
+
+    const eventHash = simulator.createRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+    );
+    const state = simulator.getLedger();
+    const recordById = simulator.getRecognition(recognition.recognitionId);
+    const recordByScope = simulator.getCurrentRecognition(
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+    );
+
+    expect(state.recognitionCount).toEqual(1n);
+    expect(state.activeRecognitionCount).toEqual(1n);
+    expect(recordById.status).toEqual(AuthorizationStatus.active);
+    expect(Buffer.from(recordById.recognitionId)).toEqual(
+      Buffer.from(recognition.recognitionId),
+    );
+    expect(Buffer.from(recordById.lifecycleEventHash)).toEqual(
+      Buffer.from(eventHash),
+    );
+    expect(Buffer.from(recordByScope.recognitionId)).toEqual(
+      Buffer.from(recognition.recognitionId),
+    );
+    expect(() =>
+      simulator.assertRecognitionActive(
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+      ),
+    ).not.toThrow();
+  });
+
+  it("suspends, revokes, and archives recognition records while preserving append-only scope state", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(47);
+    const recognition = createRecognitionFixture("eidas");
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_RECOGNITION_ACTION_KIND,
+      computeCreateRecognitionPayloadHash(
+        recognition.recognitionId,
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+        recognition.policyId,
+        recognition.trustLevel,
+        recognition.evidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+    );
+
+    const createdRecord = simulator.getRecognition(recognition.recognitionId);
+    const suspendEvidenceHash = labelToBytes32("evidence:eidas:suspend");
+    const suspendSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        createdRecord.lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.suspendRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      suspendSignature,
+      recognition.recognitionId,
+      suspendEvidenceHash,
+    );
+
+    const suspendedRecord = simulator.getCurrentRecognition(
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+    );
+    expect(suspendedRecord.status).toEqual(AuthorizationStatus.suspended);
+    expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
+    expect(() =>
+      simulator.assertRecognitionActive(
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+      ),
+    ).toThrow(/not active/i);
+
+    const revokeEvidenceHash = labelToBytes32("evidence:eidas:revoke");
+    const revokeSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      REVOKE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        suspendedRecord.lifecycleEventHash,
+        revokeEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.revokeRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      revokeSignature,
+      recognition.recognitionId,
+      revokeEvidenceHash,
+    );
+
+    const revokedRecord = simulator.getRecognition(recognition.recognitionId);
+    expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
+
+    const archiveEvidenceHash = labelToBytes32("evidence:eidas:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        revokedRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      recognition.recognitionId,
+      archiveEvidenceHash,
+    );
+
+    const archivedRecord = simulator.getCurrentRecognition(
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+    );
+    expect(archivedRecord.status).toEqual(AuthorizationStatus.archived);
+    expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
+  });
+
+  it("rejects duplicate recognition scopes, invalid transitions, tampered signatures, and missing recognition queries", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(53);
+    const recognition = createRecognitionFixture("gaia-net");
+
+    expect(() =>
+      simulator.getRecognition(labelToBytes32("recognition:missing")),
+    ).toThrow(/not registered/i);
+    expect(() =>
+      simulator.getCurrentRecognition(
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+      ),
+    ).toThrow(/scope is not registered/i);
+
+    const createPayloadHash = computeCreateRecognitionPayloadHash(
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+    );
+    const tamperedCreateSignature = {
+      ...signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        CREATE_RECOGNITION_ACTION_KIND,
+        createPayloadHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      response: 0n,
+    };
+
+    expect(() =>
+      simulator.createRecognition(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        tamperedCreateSignature,
+        recognition.recognitionId,
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+        recognition.policyId,
+        recognition.trustLevel,
+        recognition.evidenceHash,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+
+    const createSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_RECOGNITION_ACTION_KIND,
+      createPayloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.createRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      createSignature,
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      recognition.recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+    );
+
+    expect(() =>
+      simulator.createRecognition(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          CREATE_RECOGNITION_ACTION_KIND,
+          computeCreateRecognitionPayloadHash(
+            labelToBytes32("recognition:gaia-net:duplicate"),
+            recognition.recognizedAuthorityDidCommitment,
+            recognition.recognizedRegistryId,
+            recognition.scopeResourceType,
+            recognition.scopeResourceId,
+            recognition.policyId,
+            recognition.trustLevel,
+            labelToBytes32("evidence:gaia-net:duplicate"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        labelToBytes32("recognition:gaia-net:duplicate"),
+        recognition.recognizedAuthorityDidCommitment,
+        recognition.recognizedRegistryId,
+        recognition.scopeResourceType,
+        recognition.scopeResourceId,
+        recognition.policyId,
+        recognition.trustLevel,
+        labelToBytes32("evidence:gaia-net:duplicate"),
+      ),
+    ).toThrow(/live recognition/i);
+
+    const createdRecord = simulator.getRecognition(recognition.recognitionId);
+    const archiveEvidenceHash = labelToBytes32("evidence:gaia-net:archive");
+    const archiveSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        createdRecord.lifecycleEventHash,
+        archiveEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.archiveRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveSignature,
+      recognition.recognitionId,
+      archiveEvidenceHash,
+    );
+
+    expect(() =>
+      simulator.revokeRecognition(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          REVOKE_RECOGNITION_ACTION_KIND,
+          computeUpdateRecognitionPayloadHash(
+            recognition.recognitionId,
+            simulator.getRecognition(recognition.recognitionId)
+              .lifecycleEventHash,
+            labelToBytes32("evidence:gaia-net:revoke"),
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        recognition.recognitionId,
+        labelToBytes32("evidence:gaia-net:revoke"),
+      ),
+    ).toThrow(/active or suspended/i);
+  });
+
+  it("publishes and queries an epoch commitment by id and latest pointer", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(59);
+    const epoch = createEpochCommitmentFixture("seq-1");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      computeCreateEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+      actionSequence,
+    );
+
+    const eventHash = simulator.publishEpochCommitment(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+    const state = simulator.getLedger();
+    const recordById = simulator.getEpochCommitment(epoch.epochId);
+    const recordByLatest = simulator.getCurrentEpochCommitment();
+
+    expect(state.epochCommitmentCount).toEqual(1n);
+    expect(Buffer.from(state.latestEpochCommitmentId)).toEqual(
+      Buffer.from(epoch.epochId),
+    );
+    expect(Buffer.from(recordById.epochId)).toEqual(Buffer.from(epoch.epochId));
+    expect(Buffer.from(recordById.stateRoot)).toEqual(Buffer.from(epoch.stateRoot));
+    expect(Buffer.from(recordById.eventRoot)).toEqual(Buffer.from(epoch.eventRoot));
+    expect(Buffer.from(recordById.policyRoot)).toEqual(
+      Buffer.from(epoch.policyRoot),
+    );
+    expect(recordById.validFromSequence).toEqual(epoch.validFromSequence);
+    expect(recordById.validUntilSequence).toEqual(epoch.validUntilSequence);
+    expect(Buffer.from(recordById.publicationEventHash)).toEqual(
+      Buffer.from(eventHash),
+    );
+    expect(Buffer.from(recordByLatest.epochId)).toEqual(Buffer.from(epoch.epochId));
+    expect(recordByLatest.signatureResponse).toEqual(signature.response);
+  });
+
+  it("rejects missing epoch queries, invalid epoch windows, tampered signatures, and duplicate epoch ids", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(61);
+    const epoch = createEpochCommitmentFixture("seq-2");
+
+    expect(() => simulator.getCurrentEpochCommitment()).toThrow(
+      /no epoch commitment/i,
+    );
+    expect(() =>
+      simulator.getEpochCommitment(labelToBytes32("epoch:missing")),
+    ).toThrow(/not registered/i);
+
+    expect(() =>
+      pureCircuits.createEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        10n,
+        9n,
+      ),
+    ).toThrow(/later than valid from/i);
+
+    const createPayloadHash = computeCreateEpochCommitmentPayloadHash(
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+    const tamperedSignature = {
+      ...signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        CREATE_EPOCH_ACTION_KIND,
+        createPayloadHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      response: 0n,
+    };
+
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        tamperedSignature,
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+
+    const signature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      createPayloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    simulator.publishEpochCommitment(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signature,
+      epoch.epochId,
+      epoch.stateRoot,
+      epoch.eventRoot,
+      epoch.policyRoot,
+      epoch.validFromSequence,
+      epoch.validUntilSequence,
+    );
+
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signMaintainerActionFromSeed(
+          bootstrapMaintainer.seed,
+          registryId,
+          CREATE_EPOCH_ACTION_KIND,
+          computeCreateEpochCommitmentPayloadHash(
+            epoch.epochId,
+            labelToBytes32("state-root:duplicate"),
+            epoch.eventRoot,
+            epoch.policyRoot,
+            epoch.validFromSequence,
+            epoch.validUntilSequence,
+          ),
+          simulator.getLedger().governanceActionCount,
+        ),
+        epoch.epochId,
+        labelToBytes32("state-root:duplicate"),
+        epoch.eventRoot,
+        epoch.policyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+    ).toThrow(/already exists/i);
   });
 });
