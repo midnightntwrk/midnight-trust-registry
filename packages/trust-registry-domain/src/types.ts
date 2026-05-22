@@ -157,22 +157,28 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   const templatesById = new Map<string, z.infer<typeof GovernancePolicyTemplateSchema>>();
   const templateFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();
   for (const [index, template] of record.policyTemplates.entries()) {
-    if (templatesById.has(template.templateId)) {
+    const duplicateTemplateId = templatesById.has(template.templateId);
+    if (duplicateTemplateId) {
       ctx.addIssue({
         code: "custom",
         message: "policyTemplates must not repeat templateId values",
         path: ["policyTemplates", index, "templateId"],
       });
     }
-    if (templateFamilies.has(template.family)) {
+    const duplicateTemplateFamily = templateFamilies.has(template.family);
+    if (duplicateTemplateFamily) {
       ctx.addIssue({
         code: "custom",
         message: "policyTemplates must not repeat decision families",
         path: ["policyTemplates", index, "family"],
       });
     }
-    templatesById.set(template.templateId, template);
-    templateFamilies.add(template.family);
+    if (!duplicateTemplateId) {
+      templatesById.set(template.templateId, template);
+    }
+    if (!duplicateTemplateFamily) {
+      templateFamilies.add(template.family);
+    }
   }
 
   const bindingFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();

@@ -104,6 +104,14 @@ const hashHexToBytes32 = (value: string): Uint8Array =>
 const sameBytes = (left: Uint8Array, right: Uint8Array): boolean =>
   Buffer.from(left).equals(Buffer.from(right));
 
+const thresholdToPolicyNumber = (threshold: bigint): number => {
+  if (threshold > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError("Maintainer threshold exceeds Number.MAX_SAFE_INTEGER");
+  }
+
+  return Number(threshold);
+};
+
 const timestampForSequence = (sequence: bigint): string =>
   new Date(BASE_TIMESTAMP_MS + Number(sequence) * 60_000).toISOString();
 
@@ -272,7 +280,7 @@ export class LocalTrustRegistryIntegrationHarness {
           family: "maintainer",
           name: "Maintainer Governance",
           description: "Maintainer onboarding and membership changes",
-          requiredMaintainerThreshold: Number(defaultThreshold),
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
           applicableRoles: ["maintainer"],
           applicableActionKinds: [
             "tr:maintainer:propose",
@@ -287,7 +295,7 @@ export class LocalTrustRegistryIntegrationHarness {
           family: "member",
           name: "Member Governance",
           description: "Issuer, verifier, and recognition onboarding decisions",
-          requiredMaintainerThreshold: Number(defaultThreshold),
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
           applicableRoles: ["issuer", "verifier", "authority"],
           applicableActionKinds: [
             "tr:issuer:propose",
@@ -307,7 +315,7 @@ export class LocalTrustRegistryIntegrationHarness {
           family: "emergency",
           name: "Emergency Governance",
           description: "Emergency suspension and revocation decisions",
-          requiredMaintainerThreshold: Number(emergencyThreshold),
+          requiredMaintainerThreshold: thresholdToPolicyNumber(emergencyThreshold),
           applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
           applicableActionKinds: [
             "tr:issuer:suspend",
@@ -328,7 +336,7 @@ export class LocalTrustRegistryIntegrationHarness {
           family: "archival",
           name: "Archival Governance",
           description: "Historical archival and closure decisions",
-          requiredMaintainerThreshold: Number(archivalThreshold),
+          requiredMaintainerThreshold: thresholdToPolicyNumber(archivalThreshold),
           applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
           applicableActionKinds: [
             "tr:issuer:archive",
@@ -344,7 +352,7 @@ export class LocalTrustRegistryIntegrationHarness {
           family: "auditor",
           name: "Auditor Governance",
           description: "Auditor onboarding and oversight decisions",
-          requiredMaintainerThreshold: Number(defaultThreshold),
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
           applicableRoles: ["auditor"],
           applicableActionKinds: [
             "tr:auditor:propose",

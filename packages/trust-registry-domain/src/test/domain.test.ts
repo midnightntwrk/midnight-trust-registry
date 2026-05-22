@@ -111,6 +111,22 @@ const createDecisionBindings = () => [
   },
 ];
 
+const createPolicyRecordInput = () => ({
+  policyId: "policy:university:v1",
+  registryId: "registry:midnight:university",
+  version: "v1",
+  policyUri: "https://registry.example/policy/v1",
+  status: "active" as const,
+  effectiveFrom: "2026-05-20T00:00:00Z",
+  policyTemplates: createPolicyTemplates(),
+  decisionBindings: createDecisionBindings(),
+  decisionRules: ["majority maintainers"],
+  disputeRules: ["formal appeal"],
+  retentionRules: ["retain 10 years"],
+  emergencyRules: ["emergency suspension allowed"],
+  lifecycleEventRoot: HASH_A,
+});
+
 describe("identifier helpers", () => {
   it("creates stable scoped identifiers", () => {
     expect(createScopedIdentifier("vc-type", "Birth Credential", "v1")).toBe(
@@ -157,23 +173,7 @@ describe("record schemas", () => {
   });
 
   it("accepts a participant and policy record", () => {
-    expect(() =>
-      GovernancePolicyRecordSchema.parse({
-        policyId: "policy:university:v1",
-        registryId: "registry:midnight:university",
-        version: "v1",
-        policyUri: "https://registry.example/policy/v1",
-        status: "active",
-        effectiveFrom: "2026-05-20T00:00:00Z",
-        policyTemplates: createPolicyTemplates(),
-        decisionBindings: createDecisionBindings(),
-        decisionRules: ["majority maintainers"],
-        disputeRules: ["formal appeal"],
-        retentionRules: ["retain 10 years"],
-        emergencyRules: ["emergency suspension allowed"],
-        lifecycleEventRoot: HASH_A,
-      }),
-    ).not.toThrow();
+    expect(() => GovernancePolicyRecordSchema.parse(createPolicyRecordInput())).not.toThrow();
 
     expect(() =>
       ParticipantRecordSchema.parse({
@@ -234,21 +234,7 @@ describe("record schemas", () => {
   });
 
   it("resolves a typed governance template from a decision binding", () => {
-    const policy = GovernancePolicyRecordSchema.parse({
-      policyId: "policy:university:v1",
-      registryId: "registry:midnight:university",
-      version: "v1",
-      policyUri: "https://registry.example/policy/v1",
-      status: "active",
-      effectiveFrom: "2026-05-20T00:00:00Z",
-      policyTemplates: createPolicyTemplates(),
-      decisionBindings: createDecisionBindings(),
-      decisionRules: ["majority maintainers"],
-      disputeRules: ["formal appeal"],
-      retentionRules: ["retain 10 years"],
-      emergencyRules: ["emergency suspension allowed"],
-      lifecycleEventRoot: HASH_A,
-    });
+    const policy = GovernancePolicyRecordSchema.parse(createPolicyRecordInput());
 
     const template = resolveGovernancePolicyTemplate(policy, "emergency");
 
@@ -324,12 +310,7 @@ describe("record schemas", () => {
   it("rejects governance policies with bindings that do not resolve to typed templates", () => {
     expect(() =>
       GovernancePolicyRecordSchema.parse({
-        policyId: "policy:university:v1",
-        registryId: "registry:midnight:university",
-        version: "v1",
-        policyUri: "https://registry.example/policy/v1",
-        status: "active",
-        effectiveFrom: "2026-05-20T00:00:00Z",
+        ...createPolicyRecordInput(),
         policyTemplates: createPolicyTemplates(),
         decisionBindings: [
           {
@@ -339,12 +320,83 @@ describe("record schemas", () => {
             actionScopes: ["issuer-authorization"],
           },
         ],
-        decisionRules: ["majority maintainers"],
-        disputeRules: ["formal appeal"],
-        retentionRules: ["retain 10 years"],
-        emergencyRules: ["emergency suspension allowed"],
-        lifecycleEventRoot: HASH_A,
       }),
     ).toThrow(/existing policy template/i);
+  });
+
+  it("rejects governance policies with duplicate template identifiers", () => {
+    const [firstTemplate, secondTemplate, ...remainingTemplates] = createPolicyTemplates();
+    const duplicatedTemplates = [
+      firstTemplate!,
+      {
+        ...secondTemplate!,
+        templateId: firstTemplate!.templateId,
+      },
+      ...remainingTemplates,
+    ];
+
+    expect(() =>
+      GovernancePolicyRecordSchema.parse({
+        ...createPolicyRecordInput(),
+        policyTemplates: duplicatedTemplates,
+      }),
+    ).toThrow(/repeat templateId values/i);
+  });
+
+  it("rejects governance policies with duplicate template families", () => {
+    const [firstTemplate, secondTemplate, ...remainingTemplates] = createPolicyTemplates();
+    const duplicatedTemplates = [
+      firstTemplate!,
+      {
+        ...secondTemplate!,
+        family: firstTemplate!.family,
+      },
+      ...remainingTemplates,
+    ];
+
+    expect(() =>
+      GovernancePolicyRecordSchema.parse({
+        ...createPolicyRecordInput(),
+        policyTemplates: duplicatedTemplates,
+      }),
+    ).toThrow(/repeat decision families/i);
+  });
+
+  it("rejects governance policies with duplicate binding families", () => {
+    const [firstBinding, secondBinding, ...remainingBindings] = createDecisionBindings();
+    const duplicatedBindings = [
+      firstBinding!,
+      {
+        ...secondBinding!,
+        family: firstBinding!.family,
+      },
+      ...remainingBindings,
+    ];
+
+    expect(() =>
+      GovernancePolicyRecordSchema.parse({
+        ...createPolicyRecordInput(),
+        decisionBindings: duplicatedBindings,
+      }),
+    ).toThrow(/decisionBindings must not repeat decision families/i);
+  });
+
+  it("rejects governance policies when a binding family mismatches its template family", () => {
+    const [firstBinding, secondBinding, ...remainingBindings] = createDecisionBindings();
+    const mismatchedBindings = [
+      firstBinding!,
+      {
+        ...secondBinding!,
+        family: "emergency" as const,
+      },
+      ...remainingBindings,
+    ];
+
+    expect(() =>
+      GovernancePolicyRecordSchema.parse({
+        ...createPolicyRecordInput(),
+        decisionBindings: mismatchedBindings,
+      }),
+    ).toThrow(/family must match the referenced policy template family/i);
   });
 });
