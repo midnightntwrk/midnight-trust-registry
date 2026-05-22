@@ -195,7 +195,6 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly policyId: string;
   readonly governancePolicyCommitment: Uint8Array;
   readonly registryRecord: RegistryRecord;
-  policyRecord: GovernancePolicyRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
@@ -206,6 +205,11 @@ export class LocalTrustRegistryIntegrationHarness {
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
+  private policyRecordValue: GovernancePolicyRecord;
+
+  get policyRecord(): GovernancePolicyRecord {
+    return this.policyRecordValue;
+  }
 
   constructor(label = "kanon") {
     this.simulator = new TrustRegistrySimulator();
@@ -239,7 +243,7 @@ export class LocalTrustRegistryIntegrationHarness {
       updatedAt: timestampForSequence(0n),
       lifecycleEventRoot: sha256Hex(this.registryId),
     });
-    this.policyRecord = this.buildPolicyRecord(1n, 1n, 1n);
+    this.policyRecordValue = this.buildPolicyRecord(1n, 1n, 1n);
     this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
@@ -508,7 +512,7 @@ export class LocalTrustRegistryIntegrationHarness {
         actionSequence,
       ),
     );
-    this.policyRecord = this.buildPolicyRecord(
+    this.policyRecordValue = this.buildPolicyRecord(
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
@@ -1875,7 +1879,7 @@ export class LocalTrustRegistryIntegrationHarness {
       generatedAt: epoch.validFrom,
       registryId: this.registryId,
       subjectDid: input.subjectDid,
-      policy: this.policyRecord,
+      policy: this.policyRecordValue,
       epoch,
       inclusionProof: {
         proofType: "signed-statement",
