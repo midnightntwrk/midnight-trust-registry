@@ -1,7 +1,7 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-05-22
+Updated: 2026-05-23
 
 ## Priority Model
 
@@ -41,7 +41,7 @@ Updated: 2026-05-22
 | TR-026 | P2 | Draft PR `#15` on `codex/trust-registry-mutable-operator-cli` | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
 | TR-027 | P2 | Draft PRs `#16` and `#17` on `codex/trust-registry-api-query-surface` and `codex/trust-registry-api-application-surface` | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
 | TR-028 | P2 | Draft PRs `#18` and `#19` on `codex/trust-registry-admin-console` and `codex/trust-registry-applicant-portal` | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
-| TR-029 | P2 | Draft PR `#20` on `codex/trust-registry-historical-timestamp-queries` with follow-up slices planned | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export stronger inclusion-proof material than the current signed-statement anchor. |
+| TR-029 | P2 | Draft PR `#20` on `codex/trust-registry-historical-timestamp-queries` and draft PR `#21` on `codex/trust-registry-proof-bundle-hardening` | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export canonical `merkle-inclusion` evidence bundles instead of the earlier signed-statement placeholder. |
 | TR-030 | P2 | Planned stack from `codex/trust-registry-demo-fixtures` | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
 
 ## First PR Stack
@@ -75,7 +75,7 @@ Updated: 2026-05-22
    - add timestamp-based trust queries across snapshot, client, CLI, and HTTP surfaces
 3. `codex/trust-registry-proof-bundle-hardening`
    - second `TR-029` slice
-   - replace the placeholder signed-statement proof with stronger inclusion-proof material and verification
+   - replace the placeholder signed-statement proof with canonical merkle-inclusion material and stricter verification
 4. `codex/trust-registry-historical-evidence-adapters`
    - third `TR-029` slice
    - expose timestamped historical trust evidence through TRQP and HTTP adapter surfaces

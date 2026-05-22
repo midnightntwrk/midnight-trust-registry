@@ -323,18 +323,18 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-historical-timestamp-queries`
+- `codex/trust-registry-proof-bundle-hardening`
 - stacked on:
-  - `codex/trust-registry-applicant-portal`
+  - `codex/trust-registry-historical-timestamp-queries`
 - current slice:
   - `TR-029`
-  - historical timestamp queries
+  - proof bundle hardening
 
 Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#20`
+  - `#12` through `#21`
   - `TR-023` through `TR-029`
 
 Merged baseline now on `origin/develop`:
@@ -398,15 +398,13 @@ Still missing for the first usable prototype:
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
-- Merkle-style inclusion proofs beyond the current signed-statement anchor
+- multi-record epoch proofs beyond the current single-statement merkle-inclusion anchor
 
 ## Next Recommended Slices
 
-1. second `TR-029` slice
-   - replace the placeholder signed-statement proof with stronger inclusion-proof material and verification
-2. third `TR-029` slice
+1. third `TR-029` slice
    - expose timestamped historical evidence through TRQP and HTTP adapter surfaces
-3. `TR-030` slices
+2. `TR-030` slices
    - package the demo registry, orchestration, release artifacts, and clean-checkout CI flow
 
 ## Knowledge Synchronization Rule
