@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -22,6 +22,7 @@ import {
   loadRegistrySummary,
   resolveAuthorizationEntry,
   resolveRecognitionEntry,
+  type TrustRegistryApiMutationResult,
   type TrustRegistryApiStateSource,
 } from "./source.js";
 import {
@@ -185,6 +186,31 @@ const routeSegments = (pathname: string): string[] =>
     .filter((segment) => segment.length > 0)
     .map((segment) => decodeURIComponent(segment));
 
+const buildMutationResponse = (
+  result: TrustRegistryApiMutationResult,
+): Record<string, unknown> => ({
+  sourceMode: "workspace",
+  workspaceVersion: result.workspace.workspaceVersion,
+  workspaceUpdatedAt: result.workspace.updatedAt,
+  snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
+  currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
+  operation: result.operation,
+  ...(result.record.recordKind === "authorization"
+    ? {
+        recordKind: "authorization",
+        entry: result.record.entry,
+      }
+    : result.record.recordKind === "recognition"
+      ? {
+          recordKind: "recognition",
+          entry: result.record.entry,
+        }
+      : {
+          recordKind: "epoch",
+          epoch: result.record.epoch,
+        }),
+});
+
 const requireAuthorizationEntry = async (
   source: TrustRegistryApiStateSource,
   roleInput: string,
@@ -244,11 +270,122 @@ const requireMutableSource = (
 
 const parseApplicationTarget = (
   targetInput: string,
-) => TrustRegistryApiApplicationTargetSchema.parse(targetInput);
+  problemBaseUri: string,
+) => {
+  const parsed = TrustRegistryApiApplicationTargetSchema.safeParse(targetInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      `Unsupported application target: ${targetInput}.`,
+    );
+  }
+
+  return parsed.data;
+};
 
 const parseApplicationAction = (
   actionInput: string,
-) => TrustRegistryApiApplicationActionSchema.parse(actionInput);
+  problemBaseUri: string,
+) => {
+  const parsed = TrustRegistryApiApplicationActionSchema.safeParse(actionInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      `Unsupported application action: ${actionInput}.`,
+    );
+  }
+
+  return parsed.data;
+};
+
+const parseApplicationIdentifier = (
+  idInput: string,
+  problemBaseUri: string,
+) => {
+  const parsed = z.string().trim().min(1).safeParse(idInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      "Application identifier must be a non-empty string.",
+    );
+  }
+
+  return parsed.data;
+};
+
+const mapMutationError = (
+  error: unknown,
+  problemBaseUri: string,
+): never => {
+  if (error instanceof HttpProblem) {
+    throw error;
+  }
+  if (error instanceof Error) {
+    if (error.message.startsWith("unknown issuer authorization:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "authorization-not-found",
+        404,
+        "authorization not found",
+        error.message,
+      );
+    }
+    if (error.message.startsWith("unknown verifier authorization:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "authorization-not-found",
+        404,
+        "authorization not found",
+        error.message,
+      );
+    }
+    if (error.message.startsWith("unknown recognition:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "recognition-not-found",
+        404,
+        "recognition not found",
+        error.message,
+      );
+    }
+    if (
+      error.message.startsWith("issuer label already submitted:")
+      || error.message.startsWith("verifier label already submitted:")
+      || error.message.startsWith("recognition label already submitted:")
+    ) {
+      throw jsonProblem(
+        problemBaseUri,
+        "duplicate-application",
+        409,
+        "duplicate application",
+        error.message,
+      );
+    }
+  }
+
+  throw error;
+};
+
+const performMutation = async (
+  source: ReturnType<typeof requireMutableSource>,
+  operation: Parameters<typeof applyMutationOperation>[1],
+  problemBaseUri: string,
+): Promise<TrustRegistryApiMutationResult> => {
+  try {
+    return await applyMutationOperation(source, operation);
+  } catch (error) {
+    return mapMutationError(error, problemBaseUri);
+  }
+};
 
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
@@ -355,35 +492,16 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiApplicationSubmitRequestSchema.parse(value),
           problemBaseUri,
         );
-        const result = await applyMutationOperation(source, {
+        const result = await performMutation(source, {
           operation: "submit",
           target: body.target,
           label: body.label,
-        });
+        }, problemBaseUri);
         writeJson(
           response,
           201,
           TrustRegistryApiApplicationMutationResponseSchema.parse({
-            sourceMode: "workspace",
-            workspaceVersion: result.workspace.workspaceVersion,
-            workspaceUpdatedAt: result.workspace.updatedAt,
-            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
-            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
-            operation: result.operation,
-            ...(result.record.recordKind === "authorization"
-              ? {
-                  recordKind: "authorization",
-                  entry: result.record.entry,
-                }
-              : result.record.recordKind === "recognition"
-                ? {
-                    recordKind: "recognition",
-                    entry: result.record.entry,
-                  }
-                : {
-                    recordKind: "epoch",
-                    epoch: result.record.epoch,
-                  }),
+            ...buildMutationResponse(result),
           }),
         );
         return;
@@ -396,38 +514,19 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "applications"
       ) {
         const source = requireMutableSource(options.source, problemBaseUri);
-        const target = parseApplicationTarget(segments[2]!);
-        const id = segments[3]!;
-        const action = parseApplicationAction(segments[4]!);
-        const result = await applyMutationOperation(source, {
+        const target = parseApplicationTarget(segments[2]!, problemBaseUri);
+        const id = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        const action = parseApplicationAction(segments[4]!, problemBaseUri);
+        const result = await performMutation(source, {
           operation: action,
           target,
           id,
-        });
+        }, problemBaseUri);
         writeJson(
           response,
           200,
           TrustRegistryApiApplicationMutationResponseSchema.parse({
-            sourceMode: "workspace",
-            workspaceVersion: result.workspace.workspaceVersion,
-            workspaceUpdatedAt: result.workspace.updatedAt,
-            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
-            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
-            operation: result.operation,
-            ...(result.record.recordKind === "authorization"
-              ? {
-                  recordKind: "authorization",
-                  entry: result.record.entry,
-                }
-              : result.record.recordKind === "recognition"
-                ? {
-                    recordKind: "recognition",
-                    entry: result.record.entry,
-                  }
-                : {
-                    recordKind: "epoch",
-                    epoch: result.record.epoch,
-                  }),
+            ...buildMutationResponse(result),
           }),
         );
         return;
@@ -446,34 +545,15 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiEpochPublishRequestSchema.parse(value),
           problemBaseUri,
         );
-        const result = await applyMutationOperation(source, {
+        const result = await performMutation(source, {
           operation: "publish-epoch",
           ...(body.label === undefined ? {} : { label: body.label }),
-        });
+        }, problemBaseUri);
         writeJson(
           response,
           200,
           TrustRegistryApiApplicationMutationResponseSchema.parse({
-            sourceMode: "workspace",
-            workspaceVersion: result.workspace.workspaceVersion,
-            workspaceUpdatedAt: result.workspace.updatedAt,
-            snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
-            currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
-            operation: result.operation,
-            ...(result.record.recordKind === "authorization"
-              ? {
-                  recordKind: "authorization",
-                  entry: result.record.entry,
-                }
-              : result.record.recordKind === "recognition"
-                ? {
-                    recordKind: "recognition",
-                    entry: result.record.entry,
-                  }
-                : {
-                    recordKind: "epoch",
-                    epoch: result.record.epoch,
-                  }),
+            ...buildMutationResponse(result),
           }),
         );
         return;

@@ -301,6 +301,35 @@ describe("trust registry api", () => {
       const issuerActivate = await issuerActivateResponse.json();
       expect(issuerActivate.entry.authorization.status).toBe("active");
 
+      const verifierSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "verifier",
+            label: "age-gate",
+          }),
+        },
+      );
+      expect(verifierSubmitResponse.status).toBe(201);
+      const verifierSubmit = await verifierSubmitResponse.json();
+      expect(verifierSubmit.recordKind).toBe("authorization");
+      expect(verifierSubmit.entry.authorization.status).toBe("proposed");
+      const verifierId = verifierSubmit.entry.authorization.authorizationId;
+
+      for (const action of ["approve", "activate", "suspend", "revoke", "archive"] as const) {
+        const response = await fetch(
+          `${server.url}/v1/applications/verifier/${verifierId}/${action}`,
+          {
+            method: "POST",
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+
       const recognitionSubmitResponse = await fetch(
         `${server.url}/v1/applications`,
         {
@@ -354,6 +383,87 @@ describe("trust registry api", () => {
       const activeIssuerList = await activeIssuerListResponse.json();
       expect(activeIssuerList.total).toBe(1);
       expect(activeIssuerList.entries[0].authorization.authorizationId).toBe(issuerId);
+
+      const archivedVerifierListResponse = await fetch(
+        `${server.url}/v1/authorizations/verifier?status=archived`,
+      );
+      expect(archivedVerifierListResponse.status).toBe(200);
+      const archivedVerifierList = await archivedVerifierListResponse.json();
+      expect(archivedVerifierList.total).toBe(1);
+      expect(archivedVerifierList.entries[0].authorization.authorizationId).toBe(verifierId);
+    } finally {
+      await server.close();
+    }
+  }, 15_000);
+
+  it("returns structured mutation problems and accepts epoch publish without a body", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-write-errors" });
+    const workspacePath = join(tempDir, "write-errors-workspace.json");
+    await writeWorkspaceToFile(workspacePath, workspace);
+
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const noBodyEpochPublishResponse = await fetch(
+        `${server.url}/v1/epochs/publish`,
+        {
+          method: "POST",
+        },
+      );
+      expect(noBodyEpochPublishResponse.status).toBe(200);
+      const noBodyEpochPublish = await noBodyEpochPublishResponse.json();
+      expect(noBodyEpochPublish.recordKind).toBe("epoch");
+
+      const invalidTargetResponse = await fetch(
+        `${server.url}/v1/applications/unknown/auth:issuer:missing:v1/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(invalidTargetResponse.status).toBe(400);
+      const invalidTargetProblem = await invalidTargetResponse.json();
+      expect(invalidTargetProblem.type).toMatch(/invalid-path-parameter$/);
+
+      const missingAuthorizationResponse = await fetch(
+        `${server.url}/v1/applications/issuer/auth:issuer:missing:v1/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(missingAuthorizationResponse.status).toBe(404);
+      const missingAuthorizationProblem = await missingAuthorizationResponse.json();
+      expect(missingAuthorizationProblem.type).toMatch(/authorization-not-found$/);
+
+      const firstSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(firstSubmitResponse.status).toBe(201);
+
+      const duplicateSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(duplicateSubmitResponse.status).toBe(409);
+      const duplicateSubmitProblem = await duplicateSubmitResponse.json();
+      expect(duplicateSubmitProblem.type).toMatch(/duplicate-application$/);
     } finally {
       await server.close();
     }

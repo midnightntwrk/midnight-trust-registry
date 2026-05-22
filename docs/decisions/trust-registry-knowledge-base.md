@@ -284,10 +284,17 @@ Completed in the current implementation wave:
 - mutation-source rule for the API:
   - writes require a mutable operator workspace source
   - snapshot and in-memory API modes stay read-only and reject mutation routes
+- mutation hardening for the API:
+  - path-parameter validation now returns structured 400 problem-details errors
+  - duplicate submissions now return structured 409 problem-details errors
+  - unknown governed ids now return structured 404 problem-details errors
+  - writes are serialized per process and per workspace source
 - focused mutation API tests that verify:
   - submit -> approve -> activate issuer flow through HTTP
+  - verifier lifecycle transitions through archive over HTTP
   - governed recognition approval through HTTP
-  - epoch publication through HTTP
+  - epoch publication with and without a request body
+  - invalid target and unknown-id problem responses
   - mutation rejection for snapshot-backed API servers
 - focused operator CLI report tests that verify:
   - full human-readable report generation
@@ -297,38 +304,31 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-mutable-operator-cli`
+- `codex/trust-registry-api-application-surface`
 - stacked on:
-  - `codex/trust-registry-governance-policy-bindings`
+  - `codex/trust-registry-api-query-surface`
 - current slice:
-  - `TR-026`
-  - mutable operator CLI workflows
+  - `TR-027`
+  - governed application API surface
 
 Current stacked base branch:
 
-- `codex/trust-registry-audit-report`
-- `#9`
-- title:
-  - `feat: add trust registry audit reports`
-- lower stacked base:
-  - `codex/trust-registry-operator-cli`
-  - `#8`
-  - contains the operator CLI slice
-  - `codex/trust-registry-verifier-authorization`
-  - contains TR-011 through TR-018 on the current stack
+- `develop`
+- open stack currently spans:
+  - `#12` through `#17`
+  - `TR-023` through `TR-027`
 
 Merged baseline now on `origin/develop`:
 
 - domain foundation
 - compact skeleton
+- merged through `TR-022`
 
 Branch handling note:
 
-- the docs/workflow baseline plus domain foundation and compact skeleton are on
-  `develop`
-- the current branch stacks governed verifier, recognition, and auditor
-  workflows on top of the issuer application-state branch while the lower PR
-  queue is still open
+- the docs/workflow baseline plus all slices through `TR-022` are on `develop`
+- the current stack adds maintainer membership, quorum execution, governance
+  policy bindings, mutable operator workflows, and API surfaces on top of that
 
 ## Validation Baseline
 

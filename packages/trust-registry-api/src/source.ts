@@ -64,6 +64,11 @@ export type TrustRegistryApiMutationResult = {
   workspace: TrustRegistryOperatorWorkspace;
 };
 
+const mutationChains = new WeakMap<
+  TrustRegistryApiMutableStateSource,
+  Promise<unknown>
+>();
+
 const latestAuthorizationTimestamp = (
   entry: TrustRegistryAuthorizationSnapshotEntry,
 ): string =>
@@ -201,16 +206,29 @@ export const applyMutationOperation = async (
   source: TrustRegistryApiMutableStateSource,
   operation: TrustRegistryOperatorWorkspaceOperation,
 ): Promise<TrustRegistryApiMutationResult> => {
-  const workspace = await source.loadWorkspace();
-  const nextWorkspace = applyWorkspaceOperation(workspace, operation);
-  await source.writeWorkspace(nextWorkspace);
-  const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
+  const previous = mutationChains.get(source) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    const workspace = await source.loadWorkspace();
+    const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+    await source.writeWorkspace(nextWorkspace);
+    const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
 
-  return {
-    operation,
-    record: toMutationRecord(record),
-    workspace: nextWorkspace,
-  };
+    return {
+      operation,
+      record: toMutationRecord(record),
+      workspace: nextWorkspace,
+    };
+  });
+
+  mutationChains.set(
+    source,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+
+  return next;
 };
 
 export const loadRegistryRecord = async (

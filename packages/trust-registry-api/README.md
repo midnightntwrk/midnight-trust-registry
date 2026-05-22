@@ -57,6 +57,11 @@ Workspace-backed mutation routes:
   state
 - currently support issuer, verifier, and recognition workflows plus registry
   epoch publication
+- are intentionally local-operator only in this slice:
+  - no authentication or authorization middleware is added here
+  - run the server on loopback or behind an explicit local proxy
+- serialize writes per workspace file inside the process, but do not provide
+  cross-process locking for multi-writer deployments
 
 Example applicant submission:
 
