@@ -334,8 +334,8 @@ Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#19`
-  - `TR-023` through `TR-028`
+  - `#12` through `#20`
+  - `TR-023` through `TR-029`
 
 Merged baseline now on `origin/develop`:
 
