@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -9,27 +9,42 @@ import {
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
 
 import {
+  applyMutationOperation,
+  evaluateAuthorizationEntryAtTimestamp,
+  evaluateRecognitionEntryAtTimestamp,
   createTrqpSourceFromStateSource,
   getAuthorizationEntryById,
   getRecognitionEntryById,
+  isMutableStateSource,
   listAuthorizationEntries,
   listRecognitionEntries,
+  loadEpochAtTimestamp,
   loadCurrentEpoch,
   loadEpochById,
   loadRegistryRecord,
   loadRegistrySummary,
   resolveAuthorizationEntry,
   resolveRecognitionEntry,
+  type TrustRegistryApiMutationResult,
   type TrustRegistryApiStateSource,
 } from "./source.js";
 import {
+  TrustRegistryApiApplicationActionSchema,
+  TrustRegistryApiApplicationMutationResponseSchema,
+  TrustRegistryApiApplicationSubmitRequestSchema,
+  TrustRegistryApiApplicationTargetSchema,
+  TrustRegistryApiAuthorizationEvaluationResponseSchema,
   TrustRegistryApiAuthorizationListQuerySchema,
   TrustRegistryApiAuthorizationListResponseSchema,
   TrustRegistryApiAuthorizationResponseSchema,
   TrustRegistryApiEpochResponseSchema,
+  TrustRegistryApiEpochPublishRequestSchema,
+  TrustRegistryApiEvaluateAuthorizationRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
   TrustRegistryApiEvidenceResponseSchema,
   TrustRegistryApiHealthResponseSchema,
   TrustRegistryApiProblemDetailsSchema,
+  TrustRegistryApiRecognitionEvaluationResponseSchema,
   TrustRegistryApiRecognitionListQuerySchema,
   TrustRegistryApiRecognitionListResponseSchema,
   TrustRegistryApiRecognitionResponseSchema,
@@ -38,6 +53,7 @@ import {
   TrustRegistryApiResolveRecognitionRequestSchema,
   TrustRegistryApiSummarySchema,
   TrustRegistryApiAuthorizationRoleSchema,
+  TimestampSchema,
   type TrustRegistryApiProblemDetails,
 } from "./schemas.js";
 
@@ -136,8 +152,25 @@ const writeJson = (
   payload: unknown,
 ): void => {
   response.statusCode = status;
+  setCorsHeaders(response);
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
+};
+
+const setCorsHeaders = (
+  response: ServerResponse,
+): void => {
+  response.setHeader("access-control-allow-origin", "*");
+  response.setHeader("access-control-allow-headers", "content-type");
+  response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+};
+
+const writeNoContent = (
+  response: ServerResponse,
+): void => {
+  response.statusCode = 204;
+  setCorsHeaders(response);
+  response.end();
 };
 
 const asProblem = (
@@ -177,6 +210,31 @@ const routeSegments = (pathname: string): string[] =>
     .split("/")
     .filter((segment) => segment.length > 0)
     .map((segment) => decodeURIComponent(segment));
+
+const buildMutationResponse = (
+  result: TrustRegistryApiMutationResult,
+): Record<string, unknown> => ({
+  sourceMode: "workspace",
+  workspaceVersion: result.workspace.workspaceVersion,
+  workspaceUpdatedAt: result.workspace.updatedAt,
+  snapshotGeneratedAt: result.workspace.snapshot.generatedAt,
+  currentEpochId: result.workspace.snapshot.currentEpoch.epochId,
+  operation: result.operation,
+  ...(result.record.recordKind === "authorization"
+    ? {
+        recordKind: "authorization",
+        entry: result.record.entry,
+      }
+    : result.record.recordKind === "recognition"
+      ? {
+          recordKind: "recognition",
+          entry: result.record.entry,
+        }
+      : {
+          recordKind: "epoch",
+          epoch: result.record.epoch,
+        }),
+});
 
 const requireAuthorizationEntry = async (
   source: TrustRegistryApiStateSource,
@@ -218,6 +276,171 @@ const requireRecognitionEntry = async (
   return TrustRegistryApiRecognitionResponseSchema.parse(entry);
 };
 
+const requireMutableSource = (
+  source: TrustRegistryApiStateSource,
+  problemBaseUri: string,
+) => {
+  if (!isMutableStateSource(source)) {
+    throw jsonProblem(
+      problemBaseUri,
+      "workspace-source-required",
+      409,
+      "workspace source required",
+      "This route requires a mutable operator workspace source.",
+    );
+  }
+
+  return source;
+};
+
+const parseApplicationTarget = (
+  targetInput: string,
+  problemBaseUri: string,
+) => {
+  const parsed = TrustRegistryApiApplicationTargetSchema.safeParse(targetInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      `Unsupported application target: ${targetInput}.`,
+    );
+  }
+
+  return parsed.data;
+};
+
+const parseApplicationAction = (
+  actionInput: string,
+  problemBaseUri: string,
+) => {
+  const parsed = TrustRegistryApiApplicationActionSchema.safeParse(actionInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      `Unsupported application action: ${actionInput}.`,
+    );
+  }
+
+  return parsed.data;
+};
+
+const parseApplicationIdentifier = (
+  idInput: string,
+  problemBaseUri: string,
+) => {
+  const parsed = z.string().trim().min(1).safeParse(idInput);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-path-parameter",
+      400,
+      "invalid path parameter",
+      "Application identifier must be a non-empty string.",
+    );
+  }
+
+  return parsed.data;
+};
+
+const parseTimestampQueryParameter = (
+  value: string | null,
+  name: string,
+  problemBaseUri: string,
+) => {
+  if (value === null) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} is required.`,
+    );
+  }
+
+  const parsed = TimestampSchema.safeParse(value);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} must be an RFC 3339 timestamp with offset.`,
+    );
+  }
+
+  return parsed.data;
+};
+
+const mapMutationError = (
+  error: unknown,
+  problemBaseUri: string,
+): never => {
+  if (error instanceof HttpProblem) {
+    throw error;
+  }
+  if (error instanceof Error) {
+    if (error.message.startsWith("unknown issuer authorization:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "authorization-not-found",
+        404,
+        "authorization not found",
+        error.message,
+      );
+    }
+    if (error.message.startsWith("unknown verifier authorization:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "authorization-not-found",
+        404,
+        "authorization not found",
+        error.message,
+      );
+    }
+    if (error.message.startsWith("unknown recognition:")) {
+      throw jsonProblem(
+        problemBaseUri,
+        "recognition-not-found",
+        404,
+        "recognition not found",
+        error.message,
+      );
+    }
+    if (
+      error.message.startsWith("issuer label already submitted:")
+      || error.message.startsWith("verifier label already submitted:")
+      || error.message.startsWith("recognition label already submitted:")
+    ) {
+      throw jsonProblem(
+        problemBaseUri,
+        "duplicate-application",
+        409,
+        "duplicate application",
+        error.message,
+      );
+    }
+  }
+
+  throw error;
+};
+
+const performMutation = async (
+  source: ReturnType<typeof requireMutableSource>,
+  operation: Parameters<typeof applyMutationOperation>[1],
+  problemBaseUri: string,
+): Promise<TrustRegistryApiMutationResult> => {
+  try {
+    return await applyMutationOperation(source, operation);
+  } catch (error) {
+    return mapMutationError(error, problemBaseUri);
+  }
+};
+
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
 ): Server => {
@@ -235,6 +458,11 @@ export const createTrustRegistryApiServer = (
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const segments = routeSegments(url.pathname);
+
+      if (method === "OPTIONS") {
+        writeNoContent(response);
+        return;
+      }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "health") {
         const summary = await loadRegistrySummary(options.source);
@@ -296,6 +524,32 @@ export const createTrustRegistryApiServer = (
         return;
       }
 
+      if (
+        method === "GET"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "epochs"
+        && segments[2] === "resolve"
+      ) {
+        const evaluatedAt = parseTimestampQueryParameter(
+          url.searchParams.get("at"),
+          "at",
+          problemBaseUri,
+        );
+        const epoch = await loadEpochAtTimestamp(options.source, evaluatedAt);
+        if (epoch === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "epoch-not-found",
+            404,
+            "epoch not found",
+            `No epoch covers ${evaluatedAt}.`,
+          );
+        }
+        writeJson(response, 200, TrustRegistryApiEpochResponseSchema.parse(epoch));
+        return;
+      }
+
       if (method === "GET" && segments.length === 3 && segments[0] === "v1" && segments[1] === "epochs") {
         const epoch = await loadEpochById(options.source, segments[2]!);
         if (epoch === null) {
@@ -308,6 +562,119 @@ export const createTrustRegistryApiServer = (
           );
         }
         writeJson(response, 200, TrustRegistryApiEpochResponseSchema.parse(epoch));
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 2
+        && segments[0] === "v1"
+        && segments[1] === "applications"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiApplicationSubmitRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const result = await performMutation(source, {
+          operation: "submit",
+          target: body.target,
+          label: body.label,
+        }, problemBaseUri);
+        writeJson(
+          response,
+          201,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            ...buildMutationResponse(result),
+          }),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 5
+        && segments[0] === "v1"
+        && segments[1] === "applications"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const target = parseApplicationTarget(segments[2]!, problemBaseUri);
+        const id = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        const action = parseApplicationAction(segments[4]!, problemBaseUri);
+        const result = await performMutation(source, {
+          operation: action,
+          target,
+          id,
+        }, problemBaseUri);
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            ...buildMutationResponse(result),
+          }),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "epochs"
+        && segments[2] === "publish"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEpochPublishRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const result = await performMutation(source, {
+          operation: "publish-epoch",
+          ...(body.label === undefined ? {} : { label: body.label }),
+        }, problemBaseUri);
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiApplicationMutationResponseSchema.parse({
+            ...buildMutationResponse(result),
+          }),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "authorizations"
+        && segments[2] === "evaluate"
+      ) {
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const evaluation = await evaluateAuthorizationEntryAtTimestamp(
+          options.source,
+          body,
+          body.at,
+        );
+        if (evaluation === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "authorization-not-found",
+            404,
+            "authorization not found",
+            "No authorization matches the requested scope and timestamp.",
+          );
+        }
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiAuthorizationEvaluationResponseSchema.parse(evaluation),
+        );
         return;
       }
 
@@ -396,6 +763,40 @@ export const createTrustRegistryApiServer = (
           response,
           200,
           TrustRegistryApiEvidenceResponseSchema.parse(entry.evidence),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "recognitions"
+        && segments[2] === "evaluate"
+      ) {
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const evaluation = await evaluateRecognitionEntryAtTimestamp(
+          options.source,
+          body,
+          body.at,
+        );
+        if (evaluation === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "recognition-not-found",
+            404,
+            "recognition not found",
+            "No recognition matches the requested scope and timestamp.",
+          );
+        }
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiRecognitionEvaluationResponseSchema.parse(evaluation),
         );
         return;
       }

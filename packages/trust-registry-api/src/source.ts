@@ -1,7 +1,18 @@
 import {
+  applyWorkspaceOperation,
   buildSnapshotSummary,
+  findEpochAtTimestamp,
   loadSnapshotFromFile,
   loadWorkspaceFromFile,
+  resolveIssuerEntryAtTimestamp,
+  resolveRecognitionEntryAtTimestamp,
+  resolveVerifierEntryAtTimestamp,
+  resolveWorkspaceOperationRecord,
+  writeWorkspaceToFile,
+  type SnapshotTemporalAuthorizationInspection,
+  type SnapshotTemporalRecognitionInspection,
+  type TrustRegistryOperatorWorkspace,
+  type TrustRegistryOperatorWorkspaceOperation,
   type TrustRegistryAuthorizationSnapshotEntry,
   type TrustRegistryOperatorSnapshot,
   type TrustRegistryRecognitionSnapshotEntry,
@@ -32,6 +43,37 @@ export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
 };
+
+export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
+  readonly mode: "workspace";
+  loadWorkspace(): Promise<TrustRegistryOperatorWorkspace>;
+  writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void>;
+};
+
+export type TrustRegistryApiMutationRecord =
+  | {
+      recordKind: "authorization";
+      entry: TrustRegistryAuthorizationSnapshotEntry;
+    }
+  | {
+      recordKind: "recognition";
+      entry: TrustRegistryRecognitionSnapshotEntry;
+    }
+  | {
+      recordKind: "epoch";
+      epoch: TrustRegistryOperatorSnapshot["currentEpoch"];
+    };
+
+export type TrustRegistryApiMutationResult = {
+  operation: TrustRegistryOperatorWorkspaceOperation;
+  record: TrustRegistryApiMutationRecord;
+  workspace: TrustRegistryOperatorWorkspace;
+};
+
+const mutationChains = new WeakMap<
+  TrustRegistryApiMutableStateSource,
+  Promise<unknown>
+>();
 
 const latestAuthorizationTimestamp = (
   entry: TrustRegistryAuthorizationSnapshotEntry,
@@ -76,6 +118,21 @@ const sortRecognitionEntries = (
     ),
   );
 
+const matchesAuthorizationRequest = (
+  entry: TrustRegistryAuthorizationSnapshotEntry,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+): boolean =>
+  entry.authorization.subjectDid === request.subjectDid
+  && entry.authorization.resourceId === request.resourceId
+  && (
+    request.resourceType === undefined
+    || entry.authorization.resourceType === request.resourceType
+  )
+  && (
+    request.trustLevel === undefined
+    || entry.authorization.trustLevel === request.trustLevel
+  );
+
 const authorizationEntriesForRole = (
   snapshot: TrustRegistryOperatorSnapshot,
   role: TrustRegistryApiAuthorizationRole,
@@ -114,10 +171,16 @@ export const createSnapshotFileSource = (
 
 export const createWorkspaceFileSource = (
   workspacePath: string,
-): TrustRegistryApiStateSource => ({
+): TrustRegistryApiMutableStateSource => ({
   mode: "workspace",
   async loadSnapshot(): Promise<TrustRegistryOperatorSnapshot> {
     return (await loadWorkspaceFromFile(workspacePath)).snapshot;
+  },
+  async loadWorkspace(): Promise<TrustRegistryOperatorWorkspace> {
+    return loadWorkspaceFromFile(workspacePath);
+  },
+  async writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void> {
+    await writeWorkspaceToFile(workspacePath, workspace);
   },
 });
 
@@ -129,6 +192,65 @@ export const createInMemorySource = (
     return snapshot;
   },
 });
+
+export const isMutableStateSource = (
+  source: TrustRegistryApiStateSource,
+): source is TrustRegistryApiMutableStateSource =>
+  source.mode === "workspace";
+
+const toMutationRecord = (
+  record:
+    | TrustRegistryAuthorizationSnapshotEntry
+    | TrustRegistryRecognitionSnapshotEntry
+    | TrustRegistryOperatorSnapshot["currentEpoch"],
+): TrustRegistryApiMutationRecord => {
+  if ("authorization" in record) {
+    return {
+      recordKind: "authorization",
+      entry: record,
+    };
+  }
+  if ("recognition" in record) {
+    return {
+      recordKind: "recognition",
+      entry: record,
+    };
+  }
+
+  return {
+    recordKind: "epoch",
+    epoch: record,
+  };
+};
+
+export const applyMutationOperation = async (
+  source: TrustRegistryApiMutableStateSource,
+  operation: TrustRegistryOperatorWorkspaceOperation,
+): Promise<TrustRegistryApiMutationResult> => {
+  const previous = mutationChains.get(source) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    const workspace = await source.loadWorkspace();
+    const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+    await source.writeWorkspace(nextWorkspace);
+    const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
+
+    return {
+      operation,
+      record: toMutationRecord(record),
+      workspace: nextWorkspace,
+    };
+  });
+
+  mutationChains.set(
+    source,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+
+  return next;
+};
 
 export const loadRegistryRecord = async (
   source: TrustRegistryApiStateSource,
@@ -150,6 +272,12 @@ export const loadEpochById = async (
   const snapshot = await source.loadSnapshot();
   return snapshot.epochs.find((entry) => entry.epochId === epochId) ?? null;
 };
+
+export const loadEpochAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  evaluatedAt: string,
+): Promise<EpochCommitment | null> =>
+  findEpochAtTimestamp(await source.loadSnapshot(), evaluatedAt);
 
 export const listAuthorizationEntries = async (
   source: TrustRegistryApiStateSource,
@@ -183,20 +311,32 @@ export const resolveAuthorizationEntry = async (
 ): Promise<TrustRegistryAuthorizationSnapshotEntry | null> => {
   const snapshot = await source.loadSnapshot();
   const matches = authorizationEntriesForRole(snapshot, request.role).filter(
-    (entry) =>
-      entry.authorization.subjectDid === request.subjectDid
-      && entry.authorization.resourceId === request.resourceId
-      && (
-        request.resourceType === undefined
-        || entry.authorization.resourceType === request.resourceType
-      )
-      && (
-        request.trustLevel === undefined
-        || entry.authorization.trustLevel === request.trustLevel
-      ),
+    (entry) => matchesAuthorizationRequest(entry, request),
   );
 
   return sortAuthorizationEntries(matches).at(0) ?? null;
+};
+
+export const evaluateAuthorizationEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalAuthorizationInspection | null> => {
+  const snapshot = await source.loadSnapshot();
+
+  if (request.role === "issuer") {
+    return resolveIssuerEntryAtTimestamp(
+      snapshot,
+      evaluatedAt,
+      (entry) => matchesAuthorizationRequest(entry, request),
+    );
+  }
+
+  return resolveVerifierEntryAtTimestamp(
+    snapshot,
+    evaluatedAt,
+    (entry) => matchesAuthorizationRequest(entry, request),
+  );
 };
 
 export const listRecognitionEntries = async (
@@ -248,6 +388,31 @@ export const resolveRecognitionEntry = async (
 
   return sortRecognitionEntries(matches).at(0) ?? null;
 };
+
+export const evaluateRecognitionEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveRecognitionRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalRecognitionInspection | null> =>
+  resolveRecognitionEntryAtTimestamp(
+    await source.loadSnapshot(),
+    evaluatedAt,
+    (entry) =>
+      entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
+      && entry.recognition.scope.resourceId === request.scopeResourceId
+      && (
+        request.recognizedRegistryId === undefined
+        || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
+      )
+      && (
+        request.scopeResourceType === undefined
+        || entry.recognition.scope.resourceType === request.scopeResourceType
+      )
+      && (
+        request.trustLevel === undefined
+        || entry.recognition.trustLevel === request.trustLevel
+      ),
+  );
 
 export const createTrqpSourceFromStateSource = (
   source: TrustRegistryApiStateSource,

@@ -206,12 +206,47 @@ describe("trust registry api", () => {
       const resolved = await resolveResponse.json();
       expect(resolved.authorization.authorizationId).toBe(issuerId);
 
+      const evaluateResponse = await fetch(
+        `${server.url}/v1/authorizations/evaluate`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "issuer",
+            subjectDid: list.entries[0].authorization.subjectDid,
+            resourceId: list.entries[0].authorization.resourceId,
+            at: list.entries[0].authorization.activeFrom,
+          }),
+        },
+      );
+      expect(evaluateResponse.status).toBe(200);
+      const evaluation = await evaluateResponse.json();
+      expect(evaluation.entry.authorization.authorizationId).toBe(issuerId);
+      expect(evaluation.statusAtTime).toBe("active");
+      expect(evaluation.trustedAtTime).toBe(true);
+
       const evidenceResponse = await fetch(
         `${server.url}/v1/authorizations/issuer/${issuerId}/evidence`,
       );
       expect(evidenceResponse.status).toBe(200);
       const evidence = await evidenceResponse.json();
       expect(evidence.authorization.authorizationId).toBe(issuerId);
+
+      const epochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent(evidence.epoch.validFrom)}`,
+      );
+      expect(epochResolveResponse.status).toBe(200);
+      const resolvedEpoch = await epochResolveResponse.json();
+      expect(resolvedEpoch.epochId).toBe(evidence.epoch.epochId);
+
+      const invalidEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("not-a-date")}`,
+      );
+      expect(invalidEpochResolveResponse.status).toBe(400);
+      const invalidEpochResolveProblem = await invalidEpochResolveResponse.json();
+      expect(invalidEpochResolveProblem.type).toMatch(/invalid-request$/);
 
       const trqpAuthorizationResponse = await fetch(
         `${server.url}/v1/trqp/authorizations/query`,
@@ -250,6 +285,227 @@ describe("trust registry api", () => {
       expect(trqpEvidenceResponse.status).toBe(200);
       const trqpEvidence = await trqpEvidenceResponse.json();
       expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
+
+      const missingEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
+      );
+      expect(missingEpochResolveResponse.status).toBe(404);
+      const missingEpochResolveProblem = await missingEpochResolveResponse.json();
+      expect(missingEpochResolveProblem.type).toMatch(/epoch-not-found$/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("submits and governs application workflows through workspace-backed write routes", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-write-api" });
+    const workspacePath = join(tempDir, "write-workspace.json");
+    await writeWorkspaceToFile(workspacePath, workspace);
+
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const issuerSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(issuerSubmitResponse.status).toBe(201);
+      const issuerSubmit = await issuerSubmitResponse.json();
+      expect(issuerSubmit.recordKind).toBe("authorization");
+      expect(issuerSubmit.entry.authorization.status).toBe("proposed");
+      const issuerId = issuerSubmit.entry.authorization.authorizationId;
+
+      const issuerApproveResponse = await fetch(
+        `${server.url}/v1/applications/issuer/${issuerId}/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(issuerApproveResponse.status).toBe(200);
+      const issuerApprove = await issuerApproveResponse.json();
+      expect(issuerApprove.entry.authorization.status).toBe("authorized");
+
+      const issuerActivateResponse = await fetch(
+        `${server.url}/v1/applications/issuer/${issuerId}/activate`,
+        {
+          method: "POST",
+        },
+      );
+      expect(issuerActivateResponse.status).toBe(200);
+      const issuerActivate = await issuerActivateResponse.json();
+      expect(issuerActivate.entry.authorization.status).toBe("active");
+
+      const verifierSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "verifier",
+            label: "age-gate",
+          }),
+        },
+      );
+      expect(verifierSubmitResponse.status).toBe(201);
+      const verifierSubmit = await verifierSubmitResponse.json();
+      expect(verifierSubmit.recordKind).toBe("authorization");
+      expect(verifierSubmit.entry.authorization.status).toBe("proposed");
+      const verifierId = verifierSubmit.entry.authorization.authorizationId;
+
+      for (const action of ["approve", "activate", "suspend", "revoke", "archive"] as const) {
+        const response = await fetch(
+          `${server.url}/v1/applications/verifier/${verifierId}/${action}`,
+          {
+            method: "POST",
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+
+      const recognitionSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "recognition",
+            label: "gaia-x",
+          }),
+        },
+      );
+      expect(recognitionSubmitResponse.status).toBe(201);
+      const recognitionSubmit = await recognitionSubmitResponse.json();
+      expect(recognitionSubmit.recordKind).toBe("recognition");
+      expect(recognitionSubmit.entry.recognition.status).toBe("proposed");
+      const recognitionId = recognitionSubmit.entry.recognition.recognitionId;
+
+      const recognitionApproveResponse = await fetch(
+        `${server.url}/v1/applications/recognition/${recognitionId}/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(recognitionApproveResponse.status).toBe(200);
+      const recognitionApprove = await recognitionApproveResponse.json();
+      expect(recognitionApprove.entry.recognition.status).toBe("authorized");
+
+      const epochPublishResponse = await fetch(
+        `${server.url}/v1/epochs/publish`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "governed-epoch",
+          }),
+        },
+      );
+      expect(epochPublishResponse.status).toBe(200);
+      const epochPublish = await epochPublishResponse.json();
+      expect(epochPublish.recordKind).toBe("epoch");
+      expect(epochPublish.epoch.epochId).toBe(epochPublish.currentEpochId);
+
+      const activeIssuerListResponse = await fetch(
+        `${server.url}/v1/authorizations/issuer?status=active`,
+      );
+      expect(activeIssuerListResponse.status).toBe(200);
+      const activeIssuerList = await activeIssuerListResponse.json();
+      expect(activeIssuerList.total).toBe(1);
+      expect(activeIssuerList.entries[0].authorization.authorizationId).toBe(issuerId);
+
+      const archivedVerifierListResponse = await fetch(
+        `${server.url}/v1/authorizations/verifier?status=archived`,
+      );
+      expect(archivedVerifierListResponse.status).toBe(200);
+      const archivedVerifierList = await archivedVerifierListResponse.json();
+      expect(archivedVerifierList.total).toBe(1);
+      expect(archivedVerifierList.entries[0].authorization.authorizationId).toBe(verifierId);
+    } finally {
+      await server.close();
+    }
+  }, 15_000);
+
+  it("returns structured mutation problems and accepts epoch publish without a body", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-write-errors" });
+    const workspacePath = join(tempDir, "write-errors-workspace.json");
+    await writeWorkspaceToFile(workspacePath, workspace);
+
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const noBodyEpochPublishResponse = await fetch(
+        `${server.url}/v1/epochs/publish`,
+        {
+          method: "POST",
+        },
+      );
+      expect(noBodyEpochPublishResponse.status).toBe(200);
+      const noBodyEpochPublish = await noBodyEpochPublishResponse.json();
+      expect(noBodyEpochPublish.recordKind).toBe("epoch");
+
+      const invalidTargetResponse = await fetch(
+        `${server.url}/v1/applications/unknown/auth:issuer:missing:v1/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(invalidTargetResponse.status).toBe(400);
+      const invalidTargetProblem = await invalidTargetResponse.json();
+      expect(invalidTargetProblem.type).toMatch(/invalid-path-parameter$/);
+
+      const missingAuthorizationResponse = await fetch(
+        `${server.url}/v1/applications/issuer/auth:issuer:missing:v1/approve`,
+        {
+          method: "POST",
+        },
+      );
+      expect(missingAuthorizationResponse.status).toBe(404);
+      const missingAuthorizationProblem = await missingAuthorizationResponse.json();
+      expect(missingAuthorizationProblem.type).toMatch(/authorization-not-found$/);
+
+      const firstSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(firstSubmitResponse.status).toBe(201);
+
+      const duplicateSubmitResponse = await fetch(
+        `${server.url}/v1/applications`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            target: "issuer",
+            label: "degree",
+          }),
+        },
+      );
+      expect(duplicateSubmitResponse.status).toBe(409);
+      const duplicateSubmitProblem = await duplicateSubmitResponse.json();
+      expect(duplicateSubmitProblem.type).toMatch(/duplicate-application$/);
     } finally {
       await server.close();
     }
@@ -306,6 +562,28 @@ describe("trust registry api", () => {
       expect(recognitionResponse.status).toBe(200);
       const recognition = await recognitionResponse.json();
       expect(recognition.recognition.recognitionId).toBe(recognitionId);
+
+      const recognitionEvaluateResponse = await fetch(
+        `${server.url}/v1/recognitions/evaluate`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            recognizedAuthorityDid: recognition.recognition.recognizedAuthorityDid,
+            recognizedRegistryId: recognition.recognition.recognizedRegistryId,
+            scopeResourceType: recognition.recognition.scope.resourceType,
+            scopeResourceId: recognition.recognition.scope.resourceId,
+            at: recognition.recognition.effectiveFrom,
+          }),
+        },
+      );
+      expect(recognitionEvaluateResponse.status).toBe(200);
+      const recognitionEvaluation = await recognitionEvaluateResponse.json();
+      expect(recognitionEvaluation.entry.recognition.recognitionId).toBe(recognitionId);
+      expect(recognitionEvaluation.statusAtTime).toBe("active");
+      expect(recognitionEvaluation.trustedAtTime).toBe(true);
 
       const metadataResponse = await fetch(
         `${server.url}/v1/trqp/metadata/${encodeURIComponent(workspace.snapshot.registry.registryDid)}`,
@@ -454,8 +732,15 @@ describe("trust registry api", () => {
     const workspace = createOperatorWorkspace({ label: "kanon-memory" });
     const server = await startServer(createInMemorySource(workspace.snapshot));
     try {
+      const preflightResponse = await fetch(`${server.url}/v1/applications`, {
+        method: "OPTIONS",
+      });
+      expect(preflightResponse.status).toBe(204);
+      expect(preflightResponse.headers.get("access-control-allow-origin")).toBe("*");
+
       const healthResponse = await fetch(`${server.url}/health`);
       expect(healthResponse.status).toBe(200);
+      expect(healthResponse.headers.get("access-control-allow-origin")).toBe("*");
       const health = await healthResponse.json();
       expect(health.sourceMode).toBe("memory");
 
@@ -463,6 +748,31 @@ describe("trust registry api", () => {
       expect(summaryResponse.status).toBe(200);
       const summary = await summaryResponse.json();
       expect(summary.registryLabel).toBe("kanon-memory");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects workspace mutation routes for non-workspace sources", async () => {
+    const workspace = createOperatorWorkspace({ label: "kanon-readonly" });
+    const snapshotPath = join(tempDir, "readonly-snapshot.json");
+    await writeSnapshotToFile(snapshotPath, workspace.snapshot);
+
+    const server = await startServer(createSnapshotFileSource(snapshotPath));
+    try {
+      const response = await fetch(`${server.url}/v1/applications`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          target: "issuer",
+          label: "degree",
+        }),
+      });
+      expect(response.status).toBe(409);
+      const problem = await response.json();
+      expect(problem.type).toMatch(/workspace-source-required$/);
     } finally {
       await server.close();
     }

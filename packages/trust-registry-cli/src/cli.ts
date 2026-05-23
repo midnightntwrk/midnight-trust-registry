@@ -9,6 +9,10 @@ import {
   buildSnapshotSummary,
   exportEvidenceBundle,
   findEpoch,
+  inspectEpochAtTimestamp,
+  inspectIssuerEntryAtTimestamp,
+  inspectRecognitionEntryAtTimestamp,
+  inspectVerifierEntryAtTimestamp,
   listEpochs,
   listIssuerEntries,
   listRecognitionEntries,
@@ -93,6 +97,7 @@ Examples:
   trust-registry revoke --workspace ./artifacts/trust-registry/workspace.json --kind verifier --id auth:verifier:employment:v1
   trust-registry archive --workspace ./artifacts/trust-registry/workspace.json --kind verifier --id auth:verifier:employment:v1
   trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind epoch
+  trust-registry inspect --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1 --at 2026-05-20T00:30:00Z
   trust-registry export-evidence --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
@@ -351,6 +356,7 @@ const runInspect = async (argv: readonly string[], io: CliIo): Promise<number> =
       workspace: { type: "string" },
       kind: { type: "string" },
       id: { type: "string" },
+      at: { type: "string" },
     },
     strict: true,
   });
@@ -362,6 +368,28 @@ const runInspect = async (argv: readonly string[], io: CliIo): Promise<number> =
     typeof parsed.values.kind === "string" ? parsed.values.kind : undefined,
   );
   const id = typeof parsed.values.id === "string" ? parsed.values.id : undefined;
+  const evaluatedAt =
+    typeof parsed.values.at === "string" ? parsed.values.at : undefined;
+
+  if (evaluatedAt !== undefined) {
+    switch (kind) {
+      case "registry":
+      case "policy":
+        throw new Error(`inspect does not support --at for kind: ${kind}`);
+      case "issuer":
+        writeJson(io, inspectIssuerEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
+        return 0;
+      case "verifier":
+        writeJson(io, inspectVerifierEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
+        return 0;
+      case "recognition":
+        writeJson(io, inspectRecognitionEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
+        return 0;
+      case "epoch":
+        writeJson(io, inspectEpochAtTimestamp(snapshot, evaluatedAt));
+        return 0;
+    }
+  }
 
   writeJson(io, renderSnapshotRecord(snapshot, kind, id));
   return 0;
