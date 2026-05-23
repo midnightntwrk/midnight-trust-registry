@@ -70,7 +70,10 @@
     "lint": "eslint src --ext .ts --ignore-pattern 'src/managed/**'",
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "all": "npm run compact && npm run build && npm run test:ci"
+    "all": "npm run compact && npm run build && npm run test:ci",
+    "compact:light": "compact compile --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
+    "build:light": "npm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
+    "test:light": "npm run test"
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "^0.15.0",

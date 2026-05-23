@@ -32,7 +32,9 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:light": "npm run build",
+    "test:light": "npm run test"
   },
   "dependencies": {
     "@midnight-ntwrk/trust-registry-cli": "0.1.0",

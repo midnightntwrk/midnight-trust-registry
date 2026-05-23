@@ -15,7 +15,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs",
     "test": "vitest run",
-    "serve": "npm run build && node ./scripts/serve.mjs"
+    "serve": "npm run build && node ./scripts/serve.mjs",
+    "build:light": "npm run build",
+    "test:light": "npm run test"
   },
   "dependencies": {
     "@midnight-ntwrk/trust-registry-api": "0.1.0",

@@ -35,6 +35,22 @@
     },
     "clean": {
       "cache": false
+    },
+    "build:light": {
+      "dependsOn": [
+        "^build:light"
+      ],
+      "outputs": [
+        "dist/**",
+        "src/managed/**",
+        "tsconfig.build.tsbuildinfo"
+      ]
+    },
+    "test:light": {
+      "dependsOn": [
+        "build:light"
+      ],
+      "outputs": []
     }
   }
 }

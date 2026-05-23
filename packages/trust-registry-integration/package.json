@@ -20,7 +20,8 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "integration": "vitest run --dir src/test"
+    "integration": "vitest run --dir src/test",
+    "build:light": "npm run build"
   },
   "dependencies": {
     "@midnight-ntwrk/midnight-did": "file:../../libs/midnight-did/did",
