@@ -149,7 +149,7 @@ const createAuthorizationMutationResponse = (
         policy,
         epoch,
         inclusionProof: {
-          proofType: "signed-statement",
+          proofType: "merkle-inclusion",
           root: HASH_C,
           leafHash: HASH_D,
           path: [HASH_B],
@@ -212,7 +212,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
         policy,
         epoch,
         inclusionProof: {
-          proofType: "signed-statement",
+          proofType: "merkle-inclusion",
           root: HASH_C,
           leafHash: HASH_D,
           path: [HASH_B],
@@ -285,7 +285,7 @@ const inspection: PublicInspection = {
         policy,
         epoch,
         inclusionProof: {
-          proofType: "signed-statement",
+          proofType: "merkle-inclusion",
           root: HASH_C,
           leafHash: HASH_D,
           path: [HASH_B],
@@ -337,7 +337,7 @@ const inspection: PublicInspection = {
         policy,
         epoch,
         inclusionProof: {
-          proofType: "signed-statement",
+          proofType: "merkle-inclusion",
           root: HASH_C,
           leafHash: HASH_D,
           path: [HASH_B],
@@ -391,7 +391,7 @@ const inspection: PublicInspection = {
         policy,
         epoch,
         inclusionProof: {
-          proofType: "signed-statement",
+          proofType: "merkle-inclusion",
           root: HASH_C,
           leafHash: HASH_D,
           path: [HASH_B],

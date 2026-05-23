@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
 import { resolveGovernancePolicyTemplate } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createAuditorScenarioFixture,
@@ -418,6 +419,7 @@ describe("trust registry local simulator integration", () => {
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("university");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
 
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
@@ -425,6 +427,9 @@ describe("trust registry local simulator integration", () => {
     if (originalSignature === undefined) {
       throw new Error("expected an epoch maintainer signature");
     }
+    const tamperedSignature = `0x${
+      originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
+    }${originalSignature.signature.slice(3)}`;
 
     expect(() =>
       harness.assertPublishedEpochEvidence({
@@ -453,11 +458,37 @@ describe("trust registry local simulator integration", () => {
             {
               keyId: originalSignature.keyId,
               algorithm: originalSignature.algorithm,
-              signature: `${originalSignature.signature.slice(0, -1)}0`,
+              signature: tamperedSignature,
             },
           ],
         },
       }),
     ).toThrow(/invalid/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            leafHash: `${bundle.inclusionProof.leafHash.slice(0, -1)}0`,
+          },
+        },
+        {},
+      ),
+    ).toThrow(/leaf hash/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            path: [`${bundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+          },
+        },
+        {},
+      ),
+    ).toThrow(/event sibling/i);
   });
 });
