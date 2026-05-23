@@ -79,6 +79,7 @@ packages/trust-registry-client/  TypeScript query and evidence-verification clie
 packages/trust-registry-cli/     Operator CLI for local workspace initialization, governed participant workflows, snapshot inspection, evidence export, and audit reports
 packages/trust-registry-api/     HTTP query and governed-application surface over saved snapshots and operator workspaces
 packages/trust-registry-admin-console/  Local admin review UI for governed approval, lifecycle actions, and epoch publication
+packages/trust-registry-applicant-portal/  Local applicant submission and public active-registry inspection UI
 adapters/trqp/                   TRQP-style read adapter
 adapters/openid-federation/      OpenID Federation publication experiment
 ```

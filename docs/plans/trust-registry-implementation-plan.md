@@ -171,7 +171,7 @@ Goal: strengthen long-term verification and make the repo shippable as a reusabl
 Deliverables:
 
 - Historical query helpers by timestamp in addition to explicit epoch id.
-- Stronger inclusion-proof export beyond the current signed-statement anchor.
+- Richer inclusion-proof export beyond the current single-statement merkle anchor.
 - Reproducible demo registry flow and packaged artifacts.
 - CI validation for the documented demo and release path.
 

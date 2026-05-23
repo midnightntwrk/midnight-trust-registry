@@ -10,12 +10,15 @@ import {
 
 import {
   applyMutationOperation,
+  evaluateAuthorizationEntryAtTimestamp,
+  evaluateRecognitionEntryAtTimestamp,
   createTrqpSourceFromStateSource,
   getAuthorizationEntryById,
   getRecognitionEntryById,
   isMutableStateSource,
   listAuthorizationEntries,
   listRecognitionEntries,
+  loadEpochAtTimestamp,
   loadCurrentEpoch,
   loadEpochById,
   loadRegistryRecord,
@@ -30,14 +33,18 @@ import {
   TrustRegistryApiApplicationMutationResponseSchema,
   TrustRegistryApiApplicationSubmitRequestSchema,
   TrustRegistryApiApplicationTargetSchema,
+  TrustRegistryApiAuthorizationEvaluationResponseSchema,
   TrustRegistryApiAuthorizationListQuerySchema,
   TrustRegistryApiAuthorizationListResponseSchema,
   TrustRegistryApiAuthorizationResponseSchema,
   TrustRegistryApiEpochResponseSchema,
   TrustRegistryApiEpochPublishRequestSchema,
+  TrustRegistryApiEvaluateAuthorizationRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
   TrustRegistryApiEvidenceResponseSchema,
   TrustRegistryApiHealthResponseSchema,
   TrustRegistryApiProblemDetailsSchema,
+  TrustRegistryApiRecognitionEvaluationResponseSchema,
   TrustRegistryApiRecognitionListQuerySchema,
   TrustRegistryApiRecognitionListResponseSchema,
   TrustRegistryApiRecognitionResponseSchema,
@@ -46,6 +53,7 @@ import {
   TrustRegistryApiResolveRecognitionRequestSchema,
   TrustRegistryApiSummarySchema,
   TrustRegistryApiAuthorizationRoleSchema,
+  TimestampSchema,
   type TrustRegistryApiProblemDetails,
 } from "./schemas.js";
 
@@ -339,6 +347,35 @@ const parseApplicationIdentifier = (
   return parsed.data;
 };
 
+const parseTimestampQueryParameter = (
+  value: string | null,
+  name: string,
+  problemBaseUri: string,
+) => {
+  if (value === null) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} is required.`,
+    );
+  }
+
+  const parsed = TimestampSchema.safeParse(value);
+  if (!parsed.success) {
+    throw jsonProblem(
+      problemBaseUri,
+      "invalid-request",
+      400,
+      "invalid request",
+      `Query parameter ${name} must be an RFC 3339 timestamp with offset.`,
+    );
+  }
+
+  return parsed.data;
+};
+
 const mapMutationError = (
   error: unknown,
   problemBaseUri: string,
@@ -487,6 +524,32 @@ export const createTrustRegistryApiServer = (
         return;
       }
 
+      if (
+        method === "GET"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "epochs"
+        && segments[2] === "resolve"
+      ) {
+        const evaluatedAt = parseTimestampQueryParameter(
+          url.searchParams.get("at"),
+          "at",
+          problemBaseUri,
+        );
+        const epoch = await loadEpochAtTimestamp(options.source, evaluatedAt);
+        if (epoch === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "epoch-not-found",
+            404,
+            "epoch not found",
+            `No epoch covers ${evaluatedAt}.`,
+          );
+        }
+        writeJson(response, 200, TrustRegistryApiEpochResponseSchema.parse(epoch));
+        return;
+      }
+
       if (method === "GET" && segments.length === 3 && segments[0] === "v1" && segments[1] === "epochs") {
         const epoch = await loadEpochById(options.source, segments[2]!);
         if (epoch === null) {
@@ -586,6 +649,40 @@ export const createTrustRegistryApiServer = (
         && segments.length === 3
         && segments[0] === "v1"
         && segments[1] === "authorizations"
+        && segments[2] === "evaluate"
+      ) {
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const evaluation = await evaluateAuthorizationEntryAtTimestamp(
+          options.source,
+          body,
+          body.at,
+        );
+        if (evaluation === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "authorization-not-found",
+            404,
+            "authorization not found",
+            "No authorization matches the requested scope and timestamp.",
+          );
+        }
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiAuthorizationEvaluationResponseSchema.parse(evaluation),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "authorizations"
         && segments[2] === "resolve"
       ) {
         const body = await parseJsonBody(
@@ -666,6 +763,40 @@ export const createTrustRegistryApiServer = (
           response,
           200,
           TrustRegistryApiEvidenceResponseSchema.parse(entry.evidence),
+        );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 3
+        && segments[0] === "v1"
+        && segments[1] === "recognitions"
+        && segments[2] === "evaluate"
+      ) {
+        const body = await parseJsonBody(
+          request,
+          (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value),
+          problemBaseUri,
+        );
+        const evaluation = await evaluateRecognitionEntryAtTimestamp(
+          options.source,
+          body,
+          body.at,
+        );
+        if (evaluation === null) {
+          throw jsonProblem(
+            problemBaseUri,
+            "recognition-not-found",
+            404,
+            "recognition not found",
+            "No recognition matches the requested scope and timestamp.",
+          );
+        }
+        writeJson(
+          response,
+          200,
+          TrustRegistryApiRecognitionEvaluationResponseSchema.parse(evaluation),
         );
         return;
       }
