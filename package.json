@@ -20,7 +20,7 @@
     "integration": "turbo run integration --continue",
     "lint": "turbo run lint --continue",
     "typecheck": "turbo run typecheck --continue",
-    "typecheck:light": "npm run typecheck",
+    "typecheck:light": "turbo run typecheck --continue --only",
     "build": "turbo run build --continue",
     "build:light": "npm run build",
     "test": "turbo run test --continue",
