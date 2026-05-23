@@ -8,6 +8,7 @@ import {
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const TimestampSchema = z.string().datetime({ offset: true });
+const PositiveIntegerSchema = z.number().int().min(1);
 const KeyReferenceSchema = z
   .string()
   .regex(/^did:[^#]+#[A-Za-z0-9:._-]+$/, "Key references must be DID fragments");
@@ -51,6 +52,32 @@ export const ResourceTypeSchema = z.enum([
 ]);
 
 export const TrustLevelSchema = NonEmptyStringSchema;
+
+export const GovernanceDecisionFamilySchema = z.enum([
+  "maintainer",
+  "member",
+  "emergency",
+  "archival",
+  "auditor",
+]);
+
+export const GovernancePolicyTemplateSchema = z.object({
+  templateId: ScopedIdentifierSchema,
+  family: GovernanceDecisionFamilySchema,
+  name: NonEmptyStringSchema,
+  description: NonEmptyStringSchema,
+  requiredMaintainerThreshold: PositiveIntegerSchema,
+  applicableRoles: z.array(AuthorizationRoleSchema).min(1),
+  applicableActionKinds: z.array(NonEmptyStringSchema).min(1),
+  evidenceRules: z.array(NonEmptyStringSchema).min(1),
+});
+
+export const GovernancePolicyBindingSchema = z.object({
+  bindingId: ScopedIdentifierSchema,
+  family: GovernanceDecisionFamilySchema,
+  templateId: ScopedIdentifierSchema,
+  actionScopes: z.array(NonEmptyStringSchema).min(1),
+});
 
 export const MaintainerSignatureSchema = z.object({
   keyId: KeyReferenceSchema,
@@ -99,6 +126,8 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   registryId: ScopedIdentifierSchema,
   version: NonEmptyStringSchema,
   policyUri: UriSchema,
+  policyTemplates: z.array(GovernancePolicyTemplateSchema).min(1),
+  decisionBindings: z.array(GovernancePolicyBindingSchema).min(1),
   decisionRules: z.array(NonEmptyStringSchema).min(1),
   disputeRules: z.array(NonEmptyStringSchema).min(1),
   retentionRules: z.array(NonEmptyStringSchema).min(1),
@@ -124,6 +153,61 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
       ["archivedAt", record.archivedAt],
     ],
   );
+
+  const templatesById = new Map<string, z.infer<typeof GovernancePolicyTemplateSchema>>();
+  const templateFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();
+  for (const [index, template] of record.policyTemplates.entries()) {
+    const duplicateTemplateId = templatesById.has(template.templateId);
+    if (duplicateTemplateId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "policyTemplates must not repeat templateId values",
+        path: ["policyTemplates", index, "templateId"],
+      });
+    }
+    const duplicateTemplateFamily = templateFamilies.has(template.family);
+    if (duplicateTemplateFamily) {
+      ctx.addIssue({
+        code: "custom",
+        message: "policyTemplates must not repeat decision families",
+        path: ["policyTemplates", index, "family"],
+      });
+    }
+    if (!duplicateTemplateId) {
+      templatesById.set(template.templateId, template);
+    }
+    if (!duplicateTemplateFamily) {
+      templateFamilies.add(template.family);
+    }
+  }
+
+  const bindingFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();
+  for (const [index, binding] of record.decisionBindings.entries()) {
+    const template = templatesById.get(binding.templateId);
+    if (template === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "decisionBindings must reference an existing policy template",
+        path: ["decisionBindings", index, "templateId"],
+      });
+      continue;
+    }
+    if (bindingFamilies.has(binding.family)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "decisionBindings must not repeat decision families",
+        path: ["decisionBindings", index, "family"],
+      });
+    }
+    if (binding.family !== template.family) {
+      ctx.addIssue({
+        code: "custom",
+        message: "decisionBindings family must match the referenced policy template family",
+        path: ["decisionBindings", index, "family"],
+      });
+    }
+    bindingFamilies.add(binding.family);
+  }
 });
 
 export const ParticipantRecordSchema = BaseRecordSchema.extend({
@@ -307,12 +391,32 @@ export const EpochCommitmentSchema = z
   });
 
 export type RegistryRecord = z.infer<typeof RegistryRecordSchema>;
+export type GovernanceDecisionFamily = z.infer<typeof GovernanceDecisionFamilySchema>;
+export type GovernancePolicyTemplate = z.infer<typeof GovernancePolicyTemplateSchema>;
+export type GovernancePolicyBinding = z.infer<typeof GovernancePolicyBindingSchema>;
 export type GovernancePolicyRecord = z.infer<typeof GovernancePolicyRecordSchema>;
 export type ParticipantRecord = z.infer<typeof ParticipantRecordSchema>;
 export type AuthorizationRecord = z.infer<typeof AuthorizationRecordSchema>;
 export type RecognitionRecord = z.infer<typeof RecognitionRecordSchema>;
 export type EpochCommitment = z.infer<typeof EpochCommitmentSchema>;
 export type MaintainerSignature = z.infer<typeof MaintainerSignatureSchema>;
+
+export function resolveGovernancePolicyTemplate(
+  policy: GovernancePolicyRecord,
+  family: GovernanceDecisionFamily,
+): GovernancePolicyTemplate {
+  const binding = policy.decisionBindings.find((candidate) => candidate.family === family);
+  if (binding === undefined) {
+    throw new Error(`No governance policy binding found for ${family}`);
+  }
+  const template = policy.policyTemplates.find(
+    (candidate) => candidate.templateId === binding.templateId,
+  );
+  if (template === undefined) {
+    throw new Error(`No governance policy template found for ${family}`);
+  }
+  return template;
+}
 
 function refineEffectiveWindow(
   ctx: z.RefinementCtx,

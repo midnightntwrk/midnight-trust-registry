@@ -1,0 +1,24 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-admin-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs",
+    "test": "vitest run",
+    "serve": "npm run build && node ./scripts/serve.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/trust-registry-api": "0.1.0",
+    "@midnight-ntwrk/trust-registry-cli": "0.1.0"
+  }
+}

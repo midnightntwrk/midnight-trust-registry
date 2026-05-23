@@ -10,6 +10,9 @@ import {
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
+  createMaintainerFixture as createContractMaintainerFixture,
+} from "@midnight-ntwrk/trust-registry-contract";
+import {
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
@@ -87,6 +90,16 @@ export type AuditorScenarioFixture = {
   disclosureLevelId: string;
   disclosureLevelCommitment: Uint8Array;
   scopeResourceId: string;
+  trustLevel: string;
+};
+
+export type MaintainerScenarioFixture = {
+  maintainerId: string;
+  maintainerIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  keyId: Uint8Array;
+  seed: Uint8Array;
   trustLevel: string;
 };
 
@@ -255,5 +268,28 @@ export const createAuditorScenarioFixture = (
     disclosureLevelCommitment: bytes32Commitment(disclosureLevelId),
     scopeResourceId,
     trustLevel: "audit-approved",
+  };
+};
+
+export const createMaintainerScenarioFixture = (
+  label: string,
+): MaintainerScenarioFixture => {
+  const maintainerId = createScopedIdentifier(
+    "participant",
+    "maintainer",
+    label,
+    "v1",
+  );
+  const subjectDid = createMidnightDid(`maintainer:${label}`);
+  const keyMaterial = createContractMaintainerFixture(label, 33);
+
+  return {
+    maintainerId,
+    maintainerIdCommitment: bytes32Commitment(maintainerId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    keyId: keyMaterial.keyId,
+    seed: keyMaterial.seed,
+    trustLevel: "governance-approved",
   };
 };

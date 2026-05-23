@@ -13,6 +13,9 @@ import {
   type AuditorAuthorizationRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
+  type MaintainerAuthorizationBundle,
+  type MaintainerAuthorizationSigner,
+  type MaintainerMembershipRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
   type IssuerResourceType,
@@ -33,7 +36,15 @@ export const labelToBytes32 = (label: string): Uint8Array => {
 
 export type MaintainerFixture = {
   seed: Uint8Array;
+  maintainerId: Uint8Array;
+  didCommitment: Uint8Array;
   keyId: Uint8Array;
+};
+
+export type MaintainerCoAuthorizer = {
+  keyId: Uint8Array;
+  publicKey: JubjubPoint;
+  signature: { announcement: JubjubPoint; response: bigint };
 };
 
 export const createMaintainerFixture = (
@@ -41,6 +52,8 @@ export const createMaintainerFixture = (
   seedByte: number,
 ): MaintainerFixture => ({
   seed: new Uint8Array(32).fill(seedByte),
+  maintainerId: labelToBytes32(`maintainer-id:${label}`),
+  didCommitment: labelToBytes32(`did:midnight:maintainer:${label}`),
   keyId: labelToBytes32(`maintainer:${label}`),
 });
 
@@ -67,6 +80,60 @@ export class TrustRegistrySimulator {
     return ledger(this.circuitContext.currentQueryContext.state);
   }
 
+  private emptyMaintainerAuthorizationSigner(): MaintainerAuthorizationSigner {
+    return {
+      keyId: new Uint8Array(32),
+      publicKey: { x: 0n, y: 0n },
+      signature: {
+        announcement: { x: 0n, y: 0n },
+        response: 0n,
+      },
+    };
+  }
+
+  private buildMaintainerAuthorizationBundle(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): MaintainerAuthorizationBundle {
+    const signers = [
+      {
+        keyId: maintainerKeyId,
+        publicKey: maintainerPublicKey,
+        signature,
+      },
+      ...coAuthorizers,
+    ];
+    if (signers.length === 0) {
+      throw new Error("at least one maintainer authorizer is required");
+    }
+    if (signers.length > 5) {
+      throw new Error("maintainer authorization bundles support at most 5 signers");
+    }
+
+    const paddedSigners = [...signers];
+    while (paddedSigners.length < 5) {
+      paddedSigners.push(this.emptyMaintainerAuthorizationSigner());
+    }
+    const [signer1, signer2, signer3, signer4, signer5] = paddedSigners as [
+      MaintainerAuthorizationSigner,
+      MaintainerAuthorizationSigner,
+      MaintainerAuthorizationSigner,
+      MaintainerAuthorizationSigner,
+      MaintainerAuthorizationSigner,
+    ];
+
+    return {
+      signerCount: BigInt(signers.length),
+      signer1,
+      signer2,
+      signer3,
+      signer4,
+      signer5,
+    };
+  }
+
   private executeCircuit<T>(
     circuitFn: () => CircuitResults<TrustRegistryPrivateState, T>,
   ): T {
@@ -84,6 +151,8 @@ export class TrustRegistrySimulator {
     registryId: Uint8Array,
     registryDidCommitment: Uint8Array,
     governancePolicyCommitment: Uint8Array,
+    maintainerId: Uint8Array,
+    maintainerDidCommitment: Uint8Array,
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
     maintainerThreshold: bigint,
@@ -94,6 +163,8 @@ export class TrustRegistrySimulator {
         registryId,
         registryDidCommitment,
         governancePolicyCommitment,
+        maintainerId,
+        maintainerDidCommitment,
         maintainerKeyId,
         maintainerPublicKey,
         maintainerThreshold,
@@ -107,15 +178,214 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     actionKind: Uint8Array,
     actionPayloadHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.authorizeMaintainerAction(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         actionKind,
         actionPayloadHash,
+      ),
+    );
+  }
+
+  updateMaintainerThresholdPolicy(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.updateMaintainerThresholdPolicy(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        defaultThreshold,
+        emergencyThreshold,
+        archivalThreshold,
+      ),
+    );
+  }
+
+  proposeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    candidateDidCommitment: Uint8Array,
+    candidateKeyId: Uint8Array,
+    candidatePublicKey: JubjubPoint,
+    policyId: Uint8Array,
+    trustLevel: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.proposeMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        candidateDidCommitment,
+        candidateKeyId,
+        candidatePublicKey,
+        policyId,
+        trustLevel,
+        evidenceHash,
+      ),
+    );
+  }
+
+  authorizeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.authorizeMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  activateMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.activateMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  suspendMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  revokeMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  archiveMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.archiveMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+      ),
+    );
+  }
+
+  getMaintainerMembership(
+    maintainerId: Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getMaintainerMembership(
+        this.circuitContext,
+        maintainerId,
+      ),
+    );
+  }
+
+  getCurrentMaintainerMembership(
+    maintainerDidCommitment: Uint8Array,
+  ): MaintainerMembershipRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentMaintainerMembership(
+        this.circuitContext,
+        maintainerDidCommitment,
       ),
     );
   }
@@ -131,13 +401,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.createIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         resourceType,
@@ -160,13 +434,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.proposeIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         resourceType,
@@ -184,13 +462,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.authorizeIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -203,13 +485,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.activateIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -222,13 +508,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.suspendIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -241,13 +531,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.revokeIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -260,13 +554,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.archiveIssuerAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -327,13 +625,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.createVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         requestProfileId,
@@ -360,13 +662,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.proposeVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         requestProfileId,
@@ -386,13 +692,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.authorizeVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -405,13 +715,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.activateVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -424,13 +738,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.suspendVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -443,13 +761,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.revokeVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -462,13 +784,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.archiveVerifierAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -517,13 +843,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.createRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         recognizedAuthorityDidCommitment,
         recognizedRegistryId,
@@ -548,13 +878,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.proposeRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         recognizedAuthorityDidCommitment,
         recognizedRegistryId,
@@ -573,13 +907,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.authorizeRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         evidenceHash,
       ),
@@ -592,13 +930,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.activateRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         evidenceHash,
       ),
@@ -611,13 +953,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.suspendRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         evidenceHash,
       ),
@@ -630,13 +976,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.revokeRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         evidenceHash,
       ),
@@ -649,13 +999,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.archiveRecognition(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         recognitionId,
         evidenceHash,
       ),
@@ -703,13 +1057,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.createAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         requestProfileId,
@@ -736,13 +1094,17 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.proposeAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         subjectDidCommitment,
         requestProfileId,
@@ -762,13 +1124,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.authorizeAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -781,13 +1147,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.activateAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -800,13 +1170,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.suspendAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -819,13 +1193,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.revokeAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -838,13 +1216,17 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.archiveAuditorAuthorization(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         authorizationId,
         evidenceHash,
       ),
@@ -910,13 +1292,17 @@ export class TrustRegistrySimulator {
     policyRoot: Uint8Array,
     validFromSequence: bigint,
     validUntilSequence: bigint,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.publishEpochCommitment(
         this.circuitContext,
-        maintainerKeyId,
-        maintainerPublicKey,
-        signature,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
         epochId,
         stateRoot,
         eventRoot,

@@ -228,6 +228,25 @@ export const computeCreateEpochCommitmentPayloadHash = (
     validUntilSequence,
   );
 
+export const computeCreateMaintainerMembershipPayloadHash = (
+  maintainerId: Uint8Array,
+  maintainerDidCommitment: Uint8Array,
+  keyId: Uint8Array,
+  publicKey: JubjubPoint,
+  policyId: Uint8Array,
+  trustLevel: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.createMaintainerMembershipPayloadHash(
+    ensure32Bytes(maintainerId),
+    ensure32Bytes(maintainerDidCommitment),
+    ensure32Bytes(keyId),
+    publicKey,
+    ensure32Bytes(policyId),
+    ensure32Bytes(trustLevel),
+    ensure32Bytes(evidenceHash),
+  );
+
 export const computeUpdateVerifierAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   previousLifecycleEventHash: Uint8Array,
@@ -259,6 +278,28 @@ export const computeUpdateAuditorAuthorizationPayloadHash = (
     ensure32Bytes(authorizationId),
     ensure32Bytes(previousLifecycleEventHash),
     ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateMaintainerMembershipPayloadHash = (
+  maintainerId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateMaintainerMembershipPayloadHash(
+    ensure32Bytes(maintainerId),
+    ensure32Bytes(previousLifecycleEventHash),
+    ensure32Bytes(evidenceHash),
+  );
+
+export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
+  defaultThreshold: bigint,
+  emergencyThreshold: bigint,
+  archivalThreshold: bigint,
+): Uint8Array =>
+  pureCircuits.updateMaintainerThresholdPolicyPayloadHash(
+    defaultThreshold,
+    emergencyThreshold,
+    archivalThreshold,
   );
 
 export const signMaintainerActionDigest = (

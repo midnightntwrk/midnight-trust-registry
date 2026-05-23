@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-05-22
+Updated: 2026-05-23
 
 ## Purpose
 
@@ -78,6 +78,30 @@ Completed in the current implementation wave:
   - a dedicated auditor authorization family that mirrors verifier composite scope
   - positive integration coverage for verifier and recognition application history
   - active and historical integration coverage for auditor authorization
+- governed maintainer membership workflow with:
+  - dedicated maintainer membership records separate from the active signer key table
+  - bootstrap maintainer mirrored into append-only membership history at initialization
+  - proposal, approval, activation, suspension, revocation, and archival circuits
+  - duplicate live maintainer identity rejection
+  - last-active-maintainer threshold protection on deactivation paths
+  - local contract and simulator integration coverage
+- governed quorum execution foundation with:
+  - fixed-capacity maintainer authorization bundles for up to `5` approving signers
+  - signer-set commitments recorded in governance event state
+  - scoped maintainer thresholds for default, emergency, and archival actions
+  - governed threshold-policy updates so registries can move from bootstrap `1-of-1` to real `N-of-M` operation after new maintainers activate
+  - contract and local simulator coverage for `2-of-N` onboarding flows plus duplicate-signer rejection
+  - internal epoch publication in the simulator now auto-selects active co-maintainers when the default threshold is above `1`, so evidence export remains valid after quorum policy changes
+- typed governance-policy binding foundation with:
+  - typed policy templates for maintainer, member, emergency, archival, and auditor decision families
+  - typed decision bindings that resolve each decision family to a concrete policy template
+  - schema validation that rejects duplicate policy families or bindings that reference missing templates
+  - simulator policy fixtures that keep template thresholds aligned with the current default, emergency, and archival maintainer thresholds
+  - operator audit reports that render policy templates and decision bindings instead of only free-form rule text
+- fresh cache-miss validation observation for the quorum slice:
+  - `./run.sh --light` now compiles `54` circuits through the contract build path
+  - `typecheck:light` spent about `18m56s` on `2026-05-22` when the contract build cache missed
+  - further quorum-surface growth should be treated as a CI/runtime review event, not just a feature addition
 - CI workflow repair for stacked PRs and manual dispatch:
   - `pull_request` workflows no longer require `develop` as the base branch
   - `CI` path filters now cover `contracts/**`, `adapters/**`, `libs/**`, and
@@ -125,6 +149,7 @@ Completed in the current implementation wave:
   - proposed issuer evidence before activation
   - authorized issuer evidence before activation
   - active issuer evidence after explicit activation
+  - quorum-gated issuer onboarding once maintainer thresholds are raised above `1`
 - first client workspace:
   - `packages/trust-registry-client`
 - simulator-backed query helpers for:
@@ -132,6 +157,11 @@ Completed in the current implementation wave:
   - verifier authorization by id and current scope
   - recognition by id and current scope
   - epoch commitments by id and latest pointer
+- temporal client helpers for:
+  - authorization lifecycle status at a specific timestamp
+  - recognition lifecycle status at a specific timestamp
+  - epoch selection by timestamp
+  - latest visible authorization or recognition entry for a scoped timestamp query
 - evidence verification helpers for:
   - issuer authorization bundles
   - verifier authorization bundles
@@ -214,17 +244,77 @@ Completed in the current implementation wave:
   - `packages/trust-registry-cli`
 - operator CLI surface for:
   - deterministic demo snapshot initialization from the local simulator harness
+  - mutable operator workspace initialization backed by an append-only CLI
+    action journal
   - local registry, policy, authorization, recognition, and epoch inspection
+  - governed issuer, verifier, and recognition submit, approve, activate,
+    suspend, revoke, and archive flows without direct simulator access
+  - registry epoch publication from the mutable workspace model
   - anchored evidence-bundle export for issuer, verifier, and recognition
     records
 - focused operator CLI tests that verify:
   - demo snapshot creation and typed reload from disk
   - summary, list, and inspect flows over the saved snapshot
+  - mutable issuer workflow from submission through activation
+  - mutable verifier and recognition workflows from submission through later
+    lifecycle transitions
   - evidence export for operator-facing JSON handoff
 - snapshot-backed audit reporting for:
   - full registry audit output
   - focused issuer, verifier, recognition, and epoch history output
   - deterministic file or stdout rendering from saved snapshots
+- read-only HTTP query workspace:
+  - `packages/trust-registry-api`
+- native API routes for:
+  - registry metadata and summary
+  - current and historical epoch export
+  - issuer and verifier listing, by-id lookup, scoped resolution, and evidence export
+  - recognition listing, by-id lookup, scoped resolution, and evidence export
+- TRQP-over-HTTP routes for:
+  - registry metadata
+  - authorization query and evidence
+  - recognition query and evidence
+- file-backed API source modes for:
+  - saved snapshots
+  - mutable operator workspaces reloaded on each request
+- focused API tests that verify:
+  - native query and evidence routes from a workspace file
+  - TRQP routes from a snapshot file
+  - workspace reload between requests
+  - structured problem-details errors for invalid or missing input
+- governed application API routes for:
+  - applicant submission of issuer, verifier, and recognition requests
+  - maintainer approval, activation, suspension, revocation, and archival actions
+  - registry epoch publication from the workspace-backed API surface
+- mutation-source rule for the API:
+  - writes require a mutable operator workspace source
+  - snapshot and in-memory API modes stay read-only and reject mutation routes
+- mutation hardening for the API:
+  - path-parameter validation now returns structured 400 problem-details errors
+  - duplicate submissions now return structured 409 problem-details errors
+  - unknown governed ids now return structured 404 problem-details errors
+  - writes are serialized per process and per workspace source
+- focused mutation API tests that verify:
+  - submit -> approve -> activate issuer flow through HTTP
+  - verifier lifecycle transitions through archive over HTTP
+  - governed recognition approval through HTTP
+  - epoch publication with and without a request body
+  - invalid target and unknown-id problem responses
+  - mutation rejection for snapshot-backed API servers
+- first admin console package:
+  - `packages/trust-registry-admin-console`
+  - static local UI over the existing API
+  - review boards grouped by lifecycle state for issuer, verifier, and recognition records
+  - maintainer actions for approve, activate, suspend, revoke, archive, and epoch publication
+- API/browser interoperability support for the admin console:
+  - permissive local CORS headers on the API
+  - preflight handling for `OPTIONS` requests
+  - preview-server smoke coverage against a seeded operator workspace
+- first applicant portal package:
+  - `packages/trust-registry-applicant-portal`
+  - static local UI for issuer/verifier/recognition submission
+  - public inspection lanes for active issuer, verifier, and recognition entries
+  - reuse of the existing governed application API instead of a second backend
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output
@@ -233,38 +323,37 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-application-foundation`
+- `codex/trust-registry-proof-bundle-hardening`
 - stacked on:
-  - `codex/trust-registry-audit-report`
+  - `codex/trust-registry-historical-timestamp-queries`
 - current slice:
-  - `TR-021`
-  - issuer application-state workflow
+  - `TR-029`
+  - proof bundle hardening
 
 Current stacked base branch:
 
-- `codex/trust-registry-audit-report`
-- `#9`
-- title:
-  - `feat: add trust registry audit reports`
-- lower stacked base:
-  - `codex/trust-registry-operator-cli`
-  - `#8`
-  - contains the operator CLI slice
-  - `codex/trust-registry-verifier-authorization`
-  - contains TR-011 through TR-018 on the current stack
+- `develop`
+- open stack currently spans:
+  - `#12` through `#21`
+  - `TR-023` through `TR-029`
+- `2026-05-23` expedite status:
+  - `#12` is green and merge-clean
+  - `CI / light` reruns were dispatched for `#13` through `#21` after
+    confirming the cancelled runs matched the current branch heads
+  - `Docs` and `Scan` remain green across the active stack while the rerun
+    `light` jobs settle
 
 Merged baseline now on `origin/develop`:
 
 - domain foundation
 - compact skeleton
+- merged through `TR-022`
 
 Branch handling note:
 
-- the docs/workflow baseline plus domain foundation and compact skeleton are on
-  `develop`
-- the current branch stacks governed verifier, recognition, and auditor
-  workflows on top of the issuer application-state branch while the lower PR
-  queue is still open
+- the docs/workflow baseline plus all slices through `TR-022` are on `develop`
+- the current stack adds maintainer membership, quorum execution, governance
+  policy bindings, mutable operator workflows, and API surfaces on top of that
 
 ## Validation Baseline
 
@@ -310,30 +399,19 @@ It does not yet cover:
 
 Still missing for the first usable prototype:
 
-- mutable operator workflows on top of the current CLI snapshot, evidence, and
-  reporting baseline
-- applicant-facing submission and public query HTTP surfaces
-- maintainer-facing web UX above the existing client and CLI packages
+- maintainer-facing web UX above the existing client and CLI/API packages
 
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
-- maintainer onboarding and removal flows
-- maintainer application and approval flows
-- historical epoch selection by timestamp
-- Merkle-style inclusion proofs beyond the current signed-statement anchor
+- multi-record epoch proofs beyond the current single-statement merkle-inclusion anchor
 
 ## Next Recommended Slices
 
-1. `TR-021`
-   - finish the issuer application-state branch and publish it as the next
-     stacked PR
-2. `TR-023` and `TR-024`
-   - add maintainer membership lifecycle and real multi-maintainer quorum
-     execution
-3. `TR-026` to `TR-028`
-   - add mutable CLI, REST API, and UI surfaces after governance workflows are
-     explicit
+1. third `TR-029` slice
+   - expose timestamped historical evidence through TRQP and HTTP adapter surfaces
+2. `TR-030` slices
+   - package the demo registry, orchestration, release artifacts, and clean-checkout CI flow
 
 ## Knowledge Synchronization Rule
 

@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AuthorizationStatus as ContractAuthorizationStatus,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
+import { resolveGovernancePolicyTemplate } from "@midnight-ntwrk/trust-registry-domain";
+import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
 } from "../fixtures.js";
@@ -77,6 +83,50 @@ describe("trust registry local simulator integration", () => {
     const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
+  });
+
+  it("enforces scoped maintainer quorum rules for issuer onboarding, emergency action, and archival action", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const secondMaintainer = createMaintainerScenarioFixture("quorum-second");
+    const issuer = createIssuerScenarioFixture("quorum-onboarding");
+
+    harness.authorizeMaintainer(secondMaintainer);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "member")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
+    expect(
+      resolveGovernancePolicyTemplate(harness.policyRecord, "emergency"),
+    ).toMatchObject({
+      requiredMaintainerThreshold: 1,
+    });
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "archival")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
+
+    expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.proposeIssuer(issuer, [secondMaintainer]);
+    harness.approveIssuer(issuer, [secondMaintainer]);
+    harness.activateIssuer(issuer, [secondMaintainer]);
+
+    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.authorization?.status).toBe("active");
+
+    harness.suspendIssuer(issuer);
+
+    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
+    const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(suspendedBundle.authorization?.status).toBe("suspended");
+
+    expect(() => harness.archiveIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.archiveIssuer(issuer, [secondMaintainer]);
+
+    const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(archivedBundle.authorization?.status).toBe("archived");
   });
 
   it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {
@@ -304,9 +354,72 @@ describe("trust registry local simulator integration", () => {
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
+  it("governs maintainer membership through proposal, approval, activation, and lifecycle state changes", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const candidate = createMaintainerScenarioFixture("governed");
+
+    harness.proposeMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.proposed);
+
+    harness.approveMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.authorized);
+
+    harness.activateMaintainer(candidate);
+    const activeMembership = harness.simulator.getCurrentMaintainerMembership(
+      candidate.subjectDidCommitment,
+    );
+    expect(activeMembership.status).toBe(ContractAuthorizationStatus.active);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
+
+    harness.suspendMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.suspended);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(1n);
+
+    harness.revokeMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.revoked);
+
+    harness.archiveMaintainer(candidate);
+    expect(
+      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+    ).toBe(ContractAuthorizationStatus.archived);
+  });
+
+  it("rejects duplicate live maintainer identity enrollment and refuses to deactivate the last active maintainer", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const candidate = createMaintainerScenarioFixture("self");
+    candidate.subjectDidCommitment = harness.maintainerDidCommitment;
+
+    expect(() => harness.proposeMaintainer(candidate)).toThrow(
+      /already has a live membership/i,
+    );
+
+    const bootstrapMembership = {
+      maintainerIdCommitment: harness.maintainerIdCommitment,
+      maintainerId: harness.maintainerId,
+      subjectDidCommitment: harness.maintainerDidCommitment,
+      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      seed: new Uint8Array(32),
+      subjectDid: harness.maintainerDid,
+      trustLevel: "bootstrap-maintainer",
+    };
+
+    expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
+      /threshold policy/i,
+    );
+  });
+
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("university");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
 
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
@@ -314,6 +427,9 @@ describe("trust registry local simulator integration", () => {
     if (originalSignature === undefined) {
       throw new Error("expected an epoch maintainer signature");
     }
+    const tamperedSignature = `0x${
+      originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
+    }${originalSignature.signature.slice(3)}`;
 
     expect(() =>
       harness.assertPublishedEpochEvidence({
@@ -342,11 +458,37 @@ describe("trust registry local simulator integration", () => {
             {
               keyId: originalSignature.keyId,
               algorithm: originalSignature.algorithm,
-              signature: `${originalSignature.signature.slice(0, -1)}0`,
+              signature: tamperedSignature,
             },
           ],
         },
       }),
     ).toThrow(/invalid/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            leafHash: `${bundle.inclusionProof.leafHash.slice(0, -1)}0`,
+          },
+        },
+        {},
+      ),
+    ).toThrow(/leaf hash/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            path: [`${bundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+          },
+        },
+        {},
+      ),
+    ).toThrow(/event sibling/i);
   });
 });
