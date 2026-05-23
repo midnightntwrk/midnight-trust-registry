@@ -1,0 +1,43 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "trust-registry-api": "./bin/trust-registry-api.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "bin/trust-registry-api.mjs",
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/trust-registry-cli": "0.1.0",
+    "@midnight-ntwrk/trust-registry-domain": "0.1.0",
+    "@midnight-ntwrk/trust-registry-trqp-adapter": "0.1.0",
+    "zod": "^4.1.0"
+  }
+}

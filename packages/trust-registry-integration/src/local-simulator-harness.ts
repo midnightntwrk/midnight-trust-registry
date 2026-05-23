@@ -45,6 +45,10 @@ import {
   type GovernancePolicyRecord,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
+  computeAuthorizationStatementLeafHash,
+  computeRecognitionStatementLeafHash,
+  computeRegistryStatementLeafHash,
+  computeSingleStatementStateRoot,
   createScopedIdentifier,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -104,6 +108,14 @@ const hashHexToBytes32 = (value: string): Uint8Array =>
 const sameBytes = (left: Uint8Array, right: Uint8Array): boolean =>
   Buffer.from(left).equals(Buffer.from(right));
 
+const thresholdToPolicyNumber = (threshold: bigint): number => {
+  if (threshold > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError("Maintainer threshold exceeds Number.MAX_SAFE_INTEGER");
+  }
+
+  return Number(threshold);
+};
+
 const timestampForSequence = (sequence: bigint): string =>
   new Date(BASE_TIMESTAMP_MS + Number(sequence) * 60_000).toISOString();
 
@@ -157,27 +169,6 @@ const contractStatusName = (
   return assertUnreachable(status);
 };
 
-const bundleLeafHash = (authorization: AuthorizationRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      authorizationId: authorization.authorizationId,
-      status: authorization.status,
-      subjectDid: authorization.subjectDid,
-      resourceId: authorization.resourceId,
-    }),
-  );
-
-const recognitionLeafHash = (recognition: RecognitionRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      recognitionId: recognition.recognitionId,
-      status: recognition.status,
-      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
-      recognizedRegistryId: recognition.recognizedRegistryId,
-      scope: recognition.scope,
-    }),
-  );
-
 export class LocalTrustRegistryIntegrationHarness {
   readonly simulator: TrustRegistrySimulator;
   readonly registryId: string;
@@ -187,7 +178,6 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly policyId: string;
   readonly governancePolicyCommitment: Uint8Array;
   readonly registryRecord: RegistryRecord;
-  readonly policyRecord: GovernancePolicyRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
@@ -198,6 +188,11 @@ export class LocalTrustRegistryIntegrationHarness {
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
+  private policyRecordValue: GovernancePolicyRecord;
+
+  get policyRecord(): GovernancePolicyRecord {
+    return this.policyRecordValue;
+  }
 
   constructor(label = "kanon") {
     this.simulator = new TrustRegistrySimulator();
@@ -231,22 +226,7 @@ export class LocalTrustRegistryIntegrationHarness {
       updatedAt: timestampForSequence(0n),
       lifecycleEventRoot: sha256Hex(this.registryId),
     });
-    this.policyRecord = GovernancePolicyRecordSchema.parse({
-      policyId: this.policyId,
-      registryId: this.registryId,
-      version: "v1",
-      policyUri: "https://registry.example/policies/kanon-v1",
-      status: "active",
-      effectiveFrom: timestampForSequence(0n),
-      decisionRules: [
-        "bootstrap starts at 1-of-1 approval in simulator mode",
-        "maintainer threshold policy may raise default, emergency, and archival quorum after additional maintainers activate",
-      ],
-      disputeRules: ["manual operator review"],
-      retentionRules: ["retain historical trust evidence for long-term verification"],
-      emergencyRules: ["maintainer may suspend compromised participants immediately"],
-      lifecycleEventRoot: sha256Hex(this.policyId),
-    });
+    this.policyRecordValue = this.buildPolicyRecord(1n, 1n, 1n);
     this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
@@ -267,6 +247,151 @@ export class LocalTrustRegistryIntegrationHarness {
       this.bootstrapPublicKey,
       1n,
     );
+  }
+
+  private buildPolicyRecord(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+  ): GovernancePolicyRecord {
+    return GovernancePolicyRecordSchema.parse({
+      policyId: this.policyId,
+      registryId: this.registryId,
+      version: "v1",
+      policyUri: "https://registry.example/policies/kanon-v1",
+      status: "active",
+      effectiveFrom: timestampForSequence(0n),
+      policyTemplates: [
+        {
+          templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
+          family: "maintainer",
+          name: "Maintainer Governance",
+          description: "Maintainer onboarding and membership changes",
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
+          applicableRoles: ["maintainer"],
+          applicableActionKinds: [
+            "tr:maintainer:propose",
+            "tr:maintainer:authorize",
+            "tr:maintainer:activate",
+            "tr:policy:thresholds:update",
+          ],
+          evidenceRules: ["governance evidence hash", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "member", "v1"),
+          family: "member",
+          name: "Member Governance",
+          description: "Issuer, verifier, and recognition onboarding decisions",
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
+          applicableRoles: ["issuer", "verifier", "authority"],
+          applicableActionKinds: [
+            "tr:issuer:propose",
+            "tr:issuer:authorize",
+            "tr:issuer:activate",
+            "tr:verifier:propose",
+            "tr:verifier:authorize",
+            "tr:verifier:activate",
+            "tr:recognition:propose",
+            "tr:recognition:authorize",
+            "tr:recognition:activate",
+          ],
+          evidenceRules: ["application evidence", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "emergency", "v1"),
+          family: "emergency",
+          name: "Emergency Governance",
+          description: "Emergency suspension and revocation decisions",
+          requiredMaintainerThreshold: thresholdToPolicyNumber(emergencyThreshold),
+          applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+          applicableActionKinds: [
+            "tr:issuer:suspend",
+            "tr:issuer:revoke",
+            "tr:verifier:suspend",
+            "tr:verifier:revoke",
+            "tr:maintainer:suspend",
+            "tr:maintainer:revoke",
+            "tr:recognition:suspend",
+            "tr:recognition:revoke",
+            "tr:auditor:suspend",
+            "tr:auditor:revoke",
+          ],
+          evidenceRules: ["incident evidence", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "archival", "v1"),
+          family: "archival",
+          name: "Archival Governance",
+          description: "Historical archival and closure decisions",
+          requiredMaintainerThreshold: thresholdToPolicyNumber(archivalThreshold),
+          applicableRoles: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+          applicableActionKinds: [
+            "tr:issuer:archive",
+            "tr:verifier:archive",
+            "tr:maintainer:archive",
+            "tr:recognition:archive",
+            "tr:auditor:archive",
+          ],
+          evidenceRules: ["archival justification", "maintainer quorum signatures"],
+        },
+        {
+          templateId: createScopedIdentifier("policy-template", "auditor", "v1"),
+          family: "auditor",
+          name: "Auditor Governance",
+          description: "Auditor onboarding and oversight decisions",
+          requiredMaintainerThreshold: thresholdToPolicyNumber(defaultThreshold),
+          applicableRoles: ["auditor"],
+          applicableActionKinds: [
+            "tr:auditor:propose",
+            "tr:auditor:authorize",
+            "tr:auditor:activate",
+          ],
+          evidenceRules: ["audit mandate evidence", "maintainer quorum signatures"],
+        },
+      ],
+      decisionBindings: [
+        {
+          bindingId: createScopedIdentifier("policy-binding", "maintainer", "v1"),
+          family: "maintainer",
+          templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
+          actionScopes: ["maintainer-membership", "threshold-policy"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "member", "v1"),
+          family: "member",
+          templateId: createScopedIdentifier("policy-template", "member", "v1"),
+          actionScopes: ["issuer-authorization", "verifier-authorization", "recognition"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "emergency", "v1"),
+          family: "emergency",
+          templateId: createScopedIdentifier("policy-template", "emergency", "v1"),
+          actionScopes: ["participant-emergency"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "archival", "v1"),
+          family: "archival",
+          templateId: createScopedIdentifier("policy-template", "archival", "v1"),
+          actionScopes: ["participant-archival"],
+        },
+        {
+          bindingId: createScopedIdentifier("policy-binding", "auditor", "v1"),
+          family: "auditor",
+          templateId: createScopedIdentifier("policy-template", "auditor", "v1"),
+          actionScopes: ["auditor-authorization"],
+        },
+      ],
+      decisionRules: [
+        `member governance starts at ${defaultThreshold.toString()}-of-active-maintainers`,
+        "maintainer threshold policy may raise default, emergency, and archival quorum after additional maintainers activate",
+      ],
+      disputeRules: ["manual operator review"],
+      retentionRules: ["retain historical trust evidence for long-term verification"],
+      emergencyRules: [
+        `emergency governance requires ${emergencyThreshold.toString()} approving maintainers`,
+      ],
+      lifecycleEventRoot: sha256Hex(this.policyId),
+    });
   }
 
   private bootstrapActionSignature(
@@ -352,7 +477,7 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
     );
-    return this.simulator.updateMaintainerThresholdPolicy(
+    const result = this.simulator.updateMaintainerThresholdPolicy(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
       this.bootstrapActionSignature(
@@ -370,6 +495,12 @@ export class LocalTrustRegistryIntegrationHarness {
         actionSequence,
       ),
     );
+    this.policyRecordValue = this.buildPolicyRecord(
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    return result;
   }
 
   authorizeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
@@ -1010,6 +1141,14 @@ export class LocalTrustRegistryIntegrationHarness {
     return bundle;
   }
 
+  readIssuerAuthorizationStatus(
+    fixture: IssuerScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
+    );
+  }
+
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
@@ -1040,6 +1179,14 @@ export class LocalTrustRegistryIntegrationHarness {
     const bundle = this.buildVerifierHistoricalEvidence(fixture);
     this.assertPublishedEpochEvidence(bundle);
     return bundle;
+  }
+
+  readVerifierAuthorizationStatus(
+    fixture: VerifierScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
+    );
   }
 
   buildVerifierHistoricalEvidence(
@@ -1174,6 +1321,14 @@ export class LocalTrustRegistryIntegrationHarness {
       lastStatusSequence: record.lastStatusSequence,
       recognition,
     });
+  }
+
+  readRecognitionStatus(
+    fixture: RecognitionScenarioFixture,
+  ): RecognitionRecord["status"] {
+    return contractStatusName(
+      this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
+    );
   }
 
   buildAuditorHistoricalEvidence(
@@ -1595,6 +1750,7 @@ export class LocalTrustRegistryIntegrationHarness {
 
   private ensurePublishedEpochCommitment(input: {
     statementId: string;
+    statementLeafHash: string;
     lastStatusSequence: bigint;
     lifecycleEventRoot: string;
     statementStatus: string;
@@ -1607,13 +1763,9 @@ export class LocalTrustRegistryIntegrationHarness {
     const epochIdCommitment = bytes32Commitment(epochId);
     const epochValidFromSequence = input.lastStatusSequence;
     const epochValidUntilSequence = input.lastStatusSequence + 60n;
-    const stateRoot = sha256Hex(
-      JSON.stringify({
-        registryId: this.registryId,
-        statementId: input.statementId,
-        status: input.statementStatus,
-        lifecycleEventRoot: input.lifecycleEventRoot,
-      }),
+    const stateRoot = computeSingleStatementStateRoot(
+      input.statementLeafHash,
+      input.lifecycleEventRoot,
     );
     const eventRoot = input.lifecycleEventRoot;
     const policyRoot = bytes32Hex(this.governancePolicyCommitment);
@@ -1673,6 +1825,22 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEpochCommitment(epochId, record);
   }
 
+  publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
+    return this.ensurePublishedEpochCommitment({
+      statementId,
+      statementLeafHash: computeRegistryStatementLeafHash({
+        registryId: this.registryId,
+        statementId,
+        statementStatus: this.registryRecord.status,
+        lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      }),
+      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      statementStatus: this.registryRecord.status,
+    });
+  }
+
   private buildEpochCommitment(
     epochId: string,
     record: ContractEpochCommitmentRecord,
@@ -1715,8 +1883,13 @@ export class LocalTrustRegistryIntegrationHarness {
     const lifecycleEventRoot =
       input.authorization?.lifecycleEventRoot
       ?? input.recognition?.lifecycleEventRoot;
+    const leafHash =
+      input.authorization !== undefined
+        ? computeAuthorizationStatementLeafHash(input.authorization)
+        : computeRecognitionStatementLeafHash(input.recognition!);
     const epoch = this.ensurePublishedEpochCommitment({
       statementId: bundleSubjectId ?? "missing",
+      statementLeafHash: leafHash,
       lastStatusSequence: input.lastStatusSequence,
       lifecycleEventRoot: lifecycleEventRoot ?? sha256Hex("missing"),
       statementStatus: statementStatus ?? "unknown",
@@ -1731,16 +1904,13 @@ export class LocalTrustRegistryIntegrationHarness {
       generatedAt: epoch.validFrom,
       registryId: this.registryId,
       subjectDid: input.subjectDid,
-      policy: this.policyRecord,
+      policy: this.policyRecordValue,
       epoch,
       inclusionProof: {
-        proofType: "signed-statement",
-        root: epoch.eventRoot,
-        leafHash:
-          input.authorization !== undefined
-            ? bundleLeafHash(input.authorization)
-            : recognitionLeafHash(input.recognition!),
-        path: [epoch.stateRoot],
+        proofType: "merkle-inclusion",
+        root: epoch.stateRoot,
+        leafHash,
+        path: [epoch.eventRoot],
         leafIndex: 0,
       },
       ...(input.authorization !== undefined

@@ -1,7 +1,7 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-05-22
+Updated: 2026-05-23
 
 ## Priority Model
 
@@ -36,13 +36,13 @@ Updated: 2026-05-22
 | TR-021 | P1 | Done on develop | Add issuer application-state workflow. | Issuer authorization supports explicit `proposed`, `authorized`, and `active` states with positive and negative tests plus historical evidence. |
 | TR-022 | P1 | Done on develop | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
 | TR-023 | P1 | Draft PR `#12` on `codex/trust-registry-maintainer-membership-lifecycle` | Add maintainer membership lifecycle. | Admin onboarding/removal is modeled explicitly, and no new maintainer can self-approve into the registry. |
-| TR-024 | P1 | Current branch `codex/trust-registry-quorum-execution` | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
-| TR-025 | P1 | Planned stack `codex/trust-registry-governance-policy-bindings` | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |
-| TR-026 | P2 | Planned stack `codex/trust-registry-mutable-operator-cli` | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
-| TR-027 | P2 | Planned stack `codex/trust-registry-api-query-surface` | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
-| TR-028 | P2 | Planned stack `codex/trust-registry-admin-console` | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
-| TR-029 | P2 | Planned stack `codex/trust-registry-historical-proof-hardening` | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export stronger inclusion-proof material than the current signed-statement anchor. |
-| TR-030 | P2 | Planned stack `codex/trust-registry-release-demo-flow` | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
+| TR-024 | P1 | Draft PR `#13` on `codex/trust-registry-quorum-execution` | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
+| TR-025 | P1 | Draft PR `#14` on `codex/trust-registry-governance-policy-bindings` | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |
+| TR-026 | P2 | Draft PR `#15` on `codex/trust-registry-mutable-operator-cli` | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
+| TR-027 | P2 | Draft PRs `#16` and `#17` on `codex/trust-registry-api-query-surface` and `codex/trust-registry-api-application-surface` | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
+| TR-028 | P2 | Draft PRs `#18` and `#19` on `codex/trust-registry-admin-console` and `codex/trust-registry-applicant-portal` | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
+| TR-029 | P2 | Draft PR `#20` on `codex/trust-registry-historical-timestamp-queries` and draft PR `#21` on `codex/trust-registry-proof-bundle-hardening` | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export canonical `merkle-inclusion` evidence bundles instead of the earlier signed-statement placeholder. |
+| TR-030 | P2 | Planned stack from `codex/trust-registry-demo-fixtures` | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
 
 ## First PR Stack
 
@@ -67,33 +67,33 @@ Updated: 2026-05-22
 
 ## Next 10 PR Stack
 
-1. `codex/trust-registry-maintainer-membership-lifecycle`
-   - `TR-023`
-   - add governed maintainer onboarding, activation, suspension, revocation, and archival
-2. `codex/trust-registry-quorum-execution`
-   - `TR-024`
-   - replace the current single-signature maintainer shortcut with policy-aware quorum execution
-3. `codex/trust-registry-governance-policy-bindings`
-   - `TR-025`
-   - bind maintainer, member, emergency, and auditor actions to typed governance policy templates
-4. `codex/trust-registry-mutable-operator-cli`
-   - `TR-026`
-   - add operator commands for submit, approve, activate, suspend, revoke, archive, and epoch publication
-5. `codex/trust-registry-api-query-surface`
-   - first `TR-027` slice
-   - expose stable read/query HTTP endpoints over the client and adapter surfaces
-6. `codex/trust-registry-api-application-surface`
-   - second `TR-027` slice
-   - expose applicant submission and maintainer approval endpoints with governed workflow semantics
-7. `codex/trust-registry-admin-console`
-   - first `TR-028` slice
-   - add admin review and approval UI flows on top of the API
-8. `codex/trust-registry-applicant-portal`
+1. `codex/trust-registry-applicant-portal`
    - second `TR-028` slice
-   - add applicant submission and public registry inspection UI flows
-9. `codex/trust-registry-historical-proof-hardening`
-   - `TR-029`
-   - add timestamp-based trust queries and stronger inclusion-proof export
-10. `codex/trust-registry-release-demo-flow`
-    - `TR-030`
-    - package the demo flow, release artifacts, and CI-backed reproducibility checks
+   - add applicant submission and public active-registry inspection UI flows
+2. `codex/trust-registry-historical-timestamp-queries`
+   - first `TR-029` slice
+   - add timestamp-based trust queries across snapshot, client, CLI, and HTTP surfaces
+3. `codex/trust-registry-proof-bundle-hardening`
+   - second `TR-029` slice
+   - replace the placeholder signed-statement proof with canonical merkle-inclusion material and stricter verification
+4. `codex/trust-registry-historical-evidence-adapters`
+   - third `TR-029` slice
+   - expose timestamped historical trust evidence through TRQP and HTTP adapter surfaces
+5. `codex/trust-registry-demo-fixtures`
+   - first `TR-030` slice
+   - add reproducible demo registry fixtures and deterministic mutable workspace seeds
+6. `codex/trust-registry-demo-orchestration`
+   - second `TR-030` slice
+   - add local scripts to boot the demo API, admin console, and applicant portal together
+7. `codex/trust-registry-package-artifacts`
+   - third `TR-030` slice
+   - package demo and release artifacts for CLI, API, and UI consumers
+8. `codex/trust-registry-demo-ci`
+   - fourth `TR-030` slice
+   - validate the documented demo flow from a clean checkout in CI
+9. `codex/trust-registry-release-docs`
+   - fifth `TR-030` slice
+   - publish release/demo operator documentation and final package boundaries
+10. `codex/trust-registry-release-hardening`
+    - sixth `TR-030` slice
+    - close reproducibility gaps, runtime regressions, and final acceptance issues before release
