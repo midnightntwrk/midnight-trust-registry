@@ -27,7 +27,7 @@
     "test:light": "npm run test",
     "ci:integration": "npm run integration",
     "ci:lint": "npm run docs-check && npm run lint",
-    "ci:build:light": "npm run ci:lint && npm run typecheck:light && npm run build:light && npm run test:light",
+    "ci:build:light": "npm run ci:lint && npm run build:light && npm run typecheck:light && npm run test:light",
     "ci:build": "npm run ci:build:light"
   },
   "devDependencies": {
