@@ -157,6 +157,11 @@ Completed in the current implementation wave:
   - verifier authorization by id and current scope
   - recognition by id and current scope
   - epoch commitments by id and latest pointer
+- temporal client helpers for:
+  - authorization lifecycle status at a specific timestamp
+  - recognition lifecycle status at a specific timestamp
+  - epoch selection by timestamp
+  - latest visible authorization or recognition entry for a scoped timestamp query
 - evidence verification helpers for:
   - issuer authorization bundles
   - verifier authorization bundles
@@ -296,6 +301,20 @@ Completed in the current implementation wave:
   - epoch publication with and without a request body
   - invalid target and unknown-id problem responses
   - mutation rejection for snapshot-backed API servers
+- first admin console package:
+  - `packages/trust-registry-admin-console`
+  - static local UI over the existing API
+  - review boards grouped by lifecycle state for issuer, verifier, and recognition records
+  - maintainer actions for approve, activate, suspend, revoke, archive, and epoch publication
+- API/browser interoperability support for the admin console:
+  - permissive local CORS headers on the API
+  - preflight handling for `OPTIONS` requests
+  - preview-server smoke coverage against a seeded operator workspace
+- first applicant portal package:
+  - `packages/trust-registry-applicant-portal`
+  - static local UI for issuer/verifier/recognition submission
+  - public inspection lanes for active issuer, verifier, and recognition entries
+  - reuse of the existing governed application API instead of a second backend
 - focused operator CLI report tests that verify:
   - full human-readable report generation
   - focused report export with stable timeline output
@@ -304,19 +323,25 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-api-application-surface`
+- `codex/trust-registry-proof-bundle-hardening`
 - stacked on:
-  - `codex/trust-registry-api-query-surface`
+  - `codex/trust-registry-historical-timestamp-queries`
 - current slice:
-  - `TR-027`
-  - governed application API surface
+  - `TR-029`
+  - proof bundle hardening
 
 Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#17`
-  - `TR-023` through `TR-027`
+  - `#12` through `#21`
+  - `TR-023` through `TR-029`
+- `2026-05-23` expedite status:
+  - `#12` is green and merge-clean
+  - `CI / light` reruns were dispatched for `#13` through `#21` after
+    confirming the cancelled runs matched the current branch heads
+  - `Docs` and `Scan` remain green across the active stack while the rerun
+    `light` jobs settle
 
 Merged baseline now on `origin/develop`:
 
@@ -379,16 +404,14 @@ Still missing for the first usable prototype:
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
-- historical epoch selection by timestamp
-- Merkle-style inclusion proofs beyond the current signed-statement anchor
+- multi-record epoch proofs beyond the current single-statement merkle-inclusion anchor
 
 ## Next Recommended Slices
 
-1. second `TR-027` slice
-   - add applicant submission and governed approval API routes
-2. `TR-028` to `TR-030`
-   - execute the remaining stack from UI through historical proof hardening
-     and release/demo flow
+1. third `TR-029` slice
+   - expose timestamped historical evidence through TRQP and HTTP adapter surfaces
+2. `TR-030` slices
+   - package the demo registry, orchestration, release artifacts, and clean-checkout CI flow
 
 ## Knowledge Synchronization Rule
 

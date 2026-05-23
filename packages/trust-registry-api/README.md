@@ -21,14 +21,17 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/epochs/current`
+- `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
 - `GET /v1/authorizations/:role`
 - `GET /v1/authorizations/:role/:authorizationId`
 - `GET /v1/authorizations/:role/:authorizationId/evidence`
+- `POST /v1/authorizations/evaluate`
 - `POST /v1/authorizations/resolve`
 - `GET /v1/recognitions`
 - `GET /v1/recognitions/:recognitionId`
 - `GET /v1/recognitions/:recognitionId/evidence`
+- `POST /v1/recognitions/evaluate`
 - `POST /v1/recognitions/resolve`
 - `GET /v1/trqp/metadata/:authorityId`
 - `POST /v1/trqp/authorizations/query`
@@ -62,6 +65,8 @@ Workspace-backed mutation routes:
   - run the server on loopback or behind an explicit local proxy
 - serialize writes per workspace file inside the process, but do not provide
   cross-process locking for multi-writer deployments
+- return permissive local CORS headers plus `OPTIONS` preflight responses so the
+  admin console can call the same loopback API from a separate port
 
 Example applicant submission:
 
@@ -76,4 +81,17 @@ Example maintainer approval:
 ```bash
 curl -sS -X POST \
   http://127.0.0.1:4400/v1/applications/issuer/<authorization-id>/approve
+```
+
+Example timestamp-based authorization evaluation:
+
+```bash
+curl -sS http://127.0.0.1:4400/v1/authorizations/evaluate \
+  -H 'content-type: application/json' \
+  -d '{
+    "role":"issuer",
+    "subjectDid":"did:midnight:testnet:issuer",
+    "resourceId":"credential-family:degree",
+    "at":"2026-05-20T00:30:00Z"
+  }'
 ```
