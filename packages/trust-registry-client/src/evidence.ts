@@ -10,14 +10,16 @@ import {
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   TrustRegistryEvidenceBundleSchema,
+  computeAuthorizationStatementLeafHash,
+  computeMerkleRootFromProof,
+  computeRecognitionStatementLeafHash,
   type AuthorizationRecord,
-  type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
-  sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   bytes32Commitment,
+  bytes32Hex,
   defaultSequenceToTimestamp,
   sameBytes32,
   type SequenceToTimestamp,
@@ -42,48 +44,6 @@ export type BundleVerificationOptions = {
   evaluationTime?: string;
   requireActive?: boolean;
 } & EpochAnchorVerificationContext;
-
-const bundleLeafHash = (authorization: AuthorizationRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      authorizationId: authorization.authorizationId,
-      status: authorization.status,
-      subjectDid: authorization.subjectDid,
-      resourceId: authorization.resourceId,
-    }),
-  );
-
-const recognitionLeafHash = (recognition: RecognitionRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      recognitionId: recognition.recognitionId,
-      status: recognition.status,
-      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
-      recognizedRegistryId: recognition.recognizedRegistryId,
-      scope: recognition.scope,
-    }),
-  );
-
-const computeBundleStateRoot = (
-  bundle: TrustRegistryEvidenceBundle,
-): string => {
-  const statementId =
-    bundle.authorization?.authorizationId ?? bundle.recognition?.recognitionId;
-  const statementStatus =
-    bundle.authorization?.status ?? bundle.recognition?.status;
-  const lifecycleEventRoot =
-    bundle.authorization?.lifecycleEventRoot
-    ?? bundle.recognition?.lifecycleEventRoot;
-
-  return sha256Hex(
-    JSON.stringify({
-      registryId: bundle.registryId,
-      statementId,
-      status: statementStatus,
-      lifecycleEventRoot,
-    }),
-  );
-};
 
 const assertCommonBundleExpectations = (
   bundle: TrustRegistryEvidenceBundle,
@@ -191,26 +151,49 @@ const assertEpochAnchor = (
   }
 };
 
+const assertPolicyAnchor = (
+  bundle: TrustRegistryEvidenceBundle,
+): void => {
+  const expectedPolicyRoot = bytes32Hex(bytes32Commitment(bundle.policy.policyId));
+  if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
+    throw new Error("Policy root does not match the bundle policy");
+  }
+};
+
 const assertInclusionProof = (
   bundle: TrustRegistryEvidenceBundle,
 ): void => {
   const expectedLeafHash =
     bundle.authorization !== undefined
-      ? bundleLeafHash(bundle.authorization)
-      : recognitionLeafHash(bundle.recognition!);
+      ? computeAuthorizationStatementLeafHash(bundle.authorization)
+      : computeRecognitionStatementLeafHash(bundle.recognition!);
 
-  if (bundle.inclusionProof.root !== bundle.epoch.eventRoot) {
-    throw new Error("Inclusion proof root does not match the anchored event root");
+  if (bundle.inclusionProof.proofType !== "merkle-inclusion") {
+    throw new Error(
+      `Unsupported inclusion proof type: ${bundle.inclusionProof.proofType}`,
+    );
   }
   if (bundle.inclusionProof.leafHash !== expectedLeafHash) {
     throw new Error("Inclusion proof leaf hash does not match the statement");
   }
-  const expectedStateRoot = computeBundleStateRoot(bundle);
-  if (bundle.epoch.stateRoot !== expectedStateRoot) {
-    throw new Error("Bundle state root does not match the anchored statement state");
+  if (bundle.inclusionProof.root !== bundle.epoch.stateRoot) {
+    throw new Error("Inclusion proof root does not match the anchored state root");
   }
-  if (bundle.inclusionProof.path[0] !== expectedStateRoot) {
-    throw new Error("Inclusion proof path does not match the anchored state root");
+  if (bundle.inclusionProof.path[0] !== bundle.epoch.eventRoot) {
+    throw new Error(
+      "Inclusion proof event sibling does not match the anchored event root",
+    );
+  }
+
+  const computedStateRoot = computeMerkleRootFromProof(
+    expectedLeafHash,
+    bundle.inclusionProof.path,
+    bundle.inclusionProof.leafIndex,
+  );
+  if (computedStateRoot !== bundle.inclusionProof.root) {
+    throw new Error(
+      "Inclusion proof root does not match the reconstructed state root",
+    );
   }
 };
 
@@ -229,6 +212,7 @@ export const verifyTrustRegistryEvidenceBundle = (
     );
   }
   assertEpochAnchor(bundle, options);
+  assertPolicyAnchor(bundle);
   assertInclusionProof(bundle);
 
   return bundle;

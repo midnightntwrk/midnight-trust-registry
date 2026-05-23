@@ -206,12 +206,47 @@ describe("trust registry api", () => {
       const resolved = await resolveResponse.json();
       expect(resolved.authorization.authorizationId).toBe(issuerId);
 
+      const evaluateResponse = await fetch(
+        `${server.url}/v1/authorizations/evaluate`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "issuer",
+            subjectDid: list.entries[0].authorization.subjectDid,
+            resourceId: list.entries[0].authorization.resourceId,
+            at: list.entries[0].authorization.activeFrom,
+          }),
+        },
+      );
+      expect(evaluateResponse.status).toBe(200);
+      const evaluation = await evaluateResponse.json();
+      expect(evaluation.entry.authorization.authorizationId).toBe(issuerId);
+      expect(evaluation.statusAtTime).toBe("active");
+      expect(evaluation.trustedAtTime).toBe(true);
+
       const evidenceResponse = await fetch(
         `${server.url}/v1/authorizations/issuer/${issuerId}/evidence`,
       );
       expect(evidenceResponse.status).toBe(200);
       const evidence = await evidenceResponse.json();
       expect(evidence.authorization.authorizationId).toBe(issuerId);
+
+      const epochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent(evidence.epoch.validFrom)}`,
+      );
+      expect(epochResolveResponse.status).toBe(200);
+      const resolvedEpoch = await epochResolveResponse.json();
+      expect(resolvedEpoch.epochId).toBe(evidence.epoch.epochId);
+
+      const invalidEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("not-a-date")}`,
+      );
+      expect(invalidEpochResolveResponse.status).toBe(400);
+      const invalidEpochResolveProblem = await invalidEpochResolveResponse.json();
+      expect(invalidEpochResolveProblem.type).toMatch(/invalid-request$/);
 
       const trqpAuthorizationResponse = await fetch(
         `${server.url}/v1/trqp/authorizations/query`,
@@ -250,6 +285,13 @@ describe("trust registry api", () => {
       expect(trqpEvidenceResponse.status).toBe(200);
       const trqpEvidence = await trqpEvidenceResponse.json();
       expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
+
+      const missingEpochResolveResponse = await fetch(
+        `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
+      );
+      expect(missingEpochResolveResponse.status).toBe(404);
+      const missingEpochResolveProblem = await missingEpochResolveResponse.json();
+      expect(missingEpochResolveProblem.type).toMatch(/epoch-not-found$/);
     } finally {
       await server.close();
     }
@@ -520,6 +562,28 @@ describe("trust registry api", () => {
       expect(recognitionResponse.status).toBe(200);
       const recognition = await recognitionResponse.json();
       expect(recognition.recognition.recognitionId).toBe(recognitionId);
+
+      const recognitionEvaluateResponse = await fetch(
+        `${server.url}/v1/recognitions/evaluate`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            recognizedAuthorityDid: recognition.recognition.recognizedAuthorityDid,
+            recognizedRegistryId: recognition.recognition.recognizedRegistryId,
+            scopeResourceType: recognition.recognition.scope.resourceType,
+            scopeResourceId: recognition.recognition.scope.resourceId,
+            at: recognition.recognition.effectiveFrom,
+          }),
+        },
+      );
+      expect(recognitionEvaluateResponse.status).toBe(200);
+      const recognitionEvaluation = await recognitionEvaluateResponse.json();
+      expect(recognitionEvaluation.entry.recognition.recognitionId).toBe(recognitionId);
+      expect(recognitionEvaluation.statusAtTime).toBe("active");
+      expect(recognitionEvaluation.trustedAtTime).toBe(true);
 
       const metadataResponse = await fetch(
         `${server.url}/v1/trqp/metadata/${encodeURIComponent(workspace.snapshot.registry.registryDid)}`,

@@ -157,6 +157,11 @@ Completed in the current implementation wave:
   - verifier authorization by id and current scope
   - recognition by id and current scope
   - epoch commitments by id and latest pointer
+- temporal client helpers for:
+  - authorization lifecycle status at a specific timestamp
+  - recognition lifecycle status at a specific timestamp
+  - epoch selection by timestamp
+  - latest visible authorization or recognition entry for a scoped timestamp query
 - evidence verification helpers for:
   - issuer authorization bundles
   - verifier authorization bundles
@@ -318,19 +323,25 @@ Completed in the current implementation wave:
 
 Active implementation branch:
 
-- `codex/trust-registry-applicant-portal`
+- `codex/trust-registry-proof-bundle-hardening`
 - stacked on:
-  - `codex/trust-registry-admin-console`
+  - `codex/trust-registry-historical-timestamp-queries`
 - current slice:
-  - `TR-028`
-  - applicant portal scaffold
+  - `TR-029`
+  - proof bundle hardening
 
 Current stacked base branch:
 
 - `develop`
 - open stack currently spans:
-  - `#12` through `#19`
-  - `TR-023` through `TR-028`
+  - `#12` through `#21`
+  - `TR-023` through `TR-029`
+- `2026-05-23` expedite status:
+  - `#12` is green and merge-clean
+  - `CI / light` reruns were dispatched for `#13` through `#21` after
+    confirming the cancelled runs matched the current branch heads
+  - `Docs` and `Scan` remain green across the active stack while the rerun
+    `light` jobs settle
 
 Merged baseline now on `origin/develop`:
 
@@ -393,17 +404,14 @@ Still missing for the first usable prototype:
 Still intentionally deferred inside the current Compact slice:
 
 - stateful multi-maintainer threshold execution above `1-of-N`
-- historical epoch selection by timestamp
-- Merkle-style inclusion proofs beyond the current signed-statement anchor
+- multi-record epoch proofs beyond the current single-statement merkle-inclusion anchor
 
 ## Next Recommended Slices
 
-1. second `TR-028` slice
-   - finish the applicant portal and keep it aligned with the admin console
-2. first `TR-029` slice
-   - add timestamp-based historical queries across snapshot, client, CLI, and HTTP surfaces
-3. remaining `TR-029` and `TR-030` slices
-   - harden proof export, expose historical evidence through adapters, then package the demo and release flow
+1. third `TR-029` slice
+   - expose timestamped historical evidence through TRQP and HTTP adapter surfaces
+2. `TR-030` slices
+   - package the demo registry, orchestration, release artifacts, and clean-checkout CI flow
 
 ## Knowledge Synchronization Rule
 
