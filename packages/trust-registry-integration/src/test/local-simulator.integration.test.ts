@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
+import { resolveGovernancePolicyTemplate } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
@@ -81,6 +83,50 @@ describe("trust registry local simulator integration", () => {
     const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
+  });
+
+  it("enforces scoped maintainer quorum rules for issuer onboarding, emergency action, and archival action", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const secondMaintainer = createMaintainerScenarioFixture("quorum-second");
+    const issuer = createIssuerScenarioFixture("quorum-onboarding");
+
+    harness.authorizeMaintainer(secondMaintainer);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "member")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
+    expect(
+      resolveGovernancePolicyTemplate(harness.policyRecord, "emergency"),
+    ).toMatchObject({
+      requiredMaintainerThreshold: 1,
+    });
+    expect(resolveGovernancePolicyTemplate(harness.policyRecord, "archival")).toMatchObject({
+      requiredMaintainerThreshold: 2,
+    });
+
+    expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.proposeIssuer(issuer, [secondMaintainer]);
+    harness.approveIssuer(issuer, [secondMaintainer]);
+    harness.activateIssuer(issuer, [secondMaintainer]);
+
+    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(activeBundle.authorization?.status).toBe("active");
+
+    harness.suspendIssuer(issuer);
+
+    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
+    const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(suspendedBundle.authorization?.status).toBe("suspended");
+
+    expect(() => harness.archiveIssuer(issuer)).toThrow(/action threshold/i);
+
+    harness.archiveIssuer(issuer, [secondMaintainer]);
+
+    const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    expect(archivedBundle.authorization?.status).toBe("archived");
   });
 
   it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {
@@ -366,13 +412,14 @@ describe("trust registry local simulator integration", () => {
     };
 
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
-      /violate the maintainer threshold/i,
+      /threshold policy/i,
     );
   });
 
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("university");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
 
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
@@ -380,6 +427,9 @@ describe("trust registry local simulator integration", () => {
     if (originalSignature === undefined) {
       throw new Error("expected an epoch maintainer signature");
     }
+    const tamperedSignature = `0x${
+      originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
+    }${originalSignature.signature.slice(3)}`;
 
     expect(() =>
       harness.assertPublishedEpochEvidence({
@@ -408,11 +458,37 @@ describe("trust registry local simulator integration", () => {
             {
               keyId: originalSignature.keyId,
               algorithm: originalSignature.algorithm,
-              signature: `${originalSignature.signature.slice(0, -1)}0`,
+              signature: tamperedSignature,
             },
           ],
         },
       }),
     ).toThrow(/invalid/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            leafHash: `${bundle.inclusionProof.leafHash.slice(0, -1)}0`,
+          },
+        },
+        {},
+      ),
+    ).toThrow(/leaf hash/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          inclusionProof: {
+            ...bundle.inclusionProof,
+            path: [`${bundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+          },
+        },
+        {},
+      ),
+    ).toThrow(/event sibling/i);
   });
 });

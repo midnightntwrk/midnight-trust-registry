@@ -5,6 +5,7 @@ TypeScript client helpers for querying and validating trust-registry state.
 Current scope:
 
 - raw current and historical queries against the local simulator/contract surface
+- temporal helpers that answer lifecycle and trust state at a specific timestamp
 - evidence-bundle verification for issuer, verifier, and recognition decisions
 - epoch-anchor verification against published roots and maintainer signatures
 - consumer-side verification exercised by simulator, DID-backed, and VC-backed

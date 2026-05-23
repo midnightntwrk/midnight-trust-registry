@@ -43,6 +43,9 @@ const renderTimeline = (entries: readonly TimelineEntry[]): string =>
 const renderList = (entries: readonly string[]): string =>
   entries.map((entry) => `  - ${entry}`).join("\n");
 
+const renderIndentedBlocks = (entries: readonly string[]): string =>
+  entries.map((entry) => `  - ${entry.replace(/\n/g, "\n    ")}`).join("\n");
+
 const renderHeader = (
   snapshot: TrustRegistryOperatorSnapshot,
   title: string,
@@ -104,6 +107,25 @@ const renderPolicySection = (policy: GovernancePolicyRecord): string =>
       renderList(policy.retentionRules),
       "Emergency rules:",
       renderList(policy.emergencyRules),
+      "Policy templates:",
+      renderIndentedBlocks(
+        policy.policyTemplates.map(
+          (template) =>
+            `${template.family}: ${template.name}\n` +
+            `threshold=${template.requiredMaintainerThreshold}; ` +
+            `roles=${template.applicableRoles.join(", ")}; ` +
+            `actions=${template.applicableActionKinds.join(", ")}`,
+        ),
+      ),
+      "Decision bindings:",
+      renderIndentedBlocks(
+        policy.decisionBindings.map(
+          (binding) =>
+            `${binding.family}: ${binding.bindingId}\n` +
+            `template=${binding.templateId}; ` +
+            `scopes=${binding.actionScopes.join(", ")}`,
+        ),
+      ),
       "Timeline:",
       renderTimeline([
         ["effectiveFrom", policy.effectiveFrom],

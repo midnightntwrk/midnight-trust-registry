@@ -1,6 +1,6 @@
 # Trust Registry Decisions
 
-Date: 2026-05-21
+Date: 2026-05-23
 
 ## Current Decisions
 
@@ -28,6 +28,11 @@ Date: 2026-05-21
 - For the first client slice, add a dedicated `packages/trust-registry-client` workspace instead of embedding client helpers into the integration harness.
 - Keep the first client slice evidence-first: verify published epoch roots, maintainer signatures, and bundle scope expectations directly from canonical contract records before adding higher-level transport adapters.
 - Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
+- For the first `TR-029` slice, derive timestamp-based trust answers from the explicit lifecycle timestamps already present on authorization, recognition, and epoch records instead of introducing a second history store.
+- Expose timestamp evaluation through client helpers first, then wrap those helpers in snapshot/CLI and HTTP evaluation surfaces.
+- For the second `TR-029` slice, export statement evidence as `merkle-inclusion` bundles anchored to `epoch.stateRoot` with canonical full-record leaf hashes and `epoch.eventRoot` as the first sibling path element; keep the Compact contract unchanged.
+- For the second `TR-029` slice, keep policy anchoring minimal and explicit: `epoch.policyRoot` continues to bind the active `policyId`, and client verification must reject bundles whose embedded policy no longer matches that commitment.
+- For the second `TR-029` slice, define canonical bundle hashing by the shared TypeScript domain helpers in this repository. Cross-language canonical JSON compatibility is deferred until TR needs non-Node evidence producers or verifiers.
 - For the first DID-backed integration slice, sync the official `@midnight-ntwrk/midnight-did`, `@midnight-ntwrk/midnight-did-domain`, and `@midnight-ntwrk/midnight-did-contract` packages into `libs/` instead of depending on sibling-repo paths at runtime.
 - Use official `midnight-did` helpers to construct fixture `did:midnight` identifiers and `MidnightDIDResolver` to resolve bundle subject DIDs from fixture ledger state; do not duplicate DID parsing or resolution logic inside TR tests.
 - For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.
@@ -45,6 +50,21 @@ Date: 2026-05-21
 - Keep the first operator CLI read-heavy: local initialization, inspection, and evidence export land before mutable maintainer workflows or audit/report generation.
 - Implement the first audit-report slice on top of the existing CLI snapshot surface instead of creating a separate reporting workspace.
 - Keep the first audit-report slice deterministic and read-only: render human-readable registry, policy, authorization, recognition, and epoch history from saved snapshots without introducing mutable operator flows.
+- For `TR-026`, implement mutable CLI state as an append-only operator workspace journal plus a derived snapshot. Do not persist or mutate raw simulator state directly on disk.
+- For `TR-026`, scope the first mutable CLI workflows to issuer, verifier, and recognition actions plus registry epoch publication. Defer mutable auditor, maintainer, and threshold-governance commands to later slices.
+- Accept replay-first workspace performance for `TR-026`: every mutable CLI command may rebuild the simulator and derived snapshot from the full journal. Favor auditability and deterministic reconstruction now; optimize compaction or incremental replay only if real operator usage makes the local workflow too slow.
+- Implement the first REST query slice as a dedicated `packages/trust-registry-api` workspace instead of extending the CLI package into an ad hoc HTTP entrypoint.
+- Keep the first REST query slice read-only and file-backed: serve native registry/epoch/authorization/recognition/evidence routes plus TRQP-compatible routes from saved snapshots or mutable operator workspaces; defer applicant submission and maintainer approval endpoints to the second `TR-027` slice.
+- Keep the second REST API slice workspace-backed only for mutation: applicant submission, maintainer lifecycle actions, and epoch publication may write only through a mutable operator workspace source, never through snapshot or in-memory modes.
+- Keep the second REST API slice thin over the CLI workspace journal: the API translates HTTP requests into existing submit/approve/activate/suspend/revoke/archive/publish operations instead of inventing a parallel server-side state machine.
+- Keep second-slice mutation failures structured at the HTTP boundary: invalid path parameters, duplicate submissions, and unknown governed ids should surface as stable 400/404/409 problem-details responses instead of leaking raw workspace exceptions.
+- Keep second-slice workspace writes serialized per process and per workspace source. This remains a local-operator guardrail, not a cross-process locking guarantee for multi-writer deployments.
+- Keep the first admin console slice static and local-first: a dedicated workspace under `packages/trust-registry-admin-console` should consume the existing API over loopback instead of introducing SSR, a separate backend, or persisted frontend state.
+- Keep the first admin console slice maintainer-only: it should cover review, lifecycle actions, and epoch publication, while applicant submission and public inspection remain in the later portal slice.
+- Keep the first applicant portal slice static and local-first in its own workspace under `packages/trust-registry-applicant-portal`; consume the same loopback API rather than creating a second service tier.
+- Keep the first applicant portal slice narrow: application submission plus public active-registry inspection only. Maintainer review and lifecycle actions remain in the admin console.
+- Keep the applicant portal package API-scoped: import public response types from `@midnight-ntwrk/trust-registry-api` instead of reaching into CLI snapshot types directly.
+- Treat `?apiBase=` as a session-only local override in the applicant portal; do not silently replace the saved default URL in browser storage.
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
 - Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
 - Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.
@@ -54,6 +74,13 @@ Date: 2026-05-21
 - Implement the first maintainer-governance slice as a dedicated `MaintainerMembershipRecord` family, separate from the active signer key table. This keeps append-only maintainer onboarding history explicit while preserving a narrow active-key surface for contract authorization checks.
 - Keep bootstrap maintainer initialization as a special-case active membership created by `initializeRegistry`, but require every non-bootstrap maintainer to pass through `proposed -> authorized -> active`.
 - Refuse duplicate live maintainer identity enrollment and refuse maintainer deactivation when it would drop the registry below the configured maintainer threshold.
+- Implement quorum execution with a fixed-capacity signer bundle instead of a dynamic signer list. The v1 contract supports up to `5` approving maintainers per governed action so the core registry can cover `3-of-5` and `5-of-7` governance patterns without introducing dynamic Compact arrays into the authorization surface.
+- Keep maintainer quorum policy explicit and stateful: bootstrap starts at `1-of-1`, then the registry lifts thresholds through a governed `tr:policy:thresholds:update` action after additional maintainers are activated.
+- Scope maintainer quorum rules by action family before the richer policy-template slice lands: use the default threshold for onboarding and ordinary governance actions, a dedicated emergency threshold for suspend/revoke actions, and a dedicated archival threshold for archive actions.
+- Keep `lastAuthorizedMaintainerKeyId` and epoch publication signatures submitter-oriented in v1: they record `signer1`, while the full approving quorum is bound into the governance-event chain via `signerSetHash`.
+- Keep simulator-generated epoch publication quorum-aware once thresholds rise above `1`: internal evidence publication may auto-select active co-maintainers to satisfy the live default threshold, but operator-facing harness calls must still pass explicit co-authorizers when the action itself is governed.
+- Treat quorum execution as the current Compact cost boundary: as of `2026-05-22`, a fresh cache-miss `./run.sh --light` path compiles `54` circuits and spent about `19` minutes inside the contract build during `typecheck:light`, so any further signer-bundle expansion or duplicate build wiring needs explicit review.
+- Implement the first governance-policy template slice in the domain, evidence, simulator, and operator-report surfaces before widening the Compact contract. The v1 contract continues to anchor one policy commitment plus threshold state, while typed policy templates and decision-family bindings explain how maintainer, member, emergency, archival, and auditor decisions should be interpreted off-chain.
 - Keep `upgrade-libs` source-layout-aware: resolve sibling DID and VC workspaces from their current `packages/...` paths instead of assuming flat workspace names.
 - Let `upgrade-libs` fall back to existing compiled artifacts when a sibling package rebuild fails but usable `dist/` output already exists; refresh should still fail when no compiled artifacts are available to sync.
 - Make `turbo typecheck` depend on the package's own `build` task as well as `^build` so fresh-runner typecheck cannot race missing generated artifacts.
@@ -64,7 +91,9 @@ Date: 2026-05-21
 
 - Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
 - Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
-- Minimum maintainer threshold for admin onboarding, member onboarding, policy updates, and emergency suspension.
+- Whether signer-set commitments should become canonicalized independent of submitter order, or remain order-sensitive because the first disclosed signer acts as the submitter of record in epoch evidence.
+- Whether `tr:policy:thresholds:update` should keep using the default maintainer threshold or move to a dedicated governance-policy quorum in the `TR-025` slice.
+- Whether typed governance-policy bindings should stay domain-first or later receive explicit per-family commitments in Compact state.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
 - First external adapter: TRQP, OpenID Federation, or both.

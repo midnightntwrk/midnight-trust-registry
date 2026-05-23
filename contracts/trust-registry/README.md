@@ -6,13 +6,19 @@ Current scope:
 
 - registry initialization
 - bootstrap maintainer registration
-- generic maintainer-signed action authorization
-- threshold validation for later multi-maintainer governance work
+- generic maintainer authorization with fixed-capacity quorum bundles
+- maintainer threshold-policy updates for default, emergency, and archival actions
 - issuer authorization lifecycle and scope queries
 - verifier authorization lifecycle and scope queries
 - recognition lifecycle and scope queries
 - epoch-anchor publication and current/by-id lookup
 
-This slice intentionally still stops short of multi-maintainer threshold
-execution above `1-of-N`, historical lookup by timestamp, and client-facing
-query adapters. Those surfaces stack on top of this package.
+The current quorum implementation supports up to `5` maintainer signers per
+action bundle so the contract can cover `3-of-5` and `5-of-7` governance
+shapes without dynamic arrays. Historical lookup by timestamp, richer
+governance policy bindings, and client-facing mutation/query adapters still
+stack on top of this package.
+
+For v1 epoch publication, the epoch record persists the submitter
+(`signer1`) key id and signature, while the full approving quorum is bound into
+the governance-event chain through the signer-set hash.

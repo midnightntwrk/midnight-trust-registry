@@ -9,6 +9,7 @@ import {
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
+  computeUpdateMaintainerThresholdPolicyPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -19,6 +20,7 @@ import {
 import {
   createMaintainerFixture,
   labelToBytes32,
+  type MaintainerCoAuthorizer,
   TrustRegistrySimulator,
 } from "../testing.js";
 import {
@@ -62,6 +64,9 @@ const ACTIVATE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:activate")
 const SUSPEND_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:suspend");
 const REVOKE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:revoke");
 const ARCHIVE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:archive");
+const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = labelToBytes32(
+  "tr:policy:thresholds:update",
+);
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const createInitializedRegistryFixture = (seedByte: number) => {
@@ -156,6 +161,24 @@ const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
   };
 };
 
+const createMaintainerCoAuthorizer = (
+  maintainer: ReturnType<typeof createMaintainerMembershipFixture>,
+  registryId: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): MaintainerCoAuthorizer => ({
+  keyId: maintainer.keyId,
+  publicKey: maintainer.publicKey,
+  signature: signMaintainerActionFromSeed(
+    maintainer.seed,
+    registryId,
+    actionKind,
+    actionPayloadHash,
+    actionSequence,
+  ),
+});
+
 const createEpochCommitmentFixture = (label: string) => ({
   epochId: labelToBytes32(`epoch:${label}`),
   stateRoot: labelToBytes32(`state-root:${label}`),
@@ -168,11 +191,17 @@ const createEpochCommitmentFixture = (label: string) => ({
 describe("trust registry contract", () => {
   it("accepts valid threshold rules and rejects invalid ones", () => {
     expect(() => pureCircuits.assertValidMaintainerThreshold(3n, 2n)).not.toThrow();
+    expect(() =>
+      pureCircuits.assertValidMaintainerThresholdPolicy(3n, 2n, 1n, 1n),
+    ).not.toThrow();
     expect(() => pureCircuits.assertValidMaintainerThreshold(0n, 1n)).toThrow(
       /at least 1/i,
     );
     expect(() => pureCircuits.assertValidMaintainerThreshold(3n, 4n)).toThrow(
       /may not exceed/i,
+    );
+    expect(() => pureCircuits.assertValidMaintainerThreshold(8n, 8n)).toThrow(
+      /supported signer-set capacity/i,
     );
     expect(() =>
       pureCircuits.assertSingleSignatureMaintainerThreshold(3n, 2n),
@@ -212,6 +241,8 @@ describe("trust registry contract", () => {
       Buffer.from(governancePolicyCommitment),
     );
     expect(state.maintainerThreshold).toEqual(1n);
+    expect(state.emergencyMaintainerThreshold).toEqual(1n);
+    expect(state.archivalMaintainerThreshold).toEqual(1n);
     expect(state.activeMaintainerCount).toEqual(1n);
     expect(state.governanceActionCount).toEqual(1n);
     expect(state.governanceEventHashes.member(state.lastGovernanceEventHash)).toBe(
@@ -551,7 +582,7 @@ describe("trust registry contract", () => {
         bootstrapMaintainer.maintainerId,
         suspendEvidenceHash,
       ),
-    ).toThrow(/violate the maintainer threshold/i);
+    ).toThrow(/threshold policy/i);
   });
 
   it("authorizes a signed maintainer action for the bootstrap maintainer", () => {
@@ -620,6 +651,492 @@ describe("trust registry contract", () => {
     expect(Buffer.from(state.lastAuthorizedMaintainerKeyId)).toEqual(
       Buffer.from(bootstrapMaintainer.keyId),
     );
+  });
+
+  it("updates quorum thresholds and enforces scoped multi-maintainer execution", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(15);
+    const secondMaintainer = createMaintainerMembershipFixture("second", 16);
+
+    const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const proposeMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_MAINTAINER_ACTION_KIND,
+      computeCreateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        secondMaintainer.maintainerDidCommitment,
+        secondMaintainer.keyId,
+        secondMaintainer.publicKey,
+        secondMaintainer.policyId,
+        secondMaintainer.trustLevel,
+        secondMaintainer.evidenceHash,
+      ),
+      proposeMaintainerSequence,
+    );
+    simulator.proposeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      proposeMaintainerSignature,
+      secondMaintainer.maintainerId,
+      secondMaintainer.maintainerDidCommitment,
+      secondMaintainer.keyId,
+      secondMaintainer.publicKey,
+      secondMaintainer.policyId,
+      secondMaintainer.trustLevel,
+      secondMaintainer.evidenceHash,
+    );
+
+    const authorizeMaintainerEvidenceHash = labelToBytes32(
+      "evidence:second:authorize",
+    );
+    const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const authorizeMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      AUTHORIZE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        simulator.getMaintainerMembership(secondMaintainer.maintainerId)
+          .lifecycleEventHash,
+        authorizeMaintainerEvidenceHash,
+      ),
+      authorizeMaintainerSequence,
+    );
+    simulator.authorizeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      authorizeMaintainerSignature,
+      secondMaintainer.maintainerId,
+      authorizeMaintainerEvidenceHash,
+    );
+
+    const activateMaintainerEvidenceHash = labelToBytes32(
+      "evidence:second:activate",
+    );
+    const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const activateMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ACTIVATE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        simulator.getMaintainerMembership(secondMaintainer.maintainerId)
+          .lifecycleEventHash,
+        activateMaintainerEvidenceHash,
+      ),
+      activateMaintainerSequence,
+    );
+    simulator.activateMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      activateMaintainerSignature,
+      secondMaintainer.maintainerId,
+      activateMaintainerEvidenceHash,
+    );
+
+    const invalidThresholdPolicySequence = simulator.getLedger().governanceActionCount;
+    const invalidThresholdPolicySignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(3n, 1n, 1n),
+      invalidThresholdPolicySequence,
+    );
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        invalidThresholdPolicySignature,
+        3n,
+        1n,
+        1n,
+      ),
+    ).toThrow(/may not exceed active maintainer count/i);
+
+    const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
+    const thresholdPolicyPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      2n,
+      1n,
+      2n,
+    );
+    const thresholdPolicySignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      thresholdPolicyPayloadHash,
+      thresholdPolicySequence,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      thresholdPolicySignature,
+      2n,
+      1n,
+      2n,
+    );
+
+    expect(simulator.getLedger().maintainerThreshold).toEqual(2n);
+    expect(simulator.getLedger().emergencyMaintainerThreshold).toEqual(1n);
+    expect(simulator.getLedger().archivalMaintainerThreshold).toEqual(2n);
+
+    const issuer = createIssuerAuthorizationFixture("quorum");
+    const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
+    const proposeIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      issuer.subjectDidCommitment,
+      issuer.resourceType,
+      issuer.resourceId,
+      issuer.policyId,
+      issuer.trustLevel,
+      proposedEvidenceHash,
+    );
+
+    const singleSignerSequence = simulator.getLedger().governanceActionCount;
+    const singleSignerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_ISSUER_ACTION_KIND,
+      proposeIssuerPayloadHash,
+      singleSignerSequence,
+    );
+    expect(() =>
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        singleSignerSignature,
+        issuer.authorizationId,
+        issuer.subjectDidCommitment,
+        issuer.resourceType,
+        issuer.resourceId,
+        issuer.policyId,
+        issuer.trustLevel,
+        proposedEvidenceHash,
+      ),
+    ).toThrow(/must satisfy the action threshold/i);
+
+    const proposeIssuerSequence = simulator.getLedger().governanceActionCount;
+    const proposeIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_ISSUER_ACTION_KIND,
+      proposeIssuerPayloadHash,
+      proposeIssuerSequence,
+    );
+    const secondIssuerProposer = createMaintainerCoAuthorizer(
+      secondMaintainer,
+      registryId,
+      PROPOSE_ISSUER_ACTION_KIND,
+      proposeIssuerPayloadHash,
+      proposeIssuerSequence,
+    );
+    simulator.proposeIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      proposeIssuerSignature,
+      issuer.authorizationId,
+      issuer.subjectDidCommitment,
+      issuer.resourceType,
+      issuer.resourceId,
+      issuer.policyId,
+      issuer.trustLevel,
+      proposedEvidenceHash,
+      [secondIssuerProposer],
+    );
+
+    const authorizeIssuerEvidenceHash = labelToBytes32(
+      "evidence:quorum:issuer:authorize",
+    );
+    const authorizeIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+      authorizeIssuerEvidenceHash,
+    );
+    const authorizeIssuerSequence = simulator.getLedger().governanceActionCount;
+    const authorizeIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      AUTHORIZE_ISSUER_ACTION_KIND,
+      authorizeIssuerPayloadHash,
+      authorizeIssuerSequence,
+    );
+    const secondIssuerAuthorizer = createMaintainerCoAuthorizer(
+      secondMaintainer,
+      registryId,
+      AUTHORIZE_ISSUER_ACTION_KIND,
+      authorizeIssuerPayloadHash,
+      authorizeIssuerSequence,
+    );
+    simulator.authorizeIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      authorizeIssuerSignature,
+      issuer.authorizationId,
+      authorizeIssuerEvidenceHash,
+      [secondIssuerAuthorizer],
+    );
+
+    const activateIssuerEvidenceHash = labelToBytes32(
+      "evidence:quorum:issuer:activate",
+    );
+    const activateIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+      activateIssuerEvidenceHash,
+    );
+    const activateIssuerSequence = simulator.getLedger().governanceActionCount;
+    const activateIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ACTIVATE_ISSUER_ACTION_KIND,
+      activateIssuerPayloadHash,
+      activateIssuerSequence,
+    );
+    const secondIssuerActivator = createMaintainerCoAuthorizer(
+      secondMaintainer,
+      registryId,
+      ACTIVATE_ISSUER_ACTION_KIND,
+      activateIssuerPayloadHash,
+      activateIssuerSequence,
+    );
+    simulator.activateIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      activateIssuerSignature,
+      issuer.authorizationId,
+      activateIssuerEvidenceHash,
+      [secondIssuerActivator],
+    );
+
+    const suspendedIssuerEvidenceHash = labelToBytes32(
+      "evidence:quorum:issuer:suspend",
+    );
+    const suspendIssuerSequence = simulator.getLedger().governanceActionCount;
+    const suspendIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      SUSPEND_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuer.authorizationId,
+        simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+        suspendedIssuerEvidenceHash,
+      ),
+      suspendIssuerSequence,
+    );
+    simulator.suspendIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      suspendIssuerSignature,
+      issuer.authorizationId,
+      suspendedIssuerEvidenceHash,
+    );
+
+    expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
+      AuthorizationStatus.suspended,
+    );
+
+    const archivedIssuerEvidenceHash = labelToBytes32(
+      "evidence:quorum:issuer:archive",
+    );
+    const archiveIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+      archivedIssuerEvidenceHash,
+    );
+    const archiveIssuerSequence = simulator.getLedger().governanceActionCount;
+    const archiveIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      archiveIssuerPayloadHash,
+      archiveIssuerSequence,
+    );
+    expect(() =>
+      simulator.archiveIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        archiveIssuerSignature,
+        issuer.authorizationId,
+        archivedIssuerEvidenceHash,
+      ),
+    ).toThrow(/must satisfy the action threshold/i);
+
+    const secondIssuerArchiver = createMaintainerCoAuthorizer(
+      secondMaintainer,
+      registryId,
+      ARCHIVE_ISSUER_ACTION_KIND,
+      archiveIssuerPayloadHash,
+      archiveIssuerSequence,
+    );
+    simulator.archiveIssuerAuthorization(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      archiveIssuerSignature,
+      issuer.authorizationId,
+      archivedIssuerEvidenceHash,
+      [secondIssuerArchiver],
+    );
+
+    expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
+      AuthorizationStatus.archived,
+    );
+  });
+
+  it("rejects duplicate maintainer signers in quorum execution", () => {
+    const {
+      simulator,
+      registryId,
+      bootstrapMaintainer,
+      bootstrapPublicKey,
+    } = createInitializedRegistryFixture(17);
+    const secondMaintainer = createMaintainerMembershipFixture("duplicate", 18);
+
+    const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const proposeMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_MAINTAINER_ACTION_KIND,
+      computeCreateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        secondMaintainer.maintainerDidCommitment,
+        secondMaintainer.keyId,
+        secondMaintainer.publicKey,
+        secondMaintainer.policyId,
+        secondMaintainer.trustLevel,
+        secondMaintainer.evidenceHash,
+      ),
+      proposeMaintainerSequence,
+    );
+    simulator.proposeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      proposeMaintainerSignature,
+      secondMaintainer.maintainerId,
+      secondMaintainer.maintainerDidCommitment,
+      secondMaintainer.keyId,
+      secondMaintainer.publicKey,
+      secondMaintainer.policyId,
+      secondMaintainer.trustLevel,
+      secondMaintainer.evidenceHash,
+    );
+
+    const authorizeMaintainerEvidenceHash = labelToBytes32(
+      "evidence:duplicate:authorize",
+    );
+    const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const authorizeMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      AUTHORIZE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        simulator.getMaintainerMembership(secondMaintainer.maintainerId)
+          .lifecycleEventHash,
+        authorizeMaintainerEvidenceHash,
+      ),
+      authorizeMaintainerSequence,
+    );
+    simulator.authorizeMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      authorizeMaintainerSignature,
+      secondMaintainer.maintainerId,
+      authorizeMaintainerEvidenceHash,
+    );
+
+    const activateMaintainerEvidenceHash = labelToBytes32(
+      "evidence:duplicate:activate",
+    );
+    const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
+    const activateMaintainerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      ACTIVATE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        secondMaintainer.maintainerId,
+        simulator.getMaintainerMembership(secondMaintainer.maintainerId)
+          .lifecycleEventHash,
+        activateMaintainerEvidenceHash,
+      ),
+      activateMaintainerSequence,
+    );
+    simulator.activateMaintainerMembership(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      activateMaintainerSignature,
+      secondMaintainer.maintainerId,
+      activateMaintainerEvidenceHash,
+    );
+
+    const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
+    const thresholdPolicySignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(2n, 1n, 1n),
+      thresholdPolicySequence,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      thresholdPolicySignature,
+      2n,
+      1n,
+      1n,
+    );
+
+    const issuer = createIssuerAuthorizationFixture("duplicate-quorum");
+    const proposedEvidenceHash = labelToBytes32(
+      "evidence:duplicate:issuer:propose",
+    );
+    const proposeIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
+      issuer.authorizationId,
+      issuer.subjectDidCommitment,
+      issuer.resourceType,
+      issuer.resourceId,
+      issuer.policyId,
+      issuer.trustLevel,
+      proposedEvidenceHash,
+    );
+    const proposeIssuerSequence = simulator.getLedger().governanceActionCount;
+    const proposeIssuerSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      PROPOSE_ISSUER_ACTION_KIND,
+      proposeIssuerPayloadHash,
+      proposeIssuerSequence,
+    );
+    const duplicateBootstrapAuthorizer: MaintainerCoAuthorizer = {
+      keyId: bootstrapMaintainer.keyId,
+      publicKey: bootstrapPublicKey,
+      signature: signMaintainerActionFromSeed(
+        bootstrapMaintainer.seed,
+        registryId,
+        PROPOSE_ISSUER_ACTION_KIND,
+        proposeIssuerPayloadHash,
+        proposeIssuerSequence,
+      ),
+    };
+
+    expect(() =>
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        proposeIssuerSignature,
+        issuer.authorizationId,
+        issuer.subjectDidCommitment,
+        issuer.resourceType,
+        issuer.resourceId,
+        issuer.policyId,
+        issuer.trustLevel,
+        proposedEvidenceHash,
+        [duplicateBootstrapAuthorizer],
+      ),
+    ).toThrow(/must not contain duplicates/i);
   });
 
   it("rejects maintainer actions before initialization and rejects tampered authorization", () => {
