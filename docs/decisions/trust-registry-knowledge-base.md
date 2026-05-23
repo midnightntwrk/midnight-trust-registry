@@ -336,6 +336,12 @@ Current stacked base branch:
 - open stack currently spans:
   - `#12` through `#21`
   - `TR-023` through `TR-029`
+- `2026-05-23` expedite status:
+  - `#12` is green and merge-clean
+  - `CI / light` reruns were dispatched for `#13` through `#21` after
+    confirming the cancelled runs matched the current branch heads
+  - `Docs` and `Scan` remain green across the active stack while the rerun
+    `light` jobs settle
 
 Merged baseline now on `origin/develop`:
 
