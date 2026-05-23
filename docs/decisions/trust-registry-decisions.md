@@ -1,6 +1,6 @@
 # Trust Registry Decisions
 
-Date: 2026-05-21
+Date: 2026-05-23
 
 ## Current Decisions
 
@@ -28,6 +28,11 @@ Date: 2026-05-21
 - For the first client slice, add a dedicated `packages/trust-registry-client` workspace instead of embedding client helpers into the integration harness.
 - Keep the first client slice evidence-first: verify published epoch roots, maintainer signatures, and bundle scope expectations directly from canonical contract records before adding higher-level transport adapters.
 - Keep the first client implementation simulator-backed so current and historical query semantics stabilize before DID- and VC-runtime dependencies are added.
+- For the first `TR-029` slice, derive timestamp-based trust answers from the explicit lifecycle timestamps already present on authorization, recognition, and epoch records instead of introducing a second history store.
+- Expose timestamp evaluation through client helpers first, then wrap those helpers in snapshot/CLI and HTTP evaluation surfaces.
+- For the second `TR-029` slice, export statement evidence as `merkle-inclusion` bundles anchored to `epoch.stateRoot` with canonical full-record leaf hashes and `epoch.eventRoot` as the first sibling path element; keep the Compact contract unchanged.
+- For the second `TR-029` slice, keep policy anchoring minimal and explicit: `epoch.policyRoot` continues to bind the active `policyId`, and client verification must reject bundles whose embedded policy no longer matches that commitment.
+- For the second `TR-029` slice, define canonical bundle hashing by the shared TypeScript domain helpers in this repository. Cross-language canonical JSON compatibility is deferred until TR needs non-Node evidence producers or verifiers.
 - For the first DID-backed integration slice, sync the official `@midnight-ntwrk/midnight-did`, `@midnight-ntwrk/midnight-did-domain`, and `@midnight-ntwrk/midnight-did-contract` packages into `libs/` instead of depending on sibling-repo paths at runtime.
 - Use official `midnight-did` helpers to construct fixture `did:midnight` identifiers and `MidnightDIDResolver` to resolve bundle subject DIDs from fixture ledger state; do not duplicate DID parsing or resolution logic inside TR tests.
 - For the first VC-backed integration slice, sync the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages into `libs/` instead of modeling VC status evidence locally inside TR.
@@ -48,6 +53,18 @@ Date: 2026-05-21
 - For `TR-026`, implement mutable CLI state as an append-only operator workspace journal plus a derived snapshot. Do not persist or mutate raw simulator state directly on disk.
 - For `TR-026`, scope the first mutable CLI workflows to issuer, verifier, and recognition actions plus registry epoch publication. Defer mutable auditor, maintainer, and threshold-governance commands to later slices.
 - Accept replay-first workspace performance for `TR-026`: every mutable CLI command may rebuild the simulator and derived snapshot from the full journal. Favor auditability and deterministic reconstruction now; optimize compaction or incremental replay only if real operator usage makes the local workflow too slow.
+- Implement the first REST query slice as a dedicated `packages/trust-registry-api` workspace instead of extending the CLI package into an ad hoc HTTP entrypoint.
+- Keep the first REST query slice read-only and file-backed: serve native registry/epoch/authorization/recognition/evidence routes plus TRQP-compatible routes from saved snapshots or mutable operator workspaces; defer applicant submission and maintainer approval endpoints to the second `TR-027` slice.
+- Keep the second REST API slice workspace-backed only for mutation: applicant submission, maintainer lifecycle actions, and epoch publication may write only through a mutable operator workspace source, never through snapshot or in-memory modes.
+- Keep the second REST API slice thin over the CLI workspace journal: the API translates HTTP requests into existing submit/approve/activate/suspend/revoke/archive/publish operations instead of inventing a parallel server-side state machine.
+- Keep second-slice mutation failures structured at the HTTP boundary: invalid path parameters, duplicate submissions, and unknown governed ids should surface as stable 400/404/409 problem-details responses instead of leaking raw workspace exceptions.
+- Keep second-slice workspace writes serialized per process and per workspace source. This remains a local-operator guardrail, not a cross-process locking guarantee for multi-writer deployments.
+- Keep the first admin console slice static and local-first: a dedicated workspace under `packages/trust-registry-admin-console` should consume the existing API over loopback instead of introducing SSR, a separate backend, or persisted frontend state.
+- Keep the first admin console slice maintainer-only: it should cover review, lifecycle actions, and epoch publication, while applicant submission and public inspection remain in the later portal slice.
+- Keep the first applicant portal slice static and local-first in its own workspace under `packages/trust-registry-applicant-portal`; consume the same loopback API rather than creating a second service tier.
+- Keep the first applicant portal slice narrow: application submission plus public active-registry inspection only. Maintainer review and lifecycle actions remain in the admin console.
+- Keep the applicant portal package API-scoped: import public response types from `@midnight-ntwrk/trust-registry-api` instead of reaching into CLI snapshot types directly.
+- Treat `?apiBase=` as a session-only local override in the applicant portal; do not silently replace the saved default URL in browser storage.
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
 - Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
 - Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.

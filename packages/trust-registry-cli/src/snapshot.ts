@@ -1,6 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+  selectAuthorizationEntryAtTime,
+  selectEpochCommitmentAtTime,
+  selectRecognitionEntryAtTime,
+  type AuthorizationTemporalEvaluation,
+  type RecognitionTemporalEvaluation,
+} from "@midnight-ntwrk/trust-registry-client";
 import type {
   AuthorizationRecord,
   EpochCommitment,
@@ -119,6 +128,133 @@ export const findEpoch = (
   }
 
   return entry;
+};
+
+export type SnapshotTemporalAuthorizationInspection =
+  AuthorizationTemporalEvaluation & {
+    entry: TrustRegistryAuthorizationSnapshotEntry;
+    epoch: EpochCommitment | null;
+  };
+
+export type SnapshotTemporalRecognitionInspection =
+  RecognitionTemporalEvaluation & {
+    entry: TrustRegistryRecognitionSnapshotEntry;
+    epoch: EpochCommitment | null;
+  };
+
+export type SnapshotTemporalEpochInspection = {
+  evaluatedAt: string;
+  epoch: EpochCommitment | null;
+};
+
+export const findEpochAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+): EpochCommitment | null =>
+  selectEpochCommitmentAtTime(snapshot.epochs, evaluatedAt);
+
+export const inspectIssuerEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  authorizationId: string,
+  evaluatedAt: string,
+): SnapshotTemporalAuthorizationInspection => {
+  const entry = findIssuerEntry(snapshot, authorizationId);
+  return {
+    entry,
+    epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+    ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+  };
+};
+
+export const inspectVerifierEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  authorizationId: string,
+  evaluatedAt: string,
+): SnapshotTemporalAuthorizationInspection => {
+  const entry = findVerifierEntry(snapshot, authorizationId);
+  return {
+    entry,
+    epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+    ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+  };
+};
+
+export const inspectRecognitionEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  recognitionId: string,
+  evaluatedAt: string,
+): SnapshotTemporalRecognitionInspection => {
+  const entry = findRecognitionEntry(snapshot, recognitionId);
+  return {
+    entry,
+    epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+    ...evaluateRecognitionRecordAtTime(entry.recognition, evaluatedAt),
+  };
+};
+
+export const inspectEpochAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+): SnapshotTemporalEpochInspection => ({
+  evaluatedAt,
+  epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+});
+
+export const resolveIssuerEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+  predicate: (entry: TrustRegistryAuthorizationSnapshotEntry) => boolean,
+): SnapshotTemporalAuthorizationInspection | null => {
+  const entry = selectAuthorizationEntryAtTime(
+    snapshot.issuerEntries,
+    evaluatedAt,
+    predicate,
+  );
+  return entry === null
+    ? null
+    : {
+        entry,
+        epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+        ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+      };
+};
+
+export const resolveVerifierEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+  predicate: (entry: TrustRegistryAuthorizationSnapshotEntry) => boolean,
+): SnapshotTemporalAuthorizationInspection | null => {
+  const entry = selectAuthorizationEntryAtTime(
+    snapshot.verifierEntries,
+    evaluatedAt,
+    predicate,
+  );
+  return entry === null
+    ? null
+    : {
+        entry,
+        epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+        ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+      };
+};
+
+export const resolveRecognitionEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+  predicate: (entry: TrustRegistryRecognitionSnapshotEntry) => boolean,
+): SnapshotTemporalRecognitionInspection | null => {
+  const entry = selectRecognitionEntryAtTime(
+    snapshot.recognitionEntries,
+    evaluatedAt,
+    predicate,
+  );
+  return entry === null
+    ? null
+    : {
+        entry,
+        epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+        ...evaluateRecognitionRecordAtTime(entry.recognition, evaluatedAt),
+      };
 };
 
 export const exportEvidenceBundle = (
