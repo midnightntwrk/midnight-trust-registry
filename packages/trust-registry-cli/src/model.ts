@@ -16,6 +16,15 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 const SnapshotEntryLabelSchema = z.string().trim().min(1);
+const WorkspaceTargetIdSchema = z.string().trim().min(1);
+
+export const MutableSnapshotTargetSchema = z.enum([
+  "issuer",
+  "verifier",
+  "recognition",
+]);
+
+export type MutableSnapshotTarget = z.infer<typeof MutableSnapshotTargetSchema>;
 
 export const TrustRegistryAuthorizationSnapshotEntrySchema = z.object({
   label: SnapshotEntryLabelSchema,
@@ -37,6 +46,50 @@ export type TrustRegistryRecognitionSnapshotEntry = z.infer<
   typeof TrustRegistryRecognitionSnapshotEntrySchema
 >;
 
+export const TrustRegistryOperatorWorkspaceOperationSchema = z.discriminatedUnion(
+  "operation",
+  [
+    z.object({
+      operation: z.literal("submit"),
+      target: MutableSnapshotTargetSchema,
+      label: SnapshotEntryLabelSchema,
+    }),
+    z.object({
+      operation: z.literal("approve"),
+      target: MutableSnapshotTargetSchema,
+      id: WorkspaceTargetIdSchema,
+    }),
+    z.object({
+      operation: z.literal("activate"),
+      target: MutableSnapshotTargetSchema,
+      id: WorkspaceTargetIdSchema,
+    }),
+    z.object({
+      operation: z.literal("suspend"),
+      target: MutableSnapshotTargetSchema,
+      id: WorkspaceTargetIdSchema,
+    }),
+    z.object({
+      operation: z.literal("revoke"),
+      target: MutableSnapshotTargetSchema,
+      id: WorkspaceTargetIdSchema,
+    }),
+    z.object({
+      operation: z.literal("archive"),
+      target: MutableSnapshotTargetSchema,
+      id: WorkspaceTargetIdSchema,
+    }),
+    z.object({
+      operation: z.literal("publish-epoch"),
+      label: SnapshotEntryLabelSchema.optional(),
+    }),
+  ],
+);
+
+export type TrustRegistryOperatorWorkspaceOperation = z.infer<
+  typeof TrustRegistryOperatorWorkspaceOperationSchema
+>;
+
 export const TrustRegistryOperatorSnapshotSchema = z.object({
   snapshotVersion: z.literal("1"),
   generatedAt: z.string().datetime({ offset: true }),
@@ -53,6 +106,18 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
 
 export type TrustRegistryOperatorSnapshot = z.infer<
   typeof TrustRegistryOperatorSnapshotSchema
+>;
+
+export const TrustRegistryOperatorWorkspaceSchema = z.object({
+  workspaceVersion: z.literal("1"),
+  updatedAt: z.string().datetime({ offset: true }),
+  registryLabel: SnapshotEntryLabelSchema,
+  operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),
+  snapshot: TrustRegistryOperatorSnapshotSchema,
+});
+
+export type TrustRegistryOperatorWorkspace = z.infer<
+  typeof TrustRegistryOperatorWorkspaceSchema
 >;
 
 export type TrustRegistrySummary = {

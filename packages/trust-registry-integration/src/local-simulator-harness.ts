@@ -45,6 +45,10 @@ import {
   type GovernancePolicyRecord,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
+  computeAuthorizationStatementLeafHash,
+  computeRecognitionStatementLeafHash,
+  computeRegistryStatementLeafHash,
+  computeSingleStatementStateRoot,
   createScopedIdentifier,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -164,27 +168,6 @@ const contractStatusName = (
 
   return assertUnreachable(status);
 };
-
-const bundleLeafHash = (authorization: AuthorizationRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      authorizationId: authorization.authorizationId,
-      status: authorization.status,
-      subjectDid: authorization.subjectDid,
-      resourceId: authorization.resourceId,
-    }),
-  );
-
-const recognitionLeafHash = (recognition: RecognitionRecord): string =>
-  sha256Hex(
-    JSON.stringify({
-      recognitionId: recognition.recognitionId,
-      status: recognition.status,
-      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
-      recognizedRegistryId: recognition.recognizedRegistryId,
-      scope: recognition.scope,
-    }),
-  );
 
 export class LocalTrustRegistryIntegrationHarness {
   readonly simulator: TrustRegistrySimulator;
@@ -1158,6 +1141,14 @@ export class LocalTrustRegistryIntegrationHarness {
     return bundle;
   }
 
+  readIssuerAuthorizationStatus(
+    fixture: IssuerScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
+    );
+  }
+
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
@@ -1188,6 +1179,14 @@ export class LocalTrustRegistryIntegrationHarness {
     const bundle = this.buildVerifierHistoricalEvidence(fixture);
     this.assertPublishedEpochEvidence(bundle);
     return bundle;
+  }
+
+  readVerifierAuthorizationStatus(
+    fixture: VerifierScenarioFixture,
+  ): AuthorizationRecord["status"] {
+    return contractStatusName(
+      this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
+    );
   }
 
   buildVerifierHistoricalEvidence(
@@ -1322,6 +1321,14 @@ export class LocalTrustRegistryIntegrationHarness {
       lastStatusSequence: record.lastStatusSequence,
       recognition,
     });
+  }
+
+  readRecognitionStatus(
+    fixture: RecognitionScenarioFixture,
+  ): RecognitionRecord["status"] {
+    return contractStatusName(
+      this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
+    );
   }
 
   buildAuditorHistoricalEvidence(
@@ -1743,6 +1750,7 @@ export class LocalTrustRegistryIntegrationHarness {
 
   private ensurePublishedEpochCommitment(input: {
     statementId: string;
+    statementLeafHash: string;
     lastStatusSequence: bigint;
     lifecycleEventRoot: string;
     statementStatus: string;
@@ -1755,13 +1763,9 @@ export class LocalTrustRegistryIntegrationHarness {
     const epochIdCommitment = bytes32Commitment(epochId);
     const epochValidFromSequence = input.lastStatusSequence;
     const epochValidUntilSequence = input.lastStatusSequence + 60n;
-    const stateRoot = sha256Hex(
-      JSON.stringify({
-        registryId: this.registryId,
-        statementId: input.statementId,
-        status: input.statementStatus,
-        lifecycleEventRoot: input.lifecycleEventRoot,
-      }),
+    const stateRoot = computeSingleStatementStateRoot(
+      input.statementLeafHash,
+      input.lifecycleEventRoot,
     );
     const eventRoot = input.lifecycleEventRoot;
     const policyRoot = bytes32Hex(this.governancePolicyCommitment);
@@ -1821,6 +1825,22 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEpochCommitment(epochId, record);
   }
 
+  publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
+    return this.ensurePublishedEpochCommitment({
+      statementId,
+      statementLeafHash: computeRegistryStatementLeafHash({
+        registryId: this.registryId,
+        statementId,
+        statementStatus: this.registryRecord.status,
+        lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      }),
+      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      statementStatus: this.registryRecord.status,
+    });
+  }
+
   private buildEpochCommitment(
     epochId: string,
     record: ContractEpochCommitmentRecord,
@@ -1863,8 +1883,13 @@ export class LocalTrustRegistryIntegrationHarness {
     const lifecycleEventRoot =
       input.authorization?.lifecycleEventRoot
       ?? input.recognition?.lifecycleEventRoot;
+    const leafHash =
+      input.authorization !== undefined
+        ? computeAuthorizationStatementLeafHash(input.authorization)
+        : computeRecognitionStatementLeafHash(input.recognition!);
     const epoch = this.ensurePublishedEpochCommitment({
       statementId: bundleSubjectId ?? "missing",
+      statementLeafHash: leafHash,
       lastStatusSequence: input.lastStatusSequence,
       lifecycleEventRoot: lifecycleEventRoot ?? sha256Hex("missing"),
       statementStatus: statementStatus ?? "unknown",
@@ -1882,13 +1907,10 @@ export class LocalTrustRegistryIntegrationHarness {
       policy: this.policyRecordValue,
       epoch,
       inclusionProof: {
-        proofType: "signed-statement",
-        root: epoch.eventRoot,
-        leafHash:
-          input.authorization !== undefined
-            ? bundleLeafHash(input.authorization)
-            : recognitionLeafHash(input.recognition!),
-        path: [epoch.stateRoot],
+        proofType: "merkle-inclusion",
+        root: epoch.stateRoot,
+        leafHash,
+        path: [epoch.eventRoot],
         leafIndex: 0,
       },
       ...(input.authorization !== undefined
