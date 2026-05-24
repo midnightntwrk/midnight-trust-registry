@@ -20,6 +20,17 @@ Use this skill from `midnight-trust-registry` when shaping the trust-registry wo
 - Keep changes documentation-first until the package or contract slice has explicit validation.
 - Run `./scripts/check-docs.sh` for docs-only changes.
 
+## PR Gate (required before any PR)
+
+- Required workspace gate:
+  - `cd <workspace-root>/midnight-identity-workspace && ./run.sh --light --repos trust-registry`
+  - `cd <workspace-root>/midnight-identity-workspace && ./run.sh --light --strict --repos did`
+- Repo-local minimum:
+  - `./run.sh --light`
+  - `./run.sh core`
+  - `./run.sh lint`
+- Do not open PRs until this gate passes.
+
 ## MCP
 
 Use the Midnight MCP server as a helper for Compact/TypeScript package inspection in neighboring DID/VC repos, but do not commit personal MCP config.
