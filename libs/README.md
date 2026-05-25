@@ -10,6 +10,11 @@ Current rule:
 - refresh tarballs only through the workspace-root sync wrapper
 - keep package manifests pointed at tarballs, not copied source trees
 
+Layout:
+
+- DID tarballs live under `libs/midnight-did/`
+- VC tarballs live under `tooling/vendor/midnight-verifiable-credentials/`
+
 Refresh from the workspace root with:
 
 ```bash

@@ -1,6 +1,7 @@
 pragma language_version >= 0.20;
 
 import CompactStandardLibrary;
+// Resolved through the root workspace install from the local package tarball.
 import "../../../node_modules/@midnight-ntwrk/midnight-did-jubjub-schnorr/dist/schnorr" prefix Schnorr_;
 
 export enum MaintainerStatus {
