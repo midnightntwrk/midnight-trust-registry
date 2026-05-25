@@ -1,20 +1,18 @@
-# Vendored Identity Libraries
+# Local Identity Package Tarballs
 
-This directory contains the local copies of external Midnight identity package
-sources that `midnight-trust-registry` depends on directly.
+This directory contains packed external Midnight identity packages that
+`midnight-trust-registry` depends on locally until those packages are published.
 
 Current rule:
 
-- sync only the packages required by the TR workspace manifests
-- group synced packages by source repo:
-  - `libs/midnight-did/...`
-  - `libs/midnight-verifiable-credentials/...`
-- commit the synced package sources and built `dist/` outputs required for local
-  installs and CI
-- import Compact sources from `libs/` instead of from `node_modules/`
+- do not vendor source directories from other `midnight-*` repositories
+- keep cross-repository dependencies as `.tgz` package artifacts
+- refresh tarballs only through the workspace-root sync wrapper
+- keep package manifests pointed at tarballs, not copied source trees
 
-Refresh from the sibling repos with:
+Refresh from the workspace root with:
 
 ```bash
-./upgrade-libs.sh --destination .
+./scripts/sync-package-tarballs.sh --source did --destination midnight-trust-registry
+./scripts/sync-package-tarballs.sh --source vc --destination midnight-trust-registry
 ```

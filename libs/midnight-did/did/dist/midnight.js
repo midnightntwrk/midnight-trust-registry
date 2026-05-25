@@ -1,2 +1,0 @@
-export { createMidnightDIDString, MidnightDIDSchema, MidnightNetwork, parseContractAddress, parseMidnightDID, parseMidnightDIDString, } from "@midnight-ntwrk/midnight-did-domain/midnight";
-//# sourceMappingURL=midnight.js.map
