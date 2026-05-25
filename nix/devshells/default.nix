@@ -12,9 +12,6 @@
           self'.packages.compact-midnight
         ];
 
-        shellHook = ''
-          export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
-        '';
       };
     };
 }
