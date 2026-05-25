@@ -8,6 +8,8 @@ This repository can be cloned independently or as a submodule of `midnight-ident
 
 `midnight-trust-registry` owns Midnight trust policy, registry governance, issuer/verifier authorization, external authority recognition, and historical evidence surfaces. It exists to integrate with DID and VC packages without taking over their responsibilities.
 
+You can use `nix develop` from this repo to get the workspace baseline toolchain.
+
 ## Repository Boundary
 
 Use this repository for:
