@@ -38,16 +38,14 @@ Completed in the current implementation wave:
   - `contracts/trust-registry`
 - DID-backed JubJub Schnorr dependency from:
   - `midnight-did`
-  - synced into `libs/midnight-did/jubjub-schnorr/`
-- local identity dependency refresh helper:
-  - `./upgrade-libs.sh --destination .`
-- manifest-driven identity dependency sync:
-  - reads TR workspace package manifests
-  - syncs only mapped local packages required from `midnight-did` or
-    `midnight-verifiable-credentials`
-  - resolves current sibling source workspaces from `packages/...` paths
-  - falls back to existing compiled sibling `dist/` artifacts when a rebuild
-    fails but reusable outputs already exist
+  - consumed from `libs/midnight-did/*.tgz`
+- VC-backed integration dependencies from:
+  - `midnight-verifiable-credentials`
+  - consumed from `tooling/vendor/midnight-verifiable-credentials/*.tgz`
+- identity dependency refresh:
+  - run only from the root `midnight-identity-workspace` repository
+  - `./scripts/sync-package-tarballs.sh --source did --destination midnight-trust-registry`
+  - `./scripts/sync-package-tarballs.sh --source vc --destination midnight-trust-registry`
   - current required packages:
     - `@midnight-ntwrk/midnight-did`
     - `@midnight-ntwrk/midnight-did-contract`
@@ -361,7 +359,6 @@ Current required local gate for code-bearing TR changes:
 
 ```bash
 npm install
-./upgrade-libs.sh --destination .
 ./run.sh --light
 ./run.sh integration
 git diff --check

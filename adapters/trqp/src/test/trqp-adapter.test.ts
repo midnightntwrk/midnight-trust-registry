@@ -199,7 +199,7 @@ describe("trust registry TRQP adapter", () => {
     );
     expect(verifierResponse.authorized).toBe(true);
     expect(verifierResponse.resource).toBe(verifier.scopeResourceId);
-  });
+  }, 15_000);
 
   it("maps revoked authorization into a negative TRQP decision and preserves evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();

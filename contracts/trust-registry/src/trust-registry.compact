@@ -1,7 +1,8 @@
 pragma language_version >= 0.20;
 
 import CompactStandardLibrary;
-import "../../../libs/midnight-did/jubjub-schnorr/src/schnorr" prefix Schnorr_;
+// Resolved through the root workspace install from the local package tarball.
+import "../../../node_modules/@midnight-ntwrk/midnight-did-jubjub-schnorr/dist/schnorr" prefix Schnorr_;
 
 export enum MaintainerStatus {
   active,
