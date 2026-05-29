@@ -14,7 +14,7 @@ esac
 
 run_common_ensure_node
 
-if [[ "${RUN_COMMON_TARGET_KIND}" == "npm-script" ]]; then
+if [[ "${RUN_COMMON_TARGET_KIND}" == "package-script" ]]; then
   run_common_run_root_script
   exit 0
 fi
@@ -22,53 +22,53 @@ fi
 case "${RUN_COMMON_TARGET}" in
   full)
     if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
-      npm run ci:build:light
+      pnpm run ci:build:light
     else
-      npm run ci:build
+      pnpm run ci:build
     fi
     ;;
   core)
     if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
-      npm run ci:build:light
+      pnpm run ci:build:light
     else
-      npm run ci:build
+      pnpm run ci:build
     fi
     ;;
   docs)
-    npm run docs-check
+    pnpm run docs-check
     ;;
   lint)
-    npm run ci:lint
+    pnpm run ci:lint
     ;;
   typecheck)
     if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
-      npm run typecheck:light
+      pnpm run typecheck:light
     else
-      npm run typecheck
+      pnpm run typecheck
     fi
     ;;
   build)
     if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
-      npm run build:light
+      pnpm run build:light
     else
-      npm run build
+      pnpm run build
     fi
     ;;
   test)
     if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
-      npm run test:light
+      pnpm run test:light
     else
-      npm run test
+      pnpm run test
     fi
     ;;
   clean)
-    npm run clean
+    pnpm run clean
     ;;
   clean-artifacts)
-    npm run clean:artifacts
+    pnpm run clean:artifacts
     ;;
   integration)
-    npm run integration
+    pnpm run integration
     ;;
   *)
     echo "[run] Unknown target: ${RUN_COMMON_TARGET}" >&2

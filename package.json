@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "npm@11.9.0",
+  "packageManager": "pnpm@10.23.0",
   "engines": {
     "node": ">=24",
-    "npm": ">=11"
+    "pnpm": ">=10"
   },
   "workspaces": [
     "contracts/*",
@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "clean": "turbo run clean --continue",
-    "clean:artifacts": "npm run clean",
+    "clean:artifacts": "pnpm run clean",
     "docs-check": "./scripts/check-docs.sh",
     "integration": "turbo run integration --continue",
     "lint": "turbo run lint --continue",
@@ -25,26 +25,28 @@
     "build:light": "turbo run build:light --continue",
     "test": "turbo run test --continue",
     "test:light": "turbo run test:light --continue",
-    "ci:integration": "npm run integration",
-    "ci:lint": "npm run docs-check && npm run lint",
-    "ci:build:light": "npm run ci:lint && npm run build:light && npm run typecheck:light && npm run test:light",
-    "ci:build": "npm run ci:build:light"
+    "ci:integration": "pnpm run integration",
+    "ci:lint": "pnpm run docs-check && pnpm run lint",
+    "ci:build:light": "pnpm run ci:lint && pnpm run build:light && pnpm run typecheck:light && pnpm run test:light",
+    "ci:build": "pnpm run ci:build:light"
   },
   "dependencies": {
-    "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.1.0.tgz",
+    "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.4.0.tgz",
+    "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.4.0.tgz",
     "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
     "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.1.0.tgz"
+    "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.4.0.tgz",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
   },
-  "overrides": {
-    "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.1.0.tgz"
+  "pnpm": {
+    "overrides": {
+      "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.4.0.tgz",
+      "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.4.0.tgz",
+      "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
+      "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
+      "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.4.0.tgz",
+      "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",

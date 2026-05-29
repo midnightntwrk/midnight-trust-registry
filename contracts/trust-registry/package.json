@@ -6,7 +6,7 @@
   "type": "module",
   "engines": {
     "node": ">=24",
-    "npm": ">=11"
+    "pnpm": ">=10"
   },
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -59,25 +59,25 @@
     }
   },
   "scripts": {
-    "contract": "npm run compact",
+    "contract": "pnpm run compact",
     "compact": "compact compile src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
     "test": "vitest run",
-    "pretest:ci": "npm run compact",
+    "pretest:ci": "pnpm run compact",
     "test:ci": "vitest run",
-    "prepack": "npm run build",
+    "prepack": "pnpm run build",
     "clean": "rm -rf dist && rm -rf coverage && rm -rf reports && rm -rf src/managed && rm -f tsconfig.build.tsbuildinfo",
-    "build": "npm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
+    "build": "pnpm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
     "lint": "eslint src --ext .ts --ignore-pattern 'src/managed/**'",
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "all": "npm run compact && npm run build && npm run test:ci",
+    "all": "pnpm run compact && pnpm run build && pnpm run test:ci",
     "compact:light": "compact compile --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
-    "build:light": "npm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
-    "test:light": "npm run test"
+    "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
+    "test:light": "pnpm run test"
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "^0.15.0",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.1.0.tgz"
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
   },
   "files": [
     "dist/**",

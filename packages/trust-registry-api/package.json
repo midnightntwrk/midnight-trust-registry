@@ -33,13 +33,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "build:light": "npm run build",
+    "build:light": "pnpm run build",
     "test:light": "vitest run --testTimeout 30000"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-cli": "0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "0.1.0",
-    "@midnight-ntwrk/trust-registry-trqp-adapter": "0.1.0",
+    "@midnight-ntwrk/trust-registry-cli": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
     "zod": "^4.1.0"
   }
 }
