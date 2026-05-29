@@ -23,7 +23,7 @@ node packages/trust-registry-api/bin/trust-registry-api.mjs serve \
   --workspace ./artifacts/trust-registry/workspace.json \
   --port 4400
 
-npm run serve -w @midnight-ntwrk/trust-registry-admin-console -- --port 4173
+pnpm run serve -w @midnight-ntwrk/trust-registry-admin-console -- --port 4173
 ```
 
 Open:

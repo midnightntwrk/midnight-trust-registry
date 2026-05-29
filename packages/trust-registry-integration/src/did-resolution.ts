@@ -33,6 +33,8 @@ const makeIterablePairs = <K, V>(
 });
 
 const bytesFromHex = (hex: string): Uint8Array => Buffer.from(hex, "hex");
+const fixtureJubjubX = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const fixtureJubjubY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 export type MidnightDidLedgerFixture = {
   did: string;
@@ -85,14 +87,15 @@ export const createMidnightDidLedgerFixture = (
         {
           typ: 1,
           publicKeyJwk: {
-            kty: 3,
-            crv: 0,
-            x: 1n,
-            y: 0n,
+            kty: 0,
+            crv: 2,
+            x: fixtureJubjubX,
+            y: fixtureJubjubY,
           },
         },
       ],
     ]),
+    schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>([]),
     authenticationRelation: makeIterable<string>([verificationMethodId]),
     assertionMethodRelation: makeIterable<string>([]),
     keyAgreementRelation: makeIterable<string>([]),

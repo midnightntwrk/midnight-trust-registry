@@ -1,21 +1,16 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const contractRoot = path.resolve(scriptDir, "..");
-const repoRoot = path.resolve(contractRoot, "..", "..");
+const require = createRequire(import.meta.url);
+const runtimePackageJson = require.resolve(
+  "@midnight-ntwrk/compact-runtime/package.json",
+);
 const runtimePackage = JSON.parse(
-  await readFile(
-    path.join(
-      repoRoot,
-      "node_modules",
-      "@midnight-ntwrk",
-      "compact-runtime",
-      "package.json",
-    ),
-    "utf8",
-  ),
+  await readFile(runtimePackageJson, "utf8"),
 );
 const runtimeVersion = runtimePackage.version;
 const targetFile = path.join(
@@ -48,10 +43,12 @@ if (next !== source) {
 }
 
 const typesSource = await readFile(targetTypesFile, "utf8");
-const nextTypes = typesSource.replace(
-  /(\s+impureCircuits: ImpureCircuits<PS>;\n)/,
-  `$1  provableCircuits: ImpureCircuits<PS>;\n`,
-);
+const nextTypes = typesSource.includes("provableCircuits:")
+  ? typesSource
+  : typesSource.replace(
+      /(\s+impureCircuits: ImpureCircuits<PS>;\n)/,
+      `$1  provableCircuits: ImpureCircuits<PS>;\n`,
+    );
 if (nextTypes !== typesSource) {
   await writeFile(targetTypesFile, nextTypes, "utf8");
 }

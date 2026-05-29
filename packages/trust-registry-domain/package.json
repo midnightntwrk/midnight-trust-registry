@@ -21,10 +21,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "build:light": "npm run build",
-    "test:light": "npm run test"
+    "build:light": "pnpm run build",
+    "test:light": "pnpm run test"
   },
   "dependencies": {
+    "@noble/hashes": "^2.2.0",
     "zod": "^4.1.0"
   }
 }

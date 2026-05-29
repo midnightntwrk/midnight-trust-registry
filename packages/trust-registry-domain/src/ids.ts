@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { z } from "zod";
 
@@ -34,9 +35,8 @@ export function createScopedIdentifier(
 }
 
 export function sha256Hex(input: string | Uint8Array): string {
-  const hash = createHash("sha256");
-  hash.update(input);
-  return `0x${hash.digest("hex")}`;
+  const bytes = typeof input === "string" ? utf8ToBytes(input) : input;
+  return `0x${bytesToHex(sha256(bytes))}`;
 }
 
 function normalizeIdentifierPart(value: string, label: string): string {
@@ -57,4 +57,3 @@ function normalizeIdentifierPart(value: string, label: string): string {
 
   return normalized;
 }
-

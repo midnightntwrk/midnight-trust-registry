@@ -97,7 +97,7 @@ just check
 Current code baseline:
 
 ```bash
-npm ci
+pnpm install --frozen-lockfile
 ./run.sh --light
 ```
 

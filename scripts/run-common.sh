@@ -39,7 +39,7 @@ run_common_parse_args() {
       shift
     elif [[ "$1" != -* ]] && run_common_root_script_exists "$1"; then
       RUN_COMMON_TARGET="$1"
-      RUN_COMMON_TARGET_KIND="npm-script"
+      RUN_COMMON_TARGET_KIND="package-script"
       shift
     fi
   fi
@@ -71,8 +71,8 @@ run_common_ensure_node() {
     exit 1
   fi
 
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "[run] npm is required" >&2
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "[run] pnpm is required" >&2
     exit 1
   fi
 }
@@ -81,7 +81,7 @@ run_common_usage() {
   cat <<'EOF'
 Usage:
   ./run.sh [target] [--light]
-  ./run.sh <root-npm-script> [--light] [-- <script args...>]
+  ./run.sh <root-package-script> [--light] [-- <script args...>]
 
 Targets:
   full        Run the standard repository validation lane (default)
@@ -102,11 +102,11 @@ EOF
 }
 
 run_common_run_root_script() {
-  echo "[run] Root npm script: ${RUN_COMMON_TARGET}"
+  echo "[run] Root package script: ${RUN_COMMON_TARGET}"
 
   if [[ "${#RUN_COMMON_FORWARD_ARGS[@]}" -gt 0 ]]; then
-    npm run "${RUN_COMMON_TARGET}" -- "${RUN_COMMON_FORWARD_ARGS[@]}"
+    pnpm run "${RUN_COMMON_TARGET}" -- "${RUN_COMMON_FORWARD_ARGS[@]}"
   else
-    npm run "${RUN_COMMON_TARGET}"
+    pnpm run "${RUN_COMMON_TARGET}"
   fi
 }

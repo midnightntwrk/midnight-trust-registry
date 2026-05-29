@@ -15,11 +15,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs",
     "test": "vitest run",
-    "serve": "npm run build && node ./scripts/serve.mjs",
-    "build:light": "npm run build",
-    "test:light": "npm run test"
+    "serve": "pnpm run build && node ./scripts/serve.mjs",
+    "build:light": "pnpm run build",
+    "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-api": "0.1.0"
+    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0"
   }
 }

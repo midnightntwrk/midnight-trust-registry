@@ -21,16 +21,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "integration": "vitest run --dir src/test",
-    "build:light": "npm run build"
+    "build:light": "pnpm run build"
   },
   "dependencies": {
-    "@midnight-ntwrk/midnight-did": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-0.1.0.tgz",
+    "@midnight-ntwrk/midnight-did": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-0.4.0.tgz",
     "@midnight-ntwrk/midnight-did-credentials": "file:../../tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
     "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:../../tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-contract": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-domain": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.1.0.tgz",
-    "@midnight-ntwrk/trust-registry-client": "0.1.0",
-    "@midnight-ntwrk/trust-registry-contract": "0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "0.1.0"
+    "@midnight-ntwrk/midnight-did-contract": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.4.0.tgz",
+    "@midnight-ntwrk/midnight-did-domain": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.4.0.tgz",
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
   }
 }
