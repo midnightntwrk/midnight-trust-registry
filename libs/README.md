@@ -1,7 +1,8 @@
 # Local Identity Package Tarballs
 
 This directory contains packed external Midnight identity packages that
-`midnight-trust-registry` depends on locally until those packages are published.
+`midnight-trust-registry` depends on locally when those packages are not yet
+published.
 
 Current rule:
 
@@ -12,12 +13,11 @@ Current rule:
 
 Layout:
 
-- DID tarballs live under `libs/midnight-did/`
-- VC tarballs live under `tooling/vendor/midnight-verifiable-credentials/`
+- DID packages should be consumed from npm once published
+- local VC tarballs live under `tooling/vendor/midnight-verifiable-credentials/`
 
 Refresh from the workspace root with:
 
 ```bash
-./scripts/sync-package-tarballs.sh --source did --destination midnight-trust-registry
 ./scripts/sync-package-tarballs.sh --source vc --destination midnight-trust-registry
 ```

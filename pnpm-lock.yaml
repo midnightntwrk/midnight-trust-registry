@@ -5,23 +5,23 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@midnight-ntwrk/midnight-did': file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz
-  '@midnight-ntwrk/midnight-did-contract': file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
+  '@midnight-ntwrk/midnight-did': 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did-contract': 0.5.0-rc1
   '@midnight-ntwrk/midnight-did-credentials': file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz
   '@midnight-ntwrk/midnight-did-credentials-status-registry': file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz
-  '@midnight-ntwrk/midnight-did-domain': file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
-  '@midnight-ntwrk/midnight-did-jubjub-schnorr': file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
+  '@midnight-ntwrk/midnight-did-domain': 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did-jubjub-schnorr': 0.5.0-rc1
 
 importers:
 
   .:
     dependencies:
       '@midnight-ntwrk/midnight-did':
-        specifier: file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/midnight-did-contract':
-        specifier: file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/midnight-did-credentials':
         specifier: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz
         version: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz
@@ -29,11 +29,11 @@ importers:
         specifier: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz
         version: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz
       '@midnight-ntwrk/midnight-did-domain':
-        specifier: file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
-        specifier: file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
     devDependencies:
       '@eslint/js':
         specifier: ^9.29.0
@@ -98,8 +98,8 @@ importers:
         specifier: ^0.15.0
         version: 0.15.0
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
-        specifier: file:../../libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
 
   packages/trust-registry-admin-console:
     dependencies:
@@ -170,11 +170,11 @@ importers:
   packages/trust-registry-integration:
     dependencies:
       '@midnight-ntwrk/midnight-did':
-        specifier: file:../../libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/midnight-did-contract':
-        specifier: file:../../libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/midnight-did-credentials':
         specifier: file:../../tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz
         version: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz
@@ -182,8 +182,8 @@ importers:
         specifier: file:../../tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz
         version: file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz
       '@midnight-ntwrk/midnight-did-domain':
-        specifier: file:../../libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
-        version: file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
+        specifier: 0.5.0-rc1
+        version: 0.5.0-rc1
       '@midnight-ntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
@@ -419,9 +419,8 @@ packages:
   '@midnight-ntwrk/ledger-v8@8.0.3':
     resolution: {integrity: sha512-2BLMfHnZyKAHZxaGWjlenhity096lZ9jvyp1qrQH5J3ogpy7H5ostCW8kRj70dGv5T55qDAC5nJ+wnU/8CGUcQ==}
 
-  '@midnight-ntwrk/midnight-did-contract@file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz':
-    resolution: {integrity: sha512-AeQo+4Phn6FLumnz1Sl7G1EOKPxdg07F1zZvJkp3NL5H8SceUuYFzRTv7PM6jH8brzbjH3WRY8I1Tv35FfqVJg==, tarball: file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz}
-    version: 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did-contract@0.5.0-rc1':
+    resolution: {integrity: sha512-AeQo+4Phn6FLumnz1Sl7G1EOKPxdg07F1zZvJkp3NL5H8SceUuYFzRTv7PM6jH8brzbjH3WRY8I1Tv35FfqVJg==}
     engines: {node: '>=24', pnpm: '>=10'}
 
   '@midnight-ntwrk/midnight-did-credentials-status-registry@file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz':
@@ -434,19 +433,16 @@ packages:
     version: 0.1.0
     engines: {node: '>=24', pnpm: '>=10'}
 
-  '@midnight-ntwrk/midnight-did-domain@file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz':
-    resolution: {integrity: sha512-CatUIptgtXHrZeBcBDoLVFGx1kQxYYGdOcdGHT41gRpPdZeReiEr2RE4rsIg43Zexl7ADGiijlnBbg3QlVn/iA==, tarball: file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz}
-    version: 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did-domain@0.5.0-rc1':
+    resolution: {integrity: sha512-CatUIptgtXHrZeBcBDoLVFGx1kQxYYGdOcdGHT41gRpPdZeReiEr2RE4rsIg43Zexl7ADGiijlnBbg3QlVn/iA==}
     engines: {node: '>=24', pnpm: '>=10'}
 
-  '@midnight-ntwrk/midnight-did-jubjub-schnorr@file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz':
-    resolution: {integrity: sha512-I7TleiZk0p2xHKBbYv+A3Is5Gglxo1kYf7RrvPE4r7T+6O7lMrjBS1cyJhuvNNLgDLZSn/CE/l12AV1Zuxw5zQ==, tarball: file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz}
-    version: 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc1':
+    resolution: {integrity: sha512-I7TleiZk0p2xHKBbYv+A3Is5Gglxo1kYf7RrvPE4r7T+6O7lMrjBS1cyJhuvNNLgDLZSn/CE/l12AV1Zuxw5zQ==}
     engines: {node: '>=24', pnpm: '>=10'}
 
-  '@midnight-ntwrk/midnight-did@file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz':
-    resolution: {integrity: sha512-17ySmMtMklYPdcyJ2kcyCnL2cUmvUymkWWtN/8AzXr3XAOhXPH1fewCHhMIEbRC0G2hPn/vhEi3R1Z2age54Kg==, tarball: file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz}
-    version: 0.5.0-rc1
+  '@midnight-ntwrk/midnight-did@0.5.0-rc1':
+    resolution: {integrity: sha512-17ySmMtMklYPdcyJ2kcyCnL2cUmvUymkWWtN/8AzXr3XAOhXPH1fewCHhMIEbRC0G2hPn/vhEi3R1Z2age54Kg==}
     engines: {node: '>=24', pnpm: '>=10'}
 
   '@midnight-ntwrk/onchain-runtime-v3@3.0.0':
@@ -1419,10 +1415,10 @@ snapshots:
 
   '@midnight-ntwrk/ledger-v8@8.0.3': {}
 
-  '@midnight-ntwrk/midnight-did-contract@file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz':
+  '@midnight-ntwrk/midnight-did-contract@0.5.0-rc1':
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.15.0
-      '@midnight-ntwrk/midnight-did-jubjub-schnorr': file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz
+      '@midnight-ntwrk/midnight-did-jubjub-schnorr': 0.5.0-rc1
 
   '@midnight-ntwrk/midnight-did-credentials-status-registry@file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz':
     dependencies:
@@ -1433,22 +1429,22 @@ snapshots:
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.15.0
 
-  '@midnight-ntwrk/midnight-did-domain@file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz':
+  '@midnight-ntwrk/midnight-did-domain@0.5.0-rc1':
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.15.0
       '@noble/hashes': 2.2.0
       zod: 4.4.3
 
-  '@midnight-ntwrk/midnight-did-jubjub-schnorr@file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.5.0-rc1.tgz':
+  '@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc1':
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.15.0
       '@midnight-ntwrk/ledger-v8': 8.0.3
       '@noble/hashes': 2.2.0
 
-  '@midnight-ntwrk/midnight-did@file:libs/midnight-did/midnight-ntwrk-midnight-did-0.5.0-rc1.tgz':
+  '@midnight-ntwrk/midnight-did@0.5.0-rc1':
     dependencies:
-      '@midnight-ntwrk/midnight-did-contract': file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.5.0-rc1.tgz
-      '@midnight-ntwrk/midnight-did-domain': file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.5.0-rc1.tgz
+      '@midnight-ntwrk/midnight-did-contract': 0.5.0-rc1
+      '@midnight-ntwrk/midnight-did-domain': 0.5.0-rc1
       zod: 4.4.3
 
   '@midnight-ntwrk/onchain-runtime-v3@3.0.0': {}
