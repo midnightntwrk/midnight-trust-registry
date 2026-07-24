@@ -43,7 +43,7 @@ git commit -S -s -m "<type>: <subject>"
 Current local validation baseline:
 
 ```bash
-npm ci
+pnpm install --frozen-lockfile
 ./run.sh --light
 ```
 
@@ -51,6 +51,34 @@ Integration scenarios currently run separately:
 
 ```bash
 ./run.sh integration
+```
+
+## Quick Demo Workflow
+
+Prepare a mutable local operator workspace from the repo root:
+
+```bash
+pnpm run demo:prepare
+```
+
+Then start the local surfaces in separate terminals:
+
+```bash
+pnpm run demo:serve:api
+pnpm run demo:serve:admin-console
+pnpm run demo:serve:applicant-portal
+```
+
+Default local endpoints:
+
+- API: `http://127.0.0.1:4400`
+- Admin console: `http://127.0.0.1:4173`
+- Applicant portal: `http://127.0.0.1:4175`
+
+You can also seed a deterministic read-only snapshot for fixture-driven demos:
+
+```bash
+pnpm run demo:prepare:snapshot
 ```
 
 For docs-only edits, the minimum fallback remains:
