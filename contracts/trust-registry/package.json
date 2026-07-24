@@ -77,7 +77,7 @@
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "^0.15.0",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:../../libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc1"
   },
   "files": [
     "dist/**",

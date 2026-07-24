@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.23.0",
+  "packageManager": "pnpm@10.34.1",
   "engines": {
     "node": ">=24",
-    "pnpm": ">=10"
+    "pnpm": ">=10.34.1"
   },
   "workspaces": [
     "contracts/*",
@@ -17,6 +17,7 @@
     "clean": "turbo run clean --continue",
     "clean:artifacts": "pnpm run clean",
     "docs-check": "./scripts/check-docs.sh",
+    "audit": "pnpm audit --audit-level low",
     "integration": "turbo run integration --continue",
     "lint": "turbo run lint --continue",
     "typecheck": "turbo run typecheck --continue",
@@ -25,27 +26,33 @@
     "build:light": "turbo run build:light --continue",
     "test": "turbo run test --continue",
     "test:light": "turbo run test:light --continue",
+    "quality": "pnpm run build && pnpm run typecheck && pnpm run audit",
     "ci:integration": "pnpm run integration",
     "ci:lint": "pnpm run docs-check && pnpm run lint",
     "ci:build:light": "pnpm run ci:lint && pnpm run build:light && pnpm run typecheck:light && pnpm run test:light",
-    "ci:build": "pnpm run ci:build:light"
+    "ci:build": "pnpm run ci:build:light",
+    "demo:prepare": "mkdir -p ./artifacts/trust-registry && pnpm run build -w @midnight-ntwrk/trust-registry-cli && node packages/trust-registry-cli/bin/trust-registry.mjs init-workspace --workspace ./artifacts/trust-registry/workspace.json",
+    "demo:prepare:snapshot": "mkdir -p ./artifacts/trust-registry && pnpm run build -w @midnight-ntwrk/trust-registry-cli && node packages/trust-registry-cli/bin/trust-registry.mjs init-demo --output ./artifacts/trust-registry/demo-snapshot.json",
+    "demo:serve:api": "pnpm run build -w @midnight-ntwrk/trust-registry-api && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/workspace.json --port 4400",
+    "demo:serve:admin-console": "pnpm run serve -w @midnight-ntwrk/trust-registry-admin-console -- --port 4173",
+    "demo:serve:applicant-portal": "pnpm run serve -w @midnight-ntwrk/trust-registry-applicant-portal -- --port 4175"
   },
   "dependencies": {
-    "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.4.0.tgz",
-    "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.4.0.tgz",
+    "@midnight-ntwrk/midnight-did": "0.5.0-rc1",
+    "@midnight-ntwrk/midnight-did-contract": "0.5.0-rc1",
     "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
     "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-    "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.4.0.tgz",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
+    "@midnight-ntwrk/midnight-did-domain": "0.5.0-rc1",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc1"
   },
   "pnpm": {
     "overrides": {
-      "@midnight-ntwrk/midnight-did": "file:libs/midnight-did/midnight-ntwrk-midnight-did-0.4.0.tgz",
-      "@midnight-ntwrk/midnight-did-contract": "file:libs/midnight-did/midnight-ntwrk-midnight-did-contract-0.4.0.tgz",
+      "@midnight-ntwrk/midnight-did": "0.5.0-rc1",
+      "@midnight-ntwrk/midnight-did-contract": "0.5.0-rc1",
       "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
       "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-      "@midnight-ntwrk/midnight-did-domain": "file:libs/midnight-did/midnight-ntwrk-midnight-did-domain-0.4.0.tgz",
-      "@midnight-ntwrk/midnight-did-jubjub-schnorr": "file:libs/midnight-did/midnight-ntwrk-midnight-did-jubjub-schnorr-0.4.0.tgz"
+      "@midnight-ntwrk/midnight-did-domain": "0.5.0-rc1",
+      "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc1"
     }
   },
   "devDependencies": {
