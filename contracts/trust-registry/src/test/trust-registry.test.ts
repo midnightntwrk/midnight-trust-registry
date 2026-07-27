@@ -369,7 +369,7 @@ describe("trust registry contract", () => {
     );
     expect(proposedMembership.status).toEqual(AuthorizationStatus.proposed);
 
-    const authorizeEvidenceHash = labelToBytes32("evidence:governed:authorize");
+    const authorizeEvidenceHash = candidate.evidenceHash;
     const authorizeActionSequence = simulator.getLedger().governanceActionCount;
     const authorizeSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -396,7 +396,7 @@ describe("trust registry contract", () => {
     );
     expect(authorizedMembership.status).toEqual(AuthorizationStatus.authorized);
 
-    const activateEvidenceHash = labelToBytes32("evidence:governed:activate");
+    const activateEvidenceHash = candidate.evidenceHash;
     const activateActionSequence = simulator.getLedger().governanceActionCount;
     const activateSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -691,9 +691,7 @@ describe("trust registry contract", () => {
       secondMaintainer.evidenceHash,
     );
 
-    const authorizeMaintainerEvidenceHash = labelToBytes32(
-      "evidence:second:authorize",
-    );
+    const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
     const authorizeMaintainerSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -715,9 +713,7 @@ describe("trust registry contract", () => {
       authorizeMaintainerEvidenceHash,
     );
 
-    const activateMaintainerEvidenceHash = labelToBytes32(
-      "evidence:second:activate",
-    );
+    const activateMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
     const activateMaintainerSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -848,9 +844,7 @@ describe("trust registry contract", () => {
       [secondIssuerProposer],
     );
 
-    const authorizeIssuerEvidenceHash = labelToBytes32(
-      "evidence:quorum:issuer:authorize",
-    );
+    const authorizeIssuerEvidenceHash = proposedEvidenceHash;
     const authorizeIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       issuer.authorizationId,
       simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
@@ -880,9 +874,7 @@ describe("trust registry contract", () => {
       [secondIssuerAuthorizer],
     );
 
-    const activateIssuerEvidenceHash = labelToBytes32(
-      "evidence:quorum:issuer:activate",
-    );
+    const activateIssuerEvidenceHash = proposedEvidenceHash;
     const activateIssuerPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       issuer.authorizationId,
       simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
@@ -1024,9 +1016,7 @@ describe("trust registry contract", () => {
       secondMaintainer.evidenceHash,
     );
 
-    const authorizeMaintainerEvidenceHash = labelToBytes32(
-      "evidence:duplicate:authorize",
-    );
+    const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
     const authorizeMaintainerSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -1048,9 +1038,7 @@ describe("trust registry contract", () => {
       authorizeMaintainerEvidenceHash,
     );
 
-    const activateMaintainerEvidenceHash = labelToBytes32(
-      "evidence:duplicate:activate",
-    );
+    const activateMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
     const activateMaintainerSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -1348,9 +1336,29 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/not active/i);
 
-    const authorizationEvidenceHash = labelToBytes32(
-      "evidence:application:authorize",
+    const mismatchedEvidenceHash = labelToBytes32("evidence:application:mismatched");
+    const mismatchedAuthorizationSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      AUTHORIZE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        proposedRecord.lifecycleEventHash,
+        mismatchedEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
     );
+    expect(() =>
+      simulator.authorizeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        mismatchedAuthorizationSignature,
+        issuerAuthorization.authorizationId,
+        mismatchedEvidenceHash,
+      ),
+    ).toThrow(/must match the proposed application/i);
+
+    const authorizationEvidenceHash = proposalEvidenceHash;
     const authorizationSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -1390,7 +1398,7 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/not active/i);
 
-    const activationEvidenceHash = labelToBytes32("evidence:application:active");
+    const activationEvidenceHash = proposalEvidenceHash;
     const activationSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -1525,7 +1533,7 @@ describe("trust registry contract", () => {
     const revocableProposedRecord = simulator.getIssuerAuthorization(
       revocableAuthorization.authorizationId,
     );
-    const authorizeEvidenceHash = labelToBytes32("evidence:revocable:authorize");
+    const authorizeEvidenceHash = revocableAuthorization.evidenceHash;
     const authorizeSignature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -2953,7 +2961,7 @@ describe("trust registry contract", () => {
       computeUpdateAuditorAuthorizationPayloadHash(
         auditorAuthorization.authorizationId,
         proposedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:iso-27001:authorize"),
+        proposedRecord.evidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2962,7 +2970,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       authorizeSignature,
       auditorAuthorization.authorizationId,
-      labelToBytes32("evidence:iso-27001:authorize"),
+      proposedRecord.evidenceHash,
     );
 
     const authorizedRecord = simulator.getAuditorAuthorization(
@@ -2977,7 +2985,7 @@ describe("trust registry contract", () => {
       computeUpdateAuditorAuthorizationPayloadHash(
         auditorAuthorization.authorizationId,
         authorizedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:iso-27001:activate"),
+        authorizedRecord.evidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2986,7 +2994,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       activateSignature,
       auditorAuthorization.authorizationId,
-      labelToBytes32("evidence:iso-27001:activate"),
+      authorizedRecord.evidenceHash,
     );
 
     const activeRecord = simulator.getCurrentAuditorAuthorization(

@@ -34,7 +34,12 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
+  assertValidApplicationEvidence,
+  computeApplicationEvidenceCommitment,
   EpochCommitmentSchema,
+  type ApplicationEvidenceSubmission,
+  type ApplicationEvidenceRole,
+  type AuthorizedEvidenceVerifier,
   type EpochCommitment,
   GovernancePolicyRecordSchema,
   RecognitionRecordSchema,
@@ -182,6 +187,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
   readonly maintainerDidCommitment: Uint8Array;
+  readonly evidenceVerifier: AuthorizedEvidenceVerifier;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
   private readonly bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
@@ -211,6 +217,11 @@ export class LocalTrustRegistryIntegrationHarness {
     this.maintainerIdCommitment = bytes32Commitment(this.maintainerId);
     this.maintainerDid = createMidnightDid(`maintainer:${label}:bootstrap`);
     this.maintainerDidCommitment = bytes32Commitment(this.maintainerDid);
+    this.evidenceVerifier = {
+      did: createMidnightDid(`evidence-verifier:${label}`),
+      keyIds: [createMidnightDid(`evidence-verifier:${label}`) + "#assertion-1"],
+      algorithms: ["jubjub-schnorr"],
+    };
     this.registryRecord = RegistryRecordSchema.parse({
       registryId: this.registryId,
       registryDid: this.registryDid,
@@ -247,6 +258,68 @@ export class LocalTrustRegistryIntegrationHarness {
       this.bootstrapPublicKey,
       1n,
     );
+  }
+
+  createApplicationEvidence(input: {
+    applicationId: string;
+    subjectDid: string;
+    role: ApplicationEvidenceRole;
+    scopeCommitment: Uint8Array;
+  }): ApplicationEvidenceSubmission {
+    const verifiedAt = timestampForSequence(this.simulator.getLedger().governanceActionCount);
+    const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
+    const envelope = {
+      version: "tr-application-evidence-v1" as const,
+      registryId: this.registryId,
+      applicationId: createScopedIdentifier("application", input.role, input.applicationId),
+      subjectDid: input.subjectDid,
+      role: input.role,
+      policyId: this.policyId,
+      policyVersion: this.policyRecord.version,
+      scopeCommitment: bytes32Hex(input.scopeCommitment),
+      evidenceVerifierDid: this.evidenceVerifier.did,
+      verifiedAt,
+      expiresAt,
+      challengeHash: sha256Hex(`challenge:${input.applicationId}`),
+      presentationHash: sha256Hex(`presentation:${input.applicationId}`),
+      claimsCommitment: sha256Hex(`claims:${input.applicationId}`),
+    };
+    const commitment = computeApplicationEvidenceCommitment(envelope);
+    const keyId = this.evidenceVerifier.keyIds[0]!;
+    return {
+      envelope,
+      commitment,
+      signature: {
+        keyId,
+        algorithm: "jubjub-schnorr",
+        // The local simulator uses a deterministic verifier adapter only.
+        value: sha256Hex(`${commitment}:${keyId}`),
+      },
+    };
+  }
+
+  assertApplicationEvidence(input: {
+    evidence: ApplicationEvidenceSubmission;
+    subjectDid: string;
+    role: ApplicationEvidenceRole;
+    scopeCommitment: Uint8Array;
+  }): Uint8Array {
+    const parsed = assertValidApplicationEvidence(
+      input.evidence,
+      {
+        registryId: this.registryId,
+        subjectDid: input.subjectDid,
+        role: input.role,
+        policyId: this.policyId,
+        policyVersion: this.policyRecord.version,
+        scopeCommitment: bytes32Hex(input.scopeCommitment),
+        evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
+      },
+      [this.evidenceVerifier],
+      (commitment, signature) =>
+        signature.value === sha256Hex(`${commitment}:${signature.keyId}`),
+    );
+    return hashHexToBytes32(parsed.commitment);
   }
 
   private buildPolicyRecord(
@@ -511,9 +584,17 @@ export class LocalTrustRegistryIntegrationHarness {
 
   proposeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.maintainerId}:propose`,
-    );
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence: this.createApplicationEvidence({
+        applicationId: fixture.maintainerId,
+        subjectDid: fixture.subjectDid,
+        role: "maintainer",
+        scopeCommitment: fixture.maintainerIdCommitment,
+      }),
+      subjectDid: fixture.subjectDid,
+      role: "maintainer",
+      scopeCommitment: fixture.maintainerIdCommitment,
+    });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -546,9 +627,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.maintainerId}:authorize`,
-    );
+    const authorizedEvidenceHash = this.simulator.getMaintainerMembership(
+      fixture.maintainerIdCommitment,
+    ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
     const authorizeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -573,7 +654,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.maintainerId}:activate`);
+    const evidenceHash = this.simulator.getMaintainerMembership(
+      fixture.maintainerIdCommitment,
+    ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const signature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -633,9 +716,29 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:propose`,
+    return this.proposeIssuerWithApplicationEvidence(
+      fixture,
+      this.createApplicationEvidence({
+        applicationId: fixture.authorizationId,
+        subjectDid: fixture.subjectDid,
+        role: "issuer",
+        scopeCommitment: fixture.resourceIdCommitment,
+      }),
+      additionalMaintainers,
     );
+  }
+
+  proposeIssuerWithApplicationEvidence(
+    fixture: IssuerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence,
+      subjectDid: fixture.subjectDid,
+      role: "issuer",
+      scopeCommitment: fixture.resourceIdCommitment,
+    });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const actionPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
@@ -674,9 +777,9 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:authorize`,
-    );
+    const authorizedEvidenceHash = this.simulator.getIssuerAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
     const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
@@ -707,7 +810,9 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const evidenceHash = this.simulator.getIssuerAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
@@ -772,9 +877,27 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:propose`,
+    return this.proposeVerifierWithApplicationEvidence(
+      fixture,
+      this.createApplicationEvidence({
+        applicationId: fixture.authorizationId,
+        subjectDid: fixture.subjectDid,
+        role: "verifier",
+        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      }),
     );
+  }
+
+  proposeVerifierWithApplicationEvidence(
+    fixture: VerifierScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+  ): Uint8Array {
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence,
+      subjectDid: fixture.subjectDid,
+      role: "verifier",
+      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+    });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -810,9 +933,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   approveVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:authorize`,
-    );
+    const authorizedEvidenceHash = this.simulator.getVerifierAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
     const authorizeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -836,7 +959,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   activateVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const evidenceHash = this.simulator.getVerifierAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const signature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -985,9 +1110,27 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:propose`,
+    return this.proposeAuditorWithApplicationEvidence(
+      fixture,
+      this.createApplicationEvidence({
+        applicationId: fixture.authorizationId,
+        subjectDid: fixture.subjectDid,
+        role: "auditor",
+        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      }),
     );
+  }
+
+  proposeAuditorWithApplicationEvidence(
+    fixture: AuditorScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+  ): Uint8Array {
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence,
+      subjectDid: fixture.subjectDid,
+      role: "auditor",
+      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+    });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -1023,9 +1166,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   approveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.authorizationId}:authorize`,
-    );
+    const authorizedEvidenceHash = this.simulator.getAuditorAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
     const authorizeSignature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -1049,7 +1192,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   activateAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.authorizationId}:activate`);
+    const evidenceHash = this.simulator.getAuditorAuthorization(
+      fixture.authorizationIdCommitment,
+    ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const signature = signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,

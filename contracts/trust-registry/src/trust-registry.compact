@@ -1925,6 +1925,10 @@ export circuit authorizeMaintainerMembership(
     currentRecord.status == AuthorizationStatus.proposed,
     "Maintainer membership must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Maintainer authorization evidence must match the proposed application"
+  );
   const actionPayloadHash = disclose(
     updateMaintainerMembershipPayloadHash(
       disclosedMaintainerId,
@@ -1977,6 +1981,10 @@ export circuit activateMaintainerMembership(
   assert(
     currentRecord.status == AuthorizationStatus.authorized,
     "Maintainer membership must be authorized to activate"
+  );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Maintainer activation evidence must match the proposed application"
   );
   const actionPayloadHash = disclose(
     updateMaintainerMembershipPayloadHash(
@@ -2386,6 +2394,10 @@ export circuit authorizeIssuerAuthorization(
     currentRecord.status == AuthorizationStatus.proposed,
     "Issuer authorization must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Issuer authorization evidence must match the proposed application"
+  );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -2520,6 +2532,10 @@ export circuit activateIssuerAuthorization(
   assert(
     currentRecord.status == AuthorizationStatus.authorized,
     "Issuer authorization must be authorized to activate"
+  );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Issuer activation evidence must match the proposed application"
   );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(
@@ -2878,6 +2894,10 @@ export circuit authorizeVerifierAuthorization(
     currentRecord.status == AuthorizationStatus.proposed,
     "Verifier authorization must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Verifier authorization evidence must match the proposed application"
+  );
   const actionPayloadHash = disclose(
     updateVerifierAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -3034,6 +3054,10 @@ export circuit activateVerifierAuthorization(
   assert(
     currentRecord.status == AuthorizationStatus.authorized,
     "Verifier authorization must be authorized to activate"
+  );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Verifier activation evidence must match the proposed application"
   );
   const actionPayloadHash = disclose(
     updateVerifierAuthorizationPayloadHash(
@@ -3412,6 +3436,10 @@ export circuit authorizeAuditorAuthorization(
     currentRecord.status == AuthorizationStatus.proposed,
     "Auditor authorization must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Auditor authorization evidence must match the proposed application"
+  );
   const actionPayloadHash = disclose(
     updateAuditorAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -3568,6 +3596,10 @@ export circuit activateAuditorAuthorization(
   assert(
     currentRecord.status == AuthorizationStatus.authorized,
     "Auditor authorization must be authorized to activate"
+  );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Auditor activation evidence must match the proposed application"
   );
   const actionPayloadHash = disclose(
     updateAuditorAuthorizationPayloadHash(
