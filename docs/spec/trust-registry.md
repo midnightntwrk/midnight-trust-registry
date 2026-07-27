@@ -164,6 +164,12 @@ Required fields:
 
 `trustLevel` is policy-defined in v1. The registry record stores the value selected by the governing policy, and the evidence bundle must include the policy version that defines the scale. A later schema pass should decide whether common scales become enums or remain policy-local strings.
 
+An authorization produced from a governed application MUST bind an
+`applicationEvidenceCommitment`, evidence-verifier identity, verification
+window, and immutable policy version. The normative envelope, privacy rules,
+and contract inputs are defined in the
+[Application Evidence Protocol](application-evidence.md).
+
 ### Recognition
 
 Recognition records that a registry accepts an external authority or registry for a scoped domain. Recognition is not the same as local authorization.
@@ -200,6 +206,11 @@ Issuer-scoped resources:
 - Schema version
 - Credential definition
 - Status method requirement
+
+V1 issuer and verifier scopes use exact canonical identifiers. Wildcard,
+delegation, version-range, and transitive external matching are excluded until
+a later policy version explicitly defines them. See
+[ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md).
 
 Verifier-scoped resources:
 
@@ -305,6 +316,9 @@ VC integration:
 - VC packages define credential schemas, credential definitions, holder binding, status, and presentation semantics.
 - TR can authorize issuers for VC resource scopes and verifiers for request profiles.
 - VC verification can consume TR evidence bundles to decide whether a credential or presentation came from an authorized trust domain.
+- Applicant VC/VP verification occurs off-chain through a policy-authorized
+  evidence verifier. The Trust Registry commits only the resulting evidence
+  commitment and governed decision context.
 
 ## 10. Privacy and Security Requirements
 
@@ -315,6 +329,9 @@ VC integration:
 - Separate authorization from recognition to avoid accidental transitive trust.
 - Make public/private access boundaries explicit before introducing permissioned registry data.
 - Require governance policy for emergency suspension, key compromise, participant exit, and archival.
+- Bind every governed decision to an immutable policy version and canonical
+  signer-set commitment as defined in
+  [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md).
 
 ## 11. V1 Acceptance Criteria
 
