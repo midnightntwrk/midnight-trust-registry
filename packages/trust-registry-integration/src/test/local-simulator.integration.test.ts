@@ -1,10 +1,14 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
-import { resolveGovernancePolicyTemplate } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  computeApplicationEvidenceCommitment,
+  resolveGovernancePolicyTemplate,
+} from "@midnight-ntwrk/trust-registry-domain";
 import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
@@ -42,6 +46,86 @@ describe("trust registry local simulator integration", () => {
     });
     expect(activeBundle.authorization?.status).toBe("active");
     expect(activeBundle.authorization?.activeFrom).toBeDefined();
+  });
+
+  it("rejects malformed application evidence before an issuer proposal reaches Compact", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("application-evidence-negative");
+    const validEvidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scopeCommitment: issuer.resourceIdCommitment,
+    });
+
+    const cases: ReadonlyArray<
+      readonly [
+        string,
+        {
+          envelope?: Partial<typeof validEvidence.envelope>;
+          signature?: Partial<typeof validEvidence.signature>;
+        },
+        RegExp,
+      ]
+    > = [
+      ["wrong subject", { envelope: { subjectDid: "did:midnight:issuer:other" } }, /subjectDid/],
+      ["wrong role", { envelope: { role: "verifier" as const } }, /role/],
+      ["wrong policy", { envelope: { policyId: "policy:wrong:v1" } }, /policyId/],
+      [
+        "wrong scope",
+        { envelope: { scopeCommitment: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
+        /scopeCommitment/,
+      ],
+      ["unauthorized verifier", { envelope: { evidenceVerifierDid: "did:midnight:evidence-verifier:other" } }, /not authorized/],
+      ["expired evidence", { envelope: { expiresAt: "2026-05-20T00:00:00Z" } }, /expiresAt/],
+      ["invalid signature", { signature: { value: "tampered" } }, /signature is invalid/],
+    ] as const;
+
+    for (const [_name, mutation, expectedError] of cases) {
+      const evidence = {
+        ...validEvidence,
+        envelope: { ...validEvidence.envelope, ...mutation.envelope },
+        signature: { ...validEvidence.signature, ...mutation.signature },
+      };
+      if (_name !== "expired evidence") {
+        evidence.commitment = computeApplicationEvidenceCommitment(evidence.envelope);
+      }
+      expect(() => harness.proposeIssuerWithApplicationEvidence(issuer, evidence)).toThrow(
+        expectedError,
+      );
+    }
+  });
+
+  it("binds validated application evidence for issuer, verifier, auditor, and maintainer proposals", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("application-evidence-issuer");
+    const verifier = createVerifierScenarioFixture("application-evidence-verifier");
+    const auditor = createAuditorScenarioFixture("application-evidence-auditor");
+    const maintainer = createMaintainerScenarioFixture("application-evidence-maintainer");
+
+    const issuerEvidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scopeCommitment: issuer.resourceIdCommitment,
+    });
+    harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
+    harness.proposeVerifier(verifier);
+    harness.proposeAuditor(auditor);
+    harness.proposeMaintainer(maintainer);
+
+    expect(
+      Array.from(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).evidenceHash),
+    ).toEqual(Array.from(Buffer.from(issuerEvidence.commitment.slice(2), "hex")));
+    expect(harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment).status).toBe(
+      ContractAuthorizationStatus.proposed,
+    );
+    expect(harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment).status).toBe(
+      ContractAuthorizationStatus.proposed,
+    );
+    expect(harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment).status).toBe(
+      ContractAuthorizationStatus.proposed,
+    );
   });
 
   it("authorizes an issuer and emits a valid active evidence bundle", () => {
