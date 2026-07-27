@@ -4,13 +4,16 @@ This documentation set is the source of truth for the initial `midnight-trust-re
 
 ## Reading Order
 
-1. [Specification](spec/trust-registry.md)
-2. [Architecture boundaries](architecture/trust-registry-boundaries.md)
-3. [Implementation plan](plans/trust-registry-implementation-plan.md)
-4. [Execution backlog](plans/trust-registry-backlog.md)
-5. [Research requirements memo](research/trust-registry-requirements-memo.md)
-6. [Decisions and open questions](decisions/trust-registry-decisions.md)
-7. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
+1. [Trust Registry specification](spec/trust-registry.md)
+2. [Application evidence protocol](spec/application-evidence.md)
+3. [Architecture boundaries](architecture/trust-registry-boundaries.md)
+4. [Implementation plan](plans/trust-registry-implementation-plan.md)
+5. [Execution backlog](plans/trust-registry-backlog.md)
+6. [Research requirements memo](research/trust-registry-requirements-memo.md)
+7. [Decisions and open questions](decisions/trust-registry-decisions.md)
+8. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
+9. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
+10. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 

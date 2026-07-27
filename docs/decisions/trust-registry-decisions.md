@@ -4,6 +4,10 @@ Date: 2026-05-23
 
 ## Current Decisions
 
+The formal decisions for application evidence and scope canonicalization are
+[ADR-0001](adr-0001-governance-evidence-and-policy-snapshots.md) and
+[ADR-0002](adr-0002-resource-and-request-profile-canonicalization.md).
+
 - Use Midnight DID by default for party and registry identifiers.
 - Use Midnight VC and VP packages as the default application evidence surface.
 - Keep Schnorr signatures over JubJub-compatible registry control keys as the default contract-facing authorization primitive for v1.
@@ -88,10 +92,8 @@ Date: 2026-05-23
 
 ## Pending Decisions
 
-- Resource granularity for issuer authorization: credential family, schema version, credential definition, or a combination.
-- Whether verifier authorization should later grow beyond the current v1 scope of request profile plus disclosure and predicate commitments.
-- Whether signer-set commitments should become canonicalized independent of submitter order, or remain order-sensitive because the first disclosed signer acts as the submitter of record in epoch evidence.
-- Whether `tr:policy:thresholds:update` should keep using the default maintainer threshold or move to a dedicated governance-policy quorum in the `TR-025` slice.
+- Whether verifier authorization should later grow beyond the current v1 exact request-profile, disclosure, and predicate commitments.
+- Whether `tr:policy:thresholds:update` should move from the default maintainer threshold to a dedicated governance-policy quorum.
 - Whether typed governance-policy bindings should stay domain-first or later receive explicit per-family commitments in Compact state.
 - Minimum archival retention window for long-term credential verification.
 - First operator-facing app surface: admin CLI, admin console, applicant portal, or public query API.
