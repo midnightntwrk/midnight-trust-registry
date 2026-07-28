@@ -73,6 +73,16 @@ For these changes, update tests, docs, and the changelog in the same PR:
 ./run.sh integration
 ```
 
+## Public Repository Policies
+
+Keep repository changes reviewable and reproducible:
+
+* Do not commit secrets, private research notes, local wallet state, proof-server logs, or absolute machine-specific paths.
+* Pin GitHub Actions to immutable commit references when adding or changing workflows.
+* Include a DCO sign-off and GPG signature on every repository-facing commit.
+* Describe release, packaging, workflow, and public documentation changes in the pull request and changelog when they affect users or operators.
+* Report vulnerabilities through the private GitHub security channel described in `SECURITY.md`, not through public issues.
+
 ## Requirements for Acceptable Contributions:
 
 * **Coding Standards:** Code must adhere to the coding style guides defined in our documentation
