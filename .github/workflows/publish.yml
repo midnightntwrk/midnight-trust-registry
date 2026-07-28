@@ -54,6 +54,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+          registry-url: ${{ inputs.registry }}
 
       - name: Set up Compact toolchain
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
@@ -77,6 +78,9 @@ jobs:
 
       - name: Check package contents
         run: pnpm run packages:check-contents
+
+      - name: Run light test suite before publish
+        run: pnpm run test:light
 
       - name: Pack local release artifacts
         run: pnpm run artifacts:pack -- --output-dir artifacts/npm-release

@@ -39,7 +39,7 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.15.0",
+    "@midnight-ntwrk/compact-runtime": "^0.16.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
   }
