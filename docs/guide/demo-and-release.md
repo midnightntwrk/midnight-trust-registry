@@ -111,13 +111,18 @@ The repo currently exposes two manual GitHub Actions workflows:
 5. publishes the remotely publishable core packages
 6. smoke-tests the published packages from the configured registry
 
+The publish workflow only runs from the `develop` branch and pauses at the
+protected `npm-publish` environment. Configure required reviewers and the
+`NPM_TOKEN` secret on that environment before using the workflow in a public
+repository.
+
 `Published Package Smoke` reruns only the final published-package import smoke
 for a specified version.
 
 Local helpers used by the workflow:
 
 ```bash
-node scripts/release-set-version.mjs --version 0.1.0-rc1
+node scripts/release-set-version.mjs --version 0.1.0-rc2
 pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release
 ```
 

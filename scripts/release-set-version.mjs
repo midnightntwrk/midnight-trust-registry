@@ -13,6 +13,7 @@ const dependencySections = [
   "peerDependencies",
   "optionalDependencies",
 ];
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 const parseArgs = () => {
   const options = {
@@ -46,6 +47,10 @@ const parseArgs = () => {
 
   if (!options.version) {
     throw new Error("--version is required");
+  }
+
+  if (!semverPattern.test(options.version)) {
+    throw new Error(`--version must be a valid semantic version: ${options.version}`);
   }
 
   return options;
