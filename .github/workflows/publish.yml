@@ -68,7 +68,9 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Stamp release version
-        run: node scripts/release-set-version.mjs --version "${{ inputs.version }}"
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/release-set-version.mjs --version "$VERSION"
 
       - name: Check workspace manifests
         run: pnpm run check:workspace-manifests

@@ -41,7 +41,10 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Smoke test published packages
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          VERSION: ${{ inputs.version }}
         run: |
           node scripts/smoke-published-artifacts.mjs \
-            --version "${{ inputs.version }}" \
-            --registry "${{ inputs.registry }}"
+            --version "$VERSION" \
+            --registry "$REGISTRY"
