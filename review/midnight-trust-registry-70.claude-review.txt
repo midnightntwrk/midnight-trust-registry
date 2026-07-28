@@ -1,0 +1,65 @@
+All SHA pins verify correctly against their claimed tags — **except** I found a mislabeled version comment. Here's the review.
+
+---
+
+# Code Review: PR #70 — `chore(repo): harden public repository surfaces`
+
+**Author:** yshyn-iohk · **Base:** `develop` ← `codex/trust-registry-pi-public-hardening` · **+154 / −18 · 10 files**
+
+## Overview
+
+A repo-hygiene / supply-chain-hardening pass (no runtime/contract code):
+
+- **Action pinning** — checkout→v6.1.0, github-script→v9, setup-node bump, and first-party actions (`setup-compact-action`, `upload-sarif-github-action`) now pinned to immutable SHAs; `persist-credentials: false` added to all checkouts.
+- **Scorecard** — new `scorecard.yml` (least-privilege, publishes OpenSSF results); `scan.yaml` offloads scorecard (`skip_scorecard_scan: true`) and adds `fail_severity: high`.
+- **Dependabot** — full restructure: npm + actions ecosystems, grouping, cooldown, `develop` targeting, labels, commit prefixes, global major-version ignore.
+- **Docs** — PR template gains a Public Repository checklist + DCO/GPG item; `CONTRIBUTING.md` gains a Public Repository Policies section.
+- **`.pi/settings.json`** — new (`npm:dev-loops@0.9.0`).
+
+## Verification I ran
+
+I resolved every pinned SHA against its claimed tag via the GitHub API:
+
+| Action | Comment | SHA matches? |
+|---|---|---|
+| `actions/checkout` | v6.1.0 | ✅ `d23441a` = v6.1.0 |
+| `actions/github-script` | v9 | ✅ `3a2844b` = v9 |
+| `ossf/scorecard-action` | v2.4.4 | ✅ `2d11466` = v2.4.4 |
+| `github/codeql-action/upload-sarif` | v4.36.2 | ✅ `8aad20d` = v4.36.2 |
+| `actions/setup-node` | **`# v4`** | ❌ `2499707` is **v6.5.0**, not v4 |
+
+## Issues
+
+### 1. `setup-node` version comment is wrong — says `# v4`, SHA is v6.5.0 (correctness / auditability)
+`.github/workflows/ci.yaml` and `.github/workflows/quality.yaml` both pin:
+```yaml
+uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v4
+```
+That SHA is **v6.5.0** (`v6` tag head), not v4. The human-readable version comment is the whole point of a pinned SHA — it's what a reviewer audits against, since the SHA is opaque. In a PR whose entire purpose is pinning hygiene, this mismatch is exactly what shouldn't ship. (The pre-existing comments were also wrong — old `2028fbc5` was v6.0.0 labeled `@v4` — so this is inherited, but this is the pass that should correct it.) **Fix the comment to `# v6.5.0`.** Also worth a conscious decision: jumping the whole toolchain from v6.0.0/v6.4.0 to v6.5.0 is fine, but do it deliberately rather than under a `v4` label.
+
+### 2. Dependabot globally ignores *all* major updates, including `@midnight-ntwrk/*` (policy — confirm intent)
+```yaml
+ignore:
+  - dependency-name: "*"
+    update-types: ["version-update:semver-major"]
+  - dependency-name: "@midnight-ntwrk/*"
+    update-types: ["version-update:semver-major"]
+```
+Suppressing all majors is a legitimate stability choice, but note the side effect: **Dependabot security PRs that can only be satisfied by a major-version bump will not be raised.** For a repo being hardened for public exposure, that's a meaningful gap. Confirm this is intended, and consider relying on the separate Scorecard/scan coverage to catch what this hides. (The second `@midnight-ntwrk/*` entry is also redundant — the `"*"` rule already covers it.)
+
+### 3. `scan.yaml` concurrency simplification dropped `merge_group` handling (low — likely fine)
+```yaml
+group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+```
+The old expression special-cased `merge_group` events. `scan.yaml` has no `merge_group` trigger, so the removed branch was dead code and this is a safe simplification — flagging only so it's a conscious call if a merge queue is added later.
+
+## Positives
+
+- All non-setup-node SHAs verified accurate; `persist-credentials: false` consistently added — good token-exfiltration hardening.
+- `scorecard.yml` uses top-level `permissions: {}` with narrow job-level grants (`id-token: write`, `security-events: write`) — textbook least privilege.
+- Splitting Scorecard out of `scan.yaml` (`skip_scorecard_scan: true`) and adding `fail_severity: high` are sensible.
+- Doc/policy additions (DCO+GPG, no-secrets, pin-actions, private security channel) align with the stated goal and are consistent with `SECURITY.md` reference.
+
+## Recommendation
+
+**Approve after fixing the `setup-node` `# v4` comment** (item 1) in both workflows, and a one-line confirmation that the blanket major-version ignore (item 2) is intended. No functional/runtime risk — scope is CI config and docs only. Note the PR body's validation (`./run.sh --light`) doesn't exercise these workflow changes; they'll only be truly validated once the workflows run on this PR.

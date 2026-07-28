@@ -46,10 +46,6 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
-      - dependency-name: "@midnight-ntwrk/*"
-        update-types:
-          - "version-update:semver-major"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "develop"
