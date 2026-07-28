@@ -2,7 +2,7 @@
 
 <!-- Describe your changes briefly here, with some context as to why this is needed. -->
 
-Target branch: `develop`
+Target branch: usually `develop`; release-promotion PRs target `main`.
 
 ## Submission Checklist
 
@@ -29,6 +29,14 @@ Complete this section when the PR changes any public TR surface:
 - [ ] Runner, demo, or CI behavior changes update the local command documentation
 - [ ] DID or VC package dependency changes were validated with `./run.sh --light` and `./run.sh integration`
 - [ ] Changelog entry added for reviewer-visible behavior, packaging, or workflow changes
+- [ ] Every commit is DCO signed and GPG signed
+
+## Public Repository Checklist
+
+- [ ] No secrets, private notes, local paths, wallet state, or proof-server logs were added
+- [ ] Workflow and dependency changes use pinned action references where practical
+- [ ] Security-sensitive changes include the relevant security boundary and test evidence
+- [ ] Release, package, or documentation policy changes are reflected in public docs
 
 ## Links
 
