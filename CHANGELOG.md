@@ -9,10 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- upgraded vendored `midnight-did` dependencies consumed by trust-registry from
-  `0.4.0` to the published `0.5.0-rc1` tarballs
+- upgraded published `midnight-did` dependencies consumed by trust-registry from
+  `0.4.0` to the `0.5.0-rc1` package baseline
 - aligned the repo with the pnpm `10.34.1` baseline used by the current DID
   repository
+- pinned repository workflows, added Scorecard coverage, and aligned Dependabot
+  grouping and cooldown policy with the public `midnight-did` repository
+- added pi.dev project settings and public contribution, security, and release
+  policy checks
 
 ### Added
 
