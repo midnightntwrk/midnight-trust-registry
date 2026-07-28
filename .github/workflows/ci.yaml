@@ -83,3 +83,6 @@ jobs:
 
       - name: Run light validation
         run: ./run.sh --light
+
+      - name: Smoke test documented demo flow
+        run: pnpm run demo:smoke

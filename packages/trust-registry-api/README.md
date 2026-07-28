@@ -49,7 +49,7 @@ Current route set:
 Run locally against a saved workspace:
 
 ```bash
-pnpm run build -w @midnight-ntwrk/trust-registry-api
+pnpm --filter @midnight-ntwrk/trust-registry-api run build
 npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
 ```
 
