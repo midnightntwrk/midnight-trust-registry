@@ -1,10 +1,24 @@
 {
   "name": "@midnight-ntwrk/trust-registry-openid-federation-adapter",
   "version": "0.1.0",
-  "private": true,
+  "license": "Apache-2.0",
+  "private": false,
   "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
   "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midnightntwrk/midnight-trust-registry.git",
+    "directory": "adapters/openid-federation"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

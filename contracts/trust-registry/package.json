@@ -2,15 +2,23 @@
   "name": "@midnight-ntwrk/trust-registry-contract",
   "version": "0.1.0",
   "license": "Apache-2.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "engines": {
     "node": ">=24",
     "pnpm": ">=10"
   },
-  "main": "dist/index.js",
-  "module": "dist/index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midnightntwrk/midnight-trust-registry.git",
+    "directory": "contracts/trust-registry"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -76,8 +84,8 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.15.0",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc1"
+    "@midnight-ntwrk/compact-runtime": "^0.16.0",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc2"
   },
   "files": [
     "dist/**",

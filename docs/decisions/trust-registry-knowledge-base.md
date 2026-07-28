@@ -69,19 +69,19 @@ Implemented functional baseline on `develop`:
 
 ## Identity Dependency Posture
 
-Trust Registry consumes official Midnight identity packages from local vendored
-tarballs under `libs/`.
+Trust Registry consumes the published Midnight DID packages from npm and the
+official VC packages from local vendored tarballs under `tooling/vendor/`.
 
 Current DID package baseline:
 
-- `@midnight-ntwrk/midnight-did@0.5.0-rc1`
-- `@midnight-ntwrk/midnight-did-contract@0.5.0-rc1`
-- `@midnight-ntwrk/midnight-did-domain@0.5.0-rc1`
-- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc1`
+- `@midnight-ntwrk/midnight-did@0.5.0-rc2`
+- `@midnight-ntwrk/midnight-did-contract@0.5.0-rc2`
+- `@midnight-ntwrk/midnight-did-domain@0.5.0-rc2`
+- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc2`
 
 Current VC dependency posture:
 
-- keep consuming official vendored VC packages from repo-local `libs/`
+- keep consuming official vendored VC packages from repo-local `tooling/vendor/`
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
@@ -142,7 +142,7 @@ git diff --check
 Validation status for the current local slice on 2026-07-23:
 
 - `pnpm install --frozen-lockfile=false`
-  - passed while updating the lockfile for DID `0.5.0-rc1`
+  - passed while updating the lockfile for DID `0.5.0-rc2`
 - `./run.sh --light`
   - passed
 - `./run.sh integration`

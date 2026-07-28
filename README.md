@@ -28,6 +28,7 @@ This repository does not own:
 - [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.
 - [Requirements memo](docs/research/trust-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
 - [Architecture boundaries](docs/architecture/trust-registry-boundaries.md) describes how TR integrates with DID and VC repositories.
+- [Demo and release guide](docs/guide/demo-and-release.md) documents the operator walkthrough, package boundaries, and manual publish/smoke workflows.
 - [Decisions](docs/decisions/trust-registry-decisions.md) records current design decisions and unresolved questions.
 
 ## Development Baseline
@@ -52,6 +53,41 @@ Integration scenarios currently run separately:
 ```bash
 ./run.sh integration
 ```
+
+Package artifact validation for downstream consumers:
+
+```bash
+pnpm run artifacts:pack
+pnpm run packages:check-contents
+pnpm run packed-artifacts:smoke
+```
+
+Artifact tarballs are written to `artifacts/npm/`. The current local artifact
+set is:
+
+- `@midnight-ntwrk/trust-registry-contract`
+- `@midnight-ntwrk/trust-registry-domain`
+- `@midnight-ntwrk/trust-registry-client`
+- `@midnight-ntwrk/trust-registry-integration`
+- `@midnight-ntwrk/trust-registry-cli`
+- `@midnight-ntwrk/trust-registry-api`
+- `@midnight-ntwrk/trust-registry-trqp-adapter`
+- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+
+The remotely publishable core package subset is intentionally narrower:
+
+- `@midnight-ntwrk/trust-registry-contract`
+- `@midnight-ntwrk/trust-registry-domain`
+- `@midnight-ntwrk/trust-registry-client`
+- `@midnight-ntwrk/trust-registry-trqp-adapter`
+- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+
+`@midnight-ntwrk/trust-registry-integration`, `@midnight-ntwrk/trust-registry-cli`,
+and `@midnight-ntwrk/trust-registry-api` remain local-only artifacts for now
+because the simulator-backed demo path still consumes vendored VC tarballs from
+`tooling/vendor/midnight-verifiable-credentials/`. The local artifact smoke
+check seeds those tarballs explicitly so downstream consumers can validate the
+same contract.
 
 ## Quick Demo Workflow
 
@@ -79,6 +115,18 @@ You can also seed a deterministic read-only snapshot for fixture-driven demos:
 
 ```bash
 pnpm run demo:prepare:snapshot
+```
+
+Smoke-test the documented demo flow from a clean local checkout:
+
+```bash
+pnpm run demo:smoke
+```
+
+Refresh published DID dependencies plus vendored VC tarballs with validation:
+
+```bash
+pnpm run refresh:identity-dependencies -- --did-version 0.5.0-rc2 --validate light
 ```
 
 For docs-only edits, the minimum fallback remains:

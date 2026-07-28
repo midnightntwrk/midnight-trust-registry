@@ -1,0 +1,112 @@
+name: Publish Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to publish, for example 0.1.0-rc1"
+        required: true
+        type: string
+      npm_tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: "next"
+        type: string
+      registry:
+        description: "npm registry URL"
+        required: false
+        default: "https://registry.npmjs.org"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  COMPACT_COMPILER_VERSION: 0.30.0
+  PNPM_CONFIG_AUDIT: "false"
+  PNPM_CONFIG_FUND: "false"
+
+concurrency:
+  group: trust-registry-publish-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish core packages
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: npm-publish
+      url: ${{ inputs.registry }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: ${{ inputs.registry }}
+
+      - name: Set up Compact toolchain
+        uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
+        with:
+          compact-version: ${{ env.COMPACT_COMPILER_VERSION }}
+
+      - name: Verify Compact installation
+        run: compact compile --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Stamp release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/release-set-version.mjs --version "$VERSION"
+
+      - name: Check workspace manifests
+        run: pnpm run check:workspace-manifests
+
+      - name: Build repository
+        run: pnpm run build
+
+      - name: Check package contents
+        run: pnpm run packages:check-contents
+
+      - name: Run light test suite before publish
+        run: pnpm run test:light
+
+      - name: Pack local release artifacts
+        run: pnpm run artifacts:pack -- --output-dir artifacts/npm-release
+
+      - name: Smoke test release tarballs before publish
+        run: pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release
+
+      - name: Upload release tarballs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
+        with:
+          name: trust-registry-${{ inputs.version }}-tarballs
+          if-no-files-found: error
+          path: artifacts/npm-release/*.tgz
+
+      - name: Publish packages to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+          REGISTRY: ${{ inputs.registry }}
+          VERSION: ${{ inputs.version }}
+        run: ./scripts/publish-npm-packages.sh
+
+      - name: Smoke test published packages
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          VERSION: ${{ inputs.version }}
+        run: ./scripts/release-smoke-npm-packages.sh
