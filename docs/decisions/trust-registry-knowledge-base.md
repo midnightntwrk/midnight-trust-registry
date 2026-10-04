@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-07-23
+Updated: 2026-10-05
 
 ## Purpose
 
@@ -12,7 +12,27 @@ It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
 
-## Current Branch State
+## Current Milestone
+
+- `develop` includes the release/demo and DID `0.5.0-rc2` slice from PR #71.
+- The [0.1.0 profile](../spec/milestone-0.1.0.md) defines a simulator-based,
+  DID/VC-backed governed trust journey and names each actor's authority.
+- The [issue plan](../plans/milestone-0.1.0-issues.md) reuses #39, #45, #49,
+  #58-#60, and #67 and tracks the missing scope, evidence, mutation, and
+  multi-role integration slices as #75-#79.
+- The main blockers are real evidence-verifier signature checks in Compact,
+  official VC/VP eligibility verification, authenticated API mutations,
+  independently verified VC trust-anchor production, and cross-surface
+  positive/negative scenarios.
+- Ledger 8 signer descriptors (#73) and production hosting remain outside the
+  0.1.0 reference milestone.
+
+## Historical Branch Snapshot
+
+The following branch notes are retained as a July 2026 snapshot. They are not
+the current release plan.
+
+## July 2026 Branch State
 
 - upstream baseline branch:
   - `develop`
