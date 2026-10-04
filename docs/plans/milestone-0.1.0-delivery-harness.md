@@ -38,11 +38,9 @@ their disposition in the PR, with a linked follow-up issue when deferred.
    `<head>` is the 40-character GitHub PR head SHA; `<mode>` is `self` or
    `external`. Editing the PR body reruns only `Milestone Review`. A new push
    invalidates the old receipt and all prior exact-head review evidence.
-5. Confirm `Milestone Review`, `Milestone Light`, and `scan` are green for the
-   current head. For code-bearing changes also wait for `Typecheck, Audit, and
-   Packaging Baseline` to pass, pending the fail-closed routing work in #84.
-   Docs/harness PRs may proceed while that slow check is pending, but not if it
-   fails. Inspect all non-required checks and resolve real failures. Resolve
+5. Confirm `Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
+   Packaging Baseline`, and `scan` are green for the current head. Inspect all
+   non-required checks and resolve real failures. Resolve
    review conversations, confirm mergeability, and refresh the base if stale.
 6. Re-read the PR head immediately before merging. Merge only with the
    compare-and-swap guard; never use `--admin`:
@@ -59,23 +57,22 @@ their disposition in the PR, with a linked follow-up issue when deferred.
 ## Hosted gates
 
 - `Milestone Review`: exact-head review receipt, issue link, findings text,
-  author-matching DCO signoffs, and harness unit tests. It uses read-only
-  permissions and no secrets.
+  author-matching DCO signoffs for new commits, and harness unit tests.
+  Develop commits already accepted on the human-reviewed branch are
+  grandfathered for explicit develop-to-milestone sync PRs. The job uses
+  read-only permissions and no secrets.
 - `Milestone Light`: unconditional `./run.sh --light` and `pnpm run demo:smoke`
   on milestone PRs, even
   docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
   to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
-  pushes. It is advisory for docs/harness PRs until #84 provides a fast stable
-  required aggregator; code-bearing PRs must wait for it by policy.
+  pushes. It remains required until #84 provides a fast fail-closed aggregator.
 - `Scan`: security scan on every PR and milestone push.
 - Existing docs and PR-title checks remain applicable where triggered.
 
 The milestone branch must require PRs, zero approving GitHub reviews, strict
-up-to-date checks (`Milestone Review`, `Milestone Light`, `scan`), signed
-commits, and resolved conversations. This temporary protection profile trades
-mechanical enforcement of full Quality for acceptable docs/harness latency;
-the operator must enforce the code-bearing rule above until #84 lands.
+up-to-date checks (`Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
+Packaging Baseline`, `scan`), signed commits, and resolved conversations.
 Force pushes and deletions must be disabled. Verify these settings through the
 GitHub API after configuration. Do not weaken `develop` or `main` protection.
 

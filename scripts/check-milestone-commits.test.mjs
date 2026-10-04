@@ -21,3 +21,7 @@ test('rejects absent and different-author signoffs', () => {
 test('rejects an empty authored commit range', () => {
   assert.equal(checkCommitSignoffs([]).length, 1);
 });
+
+test('grandfathers a commit already present on develop for train sync', () => {
+  assert.deepEqual(checkCommitSignoffs([{ ...commit, message: 'legacy commit' }], new Set([commit.sha])), []);
+});

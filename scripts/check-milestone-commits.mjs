@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
-export function checkCommitSignoffs(commits) {
+export function checkCommitSignoffs(commits, trustedShas = new Set()) {
   const errors = [];
   for (const { sha, authorName, authorEmail, message } of commits) {
+    if (trustedShas.has(sha)) continue;
     const expected = `Signed-off-by: ${authorName} <${authorEmail}>`;
     if (!message.split('\n').some((line) => line.trim() === expected)) {
       errors.push(`${sha}: missing author-matching DCO signoff`);
@@ -22,7 +23,10 @@ if (process.argv[1]?.endsWith('/check-milestone-commits.mjs')) {
     const [sha, authorName, authorEmail, message] = record.split('\0');
     return { sha, authorName, authorEmail, message };
   });
-  const errors = checkCommitSignoffs(commits);
+  const trustedShas = new Set(execFileSync('git', [
+    'rev-list', 'origin/develop',
+  ], { encoding: 'utf8' }).trim().split('\n'));
+  const errors = checkCommitSignoffs(commits, trustedShas);
   for (const error of errors) console.error(error);
   if (errors.length > 0) process.exitCode = 1;
 }

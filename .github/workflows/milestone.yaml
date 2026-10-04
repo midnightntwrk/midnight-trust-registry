@@ -27,4 +27,5 @@ jobs:
           node-version-file: .nvmrc
       - run: node --test scripts/check-milestone-review.test.mjs scripts/check-milestone-commits.test.mjs
       - run: node scripts/check-milestone-review.mjs
+      - run: git fetch --no-tags origin develop:refs/remotes/origin/develop
       - run: node scripts/check-milestone-commits.mjs
