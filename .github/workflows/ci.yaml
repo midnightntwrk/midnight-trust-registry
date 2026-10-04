@@ -84,5 +84,8 @@ jobs:
       - name: Run light validation
         run: ./run.sh --light
 
+      - name: Run DID and VC integration scenarios
+        run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+
       - name: Smoke test documented demo flow
         run: pnpm run demo:smoke

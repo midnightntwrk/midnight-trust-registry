@@ -168,9 +168,7 @@ const updatePackageVersion = (relativePath, packageNames, resolvedVersion) => {
   }
 };
 
-const updateWorkspaceOverrides = (packageNames, resolvedVersion) => {
-  const workspaceFile = path.join(repoRoot, "pnpm-workspace.yaml");
-  let source = fs.readFileSync(workspaceFile, "utf8");
+const renderWorkspaceOverrides = (source, packageNames, resolvedVersion) => {
   for (const packageName of packageNames) {
     const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const overrideLine = new RegExp(`^(\\s*"${escaped}":\\s*).+$`, "m");
@@ -179,7 +177,7 @@ const updateWorkspaceOverrides = (packageNames, resolvedVersion) => {
     }
     source = source.replace(overrideLine, (_line, prefix) => `${prefix}${resolvedVersion}`);
   }
-  fs.writeFileSync(workspaceFile, source);
+  return source;
 };
 
 const options = parseArgs();
@@ -193,19 +191,29 @@ const resolvedDidVersion = options.refreshDid
 const resolvedVcVersion = options.refreshVc
   ? resolvePackageFamilyVersion(vcPackageNames, "@midnight-ntwrk/credential-compact", options.vcVersion)
   : undefined;
+const workspaceFile = path.join(repoRoot, "pnpm-workspace.yaml");
+const originalWorkspaceSource = fs.readFileSync(workspaceFile, "utf8");
+let updatedWorkspaceSource = originalWorkspaceSource;
+if (resolvedDidVersion !== undefined) {
+  updatedWorkspaceSource = renderWorkspaceOverrides(updatedWorkspaceSource, didPackageNames, resolvedDidVersion);
+}
+if (resolvedVcVersion !== undefined) {
+  updatedWorkspaceSource = renderWorkspaceOverrides(updatedWorkspaceSource, vcPackageNames, resolvedVcVersion);
+}
 
 if (resolvedDidVersion !== undefined) {
   for (const relativePath of packageJsonPaths) {
     updatePackageVersion(relativePath, didPackageNames, resolvedDidVersion);
   }
-  updateWorkspaceOverrides(didPackageNames, resolvedDidVersion);
 }
 
 if (resolvedVcVersion !== undefined) {
   for (const relativePath of packageJsonPaths) {
     updatePackageVersion(relativePath, vcPackageNames, resolvedVcVersion);
   }
-  updateWorkspaceOverrides(vcPackageNames, resolvedVcVersion);
+}
+if (updatedWorkspaceSource !== originalWorkspaceSource) {
+  fs.writeFileSync(workspaceFile, updatedWorkspaceSource);
 }
 
 if (options.runInstall) {

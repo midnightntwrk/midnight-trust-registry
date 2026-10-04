@@ -61,6 +61,13 @@ Integration scenarios currently run separately:
 ./run.sh integration
 ```
 
+The fast GitHub CI lane also runs the focused DID/VC scenarios after
+`./run.sh --light`:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+```
+
 Package artifact validation for downstream consumers:
 
 ```bash
