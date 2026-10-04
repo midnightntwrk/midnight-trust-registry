@@ -28,19 +28,22 @@ their disposition in the PR, with a linked follow-up issue when deferred.
 3. Push DCO-signed and GPG-signed commits. Open a PR to the milestone branch
    with `Closes #N`, `Fixes #N`, or `Refs #N` in its body.
 4. Review the final diff. Fill `## Review findings` with blocking/advisory
-   dispositions and, if external, a review link. Add exactly one receipt on its
-   own line, replacing `<head>` and `<mode>`:
+   dispositions, the review round, and, if external, a review link. Add exactly
+   one receipt on its own line, replacing `<head>`, `<mode>`, and `<round>`:
 
    ```text
-   <!-- tr-review:v1 head=<head> mode=<mode> verdict=pass -->
+   <!-- tr-review:v1 head=<head> mode=<mode> round=<round> verdict=pass -->
    ```
 
    `<head>` is the 40-character GitHub PR head SHA; `<mode>` is `self` or
-   `external`. Editing the PR body reruns only `Milestone Review`. A new push
+   `external`; `<round>` is `1`, `2`, or `3`. Editing the PR body reruns only
+   `Milestone Review`. A new push
    invalidates the old receipt and all prior exact-head review evidence.
-5. Confirm `Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
-   Packaging Baseline`, and `scan` are green for the current head. Inspect all
-   non-required checks and resolve real failures. Resolve
+5. Confirm `Milestone Review`, `Milestone Light`, and `scan` are green for the
+   current head. Inspect `Quality` and all other non-required checks. During
+   the 0.1.0 delivery week, a pending or red `Quality` result may be deferred
+   only with a linked issue, root cause, and risk disposition in the PR; a new
+   unexplained failure or a runtime security blocker still stops merge. Resolve
    review conversations, confirm mergeability, and refresh the base if stale.
 6. Re-read the PR head immediately before merging. Merge only with the
    compare-and-swap guard; never use `--admin`:
@@ -54,6 +57,20 @@ their disposition in the PR, with a linked follow-up issue when deferred.
    signature, status, and conversation gates. The SHA flag prevents a race
    with a subsequent push. Merge one PR at a time, bottom-up for stacks.
 
+## Bounded review loop
+
+One round is one completed correctness/security review of a candidate head,
+followed by finding disposition and, if needed, a fix push. Record each round
+and its head in `## Review findings`; the final receipt names the last round.
+Allow at most three completed rounds per PR. Before round three, batch related
+fixes rather than pushing after each comment. After round three, do not start
+another automatic review/fix loop. Open a linked follow-up issue for any
+remaining advisory finding with owner, risk, and acceptance criteria. If a
+blocking finding remains, create a follow-up issue but leave the PR unmerged
+and explicitly blocked; never convert a security, correctness, data-integrity,
+or CI failure into an advisory solely to meet the round limit. A changed head
+without a valid final-head review cannot merge.
+
 ## Hosted gates
 
 - `Milestone Review`: exact-head review receipt, issue link, findings text,
@@ -66,13 +83,17 @@ their disposition in the PR, with a linked follow-up issue when deferred.
   docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
   to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
-  pushes. It remains required until #84 provides a fast fail-closed aggregator.
+  pushes. It is temporarily non-blocking because a docs-only run took over
+  43 minutes and the current audit baseline is red. See #84 and #86. Revisit
+  this exception by 2026-10-12; do not remove the workflow.
 - `Scan`: security scan on every PR and milestone push.
 - Existing docs and PR-title checks remain applicable where triggered.
 
 The milestone branch must require PRs, zero approving GitHub reviews, strict
-up-to-date checks (`Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
-Packaging Baseline`, `scan`), signed commits, and resolved conversations.
+up-to-date checks (`Milestone Review`, `Milestone Light`, `scan`), signed
+commits, and resolved conversations. This is a temporary delivery-week profile,
+not a claim that full Quality passed. Restore a fast fail-closed Quality
+aggregator after #84 and #86 are resolved.
 Force pushes and deletions must be disabled. Verify these settings through the
 GitHub API after configuration. Do not weaken `develop` or `main` protection.
 

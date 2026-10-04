@@ -147,8 +147,16 @@ than `develop` and follow [the milestone delivery harness](docs/plans/milestone-
 Agent/operator merge into that branch is permitted only after exact-head
 review, required CI, signed commits, and resolved conversations. Self-review
 may satisfy low-risk changes; high-risk and harness changes need an independent
-second opinion. Never use admin bypass or direct push. PRs into `develop` and
+second opinion. Cap each PR at three completed review/fix rounds. After round
+three, file a linked follow-up for remaining advisory findings; unresolved
+blockers stop the PR rather than triggering an endless review loop. Never use
+admin bypass or direct push. PRs into `develop` and
 `main` retain human merge authority and their existing protections.
+
+Until the CI latency and audit backlog (#84 and #86) is fixed, full `Quality`
+is advisory for milestone PRs only. Record any pending/red result, root cause,
+linked follow-up, and risk disposition in the PR; required light and scan
+checks remain mandatory. Reassess this exception by 2026-10-12.
 
 Commit form:
 

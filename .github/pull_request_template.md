@@ -56,5 +56,5 @@ receipt on its own line using the exact comment syntax below. Replace the
 placeholders; do not leave this example as evidence.
 
 ```text
-<!-- tr-review:v1 head=<40-character SHA> mode=<self-or-external> verdict=pass -->
+<!-- tr-review:v1 head=<40-character SHA> mode=<self-or-external> round=<1-3> verdict=pass -->
 ```

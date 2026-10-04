@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-const REVIEW_LINE = /^<!-- tr-review:v1 head=([0-9a-f]{40}) mode=(self|external) verdict=pass -->$/gm;
+const REVIEW_LINE = /^<!-- tr-review:v1 head=([0-9a-f]{40}) mode=(self|external) round=([1-3]) verdict=pass -->$/gm;
 const ISSUE_LINK = /^\s*(?:Closes|Fixes|Refs)\s+#([1-9][0-9]*)\b/im;
 
 export function checkMilestoneReview(pr) {
