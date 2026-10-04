@@ -32,13 +32,6 @@ const subjectDid = createMidnightDIDString(
   MidnightNetwork.Testnet,
 );
 
-const requireStatusRegistryId = (value: string | undefined): string => {
-  if (value === undefined) {
-    throw new Error("expected the issuer bundle to reference a status registry");
-  }
-  return value;
-};
-
 describe("published VC and DID trust integration", () => {
   it("constructs a candidate VC signer descriptor from verified issuer and DID evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
@@ -112,59 +105,5 @@ describe("published VC and DID trust integration", () => {
       verificationMethodId: "#issuer-key",
       relationship: "capabilityInvocation",
     })).rejects.toThrow("not authorized");
-  });
-
-  it("hashes a VC status reference derived from the trusted issuer bundle", async () => {
-    const harness = new LocalTrustRegistryIntegrationHarness();
-    const fixture = createIssuerScenarioFixture("degree-status");
-    const issuer = {
-      ...fixture,
-      subjectDid,
-      subjectDidCommitment: bytes32Commitment(subjectDid),
-    };
-    harness.authorizeIssuer(issuer);
-
-    const client = new TrustRegistrySimulatorClient(harness.simulator);
-    const bundle = client.verifyIssuerAuthorizationBundle(
-      harness.evaluateCurrentIssuerDecision(issuer),
-      {
-        expectedRegistryId: harness.registryId,
-        expectedSubjectDid: subjectDid,
-      },
-    );
-    const resolver = createMidnightDidResolver([
-      createMidnightDidLedgerFixture(subjectDid, {
-        verificationMethodId: "status-key",
-      }),
-    ]);
-    const method = await resolveMidnightDIDMethodBinding({
-      resolver,
-      did: subjectDid,
-      verificationMethodId: "#status-key",
-      relationship: "assertionMethod",
-    });
-    const acceptedRegistryId = bytes32Commitment(
-      requireStatusRegistryId(bundle.referencedStatusRegistryId),
-    );
-    // This checks the VC commitment shape, not the status authority or revocation state.
-    const binding = {
-      registryRef: {
-        registryId: acceptedRegistryId,
-        authorityVerificationMethodRef: method.verificationMethodRef,
-      },
-      statusHandleCommitment: bytes32Commitment("status-handle:degree-status"),
-    };
-
-    expect(pureCircuits.assertValidRegistryBoundStatusBinding(binding)).toEqual([]);
-    expect(binding.registryRef.registryId).toEqual(acceptedRegistryId);
-    expect(pureCircuits.registryBoundStatusBindingRoot(binding)).not.toEqual(
-      pureCircuits.registryBoundStatusBindingRoot({
-        ...binding,
-        registryRef: {
-          ...binding.registryRef,
-          registryId: bytes32Commitment("status-registry:other:v1"),
-        },
-      }),
-    );
   });
 });

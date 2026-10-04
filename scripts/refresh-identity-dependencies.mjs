@@ -133,6 +133,16 @@ const resolvePublishedVersion = (packageName, requestedVersion) => {
   return resolved;
 };
 
+const resolvePackageFamilyVersion = (packageNames, primaryPackageName, requestedVersion) => {
+  const resolvedVersion = resolvePublishedVersion(primaryPackageName, requestedVersion);
+  for (const packageName of packageNames) {
+    if (packageName !== primaryPackageName) {
+      resolvePublishedVersion(packageName, resolvedVersion);
+    }
+  }
+  return resolvedVersion;
+};
+
 const updatePackageVersion = (relativePath, packageNames, resolvedVersion) => {
   const packageJson = readJson(relativePath);
   let changed = false;
@@ -177,18 +187,21 @@ const packageJsonPaths = [
   "package.json",
   ...workspaceCatalog.map(({ workspace }) => path.join(workspace, "package.json")),
 ];
+const resolvedDidVersion = options.refreshDid
+  ? resolvePackageFamilyVersion(didPackageNames, "@midnight-ntwrk/midnight-did", options.didVersion)
+  : undefined;
+const resolvedVcVersion = options.refreshVc
+  ? resolvePackageFamilyVersion(vcPackageNames, "@midnight-ntwrk/credential-compact", options.vcVersion)
+  : undefined;
 
-if (options.refreshDid) {
-  const resolvedDidVersion = resolvePublishedVersion("@midnight-ntwrk/midnight-did", options.didVersion);
+if (resolvedDidVersion !== undefined) {
   for (const relativePath of packageJsonPaths) {
     updatePackageVersion(relativePath, didPackageNames, resolvedDidVersion);
   }
   updateWorkspaceOverrides(didPackageNames, resolvedDidVersion);
 }
 
-if (options.refreshVc) {
-  const resolvedVcVersion = resolvePublishedVersion("@midnight-ntwrk/credential-compact", options.vcVersion);
-  resolvePublishedVersion("@midnight-ntwrk/credential-did-midnight", resolvedVcVersion);
+if (resolvedVcVersion !== undefined) {
   for (const relativePath of packageJsonPaths) {
     updatePackageVersion(relativePath, vcPackageNames, resolvedVcVersion);
   }

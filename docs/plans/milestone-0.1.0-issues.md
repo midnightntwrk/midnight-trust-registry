@@ -153,6 +153,10 @@ Subtasks:
       scenarios through a published status-authority package or adapter. The
       published VC core 0.2.0 validates status-reference shape and commitment,
       but does not replace the retired status-registry verification helper.
+- [ ] Anchor the accepted status-registry identifier and authority key to the
+      issuer authorization statement or a signed policy commitment. The
+      bundle's current `referencedStatusRegistryId` metadata is outside the
+      signed authorization leaf and must not authorize a VC status binding.
 - [ ] Sign the canonical envelope commitment with the evidence verifier's
       Midnight DID assertion key; expose the key reference and verification
       result without returning the raw VC/VP from a public API.

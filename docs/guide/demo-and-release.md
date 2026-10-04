@@ -140,6 +140,9 @@ Current VC baseline is `@midnight-ntwrk/credential-compact@0.2.0` and
 `@midnight-ntwrk/credential-did-midnight@0.2.0` from npm. The retired private
 VC/status package tarballs are not supported. VC `0.2.0` does not include the
 old status-helper API; live status-registry evidence needs a separate adapter.
+The evidence bundle's `referencedStatusRegistryId` is not included in the
+signed authorization leaf. Consumers must not use it alone to accept a VC
+status authority or non-revocation claim.
 
 Refresh the published DID and VC versions with validation:
 

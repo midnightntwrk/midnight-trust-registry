@@ -107,6 +107,8 @@ Current VC dependency posture:
   signer-authorization and DID-binding surface for #73
 - retired VC 0.1.0 status helpers are not part of the new VC core; status
   authority evidence and a live TR-to-VC anchor still require follow-up work
+- `referencedStatusRegistryId` in the evidence bundle is metadata outside the
+  signed authorization leaf; never treat it as authenticated status policy
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
@@ -115,9 +117,10 @@ Current VC dependency posture:
 Local validation on 2026-10-05: frozen pnpm install, `pnpm audit --audit-level
 low`, `./run.sh --light`, and `./run.sh integration` passed. The full lane
 spent about 19 minutes compiling the 54-circuit contract, while the focused
-integration package passed 22 tests. The removed status-helper tests are not
-equivalent to the new status-reference hashing test; #76 tracks restored live
-status-authority and revocation coverage.
+integration package passed 22 tests before the review fix that removed the
+tautological status-reference test; the focused package then passed 21 tests.
+#76 tracks anchoring the status reference and restoring live status-authority
+and revocation coverage.
 
 Dependency decision:
 
