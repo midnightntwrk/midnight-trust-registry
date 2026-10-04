@@ -112,6 +112,13 @@ Current VC dependency posture:
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
   semantics
 
+Local validation on 2026-10-05: frozen pnpm install, `pnpm audit --audit-level
+low`, `./run.sh --light`, and `./run.sh integration` passed. The full lane
+spent about 19 minutes compiling the 54-circuit contract, while the focused
+integration package passed 22 tests. The removed status-helper tests are not
+equivalent to the new status-reference hashing test; #76 tracks restored live
+status-authority and revocation coverage.
+
 Dependency decision:
 
 - do not import source files from sibling repositories at runtime
