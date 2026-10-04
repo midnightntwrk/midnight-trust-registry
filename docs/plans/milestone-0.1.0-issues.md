@@ -149,6 +149,10 @@ Subtasks:
 - [ ] Build a fixture-backed evidence-verifier adapter using public DID/VC
       package interfaces; verify applicant DID control, challenge binding,
       credential issuer, status, expiry, and role-specific claims.
+- [ ] Restore end-to-end accepted, mismatched-registry, and revoked-status
+      scenarios through a published status-authority package or adapter. The
+      published VC core 0.2.0 validates status-reference shape and commitment,
+      but does not replace the retired status-registry verification helper.
 - [ ] Sign the canonical envelope commitment with the evidence verifier's
       Midnight DID assertion key; expose the key reference and verification
       result without returning the raw VC/VP from a public API.
@@ -214,15 +218,13 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
-- [ ] Reconcile TR's published `midnight-did` 0.5.0-rc2 dependency with the
-      VC 0.2.0 profile's 0.7.0 adapter baseline: upgrade the published
-      dependency or prove the required fragment mapping and DID-state evidence
-      with cross-version vectors. Do not import sibling repository source.
-- [ ] Replace the legacy VC 0.1.0 credential tarball path for this integration
-      with a published or owner-packed VC core artifact that actually exports
-      signer authorization. Pin its version/integrity in the TR lockfile and
-      prove clean-checkout installation. If no consumable artifact exists,
-      block #73 and the milestone rather than substituting a copied source.
+- [x] Align the published Midnight DID dependency to 0.7.0 and verify the
+      adapter's canonical fragment and DID-state mapping without importing
+      sibling repository source.
+- [x] Replace the legacy VC 0.1.0 credential tarballs with published VC core
+      and DID-binding 0.2.0 packages, pinned in the lockfile and installed in
+      a clean consumer. This dependency migration does not complete the
+      verified TR decision-to-VC descriptor bridge above.
       #48's automated refresh policy remains a separate, deferred task.
 - [ ] Use VC `persistentHash<SchemaRef>` for issuer scope; define the exact
       signed request-profile commitment for verifier scope. Publish vectors
