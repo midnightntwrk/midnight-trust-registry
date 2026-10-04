@@ -53,22 +53,6 @@
     "@midnight-ntwrk/midnight-did-domain": "0.5.0-rc2",
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc2"
   },
-  "pnpm": {
-    "overrides": {
-      "@midnight-ntwrk/midnight-did": "0.5.0-rc2",
-      "@midnight-ntwrk/midnight-did-contract": "0.5.0-rc2",
-      "@midnight-ntwrk/midnight-did-credentials": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-0.1.0.tgz",
-      "@midnight-ntwrk/midnight-did-credentials-status-registry": "file:tooling/vendor/midnight-verifiable-credentials/midnight-ntwrk-midnight-did-credentials-status-registry-0.1.0.tgz",
-      "@midnight-ntwrk/midnight-did-domain": "0.5.0-rc2",
-      "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.5.0-rc2",
-      "vitest>vite": "7.3.6",
-      "esbuild@>=0.27.3 <0.28.1": "0.28.1",
-      "postcss": "8.5.23",
-      "js-yaml": "4.3.2",
-      "brace-expansion@<5.0.12": "5.0.12",
-      "nanoid@<3.3.18": "3.3.18"
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
     "@types/node": "^24.0.10",
@@ -76,7 +60,7 @@
     "@typescript-eslint/parser": "^8.35.1",
     "eslint": "^9.29.0",
     "eslint-config-prettier": "^10.1.5",
-    "turbo": "^2.5.4",
+    "turbo": "^2.10.13",
     "typescript": "^5.8.3",
     "vitest": "^4.1.11"
   }
