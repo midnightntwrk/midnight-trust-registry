@@ -114,7 +114,7 @@ describe("published VC and DID trust integration", () => {
     })).rejects.toThrow("not authorized");
   });
 
-  it("binds the VC status reference to the registry named by trusted issuer evidence", async () => {
+  it("hashes a VC status reference derived from the trusted issuer bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const fixture = createIssuerScenarioFixture("degree-status");
     const issuer = {
