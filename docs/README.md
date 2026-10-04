@@ -2,18 +2,25 @@
 
 This documentation set is the source of truth for the initial `midnight-trust-registry` implementation.
 
+The [0.1.0 reference profile](spec/milestone-0.1.0.md) defines the next
+release gate. The general specification below describes the longer-term v1
+system; the [0.1.0 issue plan](plans/milestone-0.1.0-issues.md) names the
+remaining implementation and test work.
+
 ## Reading Order
 
-1. [Trust Registry specification](spec/trust-registry.md)
-2. [Application evidence protocol](spec/application-evidence.md)
-3. [Architecture boundaries](architecture/trust-registry-boundaries.md)
-4. [Implementation plan](plans/trust-registry-implementation-plan.md)
-5. [Execution backlog](plans/trust-registry-backlog.md)
-6. [Research requirements memo](research/trust-registry-requirements-memo.md)
-7. [Decisions and open questions](decisions/trust-registry-decisions.md)
-8. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
-9. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
-10. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
+1. [0.1.0 reference profile and actor use cases](spec/milestone-0.1.0.md)
+2. [0.1.0 executable issue plan](plans/milestone-0.1.0-issues.md)
+3. [Trust Registry general specification](spec/trust-registry.md)
+4. [Application evidence protocol](spec/application-evidence.md)
+5. [Architecture boundaries](architecture/trust-registry-boundaries.md)
+6. [Implementation plan](plans/trust-registry-implementation-plan.md)
+7. [Execution backlog](plans/trust-registry-backlog.md)
+8. [Research requirements memo](research/trust-registry-requirements-memo.md)
+9. [Decisions and open questions](decisions/trust-registry-decisions.md)
+10. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
+11. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
+12. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 

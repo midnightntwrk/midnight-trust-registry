@@ -9,6 +9,8 @@ required_files=(
   "AGENT.md"
   "docs/README.md"
   "docs/spec/trust-registry.md"
+  "docs/spec/milestone-0.1.0.md"
+  "docs/plans/milestone-0.1.0-issues.md"
   "docs/plans/trust-registry-implementation-plan.md"
   "docs/plans/trust-registry-backlog.md"
   "docs/research/trust-registry-requirements-memo.md"
