@@ -5,8 +5,9 @@ Base branch: `develop`
 
 ## 0.1.0 Delivery Sequence
 
-The phases below record the historical build-out. Current delivery follows
-the [0.1.0 actor/use-case profile](../spec/milestone-0.1.0.md) and
+The phase archive later in this document records the earlier build-out.
+Current delivery follows the
+[0.1.0 actor/use-case profile](../spec/milestone-0.1.0.md) and
 [executable issue plan](milestone-0.1.0-issues.md):
 
 1. Lock role-specific scope commitments, immutable policy snapshots, and

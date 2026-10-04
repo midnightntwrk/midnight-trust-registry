@@ -152,7 +152,8 @@ revoked issuer cannot issue new credentials. Whether a revocation invalidates
 earlier credentials is explicit in the governing policy, never guessed by TR.
 
 Query outcomes MUST distinguish `active`, `not-authorized`, `suspended`,
-`revoked`, `superseded`, `out-of-scope`, `expired-policy`, `stale-or-unfinalized-epoch`, and
+`revoked`, `superseded`, `archived`, `out-of-scope`, `expired-policy`,
+`stale-or-unfinalized-epoch`, and
 `invalid-evidence`. A missing or unverifiable historical anchor fails closed.
 Query responses include registry ID, role, exact scope, policy ID/version,
 effective interval, epoch ID/root, and a verifiable evidence bundle. A listing

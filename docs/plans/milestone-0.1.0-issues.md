@@ -18,12 +18,12 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 2 | [#75](https://github.com/midnightntwrk/midnight-trust-registry/issues/75) | Canonical scope and policy snapshots: issuer, verifier, auditor, maintainer, relying party | #49, ADR-0001, ADR-0002 |
 | 3 | [#76](https://github.com/midnightntwrk/midnight-trust-registry/issues/76) | Real VC/VP evidence attestation: applicant and evidence verifier | #75 |
 | 4 | [#67](https://github.com/midnightntwrk/midnight-trust-registry/issues/67) | DID-bound on-chain evidence signature | #75, #76 |
-| 5 | [#77](https://github.com/midnightntwrk/midnight-trust-registry/issues/77) | Authenticated mutation gateway: applicant, maintainer, operator | #67 |
+| 5 | [#77](https://github.com/midnightntwrk/midnight-trust-registry/issues/77) | Authenticated mutation gateway: applicant, maintainer, operator | #67, #75 |
 | 6 | [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) | Historical API and TRQP evidence | Scope profile and #67 |
 | 7 | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | Produce authenticated issuer/verifier decision evidence | #75, #39 |
 | 8 | [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73) | Publish VC-compatible signer descriptors and authority proofs for Ledger 8 consumers | #67, #79 |
 | 9 | [#58](https://github.com/midnightntwrk/midnight-trust-registry/issues/58) | Issuer VC/VP governed journey | #67, #77, #39, #73 |
-| 10 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58 |
+| 10 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58, #67, #77 |
 | 11 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
 | 12 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial and historical security matrix | #58, #78, #73 |
 | 13 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Release candidate and attestable package gate | All prior milestone issues |
@@ -78,7 +78,8 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
 
 - #39 MUST return a historical epoch, policy version, exact scope, and
   independently verifiable proof for native API requests; TRQP historical
-  responses remain a named extension.
+  responses remain a named extension. Its UC-11 fixture MUST publish a valid
+  epoch and reject an invalid root or signer before that view can be queried.
 - #58 MUST consume the real evidence-verifier adapter and DID-bound contract
   path and the #73 signer descriptor, then test accepted, wrong-scope, suspended,
   revoked, expired, and wrong-registry issuer outcomes.
@@ -210,6 +211,16 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
+- [ ] Reconcile TR's published `midnight-did` 0.5.0-rc2 dependency with the
+      VC 0.2.0 profile's 0.7.0 adapter baseline: upgrade the published
+      dependency or prove the required fragment mapping and DID-state evidence
+      with cross-version vectors. Do not import sibling repository source.
+- [ ] Replace the legacy VC 0.1.0 credential tarball path for this integration
+      with a published or owner-packed VC core artifact that actually exports
+      signer authorization. Pin its version/integrity in the TR lockfile and
+      prove clean-checkout installation. If no consumable artifact exists,
+      block #73 and the milestone rather than substituting a copied source.
+      #48's automated refresh policy remains a separate, deferred task.
 - [ ] Use VC `persistentHash<SchemaRef>` for issuer scope; define the exact
       signed request-profile commitment for verifier scope. Publish vectors
       against VC's checked-in signer-authorization conformance suite.
@@ -284,7 +295,7 @@ Subtasks:
 - [ ] Export a scrubbed evidence report with policy version, epoch, signer
       set, and expected result for every actor.
 
-Definition of done: each UC-03/06/07/10/14 path has a positive and
+Definition of done: each UC-03/06/07/09/10/14 path has a positive and
 rule-specific negative automated case using the real evidence path. The suite
 is deterministic and runs through `./run.sh integration` with expensive
 proving variants documented separately.

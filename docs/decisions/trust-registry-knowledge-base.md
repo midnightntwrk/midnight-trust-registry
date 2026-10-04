@@ -30,8 +30,8 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## Historical Branch Snapshot
 
-The following branch notes are retained as a July 2026 snapshot. They are not
-the current release plan.
+The branch and implementation notes below are retained as a July 2026
+snapshot. They are not the current release plan.
 
 ### July 2026 Branch State
 
@@ -47,7 +47,7 @@ the current release plan.
 
 ### July 2026 Implementation Baseline
 
-Merged on `develop` before the current local slice:
+Merged on `develop` before the July 2026 local slice:
 
 - domain package:
   - `packages/trust-registry-domain`
@@ -88,7 +88,7 @@ Implemented functional baseline on `develop`:
 - read-only query API plus workspace-backed governed mutation API
 - local admin console and applicant portal over the existing API
 
-### Identity Dependency Posture
+## Current Identity Dependency Posture
 
 Trust Registry consumes the published Midnight DID packages from npm and the
 official VC packages from local vendored tarballs under `tooling/vendor/`.
@@ -103,6 +103,9 @@ Current DID package baseline:
 Current VC dependency posture:
 
 - keep consuming official vendored VC packages from repo-local `tooling/vendor/`
+- those VC 0.1.0 tarballs do not contain the current VC core signer-authorization
+  surface; #73 must consume a published or owner-packed compatible artifact
+  and reconcile the current VC profile's DID 0.7.0 baseline
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
@@ -114,9 +117,9 @@ Dependency decision:
 - do not keep copied Schnorr helper code inside the TR contract package
 - consume published or vendored package artifacts through local manifests
 
-### Public-Readiness Hardening
+## Public-Readiness Hardening
 
-The current local slice adds the following repository hardening:
+Merged PR #71 added the following repository hardening:
 
 - root package-manager baseline:
   - `pnpm@10.34.1`
@@ -127,7 +130,7 @@ The current local slice adds the following repository hardening:
 - contributor and PR-template updates for public review hygiene
 - root ignore rules for generated demo artifacts
 
-### Root Demo And Operator Surface
+## Root Demo And Operator Surface
 
 The repo now exposes root orchestration commands for the existing contract,
 backend, and UI skeleton:
@@ -149,7 +152,7 @@ Default local endpoints:
 - applicant portal:
   - `http://127.0.0.1:4175`
 
-### Validation Baseline
+## Validation Baseline
 
 Current required local gate for code-bearing changes:
 
@@ -160,7 +163,7 @@ pnpm install --frozen-lockfile
 git diff --check
 ```
 
-Validation status for the current local slice on 2026-07-23:
+Historical July 2026 validation snapshot (not the current milestone result):
 
 - `pnpm install --frozen-lockfile=false`
   - passed while updating the lockfile for DID `0.5.0-rc2`
@@ -177,13 +180,13 @@ Operational note:
 - run `./run.sh --light` and `./run.sh integration` sequentially, not in
   parallel
 
-### Backlog Posture
+## Backlog Posture
 
 Planning has shifted from stack-only notes to GitHub issue tracking.
 
-The first 20 issue-backed work items now exist in the repository:
-
-- `#29` through `#49`
+The first 20 issue-backed work items are #29 through #48. The next alignment
+issue is #49. The current 0.1.0 blocker set is the
+[milestone plan](../plans/milestone-0.1.0-issues.md), not this older tranche.
 
 These cover:
 
@@ -200,7 +203,9 @@ Canonical backlog file:
 
 - `docs/plans/trust-registry-backlog.md`
 
-### July 2026 Recommended Execution Order
+## Historical July 2026 Execution Order
+
+This list is retained for context and is not the current recommendation.
 
 1. close the public-readiness branch locally
    - confirm `./run.sh integration`
