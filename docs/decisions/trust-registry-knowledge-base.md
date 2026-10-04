@@ -18,21 +18,22 @@ shorter-lived and more action-oriented than the normative specification.
 - The [0.1.0 profile](../spec/milestone-0.1.0.md) defines a simulator-based,
   DID/VC-backed governed trust journey and names each actor's authority.
 - The [issue plan](../plans/milestone-0.1.0-issues.md) reuses #39, #45, #49,
-  #58-#60, and #67 and tracks the missing scope, evidence, mutation, and
+  #58-#60, #67, and #73 and tracks the missing scope, evidence, mutation, and
   multi-role integration slices as #75-#79.
 - The main blockers are real evidence-verifier signature checks in Compact,
   official VC/VP eligibility verification, authenticated API mutations,
-  independently verified VC trust-anchor production, and cross-surface
+  independently verified VC signer-descriptor and authority-proof production,
+  and cross-surface
   positive/negative scenarios.
-- Ledger 8 signer descriptors (#73) and production hosting remain outside the
-  0.1.0 reference milestone.
+- Ledger 8 portable signer descriptors (#73) are in 0.1.0; synchronous
+  cross-contract calls and production hosting remain outside it.
 
 ## Historical Branch Snapshot
 
 The following branch notes are retained as a July 2026 snapshot. They are not
 the current release plan.
 
-## July 2026 Branch State
+### July 2026 Branch State
 
 - upstream baseline branch:
   - `develop`
@@ -44,7 +45,7 @@ the current release plan.
   - expose root demo and operator entrypoints
   - switch the backlog from stack-only tracking to issue-backed tracking
 
-## Current Implementation Baseline
+### July 2026 Implementation Baseline
 
 Merged on `develop` before the current local slice:
 
@@ -87,7 +88,7 @@ Implemented functional baseline on `develop`:
 - read-only query API plus workspace-backed governed mutation API
 - local admin console and applicant portal over the existing API
 
-## Identity Dependency Posture
+### Identity Dependency Posture
 
 Trust Registry consumes the published Midnight DID packages from npm and the
 official VC packages from local vendored tarballs under `tooling/vendor/`.
@@ -113,7 +114,7 @@ Dependency decision:
 - do not keep copied Schnorr helper code inside the TR contract package
 - consume published or vendored package artifacts through local manifests
 
-## Public-Readiness Hardening
+### Public-Readiness Hardening
 
 The current local slice adds the following repository hardening:
 
@@ -126,7 +127,7 @@ The current local slice adds the following repository hardening:
 - contributor and PR-template updates for public review hygiene
 - root ignore rules for generated demo artifacts
 
-## Root Demo And Operator Surface
+### Root Demo And Operator Surface
 
 The repo now exposes root orchestration commands for the existing contract,
 backend, and UI skeleton:
@@ -148,7 +149,7 @@ Default local endpoints:
 - applicant portal:
   - `http://127.0.0.1:4175`
 
-## Validation Baseline
+### Validation Baseline
 
 Current required local gate for code-bearing changes:
 
@@ -176,7 +177,7 @@ Operational note:
 - run `./run.sh --light` and `./run.sh integration` sequentially, not in
   parallel
 
-## Backlog Posture
+### Backlog Posture
 
 Planning has shifted from stack-only notes to GitHub issue tracking.
 
@@ -199,7 +200,7 @@ Canonical backlog file:
 
 - `docs/plans/trust-registry-backlog.md`
 
-## Next Recommended Execution Order
+### July 2026 Recommended Execution Order
 
 1. close the public-readiness branch locally
    - confirm `./run.sh integration`

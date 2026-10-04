@@ -25,7 +25,7 @@ production service operation. The simulator is a test double for Midnight
 ledger execution. Tests MUST say when finality is simulated. Production
 deployment, public multi-tenant hosting, arbitrary DID methods, native
 secp256k1/P-256/Ed25519 contract verification, transitive federation trust,
-and Ledger 8 cross-contract consumption are outside this milestone.
+and Ledger 8 synchronous cross-contract calls are outside this milestone.
 
 ## 2. Layers And Owners
 
@@ -59,7 +59,7 @@ authorization. A DID alone confers no registry privilege.
 | External authority / registry | Supply evidence for scoped recognition | Recognition is a peer statement, not a local authorization or maintainer role |
 | Holder | Choose whether to present a VC/VP to a verifier | Registry does not observe or log presentation activity |
 | Relying party | Query issuer/verifier/auditor grants and validate evidence | Must verify registry, scope, policy, epoch, and time before relying on an answer |
-| VC verifier / credential product | Consume an accepted issuer/verifier trust anchor for a presentation decision | Must pin the registry authority and verify both grants, not trust a caller-supplied digest |
+| VC verifier / credential product | Materialize a registry-signed issuer or verifier descriptor | Must pin the registry authority in its own ledger state; a relayer or witness is not an authority |
 | Registry operator | Run API, indexer, and local UI | Transport access alone never authorizes a governed mutation |
 
 For the auditor request, the registry answers whether an auditor DID is active
@@ -86,7 +86,7 @@ grant as blanket access to presentations or personal information.
 | UC-12 | Relying party evaluates at time T | Active scoped grant, accepted epoch, DID/key history, policy snapshot, and proof all verify | Wrong registry, scope, time, status, Merkle path, or stale epoch |
 | UC-13 | Holder presents a credential | Verifier checks VC proof, VC status, issuer grant at issuance, and applicable current policy | Registry lookup used as substitute for VC proof or status |
 | UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant and exact request purpose | Blanket data access or holder tracking through the registry |
-| UC-15 | VC verifier resolves a trusted anchor | Required issuer/verifier grants, schema, policy, network, epoch, and proof bind the VC trust fields | Caller-provided root, missing verifier grant in two-party mode, withdrawn schema, suspended party, or stale epoch |
+| UC-15 | VC consumer installs a registry decision | A governed issuer or verifier grant yields a VC-compatible descriptor and authority proof accepted under a pinned local anchor | Witness-supplied authority, wrong network/contract, method/key/scope substitution, stale sequence, or revoked-to-active replay |
 
 ## 5. Application And Decision Protocol
 
@@ -110,8 +110,15 @@ grant as blanket access to presentations or personal information.
    Historical decisions remain addressable with their original policy and
    signer/key state. The operator publishes a new epoch for a new public view.
 
+The 0.1.0 reference fixture bootstraps three maintainer DIDs and uses a
+2-of-3 threshold for ordinary, membership, emergency, and archival action
+families. This is a concrete test policy, not a fixed protocol limit. A
+maintainer cannot vote on its own admission, suspension, or removal, and no
+decision may leave fewer active maintainers than the live threshold. Other
+thresholds require their own policy version and positive/negative fixtures.
+
 Application states are `proposed -> authorized -> active`, followed by
-`suspended`, `revoked`, or `archived` as allowed by the existing lifecycle
+`suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing lifecycle
 validators. A rejected proposal MUST be terminal or represented by an explicit
 rejection event before its scope can be reused; 0.1.0 implementation issues
 must settle this currently missing transition. A superseding application gets
@@ -145,7 +152,7 @@ revoked issuer cannot issue new credentials. Whether a revocation invalidates
 earlier credentials is explicit in the governing policy, never guessed by TR.
 
 Query outcomes MUST distinguish `active`, `not-authorized`, `suspended`,
-`revoked`, `out-of-scope`, `expired-policy`, `stale-or-unfinalized-epoch`, and
+`revoked`, `superseded`, `out-of-scope`, `expired-policy`, `stale-or-unfinalized-epoch`, and
 `invalid-evidence`. A missing or unverifiable historical anchor fails closed.
 Query responses include registry ID, role, exact scope, policy ID/version,
 effective interval, epoch ID/root, and a verifiable evidence bundle. A listing
@@ -153,48 +160,62 @@ or positive boolean without proof is informational only.
 
 ## 7. Trusted Anchor For VC Consumers
 
-The VC [verification contract v1](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/docs/spec/verification-contract-v1.md)
-defines `trustScopeDigest`, `trustEvidenceDigest`, and a trust
-`EvidenceBindingV1`; its authority table assigns production of accepted trust
-state or signed epoch evidence to this repository. The VC repository owns
-transcript, proof, status, and final decision semantics. This registry owns the
-authoritative grant and the producer/verifier of its portable trust evidence.
-An application-eligibility attestation is input to governance, not itself a
-trusted issuer/verifier anchor.
+The current VC [signer-authorization specification](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/spec/signer-authorization.md)
+defines `AuthorizedSignerDescriptor`, `SignerAuthorizationAuthority`, and a
+domain-bound authority `Proof` for issuer and verifier roles. It does not use
+the older draft's `trustScopeDigest`/`trustEvidenceDigest` transcript. VC owns
+core descriptor validation and VC/VP proof decisions; TR owns governed
+authorization, DID/relationship evaluation, decision evidence, and
+descriptor/authority-proof production. An applicant's eligibility attestation
+is input to governance, not an approved signer descriptor.
 
-The 0.1.0 exported `TrustAnchorEvidenceV1` MUST bind a configured registry DID
-and network, an accepted finalized epoch and policy version, exact issuer DID
-and credential family/schema version. Its explicit mode is `issuer-only` for an
-issuance check or `issuer-and-verifier` for a presentation check that requires
-an authorized verifier. The latter MUST also bind exact verifier DID and
-request profile; absent verifier fields have one canonical encoding in the
-former mode and MUST NOT be interpreted as a verifier grant. Each included
-role-specific authorization statement carries effective time, status, and a
-verifiable inclusion path to its epoch. The issuer and verifier MAY use
-different accepted epochs when the consumer's time policy permits. The schema
-binding MUST be explicit: a live issuer grant for another schema or a
-verifier grant for another request profile is not sufficient.
-Artifact/deployment references MAY be included only when governed and
-digest-verified; an arbitrary URL is discovery metadata, not a trust anchor.
+Issue #79 MUST export a versioned, independently verified TR decision-evidence
+bundle: exact registry/network identity, grant role and scope, policy version,
+issuer or verifier DID and active method/key, observed DID state version,
+effective lifecycle state, accepted epoch, quorum evidence, and inclusion
+proof. The builder verifies this evidence before producing a descriptor
+candidate. An issuer-only query yields issuer evidence; a verifier query yields
+verifier evidence. A presentation product requiring both MUST verify both
+independently. Artifact/deployment URLs are discovery metadata unless their
+digests are governed and verified.
 
-The TR package MUST export a versioned encoder and verifier for this evidence
-and publish cross-runtime vectors for the VC `trustScopeDigest` and trust
-`EvidenceBindingV1` fields: authority = configured registry identity, subject
-= exact issuer/verifier/schema/network/policy scope, state anchor = accepted
-epoch, statement = proven authorization statement set, and created/expiry =
-bounded accepted evidence window. The exact composite field order, absence
-rules, and digest algorithm MUST be fixed in the #79 implementation before a
-final VC profile consumes it. A caller-supplied `trustEvidenceDigest` without
-verified proofs and a locally accepted registry root MUST fail closed.
+Issue [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73)
+MUST map each verified grant to the exact VC `AuthorizedSignerDescriptor` v1
+field order and sign its domain-separated decision root with a governed TR
+JubJub authority key. The descriptor has non-zero authorization ID, monotonic
+decision sequence, state (`active`, `suspended`, or `revoked`), role, exact
+`VerificationMethodRef`, public key, positive DID state version, required DID
+relationship, non-zero scope commitment, and non-zero policy commitment.
+Issuer method requires `assertionMethod`; verifier method requires
+`authentication` or `capabilityInvocation`. The VC method ID is SHA-256 of
+the canonical Midnight DID fragment and its controller is the exact DID
+contract address. Issuer scope is VC `persistentHash<SchemaRef>` for the exact
+credential schema; verifier scope is a canonical commitment to the approved
+signed request profile. The richer ADR-0002 registry scope is evaluated before
+issuing this narrower VC descriptor, never silently widened by it.
 
-The registry trust root cannot bootstrap itself from its own query result.
-The consumer MUST pin a registry identity plus genesis/manifest commitment or
-another independently authenticated registry authority, then validate epoch
-signer quorum and proof inclusion under that root. Recognition or OpenID
-Federation metadata alone does not make an external root accepted. The
-0.1.0 reference consumer is the TR client with a VC-compatible projection;
-direct Compact-to-Compact VC verification remains [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73)
-and MUST NOT be advertised as complete.
+The TR-owned `domainCommitment` preimage MUST include Midnight network,
+consuming contract, registry ID, and authority identity. The authority proof
+binds `persistentHash<Vector<2, Bytes<32>>>([domainCommitment,
+descriptorRoot])` using the VC `midnight:vc:signer-auth:v1` context;
+`Proof.createdAt` equals the decision sequence, not wall-clock time.
+Published vectors MUST match the VC
+[signer-authorization conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json).
+Authority-key rotation is governed and published with overlap/retirement
+rules. The signing service MUST only sign a decision already committed under
+the required maintainer quorum; its single key is a portable attestation of
+that decision, not a replacement for quorum evidence.
+
+A Ledger 8 consumer MUST pin the accepted authority domain, verification
+method, and key in its own ledger state, then verify the proof and monotonic
+descriptor update before materializing current authorization. A relayer may
+deliver a decision but has no authority. Revocation is not synchronous: until
+the consumer accepts the newer signed decision it sees its last stored state.
+Historical issuance-time authorization remains a separate TR query with an
+authenticated epoch; the current VC core descriptor does not prove historical
+trust. Recognition or OpenID Federation metadata alone never pins an
+authority. A caller-supplied root, descriptor, or `isTrusted` boolean is not
+authoritative.
 
 ## 8. API, Privacy, And Interoperability
 
@@ -230,9 +251,10 @@ maintainer.
 - Current and historical evidence is verified independently, including
   policy/key rotation, suspension/revocation, wrong scope, stale epoch, and
   tampered proof failures. Simulator finality is labeled as simulated.
-- UC-15 exports VC-compatible issuer-only and issuer-plus-verifier anchor
-  bundles and digest vectors; an independently configured consumer
-  rejects an unpinned root, wrong schema/profile, or caller-made digest.
+- UC-15 exports TR decision evidence plus VC-compatible issuer and verifier
+  descriptors with authority proofs; a Ledger 8 consumer fixture pins its own
+  anchor and rejects wrong domain/key/scope, stale sequence, and revoked
+  replay. It labels current-trust versus historical-TR semantics explicitly.
 - `./scripts/check-docs.sh`, `./run.sh --light`, `./run.sh integration`,
   `pnpm run demo:smoke`, artifact packing/smoke, and a fresh-checkout 0.1.0
   scenario pass. A release candidate has a source revision, Compact compiler
@@ -243,6 +265,6 @@ maintainer.
 - [ToIP TRQP v2.0 approved specification](https://trustoverip.github.io/tswg-trust-registry-protocol/approved/): authorization and recognition read queries; metadata/description is deferred.
 - [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html): signed entity statements and trust chains for publisher authentication.
 - [OpenID Federation for Wallet Architectures draft](https://openid.net/specs/openid-federation-wallet-1_0.html): informative future wallet federation integration.
-- [VC verification contract v1](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/docs/spec/verification-contract-v1.md) and [VC contract-composition ADR](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/docs/decisions/0002-contract-composition-and-registry-governance.md): trust digest/evidence consumer contract and repository ownership.
+- [VC signer authorization](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/spec/signer-authorization.md), [Compact implementation](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/packages/core/compact/src/credentials/signer-authorization.compact), and [conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json): current issuer/verifier authority-anchor contract.
 - [Application Evidence Protocol](application-evidence.md), [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md), and [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md) are the local v0.1 inputs.
 - [Research requirements memo](../research/trust-registry-requirements-memo.md) traces the Kanon, MIT issuer registry governance, and other research sources.

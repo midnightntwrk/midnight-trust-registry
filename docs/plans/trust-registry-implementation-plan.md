@@ -16,8 +16,9 @@ the [0.1.0 actor/use-case profile](../spec/milestone-0.1.0.md) and
 3. Bind signed applicant and maintainer intents through API/UI to the same
    contract state machine; fail closed on replay and stale writes.
 4. Export current and historical evidence with policy, epoch, and scope;
-   produce independently verified issuer/verifier trust anchors compatible
-   with VC trust-scope and trust-evidence bindings.
+   authenticate DID-bound issuer/verifier decisions and produce VC-core
+   signer descriptors with domain-bound authority proofs for a Ledger 8
+   consumer fixture.
 5. Exercise issuer, verifier, auditor, maintainer, recognition, holder, and
    relying-party journeys plus adversarial tests.
 6. Run the clean-checkout release gate and produce digest-verified 0.1.0

@@ -316,10 +316,10 @@ VC integration:
 - VC packages define credential schemas, credential definitions, holder binding, status, and presentation semantics.
 - TR can authorize issuers for VC resource scopes and verifiers for request profiles.
 - VC verification can consume TR evidence bundles to decide whether a credential or presentation came from an authorized trust domain.
-- TR produces the independently verifiable issuer/verifier/schema trusted
-  anchor and VC trust-scope/evidence bindings defined by the
-  [0.1.0 reference profile](milestone-0.1.0.md). VC owns the consumer
-  transcript and final proof decision; an API boolean is not an anchor.
+- TR produces authenticated issuer/verifier decision evidence and
+  VC-compatible signer descriptors with domain-bound authority proofs as
+  defined by the [0.1.0 reference profile](milestone-0.1.0.md). VC owns the
+  consumer proof decision; an API boolean is not an anchor.
 - Applicant VC/VP verification occurs off-chain through a policy-authorized
   evidence verifier. The Trust Registry commits only the resulting evidence
   commitment and governed decision context.

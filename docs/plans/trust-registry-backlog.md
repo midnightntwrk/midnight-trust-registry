@@ -43,7 +43,8 @@ DID-bound signature, and the local mutation API does not authenticate callers.
 | DID-bound on-chain attestation | [#67](https://github.com/midnightntwrk/midnight-trust-registry/issues/67) | Compact rejects fake, substituted, retired, or unauthorized assertion keys. |
 | Authenticated mutation gateway | [#77](https://github.com/midnightntwrk/midnight-trust-registry/issues/77) | Applicant and maintainer intents are signed, scoped, and replay safe. |
 | Historical public evidence | [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) | API and TRQP extension carry epoch, policy, scope, and verifiable proof at time T. |
-| VC issuer/verifier trusted anchor | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | TR exports accepted, independently verifiable issuer/verifier/schema grant evidence and VC-compatible trust digest vectors. |
+| VC decision evidence | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | TR authenticates exact issuer/verifier grant, DID method/key, policy, and epoch before descriptor production. |
+| Portable VC signer anchor | [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73) | TR signs VC-compatible issuer/verifier descriptors; Ledger 8 consumer pins the authority and rejects replay/substitution. |
 | Issuer trust journey | [#58](https://github.com/midnightntwrk/midnight-trust-registry/issues/58) | VC/VP -> quorum -> epoch -> accepted/rejected trust evaluation. |
 | Other actor journeys | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Verifier, auditor, recognition, and maintainer positive/negative E2E paths. |
 | API/UI and adversarial journeys | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59), [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Public contracts preserve the same rules and fail closed under tampering. |
@@ -67,9 +68,9 @@ be checked against the issue's acceptance criteria before closure.
 
 ## Deferred And Reconciliation Queue
 
-- [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73):
-  Ledger 8 portable signer descriptors for on-chain VC consumers are a later
-  integration milestone. 0.1.0 verifies TR evidence in the client.
+- Ledger 8 synchronous cross-contract calls and production relayer monitoring
+  remain outside the reference milestone; #73 delivers portable descriptors
+  and a locally pinned consumer fixture without requiring either capability.
 - [#61](https://github.com/midnightntwrk/midnight-trust-registry/issues/61)
   through [#64](https://github.com/midnightntwrk/midnight-trust-registry/issues/64):
   dependency automation, public docs site, change-aware CI, and additional
@@ -82,6 +83,13 @@ be checked against the issue's acceptance criteria before closure.
   close with a comment naming PR, merge commit, validation command, and any
   deliberate deferral. Do not close [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
   without a concrete implementation reference for historical API/TRQP output.
+
+## Legacy Backlog Aliases
+
+Older decision notes still refer to `TR-026` (mutable operator CLI, now #32),
+`TR-027` (read/query and applicant APIs, now #33 and #34), and `TR-029`
+(historical query/proof/adapters, now #37, #38, and #39). These are historical
+labels, not additional open work items.
 
 ## Delivery Rule
 

@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- defined the 0.1.0 actor/use-case profile, executable milestone issue plan,
+  and current VC signer-authorization anchor delivery boundary
 - public-repo hardening with PR-title/body validation and a quality workflow
 - root demo commands for preparing a seeded operator workspace and booting the
   API, admin console, and applicant portal from the repo root
