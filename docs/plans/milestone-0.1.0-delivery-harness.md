@@ -1,0 +1,89 @@
+# Milestone 0.1.0 delivery harness
+
+`milestone-0.1.0` is a product integration train based on `develop`. It is not
+a release branch. The branch accepts issue-backed PRs after exact-head review
+and CI; promotion back to `develop` requires the normal human review policy.
+
+## Authority and scope
+
+| Target | Merge authority | Minimum evidence |
+| --- | --- | --- |
+| `milestone-0.1.0` | Agent/operator after guard checks | Issue, current-head review receipt, green required CI, signed commits, resolved conversations |
+| `develop` | Human review | Existing protected-branch policy and integration evidence |
+| `main` | Human release review | Release policy and complete release validation |
+
+No agent may use `--admin`, direct push, force push, or a branch-protection
+bypass to land a milestone increment. A CI pass is not a substitute for review.
+Self-review is allowed for low-risk changes; contract, cryptography, governance,
+security, credential trust decisions, and CI/merge-policy changes need a
+second-opinion external review (Claude CLI or another independent reviewer).
+Blocking findings must be fixed before merge. Record advisory findings and
+their disposition in the PR, with a linked follow-up issue when deferred.
+
+## One-PR loop
+
+1. Select a ready issue with acceptance criteria and base `milestone-0.1.0`.
+2. Use an isolated `codex/` branch; run focused tests, then `./run.sh --light`.
+   Run `./run.sh integration` for contract, client, API, or UI behavior changes.
+3. Push DCO-signed and GPG-signed commits. Open a PR to the milestone branch
+   with `Closes #N`, `Fixes #N`, or `Refs #N` in its body.
+4. Review the final diff. Fill `## Review findings` with blocking/advisory
+   dispositions and, if external, a review link. Add exactly one receipt on its
+   own line, replacing `<head>` and `<mode>`:
+
+   ```text
+   <!-- tr-review:v1 head=<head> mode=<mode> verdict=pass -->
+   ```
+
+   `<head>` is the 40-character GitHub PR head SHA; `<mode>` is `self` or
+   `external`. Editing the PR body reruns `Milestone Review`. A new push
+   invalidates the old receipt and all prior exact-head review evidence.
+5. Confirm `Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
+   Packaging Baseline`, and `scan` are green for the current head. Also inspect
+   all non-required checks and resolve any real failures. Resolve review
+   conversations, confirm mergeability, and refresh the base if stale.
+6. Re-read the PR head immediately before merging. Merge only with the
+   compare-and-swap guard; never use `--admin`:
+
+   ```bash
+   gh pr merge <number> -R midnightntwrk/midnight-trust-registry \
+     --merge --match-head-commit <reviewed-head-sha>
+   ```
+
+   The branch protection settings, not a local script, enforce the PR,
+   signature, status, and conversation gates. The SHA flag prevents a race
+   with a subsequent push. Merge one PR at a time, bottom-up for stacks.
+
+## Hosted gates
+
+- `Milestone Review`: exact-head review receipt, issue link, findings text,
+  author-matching DCO signoffs, and harness unit tests. It uses read-only
+  permissions and no secrets.
+- `Milestone Light`: unconditional `./run.sh --light` on milestone PRs, even
+  docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
+  to avoid a duplicate Compact build.
+- `Quality`: build, typecheck, and dependency audit on milestone PRs and train
+  pushes.
+- `Scan`: security scan on every PR and milestone push.
+- Existing docs and PR-title checks remain applicable where triggered.
+
+The milestone branch must require PRs, zero approving GitHub reviews, strict
+up-to-date checks (`Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
+Packaging Baseline`, `scan`), signed commits, and resolved conversations.
+Force pushes and deletions must be disabled. Verify these settings through the
+GitHub API after configuration. Do not weaken `develop` or `main` protection.
+
+## Boundaries
+
+This is deliberately smaller than the `factory` harness: no custom Pi runtime,
+claim leases, metrics database, change-classification engine, or automated
+merger. Add those only when a measured delivery bottleneck justifies them.
+The body receipt is an attestation, not cryptographic proof of review. CI
+verifies freshness and form; the operator remains responsible for the actual
+review and disposition. For now, a self-review is a documented process rather
+than a GitHub approval because GitHub does not permit authors to approve their
+own PRs.
+
+After the pending milestone specification PR lands in `develop`, sync it into
+the train through a separate PR and rerun the complete train gates. Do not
+silently rebase or force-push the protected milestone branch.

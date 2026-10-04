@@ -142,6 +142,14 @@ or compact scripts, then validate the generated surface through tests.
 6. Push and open PRs against `develop` or the previous branch when stacking.
 7. Ask for second-opinion review when the change affects protocol, governance, package layout, Compact contracts, CI, or security boundaries.
 
+For issue-backed `0.1.0` product increments, target `milestone-0.1.0` rather
+than `develop` and follow [the milestone delivery harness](docs/plans/milestone-0.1.0-delivery-harness.md).
+Agent/operator merge into that branch is permitted only after exact-head
+review, required CI, signed commits, and resolved conversations. Self-review
+may satisfy low-risk changes; high-risk and harness changes need an independent
+second opinion. Never use admin bypass or direct push. PRs into `develop` and
+`main` retain human merge authority and their existing protections.
+
 Commit form:
 
 ```bash

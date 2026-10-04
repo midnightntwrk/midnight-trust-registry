@@ -198,3 +198,13 @@ When a meaningful TR slice lands or materially changes direction, update:
 2. the workspace-root knowledge base under
    `midnight-identity-workspace/research/`
 3. the global `trusted-registry` Obsidian vault
+
+## Milestone delivery train (2026-10-05)
+
+`milestone-0.1.0` was created from `develop` at `0b7f620`. Its minimal
+repo-local harness is specified in
+`docs/plans/milestone-0.1.0-delivery-harness.md`: exact-head review receipts,
+issue-backed PRs, unconditional light and quality gates, and guarded merging.
+Only this milestone branch permits agent/operator merge without a GitHub human
+approval; `develop` and `main` remain human-controlled. The pending 0.1.0
+specification PR should be synced to the train after it merges to `develop`.
