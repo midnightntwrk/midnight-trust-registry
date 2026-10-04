@@ -2,7 +2,10 @@
 
 `midnight-trust-registry` owns the trust-policy and registry-governance workstream for Midnight identity. It defines how issuers, verifiers, credential resources, and external authorities become trusted without moving DID resolution or verifiable credential issuance into this repository.
 
-The repository is intentionally documentation-first while the contract and package boundaries are being finalized. The first implementation target is a registry that works with `midnight-did` and `midnight-verifiable-credentials` without duplicating their responsibilities.
+The repository contains a simulator-first contract, client, API, and local app
+skeleton. The 0.1.0 milestone turns that foundation into a DID/VC-backed,
+governed reference journey without duplicating the sibling repositories'
+responsibilities.
 
 ## Scope
 
@@ -13,7 +16,7 @@ This repository owns:
 - Recognition of external authorities and registries.
 - Historical evidence needed for long-term credential verification.
 - Query and evidence surfaces that applications can consume.
-- Future Compact and TypeScript packages for registry contracts, clients, and adapters.
+- Compact and TypeScript packages for registry contracts, clients, and adapters.
 
 This repository does not own:
 
@@ -23,6 +26,10 @@ This repository does not own:
 
 ## Documentation Map
 
+- [0.1.0 reference profile](docs/spec/milestone-0.1.0.md) defines the actor,
+  use-case, security, and release-acceptance contract for the next milestone.
+- [0.1.0 executable issue plan](docs/plans/milestone-0.1.0-issues.md) maps
+  each use case to a tracker issue, dependency, and definition of done.
 - [Trust registry specification](docs/spec/trust-registry.md) defines the v1 product and protocol scope.
 - [Implementation plan](docs/plans/trust-registry-implementation-plan.md) breaks execution into reviewable slices.
 - [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.

@@ -112,15 +112,18 @@ grant as blanket access to presentations or personal information.
 
 The 0.1.0 reference fixture bootstraps three maintainer DIDs and uses a
 2-of-3 threshold for ordinary, membership, emergency, and archival action
-families. This is a concrete test policy, not a fixed protocol limit. A
-maintainer cannot vote on its own admission, suspension, or removal, and no
-decision may leave fewer active maintainers than the live threshold. Other
-thresholds require their own policy version and positive/negative fixtures.
+families. This is a reference policy, not a protocol-wide default. The
+current `MaintainerAuthorizationBundle` has five signer slots; Compact
+rejects thresholds above five. Other thresholds from one to five require
+their own policy version and positive/negative fixtures; larger thresholds
+require a contract change. A maintainer cannot vote on its own admission,
+suspension, or removal, and no decision may leave fewer active maintainers
+than the live threshold. Other policies must preserve these invariants.
 
 Application states are `proposed -> authorized -> active`, followed by
-`suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing lifecycle
-validators. A rejected proposal MUST be terminal or represented by an explicit
-rejection event before its scope can be reused; 0.1.0 implementation issues
+`suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
+lifecycle validators. A rejected proposal MUST be terminal or represented by
+an explicit rejection event before its scope can be reused; 0.1.0 issues
 must settle this currently missing transition. A superseding application gets
 a new ID and explicit predecessor reference. No status change is inferred from
 a changed API response alone.
@@ -207,6 +210,14 @@ rules. The signing service MUST only sign a decision already committed under
 the required maintainer quorum; its single key is a portable attestation of
 that decision, not a replacement for quorum evidence.
 
+The consumer MUST use the VC core's composed
+`VC<>::assertAuthorizedIssuerProof` when claiming an issuer-authorized
+credential decision. The lower-level `assertAuthorizedIssuerDescriptor`
+checks signer metadata and schema scope but does not verify the credential
+proof signature; it cannot be used alone as a trust decision. A verifier
+request uses `assertAuthorizedVerifierProof` with its signed request scope,
+not the holder's presentation proof.
+
 A Ledger 8 consumer MUST pin the accepted authority domain, verification
 method, and key in its own ledger state, then verify the proof and monotonic
 descriptor update before materializing current authorization. A relayer may
@@ -255,7 +266,9 @@ maintainer.
 - UC-15 exports TR decision evidence plus VC-compatible issuer and verifier
   descriptors with authority proofs; a Ledger 8 consumer fixture pins its own
   anchor and rejects wrong domain/key/scope, stale sequence, and revoked
-  replay. It labels current-trust versus historical-TR semantics explicitly.
+  replay. A forged credential signature fails the composed issuer-proof path
+  even when its descriptor metadata matches. The fixture labels current-trust
+  versus historical-TR semantics explicitly.
 - `./scripts/check-docs.sh`, `./run.sh --light`, `./run.sh integration`,
   `pnpm run demo:smoke`, artifact packing/smoke, and a fresh-checkout 0.1.0
   scenario pass. A release candidate has a source revision, Compact compiler

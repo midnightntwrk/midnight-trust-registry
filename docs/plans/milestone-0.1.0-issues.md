@@ -82,7 +82,9 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
   epoch and reject an invalid root or signer before that view can be queried.
 - #58 MUST consume the real evidence-verifier adapter and DID-bound contract
   path and the #73 signer descriptor, then test accepted, wrong-scope, suspended,
-  revoked, expired, and wrong-registry issuer outcomes.
+  revoked, expired, and wrong-registry issuer outcomes. Its credential decision
+  MUST use the VC composed `VC<>::assertAuthorizedIssuerProof` path, not the
+  metadata-only descriptor helper.
 - #59 MUST exercise authenticated applicant and maintainer intents through the
   public API/UI, assert fail-closed stale/replayed writes, and compare the
   public query with client evidence verification.
@@ -96,7 +98,7 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
 
 ## Issue #75: Canonical scope and policy snapshot conformance
 
-Suggested title: `feat(domain): enforce canonical scopes and policy snapshots across registry surfaces`
+Tracker title: `feat(domain): enforce canonical scopes and policy snapshots across registry surfaces`
 
 Why: ADR-0001 and ADR-0002 describe exact scope IDs and immutable policy
 versions, while the current contract exposes opaque byte fields and the
@@ -114,6 +116,7 @@ Subtasks:
 - [ ] Publish the three-maintainer, 2-of-3 reference fixture for ordinary,
       membership, emergency, and archival families; reject self-vote and a
       transition that would leave fewer active maintainers than the threshold.
+      Reject a threshold above the current Compact five-signer ceiling.
 - [ ] Exercise one-time bootstrap versus duplicate initialization and a
       versioned policy revision versus reinterpretation of an old decision.
 - [ ] Publish JSON and byte-level vectors consumed by domain, Compact wrapper,
@@ -135,7 +138,7 @@ Depends on: ADR-0001, ADR-0002, #49. Labels: `trust-registry`, `governance`,
 
 ## Issue #76: Verify VC/VP eligibility and sign the result
 
-Suggested title: `feat(evidence): verify Midnight VC/VP eligibility and sign application attestations`
+Tracker title: `feat(evidence): verify Midnight VC/VP eligibility and sign application attestations`
 
 Why: the current simulator fabricates `SHA-256(commitment:keyId)` as a
 signature. A real 0.1.0 journey needs actual DID, VC/VP, status, and policy
@@ -232,6 +235,10 @@ not the older transcript-digest draft.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
+- [ ] In the consumer fixture, use the VC composed
+      `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
+      that a forged credential signature fails despite matching descriptor
+      metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 
@@ -243,7 +250,7 @@ and a focused Ledger 8 fixture smoke test. Depends on #67 and #79.
 
 ## Issue #77: Authenticate mutation actors and make writes replay safe
 
-Suggested title: `feat(api): require DID-signed applicant and maintainer mutation intents`
+Tracker title: `feat(api): require DID-signed applicant and maintainer mutation intents`
 
 Why: the local workspace-backed API currently accepts `target` and `label`
 for submission and invokes maintainer actions without a caller signature.
@@ -276,7 +283,7 @@ Depends on: #67 and #75. Labels: `trust-registry`,
 
 ## Issue #78: Prove verifier, auditor, recognition, and maintainer journeys
 
-Suggested title: `test(e2e): cover governed verifier, auditor, recognition, and maintainer roles`
+Tracker title: `test(e2e): cover governed verifier, auditor, recognition, and maintainer roles`
 
 Why: #58 intentionally focuses on the issuer path. 0.1.0 also promises
 separate scoped rights for verifier, auditor, external authority, and
