@@ -49,5 +49,10 @@ Complete this section when the PR changes any public TR surface:
      were found. Record advisory findings and their disposition. Link external
      review output when applicable. -->
 
-<!-- For milestone PRs only, after reviewing the final pushed head, add a live
-     receipt on its own line: tr-review:v1 head=<40-character SHA> mode=self|external verdict=pass -->
+For milestone PRs only, after reviewing the final pushed head, add a live
+receipt on its own line using the exact comment syntax below. Replace the
+placeholders; do not leave this example as evidence.
+
+```text
+<!-- tr-review:v1 head=<40-character SHA> mode=<self-or-external> verdict=pass -->
+```

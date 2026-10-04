@@ -17,7 +17,7 @@ export function checkMilestoneReview(pr) {
     errors.push('PR body must contain exactly one passing review receipt for the current head SHA');
   }
   const findings = body.match(/^## Review findings\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1]
-    ?.replace(/<!--[^>]*-->/g, '').trim();
+    ?.replace(/<!--[\s\S]*?-->/g, '').trim();
   if (!findings) {
     errors.push('PR body must include nonempty Review findings and disposition');
   }

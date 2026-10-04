@@ -26,3 +26,8 @@ test('rejects wrong target, missing issue, and missing findings', () => {
   const errors = checkMilestoneReview({ ...valid, base: { ref: 'develop' }, body: `## Review findings\n\n<!-- tr-review:v1 head=${head} mode=self verdict=pass -->` });
   assert.equal(errors.length, 3);
 });
+
+test('rejects an untouched template comment containing angle brackets', () => {
+  const body = `Closes #42\n\n## Review findings\n<!-- Replace <placeholder> with findings. -->\n\n<!-- tr-review:v1 head=${head} mode=self verdict=pass -->`;
+  assert.match(checkMilestoneReview({ ...valid, body }).join(' '), /nonempty Review findings/);
+});

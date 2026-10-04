@@ -36,7 +36,7 @@ their disposition in the PR, with a linked follow-up issue when deferred.
    ```
 
    `<head>` is the 40-character GitHub PR head SHA; `<mode>` is `self` or
-   `external`. Editing the PR body reruns `Milestone Review`. A new push
+   `external`. Editing the PR body reruns only `Milestone Review`. A new push
    invalidates the old receipt and all prior exact-head review evidence.
 5. Confirm `Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
    Packaging Baseline`, and `scan` are green for the current head. Also inspect
@@ -59,7 +59,8 @@ their disposition in the PR, with a linked follow-up issue when deferred.
 - `Milestone Review`: exact-head review receipt, issue link, findings text,
   author-matching DCO signoffs, and harness unit tests. It uses read-only
   permissions and no secrets.
-- `Milestone Light`: unconditional `./run.sh --light` on milestone PRs, even
+- `Milestone Light`: unconditional `./run.sh --light` and `pnpm run demo:smoke`
+  on milestone PRs, even
   docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
   to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
@@ -83,6 +84,13 @@ verifies freshness and form; the operator remains responsible for the actual
 review and disposition. For now, a self-review is a documented process rather
 than a GitHub approval because GitHub does not permit authors to approve their
 own PRs.
+
+The review validator currently runs from the PR checkout, so a PR changing
+the validator or its workflow can affect its own check. Treat such changes as
+security-sensitive and require independent review of the exact diff before
+merging; a trusted-base gate is a later hardening step. The full Quality lane
+is currently too slow for docs-only PRs; [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
+tracks a measured path to faster, fail-closed routing.
 
 After the pending milestone specification PR lands in `develop`, sync it into
 the train through a separate PR and rerun the complete train gates. Do not
