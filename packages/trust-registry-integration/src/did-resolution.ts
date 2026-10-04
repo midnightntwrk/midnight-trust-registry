@@ -33,8 +33,8 @@ const makeIterablePairs = <K, V>(
 });
 
 const bytesFromHex = (hex: string): Uint8Array => Buffer.from(hex, "hex");
-const fixtureJubjubX = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-const fixtureJubjubY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const fixtureJubjubX = "EMyWcM8XCxkJTyn8MDXM4q6wVLMfqCxYCu0MwT0hHPQ";
+const fixtureJubjubY = "H0wYFnDb0GGRQPznl3NU9G1sohdsMMrVdZpEQyiZrd0";
 
 export type MidnightDidLedgerFixture = {
   did: string;
@@ -97,7 +97,7 @@ export const createMidnightDidLedgerFixture = (
     ]),
     schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>([]),
     authenticationRelation: makeIterable<string>([verificationMethodId]),
-    assertionMethodRelation: makeIterable<string>([]),
+    assertionMethodRelation: makeIterable<string>([verificationMethodId]),
     keyAgreementRelation: makeIterable<string>([]),
     capabilityInvocationRelation: makeIterable<string>([]),
     capabilityDelegationRelation: makeIterable<string>([]),
