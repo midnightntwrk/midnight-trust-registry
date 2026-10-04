@@ -38,10 +38,12 @@ their disposition in the PR, with a linked follow-up issue when deferred.
    `<head>` is the 40-character GitHub PR head SHA; `<mode>` is `self` or
    `external`. Editing the PR body reruns only `Milestone Review`. A new push
    invalidates the old receipt and all prior exact-head review evidence.
-5. Confirm `Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
-   Packaging Baseline`, and `scan` are green for the current head. Also inspect
-   all non-required checks and resolve any real failures. Resolve review
-   conversations, confirm mergeability, and refresh the base if stale.
+5. Confirm `Milestone Review`, `Milestone Light`, and `scan` are green for the
+   current head. For code-bearing changes also wait for `Typecheck, Audit, and
+   Packaging Baseline` to pass, pending the fail-closed routing work in #84.
+   Docs/harness PRs may proceed while that slow check is pending, but not if it
+   fails. Inspect all non-required checks and resolve real failures. Resolve
+   review conversations, confirm mergeability, and refresh the base if stale.
 6. Re-read the PR head immediately before merging. Merge only with the
    compare-and-swap guard; never use `--admin`:
 
@@ -64,13 +66,16 @@ their disposition in the PR, with a linked follow-up issue when deferred.
   docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
   to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
-  pushes.
+  pushes. It is advisory for docs/harness PRs until #84 provides a fast stable
+  required aggregator; code-bearing PRs must wait for it by policy.
 - `Scan`: security scan on every PR and milestone push.
 - Existing docs and PR-title checks remain applicable where triggered.
 
 The milestone branch must require PRs, zero approving GitHub reviews, strict
-up-to-date checks (`Milestone Review`, `Milestone Light`, `Typecheck, Audit, and
-Packaging Baseline`, `scan`), signed commits, and resolved conversations.
+up-to-date checks (`Milestone Review`, `Milestone Light`, `scan`), signed
+commits, and resolved conversations. This temporary protection profile trades
+mechanical enforcement of full Quality for acceptable docs/harness latency;
+the operator must enforce the code-bearing rule above until #84 lands.
 Force pushes and deletions must be disabled. Verify these settings through the
 GitHub API after configuration. Do not weaken `develop` or `main` protection.
 
