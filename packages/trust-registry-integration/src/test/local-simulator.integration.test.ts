@@ -16,6 +16,7 @@ import {
   resolveGovernancePolicyTemplate,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
+  bytes32Commitment,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -87,6 +88,9 @@ describe("trust registry local simulator integration", () => {
       ["expired evidence", { envelope: { expiresAt: "2026-05-20T00:00:00Z" } }, /expiresAt/],
       ["future evidence", { envelope: { verifiedAt: "2026-05-20T01:00:00Z" } }, /not yet valid/],
       ["invalid signature", { signature: { value: "tampered" } }, /signature is invalid/],
+      ["noncanonical signature encoding", { signature: { value: validEvidence.signature.value.toUpperCase() } }, /signature is invalid/],
+      ["invalid curve point", { signature: { value: `0x${"00".repeat(96)}` } }, /signature is invalid/],
+      ["unauthorized key id", { signature: { keyId: `${harness.evidenceVerifier.did}#assertion-2` } }, /key is not authorized/],
       [
         "wrong signer key",
         {
@@ -95,6 +99,7 @@ describe("trust registry local simulator integration", () => {
               signApplicationEvidenceCommitmentFromSeed(
                 new Uint8Array(32).fill(99),
                 Buffer.from(validEvidence.commitment.slice(2), "hex"),
+                bytes32Commitment(validEvidence.signature.keyId),
               ),
             )).toString("hex")}`,
           },

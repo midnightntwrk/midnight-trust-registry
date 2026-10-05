@@ -52,37 +52,36 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
-/** Splits the canonical evidence commitment into the DID Schnorr circuit's four digest limbs. */
-export const applicationEvidenceCommitmentDigest = (
+/** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
+export const applicationEvidenceSignatureDigest = (
   commitment: Uint8Array,
-): TrustRegistryActionDigest => {
-  const bytes = require32Bytes(commitment, "Application evidence commitment");
-  return [
-    bytes.readBigUInt64BE(0),
-    bytes.readBigUInt64BE(8),
-    bytes.readBigUInt64BE(16),
-    bytes.readBigUInt64BE(24),
-  ];
-};
+  keyIdCommitment: Uint8Array,
+): TrustRegistryActionDigest =>
+  pureCircuits.applicationEvidenceSignatureDigest(
+    require32Bytes(keyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(commitment, "Application evidence commitment"),
+  ) as TrustRegistryActionDigest;
 
 export const signApplicationEvidenceCommitmentFromSeed = (
   seed: Uint8Array,
   commitment: Uint8Array,
+  keyIdCommitment: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
-    applicationEvidenceCommitmentDigest(commitment),
+    applicationEvidenceSignatureDigest(commitment, keyIdCommitment),
   );
 
 /** Verifies a signature only; the caller must separately authorize the DID assertion key. */
 export const verifyApplicationEvidenceCommitmentSignature = (
   publicKey: JubjubPoint,
   commitment: Uint8Array,
+  keyIdCommitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean =>
   verifyJubjubDigest(
     publicKey,
-    applicationEvidenceCommitmentDigest(commitment),
+    applicationEvidenceSignatureDigest(commitment, keyIdCommitment),
     signature,
   );
 

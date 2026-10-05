@@ -253,12 +253,13 @@ code-owner review; `develop` and `main` remain human-controlled.
 ## Application evidence signing slice (2026-10-06)
 
 The simulator's former `SHA-256(commitment:keyId)` signature stand-in has been
-replaced by a real, test-key JubJub Schnorr signature over the canonical
-application-evidence commitment. The 32-byte commitment maps to four
-big-endian `u64` digest limbs. A fixture test resolves the corresponding native
+replaced by a real, test-key JubJub Schnorr signature over a Compact-generated,
+domain-separated digest of the canonical application-evidence commitment and
+the assertion key id commitment. A fixture test resolves the corresponding native
 assertion key through the published Midnight DID/VC adapter and verifies the
-signature. Domain validation also binds the exact application id and rejects
-evidence evaluated before its `verifiedAt` instant.
+signature. Domain validation also binds the exact application id, rejects
+invalid evaluation timestamps, and rejects evidence evaluated before its
+`verifiedAt` instant.
 
 This is not completion of #76 or #67: the simulator still creates synthetic
 evidence hashes rather than verifying a VC/VP, its verifier key is not looked up

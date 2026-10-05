@@ -83,6 +83,16 @@ describe("application evidence", () => {
   });
 
   it("rejects expired, unauthorized, and invalidly signed evidence", () => {
+    const mismatchedCommitment = createSubmission();
+    mismatchedCommitment.envelope.presentationHash = HASH_A;
+    expect(() =>
+      assertValidApplicationEvidence(mismatchedCommitment, expectation, [authorizedVerifier], () => true),
+    ).toThrow(/commitment does not match/);
+
+    expect(() =>
+      assertValidApplicationEvidence(createSubmission(), { ...expectation, evaluatedAt: "not-a-date" }, [authorizedVerifier], () => true),
+    ).toThrow(/evaluation time is invalid/);
+
     const expired = createSubmission();
     expired.envelope.expiresAt = "2026-07-27T12:00:00Z";
     expired.commitment = computeApplicationEvidenceCommitment(expired.envelope);

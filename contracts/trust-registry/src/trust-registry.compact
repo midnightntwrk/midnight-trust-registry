@@ -319,6 +319,20 @@ export pure circuit maintainerActionDigest(
   ];
 }
 
+export pure circuit applicationEvidenceSignatureDigest(
+  keyIdCommitment: Bytes<32>,
+  evidenceCommitment: Bytes<32>
+): Vector<4, Field> {
+  assert(keyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(evidenceCommitment != pad(32, ""), "Application evidence commitment must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:app:evidence:sig:v1")),
+    transientHash<Bytes<32>>(keyIdCommitment),
+    transientHash<Bytes<32>>(evidenceCommitment),
+    1 as Field
+  ];
+}
+
 export pure circuit policyBoundActionPayloadHash(
   policyCommitment: Bytes<32>,
   actionPayloadHash: Bytes<32>

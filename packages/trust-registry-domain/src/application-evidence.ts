@@ -114,10 +114,14 @@ export function assertValidApplicationEvidence(
   assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
   assertEqual("scopeCommitment", parsed.envelope.scopeCommitment, expectation.scopeCommitment);
 
-  if (Date.parse(expectation.evaluatedAt) < Date.parse(parsed.envelope.verifiedAt)) {
+  if (!TimestampSchema.safeParse(expectation.evaluatedAt).success) {
+    throw new Error("Application evidence evaluation time is invalid");
+  }
+  const evaluatedAt = Date.parse(expectation.evaluatedAt);
+  if (evaluatedAt < Date.parse(parsed.envelope.verifiedAt)) {
     throw new Error("Application evidence is not yet valid at the governed transition");
   }
-  if (Date.parse(expectation.evaluatedAt) >= Date.parse(parsed.envelope.expiresAt)) {
+  if (evaluatedAt >= Date.parse(parsed.envelope.expiresAt)) {
     throw new Error("Application evidence is expired at the governed transition");
   }
 

@@ -81,11 +81,17 @@ signs this commitment with a policy-authorized assertion key. The signature
 and key reference are conveyed to the contract submission path but need not be
 included in the commitment itself.
 
-For the Midnight JubJub profile, the 32 commitment bytes are interpreted as
-four consecutive unsigned 64-bit big-endian integers and signed as a
-four-field DID Schnorr digest. The signer uses the published DID package's
-seed-derived signing helper. The eventual Compact verification circuit must
-reproduce this digest mapping.
+For the Midnight JubJub profile, `keyIdCommitment` is the SHA-256 digest of
+the UTF-8 bytes of the absolute DID key reference. The four-field DID Schnorr
+digest is computed by the Compact `applicationEvidenceSignatureDigest` pure
+circuit from the domain tag `tr:app:evidence:sig:v1`, the key id commitment,
+the application evidence commitment, and profile version `1`. This prevents
+reuse as an unscoped DID payload signature and binds the signature to the
+specific assertion key reference. The signer uses the published DID package's
+seed-derived signing helper over that circuit digest. The eventual governed
+verification circuit must use the same digest and the registered key. The
+signature value is the DID package's 96-byte encoding rendered as lowercase,
+`0x`-prefixed hex; other encodings are not accepted by this profile.
 
 ## 4. Contract Inputs And Checks
 
