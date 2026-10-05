@@ -2,7 +2,10 @@
 
 `midnight-trust-registry` owns the trust-policy and registry-governance workstream for Midnight identity. It defines how issuers, verifiers, credential resources, and external authorities become trusted without moving DID resolution or verifiable credential issuance into this repository.
 
-The repository is intentionally documentation-first while the contract and package boundaries are being finalized. The first implementation target is a registry that works with `midnight-did` and `midnight-verifiable-credentials` without duplicating their responsibilities.
+The repository contains a simulator-first contract, client, API, and local app
+skeleton. The 0.1.0 milestone turns that foundation into a DID/VC-backed,
+governed reference journey without duplicating the sibling repositories'
+responsibilities.
 
 ## Scope
 
@@ -13,7 +16,7 @@ This repository owns:
 - Recognition of external authorities and registries.
 - Historical evidence needed for long-term credential verification.
 - Query and evidence surfaces that applications can consume.
-- Future Compact and TypeScript packages for registry contracts, clients, and adapters.
+- Compact and TypeScript packages for registry contracts, clients, and adapters.
 
 This repository does not own:
 
@@ -23,6 +26,10 @@ This repository does not own:
 
 ## Documentation Map
 
+- [0.1.0 reference profile](docs/spec/milestone-0.1.0.md) defines the actor,
+  use-case, security, and release-acceptance contract for the next milestone.
+- [0.1.0 executable issue plan](docs/plans/milestone-0.1.0-issues.md) maps
+  each use case to a tracker issue, dependency, and definition of done.
 - [Trust registry specification](docs/spec/trust-registry.md) defines the v1 product and protocol scope.
 - [Implementation plan](docs/plans/trust-registry-implementation-plan.md) breaks execution into reviewable slices.
 - [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.
@@ -52,6 +59,13 @@ Integration scenarios currently run separately:
 
 ```bash
 ./run.sh integration
+```
+
+The fast GitHub CI lane also runs the focused DID/VC scenarios after
+`./run.sh --light`:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
 ```
 
 Package artifact validation for downstream consumers:
@@ -84,10 +98,9 @@ The remotely publishable core package subset is intentionally narrower:
 
 `@midnight-ntwrk/trust-registry-integration`, `@midnight-ntwrk/trust-registry-cli`,
 and `@midnight-ntwrk/trust-registry-api` remain local-only artifacts for now
-because the simulator-backed demo path still consumes vendored VC tarballs from
-`tooling/vendor/midnight-verifiable-credentials/`. The local artifact smoke
-check seeds those tarballs explicitly so downstream consumers can validate the
-same contract.
+while their public packaging and deployment policy is finalized. Identity
+dependencies are installed from npm; local artifact smoke runs in a clean
+consumer without seeding vendored dependency tarballs.
 
 ## Quick Demo Workflow
 
@@ -123,10 +136,10 @@ Smoke-test the documented demo flow from a clean local checkout:
 pnpm run demo:smoke
 ```
 
-Refresh published DID dependencies plus vendored VC tarballs with validation:
+Refresh published DID and VC dependencies with validation:
 
 ```bash
-pnpm run refresh:identity-dependencies -- --did-version 0.5.0-rc2 --validate light
+pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
 ```
 
 For docs-only edits, the minimum fallback remains:

@@ -2,7 +2,8 @@
 
 <!-- Describe your changes briefly here, with some context as to why this is needed. -->
 
-Target branch: usually `develop`; release-promotion PRs target `main`.
+Target branch: usually `develop`; issue increments can target `milestone-0.1.0`;
+release-promotion PRs target `main`.
 
 ## Submission Checklist
 
@@ -41,3 +42,9 @@ Complete this section when the PR changes any public TR surface:
 ## Links
 
 <!-- Link relevant issues and supporting documentation here. -->
+
+## Review findings
+
+<!-- For milestone PRs, record blocking findings and fixes, or state that none
+     were found. Record advisory findings and their disposition. Link external
+     review output when applicable. -->

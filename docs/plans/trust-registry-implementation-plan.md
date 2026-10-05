@@ -1,7 +1,33 @@
 # Trust Registry Implementation Plan
 
-Status: draft
+Status: foundation delivered; 0.1.0 critical path active
 Base branch: `develop`
+
+## 0.1.0 Delivery Sequence
+
+The phase archive later in this document records the earlier build-out.
+Current delivery follows the
+[0.1.0 actor/use-case profile](../spec/milestone-0.1.0.md) and
+[executable issue plan](milestone-0.1.0-issues.md):
+
+1. Lock role-specific scope commitments, immutable policy snapshots, and
+   application transition semantics with shared vectors.
+2. Verify real Midnight VC/VP applicant evidence off-chain, then authorize
+   the evidence-verifier DID assertion key and prove its signature in Compact.
+3. Bind signed applicant and maintainer intents through API/UI to the same
+   contract state machine; fail closed on replay and stale writes.
+4. Export current and historical evidence with policy, epoch, and scope;
+   authenticate DID-bound issuer/verifier decisions and produce VC-core
+   signer descriptors with domain-bound authority proofs for a Ledger 8
+   consumer fixture.
+5. Exercise issuer, verifier, auditor, maintainer, recognition, holder, and
+   relying-party journeys plus adversarial tests.
+6. Run the clean-checkout release gate and produce digest-verified 0.1.0
+   artifacts. Do not infer production readiness from simulator success.
+
+Large PRs should stop at a working vertical slice and include tests for their
+invariant, not only an added API shape. The milestone issue plan names the
+dependencies, validation commands, and acceptance criteria for each slice.
 
 ## Execution Strategy
 

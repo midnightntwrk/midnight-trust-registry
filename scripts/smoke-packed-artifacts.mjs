@@ -68,26 +68,6 @@ const run = (command, args, options = {}) => {
   return result.stdout;
 };
 
-const seedVendoredTarballs = (consumerRoot) => {
-  const sourceDir = path.join(
-    repoRoot,
-    "tooling/vendor/midnight-verifiable-credentials",
-  );
-  const destinationDir = path.join(
-    consumerRoot,
-    "node_modules/tooling/vendor/midnight-verifiable-credentials",
-  );
-  fs.mkdirSync(destinationDir, { recursive: true });
-  for (const fileName of fs.readdirSync(sourceDir)) {
-    if (fileName.endsWith(".tgz")) {
-      fs.copyFileSync(
-        path.join(sourceDir, fileName),
-        path.join(destinationDir, fileName),
-      );
-    }
-  }
-};
-
 const ensureArtifacts = (artifactsPath) => {
   const tarballs = fs
     .readdirSync(artifactsPath, { withFileTypes: true })
@@ -125,8 +105,6 @@ try {
     path.join(smokeRoot, "package.json"),
     `${JSON.stringify({ name: "trust-registry-pack-smoke", private: true, type: "module" }, null, 2)}\n`,
   );
-  seedVendoredTarballs(smokeRoot);
-
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...tarballPaths], {
     cwd: smokeRoot,
   });

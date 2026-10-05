@@ -2,6 +2,13 @@
 
 Status: draft v0.1
 
+The on-chain DID/key check and real VC/VP attestation described here are 0.1.0
+requirements, not claims about the current simulator. The current simulator
+uses a deterministic signature stand-in, and the contract currently binds an
+evidence hash without verifying the evidence-verifier DID assertion signature.
+See the [0.1.0 reference profile](milestone-0.1.0.md) and
+[issue plan](../plans/milestone-0.1.0-issues.md).
+
 This profile defines how a party proves eligibility to join a Midnight Trust
 Registry. It applies to issuer, verifier, auditor, and non-bootstrap
 maintainer applications.

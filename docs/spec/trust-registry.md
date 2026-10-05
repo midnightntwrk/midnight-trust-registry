@@ -1,6 +1,6 @@
 # Trust Registry Specification
 
-Status: draft v0.1
+Status: general v1 draft; [0.1.0 release profile](milestone-0.1.0.md) takes precedence for milestone acceptance
 Target branch: `develop`
 Owner repository: `midnight-trust-registry`
 
@@ -316,6 +316,10 @@ VC integration:
 - VC packages define credential schemas, credential definitions, holder binding, status, and presentation semantics.
 - TR can authorize issuers for VC resource scopes and verifiers for request profiles.
 - VC verification can consume TR evidence bundles to decide whether a credential or presentation came from an authorized trust domain.
+- TR produces authenticated issuer/verifier decision evidence and
+  VC-compatible signer descriptors with domain-bound authority proofs as
+  defined by the [0.1.0 reference profile](milestone-0.1.0.md). VC owns the
+  consumer proof decision; an API boolean is not an anchor.
 - Applicant VC/VP verification occurs off-chain through a policy-authorized
   evidence verifier. The Trust Registry commits only the resulting evidence
   commitment and governed decision context.
@@ -334,6 +338,10 @@ VC integration:
   [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md).
 
 ## 11. V1 Acceptance Criteria
+
+These are general product capabilities. The 0.1.0 reference implementation
+also requires the actor-specific evidence, API, historical proof, and release
+gates in the [milestone profile](milestone-0.1.0.md).
 
 The v1 implementation is acceptable when:
 

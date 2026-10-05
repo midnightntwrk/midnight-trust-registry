@@ -1,94 +1,101 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-07-23
+Updated: 2026-10-05
 
-## Priority Model
+The [0.1.0 reference profile](../spec/milestone-0.1.0.md) is the product
+contract. The [0.1.0 issue plan](milestone-0.1.0-issues.md) contains the
+ordered, testable implementation slices and is the source of truth for milestone
+acceptance. GitHub [milestone 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
+tracks their execution. The broad [v1 specification](../spec/trust-registry.md)
+continues to describe the longer-term system.
 
-- P0: needed before meaningful implementation can start.
-- P1: needed for the first usable prototype.
-- P2: needed for interoperability, operations, or polish.
+## Delivered Foundation
 
-## Current Backlog
+Merged on `develop` before this milestone plan:
 
-| ID | Priority | Status | Item | Acceptance |
-| --- | --- | --- | --- | --- |
-| TR-001 | P0 | Done in docs foundation | Move trust registry spec, plan, research memo, and decisions into this repository. | `docs/spec`, `docs/plans`, `docs/research`, and `docs/decisions` contain public TR source material. |
-| TR-002 | P0 | Done in docs foundation | Replace template README with project-specific scope. | README explains scope, non-scope, repo boundaries, and documentation map. |
-| TR-003 | P0 | Done on develop | Add repository-local agent guidance. | `AGENT.md`, `.codex`, and `.claude` point engineers to the same TR rules. |
-| TR-004 | P0 | Done on develop | Add lightweight docs validation. | `./scripts/check-docs.sh` checks markdown links and required docs without requiring a package manager. |
-| TR-005 | P0 | Done on develop | Make CI target `develop`. | Docs and scan workflows run for pull requests into `develop`. |
-| TR-006 | P1 | Done on develop | Create TypeScript domain package. | Registry, participant, policy, authorization, recognition, and epoch types compile and are unit-tested. |
-| TR-007 | P1 | Done on develop | Add lifecycle validators. | Invalid transitions for authorization, recognition, and policy records fail tests. |
-| TR-008 | P1 | Done on develop | Add canonical evidence bundle model. | Evidence bundle JSON schema covers issuer, verifier, recognition, policy, epoch, and inclusion proof fields. |
-| TR-009 | P1 | Done on develop | Build first Compact contract skeleton. | Registry initialization and maintainer authorization compile. |
-| TR-010 | P1 | Done on develop | Add issuer authorization circuits. | Create, suspend, revoke, archive, and query paths have positive and negative tests. |
-| TR-011 | P1 | Done on develop | Add verifier authorization circuits. | Request-profile authorization supports disclosure and predicate scopes. |
-| TR-012 | P1 | Done on develop | Add recognition circuits. | Recognized external authority state is separate from local authorization state. |
-| TR-013 | P1 | Done on develop | Add epoch anchor. | Maintainer-signed state roots can be published and verified. |
-| TR-014 | P1 | Done on develop | Add TypeScript client. | Apps can query current and historical authorization and recognition state and verify anchored evidence. |
-| TR-015 | P1 | Done on develop | Add DID integration test. | `did:midnight` references resolve through `midnight-did` helpers and `MidnightDIDResolver` fixtures without copying DID logic. |
-| TR-016 | P1 | Done on develop | Add VC integration test. | VC verifier consumes TR evidence plus status evidence. |
-| TR-017 | P2 | Done on develop | Add TRQP read adapter. | Registry metadata, authorization, recognition, and historical evidence map to TRQP-style responses. |
-| TR-018 | P2 | Done on develop | Add OpenID Federation adapter experiment. | Signed metadata and trust-chain mapping are documented and fixture-tested. |
-| TR-019 | P2 | Done on develop | Add operator CLI. | Maintainers can initialize, inspect, and export registry state locally. |
-| TR-020 | P2 | Done on develop | Add audit report generator. | A command emits human-readable authorization and policy history. |
-| TR-021 | P1 | Done on develop | Add issuer application-state workflow. | Issuer authorization supports explicit `proposed`, `authorized`, and `active` states with positive and negative tests plus historical evidence. |
-| TR-022 | P1 | Done on develop | Add verifier, recognition, and auditor application workflows. | Verifier, recognition, and auditor flows support governed proposal and approval state instead of direct-only activation. |
-| TR-023 | P1 | Open issue [#29](https://github.com/midnightntwrk/midnight-trust-registry/issues/29) | Add maintainer membership lifecycle. | Admin onboarding/removal is modeled explicitly, and no new maintainer can self-approve into the registry. |
-| TR-024 | P1 | Open issue [#30](https://github.com/midnightntwrk/midnight-trust-registry/issues/30) | Add multi-maintainer quorum execution. | Thresholds above `1-of-N` work on-chain with signer-set evidence and policy-scoped quorum rules. |
-| TR-025 | P1 | Open issue [#31](https://github.com/midnightntwrk/midnight-trust-registry/issues/31) | Add governance policy templates and bindings. | Maintainer, member, emergency, and auditor decisions can bind to typed policy templates and fixtures. |
-| TR-026 | P2 | Open issue [#32](https://github.com/midnightntwrk/midnight-trust-registry/issues/32) | Add mutable operator CLI workflows. | Operators can submit, approve, activate, suspend, revoke, and epoch-publish from the CLI without raw simulator access. |
-| TR-027 | P2 | Open issues [#33](https://github.com/midnightntwrk/midnight-trust-registry/issues/33) and [#34](https://github.com/midnightntwrk/midnight-trust-registry/issues/34) | Add applicant and query REST API. | Applicants can submit applications and consumers can query trust/evidence through stable HTTP endpoints. |
-| TR-028 | P2 | Open issues [#35](https://github.com/midnightntwrk/midnight-trust-registry/issues/35) and [#36](https://github.com/midnightntwrk/midnight-trust-registry/issues/36) | Add admin console and applicant portal scaffold. | A local UI supports proposal review, approval, and public registry inspection flows on top of the API/client. |
-| TR-029 | P2 | Open issues [#37](https://github.com/midnightntwrk/midnight-trust-registry/issues/37), [#38](https://github.com/midnightntwrk/midnight-trust-registry/issues/38), and [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) | Add historical timestamp queries and proof hardening. | Client and adapters can answer trust decisions by timestamp and export canonical `merkle-inclusion` evidence bundles instead of the earlier signed-statement placeholder. |
-| TR-030 | P2 | Open issues [#40](https://github.com/midnightntwrk/midnight-trust-registry/issues/40) through [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Add release, demo, and package flow. | The repo ships a reproducible demo registry, packaged artifacts, and CI validation for the documented operator flow. |
-| TR-031 | P1 | Open issue [#46](https://github.com/midnightntwrk/midnight-trust-registry/issues/46) | Harden public-repo governance, pnpm baseline, and quality workflows. | The public repo has pnpm-native docs, PR governance, dependency automation, and a DID-style quality lane. |
-| TR-032 | P2 | Open issue [#47](https://github.com/midnightntwrk/midnight-trust-registry/issues/47) | Add trust-registry publish and release-smoke workflows. | The repo can publish intended artifacts and run a smoke test over the published outputs. |
-| TR-033 | P2 | Open issue [#48](https://github.com/midnightntwrk/midnight-trust-registry/issues/48) | Automate published DID and VC dependency refresh with compatibility checks. | Published tarball refresh is scriptable and validated against the TR light/integration lanes. |
-| TR-034 | P1 | Open issue [#49](https://github.com/midnightntwrk/midnight-trust-registry/issues/49) | Align backlog and knowledge base with live GitHub issue tracking. | Checked-in planning docs point to live issues instead of stale stacked-PR state. |
+- Domain models, lifecycle validators, canonical evidence bundle, Compact
+  registry, maintainer membership, and scoped issuer/verifier/auditor and
+  recognition records.
+- Multi-maintainer quorum, governance policy templates, signed epoch records,
+  simulator/client integration, DID resolution fixtures, VC status fixtures,
+  TRQP and experimental OpenID Federation adapters.
+- Local operator CLI, read/query API, mutable workspace API, applicant portal,
+  admin console, demo, packaging, and repository quality workflows.
+- [Application evidence specification](../spec/application-evidence.md),
+  [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md),
+  [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md),
+  and an initial on-chain application evidence hash binding.
 
-## Historical Foundation
+These are components of a reference implementation, not proof that a real
+VC/VP-backed application or authenticated HTTP governance journey works yet.
+The current simulator generates a deterministic stand-in evidence signature,
+the Compact contract checks evidence hashes but not the evidence verifier's
+DID-bound signature, and the local mutation API does not authenticate callers.
 
-The first docs-foundation and repo-workflow slices are already merged on
-`develop`. Current execution is tracked through the GitHub issues listed above
-instead of the earlier stacked-PR queue.
+## 0.1.0 Critical Path
 
-## Implementation Notes
+| Slice | Existing issue or planned issue | Exit evidence |
+| --- | --- | --- |
+| Specification and tracker reconciliation | [#49](https://github.com/midnightntwrk/midnight-trust-registry/issues/49) | Actor/use-case contract and milestone issue map pass docs validation. |
+| Canonical scope and policy snapshots | [#75](https://github.com/midnightntwrk/midnight-trust-registry/issues/75) | One set of role-specific vectors across domain, contract wrapper, API, client, and adapters. |
+| Real VC/VP evidence attestation | [#76](https://github.com/midnightntwrk/midnight-trust-registry/issues/76) | Official DID/VC packages validate applicant evidence and sign its commitment. |
+| DID-bound on-chain attestation | [#67](https://github.com/midnightntwrk/midnight-trust-registry/issues/67) | Compact rejects fake, substituted, retired, or unauthorized assertion keys. |
+| Authenticated mutation gateway | [#77](https://github.com/midnightntwrk/midnight-trust-registry/issues/77) | Applicant and maintainer intents are signed, scoped, and replay safe. |
+| Historical public evidence | [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) | API and TRQP extension carry epoch, policy, scope, and verifiable proof at time T. |
+| VC decision evidence | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | TR authenticates exact issuer/verifier grant, DID method/key, policy, and epoch before descriptor production. |
+| Portable VC signer anchor | [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73) | TR signs VC-compatible issuer/verifier descriptors; Ledger 8 consumer pins the authority and rejects replay/substitution. |
+| Issuer trust journey | [#58](https://github.com/midnightntwrk/midnight-trust-registry/issues/58) | VC/VP -> quorum -> epoch -> accepted/rejected trust evaluation. |
+| Other actor journeys | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Verifier, auditor, recognition, and maintainer positive/negative E2E paths. |
+| API/UI and adversarial journeys | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59), [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Public contracts preserve the same rules and fail closed under tampering. |
+| Release candidate | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Clean-checkout validation and digest-verified package/contract artifacts. |
 
-- Keep status and revocation in VC status registry packages.
-- Keep DID CRUD and resolver behavior in DID packages.
-- Start integration coverage with an in-process simulator lane before binding TR
-  to DID and VC runtime dependencies.
-- Use append-only state for decisions that affect long-term verification.
-- Keep holder data out of TR state and query logs.
-- Keep recognition separate from authorization.
-- Keep the first client package evidence-first: query raw contract state, then
-  validate anchored bundles against published epoch records before adding richer
-  adapters.
-- Keep DID-backed scenarios on the shared integration lane by consuming the
-  official `midnight-did` package surface and fixture ledger state rather than
-  re-implementing DID parsing or resolution logic inside TR.
+## Historical First 20 Issues
 
-## First 20 GitHub Issues
+The original issue tranche (#29-#48) is grouped by scope and original priority
+for traceability. This table is historical; current 0.1.0 priority is the
+critical path above. The "reconcile" status means merged implementation must
+be checked against the issue's acceptance criteria before closure.
 
-1. [#29](https://github.com/midnightntwrk/midnight-trust-registry/issues/29) `TR-023`: maintainer membership lifecycle
-2. [#30](https://github.com/midnightntwrk/midnight-trust-registry/issues/30) `TR-024`: multi-maintainer quorum execution
-3. [#31](https://github.com/midnightntwrk/midnight-trust-registry/issues/31) `TR-025`: governance policy templates and bindings
-4. [#32](https://github.com/midnightntwrk/midnight-trust-registry/issues/32) `TR-026`: mutable operator CLI workflows
-5. [#33](https://github.com/midnightntwrk/midnight-trust-registry/issues/33) `TR-027A`: read-only query API
-6. [#34](https://github.com/midnightntwrk/midnight-trust-registry/issues/34) `TR-027B`: governed application API
-7. [#35](https://github.com/midnightntwrk/midnight-trust-registry/issues/35) `TR-028A`: admin console scaffold
-8. [#36](https://github.com/midnightntwrk/midnight-trust-registry/issues/36) `TR-028B`: applicant portal scaffold
-9. [#37](https://github.com/midnightntwrk/midnight-trust-registry/issues/37) `TR-029A`: timestamp-based trust evaluation
-10. [#38](https://github.com/midnightntwrk/midnight-trust-registry/issues/38) `TR-029B`: canonical merkle-inclusion proof bundles
-11. [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) `TR-029C`: historical evidence adapters
-12. [#40](https://github.com/midnightntwrk/midnight-trust-registry/issues/40) `TR-030A`: demo fixtures
-13. [#41](https://github.com/midnightntwrk/midnight-trust-registry/issues/41) `TR-030B`: local demo orchestration
-14. [#42](https://github.com/midnightntwrk/midnight-trust-registry/issues/42) `TR-030C`: package and release artifacts
-15. [#43](https://github.com/midnightntwrk/midnight-trust-registry/issues/43) `TR-030D`: demo CI
-16. [#44](https://github.com/midnightntwrk/midnight-trust-registry/issues/44) `TR-030E`: release/demo docs
-17. [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) `TR-030F`: release hardening
-18. [#46](https://github.com/midnightntwrk/midnight-trust-registry/issues/46) `TR-031`: public-repo hardening parity
-19. [#47](https://github.com/midnightntwrk/midnight-trust-registry/issues/47) `TR-032`: publish and release-smoke workflows
-20. [#48](https://github.com/midnightntwrk/midnight-trust-registry/issues/48) `TR-033`: published DID/VC dependency refresh automation
+| Scope / priority | Issues | Tracker state |
+| --- | --- | --- |
+| Governance / P1 | [#29](https://github.com/midnightntwrk/midnight-trust-registry/issues/29), [#30](https://github.com/midnightntwrk/midnight-trust-registry/issues/30), [#31](https://github.com/midnightntwrk/midnight-trust-registry/issues/31) | Closed |
+| Operator, API, UI / P2 | [#32](https://github.com/midnightntwrk/midnight-trust-registry/issues/32), [#33](https://github.com/midnightntwrk/midnight-trust-registry/issues/33), [#34](https://github.com/midnightntwrk/midnight-trust-registry/issues/34), [#35](https://github.com/midnightntwrk/midnight-trust-registry/issues/35), [#36](https://github.com/midnightntwrk/midnight-trust-registry/issues/36) | Closed |
+| Historical queries and proof / P2 | [#37](https://github.com/midnightntwrk/midnight-trust-registry/issues/37), [#38](https://github.com/midnightntwrk/midnight-trust-registry/issues/38) closed; [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) open | #39 requires concrete historical API/TRQP evidence |
+| Demo and packaging / P2 | [#40](https://github.com/midnightntwrk/midnight-trust-registry/issues/40), [#41](https://github.com/midnightntwrk/midnight-trust-registry/issues/41), [#42](https://github.com/midnightntwrk/midnight-trust-registry/issues/42), [#43](https://github.com/midnightntwrk/midnight-trust-registry/issues/43), [#44](https://github.com/midnightntwrk/midnight-trust-registry/issues/44), [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Open; #40-#44 reconcile, #45 is 0.1 gate |
+| Public repository / P1 | [#46](https://github.com/midnightntwrk/midnight-trust-registry/issues/46) | Closed |
+| Publication and dependency refresh / P2 | [#47](https://github.com/midnightntwrk/midnight-trust-registry/issues/47), [#48](https://github.com/midnightntwrk/midnight-trust-registry/issues/48) | Open; reconcile |
+
+## Deferred And Reconciliation Queue
+
+- Ledger 8 synchronous cross-contract calls and production relayer monitoring
+  remain outside the reference milestone; #73 delivers portable descriptors
+  and a locally pinned consumer fixture without requiring either capability.
+- [#61](https://github.com/midnightntwrk/midnight-trust-registry/issues/61)
+  through [#64](https://github.com/midnightntwrk/midnight-trust-registry/issues/64):
+  dependency automation, public docs site, change-aware CI, and additional
+  boundary automation stay open but do not block the reference profile.
+- [#40](https://github.com/midnightntwrk/midnight-trust-registry/issues/40)
+  through [#44](https://github.com/midnightntwrk/midnight-trust-registry/issues/44),
+  [#47](https://github.com/midnightntwrk/midnight-trust-registry/issues/47),
+  and [#48](https://github.com/midnightntwrk/midnight-trust-registry/issues/48):
+  reconcile each acceptance criterion against merged PR #71. If implemented,
+  close with a comment naming PR, merge commit, validation command, and any
+  deliberate deferral. Do not close [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
+  without a concrete implementation reference for historical API/TRQP output.
+
+## Legacy Backlog Aliases
+
+Older decision notes still refer to `TR-026` (mutable operator CLI, now #32),
+`TR-027` (read/query and applicant APIs, now #33 and #34), and `TR-029`
+(historical query/proof/adapters, now #37, #38, and #39). These are historical
+labels, not additional open work items.
+
+## Delivery Rule
+
+Each code PR links its issue, contains DCO/GPG-signed commits, updates the
+relevant spec/ADR when behavior changes, includes positive and negative tests,
+and runs `./run.sh --light`. Integration or E2E slices additionally run
+`./run.sh integration`; release/demo slices run `pnpm run demo:smoke` and packed
+artifact smoke checks. A merged issue is closed only with its implementation
+reference and validation evidence.

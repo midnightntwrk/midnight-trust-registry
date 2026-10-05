@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - develop
+      - milestone-0.1.0
   workflow_dispatch:
   schedule:
     - cron: "15 3 * * *"
@@ -20,6 +21,7 @@ env:
   COMPACT_COMPILER_VERSION: 0.30.0
   PNPM_CONFIG_AUDIT: "false"
   PNPM_CONFIG_FUND: "false"
+  TURBO_CACHE_DIR: .turbo/cache
 
 concurrency:
   group: trust-registry-quality-${{ github.event.pull_request.number || github.ref }}
@@ -35,6 +37,15 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+
+      - name: Restore Turbo task cache
+        id: turbo-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo/cache
+          key: tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
+          restore-keys: |
+            tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}-
 
       - name: Enable Corepack
         run: corepack enable
@@ -61,7 +72,14 @@ jobs:
         run: pnpm run build
 
       - name: Typecheck all workspaces
-        run: pnpm run typecheck
+        run: pnpm run typecheck:light
+
+      - name: Publish Turbo task cache from trusted branch
+        if: github.event_name == 'push' && steps.turbo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo/cache
+          key: tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
 
       - name: Audit dependencies
         run: pnpm audit --audit-level low

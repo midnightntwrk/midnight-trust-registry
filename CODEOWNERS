@@ -1,8 +1,31 @@
-* @midnightntwrk/mn-security
+/.github/pull_request_template.md @midnightntwrk/mn-security
+/.github/workflows/ @midnightntwrk/mn-security
+/AGENT.md @midnightntwrk/mn-security
+/docs/plans/milestone-0.1.0-delivery-harness.md @midnightntwrk/mn-security
+/run.sh @midnightntwrk/mn-security
+/scripts/ @midnightntwrk/mn-security
+/contracts/**/scripts/ @midnightntwrk/mn-security
+/packages/**/scripts/ @midnightntwrk/mn-security
+/adapters/**/scripts/ @midnightntwrk/mn-security
+/renovate.json @midnightntwrk/mn-security
+/.codex/ @midnightntwrk/mn-security
+/.claude/ @midnightntwrk/mn-security
+/package.json @midnightntwrk/mn-security
+/packages/**/package.json @midnightntwrk/mn-security
+/contracts/**/package.json @midnightntwrk/mn-security
+/adapters/**/package.json @midnightntwrk/mn-security
+/pnpm-workspace.yaml @midnightntwrk/mn-security
+/pnpm-lock.yaml @midnightntwrk/mn-security
+/turbo.json @midnightntwrk/mn-security
+/.npmrc @midnightntwrk/mn-security
+/.nvmrc @midnightntwrk/mn-security
+/eslint.config.mjs @midnightntwrk/mn-security
+/tsconfig.base.json @midnightntwrk/mn-security
+/justfile @midnightntwrk/mn-security
 /.github/ISSUE_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
 /.github/PULL_REQUEST_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
 /.github/workflows/scan.yaml @midnightntwrk/mn-security @midnightntwrk/mn-sre
-/.github/workflows/dependabot.yml @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/dependabot.yml @midnightntwrk/mn-security @midnightntwrk/mn-sre
 CODE_OF_CONDUCT.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
 CODEOWNERS @midnightntwrk/mn-security @midnightntwrk/mn-sre
 CONTRIBUTING.md @midnightntwrk/mn-security @midnightntwrk/mn-sre

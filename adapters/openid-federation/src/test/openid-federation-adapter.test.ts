@@ -3,10 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   exportJWK,
   generateKeyPair,
+  SignJWT,
   type JWK,
+  type JWTPayload,
 } from "jose";
 
 import {
+  buildAuthorizationSubordinateStatementPayload,
   buildFederationLeafConfigurationPayload,
   buildTrustRegistryEntityConfigurationPayload,
   buildTrustRegistryPublicationMetadata,
@@ -76,6 +79,42 @@ describe("trust registry OpenID Federation adapter", () => {
       verified.metadata?.federation_entity?.federation_fetch_endpoint,
     ).toBe(
       `${harness.registryRecord.serviceEndpoint.replace(/\/$/, "")}/federation/fetch`,
+    );
+  });
+
+  it("does not sign an unanchored status registry hint in issuer metadata", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("degree-status-hint");
+    const registryKeys = await createSigningFixture("registry-key-1");
+    harness.authorizeIssuer(issuer);
+
+    const bundle = {
+      ...harness.evaluateCurrentIssuerDecision(issuer),
+      referencedStatusRegistryId: "status-registry:attacker:v1",
+    };
+    const payload = buildAuthorizationSubordinateStatementPayload({
+      issuerEntityId: harness.registryRecord.serviceEndpoint,
+      sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
+      subjectPublicJwks: registryKeys.publicJwks,
+      bundle,
+    });
+    const jwt = await signEntityStatement({
+      payload,
+      privateKey: registryKeys.privateKey,
+      kid: registryKeys.kid,
+      alg: registryKeys.alg,
+    });
+    const verified = await verifyEntityStatement({
+      jwt,
+      jwks: registryKeys.publicJwks,
+    });
+
+    expect(payload.metadata?.midnight_trust_registry?.statement_kind).toBe("authorization");
+    expect(payload.metadata?.midnight_trust_registry).not.toHaveProperty(
+      "referenced_status_registry_id",
+    );
+    expect(verified.metadata?.midnight_trust_registry).not.toHaveProperty(
+      "referenced_status_registry_id",
     );
   });
 
@@ -162,6 +201,35 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(
       midnightMetadata.authorization_bundle?.authorization?.resourceId,
     ).toBe(bundle.authorization?.resourceId);
+    expect(bundle.referencedStatusRegistryId).toBeDefined();
+    expect(midnightMetadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
+    expect(midnightMetadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
+
+    const rawPeerStatement = {
+      ...subordinatePayload,
+      metadata: {
+        ...subordinatePayload.metadata,
+        midnight_trust_registry: {
+          ...midnightMetadata,
+          authorization_bundle: {
+            ...bundle,
+            referencedStatusRegistryId: "status-registry:attacker:v1",
+            referencedStatusPolicyUri: "https://attacker.example/status-policy",
+          },
+        },
+      },
+    };
+    const peerJwt = await new SignJWT(rawPeerStatement as JWTPayload)
+      .setProtectedHeader({ typ: "entity-statement+jwt", alg: anchorKeys.alg, kid: anchorKeys.kid })
+      .sign(anchorKeys.privateKey);
+    const peerVerified = await verifyEntityStatement({ jwt: peerJwt, jwks: anchorKeys.publicJwks });
+    const peerChain = await verifySimpleTrustChain([chain[0]!, peerJwt, chain[2]!]);
+    for (const statement of [peerVerified, peerChain[1]]) {
+      const metadata = statement?.metadata?.midnight_trust_registry;
+      if (metadata?.statement_kind !== "registry-publication") throw new Error("expected publication metadata");
+      expect(metadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
+      expect(metadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
+    }
   });
 
   it("embeds a recognition bundle in signed registry publication metadata", async () => {
