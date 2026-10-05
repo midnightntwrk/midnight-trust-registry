@@ -3,8 +3,16 @@ import { z } from "zod";
 import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 
 const ExactStringSchema = z.string().min(1).refine(
-  (value) => value === value.trim() && !value.includes("*") && isUnicodeScalar(value),
-  "Scope values must be exact, trimmed, and free of wildcards, controls, or lone surrogates",
+  (value) => value === value.trim()
+    && value === value.normalize("NFC")
+    && !value.includes("*")
+    && !/\p{Default_Ignorable_Code_Point}/u.test(value)
+    && isUnicodeScalar(value),
+  "Scope values must be exact NFC text without wildcards, invisible characters, controls, or lone surrogates",
+);
+const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
+  (value) => value === value.toLowerCase(),
+  "Scoped identifiers must be lowercase",
 );
 const ExactSchemaVersionSchema = ExactStringSchema.regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u);
 const ExactHashSchema = HashHexSchema.regex(/^0x[0-9a-f]{64}$/u);
@@ -55,7 +63,7 @@ export const AuditorScopeSchema = z.strictObject({
 export const MaintainerScopeSchema = z.strictObject({
   ...ScopeBase,
   role: z.literal("maintainer"),
-  registryId: ScopedIdentifierSchema,
+  registryId: CanonicalIdentifierSchema,
 });
 
 export const AuthorizationScopeSchema = z.discriminatedUnion("role", [

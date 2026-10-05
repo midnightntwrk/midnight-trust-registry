@@ -63,6 +63,10 @@ delegation, or transitive external authorization. Unknown fields, malformed
 Unicode, and a version other than `tr-scope-v1` fail closed. Issuer
 `schemaVersion` uses an exact three-component numeric version.
 External authorization requires a separate recognition record.
+Scope strings must already be NFC-normalized and must not contain default
+ignorable Unicode code points such as zero-width joiners. The maintainer
+`registryId` must use lowercase scoped-identifier spelling; case variants are
+rejected rather than hashed into separate authorizations.
 
 The following canonical inputs are required test vectors. Implementations MUST
 produce the same scope commitment for the exact JSON object after array

@@ -9,6 +9,10 @@ import {
 
 const VersionSchema = z.string().regex(/^v[1-9][0-9]*$/u);
 const TimestampSchema = z.string().datetime({ offset: true });
+const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
+  (value) => value === value.toLowerCase(),
+  "Scoped identifiers must be lowercase",
+);
 const ThresholdSchema = z.strictObject({
   family: GovernanceDecisionFamilySchema,
   threshold: z.number().int().min(1).max(5),
@@ -17,8 +21,8 @@ const requiredFamilies = ["maintainer", "member", "emergency", "archival"] as co
 
 export const GovernancePolicySnapshotSchema = z.strictObject({
   format: z.literal("tr-policy-snapshot-v1"),
-  registryId: ScopedIdentifierSchema,
-  policyId: ScopedIdentifierSchema,
+  registryId: CanonicalIdentifierSchema,
+  policyId: CanonicalIdentifierSchema,
   policyVersion: VersionSchema,
   effectiveFrom: TimestampSchema,
   effectiveUntil: TimestampSchema.nullable(),
@@ -37,8 +41,15 @@ export const GovernancePolicySnapshotSchema = z.strictObject({
       ctx.addIssue({ code: "custom", path: ["thresholds"], message: `Missing ${family} threshold` });
     }
   }
-  if (snapshot.effectiveUntil !== null && Date.parse(snapshot.effectiveUntil) <= Date.parse(snapshot.effectiveFrom)) {
-    ctx.addIssue({ code: "custom", path: ["effectiveUntil"], message: "Policy window must end after it starts" });
+  const defaultThreshold = snapshot.thresholds.find(({ family }) => family === "member")?.threshold;
+  for (const family of ["maintainer", "auditor"] as const) {
+    const threshold = snapshot.thresholds.find((candidate) => candidate.family === family)?.threshold;
+    if (threshold !== undefined && defaultThreshold !== undefined && threshold !== defaultThreshold) {
+      ctx.addIssue({ code: "custom", path: ["thresholds"], message: `${family} must use the Compact default threshold` });
+    }
+  }
+  if (snapshot.effectiveUntil !== null && Date.parse(snapshot.effectiveUntil) < Date.parse(snapshot.effectiveFrom)) {
+    ctx.addIssue({ code: "custom", path: ["effectiveUntil"], message: "Policy window must not end before it starts" });
   }
 });
 
@@ -69,7 +80,7 @@ export function deriveGovernancePolicySnapshot(policy: GovernancePolicyRecord): 
     policyId: parsed.policyId,
     policyVersion: parsed.version,
     effectiveFrom: parsed.effectiveFrom,
-    effectiveUntil: parsed.effectiveUntil ?? null,
+    effectiveUntil: parsed.effectiveUntil ?? parsed.supersededAt ?? null,
     contentCommitment: sha256Hex(canonicalizeJson(content)),
     thresholds: parsed.policyTemplates.map((template) => ({
       family: template.family,
@@ -90,6 +101,16 @@ export function canonicalizeGovernancePolicySnapshot(snapshot: GovernancePolicyS
 
 export function computeGovernancePolicySnapshotCommitment(snapshot: GovernancePolicySnapshot): string {
   return sha256Hex(canonicalizeGovernancePolicySnapshot(snapshot));
+}
+
+export function assertGovernancePolicySnapshotMatchesRecord(
+  policy: GovernancePolicyRecord,
+  snapshot: GovernancePolicySnapshot,
+): void {
+  const expected = deriveGovernancePolicySnapshot(policy);
+  if (computeGovernancePolicySnapshotCommitment(snapshot) !== computeGovernancePolicySnapshotCommitment(expected)) {
+    throw new Error("Policy snapshot does not match the source policy record");
+  }
 }
 
 export function assertGovernancePolicyRevision(

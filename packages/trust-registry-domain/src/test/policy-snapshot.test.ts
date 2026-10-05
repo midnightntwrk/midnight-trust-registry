@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertGovernancePolicyRevision,
+  assertGovernancePolicySnapshotMatchesRecord,
   assertMaintainerThresholdsRemainSatisfiable,
   canonicalizeGovernancePolicySnapshot,
   computeGovernancePolicySnapshotCommitment,
@@ -104,6 +105,41 @@ describe("governance policy snapshot v1", () => {
     expect(computeGovernancePolicySnapshotCommitment(differentRule)).not.toBe(computeGovernancePolicySnapshotCommitment(first));
   });
 
+  it("checks a supplied snapshot against the independently derived source policy", () => {
+    const record = policy();
+    const snapshot = deriveGovernancePolicySnapshot(record);
+    expect(() => assertGovernancePolicySnapshotMatchesRecord(record, snapshot)).not.toThrow();
+    expect(() => assertGovernancePolicySnapshotMatchesRecord(record, {
+      ...snapshot,
+      contentCommitment: "0x" + "b".repeat(64),
+    })).toThrow(/does not match/);
+    expect(() => assertGovernancePolicySnapshotMatchesRecord(policy("v1", 3), snapshot)).toThrow(/does not match/);
+  });
+
+  it("uses supersededAt to close a legacy record without effectiveUntil", () => {
+    const record = GovernancePolicyRecordSchema.parse({
+      ...policy(),
+      effectiveUntil: undefined,
+      supersededAt: "2026-11-05T00:00:00Z",
+    });
+    const previous = deriveGovernancePolicySnapshot(record);
+    const next = {
+      ...deriveGovernancePolicySnapshot(policy("v2", 3)),
+      effectiveFrom: "2026-11-05T00:00:00Z",
+      effectiveUntil: null,
+    };
+    expect(previous.effectiveUntil).toBe(record.supersededAt);
+    expect(() => assertGovernancePolicyRevision(previous, next)).not.toThrow();
+  });
+
+  it("preserves a historically accepted zero-length effective window", () => {
+    const record = GovernancePolicyRecordSchema.parse({
+      ...policy(),
+      effectiveUntil: "2026-10-05T00:00:00Z",
+    });
+    expect(() => deriveGovernancePolicySnapshot(record)).not.toThrow();
+  });
+
   it("requires a new version and a closed previous effective window", () => {
     const previous = deriveGovernancePolicySnapshot(policy());
     const next = {
@@ -126,5 +162,15 @@ describe("governance policy snapshot v1", () => {
     })).toThrow();
     expect(() => deriveGovernancePolicySnapshot(policy("v1", 6))).toThrow();
     expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, extra: "ignored" })).toThrow();
+    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, registryId: "Registry:Midnight:Kanon" })).toThrow();
+    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, policyId: "Policy:Kanon" })).toThrow();
+    expect(() => GovernancePolicySnapshotSchema.parse({
+      ...snapshot,
+      thresholds: snapshot.thresholds.map((entry) => entry.family === "member" ? { ...entry, threshold: 3 } : entry),
+    })).toThrow(/Compact default threshold/);
+    expect(() => GovernancePolicySnapshotSchema.parse({
+      ...snapshot,
+      thresholds: [...snapshot.thresholds, { family: "auditor", threshold: 3 }],
+    })).toThrow(/Compact default threshold/);
   });
 });

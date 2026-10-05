@@ -48,10 +48,17 @@ The domain package now exports `deriveGovernancePolicySnapshot`,
 `computeGovernancePolicySnapshotCommitment`. V1 snapshots commit the registry
 and policy IDs, monotonically increasing `vN` version, UTC-normalized effective
 window, an independently computed policy-content digest, and sorted action
-family thresholds. The content digest covers URI, templates, bindings, and
+family thresholds. `maintainer`, `member`, and optional `auditor` thresholds
+must agree because the current Compact contract enforces one default threshold
+for all three; emergency and archival thresholds may differ. The content digest covers URI, templates, bindings, and
 decision/dispute/retention/emergency rules; it excludes mutable lifecycle
 status and event roots. Sets and family lists are sorted and duplicates are
 rejected. All thresholds must fit the current Compact five-signer ceiling.
+Consumers with the source policy record MUST call
+`assertGovernancePolicySnapshotMatchesRecord` rather than trusting a supplied
+`contentCommitment` by shape alone. A record superseded without an explicit
+`effectiveUntil` uses `supersededAt` to close its derived window; a historically
+valid zero-length window remains representable.
 
 For the example registry, four ordinary/membership/emergency/archival families
 at 2-of-3 have this canonical snapshot vector when the content digest is

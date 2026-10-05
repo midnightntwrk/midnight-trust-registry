@@ -63,6 +63,9 @@ describe("authorization scope v1", () => {
     [{ ...request, credentialScopeCommitment: "0x" + "A".repeat(64) }, "noncanonical hex"],
     [{ ...issuer, statusMethod: "bad\ud800" }, "lone surrogate"],
     [{ ...issuer, statusMethod: "bad\u0085" }, "C1 control"],
+    [{ ...issuer, statusMethod: "cafe\u0301" }, "non-NFC text"],
+    [{ ...issuer, statusMethod: "issuer\u200bstatus" }, "invisible character"],
+    [{ version: "tr-scope-v1", role: "maintainer", registryId: "TR:Midnight:Example" }, "mixed-case registry ID"],
   ].map(([input, reason]) => ({ input, reason })))("rejects $reason", ({ input }) => {
     expect(() => canonicalizeAuthorizationScope(input as typeof issuer)).toThrow();
   });
