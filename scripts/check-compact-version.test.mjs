@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -20,6 +21,23 @@ const paths = [
 
 test("all Compact consumers use the shared version", () => {
   assert.equal(checkCompactVersion(), pinnedVersion);
+});
+
+test("CLI emits the pin when invoked through a symlink", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "tr-compact-cli-"));
+  try {
+    const link = join(fixture, "compact-version.mjs");
+    const output = join(fixture, "github-output");
+    symlinkSync(join(sourceRoot, "scripts/check-compact-version.mjs"), link);
+    const result = spawnSync(process.execPath, [link, "--github-output"], {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: output },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(output, "utf8"), `version=${pinnedVersion}\n`);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test("workflow and Nix version drift fail validation", () => {
@@ -45,6 +63,14 @@ test("workflow and Nix version drift fail validation", () => {
     writeFileSync(roguePath, `steps:\n  - uses: midnightntwrk/setup-compact-action@abc\n    with:\n      compact-version: ${otherVersion}\n`);
     assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml/);
     rmSync(roguePath);
+
+    const qualityPath = join(fixture, ".github/workflows/quality.yaml");
+    writeFileSync(qualityPath, readFileSync(qualityPath, "utf8").replace(
+      "compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles",
+      "compact-unpinned-${{ hashFiles",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /Quality restore and save cache keys/);
+    writeFileSync(qualityPath, readFileSync(join(sourceRoot, ".github/workflows/quality.yaml")));
 
     const nixPath = join(fixture, "nix/packages/compact-toolchain.nix");
     writeFileSync(nixPath, readFileSync(nixPath, "utf8").replace(

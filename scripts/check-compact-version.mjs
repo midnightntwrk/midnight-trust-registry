@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -37,8 +37,8 @@ export function checkCompactVersion(directory = root) {
       !workflow.includes("setup-compact-action@") ||
       !workflow.includes("run: node scripts/check-compact-version.mjs --github-output") ||
       !workflow.includes("run: node scripts/check-compact-version.mjs --check-installed") ||
-      setupVersions.length !== 1 ||
-      setupVersions[0] !== outputReference ||
+      setupVersions.length === 0 ||
+      setupVersions.some((value) => value !== outputReference) ||
       workflow.includes("COMPACT_COMPILER_VERSION") ||
       workflow.includes(`compact-version: ${version}`)
     ) {
@@ -47,8 +47,9 @@ export function checkCompactVersion(directory = root) {
   }
 
   const quality = readFileSync(resolve(directory, ".github/workflows/quality.yaml"), "utf8");
-  if (!quality.includes(`compact-${outputReference}`)) {
-    throw new Error("Quality cache key must include the checked-in Compact version");
+  const cacheKeys = [...quality.matchAll(/^\s*key:\s*(.+)$/gm)].map((match) => match[1]);
+  if (cacheKeys.length < 2 || cacheKeys.some((key) => !key.includes(`compact-${outputReference}-`))) {
+    throw new Error("Quality restore and save cache keys must include the checked-in Compact version");
   }
 
   const turbo = JSON.parse(readFileSync(resolve(directory, "turbo.json"), "utf8"));
@@ -68,7 +69,7 @@ export function checkCompactVersion(directory = root) {
   return version;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
     const version = checkCompactVersion();
     if (process.argv[2] === "--github-output") {
