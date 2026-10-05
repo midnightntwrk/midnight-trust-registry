@@ -1484,7 +1484,7 @@ export class LocalTrustRegistryIntegrationHarness {
     const version = BigInt(bundle.policy.version.slice(1));
     const ledger = this.simulator.getLedger();
     if (ledger.contractVersion !== 3n) {
-      throw new Error("Registry state predates policy-bound actions and requires governed migration");
+      throw new Error("Unsupported pre-release registry format");
     }
     if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
       throw new Error("Policy version is not committed to the ledger");

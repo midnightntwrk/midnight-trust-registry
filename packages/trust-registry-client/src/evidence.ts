@@ -141,6 +141,12 @@ const assertEpochAnchor = (
     epochRecord.validFromSequence,
     epochRecord.validUntilSequence,
   );
+  if (
+    !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+    || epochRecord.publicationPolicyCommitment.length !== 32
+  ) {
+    throw new Error("Epoch publication policy commitment is missing or malformed");
+  }
 
   if (
     !verifyPolicyBoundMaintainerAction(

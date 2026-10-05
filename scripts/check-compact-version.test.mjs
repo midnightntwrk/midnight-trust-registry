@@ -40,7 +40,7 @@ test("CLI emits the pin when invoked through a symlink", () => {
   }
 });
 
-test("installed check executes the compiler binary in COMPACT_DIRECTORY", () => {
+test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () => {
   const fixture = mkdtempSync(join(tmpdir(), "tr-compact-installed-"));
   try {
     const bin = join(fixture, "bin");
@@ -62,7 +62,7 @@ test("installed check executes the compiler binary in COMPACT_DIRECTORY", () => 
       "--check-installed",
     ], { encoding: "utf8", env });
     assert.notEqual(mismatch.status, 0);
-    assert.match(mismatch.stderr, /compiler binary 0\.0\.0 does not match pin/);
+    assert.match(mismatch.stderr, /compiler 0\.0\.0 does not match pin/);
 
     writeFileSync(compiler, `#!/bin/sh\necho ${pinnedVersion}\n`);
     const matching = spawnSync(process.execPath, [
@@ -70,6 +70,13 @@ test("installed check executes the compiler binary in COMPACT_DIRECTORY", () => 
       "--check-installed",
     ], { encoding: "utf8", env });
     assert.equal(matching.status, 0, matching.stderr);
+
+    rmSync(compiler);
+    const upstreamLayout = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.equal(upstreamLayout.status, 0, upstreamLayout.stderr);
 
     writeFileSync(compact, "#!/bin/sh\necho 0.0.0\n");
     const hostMismatch = spawnSync(process.execPath, [
@@ -132,8 +139,14 @@ test("workflow and Nix version drift fail validation", () => {
     writeFileSync(nixPath, readFileSync(join(sourceRoot, "nix/packages/compact-toolchain.nix")));
     const turboPath = join(fixture, "turbo.json");
     writeFileSync(turboPath, readFileSync(turboPath, "utf8").replace(
-      '"globalDependencies": [".compact-version"],',
+      '"globalDependencies": [".compact-version", "scripts/compile-compact.mjs"],',
       '"globalDependencies": [],',
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /Turbo must invalidate/);
+
+    writeFileSync(turboPath, readFileSync(join(sourceRoot, "turbo.json"), "utf8").replace(
+      '"scripts/compile-compact.mjs"',
+      '"scripts/other-compiler.mjs"',
     ));
     assert.throws(() => checkCompactVersion(fixture), /Turbo must invalidate/);
 
