@@ -62,6 +62,7 @@ describe("authorization scope v1", () => {
     [{ ...request, allowedPredicates: ["age_*" ] }, "wildcard predicate"],
     [{ ...request, credentialScopeCommitment: "0x" + "A".repeat(64) }, "noncanonical hex"],
     [{ ...issuer, statusMethod: "bad\ud800" }, "lone surrogate"],
+    [{ ...issuer, statusMethod: "bad\u0085" }, "C1 control"],
   ].map(([input, reason]) => ({ input, reason })))("rejects $reason", ({ input }) => {
     expect(() => canonicalizeAuthorizationScope(input as typeof issuer)).toThrow();
   });
