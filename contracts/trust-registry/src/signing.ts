@@ -55,8 +55,8 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
 
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
 export const applicationEvidenceSignatureDigest = (
-  commitment: Uint8Array,
   keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.applicationEvidenceSignatureDigest(
     require32Bytes(keyIdCommitment, "Evidence verifier key id commitment"),
@@ -65,19 +65,19 @@ export const applicationEvidenceSignatureDigest = (
 
 export const signApplicationEvidenceCommitmentFromSeed = (
   seed: Uint8Array,
-  commitment: Uint8Array,
   keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
-    applicationEvidenceSignatureDigest(commitment, keyIdCommitment),
+    applicationEvidenceSignatureDigest(keyIdCommitment, commitment),
   );
 
 /** Verifies a signature only; the caller must separately authorize the DID assertion key. */
 export const verifyApplicationEvidenceCommitmentSignature = (
   publicKey: JubjubPoint,
-  commitment: Uint8Array,
   keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
   if (
@@ -88,11 +88,12 @@ export const verifyApplicationEvidenceCommitmentSignature = (
     signature.announcement.y < 0n ||
     signature.announcement.y > MAX_FIELD
   ) return false;
-  return verifyJubjubDigest(
-    publicKey,
-    applicationEvidenceSignatureDigest(commitment, keyIdCommitment),
-    signature,
-  );
+  const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
+  try {
+    return verifyJubjubDigest(publicKey, digest, signature);
+  } catch {
+    return false;
+  }
 };
 
 /** @deprecated Unbound pre-release helper; governed actions require a policy commitment. */

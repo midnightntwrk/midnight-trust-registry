@@ -311,8 +311,8 @@ export class LocalTrustRegistryIntegrationHarness {
     const keyId = this.evidenceVerifier.keyIds[0]!;
     const signature = signApplicationEvidenceCommitmentFromSeed(
       this.evidenceVerifierKey.seed,
-      hashHexToBytes32(commitment),
       bytes32Commitment(keyId),
+      hashHexToBytes32(commitment),
     );
     return {
       envelope,
@@ -355,8 +355,8 @@ export class LocalTrustRegistryIntegrationHarness {
           // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
           return verifyApplicationEvidenceCommitmentSignature(
             this.evidenceVerifierPublicKey,
-            hashHexToBytes32(commitment),
             bytes32Commitment(signature.keyId),
+            hashHexToBytes32(commitment),
             decodeJubjubSignature(Buffer.from(signature.value.slice(2), "hex")),
           );
         } catch {

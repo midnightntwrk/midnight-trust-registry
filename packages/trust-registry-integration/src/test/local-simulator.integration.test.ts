@@ -115,8 +115,8 @@ describe("trust registry local simulator integration", () => {
             value: `0x${Buffer.from(encodeJubjubSignature(
               signApplicationEvidenceCommitmentFromSeed(
                 new Uint8Array(32).fill(99),
-                Buffer.from(validEvidence.commitment.slice(2), "hex"),
                 bytes32Commitment(validEvidence.signature.keyId),
+                Buffer.from(validEvidence.commitment.slice(2), "hex"),
               ),
             )).toString("hex")}`,
           },

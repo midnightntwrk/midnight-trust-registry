@@ -40,14 +40,14 @@ describe("application evidence DID assertion-key fixture", () => {
     expect(evidence.signature.keyId).toBe(`${did}#assertion-1`);
     expect(verifyApplicationEvidenceCommitmentSignature(
       method.publicKey,
-      Buffer.from(evidence.commitment.slice(2), "hex"),
       bytes32Commitment(evidence.signature.keyId),
+      Buffer.from(evidence.commitment.slice(2), "hex"),
       decodeJubjubSignature(Buffer.from(evidence.signature.value.slice(2), "hex")),
     )).toBe(true);
     expect(verifyApplicationEvidenceCommitmentSignature(
       method.publicKey,
-      bytes32Commitment("another-application"),
       bytes32Commitment(evidence.signature.keyId),
+      bytes32Commitment("another-application"),
       decodeJubjubSignature(Buffer.from(evidence.signature.value.slice(2), "hex")),
     )).toBe(false);
     await expect(resolveMidnightDIDMethodBinding({
