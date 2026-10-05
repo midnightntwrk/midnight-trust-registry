@@ -266,3 +266,22 @@ evidence hashes rather than verifying a VC/VP, its verifier key is not looked up
 from a DID during proposal, and the Compact contract does not yet check the
 evidence-verifier signature. Full integration passed with a fresh Compact build
 and 23 integration tests; the pinned light gate and low-level audit passed.
+
+## Application evidence checkpoint (2026-10-06)
+
+- PR #99 is the policy-bound action review follow-up; PR #100 is a partial #76
+  DID JubJub evidence-signature slice stacked on #99. Neither is merged.
+- PR #100 passed an exact-head Nix-pinned full integration run with 23/23 local
+  simulator tests. It does not complete VC/VP eligibility or the #67 on-ledger
+  evidence-verifier authorization path. Issue #101 tracks broader signature
+  ingress auditing.
+- The independent, unpublished `codex/trust-registry-evidence-challenges`
+  branch adds a five-minute, one-use off-ledger challenge service. Its storage
+  interface requires atomic insert and consume; the included in-memory adapter
+  is for local testing, not a public multi-replica API. A public endpoint still
+  needs durable storage, abuse controls, and actual VP challenge verification.
+- PR #99 Quality run 37362856813 was cancelled twice before any step after
+  about 15 minutes queued. The later exact-head run 37417727434 succeeded.
+  Issue #84 records the CI queue evidence; a cancelled run was not a green gate.
+- The challenge TTL is enforced by the evidence verifier's off-ledger clock;
+  the Midnight contract does not independently provide wall-clock time.
