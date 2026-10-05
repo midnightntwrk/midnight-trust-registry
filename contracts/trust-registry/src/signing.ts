@@ -47,6 +47,11 @@ const ensure32Bytes = (value: Uint8Array): Buffer => {
   return Buffer.concat([buffer, Buffer.alloc(32 - buffer.length)]);
 };
 
+const require32Bytes = (value: Uint8Array, label: string): Buffer => {
+  if (value.length !== 32) throw new RangeError(`${label} must be 32 bytes`);
+  return Buffer.from(value);
+};
+
 export const computeMaintainerActionDigest = (
   registryId: Uint8Array,
   actionKind: Uint8Array,
@@ -59,6 +64,15 @@ export const computeMaintainerActionDigest = (
     ensure32Bytes(actionPayloadHash),
     actionSequence,
   ) as TrustRegistryActionDigest;
+
+export const computePolicyBoundActionPayloadHash = (
+  policyCommitment: Uint8Array,
+  actionPayloadHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.policyBoundActionPayloadHash(
+    require32Bytes(policyCommitment, "Policy commitment"),
+    require32Bytes(actionPayloadHash, "Action payload hash"),
+  );
 
 export const computeIssuerAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,

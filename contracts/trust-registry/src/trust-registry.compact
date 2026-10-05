@@ -316,6 +316,19 @@ export pure circuit maintainerActionDigest(
   ];
 }
 
+export pure circuit policyBoundActionPayloadHash(
+  policyCommitment: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(policyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:policy:action:v1"),
+    policyCommitment,
+    actionPayloadHash
+  ]);
+}
+
 export pure circuit maintainerSignerSetHash(
   signerCount: Uint<64>,
   signer1KeyId: Bytes<32>,

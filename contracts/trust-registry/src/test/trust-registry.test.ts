@@ -13,6 +13,7 @@ import {
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
+  computePolicyBoundActionPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   signMaintainerActionFromSeed,
   verifyMaintainerAction,
@@ -189,6 +190,27 @@ const createEpochCommitmentFixture = (label: string, policyRoot: Uint8Array) => 
 });
 
 describe("trust registry contract", () => {
+  it("binds action payload hashes to a nonempty policy commitment", () => {
+    const policyV1 = labelToBytes32("policy:snapshot:v1");
+    const policyV2 = labelToBytes32("policy:snapshot:v2");
+    const payload = labelToBytes32("action:payload");
+    const bound = computePolicyBoundActionPayloadHash(policyV1, payload);
+
+    expect(bound).toEqual(pureCircuits.policyBoundActionPayloadHash(policyV1, payload));
+    expect(Buffer.from(bound).toString("hex")).not.toBe(
+      Buffer.from(computePolicyBoundActionPayloadHash(policyV2, payload)).toString("hex"),
+    );
+    expect(Buffer.from(bound).toString("hex")).not.toBe(
+      Buffer.from(computePolicyBoundActionPayloadHash(policyV1, labelToBytes32("other"))).toString("hex"),
+    );
+    expect(() => computePolicyBoundActionPayloadHash(new Uint8Array(32), payload)).toThrow(
+      /policy commitment must be set/i,
+    );
+    expect(() => computePolicyBoundActionPayloadHash(policyV1, payload.subarray(1))).toThrow(
+      /action payload hash must be 32 bytes/i,
+    );
+  });
+
   it("accepts valid threshold rules and rejects invalid ones", () => {
     expect(() => pureCircuits.assertValidMaintainerThreshold(3n, 2n)).not.toThrow();
     expect(() =>
