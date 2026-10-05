@@ -74,26 +74,30 @@ without a valid final-head review cannot merge.
 ## Hosted gates
 
 - `Milestone Review`: exact-head review receipt, issue link, findings text,
-  author-matching DCO signoffs for new commits, and harness unit tests.
-  Develop commits already accepted on the human-reviewed branch are
-  grandfathered for explicit develop-to-milestone sync PRs. The job uses
-  read-only permissions and no secrets.
+  author- or committer-matching DCO signoffs, verified commit signatures, and
+  harness unit tests. Develop commits already accepted on the human-reviewed
+  branch are grandfathered for explicit develop-to-milestone sync PRs. The job
+  uses read-only permissions and no secrets. It checks out the protected
+  milestone base SHA and executes that version of the policy scripts, never
+  policy scripts from an ordinary PR head.
 - `Milestone Light`: unconditional `./run.sh --light` and `pnpm run demo:smoke`
   on milestone PRs, even
   docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
   to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
-  pushes. It is temporarily non-blocking because a docs-only run took over
-  43 minutes and the current audit baseline is red. See #84 and #86. Revisit
-  this exception by 2026-10-12; do not remove the workflow.
+  pushes. Require its `Typecheck, Audit, and Packaging Baseline` job before
+  autonomous merges. Issue #84 tracks reducing its critical path; a slow check
+  is not an authorization to merge red CI.
 - `Scan`: security scan on every PR and milestone push.
 - Existing docs and PR-title checks remain applicable where triggered.
 
-The milestone branch must require PRs, zero approving GitHub reviews, strict
-up-to-date checks (`Milestone Review`, `Milestone Light`, `scan`), signed
-commits, and resolved conversations. This is a temporary delivery-week profile,
-not a claim that full Quality passed. Restore a fast fail-closed Quality
-aggregator after #84 and #86 are resolved.
+The milestone branch must require PRs, zero general approving GitHub reviews,
+strict up-to-date checks (`Milestone Review`, `Milestone Light`, `scan`, and
+`Typecheck, Audit, and Packaging Baseline`), signed commits, and resolved
+conversations. Enable code-owner review for the gate source and all workflow
+files using `.github/CODEOWNERS`; ordinary product PRs remain zero-human-review
+unless they touch those paths. Issue #84 tracks a faster fail-closed Quality
+lane, not removal of the gate.
 Force pushes and deletions must be disabled. Verify these settings through the
 GitHub API after configuration. Do not weaken `develop` or `main` protection.
 
@@ -108,11 +112,21 @@ review and disposition. For now, a self-review is a documented process rather
 than a GitHub approval because GitHub does not permit authors to approve their
 own PRs.
 
-The review validator currently runs from the PR checkout, so a PR changing
-the validator or its workflow can affect its own check. Treat such changes as
-security-sensitive and require independent review of the exact diff before
-merging; a trusted-base gate is a later hardening step. The full Quality lane
-is currently too slow for docs-only PRs; [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
+The initial bootstrap PR is exceptional: the milestone base does not yet have
+the review scripts, so only the named bootstrap branch may run candidate policy
+code. It requires an external exact-head review and all hosted gates before
+merge. The bootstrap must not be represented as already protected by a trusted
+base. After it lands, the fallback is unreachable while the protected base
+retains the policy scripts. Turn on code-owner review and the Quality required
+check, then test a canary PR that modifies a validator, a workflow, and a
+fenced receipt. The canary must be blocked. Do not run an autonomous milestone
+merge before this is confirmed.
+
+The protected-base checkout prevents a product PR from changing the validator
+it executes. Code-owner review protects the workflow that selects the checkout;
+without it a PR could replace its own workflow and forge the required check.
+An external review receipt remains a process attestation, not a cryptographic
+proof of an independent review. [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
 tracks a measured path to faster, fail-closed routing.
 
 After the pending milestone specification PR lands in `develop`, sync it into
