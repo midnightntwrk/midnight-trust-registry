@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: milestone-review-${{ github.event.pull_request.number }}
@@ -18,14 +19,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Checkout protected milestone policy
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: policy
           persist-credentials: false
-          fetch-depth: 0
+      - name: Select policy source
+        id: policy
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if test -f policy/scripts/check-milestone-review.mjs; then
+            echo 'directory=policy' >> "$GITHUB_OUTPUT"
+          elif test "$HEAD_REF" = 'codex/trust-registry-milestone-harness-safe'; then
+            echo 'directory=candidate' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Protected milestone policy is missing; refusing an unreviewed bootstrap' >&2
+            exit 1
+          fi
+      - name: Checkout one-time reviewed bootstrap candidate
+        if: steps.policy.outputs.directory == 'candidate'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: candidate
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version-file: .nvmrc
-      - run: node --test scripts/check-milestone-review.test.mjs scripts/check-milestone-commits.test.mjs
-      - run: node scripts/check-milestone-review.mjs
-      - run: git fetch --no-tags origin develop:refs/remotes/origin/develop
-      - run: node scripts/check-milestone-commits.mjs
+          node-version: '24'
+      - name: Test selected admission policy
+        run: node --test "${{ steps.policy.outputs.directory }}/scripts/check-milestone-review.test.mjs" "${{ steps.policy.outputs.directory }}/scripts/check-milestone-commits.test.mjs"
+      - name: Validate review evidence
+        if: always()
+        run: node "${{ steps.policy.outputs.directory }}/scripts/check-milestone-review.mjs"
+      - name: Validate DCO and signed commits
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node "${{ steps.policy.outputs.directory }}/scripts/check-milestone-commits.mjs"

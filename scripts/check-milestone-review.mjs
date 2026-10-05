@@ -1,25 +1,87 @@
 import { readFileSync } from 'node:fs';
 
-const REVIEW_LINE = /^<!-- tr-review:v1 head=([0-9a-f]{40}) mode=(self|external) round=([1-3]) verdict=pass -->$/gm;
-const ISSUE_LINK = /^\s*(?:Closes|Fixes|Refs)\s+#([1-9][0-9]*)\b/im;
+const RECEIPT = /^<!-- tr-review:v1 head=([0-9a-f]{40}) mode=(self|external) round=([1-3]) verdict=pass -->$/;
+const ISSUE_LINK = /\b(?:close[ds]?|fix(?:es|ed)?|resolve[ds]?|refs?|references)\s+#([1-9][0-9]*)\b/i;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+
+export function scanMilestoneBody(body) {
+  const visible = [];
+  const findings = [];
+  const receipts = [];
+  let fence = null;
+  let inComment = false;
+  let inFindings = false;
+
+  for (const line of body.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (fence !== null) {
+      const close = fence.character === '`' ? /^ {0,3}`{3,}\s*$/ : /^ {0,3}~{3,}\s*$/;
+      if (close.test(line) && trimmed[0] === fence.character && trimmed.length >= fence.length) {
+        fence = null;
+      } else if (inFindings) {
+        findings.push(line);
+      }
+      continue;
+    }
+
+    if (!inComment) {
+      const opening = line.match(FENCE_OPEN)?.[1];
+      if (opening !== undefined) {
+        fence = { character: opening[0], length: opening.length };
+        continue;
+      }
+      if (/^ {4}|^\t/.test(line)) continue;
+      if (RECEIPT.test(line)) {
+        receipts.push(line.match(RECEIPT));
+        continue;
+      }
+    }
+
+    let prose = '';
+    for (let index = 0; index < line.length;) {
+      if (inComment) {
+        const end = line.indexOf('-->', index);
+        if (end === -1) break;
+        inComment = false;
+        index = end + 3;
+      } else {
+        const start = line.indexOf('<!--', index);
+        if (start === -1) {
+          prose += line.slice(index);
+          break;
+        }
+        prose += line.slice(index, start);
+        inComment = true;
+        index = start + 4;
+      }
+    }
+
+    if (/^##\s+Review findings\s*$/i.test(prose.trim())) {
+      inFindings = true;
+      continue;
+    }
+    if (/^##\s+/.test(prose.trim())) inFindings = false;
+    visible.push(prose);
+    if (inFindings) findings.push(prose);
+  }
+
+  return { visible: visible.join('\n'), findings: findings.join('\n'), receipts };
+}
 
 export function checkMilestoneReview(pr) {
   const errors = [];
   if (pr.base?.ref !== 'milestone-0.1.0') {
     errors.push('PR must target milestone-0.1.0');
   }
-  const body = pr.body ?? '';
-  const visibleBody = body.replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/^```[\s\S]*?^```/gm, '');
-  if (!ISSUE_LINK.test(visibleBody)) {
-    errors.push('PR body must link an issue with Closes, Fixes, or Refs #N');
+  const { visible, findings, receipts } = scanMilestoneBody(pr.body ?? '');
+  if (!ISSUE_LINK.test(visible)) {
+    errors.push('PR body must link an issue with a closing keyword or Refs #N');
   }
-  const receipts = [...body.matchAll(REVIEW_LINE)];
   if (receipts.length !== 1 || receipts[0][1] !== pr.head?.sha) {
     errors.push('PR body must contain exactly one passing review receipt for the current head SHA');
   }
-  const findings = visibleBody.match(/^## Review findings\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1]?.trim();
-  if (!findings) {
+  const substantiveFindings = findings.trim();
+  if (!substantiveFindings || /^(?:none|no findings|replace .* findings\.?|<[^>]+>)$/i.test(substantiveFindings)) {
     errors.push('PR body must include nonempty Review findings and disposition');
   }
   return errors;

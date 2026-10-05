@@ -44,6 +44,27 @@ test('rejects issue links hidden in comments or code fences', () => {
   assert.match(checkMilestoneReview({ ...valid, body: body.replace('<!-- Closes #42 -->', '```text\nCloses #42\n```') }).join(' '), /link an issue/);
 });
 
+test('rejects current-head receipts hidden in Markdown or HTML', () => {
+  const receipt = `<!-- tr-review:v1 head=${head} mode=self round=1 verdict=pass -->`;
+  for (const hidden of [
+    `\`\`\`text\n${receipt}\n\`\`\``,
+    `~~~text\n${receipt}\n~~~`,
+    `    ${receipt}`,
+    `<!--\n${receipt}\n-->`,
+  ]) {
+    const body = `Closes #42\n\n## Review findings\nReviewed on this head; no blockers.\n\n${hidden}`;
+    assert.match(checkMilestoneReview({ ...valid, body }).join(' '), /review receipt/);
+  }
+});
+
+test('accepts GitHub closing keywords and factual fenced review evidence', () => {
+  const body = valid.body.replace('Closes #42', 'Resolved #42').replace(
+    'No blocking findings after self-review.',
+    'External review completed; no blockers.\n\n```text\nClaude reviewed the exact head.\n```',
+  );
+  assert.deepEqual(checkMilestoneReview({ ...valid, body }), []);
+});
+
 test('does not treat the repository PR template as completed findings', () => {
   const template = readFileSync(new URL('../.github/pull_request_template.md', import.meta.url), 'utf8');
   assert.match(checkMilestoneReview({ ...valid, body: template }).join(' '), /nonempty Review findings/);

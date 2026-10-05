@@ -1,0 +1,3 @@
+/.github/CODEOWNERS @midnightntwrk/mn-security
+/.github/workflows/ @midnightntwrk/mn-security
+/scripts/check-milestone-* @midnightntwrk/mn-security
