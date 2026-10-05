@@ -143,6 +143,7 @@ export struct EpochCommitmentRecord {
   stateRoot: Bytes<32>,
   eventRoot: Bytes<32>,
   policyRoot: Bytes<32>,
+  publicationPolicyCommitment: Bytes<32>,
   validFromSequence: Uint<64>,
   validUntilSequence: Uint<64>,
   publishedAtSequence: Uint<64>,
@@ -211,6 +212,7 @@ export ledger governanceEventHashes: Set<Bytes<32>>;
 export ledger lastGovernanceEventHash: Bytes<32>;
 export ledger lastAuthorizedActionKind: Bytes<32>;
 export ledger lastAuthorizedActionPayloadHash: Bytes<32>;
+export ledger lastAuthorizedPolicyCommitment: Bytes<32>;
 export ledger lastAuthorizedMaintainerKeyId: Bytes<32>;
 export ledger lastAuthorizedSignerSetHash: Bytes<32>;
 export ledger issuerAuthorizationCount: Counter;
@@ -239,7 +241,7 @@ export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
 constructor() {
-  contractVersion = 2;
+  contractVersion = 3;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
   registryDidCommitment = pad(32, "midnight:tr:unset");
@@ -257,6 +259,7 @@ constructor() {
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
+  lastAuthorizedPolicyCommitment = pad(32, "midnight:tr:unset");
   lastAuthorizedMaintainerKeyId = pad(32, "midnight:tr:none");
   lastAuthorizedSignerSetHash = pad(32, "midnight:tr:none");
 }
@@ -314,6 +317,34 @@ export pure circuit maintainerActionDigest(
     transientHash<Bytes<32>>(actionPayloadHash),
     actionSequence as Field
   ];
+}
+
+export pure circuit policyBoundActionPayloadHash(
+  policyCommitment: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(policyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:policy:action:v1"),
+    policyCommitment,
+    actionPayloadHash
+  ]);
+}
+
+export pure circuit policyBoundMaintainerActionDigest(
+  registryIdValue: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Vector<4, Field> {
+  return maintainerActionDigest(
+    registryIdValue,
+    actionKind,
+    policyBoundActionPayloadHash(policyCommitment, actionPayloadHash),
+    actionSequence
+  );
 }
 
 export pure circuit maintainerSignerSetHash(
@@ -1096,13 +1127,15 @@ export pure circuit updateMaintainerThresholdPolicyPayloadHash(
 
 export pure circuit governanceEventHash(
   registryIdValue: Bytes<32>,
+  policyCommitment: Bytes<32>,
   maintainerSignerSetHashValue: Bytes<32>,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>,
   actionSequence: Uint<64>
 ): Bytes<32> {
-  return persistentHash<Vector<5, Bytes<32>>>([
+  return persistentHash<Vector<6, Bytes<32>>>([
     registryIdValue,
+    policyCommitment,
     maintainerSignerSetHashValue,
     actionKind,
     actionPayloadHash,
@@ -1182,6 +1215,7 @@ export circuit initializeRegistry(
   const initializationEventHash = disclose(
     governanceEventHash(
       disclosedRegistryId,
+      disclosedGovernancePolicyCommitment,
       initializationSignerSetHash,
       pad(32, "midnight:tr:init"),
       initializationPayloadHash,
@@ -1255,6 +1289,7 @@ export circuit initializeRegistry(
   lastGovernanceEventHash = initializationEventHash;
   lastAuthorizedActionKind = pad(32, "midnight:tr:init");
   lastAuthorizedActionPayloadHash = initializationPayloadHash;
+  lastAuthorizedPolicyCommitment = disclosedGovernancePolicyCommitment;
   lastAuthorizedMaintainerKeyId = disclosedMaintainerKeyId;
   lastAuthorizedSignerSetHash = initializationSignerSetHash;
   initialized = true;
@@ -1363,6 +1398,7 @@ circuit finalizeAuthorizedMaintainerAction(
   const eventHash = disclose(
     governanceEventHash(
       registryId,
+      governancePolicyCommitment,
       signerSetHash,
       actionKind,
       actionPayloadHash,
@@ -1375,6 +1411,7 @@ circuit finalizeAuthorizedMaintainerAction(
   lastGovernanceEventHash = eventHash;
   lastAuthorizedActionKind = actionKind;
   lastAuthorizedActionPayloadHash = actionPayloadHash;
+  lastAuthorizedPolicyCommitment = governancePolicyCommitment;
   lastAuthorizedMaintainerKeyId = signer1KeyId;
   lastAuthorizedSignerSetHash = signerSetHash;
   return AuthorizedMaintainerAction {
@@ -1437,7 +1474,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
-  assert(contractVersion == 2, "Legacy registry state requires governed migration");
+  assert(contractVersion == 3, "Legacy registry state requires governed migration");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);
@@ -1449,8 +1486,9 @@ circuit performAuthorizedMaintainerAction(
     archivalMaintainerThreshold
   );
   const actionSequence = governanceActionCount.read();
-  const digest = maintainerActionDigest(
+  const digest = policyBoundMaintainerActionDigest(
     registryId,
+    governancePolicyCommitment,
     disclosedActionKind,
     disclosedActionPayloadHash,
     actionSequence
@@ -1840,7 +1878,7 @@ export circuit updateMaintainerThresholdPolicy(
   governancePolicyVersion = disclosedNextPolicyVersion;
   governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
   governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
-  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, authorizedAction.actionSequence);
+  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, governanceActionCount.read());
   return authorizedAction.eventHash;
 }
 
@@ -4466,6 +4504,7 @@ export circuit publishEpochCommitment(
       stateRoot: disclosedStateRoot,
       eventRoot: disclosedEventRoot,
       policyRoot: disclosedPolicyRoot,
+      publicationPolicyCommitment: governancePolicyCommitment,
       validFromSequence: disclosedValidFromSequence,
       validUntilSequence: disclosedValidUntilSequence,
       publishedAtSequence: authorizedAction.actionSequence,

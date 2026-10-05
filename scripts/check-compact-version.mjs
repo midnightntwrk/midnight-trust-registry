@@ -99,6 +99,13 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       if (installed !== version) {
         throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
       }
+      if (process.env.COMPACT_DIRECTORY) {
+        const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
+        const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
+        if (compilerVersion !== version) {
+          throw new Error(`Compact compiler binary ${compilerVersion} does not match pin ${version}`);
+        }
+      }
     } else if (process.argv.length > 2) {
       throw new Error(`Unknown argument: ${process.argv[2]}`);
     }

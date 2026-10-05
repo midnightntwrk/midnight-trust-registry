@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- bound contract-version-3 governed action signatures and governance event
+  hashes to the active policy snapshot, with explicit migration required for
+  version-2 state and separate epoch publication-policy commitments
+- selected the checked-in Compact compiler version for contract builds and
+  validated the active compiler default during the light gate
 - bound governance policy snapshot digests and versions to signed threshold
   revisions, historical epoch roots, and client evidence verification in the
   contract-version-2 reference profile

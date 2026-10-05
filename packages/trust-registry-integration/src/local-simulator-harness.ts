@@ -19,9 +19,9 @@ import {
   encodeJubjubSignature,
   labelToBytes32,
   type MaintainerCoAuthorizer,
-  signMaintainerActionFromSeed,
+  signPolicyBoundMaintainerActionFromSeed,
   TrustRegistrySimulator,
-  verifyMaintainerAction,
+  verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
@@ -491,9 +491,26 @@ export class LocalTrustRegistryIntegrationHarness {
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
   ) {
-    return signMaintainerActionFromSeed(
+    return this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    );
+  }
+
+  private signMaintainerActionFromSeed(
+    seed: Uint8Array,
+    registryId: Uint8Array,
+    actionKind: Uint8Array,
+    actionPayloadHash: Uint8Array,
+    actionSequence: bigint,
+  ) {
+    return signPolicyBoundMaintainerActionFromSeed(
+      seed,
+      registryId,
+      this.simulator.getLedger().governancePolicyCommitment,
       actionKind,
       actionPayloadHash,
       actionSequence,
@@ -509,7 +526,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return maintainers.map((maintainer) => ({
       keyId: maintainer.keyId,
       publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-      signature: signMaintainerActionFromSeed(
+      signature: this.signMaintainerActionFromSeed(
         maintainer.seed,
         this.registryIdCommitment,
         actionKind,
@@ -570,7 +587,7 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
       nextPolicyVersion,
-      actionSequence,
+      actionSequence + 1n,
     );
     assertGovernancePolicyRevision(
       deriveGovernancePolicySnapshot(this.policyRecordValue),
@@ -618,7 +635,7 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: bytes32Hex(result),
     });
     this.policyRevisions.push({
-      effectiveFromSequence: actionSequence,
+      effectiveFromSequence: actionSequence + 1n,
       commitment: nextPolicyCommitment,
       record: nextPolicyRecord,
     });
@@ -645,7 +662,7 @@ export class LocalTrustRegistryIntegrationHarness {
       scopeCommitment: fixture.maintainerIdCommitment,
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
+    const proposeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND,
@@ -680,7 +697,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.maintainerIdCommitment,
     ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
+    const authorizeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       AUTHORIZE_MAINTAINER_ACTION_KIND,
@@ -707,7 +724,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.maintainerIdCommitment,
     ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       ACTIVATE_MAINTAINER_ACTION_KIND,
@@ -948,7 +965,7 @@ export class LocalTrustRegistryIntegrationHarness {
       scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
+    const proposeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       PROPOSE_VERIFIER_ACTION_KIND,
@@ -986,7 +1003,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
+    const authorizeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       AUTHORIZE_VERIFIER_ACTION_KIND,
@@ -1012,7 +1029,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       ACTIVATE_VERIFIER_ACTION_KIND,
@@ -1069,7 +1086,7 @@ export class LocalTrustRegistryIntegrationHarness {
       `${fixture.recognitionId}:propose`,
     );
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
+    const proposeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       PROPOSE_RECOGNITION_ACTION_KIND,
@@ -1106,7 +1123,7 @@ export class LocalTrustRegistryIntegrationHarness {
       `${fixture.recognitionId}:authorize`,
     );
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
+    const authorizeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       AUTHORIZE_RECOGNITION_ACTION_KIND,
@@ -1130,7 +1147,7 @@ export class LocalTrustRegistryIntegrationHarness {
   activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
     const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:activate`);
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       ACTIVATE_RECOGNITION_ACTION_KIND,
@@ -1181,7 +1198,7 @@ export class LocalTrustRegistryIntegrationHarness {
       scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
+    const proposeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       PROPOSE_AUDITOR_ACTION_KIND,
@@ -1219,7 +1236,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
+    const authorizeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       AUTHORIZE_AUDITOR_ACTION_KIND,
@@ -1245,7 +1262,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       ACTIVATE_AUDITOR_ACTION_KIND,
@@ -1466,8 +1483,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
     const version = BigInt(bundle.policy.version.slice(1));
     const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 2n) {
-      throw new Error("Legacy registry state requires governed migration");
+    if (ledger.contractVersion !== 3n) {
+      throw new Error("Registry state predates policy-bound actions and requires governed migration");
     }
     if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
       throw new Error("Policy version is not committed to the ledger");
@@ -1526,9 +1543,10 @@ export class LocalTrustRegistryIntegrationHarness {
     const maintainerRecord = this.simulator
       .getLedger()
       .maintainerRecords.lookup(epochRecord.maintainerKeyId);
-    const verified = verifyMaintainerAction(
+    const verified = verifyPolicyBoundMaintainerAction(
       maintainerRecord.publicKey,
       this.registryIdCommitment,
+      epochRecord.publicationPolicyCommitment,
       CREATE_EPOCH_ACTION_KIND,
       payloadHash,
       epochRecord.publishedAtSequence,
@@ -1585,7 +1603,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.maintainerIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1644,7 +1662,7 @@ export class LocalTrustRegistryIntegrationHarness {
       currentRecord.lifecycleEventHash,
       evidenceHash,
     );
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1709,7 +1727,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1760,7 +1778,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1811,7 +1829,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.recognitionIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -2019,7 +2037,7 @@ export class LocalTrustRegistryIntegrationHarness {
       }
 
       const actionSequence = this.simulator.getLedger().governanceActionCount;
-      const signature = signMaintainerActionFromSeed(
+      const signature = this.signMaintainerActionFromSeed(
         this.bootstrapMaintainer.seed,
         this.registryIdCommitment,
         CREATE_EPOCH_ACTION_KIND,

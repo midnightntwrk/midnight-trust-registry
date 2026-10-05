@@ -183,8 +183,8 @@ export class TrustRegistrySimulatorClient {
   > {
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 2n) {
-      throw new Error("Legacy registry state requires governed migration");
+    if (ledger.contractVersion !== 3n) {
+      throw new Error("Registry state predates policy-bound actions and requires governed migration");
     }
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {

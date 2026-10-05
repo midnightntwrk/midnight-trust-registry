@@ -47,6 +47,12 @@ const ensure32Bytes = (value: Uint8Array): Buffer => {
   return Buffer.concat([buffer, Buffer.alloc(32 - buffer.length)]);
 };
 
+const require32Bytes = (value: Uint8Array, label: string): Buffer => {
+  if (value.length !== 32) throw new RangeError(`${label} must be 32 bytes`);
+  return Buffer.from(value);
+};
+
+/** @deprecated Version 2 only; version 3 requires an explicit policy commitment. */
 export const computeMaintainerActionDigest = (
   registryId: Uint8Array,
   actionKind: Uint8Array,
@@ -57,6 +63,30 @@ export const computeMaintainerActionDigest = (
     ensure32Bytes(registryId),
     ensure32Bytes(actionKind),
     ensure32Bytes(actionPayloadHash),
+    actionSequence,
+  ) as TrustRegistryActionDigest;
+
+export const computePolicyBoundActionPayloadHash = (
+  policyCommitment: Uint8Array,
+  actionPayloadHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.policyBoundActionPayloadHash(
+    require32Bytes(policyCommitment, "Policy commitment"),
+    require32Bytes(actionPayloadHash, "Action payload hash"),
+  );
+
+export const computePolicyBoundMaintainerActionDigest = (
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryActionDigest =>
+  pureCircuits.policyBoundMaintainerActionDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(policyCommitment, "Policy commitment"),
+    require32Bytes(actionKind, "Action kind"),
+    require32Bytes(actionPayloadHash, "Action payload hash"),
     actionSequence,
   ) as TrustRegistryActionDigest;
 
@@ -320,6 +350,7 @@ export const signMaintainerActionDigestFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(ensure32Bytes(seedBytes), digest);
 
+/** @deprecated Version 2 only; use signPolicyBoundMaintainerActionFromSeed. */
 export const signMaintainerActionFromSeed = (
   seedBytes: Uint8Array,
   registryId: Uint8Array,
@@ -337,12 +368,32 @@ export const signMaintainerActionFromSeed = (
     ),
   );
 
+export const signPolicyBoundMaintainerActionFromSeed = (
+  seedBytes: Uint8Array,
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryJubjubSignature =>
+  signMaintainerActionDigestFromSeed(
+    seedBytes,
+    computePolicyBoundMaintainerActionDigest(
+      registryId,
+      policyCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+  );
+
 export const verifyMaintainerActionDigest = (
   publicKey: JubjubPoint,
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
 ): boolean => verifyJubjubDigest(publicKey, digest, signature);
 
+/** @deprecated Version 2 only; use verifyPolicyBoundMaintainerAction. */
 export const verifyMaintainerAction = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
@@ -355,6 +406,27 @@ export const verifyMaintainerAction = (
     publicKey,
     computeMaintainerActionDigest(
       registryId,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+    signature,
+  );
+
+export const verifyPolicyBoundMaintainerAction = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+  signature: TrustRegistryJubjubSignature,
+): boolean =>
+  verifyMaintainerActionDigest(
+    publicKey,
+    computePolicyBoundMaintainerActionDigest(
+      registryId,
+      policyCommitment,
       actionKind,
       actionPayloadHash,
       actionSequence,

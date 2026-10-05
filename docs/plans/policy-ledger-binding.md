@@ -1,6 +1,7 @@
 # Policy snapshot ledger binding (issue #75)
 
-Status: local implementation in progress; not yet ready for a PR.
+Status: snapshot-ledger slice published as PR #96; this local follow-on binds
+actions and governance events to the active policy and awaits stacked review.
 
 The local branch now binds a canonical V1 snapshot digest to contract version 2
 bootstrap and to an atomic, quorum-signed threshold revision. The ledger keeps
@@ -9,11 +10,44 @@ out-of-window policy roots. The simulator selects the digest effective at the au
 sequence, including when an old epoch is published after rotation. Client and
 simulator verification recompute the policy preimage digest.
 
-Still required before publication: complete the full Compact/integration run,
-bind active policy identity to each application and authorization action, and
-document the migration boundary for existing contract-version-1 state. The
-contract does not parse the off-chain JSON policy preimage; its signatures
-attest only to the disclosed digest and threshold tuple.
+The PR #96 tree passed full Compact/integration validation and documents the
+contract-version-1 migration boundary. Remaining issue #75 work binds active
+policy identity to each application and authorization action, publishes
+cross-surface byte vectors, and resolves rejected/superseding application
+lifecycle rules. The contract does not parse the off-chain JSON policy
+preimage; its signatures attest only to the disclosed digest and threshold
+tuple.
+
+## Action-binding follow-on
+
+All governed mutations converge on `performAuthorizedMaintainerAction`. The
+version-2 four-field Schnorr digest included only registry, action kind,
+payload hash, and sequence, allowing an equal-sequence fork with another
+policy to reuse the same signed message. Version 3 binds the current ledger
+policy commitment into the payload field
+with a domain-separated two-value hash before signature verification. Keep
+the four-field JubJub digest shape supported by the DID package; do not rely
+on an optional caller-supplied policy digest or a test-only default.
+
+Update the contract-facing signer and verifier together with the simulator,
+client evidence verifier, and contract tests. The signing API must require an
+explicit 32-byte policy commitment, and the simulator must read it from the
+active ledger state immediately before each action. Reject a signature made
+under a different policy at the same action sequence, and also reject stale
+sequence signatures after revision. Preserve the raw action payload hash for
+record lookup and audit; the policy-bound hash is only the signature input.
+
+The governance event commitment now binds the policy digest effective at its
+action sequence, so historical evidence is independently attributable to a
+policy version. Test policy rotation between proposal and authorization,
+cross-fork reuse of an old-policy signature at the same sequence, and reconstruction of
+an old event after rotation. Do not silently relabel existing version-2
+events; this is a contract-format change requiring a version/migration note.
+Version-2 state cannot invoke governed version-3 actions without an explicit
+governed migration or a new deployment. A revision at sequence S is signed
+under the old policy; the new digest becomes effective at S+1. Epoch records
+retain both their historical `policyRoot` and the policy commitment used to
+authorize their publication.
 
 ## Boundary
 
