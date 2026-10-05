@@ -919,7 +919,7 @@ describe("trust registry contract", () => {
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         thresholdPolicySignature,
-        labelToBytes32("policy:kanon:v3"),
+        labelToBytes32("unused-policy-commitment"),
         2n,
         2n,
         1n,
