@@ -15,6 +15,7 @@ const paths = [
   ".github/workflows/quality.yaml",
   ".github/workflows/publish.yml",
   "nix/packages/compact-toolchain.nix",
+  "turbo.json",
 ];
 
 test("all Compact consumers use the shared version", () => {
@@ -40,12 +41,29 @@ test("workflow and Nix version drift fail validation", () => {
     assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
 
     writeFileSync(workflowPath, readFileSync(join(sourceRoot, ".github/workflows/milestone-light.yaml")));
+    const roguePath = join(fixture, ".github/workflows/new-compact.yaml");
+    writeFileSync(roguePath, `steps:\n  - uses: midnightntwrk/setup-compact-action@abc\n    with:\n      compact-version: ${otherVersion}\n`);
+    assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml/);
+    rmSync(roguePath);
+
     const nixPath = join(fixture, "nix/packages/compact-toolchain.nix");
     writeFileSync(nixPath, readFileSync(nixPath, "utf8").replace(
-      'version = lib.removeSuffix "\\n" (builtins.readFile ../../.compact-version);',
-      `version = "${otherVersion}";`,
+      "builtins.readFile ../../.compact-version",
+      `"${otherVersion}"`,
     ));
     assert.throws(() => checkCompactVersion(fixture), /Nix Compact toolchain/);
+
+    writeFileSync(nixPath, readFileSync(join(sourceRoot, "nix/packages/compact-toolchain.nix")));
+    const turboPath = join(fixture, "turbo.json");
+    writeFileSync(turboPath, readFileSync(turboPath, "utf8").replace(
+      '"globalDependencies": [".compact-version"],',
+      '"globalDependencies": [],',
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /Turbo must invalidate/);
+
+    writeFileSync(turboPath, readFileSync(join(sourceRoot, "turbo.json")));
+    writeFileSync(join(fixture, ".compact-version"), `${pinnedVersion}\r\n`);
+    assert.throws(() => checkCompactVersion(fixture), /one stable semver/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

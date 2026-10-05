@@ -58,7 +58,7 @@ jobs:
           path: .turbo/cache
           key: tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
           restore-keys: |
-            tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}-
+            tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-
 
       - name: Set up Compact toolchain
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
