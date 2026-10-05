@@ -69,7 +69,14 @@ test("workflow and Nix version drift fail validation", () => {
       "compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles",
       "compact-unpinned-${{ hashFiles",
     ));
-    assert.throws(() => checkCompactVersion(fixture), /Quality restore and save cache keys/);
+    assert.throws(() => checkCompactVersion(fixture), /Quality Turbo cache and restore keys/);
+    writeFileSync(qualityPath, readFileSync(join(sourceRoot, ".github/workflows/quality.yaml")));
+
+    writeFileSync(qualityPath, readFileSync(qualityPath, "utf8").replace(
+      "restore-keys: |\n            tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-",
+      "restore-keys: |\n            tr-turbo-v1-${{ runner.os }}-",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /Quality Turbo cache and restore keys/);
     writeFileSync(qualityPath, readFileSync(join(sourceRoot, ".github/workflows/quality.yaml")));
 
     const nixPath = join(fixture, "nix/packages/compact-toolchain.nix");

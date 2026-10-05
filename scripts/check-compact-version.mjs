@@ -39,7 +39,8 @@ export function checkCompactVersion(directory = root) {
       !workflow.includes("run: node scripts/check-compact-version.mjs --check-installed") ||
       setupVersions.length === 0 ||
       setupVersions.some((value) => value !== outputReference) ||
-      workflow.includes("COMPACT_COMPILER_VERSION") ||
+      /^\s*COMPACT_COMPILER_VERSION\s*:/m.test(workflow) ||
+      workflow.includes("env.COMPACT_COMPILER_VERSION") ||
       workflow.includes(`compact-version: ${version}`)
     ) {
       throw new Error(`${path} must read the checked-in Compact version for setup`);
@@ -47,9 +48,17 @@ export function checkCompactVersion(directory = root) {
   }
 
   const quality = readFileSync(resolve(directory, ".github/workflows/quality.yaml"), "utf8");
-  const cacheKeys = [...quality.matchAll(/^\s*key:\s*(.+)$/gm)].map((match) => match[1]);
-  if (cacheKeys.length < 2 || cacheKeys.some((key) => !key.includes(`compact-${outputReference}-`))) {
-    throw new Error("Quality restore and save cache keys must include the checked-in Compact version");
+  const cacheKeys = [...quality.matchAll(/^\s*key:\s*(.+)$/gm)]
+    .map((match) => match[1])
+    .filter((key) => key.startsWith("tr-turbo-v1-"));
+  const restoreKeys = [...quality.matchAll(/^\s+tr-turbo-v1-[^\n]+$/gm)]
+    .map((match) => match[0].trim());
+  if (
+    cacheKeys.length < 2 ||
+    restoreKeys.length < 1 ||
+    [...cacheKeys, ...restoreKeys].some((key) => !key.includes(`compact-${outputReference}-`))
+  ) {
+    throw new Error("Quality Turbo cache and restore keys must include the checked-in Compact version");
   }
 
   const turbo = JSON.parse(readFileSync(resolve(directory, "turbo.json"), "utf8"));
@@ -78,7 +87,15 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       }
       appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
     } else if (process.argv[2] === "--check-installed") {
-      const installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+      let installed;
+      try {
+        installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+      } catch (error) {
+        if (error.code === "ENOENT") {
+          throw new Error("Compact compiler not found; enter the Nix development shell");
+        }
+        throw error;
+      }
       if (installed !== version) {
         throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
       }
