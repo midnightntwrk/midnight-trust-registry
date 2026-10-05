@@ -26,7 +26,8 @@ their disposition in the PR, with a linked follow-up issue when deferred.
 2. Use an isolated `codex/` branch; run focused tests, then `./run.sh --light`.
    Run `./run.sh integration` for contract, client, API, or UI behavior changes.
 3. Push DCO-signed and GPG-signed commits. Open a PR to the milestone branch
-   with `Closes #N`, `Fixes #N`, or `Refs #N` in its body.
+   with a GitHub closing keyword or `Refs #N` in its body. Keep the PR below
+   GitHub's 250-commit PR-listing limit; larger trains require manual audit.
 4. Review the final diff. Fill `## Review findings` with blocking/advisory
    dispositions, the review round, and, if external, a review link. Add exactly
    one receipt on its own line, replacing `<head>`, `<mode>`, and `<round>`:
@@ -39,12 +40,11 @@ their disposition in the PR, with a linked follow-up issue when deferred.
    `external`; `<round>` is `1`, `2`, or `3`. Editing the PR body reruns only
    `Milestone Review`. A new push
    invalidates the old receipt and all prior exact-head review evidence.
-5. Confirm `Milestone Review`, `Milestone Light`, and `scan` are green for the
-   current head. Inspect `Quality` and all other non-required checks. During
-   the 0.1.0 delivery week, a pending or red `Quality` result may be deferred
-   only with a linked issue, root cause, and risk disposition in the PR; a new
-   unexplained failure or a runtime security blocker still stops merge. Resolve
-   review conversations, confirm mergeability, and refresh the base if stale.
+5. Confirm `Milestone Review`, `Milestone Light`, `scan`, and `Quality` are green
+   for the current head. Resolve review conversations and confirm mergeability.
+   If the base moved, rebase or merge locally with a verified signature and DCO
+   trailer, then repeat the exact-head review. GitHub's Update branch button
+   can create an unsigned-off merge commit and does not satisfy this DCO gate.
 6. Re-read the PR head immediately before merging. Merge only with the
    compare-and-swap guard; never use `--admin`:
 
@@ -80,10 +80,10 @@ without a valid final-head review cannot merge.
   uses read-only permissions and no secrets. It checks out the protected
   milestone base SHA and executes that version of the policy scripts, never
   policy scripts from an ordinary PR head.
-- `Milestone Light`: unconditional `./run.sh --light` and `pnpm run demo:smoke`
-  on milestone PRs, even
-  docs-only PRs. The existing path-filtered `CI` PR lane excludes milestone
-  to avoid a duplicate Compact build.
+- `Milestone Light`: unconditional Compact version check, `./run.sh --light`,
+  DID/VC integration scenarios, and `pnpm run demo:smoke` on milestone PRs,
+  even docs-only PRs. The existing path-filtered `CI` PR lane excludes
+  milestone to avoid a duplicate Compact build.
 - `Quality`: build, typecheck, and dependency audit on milestone PRs and train
   pushes. Require its `Typecheck, Audit, and Packaging Baseline` job before
   autonomous merges. Issue #84 tracks reducing its critical path; a slow check
@@ -113,8 +113,9 @@ than a GitHub approval because GitHub does not permit authors to approve their
 own PRs.
 
 The initial bootstrap PR is exceptional: the milestone base does not yet have
-the review scripts, so only the named bootstrap branch may run candidate policy
-code. It requires an external exact-head review and all hosted gates before
+the review scripts, so only replacement PR #91 from this repository and its
+named bootstrap branch may run candidate policy code. It requires an external
+exact-head review and all hosted gates before
 merge. The bootstrap must not be represented as already protected by a trusted
 base. After it lands, the fallback is unreachable while the protected base
 retains the policy scripts. Turn on code-owner review and the Quality required
@@ -125,6 +126,8 @@ merge before this is confirmed.
 The protected-base checkout prevents a product PR from changing the validator
 it executes. Code-owner review protects the workflow that selects the checkout;
 without it a PR could replace its own workflow and forge the required check.
+The agent guide and this delivery policy are code-owned too, so a docs-only PR
+cannot silently weaken merge authority.
 An external review receipt remains a process attestation, not a cryptographic
 proof of an independent review. [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
 tracks a measured path to faster, fail-closed routing.
