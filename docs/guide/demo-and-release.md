@@ -81,11 +81,9 @@ Local-only artifact packages for now:
 - `@midnight-ntwrk/trust-registry-cli`
 - `@midnight-ntwrk/trust-registry-api`
 
-Those packages remain local-only because they still rely on unpublished or
-vendored VC inputs for the simulator-backed demo path. They are still packed
-into `artifacts/npm/` for downstream workspace use and smoke-tested there, but
-they are intentionally excluded from the public npm publish workflow until the
-dependency story is fully registry-safe.
+Those packages remain local-only while their public packaging and deployment
+policy is finalized. They are still packed into `artifacts/npm/` for downstream
+workspace use and smoke-tested there; DID and VC dependencies come from npm.
 
 Pack and validate local artifact tarballs:
 
@@ -133,27 +131,28 @@ secret. The default registry is `https://registry.npmjs.org`.
 
 Current supported DID baseline:
 
-- `@midnight-ntwrk/midnight-did@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-contract@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-domain@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc2`
+- `@midnight-ntwrk/midnight-did@0.7.0`
+- `@midnight-ntwrk/midnight-did-contract@0.7.0`
+- `@midnight-ntwrk/midnight-did-domain@0.7.0`
+- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.7.0`
 
-VC inputs are still consumed from vendored tarballs under
-`tooling/vendor/midnight-verifiable-credentials/`.
+Current VC baseline is `@midnight-ntwrk/credential-compact@0.2.0` and
+`@midnight-ntwrk/credential-did-midnight@0.2.0` from npm. The retired private
+VC/status package tarballs are not supported. VC `0.2.0` does not include the
+old status-helper API; live status-registry evidence needs a separate adapter.
+The evidence bundle's `referencedStatusRegistryId` is not included in the
+signed authorization leaf. Consumers must not use it alone to accept a VC
+status authority or non-revocation claim.
 
-Refresh the published DID version and the vendored VC tarballs with validation:
+Refresh the published DID and VC versions with validation:
 
 ```bash
-pnpm run refresh:identity-dependencies -- --did-version 0.5.0-rc2 --validate light
+pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
 ```
 
 Useful variants:
 
 ```bash
 pnpm run refresh:identity-dependencies -- --did-version latest --skip-vc --validate none
-pnpm run refresh:identity-dependencies -- --skip-did --validate integration
+pnpm run refresh:identity-dependencies -- --skip-did --vc-version 0.2.0 --validate integration
 ```
-
-The VC refresh step relies on the workspace-root
-`scripts/sync-package-tarballs.sh` helper, so the full refresh path is intended
-to run from the `midnight-identity-workspace` checkout.

@@ -44,14 +44,14 @@ describe("trust registry DID integration", () => {
     ]);
 
     expect(issuerResolution?.didDocument.id).toBe(issuerBundle.subjectDid);
-    expect(issuerResolution?.didDocument.authentication).toEqual(["#auth-1"]);
+    expect(issuerResolution?.didDocument.authentication).toEqual([`${issuerBundle.subjectDid}#auth-1`]);
     expect(issuerResolution?.didDocument.service?.[0]?.serviceEndpoint).toBe(
       "https://issuer.example/did",
     );
     expect(issuerResolution?.didDocumentMetadata.versionId).toBe("1");
 
     expect(verifierResolution?.didDocument.id).toBe(verifierBundle.subjectDid);
-    expect(verifierResolution?.didDocument.authentication).toEqual(["#auth-1"]);
+    expect(verifierResolution?.didDocument.authentication).toEqual([`${verifierBundle.subjectDid}#auth-1`]);
     expect(verifierResolution?.didDocument.service?.[0]?.serviceEndpoint).toBe(
       "https://verifier.example/did",
     );

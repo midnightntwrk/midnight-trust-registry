@@ -61,6 +61,13 @@ Integration scenarios currently run separately:
 ./run.sh integration
 ```
 
+The fast GitHub CI lane also runs the focused DID/VC scenarios after
+`./run.sh --light`:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+```
+
 Package artifact validation for downstream consumers:
 
 ```bash
@@ -91,10 +98,9 @@ The remotely publishable core package subset is intentionally narrower:
 
 `@midnight-ntwrk/trust-registry-integration`, `@midnight-ntwrk/trust-registry-cli`,
 and `@midnight-ntwrk/trust-registry-api` remain local-only artifacts for now
-because the simulator-backed demo path still consumes vendored VC tarballs from
-`tooling/vendor/midnight-verifiable-credentials/`. The local artifact smoke
-check seeds those tarballs explicitly so downstream consumers can validate the
-same contract.
+while their public packaging and deployment policy is finalized. Identity
+dependencies are installed from npm; local artifact smoke runs in a clean
+consumer without seeding vendored dependency tarballs.
 
 ## Quick Demo Workflow
 
@@ -130,10 +136,10 @@ Smoke-test the documented demo flow from a clean local checkout:
 pnpm run demo:smoke
 ```
 
-Refresh published DID dependencies plus vendored VC tarballs with validation:
+Refresh published DID and VC dependencies with validation:
 
 ```bash
-pnpm run refresh:identity-dependencies -- --did-version 0.5.0-rc2 --validate light
+pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
 ```
 
 For docs-only edits, the minimum fallback remains:

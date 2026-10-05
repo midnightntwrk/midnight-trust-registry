@@ -57,7 +57,6 @@ export const MidnightTrustRegistryMetadataSchema = z.discriminatedUnion(
       role: AuthorizationRecordSchema.shape.role,
       resource_type: AuthorizationRecordSchema.shape.resourceType,
       resource_id: NonEmptyStringSchema,
-      referenced_status_registry_id: NonEmptyStringSchema.optional(),
     }),
     z.object({
       statement_kind: z.literal("recognition"),

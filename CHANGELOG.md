@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- upgraded published Midnight DID packages to `0.7.0` and replaced retired
+  vendored VC tarballs with published VC core and DID-binding packages at `0.2.0`
+- moved clean-consumer artifact smoke tests to npm-resolved identity dependencies
+- removed Turbo cache restore from the fork-capable CI lane and limited cache
+  publication to trusted pushes
+- prevented OpenID Federation statements from re-signing unanchored issuer
+  status-registry hints and added DID/VC integration scenarios to CI
 - upgraded the published `midnight-did` package chain and contract Schnorr
   helper from `0.5.0-rc1` to `0.5.0-rc2`
 - added protected, develop-only npm publishing with local artifact and

@@ -124,6 +124,11 @@ export const buildTrustRegistryPublicationMetadata = (input: {
   policyVersion: string;
 }): EntityStatementPayload["metadata"] => {
   const bundle = input.bundle;
+  const publishedBundle = bundle === undefined ? undefined : { ...bundle };
+  if (publishedBundle !== undefined) {
+    delete publishedBundle.referencedStatusRegistryId;
+    delete publishedBundle.referencedStatusPolicyUri;
+  }
 
   return {
     federation_entity: {
@@ -142,11 +147,11 @@ export const buildTrustRegistryPublicationMetadata = (input: {
       policy_version: input.policyVersion,
       policy_uri: input.registry.policyUri,
       status: input.registry.status,
-      authorization_bundle: bundle?.authorization !== undefined
-        ? bundle
+      authorization_bundle: publishedBundle?.authorization !== undefined
+        ? publishedBundle
         : undefined,
-      recognition_bundle: bundle?.recognition !== undefined
-        ? bundle
+      recognition_bundle: publishedBundle?.recognition !== undefined
+        ? publishedBundle
         : undefined,
     },
   };
@@ -215,7 +220,6 @@ export const buildAuthorizationSubordinateStatementPayload = (
         role: authorization.role,
         resource_type: authorization.resourceType,
         resource_id: authorization.resourceId,
-        referenced_status_registry_id: parsed.bundle.referencedStatusRegistryId,
       },
     },
   });

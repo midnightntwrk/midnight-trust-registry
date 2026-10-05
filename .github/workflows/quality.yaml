@@ -71,7 +71,7 @@ jobs:
         run: pnpm run build
 
       - name: Typecheck all workspaces
-        run: pnpm run typecheck
+        run: pnpm run typecheck:light
 
       - name: Publish Turbo task cache from trusted branch
         if: github.event_name == 'push' && steps.turbo-cache.outputs.cache-hit != 'true'

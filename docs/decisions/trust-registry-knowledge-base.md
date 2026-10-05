@@ -90,32 +90,43 @@ Implemented functional baseline on `develop`:
 
 ## Current Identity Dependency Posture
 
-Trust Registry consumes the published Midnight DID packages from npm and the
-official VC packages from local vendored tarballs under `tooling/vendor/`.
+Trust Registry consumes published Midnight DID and VC packages from npm. No
+VC package tarballs are tracked or seeded into clean-consumer tests.
 
 Current DID package baseline:
 
-- `@midnight-ntwrk/midnight-did@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-contract@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-domain@0.5.0-rc2`
-- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.5.0-rc2`
+- `@midnight-ntwrk/midnight-did@0.7.0`
+- `@midnight-ntwrk/midnight-did-contract@0.7.0`
+- `@midnight-ntwrk/midnight-did-domain@0.7.0`
+- `@midnight-ntwrk/midnight-did-jubjub-schnorr@0.7.0`
 
 Current VC dependency posture:
 
-- keep consuming official vendored VC packages from repo-local `tooling/vendor/`
-- those VC 0.1.0 tarballs do not contain the current VC core signer-authorization
-  surface; #73 must consume a published or owner-packed compatible artifact
-  and reconcile the current VC profile's DID 0.7.0 baseline
+- `@midnight-ntwrk/credential-compact@0.2.0` and
+  `@midnight-ntwrk/credential-did-midnight@0.2.0` provide the current VC core
+  signer-authorization and DID-binding surface for #73
+- retired VC 0.1.0 status helpers are not part of the new VC core; status
+  authority evidence and a live TR-to-VC anchor still require follow-up work
+- `referencedStatusRegistryId` in the evidence bundle is metadata outside the
+  signed authorization leaf; never treat it as authenticated status policy
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
   semantics
 
+Local validation on 2026-10-05: frozen pnpm install, `pnpm audit --audit-level
+low`, `./run.sh --light`, and `./run.sh integration` passed. The full lane
+spent about 19 minutes compiling the 54-circuit contract, while the focused
+integration package passed 22 tests before the review fix that removed the
+tautological status-reference test; the focused package then passed 21 tests.
+#76 tracks anchoring the status reference and restoring live status-authority
+and revocation coverage.
+
 Dependency decision:
 
 - do not import source files from sibling repositories at runtime
 - do not keep copied Schnorr helper code inside the TR contract package
-- consume published or vendored package artifacts through local manifests
+- consume published package artifacts through local manifests
 
 ## Public-Readiness Hardening
 
