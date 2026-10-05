@@ -59,6 +59,11 @@ Consumers with the source policy record MUST call
 `contentCommitment` by shape alone. A record superseded without an explicit
 `effectiveUntil` uses `supersededAt` to close its derived window; a historically
 valid zero-length window remains representable.
+V1 snapshot timestamps allow no more than millisecond precision: extra
+fractional digits are rejected rather than silently truncated by JavaScript
+`Date`. Older records with semantic versions outside monotonic `vN` notation
+or fewer than the four required decision families remain valid historical
+records but require explicit migration before V1 snapshot encoding.
 
 For the example registry, four ordinary/membership/emergency/archival families
 at 2-of-3 have this canonical snapshot vector when the content digest is

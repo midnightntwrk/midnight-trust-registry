@@ -8,7 +8,10 @@ import {
 } from "./types.js";
 
 const VersionSchema = z.string().regex(/^v[1-9][0-9]*$/u);
-const TimestampSchema = z.string().datetime({ offset: true });
+const TimestampSchema = z.string().datetime({ offset: true }).refine((value) => {
+  const fraction = value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/u)?.[1];
+  return fraction === undefined || fraction.length <= 3;
+}, "Policy snapshot timestamps support millisecond precision at most");
 const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
   "Scoped identifiers must be lowercase",
@@ -57,6 +60,14 @@ export type GovernancePolicySnapshot = z.infer<typeof GovernancePolicySnapshotSc
 
 export function deriveGovernancePolicySnapshot(policy: GovernancePolicyRecord): GovernancePolicySnapshot {
   const parsed = GovernancePolicyRecordSchema.parse(policy);
+  if (!VersionSchema.safeParse(parsed.version).success) {
+    throw new Error("Policy record version must migrate to monotonic vN form before V1 snapshot encoding");
+  }
+  const presentFamilies = new Set(parsed.policyTemplates.map((template) => template.family));
+  const missingFamilies = requiredFamilies.filter((family) => !presentFamilies.has(family));
+  if (missingFamilies.length > 0) {
+    throw new Error(`Policy record lacks V1 decision families: ${missingFamilies.join(", ")}`);
+  }
   const content = {
     policyUri: parsed.policyUri,
     policyTemplates: parsed.policyTemplates.map((template) => ({

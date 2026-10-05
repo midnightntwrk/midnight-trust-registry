@@ -140,6 +140,27 @@ describe("governance policy snapshot v1", () => {
     expect(() => deriveGovernancePolicySnapshot(record)).not.toThrow();
   });
 
+  it("rejects sub-millisecond timestamps rather than colliding after Date normalization", () => {
+    const snapshot = deriveGovernancePolicySnapshot(policy());
+    for (const effectiveFrom of ["2026-10-05T00:00:00.0001Z", "2026-10-05T00:00:00.0002Z"]) {
+      expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, effectiveFrom })).toThrow();
+    }
+    expect(() => deriveGovernancePolicySnapshot(GovernancePolicyRecordSchema.parse({
+      ...policy(),
+      effectiveFrom: "2026-10-05T00:00:00.0001Z",
+    }))).toThrow(/millisecond precision/);
+  });
+
+  it("reports legacy policy shapes that require migration to the V1 profile", () => {
+    expect(() => deriveGovernancePolicySnapshot(policy("1.0.0"))).toThrow(/migrate to monotonic vN/);
+    const incomplete = GovernancePolicyRecordSchema.parse({
+      ...policy(),
+      policyTemplates: policy().policyTemplates.slice(0, 2),
+      decisionBindings: policy().decisionBindings.slice(0, 2),
+    });
+    expect(() => deriveGovernancePolicySnapshot(incomplete)).toThrow(/lacks V1 decision families/);
+  });
+
   it("requires a new version and a closed previous effective window", () => {
     const previous = deriveGovernancePolicySnapshot(policy());
     const next = {
