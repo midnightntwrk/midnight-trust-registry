@@ -292,11 +292,17 @@ export const computeUpdateMaintainerMembershipPayloadHash = (
   );
 
 export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
+  previousPolicyCommitment: Uint8Array,
+  nextPolicyCommitment: Uint8Array,
+  nextPolicyVersion: bigint,
   defaultThreshold: bigint,
   emergencyThreshold: bigint,
   archivalThreshold: bigint,
 ): Uint8Array =>
   pureCircuits.updateMaintainerThresholdPolicyPayloadHash(
+    ensure32Bytes(previousPolicyCommitment),
+    ensure32Bytes(nextPolicyCommitment),
+    nextPolicyVersion,
     defaultThreshold,
     emergencyThreshold,
     archivalThreshold,

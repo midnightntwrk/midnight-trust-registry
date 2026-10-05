@@ -133,13 +133,17 @@ export function assertGovernancePolicyRevision(
   if (oldSnapshot.registryId !== newSnapshot.registryId || oldSnapshot.policyId !== newSnapshot.policyId) {
     throw new Error("Policy revision must retain registry and policy identity");
   }
-  const oldVersion = Number(oldSnapshot.policyVersion.slice(1));
-  const newVersion = Number(newSnapshot.policyVersion.slice(1));
-  if (!Number.isSafeInteger(oldVersion) || !Number.isSafeInteger(newVersion) || newVersion <= oldVersion) {
-    throw new Error("Policy revision must increase the policy version");
+  const oldVersion = BigInt(oldSnapshot.policyVersion.slice(1));
+  const newVersion = BigInt(newSnapshot.policyVersion.slice(1));
+  if (newVersion !== oldVersion + 1n) {
+    throw new Error("Policy revision must increase the policy version by one");
   }
-  if (oldSnapshot.effectiveUntil === null || Date.parse(oldSnapshot.effectiveUntil) > Date.parse(newSnapshot.effectiveFrom)) {
-    throw new Error("Previous policy window must close before the revision begins");
+  if (
+    Date.parse(newSnapshot.effectiveFrom) <= Date.parse(oldSnapshot.effectiveFrom)
+    || (oldSnapshot.effectiveUntil !== null
+      && Date.parse(oldSnapshot.effectiveUntil) > Date.parse(newSnapshot.effectiveFrom))
+  ) {
+    throw new Error("Policy revision must start after the previous start without overlapping a closed window");
   }
 }
 

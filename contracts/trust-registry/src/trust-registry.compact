@@ -191,6 +191,10 @@ export ledger initialized: Boolean;
 export ledger registryId: Bytes<32>;
 export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
+export ledger governancePolicyVersion: Uint<64>;
+export ledger governancePolicyCommitmentsByVersion: Map<Uint<64>, Bytes<32>>;
+export ledger governancePolicyVersionsByCommitment: Map<Bytes<32>, Uint<64>>;
+export ledger governancePolicyEffectiveFromByVersion: Map<Uint<64>, Uint<64>>;
 export ledger maintainerThreshold: Uint<64>;
 export ledger emergencyMaintainerThreshold: Uint<64>;
 export ledger archivalMaintainerThreshold: Uint<64>;
@@ -235,11 +239,12 @@ export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
 constructor() {
-  contractVersion = 1;
+  contractVersion = 2;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
   registryDidCommitment = pad(32, "midnight:tr:unset");
   governancePolicyCommitment = pad(32, "midnight:tr:unset");
+  governancePolicyVersion = 0;
   maintainerThreshold = 0;
   emergencyMaintainerThreshold = 0;
   archivalMaintainerThreshold = 0;
@@ -1072,11 +1077,17 @@ export pure circuit updateMaintainerMembershipPayloadHash(
 }
 
 export pure circuit updateMaintainerThresholdPolicyPayloadHash(
+  previousPolicyCommitment: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
   defaultThreshold: Uint<64>,
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Bytes<32> {
-  return persistentHash<Vector<3, Bytes<32>>>([
+  return persistentHash<Vector<6, Bytes<32>>>([
+    previousPolicyCommitment,
+    nextPolicyCommitment,
+    ((nextPolicyVersion as Field) as Bytes<32>),
     ((defaultThreshold as Field) as Bytes<32>),
     ((emergencyThreshold as Field) as Bytes<32>),
     ((archivalThreshold as Field) as Bytes<32>)
@@ -1181,6 +1192,10 @@ export circuit initializeRegistry(
   registryId = disclosedRegistryId;
   registryDidCommitment = disclosedRegistryDidCommitment;
   governancePolicyCommitment = disclosedGovernancePolicyCommitment;
+  governancePolicyVersion = 1;
+  governancePolicyCommitmentsByVersion.insert(1, disclosedGovernancePolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedGovernancePolicyCommitment, 1);
+  governancePolicyEffectiveFromByVersion.insert(1, 0);
   maintainerThreshold = disclose(nextMaintainerThreshold);
   emergencyMaintainerThreshold = disclose(nextMaintainerThreshold);
   archivalMaintainerThreshold = disclose(nextMaintainerThreshold);
@@ -1422,6 +1437,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
+  assert(contractVersion == 2, "Legacy registry state requires governed migration");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);
@@ -1778,10 +1794,14 @@ export circuit authorizeMaintainerAction(
 
 export circuit updateMaintainerThresholdPolicy(
   authorizationBundle: MaintainerAuthorizationBundle,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
   defaultThreshold: Uint<64>,
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Bytes<32> {
+  const disclosedNextPolicyCommitment = disclose(nextPolicyCommitment);
+  const disclosedNextPolicyVersion = disclose(nextPolicyVersion);
   const disclosedDefaultThreshold = disclose(defaultThreshold);
   const disclosedEmergencyThreshold = disclose(emergencyThreshold);
   const disclosedArchivalThreshold = disclose(archivalThreshold);
@@ -1791,8 +1811,17 @@ export circuit updateMaintainerThresholdPolicy(
     disclosedEmergencyThreshold,
     disclosedArchivalThreshold
   );
+  assert(disclosedNextPolicyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(disclosedNextPolicyVersion == governancePolicyVersion + 1, "Policy version must increase by one");
+  assert(
+    !governancePolicyVersionsByCommitment.member(disclosedNextPolicyCommitment),
+    "Policy commitment must not reuse a historical snapshot"
+  );
   const actionPayloadHash = disclose(
     updateMaintainerThresholdPolicyPayloadHash(
+      governancePolicyCommitment,
+      disclosedNextPolicyCommitment,
+      disclosedNextPolicyVersion,
       disclosedDefaultThreshold,
       disclosedEmergencyThreshold,
       disclosedArchivalThreshold
@@ -1807,6 +1836,11 @@ export circuit updateMaintainerThresholdPolicy(
   maintainerThreshold = disclosedDefaultThreshold;
   emergencyMaintainerThreshold = disclosedEmergencyThreshold;
   archivalMaintainerThreshold = disclosedArchivalThreshold;
+  governancePolicyCommitment = disclosedNextPolicyCommitment;
+  governancePolicyVersion = disclosedNextPolicyVersion;
+  governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
+  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, authorizedAction.actionSequence);
   return authorizedAction.eventHash;
 }
 
@@ -4402,6 +4436,27 @@ export circuit publishEpochCommitment(
     !epochCommitmentIds.member(disclosedEpochId),
     "Epoch commitment already exists"
   );
+  assert(
+    governancePolicyVersionsByCommitment.member(disclosedPolicyRoot),
+    "Epoch policy root must be a committed governance policy"
+  );
+  assert(
+    disclosedValidFromSequence <= authorizedAction.actionSequence,
+    "Epoch cannot start after its publication action"
+  );
+  const epochPolicyVersion = governancePolicyVersionsByCommitment.lookup(disclosedPolicyRoot);
+  assert(
+    disclosedValidFromSequence >= governancePolicyEffectiveFromByVersion.lookup(epochPolicyVersion),
+    "Epoch policy root is not effective at this sequence"
+  );
+  if (epochPolicyVersion < governancePolicyVersion) {
+    assert(
+      disclosedValidFromSequence < governancePolicyEffectiveFromByVersion.lookup(
+        (epochPolicyVersion + (1 as Uint<64>)) as Uint<64>
+      ),
+      "Epoch policy root is superseded at this sequence"
+    );
+  }
 
   epochCommitmentIds.insert(disclosedEpochId);
   epochCommitmentRecords.insert(

@@ -21,11 +21,11 @@ import {
   verifyVerifierAuthorizationBundle,
   type BundleVerificationOptions,
 } from "./evidence.js";
-import { bytes32Commitment } from "./utils.js";
+import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<
   BundleVerificationOptions,
-  "epochRecord" | "maintainerPublicKey" | "registryIdCommitment"
+  "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
 >;
 
 export class TrustRegistrySimulatorClient {
@@ -179,9 +179,31 @@ export class TrustRegistrySimulatorClient {
 
   private buildEpochContext(bundle: TrustRegistryEvidenceBundle): Pick<
     BundleVerificationOptions,
-    "epochRecord" | "maintainerPublicKey" | "registryIdCommitment"
+    "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 2n) {
+      throw new Error("Legacy registry state requires governed migration");
+    }
+    const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
+    if (versionMatch === null) {
+      throw new Error("Bundle policy version is invalid");
+    }
+    const version = BigInt(versionMatch[1]!);
+    if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
+      throw new Error("Bundle policy version is not committed to the ledger");
+    }
+    const policyCommitment = ledger.governancePolicyCommitmentsByVersion.lookup(version);
+    if (bytes32Hex(policyCommitment) !== bundle.epoch.policyRoot) {
+      throw new Error("Bundle policy root does not match the committed ledger version");
+    }
+    const nextVersion = version + 1n;
+    const policySupersededAt = nextVersion <= ledger.governancePolicyVersion
+      ? defaultSequenceToTimestamp(
+        ledger.governancePolicyEffectiveFromByVersion.lookup(nextVersion),
+      )
+      : undefined;
     const maintainerRecord = this.getMaintainerRecordByKeyId(
       epochRecord.maintainerKeyId,
     );
@@ -190,6 +212,7 @@ export class TrustRegistrySimulatorClient {
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: this.asBytes32(bundle.registryId),
+      ...(policySupersededAt === undefined ? {} : { policySupersededAt }),
     };
   }
 

@@ -7,6 +7,8 @@ import {
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
 import {
   computeApplicationEvidenceCommitment,
+  computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot,
   resolveGovernancePolicyTemplate,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -211,6 +213,69 @@ describe("trust registry local simulator integration", () => {
 
     const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
+  });
+
+  it("keeps historical evidence on the original policy after a signed threshold revision", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const beforeRevision = createIssuerScenarioFixture("before-policy-revision");
+    const latePublished = createIssuerScenarioFixture("late-published-policy-revision");
+    const afterRevision = createIssuerScenarioFixture("after-policy-revision");
+    const secondMaintainer = createMaintainerScenarioFixture("revision-second");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+
+    harness.authorizeIssuer(beforeRevision);
+    const originalBundle = harness.evaluateCurrentIssuerDecision(beforeRevision);
+    harness.authorizeIssuer(latePublished);
+    harness.authorizeMaintainer(secondMaintainer);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+
+    harness.proposeIssuer(afterRevision, [secondMaintainer]);
+    harness.approveIssuer(afterRevision, [secondMaintainer]);
+    harness.activateIssuer(afterRevision, [secondMaintainer]);
+    const currentBundle = harness.evaluateCurrentIssuerDecision(afterRevision);
+    const historicalBundle = harness.buildIssuerHistoricalEvidence(beforeRevision);
+    const latePublishedBundle = harness.buildIssuerHistoricalEvidence(latePublished);
+
+    expect(historicalBundle.policy.version).toBe("v1");
+    expect(currentBundle.policy.version).toBe("v2");
+    expect(harness.registryRecord.policyUri).toBe(currentBundle.policy.policyUri);
+    expect(historicalBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
+    expect(latePublishedBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
+    expect(currentBundle.epoch.policyRoot).not.toBe(originalBundle.epoch.policyRoot);
+    expect(currentBundle.epoch.policyRoot).toBe(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(currentBundle.policy),
+      ),
+    );
+    expect(harness.simulator.getLedger().governancePolicyVersion).toBe(2n);
+    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {})).not.toThrow();
+    expect(() => client.verifyIssuerAuthorizationBundle(latePublishedBundle, {})).not.toThrow();
+    expect(() => client.verifyIssuerAuthorizationBundle(currentBundle, {})).not.toThrow();
+    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+      evaluationTime: currentBundle.policy.effectiveFrom,
+    })).toThrow(/policy snapshot is superseded/i);
+    expect(() => harness.assertPublishedEpochEvidence(historicalBundle, {
+      evaluationTime: currentBundle.policy.effectiveFrom,
+    })).toThrow(/policy snapshot is superseded/i);
+    expect(() => client.verifyIssuerAuthorizationBundle(
+      { ...historicalBundle, policy: { ...historicalBundle.policy, version: "v9" } },
+      {},
+    )).toThrow(/not committed to the ledger/i);
+    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+      evaluationTime: "not-a-date",
+    })).toThrow(/evaluation time is invalid/i);
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...historicalBundle,
+          policy: { ...historicalBundle.policy, version: "v2" },
+        },
+        {},
+      ),
+    ).toThrow(/committed ledger version/i);
+    harness.assertPublishedEpochEvidence(historicalBundle);
+    harness.assertPublishedEpochEvidence(latePublishedBundle);
+    harness.assertPublishedEpochEvidence(currentBundle);
   });
 
   it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {
