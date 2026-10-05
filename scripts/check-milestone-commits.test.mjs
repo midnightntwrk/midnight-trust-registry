@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkCommitSignoffs } from './check-milestone-commits.mjs';
+import { assertCompleteCommitList, checkCommitSignoffs } from './check-milestone-commits.mjs';
 
 const commit = {
   sha: 'a'.repeat(40),
@@ -39,4 +39,10 @@ test('rejects an empty authored commit range', () => {
 
 test('grandfathers a commit already present on develop for train sync', () => {
   assert.deepEqual(checkCommitSignoffs([{ ...commit, message: 'legacy commit' }], new Set([commit.sha])), []);
+});
+
+test('fails closed when GitHub truncates a PR commit listing', () => {
+  assert.doesNotThrow(() => assertCompleteCommitList(250, 250));
+  assert.throws(() => assertCompleteCommitList(251), /API limit/);
+  assert.throws(() => assertCompleteCommitList(250, 249), /incomplete/);
 });

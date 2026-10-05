@@ -18,6 +18,14 @@ test('accepts current-head external-review receipt', () => {
   assert.deepEqual(checkMilestoneReview({ ...valid, body: valid.body.replace('mode=self', 'mode=external') }), []);
 });
 
+test('accepts harmless receipt whitespace and uppercase head hex', () => {
+  const body = valid.body.replace(
+    `<!-- tr-review:v1 head=${head}`,
+    `  <!-- tr-review:v1 head=${head.toUpperCase()}`,
+  ).replace('verdict=pass -->', 'verdict=pass -->   ');
+  assert.deepEqual(checkMilestoneReview({ ...valid, body }), []);
+});
+
 test('rejects stale and duplicate receipts', () => {
   assert.match(checkMilestoneReview({ ...valid, head: { sha: 'b'.repeat(40) } }).join(' '), /current head/);
   assert.match(checkMilestoneReview({ ...valid, body: `${valid.body}\n${valid.body.match(/<!-- tr-review[^\n]+/)[0]}` }).join(' '), /exactly one/);
@@ -68,4 +76,8 @@ test('accepts GitHub closing keywords and factual fenced review evidence', () =>
 test('does not treat the repository PR template as completed findings', () => {
   const template = readFileSync(new URL('../.github/pull_request_template.md', import.meta.url), 'utf8');
   assert.match(checkMilestoneReview({ ...valid, body: template }).join(' '), /nonempty Review findings/);
+});
+
+test('treats an explicit None as a review disposition, not a parser failure', () => {
+  assert.deepEqual(checkMilestoneReview({ ...valid, body: valid.body.replace('No blocking findings after self-review.', 'None') }), []);
 });

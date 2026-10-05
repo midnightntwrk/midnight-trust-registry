@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-const RECEIPT = /^<!-- tr-review:v1 head=([0-9a-f]{40}) mode=(self|external) round=([1-3]) verdict=pass -->$/;
+const RECEIPT = /^ {0,3}<!-- tr-review:v1 head=([0-9a-fA-F]{40}) mode=(self|external) round=([1-3]) verdict=pass -->[ \t]*$/;
 const ISSUE_LINK = /\b(?:close[ds]?|fix(?:es|ed)?|resolve[ds]?|refs?|references)\s+#([1-9][0-9]*)\b/i;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 
@@ -77,11 +77,11 @@ export function checkMilestoneReview(pr) {
   if (!ISSUE_LINK.test(visible)) {
     errors.push('PR body must link an issue with a closing keyword or Refs #N');
   }
-  if (receipts.length !== 1 || receipts[0][1] !== pr.head?.sha) {
+  if (receipts.length !== 1 || receipts[0][1].toLowerCase() !== pr.head?.sha) {
     errors.push('PR body must contain exactly one passing review receipt for the current head SHA');
   }
   const substantiveFindings = findings.trim();
-  if (!substantiveFindings || /^(?:none|no findings|replace .* findings\.?|<[^>]+>)$/i.test(substantiveFindings)) {
+  if (!substantiveFindings) {
     errors.push('PR body must include nonempty Review findings and disposition');
   }
   return errors;

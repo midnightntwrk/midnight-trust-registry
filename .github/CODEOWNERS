@@ -1,3 +1,6 @@
 /.github/CODEOWNERS @midnightntwrk/mn-security
+/.github/pull_request_template.md @midnightntwrk/mn-security
 /.github/workflows/ @midnightntwrk/mn-security
+/AGENT.md @midnightntwrk/mn-security
+/docs/plans/milestone-0.1.0-delivery-harness.md @midnightntwrk/mn-security
 /scripts/check-milestone-* @midnightntwrk/mn-security

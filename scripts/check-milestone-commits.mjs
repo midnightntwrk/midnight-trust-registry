@@ -43,7 +43,16 @@ async function pullCommits(repo, number, token) {
     commits.push(...batch);
     if (batch.length < 100) return commits;
   }
-  throw new Error('PR has more than 300 commits; manual DCO audit required');
+  return commits;
+}
+
+export function assertCompleteCommitList(expectedCount, receivedCount = expectedCount) {
+  if (!Number.isInteger(expectedCount) || expectedCount < 1 || expectedCount > 250) {
+    throw new Error('PR commit count exceeds GitHub API limit; manual DCO audit required');
+  }
+  if (receivedCount !== expectedCount) {
+    throw new Error('GitHub PR commit listing is incomplete; refusing DCO approval');
+  }
 }
 
 export async function checkMilestoneCommits(event, repo, token) {
@@ -51,7 +60,26 @@ export async function checkMilestoneCommits(event, repo, token) {
   if (!pr || pr.base?.ref !== 'milestone-0.1.0' || !Number.isInteger(pr.number)) {
     throw new Error('Milestone pull request event is required');
   }
+  const live = await githubJson(`repos/${repo}/pulls/${pr.number}`, token);
+  if (live.head?.sha !== pr.head?.sha || live.base?.sha !== pr.base?.sha) {
+    throw new Error('Pull request head or base changed during admission check');
+  }
+  assertCompleteCommitList(live.commits);
   const commits = await pullCommits(repo, pr.number, token);
+  assertCompleteCommitList(live.commits, commits.length);
+  const records = commits.map(({ sha, commit }) => ({
+    sha,
+    authorName: commit.author?.name,
+    authorEmail: commit.author?.email,
+    committerName: commit.committer?.name,
+    committerEmail: commit.committer?.email,
+    message: commit.message,
+    verified: commit.verification?.verified === true,
+  }));
+  const directErrors = checkCommitSignoffs(records);
+  if (directErrors.length === 0) return [];
+  if (directErrors.every((error) => error.includes('signature is not verified'))) return directErrors;
+
   const firstPage = await githubJson(`repos/${repo}/compare/${pr.base.sha}...develop?per_page=100&page=1`, token);
   if (firstPage.total_commits > 250) {
     throw new Error('Develop sync exceeds GitHub compare limit; manual DCO audit required');
@@ -62,15 +90,7 @@ export async function checkMilestoneCommits(event, repo, token) {
     if (nextPage.commits.length === 0) throw new Error('Develop comparison was truncated');
     for (const commit of nextPage.commits) trustedShas.add(commit.sha);
   }
-  return checkCommitSignoffs(commits.map(({ sha, commit }) => ({
-    sha,
-    authorName: commit.author?.name,
-    authorEmail: commit.author?.email,
-    committerName: commit.committer?.name,
-    committerEmail: commit.committer?.email,
-    message: commit.message,
-    verified: commit.verification?.verified === true,
-  })), trustedShas);
+  return checkCommitSignoffs(records, trustedShas);
 }
 
 if (process.argv[1]?.endsWith('/check-milestone-commits.mjs')) {
