@@ -19,7 +19,7 @@
     "docs-check": "./scripts/check-docs.sh",
     "audit": "pnpm audit --audit-level low",
     "check:workspace-manifests": "node scripts/check-workspace-manifests.mjs",
-    "check:compact-version": "node --test scripts/check-compact-version.test.mjs && node scripts/check-compact-version.mjs",
+    "check:compact-version": "node --test scripts/check-compact-version.test.mjs scripts/compile-compact.test.mjs && node scripts/check-compact-version.mjs",
     "check:compact-installed": "node scripts/check-compact-version.mjs --check-installed",
     "packages:check-contents": "node scripts/check-package-contents.mjs",
     "artifacts:pack": "node scripts/pack-artifacts.mjs",

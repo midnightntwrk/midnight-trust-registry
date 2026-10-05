@@ -44,9 +44,8 @@ stdenv.mkDerivation rec {
 
   nativeBuildInputs = [ unzip ];
 
-  # The compact devtool binary reads bin/compactc as a symlink and resolves
-  # its target string to locate the compiler. Relative symlinks break that
-  # lookup, so keep the absolute symlink layout intact inside the derivation.
+  # The devtool resolves bin/compactc as an absolute symlink. The compactc
+  # launcher then looks for compactc.bin and zkir beside its invocation path.
   dontRewriteSymlinks = true;
 
   installPhase = ''
@@ -58,8 +57,11 @@ stdenv.mkDerivation rec {
 
     mkdir -p $out/bin
     ln -s $out/versions/${version}/$compact_platform/compactc $out/bin/compactc
+    ln -s $out/versions/${version}/$compact_platform/compactc.bin $out/bin/compactc.bin
     ln -s $out/versions/${version}/$compact_platform/fixup-compact $out/bin/fixup-compact
     ln -s $out/versions/${version}/$compact_platform/format-compact $out/bin/format-compact
+    ln -s $out/versions/${version}/$compact_platform/zkir $out/bin/zkir
+    ln -s $out/versions/${version}/$compact_platform/zkir-v3 $out/bin/zkir-v3
 
     runHook postInstall
   '';
