@@ -293,6 +293,22 @@ describe("trust registry client", () => {
       client.verifyIssuerAuthorizationBundle(
         {
           ...bundle,
+          epoch: {
+            ...bundle.epoch,
+            maintainerSignatures: [{
+              ...originalSignature,
+              signature: `0x${"00".repeat(96)}`,
+            }],
+          },
+        },
+        {},
+      ),
+    ).toThrow("Epoch maintainer signature is invalid");
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
           policy: {
             ...bundle.policy,
             policyId: "policy:other:v1",

@@ -82,7 +82,7 @@ test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () =
     const hostMismatch = spawnSync(process.execPath, [
       join(sourceRoot, "scripts/check-compact-version.mjs"),
       "--check-installed",
-    ], { encoding: "utf8", env: { ...env, COMPACT_DIRECTORY: "" } });
+    ], { encoding: "utf8", env });
     assert.notEqual(hostMismatch.status, 0);
     assert.match(hostMismatch.stderr, /Installed Compact 0\.0\.0 does not match pin/);
   } finally {

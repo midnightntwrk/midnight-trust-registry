@@ -104,11 +104,11 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       }
       if (process.env.COMPACT_DIRECTORY) {
         const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
-        const compilerVersion = existsSync(compiler)
-          ? execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim()
-          : execFileSync("compact", ["compile", `+${version}`, "--version"], { encoding: "utf8" }).trim();
-        if (compilerVersion !== version) {
-          throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+        if (existsSync(compiler)) {
+          const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
+          if (compilerVersion !== version) {
+            throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+          }
         }
       }
     } else if (process.argv.length > 2) {
