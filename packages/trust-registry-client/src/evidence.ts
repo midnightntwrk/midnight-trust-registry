@@ -11,15 +11,16 @@ import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contr
 import {
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   bytes32Commitment,
-  bytes32Hex,
   defaultSequenceToTimestamp,
   sameBytes32,
   type SequenceToTimestamp,
@@ -154,7 +155,9 @@ const assertEpochAnchor = (
 const assertPolicyAnchor = (
   bundle: TrustRegistryEvidenceBundle,
 ): void => {
-  const expectedPolicyRoot = bytes32Hex(bytes32Commitment(bundle.policy.policyId));
+  const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(
+    deriveGovernancePolicySnapshot(bundle.policy),
+  );
   if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
     throw new Error("Policy root does not match the bundle policy");
   }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot,
+} from "@midnight-ntwrk/trust-registry-domain";
+
+import {
   createAuditorScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   createIssuerScenarioFixture,
@@ -17,6 +22,12 @@ describe("trust registry client", () => {
 
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+
+    expect(bundle.epoch.policyRoot).toBe(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(bundle.policy),
+      ),
+    );
     const client = new TrustRegistrySimulatorClient(harness.simulator);
 
     const currentRecord = client.getCurrentIssuerAuthorization({
@@ -264,6 +275,19 @@ describe("trust registry client", () => {
           policy: {
             ...bundle.policy,
             policyId: "policy:other:v1",
+          },
+        },
+        {},
+      ),
+    ).toThrow(/policy root/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          policy: {
+            ...bundle.policy,
+            decisionRules: [...bundle.policy.decisionRules, "unauthorized rule"],
           },
         },
         {},

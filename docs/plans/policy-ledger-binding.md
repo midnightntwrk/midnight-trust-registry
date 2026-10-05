@@ -1,7 +1,19 @@
 # Policy snapshot ledger binding (issue #75)
 
-Status: local implementation design; not a claim that the current contract
-enforces V1 policy snapshots.
+Status: local implementation in progress; not yet ready for a PR.
+
+The local branch now binds a canonical V1 snapshot digest to contract version 2
+bootstrap and to an atomic, quorum-signed threshold revision. The ledger keeps
+versioned historical digests, and epoch publication rejects unknown or
+out-of-window policy roots. The simulator selects the digest effective at the authorization's
+sequence, including when an old epoch is published after rotation. Client and
+simulator verification recompute the policy preimage digest.
+
+Still required before publication: complete the full Compact/integration run,
+bind active policy identity to each application and authorization action, and
+document the migration boundary for existing contract-version-1 state. The
+contract does not parse the off-chain JSON policy preimage; its signatures
+attest only to the disclosed digest and threshold tuple.
 
 ## Boundary
 
@@ -14,12 +26,12 @@ digest from the policy record before treating the committed value as its
 policy. A signature on a digest is not proof that the signers supplied the
 correct preimage.
 
-The existing `governancePolicyCommitment` is only a commitment to `policyId`
-in simulator bootstrap and is unchanged by threshold updates. It must not be
-relabelled as a V1 snapshot digest for historical records. The reference
-profile should deploy a new contract version for V1 snapshot binding; legacy
-root-only deployments remain queryable as legacy evidence but cannot satisfy
-V1 policy verification without a separately governed migration.
+The existing contract-version-1 `governancePolicyCommitment` was only a
+commitment to `policyId` in simulator bootstrap and was unchanged by threshold
+updates. It must not be relabelled as a V1 snapshot digest for historical
+records. The version-2 reference profile is a new deployment; legacy root-only
+deployments remain queryable as legacy evidence but cannot satisfy V1 policy
+verification without a separately governed migration.
 
 ## Contract state and actions
 

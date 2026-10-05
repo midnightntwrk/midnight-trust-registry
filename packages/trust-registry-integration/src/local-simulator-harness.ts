@@ -36,6 +36,7 @@ import {
   AuthorizationRecordSchema,
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
+  computeGovernancePolicySnapshotCommitment,
   EpochCommitmentSchema,
   type ApplicationEvidenceSubmission,
   type ApplicationEvidenceRole,
@@ -50,11 +51,13 @@ import {
   type GovernancePolicyRecord,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
+  assertGovernancePolicyRevision,
   computeAuthorizationStatementLeafHash,
   computeRecognitionStatementLeafHash,
   computeRegistryStatementLeafHash,
   computeSingleStatementStateRoot,
   createScopedIdentifier,
+  deriveGovernancePolicySnapshot,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -181,7 +184,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly registryIdCommitment: Uint8Array;
   readonly registryDidCommitment: Uint8Array;
   readonly policyId: string;
-  readonly governancePolicyCommitment: Uint8Array;
+  governancePolicyCommitment: Uint8Array;
   readonly registryRecord: RegistryRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
@@ -195,6 +198,11 @@ export class LocalTrustRegistryIntegrationHarness {
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
   private policyRecordValue: GovernancePolicyRecord;
+  private readonly policyRevisions: Array<{
+    effectiveFromSequence: bigint;
+    commitment: Uint8Array;
+    record: GovernancePolicyRecord;
+  }> = [];
 
   get policyRecord(): GovernancePolicyRecord {
     return this.policyRecordValue;
@@ -207,7 +215,6 @@ export class LocalTrustRegistryIntegrationHarness {
     this.registryIdCommitment = bytes32Commitment(this.registryId);
     this.registryDidCommitment = bytes32Commitment(this.registryDid);
     this.policyId = createScopedIdentifier("policy", label, "v1");
-    this.governancePolicyCommitment = bytes32Commitment(this.policyId);
     this.maintainerId = createScopedIdentifier(
       "participant",
       "maintainer",
@@ -238,6 +245,16 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: sha256Hex(this.registryId),
     });
     this.policyRecordValue = this.buildPolicyRecord(1n, 1n, 1n);
+    this.governancePolicyCommitment = hashHexToBytes32(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(this.policyRecordValue),
+      ),
+    );
+    this.policyRevisions.push({
+      effectiveFromSequence: 0n,
+      commitment: this.governancePolicyCommitment,
+      record: this.policyRecordValue,
+    });
     this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
@@ -326,14 +343,16 @@ export class LocalTrustRegistryIntegrationHarness {
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
+    version = 1n,
+    effectiveFromSequence = 0n,
   ): GovernancePolicyRecord {
     return GovernancePolicyRecordSchema.parse({
       policyId: this.policyId,
       registryId: this.registryId,
-      version: "v1",
+      version: `v${version.toString()}`,
       policyUri: "https://registry.example/policies/kanon-v1",
       status: "active",
-      effectiveFrom: timestampForSequence(0n),
+      effectiveFrom: timestampForSequence(effectiveFromSequence),
       policyTemplates: [
         {
           templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
@@ -545,7 +564,27 @@ export class LocalTrustRegistryIntegrationHarness {
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
     const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const nextPolicyVersion = this.simulator.getLedger().governancePolicyVersion + 1n;
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+      nextPolicyVersion,
+      actionSequence,
+    );
+    assertGovernancePolicyRevision(
+      deriveGovernancePolicySnapshot(this.policyRecordValue),
+      deriveGovernancePolicySnapshot(nextPolicyRecord),
+    );
+    const nextPolicyCommitment = hashHexToBytes32(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(nextPolicyRecord),
+      ),
+    );
     const actionPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      this.governancePolicyCommitment,
+      nextPolicyCommitment,
+      nextPolicyVersion,
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
@@ -558,6 +597,8 @@ export class LocalTrustRegistryIntegrationHarness {
         actionPayloadHash,
         actionSequence,
       ),
+      nextPolicyCommitment,
+      nextPolicyVersion,
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
@@ -568,11 +609,13 @@ export class LocalTrustRegistryIntegrationHarness {
         actionSequence,
       ),
     );
-    this.policyRecordValue = this.buildPolicyRecord(
-      defaultThreshold,
-      emergencyThreshold,
-      archivalThreshold,
-    );
+    this.policyRecordValue = nextPolicyRecord;
+    this.governancePolicyCommitment = nextPolicyCommitment;
+    this.policyRevisions.push({
+      effectiveFromSequence: actionSequence,
+      commitment: nextPolicyCommitment,
+      record: nextPolicyRecord,
+    });
     return result;
   }
 
@@ -1409,6 +1452,19 @@ export class LocalTrustRegistryIntegrationHarness {
         `Epoch policy root mismatch: expected ${expectedPolicyRoot}, got ${bundle.epoch.policyRoot}`,
       );
     }
+    const expectedSnapshotRoot = computeGovernancePolicySnapshotCommitment(
+      deriveGovernancePolicySnapshot(bundle.policy),
+    );
+    if (bundle.epoch.policyRoot !== expectedSnapshotRoot) {
+      throw new Error("Epoch policy root does not match the policy snapshot");
+    }
+    const version = BigInt(bundle.policy.version.slice(1));
+    if (
+      bytes32Hex(this.simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(version))
+      !== expectedSnapshotRoot
+    ) {
+      throw new Error("Policy snapshot does not match the committed ledger version");
+    }
     if (bundle.epoch.registryId !== this.registryId) {
       throw new Error(
         `Epoch registry mismatch: expected ${this.registryId}, got ${bundle.epoch.registryId}`,
@@ -1893,6 +1949,16 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
+  private policyRevisionAtSequence(sequence: bigint): (typeof this.policyRevisions)[number] {
+    const revision = [...this.policyRevisions]
+      .reverse()
+      .find((candidate) => candidate.effectiveFromSequence <= sequence);
+    if (revision === undefined) {
+      throw new Error("No governance policy revision applies to this sequence");
+    }
+    return revision;
+  }
+
   private ensurePublishedEpochCommitment(input: {
     statementId: string;
     statementLeafHash: string;
@@ -1913,7 +1979,8 @@ export class LocalTrustRegistryIntegrationHarness {
       input.lifecycleEventRoot,
     );
     const eventRoot = input.lifecycleEventRoot;
-    const policyRoot = bytes32Hex(this.governancePolicyCommitment);
+    const policyRevision = this.policyRevisionAtSequence(input.lastStatusSequence);
+    const policyRoot = bytes32Hex(policyRevision.commitment);
 
     let record: ContractEpochCommitmentRecord;
     try {
@@ -2039,6 +2106,10 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: lifecycleEventRoot ?? sha256Hex("missing"),
       statementStatus: statementStatus ?? "unknown",
     });
+    const policyRevision = this.policyRevisionAtSequence(input.lastStatusSequence);
+    if (epoch.policyRoot !== bytes32Hex(policyRevision.commitment)) {
+      throw new Error("Published epoch does not match the historical policy revision");
+    }
 
     return TrustRegistryEvidenceBundleSchema.parse({
       bundleId: createScopedIdentifier(
@@ -2049,7 +2120,7 @@ export class LocalTrustRegistryIntegrationHarness {
       generatedAt: epoch.validFrom,
       registryId: this.registryId,
       subjectDid: input.subjectDid,
-      policy: this.policyRecordValue,
+      policy: policyRevision.record,
       epoch,
       inclusionProof: {
         proofType: "merkle-inclusion",

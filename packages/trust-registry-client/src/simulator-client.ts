@@ -21,7 +21,7 @@ import {
   verifyVerifierAuthorizationBundle,
   type BundleVerificationOptions,
 } from "./evidence.js";
-import { bytes32Commitment } from "./utils.js";
+import { bytes32Commitment, bytes32Hex } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<
   BundleVerificationOptions,
@@ -182,6 +182,15 @@ export class TrustRegistrySimulatorClient {
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment"
   > {
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
+    const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
+    if (versionMatch === null) {
+      throw new Error("Bundle policy version is invalid");
+    }
+    const policyCommitment = this.simulator.getLedger()
+      .governancePolicyCommitmentsByVersion.lookup(BigInt(versionMatch[1]!));
+    if (bytes32Hex(policyCommitment) !== bundle.epoch.policyRoot) {
+      throw new Error("Bundle policy root does not match the committed ledger version");
+    }
     const maintainerRecord = this.getMaintainerRecordByKeyId(
       epochRecord.maintainerKeyId,
     );

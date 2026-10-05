@@ -161,7 +161,7 @@ describe("governance policy snapshot v1", () => {
     expect(() => deriveGovernancePolicySnapshot(incomplete)).toThrow(/lacks V1 decision families/);
   });
 
-  it("requires a new version and a closed previous effective window", () => {
+  it("requires the next version and a non-overlapping effective window", () => {
     const previous = deriveGovernancePolicySnapshot(policy());
     const next = {
       ...deriveGovernancePolicySnapshot(policy("v2", 3)),
@@ -171,7 +171,12 @@ describe("governance policy snapshot v1", () => {
     expect(() => assertGovernancePolicyRevision(previous, next)).not.toThrow();
     expect(() => assertGovernancePolicyRevision(previous, { ...next, policyVersion: "v1" })).toThrow(/increase/);
     expect(() => assertGovernancePolicyRevision(previous, { ...next, effectiveFrom: "2026-11-04T00:00:00Z" })).toThrow(/window/);
-    expect(() => assertGovernancePolicyRevision({ ...previous, effectiveUntil: null }, next)).toThrow(/window/);
+    expect(() => assertGovernancePolicyRevision({ ...previous, effectiveUntil: null }, next)).not.toThrow();
+    expect(() => assertGovernancePolicyRevision({ ...previous, effectiveUntil: null }, {
+      ...next,
+      effectiveFrom: previous.effectiveFrom,
+    })).toThrow(/window/);
+    expect(() => assertGovernancePolicyRevision(previous, { ...next, policyVersion: "v3" })).toThrow(/by one/);
   });
 
   it("fails closed on missing families, duplicates, and the Compact five-signer ceiling", () => {
