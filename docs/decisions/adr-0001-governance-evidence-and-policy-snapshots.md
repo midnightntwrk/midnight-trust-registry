@@ -41,6 +41,52 @@ references in addition to the existing threshold and signer-set commitment.
 Existing ordinal lifecycle deployments require migration or redeployment before
 adding new serialized fields or statuses.
 
+## Canonical domain snapshot (0.1.0 slice)
+
+The domain package now exports `deriveGovernancePolicySnapshot`,
+`canonicalizeGovernancePolicySnapshot`, and
+`computeGovernancePolicySnapshotCommitment`. V1 snapshots commit the registry
+and policy IDs, monotonically increasing `vN` version, UTC-normalized effective
+window, an independently computed policy-content digest, and sorted action
+family thresholds. `maintainer`, `member`, and optional `auditor` thresholds
+must agree because the current Compact contract enforces one default threshold
+for all three; emergency and archival thresholds may differ. The content digest covers URI, templates, bindings, and
+decision/dispute/retention/emergency rules; it excludes mutable lifecycle
+status and event roots. Sets and family lists are sorted and duplicates are
+rejected. All thresholds must fit the current Compact five-signer ceiling.
+Consumers with the source policy record MUST call
+`assertGovernancePolicySnapshotMatchesRecord` rather than trusting a supplied
+`contentCommitment` by shape alone. A record superseded without an explicit
+`effectiveUntil` uses `supersededAt` to close its derived window; a historically
+valid zero-length window remains representable.
+V1 snapshot timestamps allow no more than millisecond precision: extra
+fractional digits are rejected rather than silently truncated by JavaScript
+`Date`. Older records with semantic versions outside monotonic `vN` notation
+or fewer than the four required decision families remain valid historical
+records but require explicit migration before V1 snapshot encoding.
+
+For the example registry, four ordinary/membership/emergency/archival families
+at 2-of-3 have this canonical snapshot vector when the content digest is
+`0x` followed by 64 lowercase `a` characters:
+
+```json
+{"contentCommitment":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effectiveFrom":"2026-10-05T00:00:00.000Z","effectiveUntil":null,"format":"tr-policy-snapshot-v1","policyId":"policy:kanon","policyVersion":"v1","registryId":"registry:midnight:kanon","thresholds":[{"family":"archival","threshold":2},{"family":"emergency","threshold":2},{"family":"maintainer","threshold":2},{"family":"member","threshold":2}]}
+```
+
+Its SHA-256 commitment is
+`0x29485cb6d7192cdc2d70a9843fb2f3364ffadaa0e2de5a8f839db40b15b9852c`.
+The domain helper rejects a revision that reuses a policy version or overlaps
+the prior effective window. It also rejects a maintainer transition that
+would leave fewer active maintainers than any configured threshold.
+
+This slice does not retrofit existing root-only or ordinal-status ledger
+records. Such records retain their historical meaning; they must be migrated
+or redeployed before a contract or API treats the new snapshot digest as an
+on-ledger policy commitment. The current simulator still has mutable `v1`
+thresholds and must not claim that a domain snapshot authenticates those
+ledger transitions. Binding application evidence and governance events to a
+versioned ledger policy commitment remains open under issue #75.
+
 ## Rejected Alternatives
 
 - Preserve signer order as policy meaning: rejected because approval order is
