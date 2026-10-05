@@ -32,7 +32,7 @@ jobs:
         run: |
           if test -f policy/scripts/check-milestone-review.mjs; then
             echo 'directory=policy' >> "$GITHUB_OUTPUT"
-          elif test "$HEAD_REF" = 'codex/trust-registry-milestone-harness-safe'; then
+          elif test "$HEAD_REF" = 'codex/trust-registry-milestone-harness-verified'; then
             echo 'directory=candidate' >> "$GITHUB_OUTPUT"
           else
             echo 'Protected milestone policy is missing; refusing an unreviewed bootstrap' >&2
