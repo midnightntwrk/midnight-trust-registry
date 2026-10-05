@@ -70,6 +70,14 @@ test("installed check executes the compiler binary in COMPACT_DIRECTORY", () => 
       "--check-installed",
     ], { encoding: "utf8", env });
     assert.equal(matching.status, 0, matching.stderr);
+
+    writeFileSync(compact, "#!/bin/sh\necho 0.0.0\n");
+    const hostMismatch = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env: { ...env, COMPACT_DIRECTORY: "" } });
+    assert.notEqual(hostMismatch.status, 0);
+    assert.match(hostMismatch.stderr, /Installed Compact 0\.0\.0 does not match pin/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

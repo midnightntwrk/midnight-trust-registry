@@ -89,7 +89,7 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
     } else if (process.argv[2] === "--check-installed") {
       let installed;
       try {
-        installed = execFileSync("compact", ["compile", `+${version}`, "--version"], { encoding: "utf8" }).trim();
+        installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
       } catch (error) {
         if (error.code === "ENOENT") {
           throw new Error("Compact compiler not found; enter the Nix development shell");

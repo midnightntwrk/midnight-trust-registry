@@ -64,9 +64,10 @@ run `pnpm run check:compact-version` and `./run.sh --light`. Validate the
 toolchain itself with `nix develop --command compactc --version` and
 `nix develop --command ./run.sh --light` before opening a PR. The contract
 build wrapper passes the pin explicitly as `+VERSION`; an unqualified
-`compact compile` can select a different host-installed default. A host-installed
-`compact` outside the Nix shell must also match this pin for `./run.sh --light`
-to pass; use the Nix shell if the host installation differs.
+`compact compile` can select a different host-installed default. The light
+gate also checks that unqualified compiler default, so a host-installed
+`compact` outside the Nix shell must match the pin for `./run.sh --light` to
+pass. Use the Nix shell if the host default differs.
 
 Integration scenarios currently run separately:
 
