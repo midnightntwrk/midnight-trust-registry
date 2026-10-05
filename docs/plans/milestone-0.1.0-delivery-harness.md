@@ -105,8 +105,9 @@ test a canary PR that modifies a workflow or policy file. The canary must be
 blocked without code-owner approval. Do not run an autonomous milestone merge
 before this is confirmed.
 
-Code-owner review protects workflow, build entrypoints, package scripts, and
-policy changes. The agent guide and this delivery policy are code-owned too,
+Code-owner review protects workflow, build entrypoints including package-local
+scripts, dependency automation, agent instructions, and policy changes. The
+agent guide and this delivery policy are code-owned too,
 so a docs-only PR cannot silently weaken merge authority. Milestone pushes do
 not publish the shared Turbo cache used by PRs; only trusted `develop` and
 `main` pushes may publish it. [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
