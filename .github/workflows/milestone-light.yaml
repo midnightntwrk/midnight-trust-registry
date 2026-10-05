@@ -17,8 +17,6 @@ jobs:
     name: Milestone Light
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      COMPACT_COMPILER_VERSION: 0.30.0
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -29,10 +27,12 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
       - uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
-          compact-version: ${{ env.COMPACT_COMPILER_VERSION }}
-      - run: compact compile --version
+          compact-version: ${{ steps.compact-version.outputs.version }}
+      - run: node scripts/check-compact-version.mjs --check-installed
       - run: pnpm install --frozen-lockfile --prefer-offline
       - run: ./run.sh --light
       - run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration

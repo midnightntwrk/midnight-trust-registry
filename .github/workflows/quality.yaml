@@ -18,7 +18,6 @@ permissions:
   contents: read
 
 env:
-  COMPACT_COMPILER_VERSION: 0.30.0
   PNPM_CONFIG_AUDIT: "false"
   PNPM_CONFIG_FUND: "false"
   TURBO_CACHE_DIR: .turbo/cache
@@ -38,15 +37,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Restore Turbo task cache
-        id: turbo-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .turbo/cache
-          key: tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
-          restore-keys: |
-            tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}-
-
       - name: Enable Corepack
         run: corepack enable
 
@@ -57,13 +47,26 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
+      - name: Restore Turbo task cache
+        id: turbo-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo/cache
+          key: tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
+          restore-keys: |
+            tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-
+
       - name: Set up Compact toolchain
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
-          compact-version: ${{ env.COMPACT_COMPILER_VERSION }}
+          compact-version: ${{ steps.compact-version.outputs.version }}
 
       - name: Verify Compact installation
-        run: compact compile --version
+        run: node scripts/check-compact-version.mjs --check-installed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
@@ -79,7 +82,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .turbo/cache
-          key: tr-turbo-v1-${{ runner.os }}-compact-${{ env.COMPACT_COMPILER_VERSION }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
+          key: tr-turbo-v1-${{ runner.os }}-compact-${{ steps.compact-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', '.nvmrc') }}
 
       - name: Audit dependencies
         run: pnpm audit --audit-level low

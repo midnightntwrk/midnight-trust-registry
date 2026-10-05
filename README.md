@@ -55,6 +55,17 @@ pnpm install --frozen-lockfile
 ./run.sh --light
 ```
 
+`.compact-version` is the single Compact compiler version pin for the Nix
+toolchain and all Compact GitHub workflows. The light gate checks every
+top-level workflow that directly installs Compact, plus Nix; add a future
+Compact-installing composite action to this guard. To upgrade, change that file, update the
+platform-specific fetch hashes in `nix/packages/compact-toolchain.nix`, then
+run `pnpm run check:compact-version` and `./run.sh --light`. Validate the
+toolchain itself with `nix develop --command compact compile --version` and
+`nix develop --command ./run.sh --light` before opening a PR. A host-installed
+`compact` outside the Nix shell must also match this pin for `./run.sh --light`
+to pass; use the Nix shell if the host installation differs.
+
 Integration scenarios currently run separately:
 
 ```bash

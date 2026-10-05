@@ -19,7 +19,12 @@ let
 
   currentPlatform = platformInfo.${stdenv.hostPlatform.system} or null;
 
-  version = "0.30.0";
+  versionFile = builtins.readFile ../../.compact-version;
+  versionMatch = builtins.match "([0-9]+[.][0-9]+[.][0-9]+)\n" versionFile;
+  version = if versionMatch == null then
+    throw ".compact-version must contain one stable semver followed by LF"
+  else
+    builtins.elemAt versionMatch 0;
 in
 
 assert lib.asserts.assertMsg (currentPlatform != null) ''
