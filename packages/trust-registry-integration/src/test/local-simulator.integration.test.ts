@@ -2,7 +2,9 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeJubjubSignature,
   encodeJubjubSignature,
+  JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
@@ -64,6 +66,9 @@ describe("trust registry local simulator integration", () => {
       role: "issuer",
       scopeCommitment: issuer.resourceIdCommitment,
     });
+    const decodedSignature = decodeJubjubSignature(
+      Buffer.from(validEvidence.signature.value.slice(2), "hex"),
+    );
 
     const cases: ReadonlyArray<
       readonly [
@@ -90,6 +95,18 @@ describe("trust registry local simulator integration", () => {
       ["invalid signature", { signature: { value: "tampered" } }, /signature is invalid/],
       ["noncanonical signature encoding", { signature: { value: validEvidence.signature.value.toUpperCase() } }, /signature is invalid/],
       ["invalid curve point", { signature: { value: `0x${"00".repeat(96)}` } }, /signature is invalid/],
+      [
+        "malleated response scalar",
+        {
+          signature: {
+            value: `0x${Buffer.from(encodeJubjubSignature({
+              ...decodedSignature,
+              response: decodedSignature.response + JUBJUB_ORDER,
+            })).toString("hex")}`,
+          },
+        },
+        /signature is invalid/,
+      ],
       ["unauthorized key id", { signature: { keyId: `${harness.evidenceVerifier.did}#assertion-2` } }, /key is not authorized/],
       [
         "wrong signer key",

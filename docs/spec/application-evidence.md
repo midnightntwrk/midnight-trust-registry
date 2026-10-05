@@ -91,7 +91,8 @@ specific assertion key reference. The signer uses the published DID package's
 seed-derived signing helper over that circuit digest. The eventual governed
 verification circuit must use the same digest and the registered key. The
 signature value is the DID package's 96-byte encoding rendered as lowercase,
-`0x`-prefixed hex; other encodings are not accepted by this profile.
+`0x`-prefixed hex, with a response scalar below the JubJub group order and
+canonical field coordinates. Other encodings are not accepted by this profile.
 
 ## 4. Contract Inputs And Checks
 

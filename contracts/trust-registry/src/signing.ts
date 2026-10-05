@@ -1,4 +1,5 @@
 import {
+  MAX_FIELD,
   type JubjubPoint,
 } from "@midnight-ntwrk/compact-runtime";
 import {
@@ -78,12 +79,21 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   commitment: Uint8Array,
   keyIdCommitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
-): boolean =>
-  verifyJubjubDigest(
+): boolean => {
+  if (
+    signature.response < 0n ||
+    signature.response >= JUBJUB_ORDER ||
+    signature.announcement.x < 0n ||
+    signature.announcement.x > MAX_FIELD ||
+    signature.announcement.y < 0n ||
+    signature.announcement.y > MAX_FIELD
+  ) return false;
+  return verifyJubjubDigest(
     publicKey,
     applicationEvidenceSignatureDigest(commitment, keyIdCommitment),
     signature,
   );
+};
 
 /** @deprecated Unbound pre-release helper; governed actions require a policy commitment. */
 export const computeMaintainerActionDigest = (

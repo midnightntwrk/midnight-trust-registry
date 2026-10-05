@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- replaced the simulator's application-evidence hash stand-in with a
+  domain-separated, key-bound JubJub signature; application evidence validation
+  now requires the expected `applicationId` and rejects invalid or future
+  evaluation times
 - bound governed action signatures and governance event hashes to the active
   policy snapshot in the pre-release contract format, with separate epoch
   publication-policy commitments; earlier prototype state is not compatible

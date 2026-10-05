@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationEvidenceSignatureDigest,
   deriveJubjubPublicKeyFromSeed,
+  JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
 } from "../signing.js";
@@ -50,6 +51,12 @@ describe("application evidence commitment signing", () => {
       commitment,
       new Uint8Array(32).fill(8),
       signature,
+    )).toBe(false);
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      publicKey,
+      commitment,
+      keyIdCommitment,
+      { ...signature, response: signature.response + JUBJUB_ORDER },
     )).toBe(false);
   });
 
