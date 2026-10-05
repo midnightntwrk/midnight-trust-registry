@@ -238,6 +238,7 @@ describe("trust registry local simulator integration", () => {
 
     expect(historicalBundle.policy.version).toBe("v1");
     expect(currentBundle.policy.version).toBe("v2");
+    expect(harness.registryRecord.policyUri).toBe(currentBundle.policy.policyUri);
     expect(historicalBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(latePublishedBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(currentBundle.epoch.policyRoot).not.toBe(originalBundle.epoch.policyRoot);

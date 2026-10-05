@@ -185,7 +185,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly registryDidCommitment: Uint8Array;
   readonly policyId: string;
   governancePolicyCommitment: Uint8Array;
-  readonly registryRecord: RegistryRecord;
+  registryRecord: RegistryRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
@@ -350,7 +350,7 @@ export class LocalTrustRegistryIntegrationHarness {
       policyId: this.policyId,
       registryId: this.registryId,
       version: `v${version.toString()}`,
-      policyUri: "https://registry.example/policies/kanon-v1",
+      policyUri: `https://registry.example/policies/kanon-v${version.toString()}`,
       status: "active",
       effectiveFrom: timestampForSequence(effectiveFromSequence),
       policyTemplates: [
@@ -611,6 +611,12 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     this.policyRecordValue = nextPolicyRecord;
     this.governancePolicyCommitment = nextPolicyCommitment;
+    this.registryRecord = RegistryRecordSchema.parse({
+      ...this.registryRecord,
+      policyUri: nextPolicyRecord.policyUri,
+      updatedAt: timestampForSequence(actionSequence),
+      lifecycleEventRoot: bytes32Hex(result),
+    });
     this.policyRevisions.push({
       effectiveFromSequence: actionSequence,
       commitment: nextPolicyCommitment,
