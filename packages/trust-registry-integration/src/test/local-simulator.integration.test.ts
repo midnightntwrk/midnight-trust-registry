@@ -242,6 +242,14 @@ describe("trust registry local simulator integration", () => {
     expect(historicalBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(latePublishedBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(currentBundle.epoch.policyRoot).not.toBe(originalBundle.epoch.policyRoot);
+    const latePublishedRecord = client.getEpochCommitmentById(
+      latePublishedBundle.epoch.epochId,
+    );
+    expect(`0x${Buffer.from(latePublishedRecord.publicationPolicyCommitment).toString("hex")}`)
+      .toBe(currentBundle.epoch.policyRoot);
+    expect(latePublishedBundle.epoch.policyRoot).not.toBe(
+      `0x${Buffer.from(latePublishedRecord.publicationPolicyCommitment).toString("hex")}`,
+    );
     expect(currentBundle.epoch.policyRoot).toBe(
       computeGovernancePolicySnapshotCommitment(
         deriveGovernancePolicySnapshot(currentBundle.policy),

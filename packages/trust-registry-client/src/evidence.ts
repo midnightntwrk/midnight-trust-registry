@@ -5,7 +5,7 @@ import {
   computeCreateEpochCommitmentPayloadHash,
   decodeJubjubSignature,
   labelToBytes32,
-  verifyMaintainerAction,
+  verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
@@ -143,9 +143,10 @@ const assertEpochAnchor = (
   );
 
   if (
-    !verifyMaintainerAction(
+    !verifyPolicyBoundMaintainerAction(
       options.maintainerPublicKey,
       options.registryIdCommitment,
+      epochRecord.publicationPolicyCommitment,
       EPOCH_PUBLISH_ACTION_KIND,
       payloadHash,
       epochRecord.publishedAtSequence,
