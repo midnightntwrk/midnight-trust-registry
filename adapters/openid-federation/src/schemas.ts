@@ -15,6 +15,13 @@ const JwksSchema = z.object({
   keys: z.array(JwkSchema).min(1),
 });
 
+const FederationEvidenceBundleSchema = TrustRegistryEvidenceBundleSchema.transform((bundle) => {
+  const publication = { ...bundle };
+  delete publication.referencedStatusRegistryId;
+  delete publication.referencedStatusPolicyUri;
+  return publication;
+});
+
 export const FederationEntityMetadataSchema = z.object({
   organization_name: NonEmptyStringSchema.optional(),
   organization_uri: z.string().url().optional(),
@@ -45,8 +52,8 @@ export const MidnightTrustRegistryMetadataSchema = z.discriminatedUnion(
       policy_version: NonEmptyStringSchema,
       policy_uri: z.string().url(),
       status: RegistryRecordSchema.shape.status,
-      authorization_bundle: TrustRegistryEvidenceBundleSchema.optional(),
-      recognition_bundle: TrustRegistryEvidenceBundleSchema.optional(),
+      authorization_bundle: FederationEvidenceBundleSchema.optional(),
+      recognition_bundle: FederationEvidenceBundleSchema.optional(),
     }),
     z.object({
       statement_kind: z.literal("authorization"),

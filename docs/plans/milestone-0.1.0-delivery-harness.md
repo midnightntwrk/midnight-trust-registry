@@ -81,7 +81,7 @@ The milestone branch must require PRs, zero general approving GitHub reviews,
 strict up-to-date checks (`Milestone Light`, `scan`, and
 `Typecheck, Audit, and Packaging Baseline`), signed commits, and resolved
 conversations. Enable code-owner review for the gate source and all workflow
-files using `.github/CODEOWNERS`; ordinary product PRs remain zero-human-review
+files using the milestone branch's root `CODEOWNERS`; ordinary product PRs remain zero-human-review
 unless they touch those paths. Issue #84 tracks a faster fail-closed Quality
 lane, not removal of the gate.
 Force pushes and deletions must be disabled. Verify these settings through the
@@ -111,6 +111,12 @@ so a docs-only PR cannot silently weaken merge authority. Milestone pushes do
 not publish the shared Turbo cache used by PRs; only trusted `develop` and
 `main` pushes may publish it. [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
 tracks a measured path to faster, fail-closed routing.
+
+The milestone branch intentionally scopes root `CODEOWNERS` to policy and
+build-control files so ordinary product PRs can merge without a GitHub human
+approval. `develop` and `main` retain their existing root catch-all owner
+rule. A promotion PR into `develop` must restore that catch-all before merge;
+never promote the milestone-specific ownership file unchanged.
 
 After the pending milestone specification PR lands in `develop`, sync it into
 the train through a separate PR and rerun the complete train gates. Do not

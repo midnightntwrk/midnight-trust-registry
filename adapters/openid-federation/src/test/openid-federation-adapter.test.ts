@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   exportJWK,
   generateKeyPair,
+  SignJWT,
   type JWK,
+  type JWTPayload,
 } from "jose";
 
 import {
@@ -202,6 +204,32 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(bundle.referencedStatusRegistryId).toBeDefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
+
+    const rawPeerStatement = {
+      ...subordinatePayload,
+      metadata: {
+        ...subordinatePayload.metadata,
+        midnight_trust_registry: {
+          ...midnightMetadata,
+          authorization_bundle: {
+            ...bundle,
+            referencedStatusRegistryId: "status-registry:attacker:v1",
+            referencedStatusPolicyUri: "https://attacker.example/status-policy",
+          },
+        },
+      },
+    };
+    const peerJwt = await new SignJWT(rawPeerStatement as JWTPayload)
+      .setProtectedHeader({ typ: "entity-statement+jwt", alg: anchorKeys.alg, kid: anchorKeys.kid })
+      .sign(anchorKeys.privateKey);
+    const peerVerified = await verifyEntityStatement({ jwt: peerJwt, jwks: anchorKeys.publicJwks });
+    const peerChain = await verifySimpleTrustChain([chain[0]!, peerJwt, chain[2]!]);
+    for (const statement of [peerVerified, peerChain[1]]) {
+      const metadata = statement?.metadata?.midnight_trust_registry;
+      if (metadata?.statement_kind !== "registry-publication") throw new Error("expected publication metadata");
+      expect(metadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
+      expect(metadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
+    }
   });
 
   it("embeds a recognition bundle in signed registry publication metadata", async () => {

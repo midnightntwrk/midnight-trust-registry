@@ -403,7 +403,7 @@ export const verifySimpleTrustChain = async (
       throw new Error("trust chain iss/sub linkage is invalid");
     }
 
-    await verifyWithJwks(currentJwt, next.jwks as FederationJwkSet);
+    decodedPayloads[index] = await verifyWithJwks(currentJwt, next.jwks as FederationJwkSet);
   }
 
   const trustAnchor = decodedPayloads.at(-1);
@@ -411,7 +411,7 @@ export const verifySimpleTrustChain = async (
   if (trustAnchor === undefined || trustAnchorJwt === undefined) {
     throw new Error("trust chain cannot be empty");
   }
-  await verifyWithJwks(trustAnchorJwt, trustAnchor.jwks as FederationJwkSet);
+  decodedPayloads[chain.length - 1] = await verifyWithJwks(trustAnchorJwt, trustAnchor.jwks as FederationJwkSet);
 
   const leaf = decodedPayloads[0];
   const superior = decodedPayloads[1];

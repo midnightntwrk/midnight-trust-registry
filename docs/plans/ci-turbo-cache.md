@@ -9,9 +9,10 @@ it does not download the Quality archive.
   directory. The directory is ignored by Git. Turbo 2.10 bounds the local
   archive to 2 GB and seven days before it is republished.
 - Cache keys include runner OS, Compact compiler version, the lockfile,
-  `turbo.json`, `.nvmrc`, and the commit SHA. Restore keys reuse a compatible
-  earlier artifact when only source files change; Turbo still hashes task inputs
-  before replaying outputs.
+  `turbo.json`, and `.nvmrc`, but not the commit SHA. The first trusted push
+  seeds one immutable archive per build-input version; Turbo still hashes task
+  inputs before replaying outputs. Bump the cache version deliberately when
+  the baseline becomes stale rather than uploading a new archive every push.
 - PR jobs restore only. `Quality` publishes only after build and typecheck on
   trusted `push` runs. Untrusted PR code cannot publish a cache for the branch
   baseline.
