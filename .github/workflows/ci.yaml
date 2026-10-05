@@ -1,9 +1,6 @@
 name: CI
 permissions: {}
 
-env:
-  COMPACT_COMPILER_VERSION: 0.30.0
-
 on:
   push:
     branches: [develop, main, milestone-0.1.0]
@@ -16,6 +13,7 @@ on:
       - "tsconfig.base.json"
       - "eslint.config.mjs"
       - "run.sh"
+      - ".compact-version"
       - "scripts/**"
       - "contracts/**"
       - "packages/**"
@@ -33,6 +31,7 @@ on:
       - "tsconfig.base.json"
       - "eslint.config.mjs"
       - "run.sh"
+      - ".compact-version"
       - "scripts/**"
       - "contracts/**"
       - "packages/**"
@@ -71,13 +70,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
       - name: Setup Compact toolchain
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
-          compact-version: ${{ env.COMPACT_COMPILER_VERSION }}
+          compact-version: ${{ steps.compact-version.outputs.version }}
 
       - name: Verify Compact installation
-        run: compact compile --version
+        run: node scripts/check-compact-version.mjs --check-installed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline

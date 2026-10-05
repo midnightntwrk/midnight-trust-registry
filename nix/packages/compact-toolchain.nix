@@ -19,7 +19,7 @@ let
 
   currentPlatform = platformInfo.${stdenv.hostPlatform.system} or null;
 
-  version = "0.30.0";
+  version = lib.removeSuffix "\n" (builtins.readFile ../../.compact-version);
 in
 
 assert lib.asserts.assertMsg (currentPlatform != null) ''
