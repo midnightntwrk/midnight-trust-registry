@@ -251,6 +251,19 @@ describe("trust registry local simulator integration", () => {
     expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {})).not.toThrow();
     expect(() => client.verifyIssuerAuthorizationBundle(latePublishedBundle, {})).not.toThrow();
     expect(() => client.verifyIssuerAuthorizationBundle(currentBundle, {})).not.toThrow();
+    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+      evaluationTime: currentBundle.policy.effectiveFrom,
+    })).toThrow(/policy snapshot is superseded/i);
+    expect(() => harness.assertPublishedEpochEvidence(historicalBundle, {
+      evaluationTime: currentBundle.policy.effectiveFrom,
+    })).toThrow(/policy snapshot is superseded/i);
+    expect(() => client.verifyIssuerAuthorizationBundle(
+      { ...historicalBundle, policy: { ...historicalBundle.policy, version: "v9" } },
+      {},
+    )).toThrow(/not committed to the ledger/i);
+    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+      evaluationTime: "not-a-date",
+    })).toThrow(/evaluation time is invalid/i);
     expect(() =>
       client.verifyIssuerAuthorizationBundle(
         {

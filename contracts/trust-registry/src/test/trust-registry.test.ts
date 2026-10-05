@@ -3285,6 +3285,35 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/committed governance policy/i);
 
+    const futureFrom = simulator.getLedger().governanceActionCount + 1n;
+    const futureSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      computeCreateEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        futureFrom,
+        futureFrom + 60n,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        futureSignature,
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        futureFrom,
+        futureFrom + 60n,
+      ),
+    ).toThrow(/cannot start after its publication action/i);
+
     const signature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,

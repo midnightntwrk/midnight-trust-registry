@@ -193,7 +193,6 @@ export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
 export ledger governancePolicyVersion: Uint<64>;
 export ledger governancePolicyCommitmentsByVersion: Map<Uint<64>, Bytes<32>>;
-export ledger governancePolicyCommitmentHistory: Set<Bytes<32>>;
 export ledger governancePolicyVersionsByCommitment: Map<Bytes<32>, Uint<64>>;
 export ledger governancePolicyEffectiveFromByVersion: Map<Uint<64>, Uint<64>>;
 export ledger maintainerThreshold: Uint<64>;
@@ -1195,7 +1194,6 @@ export circuit initializeRegistry(
   governancePolicyCommitment = disclosedGovernancePolicyCommitment;
   governancePolicyVersion = 1;
   governancePolicyCommitmentsByVersion.insert(1, disclosedGovernancePolicyCommitment);
-  governancePolicyCommitmentHistory.insert(disclosedGovernancePolicyCommitment);
   governancePolicyVersionsByCommitment.insert(disclosedGovernancePolicyCommitment, 1);
   governancePolicyEffectiveFromByVersion.insert(1, 0);
   maintainerThreshold = disclose(nextMaintainerThreshold);
@@ -1439,6 +1437,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
+  assert(contractVersion == 2, "Legacy registry state requires governed migration");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);
@@ -1815,7 +1814,7 @@ export circuit updateMaintainerThresholdPolicy(
   assert(disclosedNextPolicyCommitment != pad(32, ""), "Policy commitment must be set");
   assert(disclosedNextPolicyVersion == governancePolicyVersion + 1, "Policy version must increase by one");
   assert(
-    !governancePolicyCommitmentHistory.member(disclosedNextPolicyCommitment),
+    !governancePolicyVersionsByCommitment.member(disclosedNextPolicyCommitment),
     "Policy commitment must not reuse a historical snapshot"
   );
   const actionPayloadHash = disclose(
@@ -1840,7 +1839,6 @@ export circuit updateMaintainerThresholdPolicy(
   governancePolicyCommitment = disclosedNextPolicyCommitment;
   governancePolicyVersion = disclosedNextPolicyVersion;
   governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
-  governancePolicyCommitmentHistory.insert(disclosedNextPolicyCommitment);
   governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
   governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, authorizedAction.actionSequence);
   return authorizedAction.eventHash;
@@ -4439,8 +4437,12 @@ export circuit publishEpochCommitment(
     "Epoch commitment already exists"
   );
   assert(
-    governancePolicyCommitmentHistory.member(disclosedPolicyRoot),
+    governancePolicyVersionsByCommitment.member(disclosedPolicyRoot),
     "Epoch policy root must be a committed governance policy"
+  );
+  assert(
+    disclosedValidFromSequence <= authorizedAction.actionSequence,
+    "Epoch cannot start after its publication action"
   );
   const epochPolicyVersion = governancePolicyVersionsByCommitment.lookup(disclosedPolicyRoot);
   assert(

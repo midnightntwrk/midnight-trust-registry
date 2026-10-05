@@ -33,6 +33,7 @@ export type EpochAnchorVerificationContext = {
   maintainerPublicKey: JubjubPoint;
   registryIdCommitment: Uint8Array;
   sequenceToTimestamp?: SequenceToTimestamp;
+  policySupersededAt?: string;
 };
 
 export type BundleVerificationOptions = {
@@ -115,6 +116,9 @@ const assertEpochAnchor = (
   }
 
   const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
+  if (!Number.isFinite(evaluationTime)) {
+    throw new Error("Evaluation time is invalid");
+  }
   if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
     throw new Error("Epoch is not yet valid for this evidence bundle");
   }
@@ -154,12 +158,30 @@ const assertEpochAnchor = (
 
 const assertPolicyAnchor = (
   bundle: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
 ): void => {
-  const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(
-    deriveGovernancePolicySnapshot(bundle.policy),
-  );
+  const snapshot = deriveGovernancePolicySnapshot(bundle.policy);
+  const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(snapshot);
   if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
     throw new Error("Policy root does not match the bundle policy");
+  }
+  const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
+  if (
+    options.policySupersededAt !== undefined
+    && !Number.isFinite(Date.parse(options.policySupersededAt))
+  ) {
+    throw new Error("Policy supersession time is invalid");
+  }
+  if (evaluationTime < Date.parse(snapshot.effectiveFrom)) {
+    throw new Error("Policy snapshot is not yet effective");
+  }
+  if (
+    (snapshot.effectiveUntil !== null
+      && evaluationTime >= Date.parse(snapshot.effectiveUntil))
+    || (options.policySupersededAt !== undefined
+      && evaluationTime >= Date.parse(options.policySupersededAt))
+  ) {
+    throw new Error("Policy snapshot is superseded at the evaluation time");
   }
 };
 
@@ -215,7 +237,7 @@ export const verifyTrustRegistryEvidenceBundle = (
     );
   }
   assertEpochAnchor(bundle, options);
-  assertPolicyAnchor(bundle);
+  assertPolicyAnchor(bundle, options);
   assertInclusionProof(bundle);
 
   return bundle;

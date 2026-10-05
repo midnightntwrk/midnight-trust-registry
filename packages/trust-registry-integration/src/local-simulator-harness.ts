@@ -1465,8 +1465,15 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch policy root does not match the policy snapshot");
     }
     const version = BigInt(bundle.policy.version.slice(1));
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 2n) {
+      throw new Error("Legacy registry state requires governed migration");
+    }
+    if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
+      throw new Error("Policy version is not committed to the ledger");
+    }
     if (
-      bytes32Hex(this.simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(version))
+      bytes32Hex(ledger.governancePolicyCommitmentsByVersion.lookup(version))
       !== expectedSnapshotRoot
     ) {
       throw new Error("Policy snapshot does not match the committed ledger version");
@@ -1478,6 +1485,20 @@ export class LocalTrustRegistryIntegrationHarness {
     }
 
     const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
+    if (!Number.isFinite(evaluationTime)) {
+      throw new Error("Evaluation time is invalid");
+    }
+    if (evaluationTime < Date.parse(bundle.policy.effectiveFrom)) {
+      throw new Error("Policy snapshot is not yet effective");
+    }
+    if (
+      version < ledger.governancePolicyVersion
+      && evaluationTime >= Date.parse(timestampForSequence(
+        ledger.governancePolicyEffectiveFromByVersion.lookup(version + 1n),
+      ))
+    ) {
+      throw new Error("Policy snapshot is superseded at the evaluation time");
+    }
     if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
       throw new Error("Epoch is not yet valid for this evidence bundle");
     }

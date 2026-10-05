@@ -143,7 +143,7 @@ export function assertGovernancePolicyRevision(
     || (oldSnapshot.effectiveUntil !== null
       && Date.parse(oldSnapshot.effectiveUntil) > Date.parse(newSnapshot.effectiveFrom))
   ) {
-    throw new Error("Previous policy window must close before the revision begins");
+    throw new Error("Policy revision must start after the previous start without overlapping a closed window");
   }
 }
 
