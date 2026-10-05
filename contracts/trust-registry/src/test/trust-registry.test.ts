@@ -179,11 +179,11 @@ const createMaintainerCoAuthorizer = (
   ),
 });
 
-const createEpochCommitmentFixture = (label: string) => ({
+const createEpochCommitmentFixture = (label: string, policyRoot: Uint8Array) => ({
   epochId: labelToBytes32(`epoch:${label}`),
   stateRoot: labelToBytes32(`state-root:${label}`),
   eventRoot: labelToBytes32(`event-root:${label}`),
-  policyRoot: labelToBytes32(`policy-root:${label}`),
+  policyRoot,
   validFromSequence: 1n,
   validUntilSequence: 61n,
 });
@@ -740,7 +740,14 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
       registryId,
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-      computeUpdateMaintainerThresholdPolicyPayloadHash(3n, 1n, 1n),
+      computeUpdateMaintainerThresholdPolicyPayloadHash(
+        simulator.getLedger().governancePolicyCommitment,
+        labelToBytes32("policy:kanon:v2"),
+        2n,
+        3n,
+        1n,
+        1n,
+      ),
       invalidThresholdPolicySequence,
     );
     expect(() =>
@@ -748,6 +755,8 @@ describe("trust registry contract", () => {
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         invalidThresholdPolicySignature,
+        labelToBytes32("policy:kanon:v2"),
+        2n,
         3n,
         1n,
         1n,
@@ -756,6 +765,9 @@ describe("trust registry contract", () => {
 
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const thresholdPolicyPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      simulator.getLedger().governancePolicyCommitment,
+      labelToBytes32("policy:kanon:v2"),
+      2n,
       2n,
       1n,
       2n,
@@ -767,10 +779,36 @@ describe("trust registry contract", () => {
       thresholdPolicyPayloadHash,
       thresholdPolicySequence,
     );
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        thresholdPolicySignature,
+        labelToBytes32("policy:kanon:unsigned"),
+        2n,
+        2n,
+        1n,
+        2n,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        thresholdPolicySignature,
+        simulator.getLedger().governancePolicyCommitment,
+        2n,
+        2n,
+        1n,
+        2n,
+      ),
+    ).toThrow(/must not reuse/i);
     simulator.updateMaintainerThresholdPolicy(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       thresholdPolicySignature,
+      labelToBytes32("policy:kanon:v2"),
+      2n,
       2n,
       1n,
       2n,
@@ -779,6 +817,29 @@ describe("trust registry contract", () => {
     expect(simulator.getLedger().maintainerThreshold).toEqual(2n);
     expect(simulator.getLedger().emergencyMaintainerThreshold).toEqual(1n);
     expect(simulator.getLedger().archivalMaintainerThreshold).toEqual(2n);
+    expect(simulator.getLedger().governancePolicyVersion).toEqual(2n);
+    expect(Buffer.from(simulator.getLedger().governancePolicyCommitment)).toEqual(
+      Buffer.from(labelToBytes32("policy:kanon:v2")),
+    );
+    expect(
+      Buffer.from(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(1n)),
+    ).toEqual(Buffer.from(labelToBytes32("policy:kanon:v1")));
+    expect(
+      Buffer.from(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(2n)),
+    ).toEqual(Buffer.from(labelToBytes32("policy:kanon:v2")));
+
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        thresholdPolicySignature,
+        labelToBytes32("policy:kanon:v3"),
+        2n,
+        2n,
+        1n,
+        2n,
+      ),
+    ).toThrow(/version must increase/i);
 
     const issuer = createIssuerAuthorizationFixture("quorum");
     const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
@@ -1065,13 +1126,22 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
       registryId,
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-      computeUpdateMaintainerThresholdPolicyPayloadHash(2n, 1n, 1n),
+      computeUpdateMaintainerThresholdPolicyPayloadHash(
+        simulator.getLedger().governancePolicyCommitment,
+        labelToBytes32("policy:kanon:v2"),
+        2n,
+        2n,
+        1n,
+        1n,
+      ),
       thresholdPolicySequence,
     );
     simulator.updateMaintainerThresholdPolicy(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       thresholdPolicySignature,
+      labelToBytes32("policy:kanon:v2"),
+      2n,
       2n,
       1n,
       1n,
@@ -3069,7 +3139,10 @@ describe("trust registry contract", () => {
       bootstrapMaintainer,
       bootstrapPublicKey,
     } = createInitializedRegistryFixture(59);
-    const epoch = createEpochCommitmentFixture("seq-1");
+    const epoch = createEpochCommitmentFixture(
+      "seq-1",
+      simulator.getLedger().governancePolicyCommitment,
+    );
     const actionSequence = simulator.getLedger().governanceActionCount;
     const signature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -3127,7 +3200,10 @@ describe("trust registry contract", () => {
       bootstrapMaintainer,
       bootstrapPublicKey,
     } = createInitializedRegistryFixture(61);
-    const epoch = createEpochCommitmentFixture("seq-2");
+    const epoch = createEpochCommitmentFixture(
+      "seq-2",
+      simulator.getLedger().governancePolicyCommitment,
+    );
 
     expect(() => simulator.getCurrentEpochCommitment()).toThrow(
       /no epoch commitment/i,
@@ -3180,6 +3256,35 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
 
+    const uncommittedPolicyRoot = labelToBytes32("policy-root:uncommitted");
+    const uncommittedSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      computeCreateEpochCommitmentPayloadHash(
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        uncommittedPolicyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        uncommittedSignature,
+        epoch.epochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        uncommittedPolicyRoot,
+        epoch.validFromSequence,
+        epoch.validUntilSequence,
+      ),
+    ).toThrow(/committed governance policy/i);
+
     const signature = signMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -3225,5 +3330,62 @@ describe("trust registry contract", () => {
         epoch.validUntilSequence,
       ),
     ).toThrow(/already exists/i);
+
+    const revisionSequence = simulator.getLedger().governanceActionCount;
+    const revisedPolicyRoot = labelToBytes32("policy:kanon:v2");
+    const revisionSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(
+        epoch.policyRoot,
+        revisedPolicyRoot,
+        2n,
+        1n,
+        1n,
+        1n,
+      ),
+      revisionSequence,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      revisionSignature,
+      revisedPolicyRoot,
+      2n,
+      1n,
+      1n,
+      1n,
+    );
+
+    const lateSequence = simulator.getLedger().governanceActionCount;
+    const lateEpochId = labelToBytes32("epoch:late-old-policy");
+    const lateSignature = signMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      CREATE_EPOCH_ACTION_KIND,
+      computeCreateEpochCommitmentPayloadHash(
+        lateEpochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        lateSequence,
+        lateSequence + 60n,
+      ),
+      lateSequence,
+    );
+    expect(() =>
+      simulator.publishEpochCommitment(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        lateSignature,
+        lateEpochId,
+        epoch.stateRoot,
+        epoch.eventRoot,
+        epoch.policyRoot,
+        lateSequence,
+        lateSequence + 60n,
+      ),
+    ).toThrow(/superseded at this sequence/i);
   });
 });
