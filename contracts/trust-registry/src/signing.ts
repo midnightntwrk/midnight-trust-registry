@@ -52,6 +52,7 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
+/** @deprecated Version 2 only; version 3 requires an explicit policy commitment. */
 export const computeMaintainerActionDigest = (
   registryId: Uint8Array,
   actionKind: Uint8Array,
@@ -349,6 +350,7 @@ export const signMaintainerActionDigestFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(ensure32Bytes(seedBytes), digest);
 
+/** @deprecated Version 2 only; use signPolicyBoundMaintainerActionFromSeed. */
 export const signMaintainerActionFromSeed = (
   seedBytes: Uint8Array,
   registryId: Uint8Array,
@@ -391,6 +393,7 @@ export const verifyMaintainerActionDigest = (
   signature: TrustRegistryJubjubSignature,
 ): boolean => verifyJubjubDigest(publicKey, digest, signature);
 
+/** @deprecated Version 2 only; use verifyPolicyBoundMaintainerAction. */
 export const verifyMaintainerAction = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,

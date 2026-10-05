@@ -705,6 +705,14 @@ describe("trust registry contract", () => {
     const state = simulator.getLedger();
 
     expect(Buffer.from(eventHash)).toEqual(Buffer.from(state.lastGovernanceEventHash));
+    expect(Buffer.from(eventHash)).toEqual(Buffer.from(pureCircuits.governanceEventHash(
+      registryId,
+      governancePolicyCommitment,
+      state.lastAuthorizedSignerSetHash,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    )));
     expect(state.governanceEventHashes.member(state.lastGovernanceEventHash)).toBe(
       true,
     );
@@ -3575,6 +3583,22 @@ describe("trust registry contract", () => {
     expect(Buffer.from(simulator.getLedger().lastAuthorizedPolicyCommitment)).toEqual(
       Buffer.from(epoch.policyRoot),
     );
+    const revisionEventHash = simulator.getLedger().lastGovernanceEventHash;
+    expect(Buffer.from(revisionEventHash)).toEqual(Buffer.from(pureCircuits.governanceEventHash(
+      registryId,
+      epoch.policyRoot,
+      simulator.getLedger().lastAuthorizedSignerSetHash,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(
+        epoch.policyRoot,
+        revisedPolicyRoot,
+        2n,
+        1n,
+        1n,
+        1n,
+      ),
+      revisionSequence,
+    )));
 
     const historicalEpochId = labelToBytes32("epoch:historical-old-policy");
     const historicalFrom = epoch.validFromSequence;
@@ -3613,6 +3637,7 @@ describe("trust registry contract", () => {
     expect(Buffer.from(simulator.getLedger().lastAuthorizedPolicyCommitment)).toEqual(
       Buffer.from(revisedPolicyRoot),
     );
+    expect(simulator.getLedger().governanceEventHashes.member(revisionEventHash)).toBe(true);
 
     const lateSequence = simulator.getLedger().governanceActionCount;
     const lateEpochId = labelToBytes32("epoch:late-old-policy");

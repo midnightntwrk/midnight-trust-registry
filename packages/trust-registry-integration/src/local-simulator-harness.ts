@@ -587,7 +587,7 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
       nextPolicyVersion,
-      actionSequence,
+      actionSequence + 1n,
     );
     assertGovernancePolicyRevision(
       deriveGovernancePolicySnapshot(this.policyRecordValue),
@@ -635,7 +635,7 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: bytes32Hex(result),
     });
     this.policyRevisions.push({
-      effectiveFromSequence: actionSequence,
+      effectiveFromSequence: actionSequence + 1n,
       commitment: nextPolicyCommitment,
       record: nextPolicyRecord,
     });

@@ -33,6 +33,9 @@ disclosed policy record. Contract-version-1 policy-ID roots cannot be
 interpreted as snapshot digests. Version-2 signatures and event hashes are
 not version-3 evidence. Existing deployments need a separately governed
 migration or a new version-3 deployment before publishing this evidence.
+The exported `signMaintainerActionFromSeed` and `verifyMaintainerAction`
+helpers remain for version-2 compatibility only. Version-3 callers must use
+the policy-bound variants and supply the active 32-byte policy commitment.
 
 For epoch publication, the epoch record persists the submitter
 (`signer1`) key id, signature, and policy commitment active at publication.

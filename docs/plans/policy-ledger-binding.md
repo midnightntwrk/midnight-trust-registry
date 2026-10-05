@@ -1,7 +1,7 @@
 # Policy snapshot ledger binding (issue #75)
 
-Status: snapshot-ledger slice published as PR #96; the action-binding follow-on
-is local only until that PR lands.
+Status: snapshot-ledger slice published as PR #96; this local follow-on binds
+actions and governance events to the active policy and awaits stacked review.
 
 The local branch now binds a canonical V1 snapshot digest to contract version 2
 bootstrap and to an atomic, quorum-signed threshold revision. The ledger keeps
@@ -20,11 +20,10 @@ tuple.
 
 ## Action-binding follow-on
 
-All governed mutations converge on `performAuthorizedMaintainerAction`, but
-the current four-field Schnorr digest includes only registry, action kind,
-payload hash, and sequence. The signer does not explicitly attest to the
-policy snapshot used to evaluate the action; an equal-sequence fork with a
-different policy can have the same signed message. Bind the current ledger
+All governed mutations converge on `performAuthorizedMaintainerAction`. The
+version-2 four-field Schnorr digest included only registry, action kind,
+payload hash, and sequence, allowing an equal-sequence fork with another
+policy to reuse the same signed message. Version 3 binds the current ledger
 policy commitment into the payload field
 with a domain-separated two-value hash before signature verification. Keep
 the four-field JubJub digest shape supported by the DID package; do not rely
@@ -38,12 +37,17 @@ under a different policy at the same action sequence, and also reject stale
 sequence signatures after revision. Preserve the raw action payload hash for
 record lookup and audit; the policy-bound hash is only the signature input.
 
-The governance event commitment should also bind the policy digest effective
-at its action sequence, so historical evidence is independently attributable
-to a policy version. Test policy rotation between proposal and authorization,
+The governance event commitment now binds the policy digest effective at its
+action sequence, so historical evidence is independently attributable to a
+policy version. Test policy rotation between proposal and authorization,
 cross-fork reuse of an old-policy signature at the same sequence, and reconstruction of
 an old event after rotation. Do not silently relabel existing version-2
 events; this is a contract-format change requiring a version/migration note.
+Version-2 state cannot invoke governed version-3 actions without an explicit
+governed migration or a new deployment. A revision at sequence S is signed
+under the old policy; the new digest becomes effective at S+1. Epoch records
+retain both their historical `policyRoot` and the policy commitment used to
+authorize their publication.
 
 ## Boundary
 

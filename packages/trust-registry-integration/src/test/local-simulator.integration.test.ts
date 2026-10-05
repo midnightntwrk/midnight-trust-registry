@@ -227,7 +227,10 @@ describe("trust registry local simulator integration", () => {
     const originalBundle = harness.evaluateCurrentIssuerDecision(beforeRevision);
     harness.authorizeIssuer(latePublished);
     harness.authorizeMaintainer(secondMaintainer);
+    const revisionSequence = harness.simulator.getLedger().governanceActionCount;
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    expect(harness.simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n))
+      .toBe(revisionSequence + 1n);
 
     harness.proposeIssuer(afterRevision, [secondMaintainer]);
     harness.approveIssuer(afterRevision, [secondMaintainer]);
@@ -238,6 +241,8 @@ describe("trust registry local simulator integration", () => {
 
     expect(historicalBundle.policy.version).toBe("v1");
     expect(currentBundle.policy.version).toBe("v2");
+    expect(Date.parse(currentBundle.policy.effectiveFrom) - Date.parse(harness.registryRecord.updatedAt))
+      .toBe(60_000);
     expect(harness.registryRecord.policyUri).toBe(currentBundle.policy.policyUri);
     expect(historicalBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(latePublishedBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
