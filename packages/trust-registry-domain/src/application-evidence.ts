@@ -66,6 +66,7 @@ export type AuthorizedEvidenceVerifier = z.infer<typeof AuthorizedEvidenceVerifi
 
 export type ApplicationEvidenceExpectation = {
   registryId: string;
+  applicationId: string;
   subjectDid: string;
   role: ApplicationEvidenceEnvelope["role"];
   policyId: string;
@@ -106,12 +107,16 @@ export function assertValidApplicationEvidence(
   }
 
   assertEqual("registryId", parsed.envelope.registryId, expectation.registryId);
+  assertEqual("applicationId", parsed.envelope.applicationId, expectation.applicationId);
   assertEqual("subjectDid", parsed.envelope.subjectDid, expectation.subjectDid);
   assertEqual("role", parsed.envelope.role, expectation.role);
   assertEqual("policyId", parsed.envelope.policyId, expectation.policyId);
   assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
   assertEqual("scopeCommitment", parsed.envelope.scopeCommitment, expectation.scopeCommitment);
 
+  if (Date.parse(expectation.evaluatedAt) < Date.parse(parsed.envelope.verifiedAt)) {
+    throw new Error("Application evidence is not yet valid at the governed transition");
+  }
   if (Date.parse(expectation.evaluatedAt) >= Date.parse(parsed.envelope.expiresAt)) {
     throw new Error("Application evidence is expired at the governed transition");
   }

@@ -3,9 +3,10 @@
 Status: draft v0.1
 
 The on-chain DID/key check and real VC/VP attestation described here are 0.1.0
-requirements, not claims about the current simulator. The current simulator
-uses a deterministic signature stand-in, and the contract currently binds an
-evidence hash without verifying the evidence-verifier DID assertion signature.
+requirements, not claims about the current simulator. The simulator signs the
+envelope commitment with a test-only JubJub key, but it does not yet resolve
+that key from an evidence-verifier DID or verify a VC/VP. The contract currently
+binds an evidence hash without verifying the evidence-verifier DID assertion signature.
 See the [0.1.0 reference profile](milestone-0.1.0.md) and
 [issue plan](../plans/milestone-0.1.0-issues.md).
 
@@ -80,6 +81,12 @@ signs this commitment with a policy-authorized assertion key. The signature
 and key reference are conveyed to the contract submission path but need not be
 included in the commitment itself.
 
+For the Midnight JubJub profile, the 32 commitment bytes are interpreted as
+four consecutive unsigned 64-bit big-endian integers and signed as a
+four-field DID Schnorr digest. The signer uses the published DID package's
+seed-derived signing helper. The eventual Compact verification circuit must
+reproduce this digest mapping.
+
 ## 4. Contract Inputs And Checks
 
 The governed approval transition consumes:
@@ -93,10 +100,10 @@ The governed approval transition consumes:
 
 The contract MUST reject a transition when any of the following holds:
 
-- the application subject, role, registry, policy, or scope differs from the
+- the application id, subject, role, registry, policy, or scope differs from the
   application being approved;
 - the evidence verifier is not active for the policy at `verifiedAt`;
-- the evidence is expired at approval or activation time;
+- the evidence is not yet valid or is expired at approval or activation time;
 - the signature is invalid for the verifier key reference;
 - the required maintainer quorum is not satisfied; or
 - the same live authorization scope already exists for the subject.

@@ -48,6 +48,7 @@ export type MidnightDidLedgerFixtureOptions = {
   serviceEndpoint?: string;
   serviceType?: string;
   verificationMethodId?: string;
+  schnorrJubjubPublicKey?: { x: bigint; y: bigint };
   version?: bigint;
   created?: bigint;
   updated?: bigint;
@@ -66,6 +67,7 @@ export const createMidnightDidLedgerFixture = (
 
   const contractAddress = parsedDid.id;
   const verificationMethodId = options.verificationMethodId ?? "auth-1";
+  const nativeKey = options.schnorrJubjubPublicKey;
   const serviceEndpoint =
     options.serviceEndpoint ?? `https://resolver.example/${contractAddress}`;
   const version = options.version ?? 1n;
@@ -81,7 +83,7 @@ export const createMidnightDidLedgerFixture = (
     deactivated: false,
     operationCount: 1n,
     alsoKnownAs: makeIterable<string>([]),
-    verificationMethods: makeIterablePairs<string, unknown>([
+    verificationMethods: makeIterablePairs<string, unknown>(nativeKey === undefined ? [
       [
         verificationMethodId,
         {
@@ -94,8 +96,12 @@ export const createMidnightDidLedgerFixture = (
           },
         },
       ],
-    ]),
-    schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>([]),
+    ] : []),
+    schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>(
+      nativeKey === undefined
+        ? []
+        : [[verificationMethodId, { id: verificationMethodId, publicKey: nativeKey }]],
+    ),
     authenticationRelation: makeIterable<string>([verificationMethodId]),
     assertionMethodRelation: makeIterable<string>([verificationMethodId]),
     keyAgreementRelation: makeIterable<string>([]),

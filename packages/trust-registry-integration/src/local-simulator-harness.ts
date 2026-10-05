@@ -18,9 +18,11 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   labelToBytes32,
+  signApplicationEvidenceCommitmentFromSeed,
   type MaintainerCoAuthorizer,
   signPolicyBoundMaintainerActionFromSeed,
   TrustRegistrySimulator,
+  verifyApplicationEvidenceCommitmentSignature,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
@@ -193,6 +195,10 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly evidenceVerifier: AuthorizedEvidenceVerifier;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
+  private readonly evidenceVerifierKey = createMaintainerFixture("evidence-verifier", 41);
+  private readonly evidenceVerifierPublicKey = deriveJubjubPublicKeyFromSeed(
+    this.evidenceVerifierKey.seed,
+  );
   private readonly bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
     this.bootstrapMaintainer.seed,
   );
@@ -303,20 +309,24 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     const commitment = computeApplicationEvidenceCommitment(envelope);
     const keyId = this.evidenceVerifier.keyIds[0]!;
+    const signature = signApplicationEvidenceCommitmentFromSeed(
+      this.evidenceVerifierKey.seed,
+      hashHexToBytes32(commitment),
+    );
     return {
       envelope,
       commitment,
       signature: {
         keyId,
         algorithm: "jubjub-schnorr",
-        // The local simulator uses a deterministic verifier adapter only.
-        value: sha256Hex(`${commitment}:${keyId}`),
+        value: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
       },
     };
   }
 
   assertApplicationEvidence(input: {
     evidence: ApplicationEvidenceSubmission;
+    applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
     scopeCommitment: Uint8Array;
@@ -325,6 +335,7 @@ export class LocalTrustRegistryIntegrationHarness {
       input.evidence,
       {
         registryId: this.registryId,
+        applicationId: createScopedIdentifier("application", input.role, input.applicationId),
         subjectDid: input.subjectDid,
         role: input.role,
         policyId: this.policyId,
@@ -333,8 +344,18 @@ export class LocalTrustRegistryIntegrationHarness {
         evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
       },
       [this.evidenceVerifier],
-      (commitment, signature) =>
-        signature.value === sha256Hex(`${commitment}:${signature.keyId}`),
+      (commitment, signature) => {
+        if (!/^0x[0-9a-f]{192}$/.test(signature.value)) return false;
+        try {
+          return verifyApplicationEvidenceCommitmentSignature(
+            this.evidenceVerifierPublicKey,
+            hashHexToBytes32(commitment),
+            decodeJubjubSignature(Buffer.from(signature.value.slice(2), "hex")),
+          );
+        } catch {
+          return false;
+        }
+      },
     );
     return hashHexToBytes32(parsed.commitment);
   }
@@ -657,6 +678,7 @@ export class LocalTrustRegistryIntegrationHarness {
         role: "maintainer",
         scopeCommitment: fixture.maintainerIdCommitment,
       }),
+      applicationId: fixture.maintainerId,
       subjectDid: fixture.subjectDid,
       role: "maintainer",
       scopeCommitment: fixture.maintainerIdCommitment,
@@ -801,6 +823,7 @@ export class LocalTrustRegistryIntegrationHarness {
   ): Uint8Array {
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "issuer",
       scopeCommitment: fixture.resourceIdCommitment,
@@ -960,6 +983,7 @@ export class LocalTrustRegistryIntegrationHarness {
   ): Uint8Array {
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "verifier",
       scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
@@ -1193,6 +1217,7 @@ export class LocalTrustRegistryIntegrationHarness {
   ): Uint8Array {
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "auditor",
       scopeCommitment: bytes32Commitment(fixture.scopeResourceId),

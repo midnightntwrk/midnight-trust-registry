@@ -52,6 +52,40 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
+/** Splits the canonical evidence commitment into the DID Schnorr circuit's four digest limbs. */
+export const applicationEvidenceCommitmentDigest = (
+  commitment: Uint8Array,
+): TrustRegistryActionDigest => {
+  const bytes = require32Bytes(commitment, "Application evidence commitment");
+  return [
+    bytes.readBigUInt64BE(0),
+    bytes.readBigUInt64BE(8),
+    bytes.readBigUInt64BE(16),
+    bytes.readBigUInt64BE(24),
+  ];
+};
+
+export const signApplicationEvidenceCommitmentFromSeed = (
+  seed: Uint8Array,
+  commitment: Uint8Array,
+): TrustRegistryJubjubSignature =>
+  signJubjubDigestFromSeed(
+    require32Bytes(seed, "Evidence verifier seed"),
+    applicationEvidenceCommitmentDigest(commitment),
+  );
+
+/** Verifies a signature only; the caller must separately authorize the DID assertion key. */
+export const verifyApplicationEvidenceCommitmentSignature = (
+  publicKey: JubjubPoint,
+  commitment: Uint8Array,
+  signature: TrustRegistryJubjubSignature,
+): boolean =>
+  verifyJubjubDigest(
+    publicKey,
+    applicationEvidenceCommitmentDigest(commitment),
+    signature,
+  );
+
 /** @deprecated Unbound pre-release helper; governed actions require a policy commitment. */
 export const computeMaintainerActionDigest = (
   registryId: Uint8Array,

@@ -2,6 +2,10 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import {
+  encodeJubjubSignature,
+  signApplicationEvidenceCommitmentFromSeed,
+} from "@midnight-ntwrk/trust-registry-contract";
+import {
   AuthorizationStatus as ContractAuthorizationStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
@@ -70,6 +74,7 @@ describe("trust registry local simulator integration", () => {
         RegExp,
       ]
     > = [
+      ["wrong application", { envelope: { applicationId: "application:issuer:other:v1" } }, /applicationId/],
       ["wrong subject", { envelope: { subjectDid: "did:midnight:issuer:other" } }, /subjectDid/],
       ["wrong role", { envelope: { role: "verifier" as const } }, /role/],
       ["wrong policy", { envelope: { policyId: "policy:wrong:v1" } }, /policyId/],
@@ -80,7 +85,22 @@ describe("trust registry local simulator integration", () => {
       ],
       ["unauthorized verifier", { envelope: { evidenceVerifierDid: "did:midnight:evidence-verifier:other" } }, /not authorized/],
       ["expired evidence", { envelope: { expiresAt: "2026-05-20T00:00:00Z" } }, /expiresAt/],
+      ["future evidence", { envelope: { verifiedAt: "2026-05-20T01:00:00Z" } }, /not yet valid/],
       ["invalid signature", { signature: { value: "tampered" } }, /signature is invalid/],
+      [
+        "wrong signer key",
+        {
+          signature: {
+            value: `0x${Buffer.from(encodeJubjubSignature(
+              signApplicationEvidenceCommitmentFromSeed(
+                new Uint8Array(32).fill(99),
+                Buffer.from(validEvidence.commitment.slice(2), "hex"),
+              ),
+            )).toString("hex")}`,
+          },
+        },
+        /signature is invalid/,
+      ],
     ] as const;
 
     for (const [_name, mutation, expectedError] of cases) {
