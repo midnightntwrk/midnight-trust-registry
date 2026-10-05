@@ -74,6 +74,21 @@ export const computePolicyBoundActionPayloadHash = (
     require32Bytes(actionPayloadHash, "Action payload hash"),
   );
 
+export const computePolicyBoundMaintainerActionDigest = (
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryActionDigest =>
+  pureCircuits.policyBoundMaintainerActionDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(policyCommitment, "Policy commitment"),
+    require32Bytes(actionKind, "Action kind"),
+    require32Bytes(actionPayloadHash, "Action payload hash"),
+    actionSequence,
+  ) as TrustRegistryActionDigest;
+
 export const computeIssuerAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,
   resourceType: IssuerResourceType,
@@ -351,6 +366,25 @@ export const signMaintainerActionFromSeed = (
     ),
   );
 
+export const signPolicyBoundMaintainerActionFromSeed = (
+  seedBytes: Uint8Array,
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryJubjubSignature =>
+  signMaintainerActionDigestFromSeed(
+    seedBytes,
+    computePolicyBoundMaintainerActionDigest(
+      registryId,
+      policyCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+  );
+
 export const verifyMaintainerActionDigest = (
   publicKey: JubjubPoint,
   digest: TrustRegistryActionDigest,
@@ -369,6 +403,27 @@ export const verifyMaintainerAction = (
     publicKey,
     computeMaintainerActionDigest(
       registryId,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+    signature,
+  );
+
+export const verifyPolicyBoundMaintainerAction = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+  signature: TrustRegistryJubjubSignature,
+): boolean =>
+  verifyMaintainerActionDigest(
+    publicKey,
+    computePolicyBoundMaintainerActionDigest(
+      registryId,
+      policyCommitment,
       actionKind,
       actionPayloadHash,
       actionSequence,

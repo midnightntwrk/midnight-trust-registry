@@ -329,6 +329,21 @@ export pure circuit policyBoundActionPayloadHash(
   ]);
 }
 
+export pure circuit policyBoundMaintainerActionDigest(
+  registryIdValue: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Vector<4, Field> {
+  return maintainerActionDigest(
+    registryIdValue,
+    actionKind,
+    policyBoundActionPayloadHash(policyCommitment, actionPayloadHash),
+    actionSequence
+  );
+}
+
 export pure circuit maintainerSignerSetHash(
   signerCount: Uint<64>,
   signer1KeyId: Bytes<32>,

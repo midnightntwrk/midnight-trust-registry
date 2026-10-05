@@ -14,9 +14,12 @@ import {
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
   computePolicyBoundActionPayloadHash,
+  computePolicyBoundMaintainerActionDigest,
   deriveJubjubPublicKeyFromSeed,
   signMaintainerActionFromSeed,
+  signPolicyBoundMaintainerActionFromSeed,
   verifyMaintainerAction,
+  verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
 import {
   createMaintainerFixture,
@@ -209,6 +212,37 @@ describe("trust registry contract", () => {
     expect(() => computePolicyBoundActionPayloadHash(policyV1, payload.subarray(1))).toThrow(
       /action payload hash must be 32 bytes/i,
     );
+  });
+
+  it("signs the four-field action digest under one explicit policy snapshot", () => {
+    const maintainer = createMaintainerFixture("policy-bound", 19);
+    const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
+    const registryId = labelToBytes32("registry:policy-bound");
+    const policyV1 = labelToBytes32("policy:snapshot:v1");
+    const policyV2 = labelToBytes32("policy:snapshot:v2");
+    const actionKind = labelToBytes32("tr:issuer:propose");
+    const payload = labelToBytes32("issuer:proposal:payload");
+    const signature = signPolicyBoundMaintainerActionFromSeed(
+      maintainer.seed,
+      registryId,
+      policyV1,
+      actionKind,
+      payload,
+      3n,
+    );
+
+    expect(computePolicyBoundMaintainerActionDigest(
+      registryId, policyV1, actionKind, payload, 3n,
+    )).toHaveLength(4);
+    expect(verifyPolicyBoundMaintainerAction(
+      publicKey, registryId, policyV1, actionKind, payload, 3n, signature,
+    )).toBe(true);
+    expect(verifyPolicyBoundMaintainerAction(
+      publicKey, registryId, policyV2, actionKind, payload, 3n, signature,
+    )).toBe(false);
+    expect(verifyMaintainerAction(
+      publicKey, registryId, actionKind, payload, 3n, signature,
+    )).toBe(false);
   });
 
   it("accepts valid threshold rules and rejects invalid ones", () => {
