@@ -48,13 +48,3 @@ Complete this section when the PR changes any public TR surface:
 <!-- For milestone PRs, record blocking findings and fixes, or state that none
      were found. Record advisory findings and their disposition. Link external
      review output when applicable. -->
-
-## Milestone Receipt
-
-For milestone PRs only, after reviewing the final pushed head, add a live
-receipt on its own line using the exact comment syntax below. Replace the
-placeholders; do not leave this example as evidence.
-
-```text
-<!-- tr-review:v1 head=<40-character SHA> mode=<self-or-external> round=<1-3> verdict=pass -->
-```

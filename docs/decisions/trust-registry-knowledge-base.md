@@ -240,14 +240,12 @@ When a meaningful TR slice lands or materially changes direction, update:
 
 `milestone-0.1.0` was created from `develop` at `0b7f620`. Its minimal
 repo-local harness is specified in
-`docs/plans/milestone-0.1.0-delivery-harness.md`: exact-head review receipts,
-issue-backed PRs, light, Quality, and scan gates, bounded review rounds, and
-guarded merging. PR #82 exposed receipt parsing and PR-controlled-policy
-problems (#88 and #85) and must remain unmerged. The replacement bootstrap
-uses read-only policy execution from the protected milestone base after its
-first externally reviewed merge. `.github/CODEOWNERS` plus required code-owner
-review protects the workflow and validator against later PR self-modification.
-The bootstrap itself is not yet protected by those controls; a hostile canary
-must be blocked before autonomous milestone merges start. Only the milestone
-branch permits zero-general-human-review product merges. Gate changes still
-require code-owner review; `develop` and `main` remain human-controlled.
+`docs/plans/milestone-0.1.0-delivery-harness.md`: issue-backed PRs, documented
+exact-head review, light, Quality, and scan gates, bounded review rounds, and
+guarded merging. PR #82's receipt gate was rejected as a self-declared policy
+check; replacement PR #91 removes it. `.github/CODEOWNERS` plus required
+code-owner review protects workflow and policy changes after the bootstrap.
+The bootstrap itself is not yet protected by those controls; a canary must be
+blocked before autonomous milestone merges start. Only the milestone branch
+permits zero-general-human-review product merges. Policy changes still require
+code-owner review; `develop` and `main` remain human-controlled.

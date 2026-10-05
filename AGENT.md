@@ -153,8 +153,8 @@ blockers stop the PR rather than triggering an endless review loop. Never use
 admin bypass or direct push. PRs into `develop` and
 `main` retain human merge authority and their existing protections.
 
-The milestone branch requires `Milestone Review`, `Milestone Light`, `scan`,
-and `Typecheck, Audit, and Packaging Baseline` before autonomous merges.
+The milestone branch requires `Milestone Light`, `scan`, and
+`Typecheck, Audit, and Packaging Baseline` before autonomous merges.
 Workflow or milestone-policy changes require code-owner approval after the
 bootstrap; ordinary product PRs retain the zero-human-review path. Do not
 treat a red or pending Quality result as advisory.
