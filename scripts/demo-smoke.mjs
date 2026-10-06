@@ -2,7 +2,6 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -12,10 +11,7 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const parseArgs = () => {
   const options = {
     keepArtifacts: false,
-    workspacePath: path.join(
-      repoRoot,
-      "artifacts/trust-registry/demo-smoke/workspace.json",
-    ),
+    workspacePath: undefined,
   };
   const args = process.argv.slice(2);
 
@@ -126,54 +122,98 @@ const requestJson = async (url, init) => {
   return payload;
 };
 
-const waitForUi = async (url, child, title) => {
+const waitForUi = async (url, child, title, distDir) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
-    if (child.exitCode !== null) {
-      throw new Error(`${title} exited early with code ${child.exitCode}`);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`${title} exited early with code ${child.exitCode ?? child.signalCode}`);
     }
 
+    let response;
     try {
-      const response = await fetch(url);
-      if (response.ok) {
-        const html = await response.text();
-        if (!html.includes(`<title>${title}</title>`)) {
-          throw new Error(`${title} served an unexpected index.html`);
-        }
-        for (const [asset, contentType] of [
-          ["index.js", "text/javascript"],
-          ["styles.css", "text/css"],
-        ]) {
-          const assetResponse = await fetch(`${url}/${asset}`);
-          if (!assetResponse.ok || !assetResponse.headers.get("content-type")?.startsWith(contentType)) {
-            throw new Error(`${title} did not serve ${asset} with ${contentType}`);
-          }
-          if (!(await assetResponse.text()).trim()) {
-            throw new Error(`${title} served an empty ${asset}`);
-          }
-        }
-        return;
-      }
+      response = await fetch(url);
     } catch (error) {
       if (!(error instanceof TypeError)) {
         throw error;
       }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (!response.ok) {
+      throw new Error(`${title} served index.html with HTTP ${response.status}`);
+    }
+    const html = await response.text();
+    if (!html.includes(`<title>${title}</title>`)) {
+      throw new Error(`${title} served an unexpected index.html`);
+    }
+    const modules = fs.readdirSync(distDir).filter((file) => file.endsWith(".js"));
+    if (!modules.includes("index.js")) {
+      throw new Error(`${title} build is missing index.js`);
+    }
+    for (const [asset, contentType] of [
+      ...modules.map((file) => [file, "text/javascript"]),
+      ["styles.css", "text/css"],
+    ]) {
+      const assetResponse = await fetch(`${url}/${asset}`);
+      if (!assetResponse.ok || !assetResponse.headers.get("content-type")?.startsWith(contentType)) {
+        throw new Error(`${title} did not serve ${asset} with ${contentType} (HTTP ${assetResponse.status})`);
+      }
+      if (!(await assetResponse.text()).trim()) {
+        throw new Error(`${title} served an empty ${asset}`);
+      }
+    }
+    return;
   }
 
   throw new Error(`timed out waiting for ${title} at ${url}`);
 };
 
-const { keepArtifacts, workspacePath } = parseArgs();
-const workspaceDir = path.dirname(workspacePath);
+const stopChild = async (child) => {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  await new Promise((resolve) => {
+    let graceTimer;
+    let hardTimer;
+    const finish = () => {
+      clearTimeout(graceTimer);
+      clearTimeout(hardTimer);
+      child.off("exit", finish);
+      resolve();
+    };
+    child.once("exit", finish);
+    graceTimer = setTimeout(() => child.kill("SIGKILL"), 2_000);
+    hardTimer = setTimeout(() => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.unref();
+      finish();
+    }, 4_000);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      finish();
+      return;
+    }
+    child.kill("SIGTERM");
+  });
+};
+
+const options = parseArgs();
+const { keepArtifacts } = options;
+const defaultWorkspaceRoot = path.join(repoRoot, "artifacts/trust-registry/demo-smoke");
+if (options.workspacePath === undefined) {
+  fs.mkdirSync(defaultWorkspaceRoot, { recursive: true });
+}
+const workspaceDir = options.workspacePath === undefined
+  ? fs.mkdtempSync(path.join(defaultWorkspaceRoot, "run-"))
+  : path.dirname(options.workspacePath);
+const workspacePath = options.workspacePath ?? path.join(workspaceDir, "workspace.json");
 const snapshotPath = path.join(workspaceDir, "demo-snapshot.json");
-const workspaceDirExisted = fs.existsSync(workspaceDir);
+const workspaceDirExisted = options.workspacePath !== undefined && fs.existsSync(workspaceDir);
 
 for (const target of [workspacePath, snapshotPath]) {
   if (fs.existsSync(target)) {
-    throw new Error(`refusing to overwrite existing demo smoke file: ${target}`);
+    throw new Error(`refusing to overwrite existing demo smoke file: ${target}; choose a new --workspace path`);
   }
 }
 
@@ -322,7 +362,8 @@ try {
       service.stderr += String(chunk);
     });
     uiProcesses.push(service);
-    await waitForUi(`http://127.0.0.1:${uiPort}`, child, title);
+    const distDir = path.resolve(repoRoot, path.dirname(scriptPath), "../dist");
+    await waitForUi(`http://127.0.0.1:${uiPort}`, child, title, distDir);
   }
 } catch (error) {
   throw new Error(
@@ -339,16 +380,7 @@ try {
       .join("\n\n"),
   );
 } finally {
-  await Promise.all([apiProcess, ...uiProcesses.map(({ child }) => child)].map(async (child) => {
-    if (child.exitCode !== null) {
-      return;
-    }
-    child.kill("SIGTERM");
-    await new Promise((resolve) => {
-      child.once("exit", resolve);
-      setTimeout(resolve, 2_000);
-    });
-  }));
+  await Promise.all([apiProcess, ...uiProcesses.map(({ child }) => child)].map(stopChild));
 
   if (!keepArtifacts) {
     fs.rmSync(workspacePath, { force: true });
@@ -360,5 +392,5 @@ try {
 }
 
 console.log(
-  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.`,
+  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts ? ` Artifacts: ${workspaceDir}` : ""}`,
 );
