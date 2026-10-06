@@ -47,6 +47,7 @@ const expectation = {
   policyId: "policy:kanon:v1",
   policyVersion: "v1",
   scopeCommitment: HASH_A,
+  challengeHash: HASH_B,
   evaluatedAt: "2026-07-27T12:00:00Z",
 };
 
@@ -74,6 +75,7 @@ describe("application evidence", () => {
     ["wrong role", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, role: "verifier" as const } }), /role/],
     ["wrong policy", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, policyId: "policy:kanon:v2" } }), /policyId/],
     ["wrong scope", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, scopeCommitment: HASH_B } }), /scopeCommitment/],
+    ["wrong challenge", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, challengeHash: HASH_C } }), /challengeHash/],
   ])("rejects %s", (_name, mutate, expectedError) => {
     const submission = mutate(createSubmission());
     submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);

@@ -94,6 +94,43 @@ signature value is the DID package's 96-byte encoding rendered as lowercase,
 `0x`-prefixed hex, with a response scalar below the JubJub group order and
 canonical field coordinates. Other encodings are not accepted by this profile.
 
+### Application challenge lifecycle
+
+Before receiving a VP, the evidence verifier issues a fresh 32-byte random
+nonce for one application. It gives the applicant the nonce and an expiry no
+more than five minutes later. The VP verifier MUST check that the presentation
+is bound to that exact nonce and the applicant DID before consuming it. The
+envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
+textual hex representation.
+
+The off-ledger challenge store retains only `challengeHash`, an expiry, and a
+domain-separated commitment to registry id, application id, subject DID,
+evidence-verifier DID, role, policy id/version, and scope commitment. It MUST
+perform insert-if-absent and check-and-delete atomically across all API
+replicas. Consumption succeeds only
+when the submitted nonce hashes to the envelope value, the complete binding
+matches, and the challenge has not expired; retry, mismatch, and expiry all
+return the same rejection category. A failed binding check does not consume a
+valid challenge. The raw nonce, VP, and holder data MUST NOT enter a journal,
+ledger, public response other than the initial challenge issuance response,
+or evidence bundle.
+
+Application evidence validation also requires the envelope `challengeHash` to
+match the hash issued for that application's governed context, even if an
+attacker recomputes the envelope commitment. The simulator currently uses a
+deterministic challenge fixture; it is not a production nonce source.
+After successful atomic consumption, the challenge service returns the verified
+hash in the envelope's original hex representation; callers MUST use that
+return value as the proposal's expected `challengeHash`, not the untrusted
+submission field. The store compares hashes as bytes, so accepted hex casing
+does not change challenge identity.
+
+The reference API package exposes an in-memory store for local tests only. A
+public issuance route requires a durable atomic store, caller authentication
+or abuse controls, and a retention/cleanup policy; those are not delivered by
+this reference store. Challenge expiry uses the evidence verifier's off-ledger
+clock. It is not a claim that the Midnight contract has a datetime primitive.
+
 ## 4. Contract Inputs And Checks
 
 The governed approval transition consumes:
