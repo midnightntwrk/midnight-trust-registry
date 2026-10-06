@@ -1,4 +1,5 @@
 import {
+  MAX_FIELD,
   type JubjubPoint,
 } from "@midnight-ntwrk/compact-runtime";
 import {
@@ -52,19 +53,48 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
-/** @deprecated Unbound pre-release helper; governed actions require a policy commitment. */
-export const computeMaintainerActionDigest = (
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
+/** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
+export const applicationEvidenceSignatureDigest = (
+  keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
 ): TrustRegistryActionDigest =>
-  pureCircuits.maintainerActionDigest(
-    ensure32Bytes(registryId),
-    ensure32Bytes(actionKind),
-    ensure32Bytes(actionPayloadHash),
-    actionSequence,
+  pureCircuits.applicationEvidenceSignatureDigest(
+    require32Bytes(keyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(commitment, "Application evidence commitment"),
   ) as TrustRegistryActionDigest;
+
+export const signApplicationEvidenceCommitmentFromSeed = (
+  seed: Uint8Array,
+  keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
+): TrustRegistryJubjubSignature =>
+  signJubjubDigestFromSeed(
+    require32Bytes(seed, "Evidence verifier seed"),
+    applicationEvidenceSignatureDigest(keyIdCommitment, commitment),
+  );
+
+/** Verifies a signature only; the caller must separately authorize the DID assertion key. */
+export const verifyApplicationEvidenceCommitmentSignature = (
+  publicKey: JubjubPoint,
+  keyIdCommitment: Uint8Array,
+  commitment: Uint8Array,
+  signature: TrustRegistryJubjubSignature,
+): boolean => {
+  if (
+    signature.response < 0n ||
+    signature.response >= JUBJUB_ORDER ||
+    signature.announcement.x < 0n ||
+    signature.announcement.x > MAX_FIELD ||
+    signature.announcement.y < 0n ||
+    signature.announcement.y > MAX_FIELD
+  ) return false;
+  const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
+  try {
+    return verifyJubjubDigest(publicKey, digest, signature);
+  } catch {
+    return false;
+  }
+};
 
 export const computePolicyBoundActionPayloadHash = (
   policyCommitment: Uint8Array,
@@ -350,24 +380,6 @@ export const signMaintainerActionDigestFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(ensure32Bytes(seedBytes), digest);
 
-/** @deprecated Unbound pre-release helper; use signPolicyBoundMaintainerActionFromSeed. */
-export const signMaintainerActionFromSeed = (
-  seedBytes: Uint8Array,
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
-): TrustRegistryJubjubSignature =>
-  signMaintainerActionDigestFromSeed(
-    seedBytes,
-    computeMaintainerActionDigest(
-      registryId,
-      actionKind,
-      actionPayloadHash,
-      actionSequence,
-    ),
-  );
-
 export const signPolicyBoundMaintainerActionFromSeed = (
   seedBytes: Uint8Array,
   registryId: Uint8Array,
@@ -392,26 +404,6 @@ export const verifyMaintainerActionDigest = (
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
 ): boolean => verifyJubjubDigest(publicKey, digest, signature);
-
-/** @deprecated Unbound pre-release helper; use verifyPolicyBoundMaintainerAction. */
-export const verifyMaintainerAction = (
-  publicKey: JubjubPoint,
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
-  signature: TrustRegistryJubjubSignature,
-): boolean =>
-  verifyMaintainerActionDigest(
-    publicKey,
-    computeMaintainerActionDigest(
-      registryId,
-      actionKind,
-      actionPayloadHash,
-      actionSequence,
-    ),
-    signature,
-  );
 
 export const verifyPolicyBoundMaintainerAction = (
   publicKey: JubjubPoint,

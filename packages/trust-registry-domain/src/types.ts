@@ -124,7 +124,7 @@ export const RegistryRecordSchema = BaseRecordSchema.extend({
 export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   policyId: ScopedIdentifierSchema,
   registryId: ScopedIdentifierSchema,
-  version: NonEmptyStringSchema,
+  version: z.string().regex(/^v[1-9][0-9]*$/u),
   policyUri: UriSchema,
   policyTemplates: z.array(GovernancePolicyTemplateSchema).min(1),
   decisionBindings: z.array(GovernancePolicyBindingSchema).min(1),
@@ -137,6 +137,13 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   supersededAt: TimestampSchema.optional(),
   archivedAt: TimestampSchema.optional(),
 }).superRefine((record, ctx) => {
+  if (record.supersededAt !== undefined && record.effectiveUntil === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Superseded policies require an explicit effectiveUntil",
+      path: ["effectiveUntil"],
+    });
+  }
   refineEffectiveWindow(
     ctx,
     record.effectiveFrom,

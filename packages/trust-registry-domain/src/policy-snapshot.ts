@@ -60,9 +60,6 @@ export type GovernancePolicySnapshot = z.infer<typeof GovernancePolicySnapshotSc
 
 export function deriveGovernancePolicySnapshot(policy: GovernancePolicyRecord): GovernancePolicySnapshot {
   const parsed = GovernancePolicyRecordSchema.parse(policy);
-  if (!VersionSchema.safeParse(parsed.version).success) {
-    throw new Error("Policy record version must migrate to monotonic vN form before V1 snapshot encoding");
-  }
   const presentFamilies = new Set(parsed.policyTemplates.map((template) => template.family));
   const missingFamilies = requiredFamilies.filter((family) => !presentFamilies.has(family));
   if (missingFamilies.length > 0) {
@@ -91,7 +88,7 @@ export function deriveGovernancePolicySnapshot(policy: GovernancePolicyRecord): 
     policyId: parsed.policyId,
     policyVersion: parsed.version,
     effectiveFrom: parsed.effectiveFrom,
-    effectiveUntil: parsed.effectiveUntil ?? parsed.supersededAt ?? null,
+    effectiveUntil: parsed.effectiveUntil ?? null,
     contentCommitment: sha256Hex(canonicalizeJson(content)),
     thresholds: parsed.policyTemplates.map((template) => ({
       family: template.family,

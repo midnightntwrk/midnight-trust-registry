@@ -249,3 +249,20 @@ The bootstrap itself is not yet protected by those controls; a canary must be
 blocked before autonomous milestone merges start. Only the milestone branch
 permits zero-general-human-review product merges. Policy changes still require
 code-owner review; `develop` and `main` remain human-controlled.
+
+## Application evidence signing slice (2026-10-06)
+
+The simulator's former `SHA-256(commitment:keyId)` signature stand-in has been
+replaced by a real, test-key JubJub Schnorr signature over a Compact-generated,
+domain-separated digest of the canonical application-evidence commitment and
+the assertion key id commitment. A fixture test resolves the corresponding native
+assertion key through the published Midnight DID/VC adapter and verifies the
+signature. Domain validation also binds the exact application id, rejects
+invalid evaluation timestamps, and rejects evidence evaluated before its
+`verifiedAt` instant.
+
+This is not completion of #76 or #67: the simulator still creates synthetic
+evidence hashes rather than verifying a VC/VP, its verifier key is not looked up
+from a DID during proposal, and the Compact contract does not yet check the
+evidence-verifier signature. Full integration passed with a fresh Compact build
+and 23 integration tests; the pinned light gate and low-level audit passed.

@@ -123,12 +123,12 @@ Subtasks:
       client, API, TRQP adapter, and OpenID Federation projection where used.
 - [ ] Resolve whether a rejected proposal is terminal and how a superseding
       application references its predecessor; update lifecycle fixtures.
-- [ ] Include an explicit migration note for old ordinal-status or root-only
-      policy records.
+- [ ] Document the fresh-deployment boundary: prototype ordinal-status and
+      root-only policy records are not accepted by the 0.1.0 profile.
 
 Definition of done: the same input yields the same 32-byte scope and policy
 commitments across implementations; mismatched version/scope fails closed;
-existing live records retain their historical policy interpretation. Tests
+historical records retain their policy interpretation within this format. Tests
 cover each role plus field order, array order, version change, wildcard, and
 duplicate-ID negatives. Validation: `./run.sh --light` and
 `./run.sh integration` for contract-facing changes.
@@ -140,9 +140,10 @@ Depends on: ADR-0001, ADR-0002, #49. Labels: `trust-registry`, `governance`,
 
 Tracker title: `feat(evidence): verify Midnight VC/VP eligibility and sign application attestations`
 
-Why: the current simulator fabricates `SHA-256(commitment:keyId)` as a
-signature. A real 0.1.0 journey needs actual DID, VC/VP, status, and policy
-verification before on-chain governance.
+Why: a real 0.1.0 journey needs DID-bound assertion-key authorization and
+actual VC/VP, status, and policy verification before on-chain governance.
+The simulator now uses a real test-key JubJub signature over the evidence
+commitment, but its verifier key is not yet resolved from a DID.
 
 Subtasks:
 

@@ -1,21 +1,19 @@
 # Policy snapshot ledger binding (issue #75)
 
-Status: snapshot-ledger slice published as PR #96; this local follow-on binds
-actions and governance events to the active policy and awaits stacked review.
+Status: the snapshot-ledger and action-binding slices are implemented in the
+0.1.0 reference profile; broader issue #75 lifecycle work remains.
 
-The local branch now binds a canonical V1 snapshot digest to contract version 2
-bootstrap and to an atomic, quorum-signed threshold revision. The ledger keeps
+The 0.1.0 contract binds a canonical V1 snapshot digest at bootstrap and in
+an atomic, quorum-signed threshold revision. The ledger keeps
 versioned historical digests, and epoch publication rejects unknown or
 out-of-window policy roots. The simulator selects the digest effective at the authorization's
 sequence, including when an old epoch is published after rotation. Client and
 simulator verification recompute the policy preimage digest.
 
-The contract version numbers in this plan describe unreleased prototype
-formats. They do not imply a deployed version-2 registry or a supported
-in-place migration. The 0.1.0 reference path uses a fresh deployment.
+The 0.1.0 reference path uses a fresh deployment with initial contract format
+version 1; unreleased prototypes are not accepted as historical registry state.
 
-The PR #96 tree passed full Compact/integration validation and documents the
-contract-version-1 migration boundary. Remaining issue #75 work binds active
+Remaining issue #75 work binds active
 policy identity to each application and authorization action, publishes
 cross-surface byte vectors, and resolves rejected/superseding application
 lifecycle rules. The contract does not parse the off-chain JSON policy
@@ -25,10 +23,8 @@ tuple.
 ## Action-binding follow-on
 
 All governed mutations converge on `performAuthorizedMaintainerAction`. The
-version-2 four-field Schnorr digest included only registry, action kind,
-payload hash, and sequence, allowing an equal-sequence fork with another
-policy to reuse the same signed message. Version 3 binds the current ledger
-policy commitment into the payload field
+four-field Schnorr digest includes registry, action kind, payload hash, and
+sequence. Bind the current ledger policy commitment into the payload field
 with a domain-separated two-value hash before signature verification. Keep
 the four-field JubJub digest shape supported by the DID package; do not rely
 on an optional caller-supplied policy digest or a test-only default.
@@ -45,8 +41,8 @@ The governance event commitment now binds the policy digest effective at its
 action sequence, so historical evidence is independently attributable to a
 policy version. Test policy rotation between proposal and authorization,
 cross-fork reuse of an old-policy signature at the same sequence, and reconstruction of
-an old event after rotation. Do not silently relabel existing version-2
-events; this is a contract-format change requiring a version/migration note.
+an old event after rotation. Prototype event hashes are not evidence for the
+current format.
 Earlier prototype state cannot invoke current governed actions. A revision at sequence S is signed
 under the old policy; the new digest becomes effective at S+1. Epoch records
 retain both their historical `policyRoot` and the policy commitment used to
@@ -63,12 +59,9 @@ digest from the policy record before treating the committed value as its
 policy. A signature on a digest is not proof that the signers supplied the
 correct preimage.
 
-The existing contract-version-1 `governancePolicyCommitment` was only a
-commitment to `policyId` in simulator bootstrap and was unchanged by threshold
-updates. It must not be relabelled as a V1 snapshot digest for historical
-records. The policy-snapshot reference profile uses a fresh deployment;
-root-only prototype state is not valid V1 policy evidence. A future migration
-would require its own governed specification and validation.
+The policy-snapshot reference profile uses a fresh deployment. Root-only
+prototype state is not valid V1 policy evidence and has no compatibility path
+in the 0.1.0 implementation.
 
 ## Contract state and actions
 
@@ -102,8 +95,8 @@ would require its own governed specification and validation.
 - The client verifies the source policy record against the committed snapshot
   and evaluates the historical digest and effective window at the decision
   time. TRQP and OpenID Federation may project only this verified view.
-- Legacy policy records are explicit migration cases, never implicit V1
-  snapshots. A superseding application references its predecessor instead of
+- Policy records must satisfy the V1 snapshot schema. A superseding
+  application references its predecessor instead of
   rewriting the previous authorization or policy interpretation.
 
 ## Validation sequence

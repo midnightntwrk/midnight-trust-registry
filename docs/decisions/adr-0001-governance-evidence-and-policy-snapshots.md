@@ -30,16 +30,16 @@ evidence and quorum execution.
 - A transition that would leave fewer active maintainers than its live
   threshold MUST fail. Recovery requires a separately defined emergency policy
   and cannot be implied by a single surviving key.
-- Bootstrap direct-create paths are a named bootstrap exception. Non-bootstrap
-  applications require evidence commitments once the evidence feature lands.
+- Bootstrap initializes maintainers and policy state. Issuer membership uses
+  proposal, approval, and activation; it has no direct-create exception.
 
 ## Consequences
 
 Historical evidence can explain both who approved a decision and which policy
 they applied. The Compact contract needs policy-version and evidence-verifier
 references in addition to the existing threshold and signer-set commitment.
-Existing ordinal lifecycle deployments require migration or redeployment before
-adding new serialized fields or statuses.
+The 0.1.0 reference profile starts with a fresh deployment; no earlier
+registry format has been released or is accepted as equivalent evidence.
 
 ## Canonical domain snapshot (0.1.0 slice)
 
@@ -57,13 +57,12 @@ rejected. All thresholds must fit the current Compact five-signer ceiling.
 Consumers with the source policy record MUST call
 `assertGovernancePolicySnapshotMatchesRecord` rather than trusting a supplied
 `contentCommitment` by shape alone. A record superseded without an explicit
-`effectiveUntil` uses `supersededAt` to close its derived window; a historically
-valid zero-length window remains representable.
+Superseding a policy requires an explicit `effectiveUntil`; a zero-length
+window remains representable when the boundary is explicit.
 V1 snapshot timestamps allow no more than millisecond precision: extra
 fractional digits are rejected rather than silently truncated by JavaScript
-`Date`. Older records with semantic versions outside monotonic `vN` notation
-or fewer than the four required decision families remain valid historical
-records but require explicit migration before V1 snapshot encoding.
+`Date`. Records with versions outside monotonic `vN` notation or fewer than
+the four required decision families are invalid for this reference profile.
 
 For the example registry, four ordinary/membership/emergency/archival families
 at 2-of-3 have this canonical snapshot vector when the content digest is
@@ -79,13 +78,11 @@ The domain helper rejects a revision that reuses a policy version or overlaps
 the prior effective window. It also rejects a maintainer transition that
 would leave fewer active maintainers than any configured threshold.
 
-This slice does not retrofit existing root-only or ordinal-status ledger
-records. Such records retain their historical meaning; they must be migrated
-or redeployed before a contract or API treats the new snapshot digest as an
-on-ledger policy commitment. The current simulator still has mutable `v1`
-thresholds and must not claim that a domain snapshot authenticates those
-ledger transitions. Binding application evidence and governance events to a
-versioned ledger policy commitment remains open under issue #75.
+The current contract stores the policy snapshot commitment and binds governed
+action signatures and event evidence to the commitment effective at the action
+sequence. The contract does not validate the off-chain policy preimage;
+consumers must recompute the snapshot digest from the policy record. Broader
+application-evidence lifecycle work remains open under issue #75.
 
 ## Rejected Alternatives
 

@@ -29,9 +29,10 @@ Merged on `develop` before this milestone plan:
 
 These are components of a reference implementation, not proof that a real
 VC/VP-backed application or authenticated HTTP governance journey works yet.
-The current simulator generates a deterministic stand-in evidence signature,
-the Compact contract checks evidence hashes but not the evidence verifier's
-DID-bound signature, and the local mutation API does not authenticate callers.
+The simulator generates a test-key JubJub evidence signature but does not
+resolve or authorize that key through a DID. The Compact contract checks
+evidence hashes but not the evidence verifier's DID-bound signature, and the
+local mutation API does not authenticate callers.
 
 ## 0.1.0 Critical Path
 

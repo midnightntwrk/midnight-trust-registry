@@ -8,6 +8,6 @@ describe("trust registry contract package surfaces", () => {
     expect(PackageSurface.pureCircuits).toBeDefined();
     expect(PackageSurface.TrustRegistryContract).toBeDefined();
     expect(PackageSurface.TrustRegistrySimulator).toBeDefined();
-    expect(PackageSurface.signMaintainerActionFromSeed).toBeDefined();
+    expect(PackageSurface.signPolicyBoundMaintainerActionFromSeed).toBeDefined();
   });
 });
