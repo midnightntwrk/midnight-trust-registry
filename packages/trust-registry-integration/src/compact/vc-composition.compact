@@ -23,7 +23,7 @@ export pure circuit presentationBodyRoot(presentation: RegistryVP_Presentation):
   return RegistryVP_presentationBodyRoot(presentation);
 }
 
-export pure circuit assertCredentialPresentationLink(
+export pure circuit assertCredentialPresentationEnvelopeLink(
   credential: RegistryVC_Credential,
   presentation: RegistryVP_Presentation
 ): [] {

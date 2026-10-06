@@ -18,8 +18,10 @@ Current coverage:
   status policy, and live revocation checks remain separate work.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
-  roots, accepts matching VC/VP linkage, and rejects mismatched claim roots or
-  issuer methods. Run it with `pnpm run test:light` in this package. This is a
+  roots, accepts matching envelope linkage, and rejects mismatched schema,
+  claim roots, or issuer methods. The upstream generic relation deliberately
+  does not compare holder bindings; the probe tests that limitation explicitly.
+  Run it with `pnpm run test:light` in this package. This is a
   compiler/runtime compatibility and typed-envelope test, not a proof of
   applicant eligibility, issuer authorization, or live credential status.
 

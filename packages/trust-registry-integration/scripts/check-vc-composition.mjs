@@ -9,7 +9,7 @@ const repoRoot = resolve(packageRoot, "../..");
 const vcCompactRoot = dirname(fileURLToPath(import.meta.resolve(
   "@midnight-ntwrk/credential-compact/credentials/composable.compact",
 )));
-const generatedRoot = resolve(packageRoot, "src/managed");
+const generatedRoot = resolve(packageRoot, "dist");
 await mkdir(generatedRoot, { recursive: true });
 const output = await mkdtemp(join(generatedRoot, "vc-composition-"));
 
@@ -66,16 +66,26 @@ try {
 
   assert.equal(pureCircuits.credentialBodyRoot(credential).length, 32);
   assert.equal(pureCircuits.presentationBodyRoot(presentation).length, 32);
-  assert.deepEqual(pureCircuits.assertCredentialPresentationLink(credential, presentation), []);
-  assert.throws(() => pureCircuits.assertCredentialPresentationLink(credential, {
+  assert.deepEqual(pureCircuits.assertCredentialPresentationEnvelopeLink(credential, presentation), []);
+  assert.throws(() => pureCircuits.assertCredentialPresentationEnvelopeLink(credential, {
     ...presentation,
     credentialClaimRoot: bytes(8),
   }), /claim root/i);
-  assert.throws(() => pureCircuits.assertCredentialPresentationLink(credential, {
+  assert.throws(() => pureCircuits.assertCredentialPresentationEnvelopeLink(credential, {
     ...presentation,
     issuerVerificationMethodRef: { ...issuer, methodId: bytes(9) },
   }), /issuer method/i);
-  console.log("Published VC Compact composition and linkage checks passed");
+  assert.throws(() => pureCircuits.assertCredentialPresentationEnvelopeLink(credential, {
+    ...presentation,
+    schema: { ...schema, schemaId: bytes(10) },
+  }), /schema reference/i);
+  assert.deepEqual(pureCircuits.assertCredentialPresentationEnvelopeLink(credential, {
+    ...presentation,
+    holderBinding: {
+      holderVerificationMethodRef: { ...holderBinding.holderVerificationMethodRef, methodId: bytes(11) },
+    },
+  }), []);
+  console.log("Published VC Compact composition and envelope-relation checks passed");
 } finally {
   await rm(output, { recursive: true, force: true });
 }
