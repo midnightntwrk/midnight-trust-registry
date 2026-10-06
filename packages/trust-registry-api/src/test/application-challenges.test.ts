@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
+  ApplicationChallengeCapacityError,
   ApplicationChallengeService,
   InMemoryApplicationChallengeStore,
   type ApplicationChallengeBinding,
@@ -55,7 +56,15 @@ describe("application challenge lifecycle", () => {
   });
 
   it("accepts exactly one consumption even when submitted concurrently", async () => {
-    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const underlying = new InMemoryApplicationChallengeStore();
+    const yieldingStore: ApplicationChallengeStore = {
+      insert: (record, nowMs) => underlying.insert(record, nowMs),
+      consume: async (challengeHash, bindingHash, nowMs) => {
+        await Promise.resolve();
+        return underlying.consume(challengeHash, bindingHash, nowMs);
+      },
+    };
+    const service = new ApplicationChallengeService(yieldingStore, () => START);
     const issued = await service.issue(binding);
     const input = { binding, nonce: issued.nonce, challengeHash: issued.challengeHash };
 
@@ -63,6 +72,24 @@ describe("application challenge lifecycle", () => {
     expect(results).toContain(null);
     expect(results).toContain(issued.challengeHash);
     expect(await service.consume(input)).toBeNull();
+  });
+
+  it("supersedes the prior live challenge for the same binding", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const first = await service.issue(binding);
+    const second = await service.issue(binding);
+
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
+    expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
+  it("keeps distinct full bindings live even when the application id matches", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const otherBinding = { ...binding, scopeCommitment: `0x${"2".repeat(64)}` };
+    const first = await service.issue(binding);
+    const second = await service.issue(otherBinding);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
+    expect(await service.consume({ binding: otherBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
   it("binds an issued challenge to the evidence envelope before one-use consumption", async () => {
@@ -114,7 +141,7 @@ describe("application challenge lifecycle", () => {
       nonce: issued.nonce,
       challengeHash: envelopeHash,
     });
-    expect(consumedChallengeHash).toBe(envelopeHash);
+    expect(consumedChallengeHash).toBe(issued.challengeHash);
     if (consumedChallengeHash === null) throw new Error("expected a consumed challenge");
 
     const envelope = {
@@ -148,7 +175,41 @@ describe("application challenge lifecycle", () => {
     };
     expect(await store.insert(record, START)).toBe(true);
     expect(await store.insert(record, START)).toBe(false);
-    expect(await store.insert(record, START + 1)).toBe(true);
+    expect(await store.insert({ ...record, expiresAtMs: START + 2 }, START + 1)).toBe(true);
+  });
+
+  it("bounds live entries and reclaims expired records without a later request", async () => {
+    const store = new InMemoryApplicationChallengeStore(1);
+    const service = new ApplicationChallengeService(store, () => START);
+    const first = await service.issue(binding);
+    const otherBinding = { ...binding, applicationId: "application:issuer:two" };
+    await expect(service.issue(otherBinding)).rejects.toThrow(ApplicationChallengeCapacityError);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
+    expect((await service.issue(otherBinding)).challengeHash).toMatch(/^0x[0-9a-f]{64}$/);
+
+    vi.useFakeTimers();
+    try {
+      const idleStore = new InMemoryApplicationChallengeStore(1);
+      const idleService = new ApplicationChallengeService(idleStore, () => START);
+      const idle = await idleService.issue(binding);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(await idleService.consume({ binding, nonce: idle.nonce, challengeHash: idle.challengeHash })).toBeNull();
+      expect((await idleService.issue(otherBinding)).challengeHash).toMatch(/^0x[0-9a-f]{64}$/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects invalid capacity and expiry outside the timer range", async () => {
+    for (const capacity of [0, -1, 1.5]) {
+      expect(() => new InMemoryApplicationChallengeStore(capacity)).toThrow(/capacity is invalid/);
+    }
+    const store = new InMemoryApplicationChallengeStore();
+    await expect(store.insert({
+      challengeHash: `0x${"a".repeat(64)}`,
+      bindingHash: `0x${"b".repeat(64)}`,
+      expiresAtMs: START + 2_147_483_648,
+    }, START)).rejects.toThrow(/timer range/);
   });
 
   it.each([
@@ -191,6 +252,14 @@ describe("application challenge lifecycle", () => {
   it("rejects invalid clock values and invalid application bindings", async () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => Number.NaN);
     await expect(service.issue(binding)).rejects.toThrow(/clock is invalid/);
+
+    let now = START;
+    const consumingService = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
+    const issued = await consumingService.issue(binding);
+    now = Number.NaN;
+    await expect(consumingService.consume({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).rejects.toThrow(/clock is invalid/);
+    now = START;
+    expect(await consumingService.consume({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(issued.challengeHash);
 
     const valid = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     await expect(valid.issue({ ...binding, scopeCommitment: "not-a-hash" })).rejects.toThrow();

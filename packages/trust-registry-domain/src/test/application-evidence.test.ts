@@ -69,6 +69,29 @@ describe("application evidence", () => {
     ).not.toThrow();
   });
 
+  it("compares hash fields by bytes without changing the signed envelope", () => {
+    const submission = createSubmission();
+    submission.envelope.scopeCommitment = HASH_A.toUpperCase().replace("0X", "0x");
+    submission.envelope.challengeHash = HASH_B.toUpperCase().replace("0X", "0x");
+    submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);
+    expect(() => assertValidApplicationEvidence(submission, expectation, [authorizedVerifier], () => true)).not.toThrow();
+  });
+
+  it("rejects invalid expected hash values as domain errors", () => {
+    expect(() => assertValidApplicationEvidence(
+      createSubmission(),
+      { ...expectation, challengeHash: undefined as unknown as string },
+      [authorizedVerifier],
+      () => true,
+    )).toThrow(/expected challengeHash is invalid/);
+    expect(() => assertValidApplicationEvidence(
+      createSubmission(),
+      { ...expectation, scopeCommitment: "not-a-hash" },
+      [authorizedVerifier],
+      () => true,
+    )).toThrow(/expected scopeCommitment is invalid/);
+  });
+
   it.each([
     ["wrong application", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, applicationId: "application:issuer:other:v1" } }), /applicationId/],
     ["wrong subject", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, subjectDid: "did:midnight:issuer:other" } }), /subjectDid/],

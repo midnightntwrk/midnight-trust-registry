@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - require exactly one epoch maintainer signature in the pre-release evidence
   bundle schema, matching the signature persisted by the format-one contract
+- bound the process-local application challenge store to a finite live-entry
+  capacity with idle expiry and same-binding supersession; challenge consumption
+  now returns canonical lowercase hashes and reports invalid clocks or capacity
+  exhaustion as operational errors
 - replaced the simulator's application-evidence hash stand-in with a
   domain-separated, key-bound JubJub signature; application evidence validation
   now requires the expected `applicationId` and rejects invalid or future
