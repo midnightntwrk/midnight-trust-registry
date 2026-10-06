@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   decodeJubjubSignature,
@@ -667,6 +667,29 @@ describe("trust registry local simulator integration", () => {
         }] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
     })).toThrow("Epoch commitment must include exactly one maintainer signature");
+
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
+      },
+    })).toThrow("Epoch commitment must include exactly one maintainer signature");
+
+    const epochRecord = harness.simulator.getEpochCommitment(
+      bytes32Commitment(bundle.epoch.epochId),
+    );
+    const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+      ...epochRecord,
+      publicationPolicyCommitment: new Uint8Array(32),
+    });
+    try {
+      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(
+        "Epoch publication policy commitment is missing or malformed",
+      );
+    } finally {
+      malformedLedger.mockRestore();
+    }
 
     expect(() =>
       harness.assertPublishedEpochEvidence({

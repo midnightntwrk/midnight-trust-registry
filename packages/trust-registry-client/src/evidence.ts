@@ -147,8 +147,15 @@ const assertEpochAnchor = (
   if (
     !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
     || epochRecord.publicationPolicyCommitment.length !== 32
+    || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
   ) {
     throw new Error("Epoch publication policy commitment is missing or malformed");
+  }
+  if (
+    !(options.registryIdCommitment instanceof Uint8Array)
+    || options.registryIdCommitment.length !== 32
+  ) {
+    throw new Error("Registry ID commitment is missing or malformed");
   }
 
   let validSignature = false;
@@ -163,7 +170,7 @@ const assertEpochAnchor = (
       signature,
     );
   } catch {
-    // Malformed curve points can trap in the Compact runtime.
+    // Unexpected verification failures must not authenticate the epoch.
   }
   if (!validSignature) {
     throw new Error("Epoch maintainer signature is invalid");

@@ -1580,6 +1580,13 @@ export class LocalTrustRegistryIntegrationHarness {
     const maintainerRecord = this.simulator
       .getLedger()
       .maintainerRecords.lookup(epochRecord.maintainerKeyId);
+    if (
+      !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+      || epochRecord.publicationPolicyCommitment.length !== 32
+      || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
+    ) {
+      throw new Error("Epoch publication policy commitment is missing or malformed");
+    }
     let verified = false;
     try {
       verified = verifyPolicyBoundMaintainerAction(
@@ -1592,7 +1599,7 @@ export class LocalTrustRegistryIntegrationHarness {
         signature,
       );
     } catch {
-      // An untrusted point can trap in the Compact runtime.
+      // Unexpected verification failures must not authenticate the epoch.
     }
     if (!verified) {
       throw new Error("Epoch maintainer signature is invalid");

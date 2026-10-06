@@ -170,6 +170,16 @@ describe("trust registry client", () => {
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
+    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      epochRecord: { ...epochRecord, publicationPolicyCommitment: new Uint8Array(32) },
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch publication policy commitment is missing or malformed/);
+    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: new Uint8Array(31),
+    })).toThrow(/Registry ID commitment is missing or malformed/);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
@@ -265,7 +275,10 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
-    const extraSignatures = [originalSignature, originalSignature] as unknown as
+    const extraSignatures = [originalSignature, {
+      ...originalSignature,
+      keyId: "did:midnight:untrusted#key-2",
+    }] as unknown as
       typeof bundle.epoch.maintainerSignatures;
     let cardinalityError: unknown;
     try {
@@ -281,6 +294,21 @@ describe("trust registry client", () => {
     }
     expect(cardinalityError).toHaveProperty("issues", expect.arrayContaining([
       expect.objectContaining({ code: "too_big", path: ["epoch", "maintainerSignatures"] }),
+    ]));
+    let missingSignatureError: unknown;
+    try {
+      client.verifyIssuerAuthorizationBundle({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
+        },
+      }, {});
+    } catch (error) {
+      missingSignatureError = error;
+    }
+    expect(missingSignatureError).toHaveProperty("issues", expect.arrayContaining([
+      expect.objectContaining({ code: "too_small", path: ["epoch", "maintainerSignatures"] }),
     ]));
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
@@ -327,13 +355,20 @@ describe("trust registry client", () => {
       originalSignature.signature.toUpperCase(),
       `${originalSignature.signature.slice(0, -1)}g`,
     ]) {
-      expect(() => client.verifyIssuerAuthorizationBundle({
-        ...bundle,
-        epoch: {
-          ...bundle.epoch,
-          maintainerSignatures: [{ ...originalSignature, signature: malformed }],
-        },
-      }, {})).toThrow("Epoch maintainer signature encoding is invalid");
+      let encodingError: unknown;
+      try {
+        client.verifyIssuerAuthorizationBundle({
+          ...bundle,
+          epoch: {
+            ...bundle.epoch,
+            maintainerSignatures: [{ ...originalSignature, signature: malformed }],
+          },
+        }, {});
+      } catch (error) {
+        encodingError = error;
+      }
+      expect(encodingError).toHaveProperty("message", "Epoch maintainer signature encoding is invalid");
+      expect(encodingError).toHaveProperty("cause.message", "Jubjub signature encoding is invalid");
     }
 
     expect(() => client.verifyIssuerAuthorizationBundle({
