@@ -18,6 +18,17 @@ const readJson = (relativePath) =>
 
 const rootPackage = readJson("package.json");
 const errors = [];
+const runtimePackageName = "@midnight-ntwrk/compact-runtime";
+const runtimeVersion = readJson("contracts/trust-registry/package.json")
+  .dependencies?.[runtimePackageName];
+const identityPackages = [
+  "credential-compact",
+  "credential-did-midnight",
+  "midnight-did",
+  "midnight-did-contract",
+  "midnight-did-domain",
+  "midnight-did-jubjub-schnorr",
+];
 
 const assertEqual = (label, actual, expected) => {
   if (actual !== expected) {
@@ -42,11 +53,21 @@ const assertFileExists = (label, relativePath) => {
 };
 
 assertArrayEqual("root workspaces", rootPackage.workspaces, expectedWorkspaces);
+if (typeof runtimeVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(runtimeVersion)) {
+  errors.push("Compact runtime must use an exact semver version");
+}
 
 for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   assertFileExists(`${workspace} package`, path.join(workspace, "package.json"));
   const packageJson = readJson(path.join(workspace, "package.json"));
   const label = `${workspace}/package.json`;
+
+  for (const section of ["dependencies", "devDependencies"]) {
+    const declaredRuntime = packageJson[section]?.[runtimePackageName];
+    if (declaredRuntime !== undefined) {
+      assertEqual(`${label} ${section} Compact runtime`, declaredRuntime, runtimeVersion);
+    }
+  }
 
   assertEqual(`${label} name exists`, typeof packageJson.name, "string");
   assertEqual(`${label} version`, packageJson.version, rootPackage.version);
@@ -99,6 +120,18 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
     expected.bin ?? [],
   );
   assertFileExists(`${workspace} README`, path.join(workspace, "README.md"));
+}
+
+for (const name of identityPackages) {
+  const manifestPath = path.join("node_modules", "@midnight-ntwrk", name, "package.json");
+  if (!fs.existsSync(path.join(repoRoot, manifestPath))) {
+    errors.push(`Missing installed identity package ${name}`);
+    continue;
+  }
+  const declaredRuntime = readJson(manifestPath).dependencies?.[runtimePackageName];
+  if (declaredRuntime !== undefined) {
+    assertEqual(`${name} Compact runtime requirement`, declaredRuntime, runtimeVersion);
+  }
 }
 
 if (errors.length > 0) {

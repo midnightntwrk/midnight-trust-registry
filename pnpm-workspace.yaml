@@ -6,7 +6,6 @@ packages:
 preferWorkspacePackages: true
 
 overrides:
-  "@midnight-ntwrk/compact-runtime": 0.16.0
   "@midnight-ntwrk/credential-compact": 0.2.0
   "@midnight-ntwrk/credential-did-midnight": 0.2.0
   "@midnight-ntwrk/midnight-did": 0.7.0

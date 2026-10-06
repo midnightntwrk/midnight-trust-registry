@@ -32,4 +32,5 @@ The repository pins that compiler in `.compact-version` and Nix. The probe
 resolves the npm-exported `composable.compact` directory as a compiler include
 path; no VC source or generated output is vendored into this repository. Its
 generated module uses the probe package's dev dependency on Compact runtime;
-the workspace override keeps that runtime at 0.16.0 for all consumers.
+direct consumers pin runtime 0.16.0 exactly, and the light gate checks that
+published DID/VC package requirements match before running the probe.

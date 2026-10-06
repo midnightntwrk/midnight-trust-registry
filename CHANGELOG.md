@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event evidence require a fresh deployment and are not reinterpreted
 - tightened policy-record versions to monotonic `vN` notation and required an
   explicit `effectiveUntil` for superseded records (pre-release API change)
+- pinned Compact runtime exactly across contract, client, and VC probe packages;
+  light validation now rejects published DID/VC runtime-version drift
 - replaced the simulator's application-evidence hash stand-in with a
   domain-separated, key-bound JubJub signature; application evidence validation
   now requires the expected `applicationId` and rejects invalid or future
