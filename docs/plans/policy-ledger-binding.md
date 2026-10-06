@@ -3,16 +3,15 @@
 Status: the snapshot-ledger and action-binding slices are implemented in the
 0.1.0 reference profile; broader issue #75 lifecycle work remains.
 
-The local branch now binds a canonical V1 snapshot digest to contract version 2
-bootstrap and to an atomic, quorum-signed threshold revision. The ledger keeps
+The 0.1.0 contract binds a canonical V1 snapshot digest at bootstrap and in
+an atomic, quorum-signed threshold revision. The ledger keeps
 versioned historical digests, and epoch publication rejects unknown or
 out-of-window policy roots. The simulator selects the digest effective at the authorization's
 sequence, including when an old epoch is published after rotation. Client and
 simulator verification recompute the policy preimage digest.
 
-The contract version numbers in this plan describe unreleased prototype
-formats. They do not imply a deployed version-2 registry or a supported
-in-place migration. The 0.1.0 reference path uses a fresh deployment.
+The 0.1.0 reference path uses a fresh deployment with initial contract format
+version 1; unreleased prototypes are not accepted as historical registry state.
 
 Remaining issue #75 work binds active
 policy identity to each application and authorization action, publishes
@@ -24,10 +23,8 @@ tuple.
 ## Action-binding follow-on
 
 All governed mutations converge on `performAuthorizedMaintainerAction`. The
-version-2 four-field Schnorr digest included only registry, action kind,
-payload hash, and sequence, allowing an equal-sequence fork with another
-policy to reuse the same signed message. Version 3 binds the current ledger
-policy commitment into the payload field
+four-field Schnorr digest includes registry, action kind, payload hash, and
+sequence. Bind the current ledger policy commitment into the payload field
 with a domain-separated two-value hash before signature verification. Keep
 the four-field JubJub digest shape supported by the DID package; do not rely
 on an optional caller-supplied policy digest or a test-only default.

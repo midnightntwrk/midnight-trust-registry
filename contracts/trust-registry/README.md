@@ -20,7 +20,7 @@ shapes without dynamic arrays. Historical lookup by timestamp, richer
 governance policy bindings, and client-facing mutation/query adapters still
 stack on top of this package.
 
-The current pre-release contract format (internal version 3) stores the
+The initial contract format (version 1) stores the
 canonical V1 policy snapshot digest supplied at
 bootstrap. A threshold revision atomically records the next digest and version
 in the same signed action, and epoch publication accepts only a committed
@@ -30,10 +30,9 @@ ledger also exposes the digest used by the last authorized action. Compact
 records a revised policy as effective at the next action sequence, because
 the revision action itself was signed under the previous policy. Compact
 signs and stores the digest; clients must independently recompute it from the
-disclosed policy record. Contract-version-1 policy-ID roots cannot be
-interpreted as snapshot digests. Earlier pre-release signatures and event
-hashes are not evidence for this format. No released deployment or supported
-in-place migration is assumed; the 0.1.0 reference path is a fresh deployment.
+disclosed policy record. The 0.1.0 reference path is a fresh deployment;
+prototype policy-ID roots, signatures, and event hashes are not valid evidence
+for this format.
 All governed action signing and verification uses the policy-bound helpers
 with the active 32-byte policy commitment; no unbound signing API is exposed.
 

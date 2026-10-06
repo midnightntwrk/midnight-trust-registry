@@ -241,7 +241,7 @@ export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
 constructor() {
-  contractVersion = 3;
+  contractVersion = 1;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
   registryDidCommitment = pad(32, "midnight:tr:unset");
@@ -1488,7 +1488,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
-  assert(contractVersion == 3, "Unsupported pre-release registry format");
+  assert(contractVersion == 1, "Unsupported trust registry format");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);

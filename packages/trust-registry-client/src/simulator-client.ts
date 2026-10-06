@@ -183,8 +183,8 @@ export class TrustRegistrySimulatorClient {
   > {
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 3n) {
-      throw new Error("Unsupported pre-release registry format");
+    if (ledger.contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
     }
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {

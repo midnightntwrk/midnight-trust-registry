@@ -344,6 +344,7 @@ describe("trust registry contract", () => {
     const maintainer = state.maintainerRecords.lookup(bootstrapMaintainer.keyId);
 
     expect(state.initialized).toBe(true);
+    expect(state.contractVersion).toBe(1n);
     expect(Buffer.from(state.registryId)).toEqual(Buffer.from(registryId));
     expect(Buffer.from(state.registryDidCommitment)).toEqual(
       Buffer.from(registryDidCommitment),
