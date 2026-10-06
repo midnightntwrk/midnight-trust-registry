@@ -275,8 +275,9 @@ and 23 integration tests; the pinned light gate and low-level audit passed.
   simulator tests. It does not complete VC/VP eligibility or the #67 on-ledger
   evidence-verifier authorization path. Issue #101 tracks broader signature
   ingress auditing.
-- The independent, unpublished `codex/trust-registry-evidence-challenges`
-  branch adds a five-minute, one-use off-ledger challenge service. Its storage
+- The unpublished `codex/trust-registry-evidence-challenges` branch is
+  temporarily based on #99's dependency-patched head, not on #100. It adds a
+  five-minute, one-use off-ledger challenge service. Its storage
   interface requires atomic insert and consume; the included in-memory adapter
   is for local testing, not a public multi-replica API. A public endpoint still
   needs durable storage, abuse controls, and actual VP challenge verification.
