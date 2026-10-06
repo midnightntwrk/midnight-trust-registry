@@ -291,3 +291,17 @@ and 23 integration tests; the pinned light gate and low-level audit passed.
   Issue #84 records the CI queue evidence; a cancelled run was not a green gate.
 - The challenge TTL is enforced by the evidence verifier's off-ledger clock;
   the Midnight contract does not independently provide wall-clock time.
+
+## Published VC Compact composition (2026-10-06)
+
+The published `@midnight-ntwrk/credential-compact@0.2.0` module requires
+Compact 0.31.1 and `@midnight-ntwrk/compact-runtime@0.16.0`. Compact 0.30.0
+can parse the module but emits a runtime 0.15.0 guard that fails at load time.
+The registry now pins 0.31.1 in `.compact-version` and Nix for both supported
+platforms, and no longer rewrites generated runtime checks or circuit tables.
+The integration package compiles a small VC/VP envelope-relation module directly
+from the published package export and executes matching and mismatching
+fixtures in the light and full integration lanes. The generic relation does
+not compare holder bindings; that is intentionally left to the family layer.
+This establishes a composition
+prerequisite for #76, not VC/VP evidence verification or a live trust anchor.
