@@ -385,7 +385,7 @@ export const EpochCommitmentSchema = z
     policyRoot: HashHexSchema,
     validFrom: TimestampSchema,
     validUntil: TimestampSchema,
-    maintainerSignatures: z.array(MaintainerSignatureSchema).length(1),
+    maintainerSignatures: z.tuple([MaintainerSignatureSchema]),
   })
   .superRefine((record, ctx) => {
     refineEffectiveWindow(

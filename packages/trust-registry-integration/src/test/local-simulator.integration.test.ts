@@ -664,7 +664,7 @@ describe("trust registry local simulator integration", () => {
           ...originalSignature,
           keyId: "did:midnight:untrusted#key-2",
           signature: `0x${"00".repeat(96)}`,
-        }],
+        }] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
     })).toThrow("Epoch commitment must include exactly one maintainer signature");
 

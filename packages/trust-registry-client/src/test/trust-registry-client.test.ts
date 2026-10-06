@@ -273,9 +273,9 @@ describe("trust registry client", () => {
           ...originalSignature,
           keyId: "did:midnight:untrusted#key-2",
           signature: `0x${"00".repeat(96)}`,
-        }],
+        }] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
-    }, {})).toThrow(/maintainerSignatures/);
+    }, {})).toThrow("Too big: expected array to have <=1 items");
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;

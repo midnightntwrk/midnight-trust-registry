@@ -24,12 +24,15 @@ The current negative fixtures cover bad encodings, response malleability,
 off-curve points, wrong signing keys, and unsupported algorithm labels. #101
 remains open for public gateway inventory, multi-key selection and rotation,
 and exact key-reference authentication with #67/#79.
+
 The singleton rule is a fail-closed client constraint, not a claim that the
 governance quorum consists of one maintainer. Multi-signature epoch provenance
 requires a ledger-bound signer set and key-selection rules before the client
 can safely accept more than one bundle signature.
+
 The simulator verifier and the published bundle schemas enforce the same
 singleton rule for the current format-one epoch record.
+
 The contract may require a quorum of up to five maintainers to authorize the
 publish action, but `EpochCommitmentRecord` persists only signer 1's key and
 signature. A bundle cannot prove the full publish quorum from that record;
