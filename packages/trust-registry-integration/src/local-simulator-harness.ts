@@ -14,7 +14,7 @@ import {
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
   createMaintainerFixture,
-  decodeJubjubSignature,
+  decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   labelToBytes32,
@@ -350,14 +350,13 @@ export class LocalTrustRegistryIntegrationHarness {
           verifier.did !== this.evidenceVerifier.did ||
           signature.keyId !== this.evidenceVerifier.keyIds[0]
         ) return false;
-        if (!/^0x[0-9a-f]{192}$/.test(signature.value)) return false;
         try {
           // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
           return verifyApplicationEvidenceCommitmentSignature(
             this.evidenceVerifierPublicKey,
             bytes32Commitment(signature.keyId),
             hashHexToBytes32(commitment),
-            decodeJubjubSignature(Buffer.from(signature.value.slice(2), "hex")),
+            decodeCanonicalJubjubSignatureHex(signature.value),
           );
         } catch {
           return false;
@@ -1559,11 +1558,10 @@ export class LocalTrustRegistryIntegrationHarness {
     if (maintainerSignature === undefined) {
       throw new Error("Epoch commitment must include at least one maintainer signature");
     }
-    const encodedSignature = Buffer.from(
-      maintainerSignature.signature.replace(/^0x/, ""),
-      "hex",
-    );
-    const signature = decodeJubjubSignature(encodedSignature);
+    if (maintainerSignature.algorithm !== "jubjub-schnorr") {
+      throw new Error("Epoch maintainer signature algorithm is unsupported");
+    }
+    const signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
     const payloadHash = computeCreateEpochCommitmentPayloadHash(
       bytes32Commitment(bundle.epoch.epochId),
       hashHexToBytes32(bundle.epoch.stateRoot),
