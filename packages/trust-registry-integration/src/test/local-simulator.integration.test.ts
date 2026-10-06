@@ -637,6 +637,7 @@ describe("trust registry local simulator integration", () => {
     try {
       expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
       expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
+      expect(() => new TrustRegistrySimulatorClient(harness.simulator)).toThrow(/Unsupported trust registry format/);
     } finally {
       spy.mockRestore();
     }
