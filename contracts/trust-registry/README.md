@@ -35,6 +35,9 @@ prototype policy-ID roots, signatures, and event hashes are not valid evidence
 for this format.
 All governed action signing and verification uses the policy-bound helpers
 with the active 32-byte policy commitment; no unbound signing API is exposed.
+Issuer, verifier, auditor, and recognition records enter the ledger through
+separate proposal, authorization, and activation actions. The prototype
+direct-create entry points are not part of format one.
 
 For epoch publication, the epoch record persists the submitter
 (`signer1`) key id, signature, and policy commitment active at publication.

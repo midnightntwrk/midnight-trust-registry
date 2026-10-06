@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capacity with idle expiry and same-binding supersession; challenge consumption
   now returns canonical lowercase hashes and reports invalid clocks or capacity
   exhaustion as operational errors
+- selected contract format 1 for the first 0.1.0 deployment rather than
+  migrating unreleased prototype formats; old policy roots, signatures, and
+  event evidence require a fresh deployment and are not reinterpreted
+- tightened policy-record versions to monotonic `vN` notation and required an
+  explicit `effectiveUntil` for superseded records (pre-release API change)
 - replaced the simulator's application-evidence hash stand-in with a
   domain-separated, key-bound JubJub signature; application evidence validation
   now requires the expected `applicationId` and rejects invalid or future
@@ -46,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouping and cooldown policy with the public `midnight-did` repository
 - added pi.dev project settings and public contribution, security, and release
   policy checks
+
+### Removed
+
+- removed pre-release direct-create issuer, verifier, auditor, and recognition
+  circuits and simulator wrappers; all four roles now use the governed
+  proposal, authorization, and activation state machine
+- removed pre-release unbound maintainer action signing/digest exports; callers
+  must sign and verify against the active policy commitment
 
 ### Added
 
