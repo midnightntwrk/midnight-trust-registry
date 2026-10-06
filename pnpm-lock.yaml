@@ -176,6 +176,9 @@ importers:
 
   packages/trust-registry-integration:
     dependencies:
+      '@midnight-ntwrk/compact-runtime':
+        specifier: 0.16.0
+        version: 0.16.0
       '@midnight-ntwrk/credential-compact':
         specifier: 0.2.0
         version: 0.2.0

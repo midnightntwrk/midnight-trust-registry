@@ -31,10 +31,12 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "integration": "vitest run --dir src/test",
+    "integration": "node scripts/check-vc-composition.mjs && vitest run --dir src/test",
+    "test:light": "node scripts/check-vc-composition.mjs",
     "build:light": "pnpm run build"
   },
   "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/credential-compact": "0.2.0",
     "@midnight-ntwrk/credential-did-midnight": "0.2.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",
