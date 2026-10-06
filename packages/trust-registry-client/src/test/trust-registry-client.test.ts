@@ -275,7 +275,7 @@ describe("trust registry client", () => {
           signature: `0x${"00".repeat(96)}`,
         }],
       },
-    }, {})).toThrow("Epoch commitment must include exactly one maintainer signature");
+    }, {})).toThrow(/maintainerSignatures/);
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;

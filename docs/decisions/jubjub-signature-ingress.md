@@ -28,3 +28,5 @@ The singleton rule is a fail-closed client constraint, not a claim that the
 governance quorum consists of one maintainer. Multi-signature epoch provenance
 requires a ledger-bound signer set and key-selection rules before the client
 can safely accept more than one bundle signature.
+The simulator verifier and the published bundle schemas enforce the same
+singleton rule for the current format-one epoch record.

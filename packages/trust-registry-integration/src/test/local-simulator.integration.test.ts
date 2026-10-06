@@ -656,6 +656,18 @@ describe("trust registry local simulator integration", () => {
       }),
     ).toThrow(/stale/i);
 
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [originalSignature, {
+          ...originalSignature,
+          keyId: "did:midnight:untrusted#key-2",
+          signature: `0x${"00".repeat(96)}`,
+        }],
+      },
+    })).toThrow("Epoch commitment must include exactly one maintainer signature");
+
     expect(() =>
       harness.assertPublishedEpochEvidence({
         ...bundle,
