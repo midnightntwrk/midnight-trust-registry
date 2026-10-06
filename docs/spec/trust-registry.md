@@ -170,6 +170,10 @@ window, and immutable policy version. The normative envelope, privacy rules,
 and contract inputs are defined in the
 [Application Evidence Protocol](application-evidence.md).
 
+Authorization and activation of a maintainer, issuer, verifier, or auditor
+MUST preserve the proposal's `evidenceHash`. A different proposal evidence
+commitment requires a new application rather than a later-stage substitution.
+
 ### Recognition
 
 Recognition records that a registry accepts an external authority or registry for a scoped domain. Recognition is not the same as local authorization.
@@ -196,7 +200,7 @@ Required fields:
 - `lifecycleEventRoot`
 
 Authorization and activation MUST preserve the recognition proposal's
-`evidenceHash`; a different application evidence commitment requires a new
+`evidenceHash`; a different proposal evidence commitment requires a new
 proposal. Suspension, revocation, and archival may replace the record's current
 `evidenceHash` with action-specific evidence, but the original proposal remains
 in the lifecycle event history.
