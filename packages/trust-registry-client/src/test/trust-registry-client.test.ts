@@ -265,17 +265,23 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
-    expect(() => client.verifyIssuerAuthorizationBundle({
-      ...bundle,
-      epoch: {
-        ...bundle.epoch,
-        maintainerSignatures: [originalSignature, {
-          ...originalSignature,
-          keyId: "did:midnight:untrusted#key-2",
-          signature: `0x${"00".repeat(96)}`,
-        }] as unknown as typeof bundle.epoch.maintainerSignatures,
-      },
-    }, {})).toThrow();
+    const extraSignatures = [originalSignature, originalSignature] as unknown as
+      typeof bundle.epoch.maintainerSignatures;
+    let cardinalityError: unknown;
+    try {
+      client.verifyIssuerAuthorizationBundle({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: extraSignatures,
+        },
+      }, {});
+    } catch (error) {
+      cardinalityError = error;
+    }
+    expect(cardinalityError).toHaveProperty("issues", expect.arrayContaining([
+      expect.objectContaining({ code: "too_big", path: ["epoch", "maintainerSignatures"] }),
+    ]));
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;

@@ -1563,7 +1563,12 @@ export class LocalTrustRegistryIntegrationHarness {
     if (maintainerSignature.algorithm !== "jubjub-schnorr") {
       throw new Error("Epoch maintainer signature algorithm is unsupported");
     }
-    const signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+    let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+    try {
+      signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+    } catch (error) {
+      throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
+    }
     const payloadHash = computeCreateEpochCommitmentPayloadHash(
       bytes32Commitment(bundle.epoch.epochId),
       hashHexToBytes32(bundle.epoch.stateRoot),
@@ -1575,15 +1580,20 @@ export class LocalTrustRegistryIntegrationHarness {
     const maintainerRecord = this.simulator
       .getLedger()
       .maintainerRecords.lookup(epochRecord.maintainerKeyId);
-    const verified = verifyPolicyBoundMaintainerAction(
-      maintainerRecord.publicKey,
-      this.registryIdCommitment,
-      epochRecord.publicationPolicyCommitment,
-      CREATE_EPOCH_ACTION_KIND,
-      payloadHash,
-      epochRecord.publishedAtSequence,
-      signature,
-    );
+    let verified = false;
+    try {
+      verified = verifyPolicyBoundMaintainerAction(
+        maintainerRecord.publicKey,
+        this.registryIdCommitment,
+        epochRecord.publicationPolicyCommitment,
+        CREATE_EPOCH_ACTION_KIND,
+        payloadHash,
+        epochRecord.publishedAtSequence,
+        signature,
+      );
+    } catch {
+      // An untrusted point can trap in the Compact runtime.
+    }
     if (!verified) {
       throw new Error("Epoch maintainer signature is invalid");
     }

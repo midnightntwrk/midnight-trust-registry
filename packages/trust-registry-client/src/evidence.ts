@@ -133,8 +133,8 @@ const assertEpochAnchor = (
   let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
   try {
     signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
-  } catch {
-    throw new Error("Epoch maintainer signature encoding is invalid");
+  } catch (error) {
+    throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
   }
   const payloadHash = computeCreateEpochCommitmentPayloadHash(
     epochRecord.epochId,
