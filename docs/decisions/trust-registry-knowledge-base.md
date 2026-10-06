@@ -269,19 +269,23 @@ and 23 integration tests; the pinned light gate and low-level audit passed.
 
 ## Application evidence checkpoint (2026-10-06)
 
-- PR #99 is the policy-bound action review follow-up; PR #100 is a partial #76
-  DID JubJub evidence-signature slice stacked on #99. Neither is merged.
-- PR #100 passed an exact-head Nix-pinned full integration run with 23/23 local
-  simulator tests. It does not complete VC/VP eligibility or the #67 on-ledger
-  evidence-verifier authorization path. Issue #101 tracks broader signature
-  ingress auditing.
+- PR #99 merged to `milestone-0.1.0` as `97a66ca`. PR #100 is a partial #76
+  DID JubJub evidence-signature slice rebased directly onto that milestone head.
+  Its signed head `bdafad4` removes pre-release compatibility paths, including
+  unbound signing wrappers and direct issuer activation.
+- PR #100 passed exact-head Nix-pinned light and full integration validation
+  with 23/23 simulator tests. It does not complete VC/VP eligibility or the
+  #67 on-ledger evidence-verifier authorization path. Issue #101 tracks broader
+  signature-ingress auditing; independent final-head review and CI remain
+  required before merge.
 - The unpublished `codex/trust-registry-evidence-challenges` branch is now
-  stacked on #100. It adds a five-minute, one-use off-ledger challenge service.
+  stacked on #100's new head. It adds a five-minute, one-use off-ledger challenge service.
   Its storage interface requires atomic insert and consume; the included
   in-memory adapter is for local testing, not a public multi-replica API. A
   public endpoint still needs durable storage, abuse controls, and actual VP
-  challenge verification. After restacking, the Nix light gate passed all 19
-  tasks and fresh full integration passed 23 simulator tests in 18m57s.
+  challenge verification. Before the latest rebase, the Nix light gate passed
+  all 19 tasks and fresh full integration passed 23 simulator tests in 18m57s;
+  the rebased tree still needs its own validation.
 - PR #99 Quality run 37362856813 was cancelled twice before any step after
   about 15 minutes queued. The later exact-head run 37417727434 succeeded.
   Issue #84 records the CI queue evidence; a cancelled run was not a green gate.
