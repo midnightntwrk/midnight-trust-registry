@@ -119,6 +119,11 @@ Application evidence validation also requires the envelope `challengeHash` to
 match the hash issued for that application's governed context, even if an
 attacker recomputes the envelope commitment. The simulator currently uses a
 deterministic challenge fixture; it is not a production nonce source.
+After successful atomic consumption, the challenge service returns the verified
+hash in the envelope's original hex representation; callers MUST use that
+return value as the proposal's expected `challengeHash`, not the untrusted
+submission field. The store compares hashes as bytes, so accepted hex casing
+does not change challenge identity.
 
 The reference API package exposes an in-memory store for local tests only. A
 public issuance route requires a durable atomic store, caller authentication
