@@ -2333,6 +2333,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = createInitializedRegistryFixture(35);
     const verifierAuthorization = createVerifierAuthorizationFixture("employment-application");
+    const proposalEvidenceHash = labelToBytes32("evidence:employment:proposal");
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -2348,7 +2349,7 @@ describe("trust registry contract", () => {
         verifierAuthorization.disclosureLevelCommitment,
         verifierAuthorization.policyId,
         verifierAuthorization.trustLevel,
-        labelToBytes32("evidence:employment-application:propose"),
+        proposalEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2364,7 +2365,7 @@ describe("trust registry contract", () => {
       verifierAuthorization.disclosureLevelCommitment,
       verifierAuthorization.policyId,
       verifierAuthorization.trustLevel,
-      labelToBytes32("evidence:employment-application:propose"),
+      proposalEvidenceHash,
     );
 
     const proposedRecord = simulator.getVerifierAuthorization(
@@ -2381,7 +2382,7 @@ describe("trust registry contract", () => {
       computeUpdateVerifierAuthorizationPayloadHash(
         verifierAuthorization.authorizationId,
         proposedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:employment-application:authorize"),
+        proposalEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2390,7 +2391,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       authorizeSignature,
       verifierAuthorization.authorizationId,
-      labelToBytes32("evidence:employment-application:authorize"),
+      proposalEvidenceHash,
     );
 
     const authorizedRecord = simulator.getVerifierAuthorization(
@@ -2407,7 +2408,7 @@ describe("trust registry contract", () => {
       computeUpdateVerifierAuthorizationPayloadHash(
         verifierAuthorization.authorizationId,
         authorizedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:employment-application:activate"),
+        proposalEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2416,7 +2417,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       activateSignature,
       verifierAuthorization.authorizationId,
-      labelToBytes32("evidence:employment-application:activate"),
+      proposalEvidenceHash,
     );
 
     const activeRecord = simulator.getCurrentVerifierAuthorization(
