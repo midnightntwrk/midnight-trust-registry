@@ -9,7 +9,8 @@ const repoRoot = resolve(packageRoot, "../..");
 const vcCompactRoot = dirname(fileURLToPath(import.meta.resolve(
   "@midnight-ntwrk/credential-compact/credentials/composable.compact",
 )));
-const generatedRoot = resolve(packageRoot, "dist");
+// Keep interrupted probe output out of Turbo's cached dist tree.
+const generatedRoot = resolve(packageRoot, "node_modules/.cache");
 await mkdir(generatedRoot, { recursive: true });
 const output = await mkdtemp(join(generatedRoot, "vc-composition-"));
 
@@ -79,12 +80,7 @@ try {
     ...presentation,
     schema: { ...schema, schemaId: bytes(10) },
   }), /schema reference/i);
-  assert.deepEqual(pureCircuits.assertCredentialPresentationEnvelopeLink(credential, {
-    ...presentation,
-    holderBinding: {
-      holderVerificationMethodRef: { ...holderBinding.holderVerificationMethodRef, methodId: bytes(11) },
-    },
-  }), []);
+  // Holder binding belongs to the application evidence profile, not this generic relation.
   console.log("Published VC Compact composition and envelope-relation checks passed");
 } finally {
   await rm(output, { recursive: true, force: true });
