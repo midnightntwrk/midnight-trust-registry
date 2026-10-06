@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "cacheMaxAge": "7d",
   "cacheMaxSize": "2GB",
-  "globalDependencies": [".compact-version"],
+  "globalDependencies": [".compact-version", "scripts/compile-compact.mjs"],
   "tasks": {
     "lint": {
       "outputs": []

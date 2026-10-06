@@ -141,9 +141,16 @@ const assertEpochAnchor = (
     epochRecord.validFromSequence,
     epochRecord.validUntilSequence,
   );
-
   if (
-    !verifyPolicyBoundMaintainerAction(
+    !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+    || epochRecord.publicationPolicyCommitment.length !== 32
+  ) {
+    throw new Error("Epoch publication policy commitment is missing or malformed");
+  }
+
+  let validSignature = false;
+  try {
+    validSignature = verifyPolicyBoundMaintainerAction(
       options.maintainerPublicKey,
       options.registryIdCommitment,
       epochRecord.publicationPolicyCommitment,
@@ -151,8 +158,11 @@ const assertEpochAnchor = (
       payloadHash,
       epochRecord.publishedAtSequence,
       signature,
-    )
-  ) {
+    );
+  } catch {
+    // Malformed curve points can trap in the Compact runtime.
+  }
+  if (!validSignature) {
     throw new Error("Epoch maintainer signature is invalid");
   }
 };

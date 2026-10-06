@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 
 import {
   computeGovernancePolicySnapshotCommitment,
@@ -13,7 +14,11 @@ import {
   createVerifierScenarioFixture,
 } from "../../../trust-registry-integration/src/index.js";
 
-import { TrustRegistrySimulatorClient } from "../index.js";
+import {
+  bytes32Commitment,
+  TrustRegistrySimulatorClient,
+  verifyTrustRegistryEvidenceBundle,
+} from "../index.js";
 
 describe("trust registry client", () => {
   it("queries current and historical issuer state plus the published epoch anchor", () => {
@@ -151,6 +156,22 @@ describe("trust registry client", () => {
     ).toThrow(/invalid literal|merkle-inclusion/i);
   });
 
+  it("rejects a pre-policy-bound epoch record with a domain error", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("legacy-epoch");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const epochRecord = client.getEpochCommitmentById(bundle.epoch.epochId);
+    const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+
+    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      epochRecord: { ...epochRecord, publicationPolicyCommitment: undefined as never },
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch publication policy commitment is missing or malformed/);
+  });
+
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application");
@@ -267,6 +288,22 @@ describe("trust registry client", () => {
         },
       ),
     ).toThrow(/invalid/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          epoch: {
+            ...bundle.epoch,
+            maintainerSignatures: [{
+              ...originalSignature,
+              signature: `0x${"00".repeat(96)}`,
+            }],
+          },
+        },
+        {},
+      ),
+    ).toThrow("Epoch maintainer signature is invalid");
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(

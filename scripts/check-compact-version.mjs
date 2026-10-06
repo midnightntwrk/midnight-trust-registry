@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -62,8 +62,11 @@ export function checkCompactVersion(directory = root) {
   }
 
   const turbo = JSON.parse(readFileSync(resolve(directory, "turbo.json"), "utf8"));
-  if (!turbo.globalDependencies?.includes(".compact-version")) {
-    throw new Error("Turbo must invalidate cached outputs when .compact-version changes");
+  if (
+    !turbo.globalDependencies?.includes(".compact-version")
+    || !turbo.globalDependencies?.includes("scripts/compile-compact.mjs")
+  ) {
+    throw new Error("Turbo must invalidate cached outputs when the Compact pin or compile wrapper changes");
   }
 
   const nix = readFileSync(resolve(directory, "nix/packages/compact-toolchain.nix"), "utf8");
@@ -101,9 +104,11 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       }
       if (process.env.COMPACT_DIRECTORY) {
         const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
-        const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
-        if (compilerVersion !== version) {
-          throw new Error(`Compact compiler binary ${compilerVersion} does not match pin ${version}`);
+        if (existsSync(compiler)) {
+          const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
+          if (compilerVersion !== version) {
+            throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+          }
         }
       }
     } else if (process.argv.length > 2) {

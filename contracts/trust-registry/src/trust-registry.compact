@@ -1474,7 +1474,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
-  assert(contractVersion == 3, "Legacy registry state requires governed migration");
+  assert(contractVersion == 3, "Unsupported pre-release registry format");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);

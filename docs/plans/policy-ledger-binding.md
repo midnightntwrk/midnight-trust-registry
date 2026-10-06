@@ -10,6 +10,10 @@ out-of-window policy roots. The simulator selects the digest effective at the au
 sequence, including when an old epoch is published after rotation. Client and
 simulator verification recompute the policy preimage digest.
 
+The contract version numbers in this plan describe unreleased prototype
+formats. They do not imply a deployed version-2 registry or a supported
+in-place migration. The 0.1.0 reference path uses a fresh deployment.
+
 The PR #96 tree passed full Compact/integration validation and documents the
 contract-version-1 migration boundary. Remaining issue #75 work binds active
 policy identity to each application and authorization action, publishes
@@ -43,8 +47,7 @@ policy version. Test policy rotation between proposal and authorization,
 cross-fork reuse of an old-policy signature at the same sequence, and reconstruction of
 an old event after rotation. Do not silently relabel existing version-2
 events; this is a contract-format change requiring a version/migration note.
-Version-2 state cannot invoke governed version-3 actions without an explicit
-governed migration or a new deployment. A revision at sequence S is signed
+Earlier prototype state cannot invoke current governed actions. A revision at sequence S is signed
 under the old policy; the new digest becomes effective at S+1. Epoch records
 retain both their historical `policyRoot` and the policy commitment used to
 authorize their publication.
@@ -63,9 +66,9 @@ correct preimage.
 The existing contract-version-1 `governancePolicyCommitment` was only a
 commitment to `policyId` in simulator bootstrap and was unchanged by threshold
 updates. It must not be relabelled as a V1 snapshot digest for historical
-records. The version-2 reference profile is a new deployment; legacy root-only
-deployments remain queryable as legacy evidence but cannot satisfy V1 policy
-verification without a separately governed migration.
+records. The policy-snapshot reference profile uses a fresh deployment;
+root-only prototype state is not valid V1 policy evidence. A future migration
+would require its own governed specification and validation.
 
 ## Contract state and actions
 
