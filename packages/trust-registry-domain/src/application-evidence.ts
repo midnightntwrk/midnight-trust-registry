@@ -113,7 +113,13 @@ export function assertValidApplicationEvidence(
   assertEqual("role", parsed.envelope.role, expectation.role);
   assertEqual("policyId", parsed.envelope.policyId, expectation.policyId);
   assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
-  assertEqual("scopeCommitment", parsed.envelope.scopeCommitment, expectation.scopeCommitment);
+  if (!HashHexSchema.safeParse(expectation.scopeCommitment).success) {
+    throw new Error("Application evidence expected scopeCommitment is invalid");
+  }
+  if (!HashHexSchema.safeParse(expectation.challengeHash).success) {
+    throw new Error("Application evidence expected challengeHash is invalid");
+  }
+  assertEqual("scopeCommitment", parsed.envelope.scopeCommitment.toLowerCase(), expectation.scopeCommitment.toLowerCase());
   assertEqual(
     "challengeHash",
     parsed.envelope.challengeHash.toLowerCase(),

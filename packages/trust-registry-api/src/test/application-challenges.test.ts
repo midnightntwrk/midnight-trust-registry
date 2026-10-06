@@ -5,6 +5,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
+  ApplicationChallengeCapacityError,
   ApplicationChallengeService,
   InMemoryApplicationChallengeStore,
   type ApplicationChallengeBinding,
@@ -80,6 +81,15 @@ describe("application challenge lifecycle", () => {
 
     expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
+  it("keeps distinct full bindings live even when the application id matches", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const otherBinding = { ...binding, scopeCommitment: `0x${"2".repeat(64)}` };
+    const first = await service.issue(binding);
+    const second = await service.issue(otherBinding);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
+    expect(await service.consume({ binding: otherBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
   it("binds an issued challenge to the evidence envelope before one-use consumption", async () => {
@@ -173,7 +183,7 @@ describe("application challenge lifecycle", () => {
     const service = new ApplicationChallengeService(store, () => START);
     const first = await service.issue(binding);
     const otherBinding = { ...binding, applicationId: "application:issuer:two" };
-    await expect(service.issue(otherBinding)).rejects.toThrow(/Could not issue/);
+    await expect(service.issue(otherBinding)).rejects.toThrow(ApplicationChallengeCapacityError);
     expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
     expect((await service.issue(otherBinding)).challengeHash).toMatch(/^0x[0-9a-f]{64}$/);
 
@@ -188,6 +198,18 @@ describe("application challenge lifecycle", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("rejects invalid capacity and expiry outside the timer range", async () => {
+    for (const capacity of [0, -1, 1.5]) {
+      expect(() => new InMemoryApplicationChallengeStore(capacity)).toThrow(/capacity is invalid/);
+    }
+    const store = new InMemoryApplicationChallengeStore();
+    await expect(store.insert({
+      challengeHash: `0x${"a".repeat(64)}`,
+      bindingHash: `0x${"b".repeat(64)}`,
+      expiresAtMs: START + 2_147_483_648,
+    }, START)).rejects.toThrow(/timer range/);
   });
 
   it.each([
@@ -235,7 +257,7 @@ describe("application challenge lifecycle", () => {
     const consumingService = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
     const issued = await consumingService.issue(binding);
     now = Number.NaN;
-    expect(await consumingService.consume({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBeNull();
+    await expect(consumingService.consume({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).rejects.toThrow(/clock is invalid/);
     now = START;
     expect(await consumingService.consume({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(issued.challengeHash);
 
