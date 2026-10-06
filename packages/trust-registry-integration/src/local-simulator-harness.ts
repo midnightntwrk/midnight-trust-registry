@@ -342,6 +342,7 @@ export class LocalTrustRegistryIntegrationHarness {
         policyId: this.policyId,
         policyVersion: this.policyRecord.version,
         scopeCommitment: bytes32Hex(input.scopeCommitment),
+        challengeHash: sha256Hex(`challenge:${input.applicationId}`),
         evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
       },
       [this.evidenceVerifier],

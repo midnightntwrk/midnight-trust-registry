@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  assertValidApplicationEvidence,
+  computeApplicationEvidenceCommitment,
+} from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   ApplicationChallengeService,
@@ -58,6 +62,38 @@ describe("application challenge lifecycle", () => {
     const results = await Promise.all([service.consume(input), service.consume(input)]);
     expect(results.sort()).toEqual([false, true]);
     expect(await service.consume(input)).toBe(false);
+  });
+
+  it("binds an issued challenge to the evidence envelope before one-use consumption", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const envelope = {
+      version: "tr-application-evidence-v1" as const,
+      ...binding,
+      verifiedAt: "2026-10-06T00:00:00Z",
+      expiresAt: "2026-10-07T00:00:00Z",
+      challengeHash: issued.challengeHash,
+      presentationHash: `0x${"2".repeat(64)}`,
+      claimsCommitment: `0x${"3".repeat(64)}`,
+    };
+    const submission = {
+      envelope,
+      commitment: computeApplicationEvidenceCommitment(envelope),
+      signature: {
+        keyId: `${binding.evidenceVerifierDid}#assertion-1`,
+        algorithm: "jubjub-schnorr" as const,
+        value: "fixture-signature",
+      },
+    };
+
+    expect(() => assertValidApplicationEvidence(
+      submission,
+      { ...binding, evaluatedAt: "2026-10-06T00:00:00Z", challengeHash: issued.challengeHash },
+      [{ did: binding.evidenceVerifierDid, keyIds: [submission.signature.keyId], algorithms: ["jubjub-schnorr"] }],
+      () => true,
+    )).not.toThrow();
+    expect(await service.consume({ binding, nonce: issued.nonce, challengeHash: envelope.challengeHash })).toBe(true);
+    expect(await service.consume({ binding, nonce: issued.nonce, challengeHash: envelope.challengeHash })).toBe(false);
   });
 
   it.each([

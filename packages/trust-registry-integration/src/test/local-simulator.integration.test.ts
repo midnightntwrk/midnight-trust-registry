@@ -84,6 +84,7 @@ describe("trust registry local simulator integration", () => {
       ["wrong subject", { envelope: { subjectDid: "did:midnight:issuer:other" } }, /subjectDid/],
       ["wrong role", { envelope: { role: "verifier" as const } }, /role/],
       ["wrong policy", { envelope: { policyId: "policy:wrong:v1" } }, /policyId/],
+      ["wrong challenge", { envelope: { challengeHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }, /challengeHash/],
       [
         "wrong scope",
         { envelope: { scopeCommitment: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },

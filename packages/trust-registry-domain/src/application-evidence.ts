@@ -72,6 +72,7 @@ export type ApplicationEvidenceExpectation = {
   policyId: string;
   policyVersion: string;
   scopeCommitment: string;
+  challengeHash: string;
   evaluatedAt: string;
 };
 
@@ -113,6 +114,7 @@ export function assertValidApplicationEvidence(
   assertEqual("policyId", parsed.envelope.policyId, expectation.policyId);
   assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
   assertEqual("scopeCommitment", parsed.envelope.scopeCommitment, expectation.scopeCommitment);
+  assertEqual("challengeHash", parsed.envelope.challengeHash, expectation.challengeHash);
 
   if (!TimestampSchema.safeParse(expectation.evaluatedAt).success) {
     throw new Error("Application evidence evaluation time is invalid");

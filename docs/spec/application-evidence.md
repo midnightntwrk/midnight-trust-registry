@@ -115,6 +115,11 @@ valid challenge. The raw nonce, VP, and holder data MUST NOT enter a journal,
 ledger, public response other than the initial challenge issuance response,
 or evidence bundle.
 
+Application evidence validation also requires the envelope `challengeHash` to
+match the hash issued for that application's governed context, even if an
+attacker recomputes the envelope commitment. The simulator currently uses a
+deterministic challenge fixture; it is not a production nonce source.
+
 The reference API package exposes an in-memory store for local tests only. A
 public issuance route requires a durable atomic store, caller authentication
 or abuse controls, and a retention/cleanup policy; those are not delivered by
