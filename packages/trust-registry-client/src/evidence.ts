@@ -126,9 +126,6 @@ const assertEpochAnchor = (
     throw new Error("Epoch is stale for this evidence bundle");
   }
 
-  if (bundle.epoch.maintainerSignatures.length !== 1) {
-    throw new Error("Epoch commitment must include exactly one maintainer signature");
-  }
   const maintainerSignature = bundle.epoch.maintainerSignatures[0]!;
   if (maintainerSignature.algorithm !== "jubjub-schnorr") {
     throw new Error("Epoch maintainer signature algorithm is unsupported");

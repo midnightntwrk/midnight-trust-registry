@@ -243,6 +243,12 @@ Required fields:
 - `validUntil`
 - `maintainerSignatures`
 
+For the 0.1.0 format-one epoch record, this list has exactly one signature:
+the ledger retains signer 1's key and signature for the epoch anchor. The
+governed publish action can require a larger maintainer quorum, but this bundle
+alone does not prove the entire quorum. Multi-signer epoch provenance requires
+an explicit ledger-bound signer set and a revised bundle format.
+
 ## 6. State Model
 
 Registry objects use an explicit lifecycle:
