@@ -265,6 +265,17 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [originalSignature, {
+          ...originalSignature,
+          keyId: "did:midnight:untrusted#key-2",
+          signature: `0x${"00".repeat(96)}`,
+        }] as unknown as typeof bundle.epoch.maintainerSignatures,
+      },
+    }, {})).toThrow("Too big: expected array to have <=1 items");
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;

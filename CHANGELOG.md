@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require exactly one epoch maintainer signature in the pre-release evidence
+  bundle schema, matching the signature persisted by the format-one contract
 - replaced the simulator's application-evidence hash stand-in with a
   domain-separated, key-bound JubJub signature; application evidence validation
   now requires the expected `applicationId` and rejects invalid or future

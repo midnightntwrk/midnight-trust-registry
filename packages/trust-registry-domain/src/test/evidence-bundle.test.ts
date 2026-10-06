@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EpochCommitmentSchema,
   TrustRegistryEvidenceBundleJsonSchema,
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
@@ -15,6 +16,32 @@ const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 
 describe("trust registry evidence bundle", () => {
+  it("requires one epoch signature in both bundle schemas", () => {
+    const epoch = {
+      epochId: "epoch:0001",
+      registryId: "registry:midnight:university",
+      stateRoot: HASH_A,
+      eventRoot: HASH_B,
+      policyRoot: HASH_C,
+      validFrom: "2026-05-20T02:00:00Z",
+      validUntil: "2026-05-20T03:00:00Z",
+      maintainerSignatures: [{
+        keyId: "did:midnight:maintainer:1#key-1",
+        algorithm: "jubjub-schnorr",
+        signature: "sig-1",
+      }],
+    };
+    expect(EpochCommitmentSchema.safeParse(epoch).success).toBe(true);
+    expect(EpochCommitmentSchema.safeParse({
+      ...epoch,
+      maintainerSignatures: [...epoch.maintainerSignatures, epoch.maintainerSignatures[0]],
+    }).success).toBe(false);
+    expect(
+      TrustRegistryEvidenceBundleJsonSchema.properties.epoch.properties
+        .maintainerSignatures.maxItems,
+    ).toBe(1);
+  });
+
   it("accepts authorization evidence bundles", () => {
     const parsed = TrustRegistryEvidenceBundleSchema.parse({
       bundleId: "bundle:issuer:birth:v1",
