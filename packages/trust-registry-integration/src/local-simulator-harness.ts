@@ -1555,6 +1555,7 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch is stale for this evidence bundle");
     }
 
+    // External callers can bypass the TypeScript tuple type at runtime.
     if (bundle.epoch.maintainerSignatures.length !== 1) {
       throw new Error("Epoch commitment must include exactly one maintainer signature");
     }

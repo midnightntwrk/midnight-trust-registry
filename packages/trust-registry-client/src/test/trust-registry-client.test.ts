@@ -275,7 +275,7 @@ describe("trust registry client", () => {
           signature: `0x${"00".repeat(96)}`,
         }] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
-    }, {})).toThrow("Too big: expected array to have <=1 items");
+    }, {})).toThrow();
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;
@@ -327,7 +327,7 @@ describe("trust registry client", () => {
           ...bundle.epoch,
           maintainerSignatures: [{ ...originalSignature, signature: malformed }],
         },
-      }, {})).toThrow(/Jubjub signature encoding is invalid/);
+      }, {})).toThrow("Epoch maintainer signature encoding is invalid");
     }
 
     expect(() => client.verifyIssuerAuthorizationBundle({

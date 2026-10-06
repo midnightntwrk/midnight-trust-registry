@@ -32,10 +32,15 @@ describe("trust registry evidence bundle", () => {
       }],
     };
     expect(EpochCommitmentSchema.safeParse(epoch).success).toBe(true);
-    expect(EpochCommitmentSchema.safeParse({
+    const invalid = EpochCommitmentSchema.safeParse({
       ...epoch,
       maintainerSignatures: [...epoch.maintainerSignatures, epoch.maintainerSignatures[0]],
-    }).success).toBe(false);
+    });
+    expect(invalid.success).toBe(false);
+    if (invalid.success) throw new Error("expected cardinality rejection");
+    expect(invalid.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "too_big", path: ["maintainerSignatures"] }),
+    ]));
     expect(
       TrustRegistryEvidenceBundleJsonSchema.properties.epoch.properties
         .maintainerSignatures.maxItems,

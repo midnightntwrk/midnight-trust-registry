@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - require exactly one epoch maintainer signature in the pre-release evidence
-  bundle schema, matching the signature persisted by the format-one contract
+  bundle schema, matching the signature persisted by the format-one contract;
+  multi-signature prototype bundles are not accepted
 - bound the process-local application challenge store to a finite live-entry
   capacity with idle expiry and same-binding supersession; challenge consumption
   now returns canonical lowercase hashes and reports invalid clocks or capacity

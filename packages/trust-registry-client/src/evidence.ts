@@ -130,7 +130,12 @@ const assertEpochAnchor = (
   if (maintainerSignature.algorithm !== "jubjub-schnorr") {
     throw new Error("Epoch maintainer signature algorithm is unsupported");
   }
-  const signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+  let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+  try {
+    signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+  } catch {
+    throw new Error("Epoch maintainer signature encoding is invalid");
+  }
   const payloadHash = computeCreateEpochCommitmentPayloadHash(
     epochRecord.epochId,
     epochRecord.stateRoot,
