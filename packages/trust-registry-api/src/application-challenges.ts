@@ -22,7 +22,7 @@ export const ApplicationChallengeBindingSchema = z.strictObject({
   evidenceVerifierDid: DidSchema.startsWith("did:midnight:"),
   role: ApplicationEvidenceRoleSchema,
   policyId: ScopedIdentifierSchema,
-  policyVersion: z.string().trim().min(1),
+  policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
   scopeCommitment: CanonicalHashSchema,
 });
 

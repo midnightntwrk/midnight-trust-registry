@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validated the active compiler default during the light gate
 - bound governance policy snapshot digests and versions to signed threshold
   revisions, historical epoch roots, and client evidence verification in the
-  contract-version-2 reference profile
+  initial contract-format-1 reference profile
 - upgraded published Midnight DID packages to `0.7.0` and replaced retired
   vendored VC tarballs with published VC core and DID-binding packages at `0.2.0`
 - moved clean-consumer artifact smoke tests to npm-resolved identity dependencies

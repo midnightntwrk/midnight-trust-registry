@@ -139,6 +139,8 @@ describe("application challenge lifecycle", () => {
 
     const valid = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     await expect(valid.issue({ ...binding, scopeCommitment: "not-a-hash" })).rejects.toThrow();
+    await expect(valid.issue({ ...binding, policyVersion: " v1 " })).rejects.toThrow();
+    await expect(valid.issue({ ...binding, policyVersion: "1.0.0" })).rejects.toThrow();
   });
 
   it("fails closed if the store reports repeated challenge hash collisions", async () => {
