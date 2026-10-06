@@ -169,6 +169,13 @@ const waitForUi = async (url, child, title) => {
 const { keepArtifacts, workspacePath } = parseArgs();
 const workspaceDir = path.dirname(workspacePath);
 const snapshotPath = path.join(workspaceDir, "demo-snapshot.json");
+const workspaceDirExisted = fs.existsSync(workspaceDir);
+
+for (const target of [workspacePath, snapshotPath]) {
+  if (fs.existsSync(target)) {
+    throw new Error(`refusing to overwrite existing demo smoke file: ${target}`);
+  }
+}
 
 fs.mkdirSync(workspaceDir, { recursive: true });
 
@@ -344,7 +351,11 @@ try {
   }));
 
   if (!keepArtifacts) {
-    fs.rmSync(workspaceDir, { force: true, recursive: true });
+    fs.rmSync(workspacePath, { force: true });
+    fs.rmSync(snapshotPath, { force: true });
+    if (!workspaceDirExisted) {
+      fs.rmSync(workspaceDir, { force: true, recursive: true });
+    }
   }
 }
 
