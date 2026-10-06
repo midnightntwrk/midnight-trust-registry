@@ -48,9 +48,13 @@ That command:
 - submits and approves an issuer application
 - publishes an epoch
 - verifies that the resulting trust state is queryable
+- starts both UI servers on ephemeral loopback ports and fetches their HTML,
+  JavaScript, and CSS assets
 
-The main CI workflow also runs the same smoke command after `./run.sh --light`
-so demo drift is caught from a clean checkout.
+The main and milestone CI workflows run the same smoke command after
+`./run.sh --light`, so missing build outputs or broken local startup fail from a
+clean checkout without repeating the full proving build. On failure, the smoke
+command includes captured API and UI process output.
 
 ## Artifact Boundaries
 

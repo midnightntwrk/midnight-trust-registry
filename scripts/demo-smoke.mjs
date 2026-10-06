@@ -126,6 +126,46 @@ const requestJson = async (url, init) => {
   return payload;
 };
 
+const waitForUi = async (url, child, title) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 20_000) {
+    if (child.exitCode !== null) {
+      throw new Error(`${title} exited early with code ${child.exitCode}`);
+    }
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const html = await response.text();
+        if (!html.includes(`<title>${title}</title>`)) {
+          throw new Error(`${title} served an unexpected index.html`);
+        }
+        for (const [asset, contentType] of [
+          ["index.js", "text/javascript"],
+          ["styles.css", "text/css"],
+        ]) {
+          const assetResponse = await fetch(`${url}/${asset}`);
+          if (!assetResponse.ok || !assetResponse.headers.get("content-type")?.startsWith(contentType)) {
+            throw new Error(`${title} did not serve ${asset} with ${contentType}`);
+          }
+          if (!(await assetResponse.text()).trim()) {
+            throw new Error(`${title} served an empty ${asset}`);
+          }
+        }
+        return;
+      }
+    } catch (error) {
+      if (!(error instanceof TypeError)) {
+        throw error;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`timed out waiting for ${title} at ${url}`);
+};
+
 const { keepArtifacts, workspacePath } = parseArgs();
 const workspaceDir = path.dirname(workspacePath);
 const snapshotPath = path.join(workspaceDir, "demo-snapshot.json");
@@ -171,6 +211,7 @@ const apiProcess = spawn("node", apiArgs, {
 
 let stdout = "";
 let stderr = "";
+const uiProcesses = [];
 apiProcess.stdout.on("data", (chunk) => {
   stdout += String(chunk);
 });
@@ -255,22 +296,52 @@ try {
   if (!fs.existsSync(adminIndex) || !fs.existsSync(applicantIndex)) {
     throw new Error("demo ui builds are missing expected dist/index.html assets");
   }
+
+  for (const [name, scriptPath, title] of [
+    ["admin console", "packages/trust-registry-admin-console/scripts/serve.mjs", "Trust Registry Admin Console"],
+    ["applicant portal", "packages/trust-registry-applicant-portal/scripts/serve.mjs", "Trust Registry Applicant Portal"],
+  ]) {
+    const uiPort = await findFreePort();
+    const child = spawn("node", [scriptPath, "--port", String(uiPort)], {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const service = { name, child, stdout: "", stderr: "" };
+    child.stdout.on("data", (chunk) => {
+      service.stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      service.stderr += String(chunk);
+    });
+    uiProcesses.push(service);
+    await waitForUi(`http://127.0.0.1:${uiPort}`, child, title);
+  }
 } catch (error) {
   throw new Error(
     [
       error instanceof Error ? error.message : String(error),
       stdout && `[demo-smoke] api stdout:\n${stdout}`,
       stderr && `[demo-smoke] api stderr:\n${stderr}`,
+      ...uiProcesses.flatMap((service) => [
+        service.stdout && `[demo-smoke] ${service.name} stdout:\n${service.stdout}`,
+        service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
+      ]),
     ]
       .filter(Boolean)
       .join("\n\n"),
   );
 } finally {
-  apiProcess.kill("SIGTERM");
-  await new Promise((resolve) => {
-    apiProcess.once("exit", () => resolve());
-    setTimeout(() => resolve(), 2_000);
-  });
+  await Promise.all([apiProcess, ...uiProcesses.map(({ child }) => child)].map(async (child) => {
+    if (child.exitCode !== null) {
+      return;
+    }
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      child.once("exit", resolve);
+      setTimeout(resolve, 2_000);
+    });
+  }));
 
   if (!keepArtifacts) {
     fs.rmSync(workspaceDir, { force: true, recursive: true });
@@ -278,5 +349,5 @@ try {
 }
 
 console.log(
-  `[demo-smoke] Verified CLI/API demo flow and local UI build artifacts on port ${port}.`,
+  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.`,
 );
