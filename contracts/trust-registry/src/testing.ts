@@ -583,43 +583,6 @@ export class TrustRegistrySimulator {
     );
   }
 
-  createVerifierAuthorization(
-    maintainerKeyId: Uint8Array,
-    maintainerPublicKey: JubjubPoint,
-    signature: { announcement: JubjubPoint; response: bigint },
-    authorizationId: Uint8Array,
-    subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
-    allowedAttributeSetCommitment: Uint8Array,
-    allowedPredicateSetCommitment: Uint8Array,
-    disclosureLevelCommitment: Uint8Array,
-    policyId: Uint8Array,
-    trustLevel: Uint8Array,
-    evidenceHash: Uint8Array,
-    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
-      this.contract.impureCircuits.createVerifierAuthorization(
-        this.circuitContext,
-        this.buildMaintainerAuthorizationBundle(
-          maintainerKeyId,
-          maintainerPublicKey,
-          signature,
-          coAuthorizers,
-        ),
-        authorizationId,
-        subjectDidCommitment,
-        requestProfileId,
-        allowedAttributeSetCommitment,
-        allowedPredicateSetCommitment,
-        disclosureLevelCommitment,
-        policyId,
-        trustLevel,
-        evidenceHash,
-      ),
-    );
-  }
-
   proposeVerifierAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
@@ -802,41 +765,6 @@ export class TrustRegistrySimulator {
     );
   }
 
-  createRecognition(
-    maintainerKeyId: Uint8Array,
-    maintainerPublicKey: JubjubPoint,
-    signature: { announcement: JubjubPoint; response: bigint },
-    recognitionId: Uint8Array,
-    recognizedAuthorityDidCommitment: Uint8Array,
-    recognizedRegistryId: Uint8Array,
-    scopeResourceType: Uint8Array,
-    scopeResourceId: Uint8Array,
-    policyId: Uint8Array,
-    trustLevel: Uint8Array,
-    evidenceHash: Uint8Array,
-    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
-      this.contract.impureCircuits.createRecognition(
-        this.circuitContext,
-        this.buildMaintainerAuthorizationBundle(
-          maintainerKeyId,
-          maintainerPublicKey,
-          signature,
-          coAuthorizers,
-        ),
-        recognitionId,
-        recognizedAuthorityDidCommitment,
-        recognizedRegistryId,
-        scopeResourceType,
-        scopeResourceId,
-        policyId,
-        trustLevel,
-        evidenceHash,
-      ),
-    );
-  }
-
   proposeRecognition(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
@@ -1011,43 +939,6 @@ export class TrustRegistrySimulator {
         recognizedRegistryId,
         scopeResourceType,
         scopeResourceId,
-      ),
-    );
-  }
-
-  createAuditorAuthorization(
-    maintainerKeyId: Uint8Array,
-    maintainerPublicKey: JubjubPoint,
-    signature: { announcement: JubjubPoint; response: bigint },
-    authorizationId: Uint8Array,
-    subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
-    allowedAttributeSetCommitment: Uint8Array,
-    allowedPredicateSetCommitment: Uint8Array,
-    disclosureLevelCommitment: Uint8Array,
-    policyId: Uint8Array,
-    trustLevel: Uint8Array,
-    evidenceHash: Uint8Array,
-    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
-      this.contract.impureCircuits.createAuditorAuthorization(
-        this.circuitContext,
-        this.buildMaintainerAuthorizationBundle(
-          maintainerKeyId,
-          maintainerPublicKey,
-          signature,
-          coAuthorizers,
-        ),
-        authorizationId,
-        subjectDidCommitment,
-        requestProfileId,
-        allowedAttributeSetCommitment,
-        allowedPredicateSetCommitment,
-        disclosureLevelCommitment,
-        policyId,
-        trustLevel,
-        evidenceHash,
       ),
     );
   }

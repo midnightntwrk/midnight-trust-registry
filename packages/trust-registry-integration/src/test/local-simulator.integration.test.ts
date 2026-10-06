@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   decodeJubjubSignature,
@@ -621,6 +621,25 @@ describe("trust registry local simulator integration", () => {
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
       /threshold policy/i,
     );
+  });
+
+  it("rejects evidence from an incompatible contract format at both verification boundaries", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("format-boundary");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const ledger = harness.simulator.getLedger();
+    const spy = vi.spyOn(harness.simulator, "getLedger").mockReturnValue({
+      ...ledger,
+      contractVersion: 2n,
+    });
+    try {
+      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
+      expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
