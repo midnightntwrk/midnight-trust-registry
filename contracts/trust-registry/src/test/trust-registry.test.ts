@@ -2732,6 +2732,8 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = createInitializedRegistryFixture(45);
     const recognition = createRecognitionFixture("gaia-x-application");
+    const proposedEvidenceHash = labelToBytes32("evidence:gaia-x-application:propose");
+    const replacementEvidenceHash = labelToBytes32("evidence:gaia-x-application:replacement");
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -2746,7 +2748,7 @@ describe("trust registry contract", () => {
         recognition.scopeResourceId,
         recognition.policyId,
         recognition.trustLevel,
-        labelToBytes32("evidence:gaia-x-application:propose"),
+        proposedEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2761,12 +2763,35 @@ describe("trust registry contract", () => {
       recognition.scopeResourceId,
       recognition.policyId,
       recognition.trustLevel,
-      labelToBytes32("evidence:gaia-x-application:propose"),
+      proposedEvidenceHash,
     );
 
     const proposedRecord = simulator.getRecognition(recognition.recognitionId);
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
     expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
+
+    const replacementAuthorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      AUTHORIZE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        proposedRecord.lifecycleEventHash,
+        replacementEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    expect(() => simulator.authorizeRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      replacementAuthorizeSignature,
+      recognition.recognitionId,
+      replacementEvidenceHash,
+    )).toThrow(/evidence must match the proposed application/i);
+    expect(simulator.getRecognition(recognition.recognitionId).status).toEqual(
+      AuthorizationStatus.proposed,
+    );
 
     const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -2776,7 +2801,7 @@ describe("trust registry contract", () => {
       computeUpdateRecognitionPayloadHash(
         recognition.recognitionId,
         proposedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:gaia-x-application:authorize"),
+        proposedEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2785,12 +2810,35 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       authorizeSignature,
       recognition.recognitionId,
-      labelToBytes32("evidence:gaia-x-application:authorize"),
+      proposedEvidenceHash,
     );
 
     const authorizedRecord = simulator.getRecognition(recognition.recognitionId);
     expect(authorizedRecord.status).toEqual(AuthorizationStatus.authorized);
     expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
+
+    const replacementActivateSignature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      ACTIVATE_RECOGNITION_ACTION_KIND,
+      computeUpdateRecognitionPayloadHash(
+        recognition.recognitionId,
+        authorizedRecord.lifecycleEventHash,
+        replacementEvidenceHash,
+      ),
+      simulator.getLedger().governanceActionCount,
+    );
+    expect(() => simulator.activateRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      replacementActivateSignature,
+      recognition.recognitionId,
+      replacementEvidenceHash,
+    )).toThrow(/activation evidence must match the proposed application/i);
+    expect(simulator.getRecognition(recognition.recognitionId).status).toEqual(
+      AuthorizationStatus.authorized,
+    );
 
     const activateSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -2800,7 +2848,7 @@ describe("trust registry contract", () => {
       computeUpdateRecognitionPayloadHash(
         recognition.recognitionId,
         authorizedRecord.lifecycleEventHash,
-        labelToBytes32("evidence:gaia-x-application:activate"),
+        proposedEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
@@ -2809,7 +2857,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
       activateSignature,
       recognition.recognitionId,
-      labelToBytes32("evidence:gaia-x-application:activate"),
+      proposedEvidenceHash,
     );
 
     const activeRecord = simulator.getCurrentRecognition(

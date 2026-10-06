@@ -3757,6 +3757,10 @@ export circuit authorizeRecognition(
     currentRecord.status == AuthorizationStatus.proposed,
     "Recognition must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Recognition evidence must match the proposed application"
+  );
   const actionPayloadHash = disclose(
     updateRecognitionPayloadHash(
       disclosedRecognitionId,
@@ -3807,6 +3811,10 @@ export circuit activateRecognition(
   assert(
     currentRecord.status == AuthorizationStatus.authorized,
     "Recognition must be authorized to activate"
+  );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Recognition activation evidence must match the proposed application"
   );
   const actionPayloadHash = disclose(
     updateRecognitionPayloadHash(

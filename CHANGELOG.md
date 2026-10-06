@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capacity with idle expiry and same-binding supersession; challenge consumption
   now returns canonical lowercase hashes and reports invalid clocks or capacity
   exhaustion as operational errors
+- bound recognition authorization and activation to the proposed evidence
+  commitment, rejecting silent evidence replacement between governance steps
 - selected contract format 1 for the first 0.1.0 deployment rather than
   migrating unreleased prototype formats; old policy roots, signatures, and
   event evidence require a fresh deployment and are not reinterpreted

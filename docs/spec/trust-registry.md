@@ -195,6 +195,11 @@ Required fields:
 - `archivedAt`
 - `lifecycleEventRoot`
 
+Authorization and activation MUST preserve the recognition proposal's
+`evidenceHash`; a different application evidence commitment requires a new
+proposal. Suspension, revocation, and archival may record action-specific
+evidence without rewriting the original proposal decision.
+
 ### Resource Authorization
 
 Resource authorization binds issuers and verifiers to VC resources.
