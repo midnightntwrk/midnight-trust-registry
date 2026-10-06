@@ -96,20 +96,6 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   }
 };
 
-/** @deprecated Unbound pre-release helper; governed actions require a policy commitment. */
-export const computeMaintainerActionDigest = (
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
-): TrustRegistryActionDigest =>
-  pureCircuits.maintainerActionDigest(
-    ensure32Bytes(registryId),
-    ensure32Bytes(actionKind),
-    ensure32Bytes(actionPayloadHash),
-    actionSequence,
-  ) as TrustRegistryActionDigest;
-
 export const computePolicyBoundActionPayloadHash = (
   policyCommitment: Uint8Array,
   actionPayloadHash: Uint8Array,
@@ -394,24 +380,6 @@ export const signMaintainerActionDigestFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(ensure32Bytes(seedBytes), digest);
 
-/** @deprecated Unbound pre-release helper; use signPolicyBoundMaintainerActionFromSeed. */
-export const signMaintainerActionFromSeed = (
-  seedBytes: Uint8Array,
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
-): TrustRegistryJubjubSignature =>
-  signMaintainerActionDigestFromSeed(
-    seedBytes,
-    computeMaintainerActionDigest(
-      registryId,
-      actionKind,
-      actionPayloadHash,
-      actionSequence,
-    ),
-  );
-
 export const signPolicyBoundMaintainerActionFromSeed = (
   seedBytes: Uint8Array,
   registryId: Uint8Array,
@@ -436,26 +404,6 @@ export const verifyMaintainerActionDigest = (
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
 ): boolean => verifyJubjubDigest(publicKey, digest, signature);
-
-/** @deprecated Unbound pre-release helper; use verifyPolicyBoundMaintainerAction. */
-export const verifyMaintainerAction = (
-  publicKey: JubjubPoint,
-  registryId: Uint8Array,
-  actionKind: Uint8Array,
-  actionPayloadHash: Uint8Array,
-  actionSequence: bigint,
-  signature: TrustRegistryJubjubSignature,
-): boolean =>
-  verifyMaintainerActionDigest(
-    publicKey,
-    computeMaintainerActionDigest(
-      registryId,
-      actionKind,
-      actionPayloadHash,
-      actionSequence,
-    ),
-    signature,
-  );
 
 export const verifyPolicyBoundMaintainerAction = (
   publicKey: JubjubPoint,

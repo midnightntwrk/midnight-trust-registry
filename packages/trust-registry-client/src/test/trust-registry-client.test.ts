@@ -156,9 +156,9 @@ describe("trust registry client", () => {
     ).toThrow(/invalid literal|merkle-inclusion/i);
   });
 
-  it("rejects a pre-policy-bound epoch record with a domain error", () => {
+  it("rejects an epoch record missing its publication policy commitment", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
-    const issuer = createIssuerScenarioFixture("legacy-epoch");
+    const issuer = createIssuerScenarioFixture("missing-policy-epoch");
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
     const client = new TrustRegistrySimulatorClient(harness.simulator);

@@ -34,10 +34,8 @@ disclosed policy record. Contract-version-1 policy-ID roots cannot be
 interpreted as snapshot digests. Earlier pre-release signatures and event
 hashes are not evidence for this format. No released deployment or supported
 in-place migration is assumed; the 0.1.0 reference path is a fresh deployment.
-The exported unbound `signMaintainerActionFromSeed` and
-`verifyMaintainerAction` helpers are retained only for pre-release tests and
-must not authorize current governed actions. Callers must use the policy-bound
-variants and supply the active 32-byte policy commitment.
+All governed action signing and verification uses the policy-bound helpers
+with the active 32-byte policy commitment; no unbound signing API is exposed.
 
 For epoch publication, the epoch record persists the submitter
 (`signer1`) key id, signature, and policy commitment active at publication.

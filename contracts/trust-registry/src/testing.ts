@@ -394,39 +394,6 @@ export class TrustRegistrySimulator {
     );
   }
 
-  createIssuerAuthorization(
-    maintainerKeyId: Uint8Array,
-    maintainerPublicKey: JubjubPoint,
-    signature: { announcement: JubjubPoint; response: bigint },
-    authorizationId: Uint8Array,
-    subjectDidCommitment: Uint8Array,
-    resourceType: IssuerResourceType,
-    resourceId: Uint8Array,
-    policyId: Uint8Array,
-    trustLevel: Uint8Array,
-    evidenceHash: Uint8Array,
-    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
-      this.contract.impureCircuits.createIssuerAuthorization(
-        this.circuitContext,
-        this.buildMaintainerAuthorizationBundle(
-          maintainerKeyId,
-          maintainerPublicKey,
-          signature,
-          coAuthorizers,
-        ),
-        authorizationId,
-        subjectDidCommitment,
-        resourceType,
-        resourceId,
-        policyId,
-        trustLevel,
-        evidenceHash,
-      ),
-    );
-  }
-
   proposeIssuerAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,

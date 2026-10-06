@@ -116,20 +116,17 @@ describe("governance policy snapshot v1", () => {
     expect(() => assertGovernancePolicySnapshotMatchesRecord(policy("v1", 3), snapshot)).toThrow(/does not match/);
   });
 
-  it("uses supersededAt to close a legacy record without effectiveUntil", () => {
-    const record = GovernancePolicyRecordSchema.parse({
+  it("requires an explicit effectiveUntil for a superseded policy", () => {
+    expect(() => GovernancePolicyRecordSchema.parse({
       ...policy(),
       effectiveUntil: undefined,
       supersededAt: "2026-11-05T00:00:00Z",
+    })).toThrow(/explicit effectiveUntil/);
+    const record = GovernancePolicyRecordSchema.parse({
+      ...policy(),
+      supersededAt: "2026-11-05T00:00:00Z",
     });
-    const previous = deriveGovernancePolicySnapshot(record);
-    const next = {
-      ...deriveGovernancePolicySnapshot(policy("v2", 3)),
-      effectiveFrom: "2026-11-05T00:00:00Z",
-      effectiveUntil: null,
-    };
-    expect(previous.effectiveUntil).toBe(record.supersededAt);
-    expect(() => assertGovernancePolicyRevision(previous, next)).not.toThrow();
+    expect(deriveGovernancePolicySnapshot(record).effectiveUntil).toBe(record.effectiveUntil);
   });
 
   it("preserves a historically accepted zero-length effective window", () => {
@@ -151,8 +148,8 @@ describe("governance policy snapshot v1", () => {
     }))).toThrow(/millisecond precision/);
   });
 
-  it("reports legacy policy shapes that require migration to the V1 profile", () => {
-    expect(() => deriveGovernancePolicySnapshot(policy("1.0.0"))).toThrow(/migrate to monotonic vN/);
+  it("rejects invalid policy versions and incomplete decision families", () => {
+    expect(() => policy("1.0.0")).toThrow();
     const incomplete = GovernancePolicyRecordSchema.parse({
       ...policy(),
       policyTemplates: policy().policyTemplates.slice(0, 2),
