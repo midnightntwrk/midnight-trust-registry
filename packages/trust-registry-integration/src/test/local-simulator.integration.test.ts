@@ -93,6 +93,8 @@ describe("trust registry local simulator integration", () => {
       ["expired evidence", { envelope: { expiresAt: "2026-05-20T00:00:00Z" } }, /expiresAt/],
       ["future evidence", { envelope: { verifiedAt: "2026-05-20T01:00:00Z" } }, /not yet valid/],
       ["invalid signature", { signature: { value: "tampered" } }, /signature is invalid/],
+      ["truncated signature", { signature: { value: validEvidence.signature.value.slice(0, -1) } }, /signature is invalid/],
+      ["non-hex signature", { signature: { value: `${validEvidence.signature.value.slice(0, -1)}g` } }, /signature is invalid/],
       ["noncanonical signature encoding", { signature: { value: validEvidence.signature.value.toUpperCase() } }, /signature is invalid/],
       ["invalid curve point", { signature: { value: `0x${"00".repeat(96)}` } }, /signature is invalid/],
       [
@@ -668,6 +670,25 @@ describe("trust registry local simulator integration", () => {
         },
       }),
     ).toThrow(/invalid/i);
+
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{
+          ...originalSignature,
+          signature: originalSignature.signature.slice(0, -1),
+        }],
+      },
+    })).toThrow(/Jubjub signature encoding is invalid/);
+
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{ ...originalSignature, algorithm: "ed25519" }],
+      },
+    })).toThrow(/signature algorithm is unsupported/);
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(

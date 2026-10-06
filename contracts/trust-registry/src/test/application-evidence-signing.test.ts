@@ -5,10 +5,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   applicationEvidenceSignatureDigest,
+  decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
+  signPolicyBoundMaintainerActionFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
+  verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
 
 const seed = new Uint8Array(32).fill(41);
@@ -71,5 +75,44 @@ describe("application evidence commitment signing", () => {
     expect(() => applicationEvidenceSignatureDigest(new Uint8Array(33), commitment)).toThrow(/32 bytes/);
     expect(() => applicationEvidenceSignatureDigest(keyIdCommitment, new Uint8Array(31))).toThrow(/32 bytes/);
     expect(() => signApplicationEvidenceCommitmentFromSeed(new Uint8Array(31), keyIdCommitment, commitment)).toThrow(/32 bytes/);
+  });
+
+  it("rejects noncanonical wire encodings before decoding a signature", () => {
+    const signature = signApplicationEvidenceCommitmentFromSeed(seed, keyIdCommitment, commitment);
+    const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
+
+    expect(decodeCanonicalJubjubSignatureHex(encoded)).toEqual(signature);
+    for (const malformed of [
+      encoded.slice(0, -1),
+      encoded.toUpperCase(),
+      `${encoded.slice(0, -1)}g`,
+      encoded.slice(2),
+    ]) {
+      expect(() => decodeCanonicalJubjubSignatureHex(malformed)).toThrow(/encoding is invalid/);
+    }
+    const highResponse = `0x${Buffer.from(encodeJubjubSignature({
+      ...signature,
+      response: signature.response + JUBJUB_ORDER,
+    })).toString("hex")}`;
+    expect(() => decodeCanonicalJubjubSignatureHex(highResponse)).toThrow(/encoding is invalid/);
+  });
+
+  it("fails closed for malformed structured maintainer signatures", () => {
+    const registryId = new Uint8Array(32).fill(1);
+    const policyCommitment = new Uint8Array(32).fill(2);
+    const actionKind = new Uint8Array(32).fill(3);
+    const payloadHash = new Uint8Array(32).fill(4);
+    const signature = signPolicyBoundMaintainerActionFromSeed(
+      seed, registryId, policyCommitment, actionKind, payloadHash, 1n,
+    );
+    const publicKey = deriveJubjubPublicKeyFromSeed(seed);
+    const verify = (candidate: typeof signature) => verifyPolicyBoundMaintainerAction(
+      publicKey, registryId, policyCommitment, actionKind, payloadHash, 1n, candidate,
+    );
+
+    expect(verify(signature)).toBe(true);
+    expect(verify({ ...signature, response: signature.response + JUBJUB_ORDER })).toBe(false);
+    expect(verify({ announcement: { x: 3n, y: 5n }, response: signature.response })).toBe(false);
+    expect(verify(null as unknown as typeof signature)).toBe(false);
   });
 });

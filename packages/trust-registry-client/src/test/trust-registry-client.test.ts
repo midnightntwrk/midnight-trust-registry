@@ -305,6 +305,28 @@ describe("trust registry client", () => {
       ),
     ).toThrow("Epoch maintainer signature is invalid");
 
+    for (const malformed of [
+      originalSignature.signature.slice(0, -1),
+      originalSignature.signature.toUpperCase(),
+      `${originalSignature.signature.slice(0, -1)}g`,
+    ]) {
+      expect(() => client.verifyIssuerAuthorizationBundle({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: [{ ...originalSignature, signature: malformed }],
+        },
+      }, {})).toThrow(/Jubjub signature encoding is invalid/);
+    }
+
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{ ...originalSignature, algorithm: "ed25519" }],
+      },
+    }, {})).toThrow(/signature algorithm is unsupported/);
+
     expect(() =>
       client.verifyIssuerAuthorizationBundle(
         {

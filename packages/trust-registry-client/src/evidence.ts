@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   computeCreateEpochCommitmentPayloadHash,
-  decodeJubjubSignature,
+  decodeCanonicalJubjubSignatureHex,
   labelToBytes32,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
@@ -130,9 +130,10 @@ const assertEpochAnchor = (
   if (maintainerSignature === undefined) {
     throw new Error("Epoch commitment must include at least one maintainer signature");
   }
-  const signature = decodeJubjubSignature(
-    Buffer.from(maintainerSignature.signature.replace(/^0x/, ""), "hex"),
-  );
+  if (maintainerSignature.algorithm !== "jubjub-schnorr") {
+    throw new Error("Epoch maintainer signature algorithm is unsupported");
+  }
+  const signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
   const payloadHash = computeCreateEpochCommitmentPayloadHash(
     epochRecord.epochId,
     epochRecord.stateRoot,

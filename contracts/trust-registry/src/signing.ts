@@ -41,6 +41,37 @@ export {
 export type TrustRegistryActionDigest = JubjubDigest;
 export type TrustRegistryJubjubSignature = JubjubSchnorrSignature;
 
+const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
+  signature !== null
+  && signature !== undefined
+  && typeof signature.response === "bigint"
+  && signature.announcement !== null
+  && signature.announcement !== undefined
+  && typeof signature.announcement.x === "bigint"
+  && typeof signature.announcement.y === "bigint"
+  && signature.response >= 0n
+  && signature.response < JUBJUB_ORDER
+  && signature.announcement.x >= 0n
+  && signature.announcement.x <= MAX_FIELD
+  && signature.announcement.y >= 0n
+  && signature.announcement.y <= MAX_FIELD;
+
+export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJubjubSignature => {
+  if (
+    value.length !== 2 + JUBJUB_SIGNATURE_LENGTH_BYTES * 2
+    || !/^0x[0-9a-f]+$/u.test(value)
+  ) {
+    throw new Error("Jubjub signature encoding is invalid");
+  }
+  try {
+    const signature = decodeJubjubSignature(Buffer.from(value.slice(2), "hex"));
+    if (isCanonicalJubjubSignature(signature)) return signature;
+  } catch {
+    // Decode failures and noncanonical encodings share one public error.
+  }
+  throw new Error("Jubjub signature encoding is invalid");
+};
+
 const ensure32Bytes = (value: Uint8Array): Buffer => {
   const buffer = Buffer.from(value);
   if (buffer.length === 32) return buffer;
@@ -80,14 +111,7 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   commitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (
-    signature.response < 0n ||
-    signature.response >= JUBJUB_ORDER ||
-    signature.announcement.x < 0n ||
-    signature.announcement.x > MAX_FIELD ||
-    signature.announcement.y < 0n ||
-    signature.announcement.y > MAX_FIELD
-  ) return false;
+  if (!isCanonicalJubjubSignature(signature)) return false;
   const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
   try {
     return verifyJubjubDigest(publicKey, digest, signature);
@@ -403,7 +427,14 @@ export const verifyMaintainerActionDigest = (
   publicKey: JubjubPoint,
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
-): boolean => verifyJubjubDigest(publicKey, digest, signature);
+): boolean => {
+  if (!isCanonicalJubjubSignature(signature)) return false;
+  try {
+    return verifyJubjubDigest(publicKey, digest, signature);
+  } catch {
+    return false;
+  }
+};
 
 export const verifyPolicyBoundMaintainerAction = (
   publicKey: JubjubPoint,
