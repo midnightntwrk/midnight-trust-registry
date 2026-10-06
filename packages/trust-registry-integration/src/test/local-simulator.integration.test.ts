@@ -634,11 +634,16 @@ describe("trust registry local simulator integration", () => {
       ...ledger,
       contractVersion: 2n,
     });
+    const epochRead = vi.spyOn(client, "getEpochCommitmentById").mockImplementation(() => {
+      throw new Error("Epoch read should not precede the format gate");
+    });
     try {
       expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
       expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
+      expect(epochRead).not.toHaveBeenCalled();
       expect(() => new TrustRegistrySimulatorClient(harness.simulator)).toThrow(/Unsupported trust registry format/);
     } finally {
+      epochRead.mockRestore();
       spy.mockRestore();
     }
   });

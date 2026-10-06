@@ -34,7 +34,9 @@ disclosed policy record. The 0.1.0 reference path is a fresh deployment;
 prototype policy-ID roots, signatures, and event hashes are not valid evidence
 for this format. The format-one marker does not make an older prototype with
 the same numeric marker compatible; consumers must check the actual ledger
-shape and verification-key provenance as well.
+shape and verification-key provenance as well. The simulator client's
+constructor checks the marker only; it does not attest a deployed contract or
+prove that another ledger with the same marker has this format.
 All governed action signing and verification uses the policy-bound helpers
 with the active 32-byte policy commitment; no unbound signing API is exposed.
 Issuer, verifier, auditor, and recognition records enter the ledger through

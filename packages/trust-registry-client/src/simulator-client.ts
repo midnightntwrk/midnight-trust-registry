@@ -191,8 +191,8 @@ export class TrustRegistrySimulatorClient {
     BundleVerificationOptions,
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
-    const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const ledger = this.requireSupportedLedger();
+    const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
       throw new Error("Bundle policy version is invalid");

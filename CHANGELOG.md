@@ -54,8 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- removed pre-release direct-create issuer, verifier, auditor, and recognition
-  circuits and simulator wrappers; all four roles now use the governed
+- removed pre-release direct-create verifier, auditor, and recognition
+  circuits and simulator wrappers; all four roles use the governed
   proposal, authorization, and activation state machine
 - removed pre-release unbound maintainer action signing/digest exports; callers
   must sign and verify against the active policy commitment
