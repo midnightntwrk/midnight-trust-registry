@@ -106,8 +106,9 @@ textual hex representation.
 The off-ledger challenge store retains only `challengeHash`, an expiry, and a
 domain-separated commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, and scope commitment. It MUST
-perform insert-if-absent and check-and-delete atomically across all API
-replicas. Consumption succeeds only
+perform collision-safe insertion, replacement of an earlier live challenge
+for the same binding, and check-and-delete atomically across all API replicas.
+The newest challenge supersedes the old one for that binding. Consumption succeeds only
 when the submitted nonce hashes to the envelope value, the complete binding
 matches, and the challenge has not expired; retry, mismatch, and expiry all
 return the same rejection category. A failed binding check does not consume a
@@ -120,12 +121,14 @@ match the hash issued for that application's governed context, even if an
 attacker recomputes the envelope commitment. The simulator currently uses a
 deterministic challenge fixture; it is not a production nonce source.
 After successful atomic consumption, the challenge service returns the verified
-hash in the envelope's original hex representation; callers MUST use that
+hash as canonical lowercase hex derived from the nonce; callers MUST use that
 return value as the proposal's expected `challengeHash`, not the untrusted
-submission field. The store compares hashes as bytes, so accepted hex casing
-does not change challenge identity.
+submission field. The evidence validator compares challenge hashes by byte value,
+so accepted hex casing does not change challenge identity or the signed envelope.
 
-The reference API package exposes an in-memory store for local tests only. A
+The reference API package exposes an in-memory store for local tests only. It
+caps live entries and schedules expiry cleanup even without another request;
+these bounds do not replace distributed durability or abuse controls. A
 public issuance route requires a durable atomic store, caller authentication
 or abuse controls, and a retention/cleanup policy; those are not delivered by
 this reference store. Challenge expiry uses the evidence verifier's off-ledger

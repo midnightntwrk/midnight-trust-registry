@@ -12,6 +12,7 @@ import { z } from "zod";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const NONCE_BYTES = 32;
 const MAX_COLLISION_ATTEMPTS = 3;
+const MAX_IN_MEMORY_CHALLENGES = 10_000;
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
 
@@ -34,35 +35,69 @@ export type ApplicationChallengeRecord = {
   expiresAtMs: number;
 };
 
-/** A production adapter must make insert-if-absent and check-and-delete atomic. */
+/** A production adapter must atomically replace the live challenge for a binding and check-and-delete on consume. */
 export interface ApplicationChallengeStore {
   insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean>;
   consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
 }
 
-/** Process-local reference adapter; expired records are pruned on subsequent issuance. */
+/** Process-local reference adapter with bounded capacity and idle expiry. */
 export class InMemoryApplicationChallengeStore implements ApplicationChallengeStore {
-  private readonly records = new Map<string, ApplicationChallengeRecord>();
+  private readonly records = new Map<string, { record: ApplicationChallengeRecord; timer: NodeJS.Timeout }>();
+  private readonly bindingHashes = new Map<string, string>();
+
+  constructor(private readonly maxEntries = MAX_IN_MEMORY_CHALLENGES) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
+      throw new RangeError("Application challenge store capacity is invalid");
+    }
+  }
 
   async insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean> {
-    for (const [hash, existing] of this.records) {
-      if (nowMs >= existing.expiresAtMs) this.records.delete(hash);
+    if (record.expiresAtMs <= nowMs) return false;
+    const existing = this.records.get(record.challengeHash);
+    if (existing !== undefined) {
+      if (nowMs < existing.record.expiresAtMs) return false;
+      this.remove(record.challengeHash);
     }
-    if (this.records.has(record.challengeHash)) return false;
-    this.records.set(record.challengeHash, record);
+    const previousHash = this.bindingHashes.get(record.bindingHash);
+    if (previousHash !== undefined) this.remove(previousHash);
+    if (this.records.size >= this.maxEntries) {
+      for (const [hash, current] of this.records) {
+        if (nowMs >= current.record.expiresAtMs) this.remove(hash);
+      }
+      if (this.records.size >= this.maxEntries) return false;
+    }
+    const timer = setTimeout(() => {
+      if (this.records.get(record.challengeHash)?.record === record) {
+        this.remove(record.challengeHash);
+      }
+    }, record.expiresAtMs - nowMs);
+    timer.unref();
+    this.records.set(record.challengeHash, { record, timer });
+    this.bindingHashes.set(record.bindingHash, record.challengeHash);
     return true;
   }
 
   async consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
-    const record = this.records.get(challengeHash);
-    if (record === undefined) return false;
-    if (nowMs >= record.expiresAtMs) {
-      this.records.delete(challengeHash);
+    const current = this.records.get(challengeHash);
+    if (current === undefined) return false;
+    if (nowMs >= current.record.expiresAtMs) {
+      this.remove(challengeHash);
       return false;
     }
-    if (record.bindingHash !== bindingHash) return false;
-    this.records.delete(challengeHash);
+    if (current.record.bindingHash !== bindingHash) return false;
+    this.remove(challengeHash);
     return true;
+  }
+
+  private remove(challengeHash: string): void {
+    const current = this.records.get(challengeHash);
+    if (current === undefined) return;
+    clearTimeout(current.timer);
+    this.records.delete(challengeHash);
+    if (this.bindingHashes.get(current.record.bindingHash) === challengeHash) {
+      this.bindingHashes.delete(current.record.bindingHash);
+    }
   }
 }
 
@@ -113,8 +148,14 @@ export class ApplicationChallengeService {
 
     const challengeHash = sha256Hex(Buffer.from(input.nonce.slice(2), "hex"));
     if (challengeHash !== input.challengeHash.toLowerCase()) return null;
-    return await this.store.consume(challengeHash, hashBinding(parsedBinding.data), this.now())
-      ? input.challengeHash
+    let nowMs: number;
+    try {
+      nowMs = this.now();
+    } catch {
+      return null;
+    }
+    return await this.store.consume(challengeHash, hashBinding(parsedBinding.data), nowMs)
+      ? challengeHash
       : null;
   }
 
