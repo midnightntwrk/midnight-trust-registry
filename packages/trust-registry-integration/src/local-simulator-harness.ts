@@ -1484,7 +1484,16 @@ export class LocalTrustRegistryIntegrationHarness {
     bundle: TrustRegistryEvidenceBundle,
     options: { evaluationTime?: string } = {},
   ): void {
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
+    }
     this.assertRegistryId(bundle.registryId);
+    const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
+    if (versionMatch === null) {
+      throw new Error("Policy version is invalid");
+    }
+    const version = BigInt(versionMatch[1]!);
     const epochRecord = this.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),
     );
@@ -1512,11 +1521,6 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     if (bundle.epoch.policyRoot !== expectedSnapshotRoot) {
       throw new Error("Epoch policy root does not match the policy snapshot");
-    }
-    const version = BigInt(bundle.policy.version.slice(1));
-    const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 1n) {
-      throw new Error("Unsupported trust registry format");
     }
     if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
       throw new Error("Policy version is not committed to the ledger");
