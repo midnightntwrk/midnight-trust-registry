@@ -9,11 +9,11 @@ let
   platformInfo = {
     x86_64-linux = {
       compactPlatform = "x86_64-unknown-linux-musl";
-      sha256 = "sha256-AWNbsvcfEaheG1wGCITergL674pIw7WnXsHQJrehyl0=";
+      sha256 = "sha256-75nwiVASCtJQ+wXVe8P5wUDmy3TevYfZ88O+qtH0lJU=";
     };
     aarch64-darwin = {
       compactPlatform = "aarch64-darwin";
-      sha256 = "sha256-ritWqIO+2PnmpdCTzjSnF5mu6W+UOp+yW2t27YyuRcY=";
+      sha256 = "sha256-QKfLjKbOBSIuxJXfYhkPgDJkn4CcsRsV6M1ULSRem9o=";
     };
   };
 

@@ -68,7 +68,7 @@
   },
   "scripts": {
     "contract": "pnpm run compact",
-    "compact": "node ../../scripts/compile-compact.mjs src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
+    "compact": "node ../../scripts/compile-compact.mjs src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
     "test": "vitest run",
     "pretest:ci": "pnpm run compact",
     "test:ci": "vitest run",
@@ -79,7 +79,7 @@
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "all": "pnpm run compact && pnpm run build && pnpm run test:ci",
-    "compact:light": "node ../../scripts/compile-compact.mjs --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
+    "compact:light": "node ../../scripts/compile-compact.mjs --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
     "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
     "test:light": "pnpm run test"
   },
