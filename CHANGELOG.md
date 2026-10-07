@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- removed the pre-release `authorizeMaintainerAction` circuit and simulator
+  wrapper with caller-supplied action kinds; use `authorizeMaintainerAuditEvent`
+  for a fixed-kind generic audit event
 - removed pre-release direct-create verifier, auditor, and recognition
   circuits and simulator wrappers; all four roles use the governed
   proposal, authorization, and activation state machine

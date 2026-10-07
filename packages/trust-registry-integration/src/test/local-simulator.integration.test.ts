@@ -628,6 +628,13 @@ describe("trust registry local simulator integration", () => {
     const issuer = createIssuerScenarioFixture("format-boundary");
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const applicationInput = {
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer" as const,
+      scopeCommitment: issuer.resourceIdCommitment,
+    };
+    const applicationEvidence = harness.createApplicationEvidence(applicationInput);
     const client = new TrustRegistrySimulatorClient(harness.simulator);
     const ledger = harness.simulator.getLedger();
     const spy = vi.spyOn(harness.simulator, "getLedger").mockReturnValue({
@@ -644,6 +651,11 @@ describe("trust registry local simulator integration", () => {
       throw new Error("Issuer record read should not precede the format gate");
     });
     try {
+      expect(() => harness.createApplicationEvidence(applicationInput)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.assertApplicationEvidence({
+        ...applicationInput,
+        evidence: applicationEvidence,
+      })).toThrow(/Unsupported trust registry format/);
       expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
       expect(() => harness.readIssuerAuthorizationStatus(issuer)).toThrow(/Unsupported trust registry format/);
       expect(() => harness.buildIssuerHistoricalEvidence(issuer)).toThrow(/Unsupported trust registry format/);

@@ -289,7 +289,7 @@ export class LocalTrustRegistryIntegrationHarness {
     role: ApplicationEvidenceRole;
     scopeCommitment: Uint8Array;
   }): ApplicationEvidenceSubmission {
-    const verifiedAt = timestampForSequence(this.simulator.getLedger().governanceActionCount);
+    const verifiedAt = timestampForSequence(this.assertSupportedContractFormat().governanceActionCount);
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
       version: "tr-application-evidence-v1" as const,
@@ -332,6 +332,7 @@ export class LocalTrustRegistryIntegrationHarness {
     role: ApplicationEvidenceRole;
     scopeCommitment: Uint8Array;
   }): Uint8Array {
+    const ledger = this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
       {
@@ -343,7 +344,7 @@ export class LocalTrustRegistryIntegrationHarness {
         policyVersion: this.policyRecord.version,
         scopeCommitment: bytes32Hex(input.scopeCommitment),
         challengeHash: sha256Hex(`challenge:${input.applicationId}`),
-        evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
+        evaluatedAt: timestampForSequence(ledger.governanceActionCount),
       },
       [this.evidenceVerifier],
       (commitment, signature, verifier) => {
