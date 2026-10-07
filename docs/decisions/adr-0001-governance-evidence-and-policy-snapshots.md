@@ -30,8 +30,9 @@ evidence and quorum execution.
 - A transition that would leave fewer active maintainers than its live
   threshold MUST fail. Recovery requires a separately defined emergency policy
   and cannot be implied by a single surviving key.
-- Bootstrap initializes maintainers and policy state. Issuer membership uses
-  proposal, approval, and activation; it has no direct-create exception.
+- Bootstrap initializes maintainers and policy state. Issuer, verifier,
+  auditor, and recognition membership use proposal, approval, and activation;
+  none has a direct-create exception.
 
 ## Consequences
 
@@ -56,8 +57,8 @@ status and event roots. Sets and family lists are sorted and duplicates are
 rejected. All thresholds must fit the current Compact five-signer ceiling.
 Consumers with the source policy record MUST call
 `assertGovernancePolicySnapshotMatchesRecord` rather than trusting a supplied
-`contentCommitment` by shape alone. A record superseded without an explicit
-Superseding a policy requires an explicit `effectiveUntil`; a zero-length
+`contentCommitment` by shape alone. A superseded policy record requires an
+explicit `effectiveUntil`; a zero-length
 window remains representable when the boundary is explicit.
 V1 snapshot timestamps allow no more than millisecond precision: extra
 fractional digits are rejected rather than silently truncated by JavaScript

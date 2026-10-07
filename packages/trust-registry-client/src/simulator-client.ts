@@ -29,7 +29,17 @@ type SimulatorBundleVerificationOptions = Omit<
 >;
 
 export class TrustRegistrySimulatorClient {
-  constructor(readonly simulator: TrustRegistrySimulator) {}
+  constructor(readonly simulator: TrustRegistrySimulator) {
+    this.requireSupportedLedger();
+  }
+
+  private requireSupportedLedger(): ReturnType<TrustRegistrySimulator["getLedger"]> {
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
+    }
+    return ledger;
+  }
 
   getIssuerAuthorizationById(
     authorizationId: string | Uint8Array,
@@ -181,11 +191,8 @@ export class TrustRegistrySimulatorClient {
     BundleVerificationOptions,
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
+    const ledger = this.requireSupportedLedger();
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
-    const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 1n) {
-      throw new Error("Unsupported trust registry format");
-    }
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
       throw new Error("Bundle policy version is invalid");
