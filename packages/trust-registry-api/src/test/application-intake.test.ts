@@ -113,6 +113,18 @@ describe("challenge-backed application intake", () => {
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
   });
 
+  it("normalizes uppercase challenge hex without losing one-time-use semantics", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash.toUpperCase().replace("0X", "0x"));
+
+    const proposal = await consumeChallengeAndSubmitApplication(input);
+    expect(proposal.evidence.envelope.challengeHash).toBe(issued.challengeHash);
+    expect(input.propose).toHaveBeenCalledOnce();
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
+  });
+
   it("does not consume on a failed VP binding, but spends a challenge after signing fails", async () => {
     const binding = bindingFor("issuer");
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);

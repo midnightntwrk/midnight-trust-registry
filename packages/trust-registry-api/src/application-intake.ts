@@ -65,7 +65,8 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   if (!hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) {
     throw new Error("Application challenge nonce or hash is invalid");
   }
-  const challengeInput = { binding, nonce: input.nonce, challengeHash: input.challengeHash };
+  const challengeHash = input.challengeHash.toLowerCase();
+  const challengeInput = { binding, nonce: input.nonce, challengeHash };
   if (!(await input.challengeService.isLive(challengeInput))) {
     throw new Error("Application challenge is invalid or already consumed");
   }
@@ -95,7 +96,7 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     evidenceVerifierDid: binding.evidenceVerifierDid,
     verifiedAt: verified.verifiedAt,
     expiresAt: verified.expiresAt,
-    challengeHash: input.challengeHash,
+    challengeHash,
     presentationHash: verified.presentationHash,
     claimsCommitment: verified.claimsCommitment,
   });
