@@ -24,8 +24,10 @@ export async function stopChild(child, { graceMs = 2000, hardMs = 4000 } = {}) {
     const onExit = () => finish(false);
     child.once("exit", onExit);
     graceTimer = setTimeout(() => {
-      forced = true;
-      child.kill("SIGKILL");
+      if (!settled && child.exitCode === null && child.signalCode === null) {
+        forced = true;
+        child.kill("SIGKILL");
+      }
     }, graceMs);
     hardTimer = setTimeout(() => {
       child.stdout?.destroy();

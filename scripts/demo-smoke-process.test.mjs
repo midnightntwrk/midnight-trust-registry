@@ -46,6 +46,18 @@ test("a child that ignores SIGTERM reports forced SIGKILL", async () => {
   assert.deepEqual(signals, ["SIGTERM", "SIGKILL"]);
 });
 
+test("an already-exited child is not marked forced at the grace deadline", async () => {
+  const child = fakeChild((process, signal) => {
+    if (signal === "SIGTERM") {
+      process.exitCode = 0;
+      setTimeout(() => process.emit("exit", 0, null), 10);
+    } else {
+      assert.fail("must not send SIGKILL to an exited child");
+    }
+  });
+  assert.deepEqual(await stopChild(child, { graceMs: 5, hardMs: 30 }), { forced: false, timedOut: false });
+});
+
 test("hard timeout reports a potentially orphaned child", async () => {
   const child = fakeChild(() => {});
   assert.deepEqual(await stopChild(child, { graceMs: 5, hardMs: 20 }), { forced: true, timedOut: true });

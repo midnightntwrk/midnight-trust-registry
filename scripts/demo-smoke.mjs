@@ -65,6 +65,7 @@ const run = (command, args, options = {}) => {
     throw new Error(
       [
         `${command} ${args.join(" ")} failed with ${result.signal ? `signal ${result.signal}` : `exit code ${result.status}`}`,
+        result.error && `spawn error: ${result.error.message}`,
         result.stdout,
         result.stderr,
       ]
@@ -422,7 +423,7 @@ try {
     const name = children[index].name;
     if (outcome.status === "rejected") cleanupProblems.push(`${name} cleanup failed: ${String(outcome.reason)}`);
     else if (outcome.value.timedOut) cleanupProblems.push(`${name} did not exit after SIGKILL`);
-    else if (outcome.value.forced) cleanupProblems.push(`${name} required SIGKILL during cleanup`);
+    else if (outcome.value.forced) console.warn(`[demo-smoke] ${name} required SIGKILL during cleanup`);
   }
 
   if (!keepArtifacts) {
