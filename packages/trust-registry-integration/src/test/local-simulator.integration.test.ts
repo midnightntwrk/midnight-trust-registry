@@ -628,6 +628,7 @@ describe("trust registry local simulator integration", () => {
     const issuer = createIssuerScenarioFixture("format-boundary");
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    harness.publishRegistryEpoch();
     const applicationInput = {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
@@ -651,6 +652,7 @@ describe("trust registry local simulator integration", () => {
       throw new Error("Issuer record read should not precede the format gate");
     });
     try {
+      expect(() => harness.publishRegistryEpoch()).toThrow(/Unsupported trust registry format/);
       expect(() => harness.createApplicationEvidence(applicationInput)).toThrow(/Unsupported trust registry format/);
       expect(() => harness.assertApplicationEvidence({
         ...applicationInput,
