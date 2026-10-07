@@ -256,6 +256,9 @@ const assertIssuerStatusPolicyBinding = (
   if (bundle.statusPolicyBinding === undefined) {
     throw new Error("Issuer status policy binding preimage is missing");
   }
+  if (bundle.authorization.statusPolicyBindingCommitment === undefined) {
+    throw new Error("Issuer status policy binding commitment is missing");
+  }
   assertIssuerStatusPolicyBindingMatchesAuthorization(
     bundle.statusPolicyBinding,
     bundle.registryId,
