@@ -55,18 +55,27 @@ export type ApplicationVpVerifierResult = {
 /** Only trusted family code may construct proof body roots or make these eligibility assertions. */
 export type ApplicationVpFamilyAdapter<Submission> = {
   prepare(submission: Submission): Promise<ApplicationVpMaterial>;
+  /** Verify family claims, holder, status, and expiry against the signed credential body root. */
+  assertCredentialBodyBinding(material: ApplicationVpMaterial): Promise<true>;
   assertIssuerEligible(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<true>;
   assertStatusActive(material: ApplicationVpMaterial): Promise<{ validUntilMs: number }>;
   /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
-  assertRoleClaims(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<{
+  assertRoleClaims(material: ApplicationVpMaterial): Promise<{
     claimsCommitment: string;
     scopeCommitment: string;
   }>;
 };
 
 export class ApplicationVpVerificationError extends Error {
-  constructor(readonly category: "invalid_presentation" | "ineligible" | "expired") {
+  constructor(readonly category: "invalid_presentation" | "ineligible" | "expired" | "unavailable") {
     super(`Application VP ${category}`);
+  }
+}
+
+/** Trusted adapters use this for retryable resolver/status infrastructure failures. */
+export class ApplicationVpDependencyUnavailableError extends Error {
+  constructor() {
+    super("Application VP dependency unavailable");
   }
 }
 
@@ -86,7 +95,10 @@ export async function verifyApplicationVp<Submission>(input: {
   let material: ApplicationVpMaterial;
   try {
     material = await input.family.prepare(input.submission);
-  } catch {
+  } catch (error) {
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
   if (material === null || typeof material !== "object") {
@@ -111,7 +123,10 @@ export async function verifyApplicationVp<Submission>(input: {
   try {
     const proofTime = material.presentationProof.createdAt;
     const now = BigInt(input.evaluatedAtMs);
-    if (proofTime > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS) || proofTime < now - BigInt(MAX_PRESENTATION_AGE_MS)) {
+    if (proofTime > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS)) {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+    if (proofTime < now - BigInt(MAX_PRESENTATION_AGE_MS)) {
       throw new ApplicationVpVerificationError("expired");
     }
     if (material.credentialProof.createdAt > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS)) {
@@ -122,16 +137,25 @@ export async function verifyApplicationVp<Submission>(input: {
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
 
+  const guardedResolver: Pick<MidnightDIDResolverInterface, "resolveResult"> = {
+    resolveResult: async (did) => {
+      try {
+        return await input.resolver.resolveResult(did);
+      } catch {
+        throw new ApplicationVpDependencyUnavailableError();
+      }
+    },
+  };
   try {
     const [issuerMethod, holderMethod] = await Promise.all([
       resolveMidnightDIDMethodBinding({
-        resolver: input.resolver,
+        resolver: guardedResolver,
         did: parseMidnightDIDString(material.issuerDid),
         verificationMethodId: material.issuerMethodId,
         relationship: "assertionMethod",
       }),
       resolveMidnightDIDMethodBinding({
-        resolver: input.resolver,
+        resolver: guardedResolver,
         did: parseMidnightDIDString(material.subjectDid),
         verificationMethodId: material.holderMethodId,
         relationship: "authentication",
@@ -152,11 +176,17 @@ export async function verifyApplicationVp<Submission>(input: {
       material.presentationProof,
     );
     pureCircuits.assertValidRegistryBoundStatusBinding(material.statusBinding);
+    if (await input.family.assertCredentialBodyBinding(material) !== true) {
+      throw new Error("Credential body binding failed");
+    }
     presentationHash = sha256Hex(pureCircuits.presentationProofPayloadRoot(
       material.presentationBodyRoot,
       material.presentationProof,
     ));
-  } catch {
+  } catch (error) {
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
 
@@ -170,13 +200,16 @@ export async function verifyApplicationVp<Submission>(input: {
     if (!validTime(status.validUntilMs) || status.validUntilMs <= input.evaluatedAtMs) {
       throw new ApplicationVpVerificationError("expired");
     }
-    const claims = await input.family.assertRoleClaims(material, scope.data);
+    const claims = await input.family.assertRoleClaims(material);
     claimsCommitment = HashHexSchema.parse(claims.claimsCommitment).toLowerCase();
     if (HashHexSchema.parse(claims.scopeCommitment).toLowerCase() !== computeAuthorizationScopeCommitment(scope.data)) {
       throw new ApplicationVpVerificationError("ineligible");
     }
   } catch (error) {
     if (error instanceof ApplicationVpVerificationError) throw error;
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
     throw new ApplicationVpVerificationError("ineligible");
   }
   const expiresAtMs = Math.min(
