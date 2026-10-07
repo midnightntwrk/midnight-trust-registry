@@ -1,13 +1,13 @@
 # Issuer Status Policy Binding V1
 
-Status: canonical off-ledger preimage and fixed vector; **not yet a governed
-ledger anchor or supported VC status decision**. Tracks #90 and #76.
+Status: governed issuer-authorization commitment and authenticated evidence
+preimage; **not yet a supported VC status decision**. Tracks #90 and #76.
 
 An issuer authorization that permits credential issuance needs an accepted
-status registry and authority. Neither the current evidence bundle's
-`referencedStatusRegistryId` nor its status-policy URI is in the signed issuer
-authorization leaf. A relying party MUST NOT treat those hints as governance
-evidence or let a federation publisher signature authenticate them by proxy.
+status registry and authority. The old evidence-bundle
+`referencedStatusRegistryId` and status-policy URI are not governance evidence.
+The issuer verifier rejects those hints rather than letting a federation
+publisher signature authenticate them by proxy.
 
 `IssuerStatusPolicyBindingSchema` is the strict V1 preimage. It binds:
 
@@ -26,12 +26,20 @@ status policy's operative rules and any published URI; a mutable URI alone is
 not an authority claim. The reference test fixes the vector
 `0x017aa24b5830dd91bb75baf2dc6306316fb45da1f2f79b77d1bbc574589510a8`.
 
-This digest is meaningful only after a governed issuer transition signs and
-stores it, historical evidence includes it in the authenticated leaf, and a
-client verifies the supplied preimage against that leaf. A verifier must also
-resolve the accepted status-authority method at the relevant decision state
-and validate the status proof, freshness, and non-revocation against an
-authenticated status-registry state. The current VC status-registry package
-documents prototype authority and root-verification limitations, so this
-encoder alone does not enable a supported status claim or restore federation
-status metadata.
+The issuer proposal signs the digest as part of its action payload and stores
+it on the ledger. Subsequent lifecycle transitions retain the same digest.
+The epoch statement leaf includes it for current and historical evidence.
+The issuer bundle carries the preimage; the client first verifies the epoch
+and statement leaf, then requires the preimage's registry and authorization
+IDs and recomputed digest to match the governed record. Missing, substituted,
+or unanchored status metadata fails closed. A changed status policy requires
+a new governed issuer authorization rather than silently editing an active
+record.
+
+This authenticates the accepted registry and authority *identifier*, not a
+credential's live status. A verifier must still resolve the status-authority
+DID method at the relevant decision state and validate the status proof,
+freshness, and non-revocation against an authenticated status-registry state.
+The current VC status-registry package documents prototype authority and
+root-verification limitations, so this binding alone does not enable a
+supported non-revocation decision or restore a federation status claim.

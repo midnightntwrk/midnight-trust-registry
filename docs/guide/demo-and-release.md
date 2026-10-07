@@ -150,9 +150,12 @@ Current VC baseline is `@midnight-ntwrk/credential-compact@0.2.0` and
 `@midnight-ntwrk/credential-did-midnight@0.2.0` from npm. The retired private
 VC/status package tarballs are not supported. VC `0.2.0` does not include the
 old status-helper API; live status-registry evidence needs a separate adapter.
-The evidence bundle's `referencedStatusRegistryId` is not included in the
-signed authorization leaf. Consumers must not use it alone to accept a VC
-status authority or non-revocation claim.
+Issuer evidence now includes a governed status-policy commitment in its signed
+authorization leaf and a client-verified preimage naming the accepted registry
+and authority method. The legacy `referencedStatusRegistryId` hint is rejected
+for issuer decisions. This does not prove a credential is unrevoked: a separate
+adapter must verify status-authority DID state and a fresh authenticated VC
+status proof before consumers accept a non-revocation claim.
 
 Refresh the published DID and VC versions with validation:
 

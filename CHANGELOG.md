@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authorization cannot emit a lifecycle or epoch event without its transition
 - reject incompatible contract formats before simulator evidence, status, and
   raw client record reads
+- bound the issuer status-registry, authority-method, and status-policy choice
+  to a governed ledger commitment and epoch-authenticated issuer evidence;
+  reject missing or substituted preimages without claiming live VC status
 - require exactly one epoch maintainer signature in the pre-release evidence
   bundle schema, matching the signature persisted by the format-one contract;
   multi-signature prototype bundles are not accepted. Malformed encoding now
