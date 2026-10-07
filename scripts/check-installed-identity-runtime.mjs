@@ -9,6 +9,7 @@ import yaml from "js-yaml";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeName = "@midnight-ntwrk/compact-runtime";
 const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+const runtimeSections = ["dependencies", "peerDependencies"];
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const declarations = (manifest, name) => sections.flatMap((section) =>
   manifest[section]?.[name] === undefined ? [] : [`${section}: ${manifest[section][name]}`]);
@@ -42,8 +43,7 @@ export function checkInstalledIdentityRuntime(directory = root) {
     .filter(([name]) => name.startsWith("@midnight-ntwrk/") && !name.includes("trust-registry"));
   if (identities.length === 0) throw new Error("no root identity dependencies found");
   const identityNames = new Set(identities.map(([name]) => name));
-  const runtimeDeclarers = new Set();
-  const missingRuntime = [];
+  const installed = new Map();
 
   if (overrides[runtimeName] !== undefined && overrides[runtimeName] !== runtimePin) {
     throw new Error(`Compact runtime override ${overrides[runtimeName]} does not match ${runtimePin}`);
@@ -59,40 +59,67 @@ export function checkInstalledIdentityRuntime(directory = root) {
       throw new Error(`${name} installed ${manifest.version} does not match ${pinnedVersion}`);
     }
     const declared = declarations(manifest, runtimeName);
-    if (declared.length === 0) {
-      missingRuntime.push([name, manifest, manifestPath]);
-      continue;
-    }
     if (declared.some((value) => !value.endsWith(`: ${runtimePin}`))) {
       throw new Error(`${name} declares Compact runtime ${declared.join(", ")}, expected ${runtimePin}`);
     }
-    const installedRuntime = resolvedPackageManifest(manifestPath, runtimeName).version;
-    if (installedRuntime !== runtimePin) {
-      throw new Error(`${name} resolves Compact runtime ${installedRuntime}, expected ${runtimePin}`);
+    const directRuntime = runtimeSections.some((section) => manifest[section]?.[runtimeName] !== undefined);
+    if (directRuntime) {
+      const installedRuntime = resolvedPackageManifest(manifestPath, runtimeName).version;
+      if (installedRuntime !== runtimePin) {
+        throw new Error(`${name} resolves Compact runtime ${installedRuntime}, expected ${runtimePin}`);
+      }
     }
-    runtimeDeclarers.add(name);
+    installed.set(name, { manifest, manifestPath, directRuntime });
   }
 
-  for (const [name, manifest, manifestPath] of missingRuntime) {
-    const delegates = Object.keys(manifest.dependencies ?? {})
-      .filter((dependency) => identityNames.has(dependency) && runtimeDeclarers.has(dependency));
+  const verified = new Set();
+  const verifyDelegation = (name, visiting = new Set()) => {
+    if (verified.has(name)) return;
+    if (visiting.has(name)) throw new Error(`${name} has a cyclic identity runtime delegation`);
+    const entry = installed.get(name);
+    if (entry.directRuntime) {
+      verified.add(name);
+      return;
+    }
+    const delegates = runtimeSections.flatMap((section) => Object.entries(entry.manifest[section] ?? {}))
+      .filter(([dependency]) => identityNames.has(dependency));
     if (delegates.length === 0) {
       throw new Error(`${name} neither declares Compact runtime nor delegates to a verified identity package`);
     }
-    for (const delegate of delegates) {
-      const installedDelegate = resolvedPackageManifest(manifestPath, delegate);
+    visiting.add(name);
+    for (const [delegate, declaredVersion] of delegates) {
+      if (declaredVersion !== rootManifest.dependencies[delegate]) {
+        throw new Error(`${name} declares ${delegate}@${declaredVersion}, expected ${rootManifest.dependencies[delegate]}`);
+      }
+      const installedDelegate = resolvedPackageManifest(entry.manifestPath, delegate);
       if (installedDelegate.version !== rootManifest.dependencies[delegate]) {
         throw new Error(`${name} resolves ${delegate}@${installedDelegate.version}, expected ${rootManifest.dependencies[delegate]}`);
       }
+      verifyDelegation(delegate, visiting);
     }
-  }
-  return { runtimePin, identityCount: identities.length };
+    visiting.delete(name);
+    try {
+      const resolvedRuntime = resolvedPackageManifest(entry.manifestPath, runtimeName).version;
+      if (resolvedRuntime !== runtimePin) {
+        throw new Error(`${name} resolves Compact runtime ${resolvedRuntime}, expected ${runtimePin}`);
+      }
+    } catch (error) {
+      if (error.code !== "MODULE_NOT_FOUND") throw error;
+    }
+    verified.add(name);
+  };
+  for (const [name] of identities) verifyDelegation(name);
+  return {
+    runtimePin,
+    identityCount: identities.length,
+    directRuntimeCount: [...installed.values()].filter((entry) => entry.directRuntime).length,
+  };
 }
 
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
     const result = checkInstalledIdentityRuntime();
-    console.log(`Installed identity runtime ${result.runtimePin} verified for ${result.identityCount} packages`);
+    console.log(`Installed identity runtime ${result.runtimePin}: ${result.identityCount} identity packages checked, ${result.directRuntimeCount} direct runtime declarations`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

@@ -43,7 +43,19 @@ function withFixture(run) {
 }
 
 test("peer runtime and verified umbrella delegation pass", () => withFixture(({ root }) => {
-  assert.deepEqual(checkInstalledIdentityRuntime(root), { runtimePin: pin, identityCount: 2 });
+  assert.deepEqual(checkInstalledIdentityRuntime(root), { runtimePin: pin, identityCount: 2, directRuntimeCount: 1 });
+}));
+
+test("peer dependency may delegate through a second umbrella", () => withFixture(({ root, save, put, rootManifest, umbrellaManifest, overrides }) => {
+  const middle = `${scope}/midnight-did-domain`;
+  rootManifest.dependencies[middle] = "0.7.0";
+  overrides[middle] = "0.7.0";
+  umbrellaManifest.dependencies = {};
+  umbrellaManifest.peerDependencies = { [middle]: "0.7.0" };
+  save();
+  put(`node_modules/${middle}/package.json`, { name: middle, version: "0.7.0", dependencies: { [leaf]: "0.7.0" } });
+  put(`node_modules/${middle}/index.js`, "module.exports = {};\n");
+  assert.deepEqual(checkInstalledIdentityRuntime(root), { runtimePin: pin, identityCount: 3, directRuntimeCount: 1 });
 }));
 
 test("package export maps need not expose package.json", () => withFixture(({ root, save, leafManifest }) => {
@@ -78,6 +90,19 @@ test("missing runtime without a verified delegate fails", () => withFixture(({ r
   delete leafManifest.peerDependencies;
   save();
   assert.throws(() => checkInstalledIdentityRuntime(root), /neither declares Compact runtime nor delegates/);
+}));
+
+test("dev-only runtime is not a production declaration", () => withFixture(({ root, save, leafManifest }) => {
+  delete leafManifest.peerDependencies;
+  leafManifest.devDependencies = { [runtime]: pin };
+  save();
+  assert.throws(() => checkInstalledIdentityRuntime(root), /neither declares Compact runtime nor delegates/);
+}));
+
+test("umbrella cannot hide a drifted hoisted runtime", () => withFixture(({ root, put }) => {
+  put(`node_modules/${umbrella}/node_modules/${runtime}/package.json`, { name: runtime, version: "0.15.0" });
+  put(`node_modules/${umbrella}/node_modules/${runtime}/index.js`, "module.exports = {};\n");
+  assert.throws(() => checkInstalledIdentityRuntime(root), /resolves Compact runtime 0\.15\.0/);
 }));
 
 test("umbrella must resolve the verified delegate version", () => withFixture(({ root, put }) => {
