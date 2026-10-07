@@ -2083,6 +2083,7 @@ export class LocalTrustRegistryIntegrationHarness {
     lifecycleEventRoot: string;
     statementStatus: string;
   }): EpochCommitment {
+    this.assertSupportedContractFormat();
     const epochId = createScopedIdentifier(
       "epoch",
       this.registryId,
@@ -2155,6 +2156,7 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    const ledger = this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.ensurePublishedEpochCommitment({
       statementId,
@@ -2164,7 +2166,7 @@ export class LocalTrustRegistryIntegrationHarness {
         statementStatus: this.registryRecord.status,
         lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       }),
-      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lastStatusSequence: ledger.governanceActionCount,
       lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       statementStatus: this.registryRecord.status,
     });
