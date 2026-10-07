@@ -62,6 +62,7 @@ describe("application challenge lifecycle", () => {
     expect(records[0]).toEqual({
       challengeHash: first.challengeHash,
       bindingHash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      applicationHash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
       expiresAtMs: START + 5 * 60 * 1000,
     });
     expect(JSON.stringify(records)).not.toContain(first.nonce);
@@ -96,14 +97,21 @@ describe("application challenge lifecycle", () => {
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
-  it("keeps distinct full bindings live even when the application id matches", async () => {
+  it("supersedes a prior challenge when the same application changes scope or resource", async () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const otherScope = { ...scope, schemaVersion: "2.0.0" };
     const otherBinding = { ...binding, scope: otherScope, scopeCommitment: computeAuthorizationScopeCommitment(otherScope) };
     const first = await service.issue(binding);
     const second = await service.issue(otherBinding);
-    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
     expect(await service.consume({ binding: otherBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+
+    const family = await service.issue(binding);
+    const schemaBinding = { ...binding, governedResource: { type: "schema" as const, id: scope.schemaId } };
+    const schema = await service.issue(schemaBinding);
+    expect(await service.consume({ binding, nonce: family.nonce, challengeHash: family.challengeHash })).toBeNull();
+    expect(await service.consume({ binding: schemaBinding, nonce: schema.nonce, challengeHash: schema.challengeHash }))
+      .toBe(schema.challengeHash);
   });
 
   it("checks every issuer resource type without replacing the scope commitment", async () => {
@@ -235,6 +243,7 @@ describe("application challenge lifecycle", () => {
     const record = {
       challengeHash: `0x${"a".repeat(64)}`,
       bindingHash: `0x${"b".repeat(64)}`,
+      applicationHash: `0x${"c".repeat(64)}`,
       expiresAtMs: START + 1,
     };
     expect(await store.insert(record, START)).toBe(true);
@@ -272,6 +281,7 @@ describe("application challenge lifecycle", () => {
     await expect(store.insert({
       challengeHash: `0x${"a".repeat(64)}`,
       bindingHash: `0x${"b".repeat(64)}`,
+      applicationHash: `0x${"c".repeat(64)}`,
       expiresAtMs: START + 2_147_483_648,
     }, START)).rejects.toThrow(/timer range/);
   });

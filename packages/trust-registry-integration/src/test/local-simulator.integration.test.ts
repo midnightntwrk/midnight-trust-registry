@@ -44,6 +44,10 @@ describe("trust registry local simulator integration", () => {
       const issuer = createIssuerScenarioFixture(`resource-${resourceType}`, resourceType);
       expect(() => harness.proposeIssuer(issuer)).not.toThrow();
       const scope = createIssuerAuthorizationScopeFixture(issuer);
+      const governedResource = {
+        type: (["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const)[resourceType]!,
+        id: issuer.resourceId,
+      };
       expect(() => harness.proposeIssuerWithApplicationEvidence(
         issuer,
         harness.createApplicationEvidence({
@@ -51,9 +55,14 @@ describe("trust registry local simulator integration", () => {
           subjectDid: issuer.subjectDid,
           role: "issuer",
           scope,
+          governedResource,
         }),
         [],
-        { scope: { ...scope, statusMethod: "substituted-method" }, challengeHash: sha256Hex("unused") },
+        {
+          scope: { ...scope, statusMethod: "substituted-method" },
+          challengeHash: sha256Hex("unused"),
+          governedResource,
+        },
       )).toThrow(/proposal scope does not match/);
     }
   });

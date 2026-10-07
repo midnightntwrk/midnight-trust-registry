@@ -61,6 +61,7 @@ following fields are required before canonical serialization:
   "policyId": "tr:policy:membership",
   "policyVersion": "v1",
   "scopeCommitment": "0x...32-byte-hex...",
+  "governedResource": { "type": "credentialFamily", "id": "credential-family:acme:v1" },
   "evidenceVerifierDid": "did:midnight:...",
   "verifiedAt": "2026-07-27T00:00:00Z",
   "expiresAt": "2027-07-27T00:00:00Z",
@@ -74,6 +75,9 @@ following fields are required before canonical serialization:
 not the VP or claim values. `scopeCommitment` binds the role-specific issuer,
 verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 `Z` suffix. Hex values are lowercase and encode exactly 32 bytes.
+The governed resource type and ID are signed separately because one issuer
+scope can authorize several resource kinds. Proposal intake MUST compare both
+fields against the proposed resource, not only the scope commitment.
 
 The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
@@ -103,8 +107,9 @@ is bound to that exact nonce and the applicant DID before consuming it. The
 envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
 textual hex representation.
 
-The off-ledger challenge store retains only `challengeHash`, an expiry, and a
-domain-separated commitment to registry id, application id, subject DID,
+The off-ledger challenge store retains only `challengeHash`, an expiry, a
+registry/application identity hash for replacement, and a domain-separated
+binding commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, governed resource type/id, and
 scope commitment. It MUST
 derive or validate the scope commitment against the versioned canonical
@@ -118,8 +123,9 @@ profile, or maintainer registry. Its identifier is not the scope commitment.
 The scope object is not stored in the challenge record, but is supplied again
 when the challenge is consumed and checked against the same commitment. It MUST
 perform collision-safe insertion, replacement of an earlier live challenge
-for the same binding, and check-and-delete atomically across all API replicas.
-The newest challenge supersedes the old one for that binding. Any future public
+for the same registry/application pair, and check-and-delete atomically across
+all API replicas. The newest challenge supersedes the old one even if the
+scope or governed resource changes. Any future public
 issuance route MUST authenticate the applicant before it permits replacement;
 otherwise a third party could invalidate the applicant's outstanding challenge.
 Consumption succeeds only

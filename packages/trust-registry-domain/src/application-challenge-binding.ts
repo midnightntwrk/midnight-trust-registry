@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ApplicationEvidenceRoleSchema } from "./application-evidence.js";
+import { ApplicationEvidenceRoleSchema, GovernedResourceSchema } from "./application-evidence.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 import { AuthorizationScopeSchema, computeAuthorizationScopeCommitment } from "./scope.js";
 
@@ -8,19 +8,6 @@ const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
   "Challenge identifier must be canonical lowercase",
 );
-const GovernedResourceSchema = z.strictObject({
-  type: z.enum([
-    "credentialFamily",
-    "schema",
-    "schemaVersion",
-    "credentialDefinition",
-    "statusMethodRequirement",
-    "requestProfile",
-    "registry",
-  ]),
-  id: z.string().min(1),
-});
-
 export const ApplicationChallengeBindingSchema = z.strictObject({
   registryId: CanonicalIdentifierSchema,
   applicationId: CanonicalIdentifierSchema,

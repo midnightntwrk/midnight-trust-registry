@@ -57,6 +57,7 @@ import {
   type AuthorizationRecord,
   type IssuerStatusPolicyBinding,
   type GovernancePolicyRecord,
+  type GovernedResource,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
   assertGovernancePolicyRevision,
@@ -122,6 +123,25 @@ const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 export type ApplicationEvidenceExpectation = {
   scope: AuthorizationScope;
   challengeHash: string;
+  governedResource: GovernedResource;
+};
+
+const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
+  if (scope.role === "issuer") return { type: "credentialFamily", id: scope.credentialFamilyId };
+  if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
+  return { type: "requestProfile", id: scope.requestProfileId };
+};
+
+const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
+  const type = ([
+    "credentialFamily",
+    "schema",
+    "schemaVersion",
+    "credentialDefinition",
+    "statusMethodRequirement",
+  ] as const)[fixture.resourceType];
+  if (type === undefined) throw new Error("Issuer resource type is invalid");
+  return { type, id: fixture.resourceId };
 };
 
 const bytes32Hex = (value: Uint8Array): string =>
@@ -303,6 +323,7 @@ export class LocalTrustRegistryIntegrationHarness {
     subjectDid: string;
     role: ApplicationEvidenceRole;
     scope: AuthorizationScope;
+    governedResource?: GovernedResource;
   }): ApplicationEvidenceSubmission {
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
@@ -317,6 +338,7 @@ export class LocalTrustRegistryIntegrationHarness {
       policyId: this.policyId,
       policyVersion: this.policyRecord.version,
       scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      governedResource: input.governedResource ?? defaultGovernedResource(scope),
       evidenceVerifierDid: this.evidenceVerifier.did,
       verifiedAt,
       expiresAt,
@@ -375,6 +397,7 @@ export class LocalTrustRegistryIntegrationHarness {
     role: ApplicationEvidenceRole;
     scope: AuthorizationScope;
     challengeHash?: string;
+    governedResource?: GovernedResource;
   }): Uint8Array {
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
@@ -389,6 +412,7 @@ export class LocalTrustRegistryIntegrationHarness {
         policyId: this.policyId,
         policyVersion: this.policyRecord.version,
         scopeCommitment: computeAuthorizationScopeCommitment(scope),
+        governedResource: input.governedResource ?? defaultGovernedResource(scope),
         challengeHash: input.challengeHash ?? sha256Hex(`challenge:${input.applicationId}`),
         evaluatedAt: timestampForSequence(ledger.governanceActionCount),
       },
@@ -725,9 +749,15 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: ApplicationEvidenceExpectation = {
       scope: createMaintainerAuthorizationScopeFixture(this.registryId),
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
     },
   ): Uint8Array {
-    if (expectedEvidence.scope.role !== "maintainer" || expectedEvidence.scope.registryId !== this.registryId) {
+    if (
+      expectedEvidence.scope.role !== "maintainer" ||
+      expectedEvidence.scope.registryId !== this.registryId ||
+      expectedEvidence.governedResource.type !== "registry" ||
+      expectedEvidence.governedResource.id !== this.registryId
+    ) {
       throw new Error("Maintainer proposal scope does not match governed registry");
     }
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
@@ -866,6 +896,7 @@ export class LocalTrustRegistryIntegrationHarness {
         subjectDid: fixture.subjectDid,
         role: "issuer",
         scope: createIssuerAuthorizationScopeFixture(fixture),
+        governedResource: issuerGovernedResource(fixture),
       }),
       additionalMaintainers,
     );
@@ -878,10 +909,13 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: ApplicationEvidenceExpectation = {
       scope: createIssuerAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: issuerGovernedResource(fixture),
     },
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "issuer" ||
+      expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
+      expectedEvidence.governedResource.id !== fixture.resourceId ||
       ([
         expectedEvidence.scope.credentialFamilyId,
         expectedEvidence.scope.schemaId,
@@ -1061,10 +1095,13 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: ApplicationEvidenceExpectation = {
       scope: createVerifierAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
     },
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "verifier" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createVerifierAuthorizationScopeFixture(fixture))
     ) {
@@ -1308,10 +1345,13 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: ApplicationEvidenceExpectation = {
       scope: createAuditorAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
     },
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "auditor" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createAuditorAuthorizationScopeFixture(fixture))
     ) {

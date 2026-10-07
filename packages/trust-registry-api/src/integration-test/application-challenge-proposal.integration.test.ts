@@ -102,6 +102,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
     const expected = {
       scope: binding.scope,
       challengeHash: issued.challengeHash,
+      governedResource: binding.governedResource,
     };
     expect(binding.scopeCommitment).not.toBe(sha256Hex(binding.governedResource.id));
     const verifyPresentation = vi.fn(async (presentation: unknown, _nonce: string, _subjectDid: string) => ({
@@ -191,6 +192,13 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         : { ...binding.scope, requestProfileId: "request-profile:other" };
     expect(() => propose(signedEvidence, { ...expected, scope: wrongResourceScope })).toThrow(/proposal scope does not match/);
     if (role === "issuer" && binding.scope.role === "issuer") {
+      const schemaVersion = binding.scope.schemaVersion;
+      expect(() => propose(signedEvidence, {
+        ...expected,
+        governedResource: { type: "schemaVersion", id: schemaVersion },
+      })).toThrow(/proposal scope does not match/);
+    }
+    if (role === "issuer" && binding.scope.role === "issuer") {
       for (const field of ["schemaId", "credentialDefinitionId"] as const) {
         const scope = { ...binding.scope, [field]: `${field}:substituted` };
         expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
@@ -243,5 +251,43 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       presentation: { ...input.presentation, proofNonce: expired.nonce },
     })).rejects.toThrow(/invalid or already consumed/);
     expect(proposeWithEvidence).toHaveBeenCalledOnce();
+  });
+
+  it("cannot redeem an issuer schema-version challenge for a credential-family proposal", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const { binding, propose } = scenario("issuer", harness);
+    if (binding.scope.role !== "issuer") throw new Error("Expected issuer scope");
+    const schemaBinding = ApplicationChallengeBindingSchema.parse({
+      ...binding,
+      governedResource: { type: "schemaVersion", id: binding.scope.schemaVersion },
+    });
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(schemaBinding);
+    await expect(consumeChallengeAndSubmitApplication({
+      challengeService: service,
+      binding: schemaBinding,
+      expectedBinding: schemaBinding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+      presentation: { proofNonce: issued.nonce, proofSubjectDid: binding.subjectDid },
+      verifyPresentation: async (presentation: unknown) => ({
+        nonce: (presentation as { proofNonce: string }).proofNonce,
+        subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
+        presentationHash: `0x${"2".repeat(64)}`,
+        claimsCommitment: `0x${"3".repeat(64)}`,
+        verifiedAt: VERIFIED_AT,
+        expiresAt: EXPIRES_AT,
+      }),
+      signEvidence: async (commitment) => harness.signApplicationEvidenceCommitment(commitment),
+      authorizedVerifiers: [harness.evidenceVerifier],
+      verifyEvidenceSignature: (commitment, signature, verifier) =>
+        harness.verifyApplicationEvidenceSignature(commitment, signature, verifier),
+      evaluatedAt: VERIFIED_AT,
+      propose: async ({ evidence }) => propose(evidence, {
+        scope: schemaBinding.scope,
+        challengeHash: issued.challengeHash,
+        governedResource: schemaBinding.governedResource,
+      }),
+    })).rejects.toThrow(/proposal scope does not match/);
   });
 });

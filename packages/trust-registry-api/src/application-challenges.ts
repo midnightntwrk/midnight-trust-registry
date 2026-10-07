@@ -29,10 +29,11 @@ export function hasMatchingApplicationChallengeHash(nonce: string, challengeHash
 export type ApplicationChallengeRecord = {
   challengeHash: string;
   bindingHash: string;
+  applicationHash: string;
   expiresAtMs: number;
 };
 
-/** A production adapter must atomically replace the live challenge for a binding and check-and-delete on consume. */
+/** A production adapter must atomically replace the live challenge for an application and check-and-delete on consume. */
 export interface ApplicationChallengeStore {
   insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean>;
   consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
@@ -47,7 +48,7 @@ export class ApplicationChallengeCapacityError extends Error {
 /** Process-local reference adapter with bounded capacity and idle expiry. */
 export class InMemoryApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly records = new Map<string, { record: ApplicationChallengeRecord; timer: NodeJS.Timeout }>();
-  private readonly bindingHashes = new Map<string, string>();
+  private readonly applicationHashes = new Map<string, string>();
 
   constructor(private readonly maxEntries = MAX_IN_MEMORY_CHALLENGES) {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
@@ -66,7 +67,7 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       if (nowMs < existing.record.expiresAtMs) return false;
       this.remove(record.challengeHash);
     }
-    const previousHash = this.bindingHashes.get(record.bindingHash);
+    const previousHash = this.applicationHashes.get(record.applicationHash);
     if (previousHash !== undefined) this.remove(previousHash);
     if (this.records.size >= this.maxEntries) {
       for (const [hash, current] of this.records) {
@@ -81,7 +82,7 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     }, delayMs);
     timer.unref();
     this.records.set(record.challengeHash, { record, timer });
-    this.bindingHashes.set(record.bindingHash, record.challengeHash);
+    this.applicationHashes.set(record.applicationHash, record.challengeHash);
     return true;
   }
 
@@ -102,8 +103,8 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     if (current === undefined) return;
     clearTimeout(current.timer);
     this.records.delete(challengeHash);
-    if (this.bindingHashes.get(current.record.bindingHash) === challengeHash) {
-      this.bindingHashes.delete(current.record.bindingHash);
+    if (this.applicationHashes.get(current.record.applicationHash) === challengeHash) {
+      this.applicationHashes.delete(current.record.applicationHash);
     }
   }
 }
@@ -126,11 +127,16 @@ export class ApplicationChallengeService {
     const issuedAtMs = this.now();
     const expiresAtMs = issuedAtMs + CHALLENGE_TTL_MS;
     const bindingHash = computeApplicationChallengeBindingHash(binding);
+    const applicationHash = sha256Hex(JSON.stringify([
+      "tr:application:identity:v1",
+      binding.registryId,
+      binding.applicationId,
+    ]));
 
     for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
       const nonceBytes = randomBytes(NONCE_BYTES);
       const challengeHash = sha256Hex(nonceBytes);
-      if (await this.store.insert({ challengeHash, bindingHash, expiresAtMs }, issuedAtMs)) {
+      if (await this.store.insert({ challengeHash, bindingHash, applicationHash, expiresAtMs }, issuedAtMs)) {
         return {
           nonce: `0x${nonceBytes.toString("hex")}`,
           challengeHash,

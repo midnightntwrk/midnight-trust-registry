@@ -21,6 +21,7 @@ const createSubmission = (): ApplicationEvidenceSubmission => {
     policyId: "policy:kanon:v1",
     policyVersion: "v1",
     scopeCommitment: HASH_A,
+    governedResource: { type: "credentialFamily" as const, id: "credential-family:acme" },
     evidenceVerifierDid: "did:midnight:evidence-verifier:one",
     verifiedAt: "2026-07-27T00:00:00Z",
     expiresAt: "2026-07-28T00:00:00Z",
@@ -47,6 +48,7 @@ const expectation = {
   policyId: "policy:kanon:v1",
   policyVersion: "v1",
   scopeCommitment: HASH_A,
+  governedResource: { type: "credentialFamily" as const, id: "credential-family:acme" },
   challengeHash: HASH_B,
   evaluatedAt: "2026-07-27T12:00:00Z",
 };
@@ -98,6 +100,8 @@ describe("application evidence", () => {
     ["wrong role", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, role: "verifier" as const } }), /role/],
     ["wrong policy", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, policyId: "policy:kanon:v2" } }), /policyId/],
     ["wrong scope", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, scopeCommitment: HASH_B } }), /scopeCommitment/],
+    ["wrong resource type", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "schemaVersion" as const, id: "credential-family:acme" } } }), /governedResource.type/],
+    ["wrong resource id", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "credentialFamily" as const, id: "credential-family:other" } } }), /governedResource.id/],
     ["wrong challenge", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, challengeHash: HASH_C } }), /challengeHash/],
   ])("rejects %s", (_name, mutate, expectedError) => {
     const submission = mutate(createSubmission());
