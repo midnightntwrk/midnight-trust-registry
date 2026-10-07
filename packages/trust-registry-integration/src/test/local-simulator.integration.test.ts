@@ -702,6 +702,29 @@ describe("trust registry local simulator integration", () => {
       },
     })).toThrow("Epoch commitment must include exactly one maintainer signature");
 
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
+      },
+    })).toThrow("Epoch commitment must include exactly one maintainer signature");
+
+    const epochRecord = harness.simulator.getEpochCommitment(
+      bytes32Commitment(bundle.epoch.epochId),
+    );
+    const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+      ...epochRecord,
+      publicationPolicyCommitment: new Uint8Array(32),
+    });
+    try {
+      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(
+        "Epoch publication policy commitment is missing or malformed",
+      );
+    } finally {
+      malformedLedger.mockRestore();
+    }
+
     expect(() =>
       harness.assertPublishedEpochEvidence({
         ...bundle,
@@ -727,7 +750,18 @@ describe("trust registry local simulator integration", () => {
           signature: originalSignature.signature.slice(0, -1),
         }],
       },
-    })).toThrow(/Jubjub signature encoding is invalid/);
+    })).toThrow("Epoch maintainer signature encoding is invalid");
+
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{
+          ...originalSignature,
+          signature: `0x${"00".repeat(96)}`,
+        }],
+      },
+    })).toThrow("Epoch maintainer signature is invalid");
 
     expect(() => harness.assertPublishedEpochEvidence({
       ...bundle,
