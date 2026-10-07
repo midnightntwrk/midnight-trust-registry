@@ -54,6 +54,15 @@ test("rejects an empty reachable module but permits empty unreferenced output", 
   assert.throws(() => collectEmittedModuleAssets(dist, "Test UI"), /Test UI reachable module is empty: app.js/);
 }));
 
+test("rejects whitespace-only reachable modules and imported JSON", () => withDist((dist) => {
+  fs.writeFileSync(path.join(dist, "index.js"), 'import "./app.js";\n');
+  fs.writeFileSync(path.join(dist, "app.js"), "  \n\t");
+  assert.throws(() => collectEmittedModuleAssets(dist, "Test UI"), /reachable module is empty: app.js/);
+  fs.writeFileSync(path.join(dist, "app.js"), 'import data from "./data.json" with { type: "json" };\nconsole.log(data);\n');
+  fs.writeFileSync(path.join(dist, "data.json"), "  \n");
+  assert.throws(() => collectEmittedModuleAssets(dist, "Test UI"), /imported JSON asset is empty: data.json/);
+}));
+
 test("reports a non-2xx UI response with its status", () => {
   assert.throws(() => assertUiIndexResponse({ ok: false, status: 503 }, "applicant portal"), /HTTP 503/);
 });

@@ -60,9 +60,10 @@ overwritten, and cleanup removes only files created by that run.
 An interrupted default run can leave a `run-*` directory under
 `artifacts/trust-registry/demo-smoke/`; inspect those directories before
 manually removing them. The smoke runner never recursively removes a
-user-provided `--workspace` directory. If shutdown needs SIGKILL or cleanup
-fails, the command reports the original failure, cleanup problem, and retained
-artifact path together.
+user-provided `--workspace` directory. If shutdown needs SIGKILL, the command
+warns but still succeeds when the child exits. An unresponsive child or failed
+cleanup fails the command and reports the original failure and any retained
+artifact path.
 
 The main and milestone CI workflows run the same smoke command after
 `./run.sh --light`, so missing build outputs or broken local startup fail from a

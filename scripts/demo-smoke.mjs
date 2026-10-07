@@ -64,7 +64,7 @@ const run = (command, args, options = {}) => {
   if (result.status !== 0) {
     throw new Error(
       [
-        `${command} ${args.join(" ")} failed with ${result.signal ? `signal ${result.signal}` : `exit code ${result.status}`}`,
+        `${command} ${args.join(" ")} ${result.error ? "failed to start" : `failed with ${result.signal ? `signal ${result.signal}` : `exit code ${result.status}`}`}`,
         result.error && `spawn error: ${result.error.message}`,
         result.stdout,
         result.stderr,
@@ -101,6 +101,7 @@ const findFreePort = async () =>
 const waitForHealth = async (url, child) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
+    if (child.launchError) throw child.launchError;
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`demo api exited early with ${describeChildExit(child)}`);
     }
@@ -157,6 +158,7 @@ const requestRawPath = async (url, pathname) =>
 const waitForUi = async (url, child, title, distDir) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
+    if (child.launchError) throw child.launchError;
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`${title} exited early with ${describeChildExit(child)}`);
     }
@@ -265,6 +267,14 @@ for (const target of [workspacePath, snapshotPath]) {
 
 fs.mkdirSync(workspaceDir, { recursive: true });
 
+let apiProcess;
+let stdout = "";
+let stderr = "";
+const uiProcesses = [];
+let primaryError;
+const cleanupProblems = [];
+let retainedWorkspacePath;
+try {
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-cli", "run", "build"]);
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-api", "run", "build"]);
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-admin-console", "run", "build"]);
@@ -296,15 +306,13 @@ const apiArgs = [
   "--port",
   String(port),
 ];
-const apiProcess = spawn("node", apiArgs, {
+apiProcess = spawn("node", apiArgs, {
   cwd: repoRoot,
   env: process.env,
   stdio: ["ignore", "pipe", "pipe"],
 });
 
-let stdout = "";
-let stderr = "";
-const uiProcesses = [];
+apiProcess.on("error", (error) => { apiProcess.launchError = error; });
 apiProcess.stdout.on("data", (chunk) => {
   stdout += String(chunk);
 });
@@ -314,10 +322,6 @@ apiProcess.stderr.on("data", (chunk) => {
 
 const baseUrl = `http://127.0.0.1:${port}`;
 
-let primaryError;
-const cleanupProblems = [];
-let retainedWorkspacePath;
-try {
   const health = await waitForHealth(baseUrl, apiProcess);
   if (health.sourceMode !== "workspace") {
     throw new Error(`expected workspace source mode, got ${health.sourceMode}`);
@@ -404,6 +408,7 @@ try {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const service = { name, child, stdout: "", stderr: "" };
+    child.on("error", (error) => { child.launchError = error; });
     child.stdout.on("data", (chunk) => {
       service.stdout += String(chunk);
     });
@@ -417,7 +422,7 @@ try {
 } catch (error) {
   primaryError = error;
 } finally {
-  const children = [{ name: "api", child: apiProcess }, ...uiProcesses];
+  const children = [...(apiProcess ? [{ name: "api", child: apiProcess }] : []), ...uiProcesses];
   const stopped = await Promise.allSettled(children.map(({ child }) => stopChild(child)));
   for (const [index, outcome] of stopped.entries()) {
     const name = children[index].name;
@@ -467,7 +472,8 @@ if (primaryError !== undefined || cleanupProblems.length > 0) {
       service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
     ]),
     ...cleanupProblems.map((problem) => `[demo-smoke] cleanup: ${problem}`),
-    (fs.existsSync(workspaceDir) || retainedWorkspacePath !== undefined) && `[demo-smoke] artifacts: ${retainedWorkspacePath ?? workspaceDir}`,
+    (keepArtifacts || retainedWorkspacePath !== undefined || (!workspaceDirExisted && fs.existsSync(workspaceDir)))
+      && `[demo-smoke] artifacts: ${retainedWorkspacePath ?? workspaceDir}`,
   ].filter(Boolean).join("\n\n"), { cause: primaryError });
 }
 

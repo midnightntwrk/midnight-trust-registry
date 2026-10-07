@@ -59,11 +59,14 @@ export function collectEmittedModuleAssets(distDir, title) {
   const visit = (modulePath) => {
     if (visited.has(modulePath)) return;
     visited.add(modulePath);
-    if (fs.statSync(modulePath).size === 0) {
+    if (!fs.readFileSync(modulePath, "utf8").trim()) {
       throw new Error(`${title} reachable module is empty: ${path.relative(root, modulePath)}`);
     }
     for (const imported of importsByModule.get(modulePath) ?? []) {
       if (imported.endsWith(".js")) visit(imported);
+      else if (!fs.readFileSync(imported, "utf8").trim()) {
+        throw new Error(`${title} imported JSON asset is empty: ${path.relative(root, imported)}`);
+      }
     }
   };
   visit(indexPath);

@@ -82,3 +82,35 @@ test("never overwrites an explicit workspace file", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("build launch failure cleans default artifacts and reports the spawn cause", () => {
+  const artifactRoot = path.resolve(path.dirname(smokeScript), "../artifacts/trust-registry/demo-smoke");
+  const runs = () => fs.existsSync(artifactRoot)
+    ? fs.readdirSync(artifactRoot).filter((name) => name.startsWith("run-")).sort()
+    : [];
+  const before = runs();
+  const result = spawnSync(process.execPath, [smokeScript], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: "/nonexistent" },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /pnpm .* failed to start/);
+  assert.match(result.stderr, /spawn error:/);
+  assert.doesNotMatch(result.stderr, /exit code null/);
+  assert.deepEqual(runs(), before);
+});
+
+test("failed explicit workspace setup does not report a retained user directory", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tr-demo-workspace-"));
+  try {
+    const result = spawnSync(process.execPath, [smokeScript, "--workspace", path.join(dir, "workspace.json")], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: "/nonexistent" },
+    });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stderr, /\[demo-smoke\] artifacts:/);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
