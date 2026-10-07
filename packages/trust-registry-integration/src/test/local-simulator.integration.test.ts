@@ -53,6 +53,28 @@ describe("trust registry local simulator integration", () => {
         subjectDid: issuer.subjectDid,
         role: "issuer",
         scope,
+        governedResource: { ...governedResource, id: "unapproved-resource" },
+      })).toThrow(/outside the scope/);
+      const validEvidence = harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+        governedResource,
+      });
+      expect(() => harness.assertApplicationEvidence({
+        evidence: validEvidence,
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+        governedResource: { ...governedResource, id: "unapproved-resource" },
+      })).toThrow(/outside the scope/);
+      expect(() => harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
       })).toThrow(/explicit governed resource/);
       expect(() => harness.proposeIssuerWithApplicationEvidence(
         issuer,

@@ -137,20 +137,20 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
 
     await expect(consumeChallengeAndSubmitApplication({
       ...input,
-      expectedBinding: { ...binding, scope: { ...binding.scope, role: role === "issuer" ? "verifier" : "issuer" } } as ApplicationChallengeBinding,
-    })).rejects.toThrow();
+      expectedBinding: { ...binding, subjectDid: "did:midnight:other-applicant" },
+    })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
 
     await expect(consumeChallengeAndSubmitApplication({
       ...input,
-      expectedBinding: { ...binding, applicationId: binding.applicationId.toUpperCase() },
-    })).rejects.toThrow();
+      expectedBinding: { ...binding, applicationId: createScopedIdentifier("application", role, "other") },
+    })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
 
     await expect(consumeChallengeAndSubmitApplication({
       ...input,
-      expectedBinding: { ...binding, governedResource: { ...binding.governedResource, id: "other-resource" } },
-    })).rejects.toThrow();
+      expectedBinding: { ...binding, policyVersion: "v2" },
+    })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
 
     const substitutedScope = binding.scope.role === "issuer"
@@ -181,6 +181,15 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       ...input,
       presentation: { ...input.presentation, proofSubjectDid: "did:midnight:wrong-subject" },
     })).rejects.toThrow(/Presentation does not match/);
+
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      verifyPresentation: async (presentation, context) => ({
+        ...await verifyPresentation(presentation, context),
+        presentationHash: "malformed-presentation-hash",
+      }),
+    })).rejects.toThrow();
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
 
     const commitment = await consumeChallengeAndSubmitApplication(input);
     expect(commitment).toBeInstanceOf(Uint8Array);

@@ -82,9 +82,6 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     throw new Error("Presentation does not match the application challenge, subject DID, or scope");
   }
 
-  const consumedHash = await input.challengeService.consume(challengeInput);
-  if (consumedHash === null) throw new Error("Application challenge is invalid or already consumed");
-
   const envelope = ApplicationEvidenceEnvelopeSchema.parse({
     version: "tr-application-evidence-v1",
     registryId: binding.registryId,
@@ -98,10 +95,14 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     evidenceVerifierDid: binding.evidenceVerifierDid,
     verifiedAt: verified.verifiedAt,
     expiresAt: verified.expiresAt,
-    challengeHash: consumedHash,
+    challengeHash: input.challengeHash,
     presentationHash: verified.presentationHash,
     claimsCommitment: verified.claimsCommitment,
   });
+  const consumedHash = await input.challengeService.consume(challengeInput);
+  if (consumedHash === null || consumedHash !== envelope.challengeHash) {
+    throw new Error("Application challenge is invalid or already consumed");
+  }
   const commitment = computeApplicationEvidenceCommitment(envelope);
   const signature = await input.signEvidence(commitment);
   const evidence = assertValidApplicationEvidence(

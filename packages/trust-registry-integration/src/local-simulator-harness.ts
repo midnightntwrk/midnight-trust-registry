@@ -67,6 +67,7 @@ import {
   computeSingleStatementStateRoot,
   createScopedIdentifier,
   deriveGovernancePolicySnapshot,
+  governedResourceInScope,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -327,6 +328,10 @@ export class LocalTrustRegistryIntegrationHarness {
   }): ApplicationEvidenceSubmission {
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
     const verifiedAt = timestampForSequence(this.assertSupportedContractFormat().governanceActionCount);
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
@@ -338,7 +343,7 @@ export class LocalTrustRegistryIntegrationHarness {
       policyId: this.policyId,
       policyVersion: this.policyRecord.version,
       scopeCommitment: computeAuthorizationScopeCommitment(scope),
-      governedResource: input.governedResource ?? defaultGovernedResource(scope),
+      governedResource,
       evidenceVerifierDid: this.evidenceVerifier.did,
       verifiedAt,
       expiresAt,
@@ -401,6 +406,10 @@ export class LocalTrustRegistryIntegrationHarness {
   }): Uint8Array {
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
     const ledger = this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
@@ -412,7 +421,7 @@ export class LocalTrustRegistryIntegrationHarness {
         policyId: this.policyId,
         policyVersion: this.policyRecord.version,
         scopeCommitment: computeAuthorizationScopeCommitment(scope),
-        governedResource: input.governedResource ?? defaultGovernedResource(scope),
+        governedResource,
         challengeHash: input.challengeHash ?? sha256Hex(`challenge:${input.applicationId}`),
         evaluatedAt: timestampForSequence(ledger.governanceActionCount),
       },

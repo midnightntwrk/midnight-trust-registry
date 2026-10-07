@@ -74,8 +74,12 @@ Their binding requires the versioned role-specific scope object, a separately
 checked governed resource, and a matching canonical scope commitment; an
 arbitrary 32-byte scope digest is not accepted. The caller must supply a
 policy-authorized VP verifier, evidence signer, authorized verifier keys,
-and a trusted proposal binding. The intake consumes the challenge once before
-signing and proposing; a later failure does not make the challenge reusable.
+and a trusted proposal binding. It parses the verifier-produced envelope
+before consuming the challenge; after atomic consumption, signing or proposal
+failure does not make the challenge reusable. A different live binding for the
+same registry/application is rejected rather than evicting the prior challenge.
+Public issuance still requires applicant authentication and rate limits even
+for same-binding retries.
 The VP verifier must derive the nonce and subject DID from the verified proof,
 not echo the expected callback arguments. The reference tests use a fixture
 verifier, not a production VC/VP verifier. Static policy configuration and the

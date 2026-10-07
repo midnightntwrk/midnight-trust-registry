@@ -46,6 +46,14 @@ export class ApplicationChallengeCapacityError extends Error {
   }
 }
 
+export class ApplicationChallengeBindingConflictError extends Error {
+  readonly code = "CHALLENGE_BINDING_CONFLICT";
+  constructor() {
+    super("A different challenge binding is already live for this application");
+    this.name = "ApplicationChallengeBindingConflictError";
+  }
+}
+
 /** Process-local reference adapter with bounded capacity and idle expiry. */
 export class InMemoryApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly records = new Map<string, { record: ApplicationChallengeRecord; timer: NodeJS.Timeout }>();
@@ -69,6 +77,10 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       this.remove(record.challengeHash);
     }
     const previousHash = this.applicationHashes.get(record.applicationHash);
+    const previous = previousHash === undefined ? undefined : this.records.get(previousHash);
+    if (previous !== undefined && nowMs < previous.record.expiresAtMs && previous.record.bindingHash !== record.bindingHash) {
+      throw new ApplicationChallengeBindingConflictError();
+    }
     if (previousHash !== undefined) this.remove(previousHash);
     if (this.records.size >= this.maxEntries) {
       for (const [hash, current] of this.records) {

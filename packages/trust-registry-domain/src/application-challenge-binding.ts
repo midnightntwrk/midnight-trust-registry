@@ -58,7 +58,7 @@ export function computeApplicationChallengeBindingHash(input: ApplicationChallen
   ]));
 }
 
-function governedResourceInScope(
+export function governedResourceInScope(
   scope: z.infer<typeof AuthorizationScopeSchema>,
   type: z.infer<typeof GovernedResourceSchema>["type"],
 ): string | null {

@@ -122,12 +122,14 @@ role-specific scope: an issuer's credential family, verifier/auditor request
 profile, or maintainer registry. Its identifier is not the scope commitment.
 The scope object is not stored in the challenge record, but is supplied again
 when the challenge is consumed and checked against the same commitment. It MUST
-perform collision-safe insertion, replacement of an earlier live challenge
-for the same registry/application pair, and check-and-delete atomically across
-all API replicas. The newest challenge supersedes the old one even if the
-scope or governed resource changes. Any future public
-issuance route MUST authenticate the applicant before it permits replacement;
-otherwise a third party could invalidate the applicant's outstanding challenge.
+perform collision-safe insertion, same-binding replacement, and
+check-and-delete atomically across all API replicas. A live challenge for the
+same registry/application pair but a different subject, scope, policy, or
+governed resource MUST NOT be replaced without an authenticated applicant
+transition. The reference store rejects such changes; a future public route
+MUST authenticate the applicant before allowing either replacement or
+same-binding retries, so a third party cannot invalidate an outstanding
+challenge.
 Consumption succeeds only
 when the submitted nonce hashes to the envelope value, the complete binding
 matches, and the challenge has not expired; retry, mismatch, and expiry all

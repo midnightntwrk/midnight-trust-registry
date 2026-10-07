@@ -114,19 +114,21 @@ describe("application challenge lifecycle", () => {
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
-  it("supersedes a prior challenge when the same application changes scope or resource", async () => {
+  it("rejects another live binding for the same application without evicting the original", async () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const otherScope = { ...scope, schemaVersion: "2.0.0" };
     const otherBinding = { ...binding, scope: otherScope, scopeCommitment: computeAuthorizationScopeCommitment(otherScope) };
     const first = await service.issue(binding);
-    const second = await service.issue(otherBinding);
-    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
-    expect(await service.consume({ binding: otherBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+    await expect(service.issue(otherBinding)).rejects.toMatchObject({ code: "CHALLENGE_BINDING_CONFLICT" });
+    await expect(service.issue({ ...binding, subjectDid: "did:midnight:issuer:other" }))
+      .rejects.toMatchObject({ code: "CHALLENGE_BINDING_CONFLICT" });
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
 
     const family = await service.issue(binding);
     const schemaBinding = { ...binding, governedResource: { type: "schema" as const, id: scope.schemaId } };
+    await expect(service.issue(schemaBinding)).rejects.toMatchObject({ code: "CHALLENGE_BINDING_CONFLICT" });
+    expect(await service.consume({ binding, nonce: family.nonce, challengeHash: family.challengeHash })).toBe(family.challengeHash);
     const schema = await service.issue(schemaBinding);
-    expect(await service.consume({ binding, nonce: family.nonce, challengeHash: family.challengeHash })).toBeNull();
     expect(await service.consume({ binding: schemaBinding, nonce: schema.nonce, challengeHash: schema.challengeHash }))
       .toBe(schema.challengeHash);
   });
