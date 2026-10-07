@@ -13,6 +13,7 @@ import {
 } from "@midnight-ntwrk/midnight-did";
 import {
   ApplicationChallengeBindingSchema,
+  ApplicationEvidenceEvaluationTimeSchema,
   AuthorizationScopeSchema,
   HashHexSchema,
   computeAuthorizationScopeCommitment,
@@ -22,7 +23,8 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 const MAX_PRESENTATION_AGE_MS = 5 * 60_000;
-const MAX_ATTESTATION_AGE_MS = 5 * 60_000;
+const MAX_FUTURE_CLOCK_SKEW_MS = 60_000;
+const MAX_ATTESTATION_AGE_MS = 24 * 60 * 60_000;
 const NONCE_PATTERN = /^0x[0-9a-f]{64}$/u;
 
 export type ApplicationVpMaterial = {
@@ -55,7 +57,11 @@ export type ApplicationVpFamilyAdapter<Submission> = {
   prepare(submission: Submission): Promise<ApplicationVpMaterial>;
   assertIssuerEligible(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<true>;
   assertStatusActive(material: ApplicationVpMaterial): Promise<{ validUntilMs: number }>;
-  assertRoleClaims(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<{ claimsCommitment: string }>;
+  /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
+  assertRoleClaims(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<{
+    claimsCommitment: string;
+    scopeCommitment: string;
+  }>;
 };
 
 export class ApplicationVpVerificationError extends Error {
@@ -95,17 +101,20 @@ export async function verifyApplicationVp<Submission>(input: {
   } catch {
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
-  if (!validTime(material.credentialExpiresAtMs) || material.credentialExpiresAtMs <= input.evaluatedAtMs) {
+  if (!validTime(material.credentialExpiresAtMs)) {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  if (material.credentialExpiresAtMs <= input.evaluatedAtMs) {
     throw new ApplicationVpVerificationError("expired");
   }
   let presentationHash: string;
   try {
     const proofTime = material.presentationProof.createdAt;
     const now = BigInt(input.evaluatedAtMs);
-    if (proofTime > now || proofTime < now - BigInt(MAX_PRESENTATION_AGE_MS)) {
+    if (proofTime > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS) || proofTime < now - BigInt(MAX_PRESENTATION_AGE_MS)) {
       throw new ApplicationVpVerificationError("expired");
     }
-    if (material.credentialProof.createdAt > now) {
+    if (material.credentialProof.createdAt > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS)) {
       throw new ApplicationVpVerificationError("invalid_presentation");
     }
   } catch (error) {
@@ -163,6 +172,9 @@ export async function verifyApplicationVp<Submission>(input: {
     }
     const claims = await input.family.assertRoleClaims(material, scope.data);
     claimsCommitment = HashHexSchema.parse(claims.claimsCommitment).toLowerCase();
+    if (HashHexSchema.parse(claims.scopeCommitment).toLowerCase() !== computeAuthorizationScopeCommitment(scope.data)) {
+      throw new ApplicationVpVerificationError("ineligible");
+    }
   } catch (error) {
     if (error instanceof ApplicationVpVerificationError) throw error;
     throw new ApplicationVpVerificationError("ineligible");
@@ -196,6 +208,7 @@ export function createApplicationVpIntakeVerifier<Submission>(config: {
     let binding: ApplicationChallengeBinding;
     try {
       binding = ApplicationChallengeBindingSchema.parse(context.binding);
+      ApplicationEvidenceEvaluationTimeSchema.parse(context.evaluatedAt);
     } catch {
       throw new ApplicationVpVerificationError("invalid_presentation");
     }

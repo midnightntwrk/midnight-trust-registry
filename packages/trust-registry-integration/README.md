@@ -30,7 +30,13 @@ Current coverage:
   proof circuits and DID resolution. It verifies issuer/holder method binding,
   issuance and presentation signatures, nonce, holder binding, proof time,
   and status-reference structure, then calls explicit trusted adapters for
-  issuer authorization, live status, and role claims. The port returns only
+  issuer authorization, live status, and role claims. The role-claims adapter
+  must return the scope commitment derived from claims bound to the verified
+  credential body root; echoing the requested scope is not sufficient. The
+  port rejects a different attested scope. It allows 60 seconds of future
+  proof-clock skew, accepts presentations at most five minutes old, and caps
+  evidence validity at the earliest of credential expiry, status validity,
+  and 24 hours. The port returns only
   redacted commitment-sized results. It is not a public intake route or a
   standalone non-revocation verifier; callers must supply trustworthy family
   body roots and the three eligibility adapters. Run its focused tests with

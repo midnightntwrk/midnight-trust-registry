@@ -91,7 +91,10 @@ async function fixture() {
     prepare: vi.fn(async () => material),
     assertIssuerEligible: vi.fn(async () => true as const),
     assertStatusActive: vi.fn(async () => ({ validUntilMs: NOW + 15 * 60_000 })),
-    assertRoleClaims: vi.fn(async () => ({ claimsCommitment: sha256Hex("accepted-issuer-claims") })),
+    assertRoleClaims: vi.fn(async () => ({
+      claimsCommitment: sha256Hex("accepted-issuer-claims"),
+      scopeCommitment: computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp"))),
+    })),
   };
   return {
     input: {
@@ -143,13 +146,15 @@ describe("published VC proof and DID application verifier port", () => {
       ...context,
       evaluatedAt: new Date(NOW + 6 * 60_000).toISOString(),
     })).rejects.toMatchObject({ category: "expired" });
+    await expect(verifyPresentation(input.submission, {
+      ...context,
+      evaluatedAt: "May 20, 2026 00:01:00 UTC",
+    })).rejects.toMatchObject({ category: "invalid_presentation" });
     const otherScope = { ...input.scope, credentialFamilyId: "credential-family:other" };
-    family.assertRoleClaims = vi.fn(async (_material, scope) => {
-      if (scope.role === "issuer" && scope.credentialFamilyId !== input.scope.credentialFamilyId) {
-        throw new Error("wrong applicant scope");
-      }
-      return { claimsCommitment: sha256Hex("accepted-issuer-claims") };
-    });
+    family.assertRoleClaims = vi.fn(async () => ({
+      claimsCommitment: sha256Hex("accepted-issuer-claims"),
+      scopeCommitment: binding.scopeCommitment,
+    }));
     await expect(verifyPresentation(input.submission, {
       ...context,
       binding: {
@@ -169,7 +174,7 @@ describe("published VC proof and DID application verifier port", () => {
     expect(verified.scopeCommitment).toBe(computeAuthorizationScopeCommitment(input.scope));
     expect(verified.presentationHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(verified.presentationHash).not.toBe(sha256Hex(bytes32("presentation-body")));
-    expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());
+    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
     expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
     expect(family.assertIssuerEligible).toHaveBeenCalledOnce();
     expect(family.assertStatusActive).toHaveBeenCalledOnce();
@@ -185,6 +190,40 @@ describe("published VC proof and DID application verifier port", () => {
       category: "invalid_presentation",
     });
     expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
+  it("permits bounded clock skew but rejects future proofs outside the allowance", async () => {
+    const { input, material, family } = await fixture();
+    const futureProof = { ...material.presentationProof, createdAt: BigInt(NOW + 1) };
+    // The signature must cover the altered timestamp; re-sign with the fixture holder key.
+    const holderMethod = await resolveMidnightDIDMethodBinding({
+      resolver: input.resolver,
+      did: parseMidnightDIDString(material.subjectDid),
+      verificationMethodId: material.holderMethodId,
+      relationship: "authentication",
+    });
+    family.prepare = vi.fn(async () => ({
+      ...material,
+      presentationProof: signMidnightDIDPresentationProof({
+        methodBinding: holderMethod,
+        secretScalar: 23n,
+        bodyRoot: material.presentationBodyRoot,
+        createdAt: futureProof.createdAt,
+        challengeHash: material.presentationProof.challengeHash,
+      }),
+    }));
+    await expect(verifyApplicationVp(input)).resolves.toMatchObject({ subjectDid: material.subjectDid });
+    family.prepare = vi.fn(async () => ({
+      ...material,
+      presentationProof: signMidnightDIDPresentationProof({
+        methodBinding: holderMethod,
+        secretScalar: 23n,
+        bodyRoot: material.presentationBodyRoot,
+        createdAt: BigInt(NOW + 60_001),
+        challengeHash: material.presentationProof.challengeHash,
+      }),
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "expired" });
   });
 
   it("rejects a tampered proof or body root without exposing the circuit error", async () => {
@@ -227,6 +266,8 @@ describe("published VC proof and DID application verifier port", () => {
     const { input, material, family } = await fixture();
     family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: NOW - 1 }));
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "expired" });
+    family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: Number.NaN }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "invalid_presentation" });
 
     family.prepare = vi.fn(async () => material);
     await expect(verifyApplicationVp({ ...input, evaluatedAtMs: NOW + 6 * 60_000 })).rejects.toMatchObject({ category: "expired" });
