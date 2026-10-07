@@ -29,12 +29,15 @@ type SimulatorBundleVerificationOptions = Omit<
 >;
 
 export class TrustRegistrySimulatorClient {
-  constructor(readonly simulator: TrustRegistrySimulator) {
+  readonly #simulator: TrustRegistrySimulator;
+
+  constructor(simulator: TrustRegistrySimulator) {
+    this.#simulator = simulator;
     this.requireSupportedLedger();
   }
 
   private requireSupportedLedger(): ReturnType<TrustRegistrySimulator["getLedger"]> {
-    const ledger = this.simulator.getLedger();
+    const ledger = this.#simulator.getLedger();
     if (ledger.contractVersion !== 1n) {
       throw new Error("Unsupported trust registry format");
     }
@@ -45,7 +48,7 @@ export class TrustRegistrySimulatorClient {
     authorizationId: string | Uint8Array,
   ): IssuerAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getIssuerAuthorization(this.asBytes32(authorizationId));
+    return this.#simulator.getIssuerAuthorization(this.asBytes32(authorizationId));
   }
 
   getCurrentIssuerAuthorization(input: {
@@ -54,7 +57,7 @@ export class TrustRegistrySimulatorClient {
     resourceId: string | Uint8Array;
   }): IssuerAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentIssuerAuthorization(
+    return this.#simulator.getCurrentIssuerAuthorization(
       this.asBytes32(input.subjectDid),
       input.resourceType,
       this.asBytes32(input.resourceId),
@@ -65,7 +68,7 @@ export class TrustRegistrySimulatorClient {
     authorizationId: string | Uint8Array,
   ): VerifierAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getVerifierAuthorization(this.asBytes32(authorizationId));
+    return this.#simulator.getVerifierAuthorization(this.asBytes32(authorizationId));
   }
 
   getCurrentVerifierAuthorization(input: {
@@ -76,7 +79,7 @@ export class TrustRegistrySimulatorClient {
     disclosureLevelCommitment: string | Uint8Array;
   }): VerifierAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentVerifierAuthorization(
+    return this.#simulator.getCurrentVerifierAuthorization(
       this.asBytes32(input.subjectDid),
       this.asBytes32(input.requestProfileId),
       this.asBytes32(input.allowedAttributeSetCommitment),
@@ -89,7 +92,7 @@ export class TrustRegistrySimulatorClient {
     authorizationId: string | Uint8Array,
   ): AuditorAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getAuditorAuthorization(this.asBytes32(authorizationId));
+    return this.#simulator.getAuditorAuthorization(this.asBytes32(authorizationId));
   }
 
   getCurrentAuditorAuthorization(input: {
@@ -100,7 +103,7 @@ export class TrustRegistrySimulatorClient {
     disclosureLevelCommitment: string | Uint8Array;
   }): AuditorAuthorizationRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentAuditorAuthorization(
+    return this.#simulator.getCurrentAuditorAuthorization(
       this.asBytes32(input.subjectDid),
       this.asBytes32(input.requestProfileId),
       this.asBytes32(input.allowedAttributeSetCommitment),
@@ -111,7 +114,7 @@ export class TrustRegistrySimulatorClient {
 
   getRecognitionById(recognitionId: string | Uint8Array): RecognitionRecord {
     this.requireSupportedLedger();
-    return this.simulator.getRecognition(this.asBytes32(recognitionId));
+    return this.#simulator.getRecognition(this.asBytes32(recognitionId));
   }
 
   getCurrentRecognition(input: {
@@ -121,7 +124,7 @@ export class TrustRegistrySimulatorClient {
     scopeResourceId: string | Uint8Array;
   }): RecognitionRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentRecognition(
+    return this.#simulator.getCurrentRecognition(
       this.asBytes32(input.recognizedAuthorityDid),
       this.asBytes32(input.recognizedRegistryId),
       this.asBytes32(input.scopeResourceType),
@@ -131,26 +134,26 @@ export class TrustRegistrySimulatorClient {
 
   getEpochCommitmentById(epochId: string | Uint8Array): EpochCommitmentRecord {
     this.requireSupportedLedger();
-    return this.simulator.getEpochCommitment(this.asBytes32(epochId));
+    return this.#simulator.getEpochCommitment(this.asBytes32(epochId));
   }
 
   getCurrentEpochCommitment(): EpochCommitmentRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentEpochCommitment();
+    return this.#simulator.getCurrentEpochCommitment();
   }
 
   getMaintainerMembershipById(
     maintainerId: string | Uint8Array,
   ): MaintainerMembershipRecord {
     this.requireSupportedLedger();
-    return this.simulator.getMaintainerMembership(this.asBytes32(maintainerId));
+    return this.#simulator.getMaintainerMembership(this.asBytes32(maintainerId));
   }
 
   getCurrentMaintainerMembership(
     subjectDid: string | Uint8Array,
   ): MaintainerMembershipRecord {
     this.requireSupportedLedger();
-    return this.simulator.getCurrentMaintainerMembership(this.asBytes32(subjectDid));
+    return this.#simulator.getCurrentMaintainerMembership(this.asBytes32(subjectDid));
   }
 
   verifyIssuerAuthorizationBundle(

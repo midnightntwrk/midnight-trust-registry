@@ -59,7 +59,7 @@ following fields are required before canonical serialization:
   "subjectDid": "did:midnight:...",
   "role": "issuer",
   "policyId": "tr:policy:membership",
-  "policyVersion": "1",
+  "policyVersion": "v1",
   "scopeCommitment": "0x...32-byte-hex...",
   "evidenceVerifierDid": "did:midnight:...",
   "verifiedAt": "2026-07-27T00:00:00Z",
@@ -106,6 +106,14 @@ textual hex representation.
 The off-ledger challenge store retains only `challengeHash`, an expiry, and a
 domain-separated commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, and scope commitment. It MUST
+derive or validate the scope commitment against the versioned canonical
+role-specific scope object before issuing the challenge; a valid-length opaque
+hash alone is insufficient. Registry, application, and policy IDs in a
+challenge binding MUST use canonical lowercase spelling. The scope role MUST
+match the application role, and a maintainer scope's registry ID MUST equal
+the challenge registry ID.
+The scope object is not stored in the challenge record, but is supplied again
+when the challenge is consumed and checked against the same commitment. It MUST
 perform collision-safe insertion, replacement of an earlier live challenge
 for the same binding, and check-and-delete atomically across all API replicas.
 The newest challenge supersedes the old one for that binding. Any future public
@@ -129,6 +137,15 @@ return value as the proposal's expected `challengeHash`, not the untrusted
 submission field. The evidence validator compares challenge hashes by byte value,
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
+
+The process-local challenge service is not yet connected to proposal intake.
+Its `scopeCommitment` is the canonical role-specific scope digest, whereas the
+simulator's synthetic application-evidence envelope currently uses a
+resource-ID commitment under the same field name. Those values MUST NOT be
+interchanged. A public challenge-to-proposal flow must replace the simulator
+stand-in with a single canonical scope digest, verify the VP challenge against
+the consumed nonce, and test each applicant role before this boundary is
+considered integrated.
 
 The reference API package exposes an in-memory store for local tests only. It
 caps live entries and schedules expiry cleanup even without another request;
