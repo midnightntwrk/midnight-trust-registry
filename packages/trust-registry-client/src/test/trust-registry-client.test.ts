@@ -3,6 +3,7 @@ import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 
 import {
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   deriveGovernancePolicySnapshot,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -106,6 +107,47 @@ describe("trust registry client", () => {
     expect(activeBundle.inclusionProof.proofType).toBe("merkle-inclusion");
     expect(activeBundle.inclusionProof.root).toBe(activeBundle.epoch.stateRoot);
     expect(activeBundle.inclusionProof.path[0]).toBe(activeBundle.epoch.eventRoot);
+    expect(activeBundle.statusPolicyBinding).toBeDefined();
+    expect(activeBundle.authorization?.statusPolicyBindingCommitment).toBe(
+      computeIssuerStatusPolicyBindingCommitment(activeBundle.statusPolicyBinding!),
+    );
+
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      statusPolicyBinding: undefined,
+    }, { expectedRegistryId: harness.registryId })).toThrow(/preimage is missing/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      statusPolicyBinding: {
+        ...activeBundle.statusPolicyBinding!,
+        statusRegistryId: `0x${"9".repeat(64)}`,
+      },
+    }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
+    const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
+    const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    expect(() => verifyTrustRegistryEvidenceBundle({
+      ...activeBundle,
+      statusPolicyBinding: {
+        ...activeBundle.statusPolicyBinding!,
+        statusAuthorityVerificationMethod: "did:midnight:attacker#status-1",
+      },
+    }, {
+      expectedRegistryId: harness.registryId,
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/does not match governed authorization/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      referencedStatusRegistryId: "status-registry:attacker:v1",
+    }, { expectedRegistryId: harness.registryId })).toThrow(/unanchored issuer status metadata/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      authorization: {
+        ...activeBundle.authorization!,
+        statusPolicyBindingCommitment: `0x${"8".repeat(64)}`,
+      },
+    }, { expectedRegistryId: harness.registryId })).toThrow(/leaf hash/i);
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(activeBundle, {

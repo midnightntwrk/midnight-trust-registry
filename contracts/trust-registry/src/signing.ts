@@ -160,6 +160,7 @@ export const computeCreateIssuerAuthorizationPayloadHash = (
   resourceType: IssuerResourceType,
   resourceId: Uint8Array,
   policyId: Uint8Array,
+  statusPolicyBindingCommitment: Uint8Array,
   trustLevel: Uint8Array,
   evidenceHash: Uint8Array,
 ): Uint8Array =>
@@ -169,6 +170,7 @@ export const computeCreateIssuerAuthorizationPayloadHash = (
     resourceType,
     ensure32Bytes(resourceId),
     ensure32Bytes(policyId),
+    ensure32Bytes(statusPolicyBindingCommitment),
     ensure32Bytes(trustLevel),
     ensure32Bytes(evidenceHash),
   );

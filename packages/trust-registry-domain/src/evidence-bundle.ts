@@ -13,6 +13,7 @@ import {
   GovernancePolicyRecordSchema,
   RecognitionRecordSchema,
 } from "./types.js";
+import { IssuerStatusPolicyBindingSchema } from "./status-policy.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 
@@ -30,8 +31,9 @@ const sortStringRecord = (
 
 export const computeAuthorizationStatementLeafHash = (
   authorization: z.infer<typeof AuthorizationRecordSchema>,
-): string =>
-  sha256Hex(
+): string => {
+  AuthorizationRecordSchema.parse(authorization);
+  return sha256Hex(
     JSON.stringify({
       recordType: "authorization",
       authorizationId: authorization.authorizationId,
@@ -42,6 +44,9 @@ export const computeAuthorizationStatementLeafHash = (
       resourceId: authorization.resourceId,
       policyId: authorization.policyId,
       trustLevel: authorization.trustLevel,
+      ...(authorization.role === "issuer"
+        ? { statusPolicyBindingCommitment: authorization.statusPolicyBindingCommitment }
+        : {}),
       status: authorization.status,
       lifecycleEventRoot: authorization.lifecycleEventRoot,
       proposedAt: authorization.proposedAt,
@@ -56,6 +61,7 @@ export const computeAuthorizationStatementLeafHash = (
       evidenceHash: authorization.evidenceHash,
     }),
   );
+};
 
 export const computeRecognitionStatementLeafHash = (
   recognition: z.infer<typeof RecognitionRecordSchema>,
@@ -164,6 +170,7 @@ export const TrustRegistryEvidenceBundleSchema = z
     epoch: EpochCommitmentSchema,
     inclusionProof: InclusionProofSchema,
     authorization: AuthorizationRecordSchema.optional(),
+    statusPolicyBinding: IssuerStatusPolicyBindingSchema.optional(),
     recognition: RecognitionRecordSchema.optional(),
     referencedStatusRegistryId: ScopedIdentifierSchema.optional(),
     referencedStatusPolicyUri: UriSchema.optional(),
@@ -173,6 +180,21 @@ export const TrustRegistryEvidenceBundleSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Evidence bundles must include either an authorization or a recognition record",
+      });
+    }
+
+    if (bundle.authorization?.role === "issuer" && bundle.statusPolicyBinding === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Issuer status policy binding preimage is missing",
+        path: ["statusPolicyBinding"],
+      });
+    }
+    if (bundle.authorization?.role !== "issuer" && bundle.statusPolicyBinding !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Status policy binding is only valid for issuer authorization",
+        path: ["statusPolicyBinding"],
       });
     }
 
@@ -395,6 +417,7 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
         resourceType: { type: "string" },
         resourceId: { type: "string" },
         policyId: { type: "string" },
+        statusPolicyBindingCommitment: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
         trustLevel: { type: "string" },
         status: { type: "string" },
         proposedAt: { type: "string", format: "date-time" },
@@ -403,6 +426,10 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
         effectiveUntil: { type: "string", format: "date-time" },
         evidenceHash: { type: "string" },
       },
+      allOf: [{
+        if: { properties: { role: { const: "issuer" } }, required: ["role"] },
+        then: { required: ["statusPolicyBindingCommitment"] },
+      }],
     },
     recognition: {
       type: "object",
@@ -443,6 +470,31 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
         proposedAt: { type: "string", format: "date-time" },
       },
     },
+    statusPolicyBinding: {
+      type: "object",
+      description: "Canonical preimage of the governed issuer status-policy binding commitment.",
+      additionalProperties: false,
+      required: [
+        "version",
+        "trustRegistryId",
+        "issuerAuthorizationId",
+        "statusRegistryId",
+        "statusAuthorityVerificationMethod",
+        "statusPolicyId",
+        "statusPolicyVersion",
+        "statusPolicyContentCommitment",
+      ],
+      properties: {
+        version: { const: "tr-issuer-status-policy-v1" },
+        trustRegistryId: { type: "string" },
+        issuerAuthorizationId: { type: "string" },
+        statusRegistryId: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
+        statusAuthorityVerificationMethod: { type: "string" },
+        statusPolicyId: { type: "string" },
+        statusPolicyVersion: { type: "string", pattern: "^v[1-9][0-9]*$" },
+        statusPolicyContentCommitment: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
+      },
+    },
     referencedStatusRegistryId: {
       type: "string",
       description:
@@ -454,6 +506,32 @@ export const TrustRegistryEvidenceBundleJsonSchema = {
     },
   },
   anyOf: [{ required: ["authorization"] }, { required: ["recognition"] }],
+  allOf: [
+    {
+      if: {
+        properties: {
+          authorization: {
+            properties: { role: { const: "issuer" } },
+            required: ["role"],
+          },
+        },
+        required: ["authorization"],
+      },
+      then: { required: ["statusPolicyBinding"] },
+    },
+    {
+      if: { required: ["statusPolicyBinding"] },
+      then: {
+        required: ["authorization"],
+        properties: {
+          authorization: {
+            properties: { role: { const: "issuer" } },
+            required: ["role"],
+          },
+        },
+      },
+    },
+  ],
 } as const;
 
 export type TrustRegistryEvidenceBundle = z.infer<typeof TrustRegistryEvidenceBundleSchema>;
