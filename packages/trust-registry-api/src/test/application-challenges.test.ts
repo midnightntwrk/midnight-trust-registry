@@ -34,6 +34,7 @@ const binding: ApplicationChallengeBinding = {
   policyVersion: "v1",
   scope,
   scopeCommitment: computeAuthorizationScopeCommitment(scope),
+  governedResource: { type: "credentialFamily", id: scope.credentialFamilyId },
 };
 
 const START = Date.parse("2026-10-06T00:00:00.000Z");
@@ -103,6 +104,56 @@ describe("application challenge lifecycle", () => {
     const second = await service.issue(otherBinding);
     expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
     expect(await service.consume({ binding: otherBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
+  it("checks every issuer resource type without replacing the scope commitment", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const resources = [
+      { type: "credentialFamily", id: scope.credentialFamilyId },
+      { type: "schema", id: scope.schemaId },
+      { type: "schemaVersion", id: scope.schemaVersion },
+      { type: "credentialDefinition", id: scope.credentialDefinitionId },
+    ] as const;
+    for (const governedResource of resources) {
+      const scopedBinding = { ...binding, governedResource };
+      const issued = await service.issue(scopedBinding);
+      expect(await service.consume({
+        binding: { ...scopedBinding, governedResource: { ...governedResource, id: "other-resource" } },
+        nonce: issued.nonce,
+        challengeHash: issued.challengeHash,
+      })).toBeNull();
+      expect(await service.consume({ binding: scopedBinding, nonce: issued.nonce, challengeHash: issued.challengeHash }))
+        .toBe(issued.challengeHash);
+    }
+  });
+
+  it.each(["verifier", "auditor"] as const)("checks %s request-profile resource independently of scope hash", async (role) => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const requestScope = {
+      version: "tr-scope-v1" as const,
+      role,
+      requestProfileId: "request-profile:admission",
+      purpose: "admission",
+      credentialScopeCommitment: binding.scopeCommitment,
+      allowedAttributes: ["degree"],
+      allowedPredicates: ["age-over-18"],
+      disclosureLevel: "minimum",
+    };
+    const requestBinding = {
+      ...binding,
+      role,
+      scope: requestScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(requestScope),
+      governedResource: { type: "requestProfile" as const, id: requestScope.requestProfileId },
+    };
+    const issued = await service.issue(requestBinding);
+    expect(await service.consume({
+      binding: { ...requestBinding, governedResource: { type: "requestProfile", id: "request-profile:other" } },
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBeNull();
+    expect(await service.consume({ binding: requestBinding, nonce: issued.nonce, challengeHash: issued.challengeHash }))
+      .toBe(issued.challengeHash);
   });
 
   it("binds an issued challenge to the evidence envelope before one-use consumption", async () => {
@@ -354,6 +405,7 @@ describe("application challenge lifecycle", () => {
       role: "maintainer" as const,
       scope: maintainerScope,
       scopeCommitment: computeAuthorizationScopeCommitment(maintainerScope),
+      governedResource: { type: "registry" as const, id: maintainerScope.registryId },
     };
     const issued = await service.issue(maintainerBinding);
     await expect(service.issue({

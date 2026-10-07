@@ -8,6 +8,17 @@ const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
   "Challenge identifier must be canonical lowercase",
 );
+const GovernedResourceSchema = z.strictObject({
+  type: z.enum([
+    "credentialFamily",
+    "schema",
+    "schemaVersion",
+    "credentialDefinition",
+    "requestProfile",
+    "registry",
+  ]),
+  id: z.string().min(1),
+});
 
 export const ApplicationChallengeBindingSchema = z.strictObject({
   registryId: CanonicalIdentifierSchema,
@@ -19,6 +30,7 @@ export const ApplicationChallengeBindingSchema = z.strictObject({
   policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
   scope: AuthorizationScopeSchema,
   scopeCommitment: HashHexSchema,
+  governedResource: GovernedResourceSchema,
 }).superRefine((binding, ctx) => {
   const scope = AuthorizationScopeSchema.safeParse(binding.scope);
   if (!scope.success) return;
@@ -32,6 +44,10 @@ export const ApplicationChallengeBindingSchema = z.strictObject({
   }
   if (computeAuthorizationScopeCommitment(scope.data) !== commitment.data.toLowerCase()) {
     ctx.addIssue({ code: "custom", path: ["scopeCommitment"], message: "Scope commitment does not match canonical scope" });
+  }
+  const resource = governedResourceInScope(scope.data, binding.governedResource.type);
+  if (resource === null || resource !== binding.governedResource.id) {
+    ctx.addIssue({ code: "custom", path: ["governedResource"], message: "Governed resource does not match canonical scope" });
   }
 });
 
@@ -49,5 +65,24 @@ export function computeApplicationChallengeBindingHash(input: ApplicationChallen
     binding.policyId,
     binding.policyVersion,
     binding.scopeCommitment.toLowerCase(),
+    binding.governedResource.type,
+    binding.governedResource.id,
   ]));
+}
+
+function governedResourceInScope(
+  scope: z.infer<typeof AuthorizationScopeSchema>,
+  type: z.infer<typeof GovernedResourceSchema>["type"],
+): string | null {
+  if (scope.role === "issuer") {
+    switch (type) {
+      case "credentialFamily": return scope.credentialFamilyId;
+      case "schema": return scope.schemaId;
+      case "schemaVersion": return scope.schemaVersion;
+      case "credentialDefinition": return scope.credentialDefinitionId;
+      default: return null;
+    }
+  }
+  if (scope.role === "maintainer") return type === "registry" ? scope.registryId : null;
+  return type === "requestProfile" ? scope.requestProfileId : null;
 }
