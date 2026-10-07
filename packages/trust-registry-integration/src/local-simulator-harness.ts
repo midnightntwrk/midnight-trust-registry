@@ -41,6 +41,7 @@ import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   EpochCommitmentSchema,
   type ApplicationEvidenceSubmission,
   type ApplicationEvidenceSignature,
@@ -54,6 +55,7 @@ import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   type AuthorizationRecord,
+  type IssuerStatusPolicyBinding,
   type GovernancePolicyRecord,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
@@ -899,6 +901,9 @@ export class LocalTrustRegistryIntegrationHarness {
       role: "issuer",
       ...expectedEvidence,
     });
+    const statusPolicyBindingCommitment = hashHexToBytes32(
+      computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
+    );
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const actionPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
@@ -906,6 +911,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.resourceType,
       fixture.resourceIdCommitment,
       this.governancePolicyCommitment,
+      statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
@@ -922,6 +928,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.resourceType,
       fixture.resourceIdCommitment,
       this.governancePolicyCommitment,
+      statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
       this.maintainerCoAuthorizers(
@@ -1493,7 +1500,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEvidenceBundle({
       authorization,
       subjectDid: fixture.subjectDid,
-      referencedStatusRegistryId: fixture.referencedStatusRegistryId,
+      statusPolicyBinding: this.issuerStatusPolicyBinding(fixture),
       lastStatusSequence: record.lastStatusSequence,
     });
   }
@@ -2048,6 +2055,21 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
+  private issuerStatusPolicyBinding(
+    fixture: IssuerScenarioFixture,
+  ): IssuerStatusPolicyBinding {
+    return {
+      version: "tr-issuer-status-policy-v1",
+      trustRegistryId: this.registryId,
+      issuerAuthorizationId: fixture.authorizationId,
+      statusRegistryId: fixture.statusRegistryId,
+      statusAuthorityVerificationMethod: fixture.statusAuthorityVerificationMethod,
+      statusPolicyId: fixture.statusPolicyId,
+      statusPolicyVersion: fixture.statusPolicyVersion,
+      statusPolicyContentCommitment: fixture.statusPolicyContentCommitment,
+    };
+  }
+
   private buildVerifierAuthorizationRecord(
     fixture: VerifierScenarioFixture,
     record: ContractVerifierAuthorizationRecord,
@@ -2135,6 +2157,11 @@ export class LocalTrustRegistryIntegrationHarness {
       resourceId: input.resourceId,
       policyId: this.policyId,
       trustLevel: input.trustLevel,
+      ...(input.role === "issuer"
+        ? { statusPolicyBindingCommitment: bytes32Hex(
+          (record as ContractIssuerAuthorizationRecord).statusPolicyBindingCommitment,
+        ) }
+        : {}),
       status,
       proposedAt: timestampForSequence(record.proposedAtSequence),
       ...(record.authorizedAtSequence > 0n
@@ -2290,6 +2317,7 @@ export class LocalTrustRegistryIntegrationHarness {
     authorization?: AuthorizationRecord;
     recognition?: RecognitionRecord;
     referencedStatusRegistryId?: string;
+    statusPolicyBinding?: IssuerStatusPolicyBinding;
   }): TrustRegistryEvidenceBundle {
     const bundleRole = input.authorization?.role ?? "recognition";
     const bundleSubjectId =
@@ -2336,8 +2364,10 @@ export class LocalTrustRegistryIntegrationHarness {
       ...(input.authorization !== undefined
         ? {
             authorization: input.authorization,
-            referencedStatusRegistryId: input.referencedStatusRegistryId,
-            referencedStatusPolicyUri: "https://registry.example/status-policy",
+            ...(input.referencedStatusRegistryId !== undefined
+              ? { referencedStatusRegistryId: input.referencedStatusRegistryId }
+              : {}),
+            statusPolicyBinding: input.statusPolicyBinding,
           }
         : {}),
       ...(input.recognition !== undefined

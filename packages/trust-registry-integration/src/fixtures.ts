@@ -42,8 +42,12 @@ export type IssuerScenarioFixture = {
   resourceId: string;
   resourceIdCommitment: Uint8Array;
   trustLevel: string;
-  referencedStatusRegistryId: string;
   authorizationScope: Extract<AuthorizationScope, { role: "issuer" }>;
+  statusRegistryId: string;
+  statusAuthorityVerificationMethod: string;
+  statusPolicyId: string;
+  statusPolicyVersion: string;
+  statusPolicyContentCommitment: string;
 };
 
 export type VerifierScenarioFixture = {
@@ -177,12 +181,12 @@ export const createIssuerScenarioFixture = (
     resourceId,
     resourceIdCommitment: bytes32Commitment(resourceId),
     trustLevel: "approved",
-    referencedStatusRegistryId: createScopedIdentifier(
-      "status-registry",
-      label,
-      "v1",
-    ),
     authorizationScope,
+    statusRegistryId: sha256Hex(`status-registry:${label}`),
+    statusAuthorityVerificationMethod: `${subjectDid}#status-1`,
+    statusPolicyId: createScopedIdentifier("status-policy", label, "v1"),
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: sha256Hex(`status-policy-content:${label}`),
   };
 };
 

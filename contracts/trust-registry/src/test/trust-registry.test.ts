@@ -106,6 +106,7 @@ const createIssuerAuthorizationFixture = (label: string) => ({
   resourceType: IssuerResourceType.credentialFamily,
   resourceId: labelToBytes32(`vc-type:${label}:v1`),
   policyId: labelToBytes32("policy:kanon:v1"),
+  statusPolicyBindingCommitment: labelToBytes32(`issuer-status-policy:${label}`),
   trustLevel: labelToBytes32("approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
@@ -134,6 +135,7 @@ const activateIssuerAuthorizationFixture = (
       authorization.resourceType,
       authorization.resourceId,
       authorization.policyId,
+      authorization.statusPolicyBindingCommitment,
       authorization.trustLevel,
       authorization.evidenceHash,
     )),
@@ -142,6 +144,7 @@ const activateIssuerAuthorizationFixture = (
     authorization.resourceType,
     authorization.resourceId,
     authorization.policyId,
+    authorization.statusPolicyBindingCommitment,
     authorization.trustLevel,
     authorization.evidenceHash,
   );
@@ -1127,6 +1130,7 @@ describe("trust registry contract", () => {
       issuer.resourceType,
       issuer.resourceId,
       issuer.policyId,
+      issuer.statusPolicyBindingCommitment,
       issuer.trustLevel,
       proposedEvidenceHash,
     );
@@ -1150,6 +1154,7 @@ describe("trust registry contract", () => {
         issuer.resourceType,
         issuer.resourceId,
         issuer.policyId,
+        issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
       ),
@@ -1190,6 +1195,7 @@ describe("trust registry contract", () => {
         issuer.resourceType,
         issuer.resourceId,
         issuer.policyId,
+        issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
         [secondIssuerProposer],
@@ -1204,6 +1210,7 @@ describe("trust registry contract", () => {
       issuer.resourceType,
       issuer.resourceId,
       issuer.policyId,
+      issuer.statusPolicyBindingCommitment,
       issuer.trustLevel,
       proposedEvidenceHash,
       [secondIssuerProposer],
@@ -1475,6 +1482,7 @@ describe("trust registry contract", () => {
       issuer.resourceType,
       issuer.resourceId,
       issuer.policyId,
+      issuer.statusPolicyBindingCommitment,
       issuer.trustLevel,
       proposedEvidenceHash,
     );
@@ -1510,6 +1518,7 @@ describe("trust registry contract", () => {
         issuer.resourceType,
         issuer.resourceId,
         issuer.policyId,
+        issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
         [duplicateBootstrapAuthorizer],
@@ -1656,11 +1665,42 @@ describe("trust registry contract", () => {
         issuerAuthorization.resourceType,
         issuerAuthorization.resourceId,
         issuerAuthorization.policyId,
+        issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         proposalEvidenceHash,
       ),
       simulator.getLedger().governanceActionCount,
     );
+    expect(() =>
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        proposalSignature,
+        issuerAuthorization.authorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        new Uint8Array(32),
+        issuerAuthorization.trustLevel,
+        proposalEvidenceHash,
+      ),
+    ).toThrow(/issuer status policy binding commitment must be set/i);
+    expect(() =>
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        proposalSignature,
+        issuerAuthorization.authorizationId,
+        issuerAuthorization.subjectDidCommitment,
+        issuerAuthorization.resourceType,
+        issuerAuthorization.resourceId,
+        issuerAuthorization.policyId,
+        labelToBytes32("status-policy:substituted"),
+        issuerAuthorization.trustLevel,
+        proposalEvidenceHash,
+      ),
+    ).toThrow(/invalid jubjub schnorr signature/i);
     const proposalEventHash = simulator.proposeIssuerAuthorization(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
@@ -1670,6 +1710,7 @@ describe("trust registry contract", () => {
       issuerAuthorization.resourceType,
       issuerAuthorization.resourceId,
       issuerAuthorization.policyId,
+      issuerAuthorization.statusPolicyBindingCommitment,
       issuerAuthorization.trustLevel,
       proposalEvidenceHash,
     );
@@ -1678,6 +1719,9 @@ describe("trust registry contract", () => {
     );
 
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
+    expect(Buffer.from(proposedRecord.statusPolicyBindingCommitment)).toEqual(
+      Buffer.from(issuerAuthorization.statusPolicyBindingCommitment),
+    );
     expect(proposedRecord.authorizedAtSequence).toEqual(0n);
     expect(proposedRecord.activeFromSequence).toEqual(0n);
     expect(simulator.getLedger().issuerAuthorizationCount).toEqual(1n);
@@ -1741,6 +1785,9 @@ describe("trust registry contract", () => {
     );
 
     expect(authorizedRecord.status).toEqual(AuthorizationStatus.authorized);
+    expect(Buffer.from(authorizedRecord.statusPolicyBindingCommitment)).toEqual(
+      Buffer.from(issuerAuthorization.statusPolicyBindingCommitment),
+    );
     expect(authorizedRecord.authorizedAtSequence).toBeGreaterThan(
       proposedRecord.proposedAtSequence,
     );
@@ -1784,6 +1831,9 @@ describe("trust registry contract", () => {
     );
 
     expect(activeRecord.status).toEqual(AuthorizationStatus.active);
+    expect(Buffer.from(activeRecord.statusPolicyBindingCommitment)).toEqual(
+      Buffer.from(issuerAuthorization.statusPolicyBindingCommitment),
+    );
     expect(activeRecord.activeFromSequence).toBeGreaterThan(
       authorizedRecord.authorizedAtSequence,
     );
@@ -1821,6 +1871,7 @@ describe("trust registry contract", () => {
         archivedProposal.resourceType,
         archivedProposal.resourceId,
         archivedProposal.policyId,
+        archivedProposal.statusPolicyBindingCommitment,
         archivedProposal.trustLevel,
         archivedProposal.evidenceHash,
       ),
@@ -1835,6 +1886,7 @@ describe("trust registry contract", () => {
       archivedProposal.resourceType,
       archivedProposal.resourceId,
       archivedProposal.policyId,
+      archivedProposal.statusPolicyBindingCommitment,
       archivedProposal.trustLevel,
       archivedProposal.evidenceHash,
     );
@@ -1876,6 +1928,7 @@ describe("trust registry contract", () => {
         revocableAuthorization.resourceType,
         revocableAuthorization.resourceId,
         revocableAuthorization.policyId,
+        revocableAuthorization.statusPolicyBindingCommitment,
         revocableAuthorization.trustLevel,
         revocableAuthorization.evidenceHash,
       ),
@@ -1890,6 +1943,7 @@ describe("trust registry contract", () => {
       revocableAuthorization.resourceType,
       revocableAuthorization.resourceId,
       revocableAuthorization.policyId,
+      revocableAuthorization.statusPolicyBindingCommitment,
       revocableAuthorization.trustLevel,
       revocableAuthorization.evidenceHash,
     );
@@ -2070,6 +2124,7 @@ describe("trust registry contract", () => {
       issuerAuthorization.resourceType,
       issuerAuthorization.resourceId,
       issuerAuthorization.policyId,
+      issuerAuthorization.statusPolicyBindingCommitment,
       issuerAuthorization.trustLevel,
       issuerAuthorization.evidenceHash,
     );
@@ -2095,6 +2150,7 @@ describe("trust registry contract", () => {
         issuerAuthorization.resourceType,
         issuerAuthorization.resourceId,
         issuerAuthorization.policyId,
+        issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         issuerAuthorization.evidenceHash,
       ),
@@ -2113,6 +2169,7 @@ describe("trust registry contract", () => {
         issuerAuthorization.resourceType,
         issuerAuthorization.resourceId,
         issuerAuthorization.policyId,
+        issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         proposalEvidenceHash,
       ),
@@ -2127,6 +2184,7 @@ describe("trust registry contract", () => {
       issuerAuthorization.resourceType,
       issuerAuthorization.resourceId,
       issuerAuthorization.policyId,
+      issuerAuthorization.statusPolicyBindingCommitment,
       issuerAuthorization.trustLevel,
       proposalEvidenceHash,
     );
@@ -2146,6 +2204,7 @@ describe("trust registry contract", () => {
             issuerAuthorization.resourceType,
             issuerAuthorization.resourceId,
             issuerAuthorization.policyId,
+            issuerAuthorization.statusPolicyBindingCommitment,
             issuerAuthorization.trustLevel,
             labelToBytes32("evidence:license:proposal:duplicate"),
           ),
@@ -2156,6 +2215,7 @@ describe("trust registry contract", () => {
         issuerAuthorization.resourceType,
         issuerAuthorization.resourceId,
         issuerAuthorization.policyId,
+        issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         labelToBytes32("evidence:license:proposal:duplicate"),
       ),
@@ -2201,6 +2261,7 @@ describe("trust registry contract", () => {
             activeIssuerAuthorization.resourceType,
             activeIssuerAuthorization.resourceId,
             activeIssuerAuthorization.policyId,
+            activeIssuerAuthorization.statusPolicyBindingCommitment,
             activeIssuerAuthorization.trustLevel,
             labelToBytes32("evidence:license-active:duplicate"),
           ),
@@ -2211,6 +2272,7 @@ describe("trust registry contract", () => {
         activeIssuerAuthorization.resourceType,
         activeIssuerAuthorization.resourceId,
         activeIssuerAuthorization.policyId,
+        activeIssuerAuthorization.statusPolicyBindingCommitment,
         activeIssuerAuthorization.trustLevel,
         labelToBytes32("evidence:license-active:duplicate"),
       ),

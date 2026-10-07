@@ -8,12 +8,23 @@ import {
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
   computeSingleStatementStateRoot,
+  computeIssuerStatusPolicyBindingCommitment,
 } from "../index.js";
 
 const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const STATUS_BINDING = {
+  version: "tr-issuer-status-policy-v1",
+  trustRegistryId: "registry:midnight:university",
+  issuerAuthorizationId: "auth:issuer:birth:v1",
+  statusRegistryId: HASH_C,
+  statusAuthorityVerificationMethod: "did:midnight:issuer:1#status-key",
+  statusPolicyId: "policy:status:birth",
+  statusPolicyVersion: "v1",
+  statusPolicyContentCommitment: HASH_D,
+} as const;
 
 describe("trust registry evidence bundle", () => {
   it("requires one epoch signature in both bundle schemas", () => {
@@ -132,17 +143,23 @@ describe("trust registry evidence bundle", () => {
         policyId: "policy:university:v1",
         trustLevel: "approved",
         status: "active",
+        statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(STATUS_BINDING),
         proposedAt: "2026-05-20T00:00:00Z",
         authorizedAt: "2026-05-20T01:00:00Z",
         activeFrom: "2026-05-20T01:00:00Z",
         evidenceHash: HASH_D,
         lifecycleEventRoot: HASH_A,
       },
+      statusPolicyBinding: STATUS_BINDING,
       referencedStatusRegistryId: "status-registry:birth:v1",
       referencedStatusPolicyUri: "https://registry.example/status-policy",
     });
 
     expect(parsed.authorization?.role).toBe("issuer");
+    expect(TrustRegistryEvidenceBundleSchema.safeParse({
+      ...parsed,
+      authorization: { ...parsed.authorization, role: "verifier" },
+    }).success).toBe(false);
   });
 
   it("rejects bundles without authorization or recognition", () => {
@@ -217,6 +234,9 @@ describe("trust registry evidence bundle", () => {
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("epoch");
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("inclusionProof");
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization.properties.statusPolicyBindingCommitment).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.statusPolicyBinding).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.allOf).toHaveLength(2);
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.recognition).toBeDefined();
   });
 
@@ -230,6 +250,7 @@ describe("trust registry evidence bundle", () => {
       resourceId: "vc-type:birth:v1",
       policyId: "policy:university:v1",
       trustLevel: "approved",
+      statusPolicyBindingCommitment: HASH_B,
       status: "active",
       lifecycleEventRoot: HASH_A,
       proposedAt: "2026-05-20T00:00:00Z",
@@ -246,6 +267,7 @@ describe("trust registry evidence bundle", () => {
       resourceId: "vc-type:birth:v1",
       policyId: "policy:university:v1",
       trustLevel: "silver",
+      statusPolicyBindingCommitment: HASH_B,
       status: "active",
       lifecycleEventRoot: HASH_A,
       proposedAt: "2026-05-20T00:00:00Z",

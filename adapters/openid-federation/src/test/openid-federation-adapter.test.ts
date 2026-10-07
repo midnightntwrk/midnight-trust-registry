@@ -118,6 +118,27 @@ describe("trust registry OpenID Federation adapter", () => {
     );
   });
 
+  it("rejects a substituted status-policy preimage before federation publication", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("degree-status-substitution");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    if (bundle.statusPolicyBinding === undefined) throw new Error("expected issuer status binding");
+    const substituted = {
+      ...bundle,
+      statusPolicyBinding: {
+        ...bundle.statusPolicyBinding,
+        statusRegistryId: `0x${"f".repeat(64)}`,
+      },
+    };
+    expect(() => buildTrustRegistryPublicationMetadata({
+      registry: harness.registryRecord,
+      policyId: harness.policyRecord.policyId,
+      policyVersion: harness.policyRecord.version,
+      bundle: substituted,
+    })).toThrow(/status policy binding does not match governed authorization/i);
+  });
+
   it("builds a signed trust chain for the registry with an embedded authorization bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");
@@ -201,7 +222,8 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(
       midnightMetadata.authorization_bundle?.authorization?.resourceId,
     ).toBe(bundle.authorization?.resourceId);
-    expect(bundle.referencedStatusRegistryId).toBeDefined();
+    expect(bundle.statusPolicyBinding?.statusRegistryId).toBeDefined();
+    expect(bundle.authorization?.statusPolicyBindingCommitment).toBeDefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
 

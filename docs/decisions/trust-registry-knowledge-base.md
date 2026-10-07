@@ -107,8 +107,18 @@ Current VC dependency posture:
   signer-authorization and DID-binding surface for #73
 - retired VC 0.1.0 status helpers are not part of the new VC core; status
   authority evidence and a live TR-to-VC anchor still require follow-up work
-- `referencedStatusRegistryId` in the evidence bundle is metadata outside the
-  signed authorization leaf; never treat it as authenticated status policy
+- legacy `referencedStatusRegistryId` and status-policy URI bundle hints are
+  outside the signed leaf; the issuer verifier rejects them
+- the local #90 slice defines a strict V1 preimage and fixed digest vector for
+  status-registry ID, authority DID method, and policy identity/content; the
+  governed issuer proposal signs its digest, the ledger retains it through
+  lifecycle changes, and the epoch-authenticated issuer leaf carries it
+- the client checks the supplied preimage against the anchored leaf before
+  exposing the accepted status registry and authority identifier; this does
+  not verify the DID method's current key state or any VC status proof
+- the VC status-registry package still documents prototype authority and
+  root-verification limitations; do not represent its current helpers as a
+  supported non-revocation proof until those upstream gates are satisfied
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status

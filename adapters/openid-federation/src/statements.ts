@@ -16,6 +16,7 @@ import {
   TrustMarkPayloadSchema,
   TrustRegistryEntityConfigurationInputSchema,
   AuthorizationSubordinateStatementInputSchema,
+  FederationEvidenceBundleSchema,
   type EntityStatementPayload,
   type FederationLeafConfigurationInput,
   type RecognitionTrustMarkInput,
@@ -123,12 +124,9 @@ export const buildTrustRegistryPublicationMetadata = (input: {
   bundle?: AuthorizationSubordinateStatementInput["bundle"];
   policyVersion: string;
 }): EntityStatementPayload["metadata"] => {
-  const bundle = input.bundle;
-  const publishedBundle = bundle === undefined ? undefined : { ...bundle };
-  if (publishedBundle !== undefined) {
-    delete publishedBundle.referencedStatusRegistryId;
-    delete publishedBundle.referencedStatusPolicyUri;
-  }
+  const publishedBundle = input.bundle === undefined
+    ? undefined
+    : FederationEvidenceBundleSchema.parse(input.bundle);
 
   return {
     federation_entity: {

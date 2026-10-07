@@ -5,4 +5,5 @@ export * from "./ids.js";
 export * from "./lifecycle.js";
 export * from "./policy-snapshot.js";
 export * from "./scope.js";
+export * from "./status-policy.js";
 export * from "./types.js";
