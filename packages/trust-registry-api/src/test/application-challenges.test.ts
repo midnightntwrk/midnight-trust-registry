@@ -356,6 +356,14 @@ describe("application challenge lifecycle", () => {
       scopeCommitment: computeAuthorizationScopeCommitment(maintainerScope),
     };
     const issued = await service.issue(maintainerBinding);
+    await expect(service.issue({
+      ...maintainerBinding,
+      registryId: "Registry:Kanon:Trusted",
+    })).rejects.toThrow(/canonical lowercase/i);
+    await expect(service.issue({
+      ...binding,
+      registryId: "Registry:Kanon:Trusted",
+    })).rejects.toThrow(/canonical lowercase/i);
     const wrongRegistryScope = {
       ...maintainerScope,
       registryId: "registry:other:trusted",

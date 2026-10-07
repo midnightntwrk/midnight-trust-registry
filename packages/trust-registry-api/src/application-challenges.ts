@@ -20,7 +20,10 @@ const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
 
 export const ApplicationChallengeBindingSchema = z.strictObject({
-  registryId: ScopedIdentifierSchema,
+  registryId: ScopedIdentifierSchema.refine(
+    (value) => value === value.toLowerCase(),
+    "Registry ID must be canonical lowercase",
+  ),
   applicationId: ScopedIdentifierSchema,
   subjectDid: DidSchema.startsWith("did:midnight:"),
   evidenceVerifierDid: DidSchema,
