@@ -38,11 +38,14 @@ not a production verifier.
 4. Evaluate issuer authorization from an independently anchored registry
    snapshot and evaluate status against an independently trusted VC status
    source. A status-reference shape check is not a non-revocation proof.
-5. Apply role-specific claims and canonical `tr-scope-v1` policy. Reject stale
-   credential or proof time with the off-ledger verifier clock; the Compact
-   registry contract does not supply wall-clock time.
-6. Return only subject DID, nonce, presentation hash, claims commitment, and
-   validity timestamps to the #127 intake seam. Sign its canonical evidence
+5. Apply role-specific claims and the live canonical `tr-scope-v1` binding
+   supplied by intake, not a scope captured when the verifier was constructed.
+   Reject stale credential or proof time against each call's trusted evaluation
+   time; the Compact registry contract does not supply wall-clock time.
+6. Return only subject DID, nonce, evaluated scope commitment, presentation
+   hash, claims commitment, and validity timestamps to the #127 intake seam.
+   Intake rejects a scope-commitment mismatch before challenge consumption.
+   Sign its canonical evidence
    commitment with the evidence verifier's DID assertion key. Never return a
    raw VP from the public surface.
 

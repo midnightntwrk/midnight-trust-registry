@@ -8,7 +8,7 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { deriveJubjubPublicKey } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -110,20 +110,55 @@ async function fixture() {
 
 describe("published VC proof and DID application verifier port", () => {
   it("adapts proof-observed bindings for challenge intake rather than echoing expected inputs", async () => {
-    const { input } = await fixture();
-    const verifyPresentation = createApplicationVpIntakeVerifier({
+    const { input, family } = await fixture();
+    const binding = ApplicationChallengeBindingSchema.parse({
+      registryId: "registry:vp:test",
+      applicationId: "application:vp:one",
+      subjectDid: input.expectedSubjectDid,
+      evidenceVerifierDid: createMidnightDid("vp-evidence-verifier"),
+      role: "issuer",
+      policyId: "policy:vp:v1",
+      policyVersion: "v1",
       scope: input.scope,
-      evaluatedAtMs: input.evaluatedAtMs,
+      scopeCommitment: computeAuthorizationScopeCommitment(input.scope),
+      governedResource: { type: "credentialFamily", id: input.scope.credentialFamilyId },
+    });
+    const verifyPresentation = createApplicationVpIntakeVerifier({
       resolver: input.resolver,
       family: input.family,
     });
-    const verified = await verifyPresentation(input.submission, input.nonce, input.expectedSubjectDid);
+    const context = { nonce: input.nonce, binding, evaluatedAt: new Date(NOW).toISOString() };
+    const verified = await verifyPresentation(input.submission, context);
     expect(verified.subjectDid).toBe(input.expectedSubjectDid);
     expect(verified.nonce).toBe(input.nonce);
-    await expect(verifyPresentation(input.submission, `0x${"22".repeat(32)}`, input.expectedSubjectDid))
+    expect(verified.scopeCommitment).toBe(binding.scopeCommitment);
+    await expect(verifyPresentation(input.submission, { ...context, nonce: `0x${"22".repeat(32)}` }))
       .rejects.toMatchObject({ category: "invalid_presentation" });
-    await expect(verifyPresentation(input.submission, input.nonce, createMidnightDid("other-holder")))
+    await expect(verifyPresentation(input.submission, {
+      ...context,
+      binding: { ...binding, subjectDid: createMidnightDid("other-holder") },
+    }))
       .rejects.toMatchObject({ category: "invalid_presentation" });
+    await expect(verifyPresentation(input.submission, {
+      ...context,
+      evaluatedAt: new Date(NOW + 6 * 60_000).toISOString(),
+    })).rejects.toMatchObject({ category: "expired" });
+    const otherScope = { ...input.scope, credentialFamilyId: "credential-family:other" };
+    family.assertRoleClaims = vi.fn(async (_material, scope) => {
+      if (scope.role === "issuer" && scope.credentialFamilyId !== input.scope.credentialFamilyId) {
+        throw new Error("wrong applicant scope");
+      }
+      return { claimsCommitment: sha256Hex("accepted-issuer-claims") };
+    });
+    await expect(verifyPresentation(input.submission, {
+      ...context,
+      binding: {
+        ...binding,
+        scope: otherScope,
+        scopeCommitment: computeAuthorizationScopeCommitment(otherScope),
+        governedResource: { type: "credentialFamily", id: otherScope.credentialFamilyId },
+      },
+    })).rejects.toMatchObject({ category: "ineligible" });
   });
 
   it("checks real issuance/presentation proofs, DID methods, challenge, and trusted eligibility ports", async () => {
@@ -131,6 +166,7 @@ describe("published VC proof and DID application verifier port", () => {
     const verified = await verifyApplicationVp(input);
     expect(verified.subjectDid).toBe(input.expectedSubjectDid);
     expect(verified.nonce).toBe(NONCE);
+    expect(verified.scopeCommitment).toBe(computeAuthorizationScopeCommitment(input.scope));
     expect(verified.presentationHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(verified.presentationHash).not.toBe(sha256Hex(bytes32("presentation-body")));
     expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());

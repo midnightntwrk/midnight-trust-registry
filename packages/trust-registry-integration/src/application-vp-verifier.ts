@@ -12,9 +12,12 @@ import {
   type MidnightDIDResolverInterface,
 } from "@midnight-ntwrk/midnight-did";
 import {
+  ApplicationChallengeBindingSchema,
   AuthorizationScopeSchema,
   HashHexSchema,
+  computeAuthorizationScopeCommitment,
   sha256Hex,
+  type ApplicationChallengeBinding,
   type AuthorizationScope,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -40,6 +43,7 @@ export type ApplicationVpMaterial = {
 export type ApplicationVpVerifierResult = {
   subjectDid: string;
   nonce: string;
+  scopeCommitment: string;
   presentationHash: string;
   claimsCommitment: string;
   verifiedAt: string;
@@ -171,6 +175,7 @@ export async function verifyApplicationVp<Submission>(input: {
   return {
     subjectDid: material.subjectDid,
     nonce: input.nonce,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope.data),
     presentationHash,
     claimsCommitment,
     verifiedAt: new Date(input.evaluatedAtMs).toISOString(),
@@ -180,17 +185,29 @@ export async function verifyApplicationVp<Submission>(input: {
 
 /** Adapts proof-observed bindings to the challenge intake callback; family.prepare must parse untrusted input. */
 export function createApplicationVpIntakeVerifier<Submission>(config: {
-  scope: AuthorizationScope;
-  evaluatedAtMs: number;
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
   family: ApplicationVpFamilyAdapter<Submission>;
-}): (presentation: unknown, nonce: string, subjectDid: string) => Promise<ApplicationVpVerifierResult> {
-  return async (presentation, nonce, subjectDid) => verifyApplicationVp({
-    ...config,
-    submission: presentation as Submission,
-    nonce,
-    expectedSubjectDid: subjectDid,
-  });
+}): (presentation: unknown, context: {
+  nonce: string;
+  binding: ApplicationChallengeBinding;
+  evaluatedAt: string;
+}) => Promise<ApplicationVpVerifierResult> {
+  return async (presentation, context) => {
+    let binding: ApplicationChallengeBinding;
+    try {
+      binding = ApplicationChallengeBindingSchema.parse(context.binding);
+    } catch {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+    return verifyApplicationVp({
+      ...config,
+      submission: presentation as Submission,
+      nonce: context.nonce,
+      expectedSubjectDid: binding.subjectDid,
+      scope: binding.scope,
+      evaluatedAtMs: Date.parse(context.evaluatedAt),
+    });
+  };
 }
 
 function assertProofMethod(
