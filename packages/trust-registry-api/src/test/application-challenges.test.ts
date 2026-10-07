@@ -113,6 +113,7 @@ describe("application challenge lifecycle", () => {
       { type: "schema", id: scope.schemaId },
       { type: "schemaVersion", id: scope.schemaVersion },
       { type: "credentialDefinition", id: scope.credentialDefinitionId },
+      { type: "statusMethodRequirement", id: scope.statusMethod },
     ] as const;
     for (const governedResource of resources) {
       const scopedBinding = { ...binding, governedResource };

@@ -14,6 +14,7 @@ const GovernedResourceSchema = z.strictObject({
     "schema",
     "schemaVersion",
     "credentialDefinition",
+    "statusMethodRequirement",
     "requestProfile",
     "registry",
   ]),
@@ -80,6 +81,7 @@ function governedResourceInScope(
       case "schema": return scope.schemaId;
       case "schemaVersion": return scope.schemaVersion;
       case "credentialDefinition": return scope.credentialDefinitionId;
+      case "statusMethodRequirement": return scope.statusMethod;
       default: return null;
     }
   }

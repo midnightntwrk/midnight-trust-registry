@@ -43,6 +43,7 @@ export type IssuerScenarioFixture = {
   resourceIdCommitment: Uint8Array;
   trustLevel: string;
   referencedStatusRegistryId: string;
+  authorizationScope: Extract<AuthorizationScope, { role: "issuer" }>;
 };
 
 export type VerifierScenarioFixture = {
@@ -106,20 +107,7 @@ export type MaintainerScenarioFixture = {
 
 export const createIssuerAuthorizationScopeFixture = (
   fixture: IssuerScenarioFixture,
-): Extract<AuthorizationScope, { role: "issuer" }> => {
-  if (fixture.resourceType !== IssuerResourceType.credentialFamily) {
-    throw new Error("Issuer scope fixture requires a credential-family resource");
-  }
-  return {
-    version: "tr-scope-v1",
-    role: "issuer",
-    credentialFamilyId: fixture.resourceId,
-    schemaId: createScopedIdentifier("schema", fixture.resourceId),
-    schemaVersion: "1.0.0",
-    credentialDefinitionId: createScopedIdentifier("credential-definition", fixture.resourceId),
-    statusMethod: "midnight-status-registry-v1",
-  };
-};
+): Extract<AuthorizationScope, { role: "issuer" }> => fixture.authorizationScope;
 
 const createRequestAuthorizationScopeFixture = (
   role: "verifier" | "auditor",
@@ -159,17 +147,33 @@ export const createMaintainerAuthorizationScopeFixture = (
 
 export const createIssuerScenarioFixture = (
   label: string,
+  resourceType: IssuerResourceType = IssuerResourceType.credentialFamily,
 ): IssuerScenarioFixture => {
   const authorizationId = createScopedIdentifier("auth", "issuer", label, "v1");
   const subjectDid = createMidnightDid(`issuer:${label}`);
-  const resourceId = createScopedIdentifier("credential-family", label, "v1");
+  const authorizationScope: Extract<AuthorizationScope, { role: "issuer" }> = {
+    version: "tr-scope-v1",
+    role: "issuer",
+    credentialFamilyId: createScopedIdentifier("credential-family", label, "v1"),
+    schemaId: createScopedIdentifier("schema", label, "v1"),
+    schemaVersion: "1.0.0",
+    credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
+    statusMethod: "midnight-status-registry-v1",
+  };
+  const resourceId = [
+    authorizationScope.credentialFamilyId,
+    authorizationScope.schemaId,
+    authorizationScope.schemaVersion,
+    authorizationScope.credentialDefinitionId,
+    authorizationScope.statusMethod,
+  ][resourceType]!;
 
   return {
     authorizationId,
     authorizationIdCommitment: bytes32Commitment(authorizationId),
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
-    resourceType: IssuerResourceType.credentialFamily,
+    resourceType,
     resourceId,
     resourceIdCommitment: bytes32Commitment(resourceId),
     trustLevel: "approved",
@@ -178,6 +182,7 @@ export const createIssuerScenarioFixture = (
       label,
       "v1",
     ),
+    authorizationScope,
   };
 };
 

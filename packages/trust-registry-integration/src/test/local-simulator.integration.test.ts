@@ -9,6 +9,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
+  IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -16,6 +17,7 @@ import {
   computeGovernancePolicySnapshotCommitment,
   deriveGovernancePolicySnapshot,
   resolveGovernancePolicyTemplate,
+  sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
@@ -29,6 +31,32 @@ import {
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("trust registry local simulator integration", () => {
+  it("proposes every supported issuer resource against its canonical scope", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    for (const resourceType of [
+      IssuerResourceType.credentialFamily,
+      IssuerResourceType.schema,
+      IssuerResourceType.schemaVersion,
+      IssuerResourceType.credentialDefinition,
+      IssuerResourceType.statusMethodRequirement,
+    ]) {
+      const issuer = createIssuerScenarioFixture(`resource-${resourceType}`, resourceType);
+      expect(() => harness.proposeIssuer(issuer)).not.toThrow();
+      const scope = createIssuerAuthorizationScopeFixture(issuer);
+      expect(() => harness.proposeIssuerWithApplicationEvidence(
+        issuer,
+        harness.createApplicationEvidence({
+          applicationId: issuer.authorizationId,
+          subjectDid: issuer.subjectDid,
+          role: "issuer",
+          scope,
+        }),
+        [],
+        { scope: { ...scope, statusMethod: "substituted-method" }, challengeHash: sha256Hex("unused") },
+      )).toThrow(/proposal scope does not match/);
+    }
+  });
+
   it("preserves issuer application history before activation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application");

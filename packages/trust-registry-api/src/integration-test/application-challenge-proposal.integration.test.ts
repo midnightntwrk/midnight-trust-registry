@@ -196,6 +196,14 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
       }
     }
+    if ((role === "verifier" || role === "auditor") && binding.scope.role === role) {
+      for (const scope of [
+        { ...binding.scope, purpose: "substituted-purpose" },
+        { ...binding.scope, credentialScopeCommitment: `0x${"a".repeat(64)}` },
+      ]) {
+        expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
+      }
+    }
     for (const [field, value, message] of [
       ["scopeCommitment", `0x${"a".repeat(64)}`, /scopeCommitment/],
       ["challengeHash", `0x${"b".repeat(64)}`, /challengeHash/],

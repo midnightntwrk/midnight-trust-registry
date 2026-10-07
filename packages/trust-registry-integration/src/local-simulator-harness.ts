@@ -879,8 +879,14 @@ export class LocalTrustRegistryIntegrationHarness {
     },
   ): Uint8Array {
     if (
-      fixture.resourceType !== IssuerResourceType.credentialFamily ||
       expectedEvidence.scope.role !== "issuer" ||
+      ([
+        expectedEvidence.scope.credentialFamilyId,
+        expectedEvidence.scope.schemaId,
+        expectedEvidence.scope.schemaVersion,
+        expectedEvidence.scope.credentialDefinitionId,
+        expectedEvidence.scope.statusMethod,
+      ][fixture.resourceType] !== fixture.resourceId) ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(fixture))
     ) {
@@ -1052,12 +1058,8 @@ export class LocalTrustRegistryIntegrationHarness {
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "verifier" ||
-      expectedEvidence.scope.requestProfileId !== fixture.requestProfileId ||
-      expectedEvidence.scope.allowedAttributes.length !== 1 ||
-      expectedEvidence.scope.allowedAttributes[0] !== fixture.allowedAttributeSetId ||
-      expectedEvidence.scope.allowedPredicates.length !== 1 ||
-      expectedEvidence.scope.allowedPredicates[0] !== fixture.allowedPredicateSetId ||
-      expectedEvidence.scope.disclosureLevel !== fixture.disclosureLevelId
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createVerifierAuthorizationScopeFixture(fixture))
     ) {
       throw new Error("Verifier proposal scope does not match governed request profile");
     }
@@ -1303,12 +1305,8 @@ export class LocalTrustRegistryIntegrationHarness {
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "auditor" ||
-      expectedEvidence.scope.requestProfileId !== fixture.requestProfileId ||
-      expectedEvidence.scope.allowedAttributes.length !== 1 ||
-      expectedEvidence.scope.allowedAttributes[0] !== fixture.allowedAttributeSetId ||
-      expectedEvidence.scope.allowedPredicates.length !== 1 ||
-      expectedEvidence.scope.allowedPredicates[0] !== fixture.allowedPredicateSetId ||
-      expectedEvidence.scope.disclosureLevel !== fixture.disclosureLevelId
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createAuditorAuthorizationScopeFixture(fixture))
     ) {
       throw new Error("Auditor proposal scope does not match governed request profile");
     }
