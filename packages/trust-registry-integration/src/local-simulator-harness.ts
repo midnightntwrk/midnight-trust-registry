@@ -881,7 +881,8 @@ export class LocalTrustRegistryIntegrationHarness {
     if (
       fixture.resourceType !== IssuerResourceType.credentialFamily ||
       expectedEvidence.scope.role !== "issuer" ||
-      expectedEvidence.scope.credentialFamilyId !== fixture.resourceId
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(fixture))
     ) {
       throw new Error("Issuer proposal scope does not match governed resource");
     }

@@ -63,10 +63,10 @@ function intakeInput(binding: ApplicationChallengeBinding, service: ApplicationC
     expectedBinding: binding,
     nonce,
     challengeHash,
-    presentation: { rawVp: "private-holder-presentation" },
-    verifyPresentation: vi.fn(async (_presentation: unknown, expectedNonce: string, subjectDid: string) => ({
-      subjectDid,
-      nonce: expectedNonce,
+    presentation: { rawVp: "private-holder-presentation", proofNonce: nonce, proofSubjectDid: binding.subjectDid },
+    verifyPresentation: vi.fn(async (presentation: unknown, _expectedNonce: string, _subjectDid: string) => ({
+      subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
+      nonce: (presentation as { proofNonce: string }).proofNonce,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
       verifiedAt: "2026-10-06T00:00:00.000Z",
@@ -111,16 +111,10 @@ describe("challenge-backed application intake", () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(binding);
     const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
-    input.verifyPresentation.mockImplementationOnce(async (_presentation, nonce, subjectDid) => ({
-      subjectDid,
-      nonce: `${nonce}-wrong`,
-      presentationHash: `0x${"2".repeat(64)}`,
-      claimsCommitment: `0x${"3".repeat(64)}`,
-      verifiedAt: "2026-10-06T00:00:00.000Z",
-      expiresAt: "2026-10-06T01:00:00.000Z",
-    }));
+    input.presentation = { ...input.presentation, proofNonce: `0x${"f".repeat(64)}` };
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/Presentation does not match/);
     expect(input.propose).not.toHaveBeenCalled();
+    input.presentation = { ...input.presentation, proofNonce: issued.nonce };
     input.signEvidence.mockRejectedValueOnce(new Error("signer failed"));
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/signer failed/);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
@@ -143,6 +137,24 @@ describe("challenge-backed application intake", () => {
     await expect(consumeChallengeAndSubmitApplication(substituted)).rejects.toThrow(/governed proposal/);
     expect(input.verifyPresentation).not.toHaveBeenCalled();
     expect(input.propose).not.toHaveBeenCalled();
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it("rejects invalid preconditions without invoking the VP verifier or consuming the challenge", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+
+    await expect(consumeChallengeAndSubmitApplication({ ...input, authorizedVerifiers: [] }))
+      .rejects.toThrow(/not authorized/);
+    await expect(consumeChallengeAndSubmitApplication({ ...input, evaluatedAt: "invalid-time" }))
+      .rejects.toThrow();
+    await expect(consumeChallengeAndSubmitApplication({ ...input, nonce: "not-a-nonce" }))
+      .rejects.toThrow(/nonce or hash/);
+    await expect(consumeChallengeAndSubmitApplication({ ...input, challengeHash: `0x${"f".repeat(64)}` }))
+      .rejects.toThrow(/nonce or hash/);
+    expect(input.verifyPresentation).not.toHaveBeenCalled();
     await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
   });
 });

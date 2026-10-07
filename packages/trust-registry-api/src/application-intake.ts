@@ -1,6 +1,8 @@
 import {
   ApplicationChallengeBindingSchema,
+  ApplicationEvidenceEvaluationTimeSchema,
   ApplicationEvidenceEnvelopeSchema,
+  AuthorizedEvidenceVerifierSchema,
   assertValidApplicationEvidence,
   computeApplicationChallengeBindingHash,
   computeApplicationEvidenceCommitment,
@@ -11,7 +13,7 @@ import {
   type AuthorizedEvidenceVerifier,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-import { ApplicationChallengeService } from "./application-challenges.js";
+import { ApplicationChallengeService, hasMatchingApplicationChallengeHash } from "./application-challenges.js";
 
 export type VerifiedApplicationPresentation = {
   subjectDid: string;
@@ -27,7 +29,7 @@ export type ApplicationProposalInput = {
   evidence: ApplicationEvidenceSubmission;
 };
 
-/** The caller supplies a policy-authorized VP verifier and evidence signer. */
+/** The caller supplies a policy-authorized VP verifier that derives bindings from the verified proof, not expected inputs. */
 export async function consumeChallengeAndSubmitApplication<Result>(input: {
   challengeService: ApplicationChallengeService;
   binding: ApplicationChallengeBinding;
@@ -46,6 +48,14 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   const expectedBinding = ApplicationChallengeBindingSchema.parse(input.expectedBinding);
   if (computeApplicationChallengeBindingHash(binding) !== computeApplicationChallengeBindingHash(expectedBinding)) {
     throw new Error("Application challenge binding does not match the governed proposal");
+  }
+  ApplicationEvidenceEvaluationTimeSchema.parse(input.evaluatedAt);
+  const authorizedVerifiers = input.authorizedVerifiers.map((verifier) => AuthorizedEvidenceVerifierSchema.parse(verifier));
+  if (!authorizedVerifiers.some((verifier) => verifier.did === binding.evidenceVerifierDid)) {
+    throw new Error("Application evidence verifier is not authorized by policy");
+  }
+  if (!hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) {
+    throw new Error("Application challenge nonce or hash is invalid");
   }
   const verified = await input.verifyPresentation(input.presentation, input.nonce, binding.subjectDid);
   if (verified.nonce !== input.nonce || verified.subjectDid !== binding.subjectDid) {
@@ -90,7 +100,7 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
       challengeHash: consumedHash,
       evaluatedAt: input.evaluatedAt,
     },
-    input.authorizedVerifiers,
+    authorizedVerifiers,
     input.verifyEvidenceSignature,
   );
   return input.propose({ binding: expectedBinding, evidence });

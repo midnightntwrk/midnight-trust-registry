@@ -19,6 +19,13 @@ const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
 export { ApplicationChallengeBindingSchema };
 export type { ApplicationChallengeBinding };
 
+/** Syntax and digest check only; the store remains authoritative for liveness and one-time use. */
+export function hasMatchingApplicationChallengeHash(nonce: string, challengeHash: string): boolean {
+  return NonceSchema.safeParse(nonce).success &&
+    HashSchema.safeParse(challengeHash).success &&
+    sha256Hex(Buffer.from(nonce.slice(2), "hex")) === challengeHash.toLowerCase();
+}
+
 export type ApplicationChallengeRecord = {
   challengeHash: string;
   bindingHash: string;
@@ -143,11 +150,8 @@ export class ApplicationChallengeService {
   }): Promise<string | null> {
     const parsedBinding = ApplicationChallengeBindingSchema.safeParse(input.binding);
     if (!parsedBinding.success) return null;
-    if (!NonceSchema.safeParse(input.nonce).success) return null;
-    if (!HashSchema.safeParse(input.challengeHash).success) return null;
-
-    const challengeHash = sha256Hex(Buffer.from(input.nonce.slice(2), "hex"));
-    if (challengeHash !== input.challengeHash.toLowerCase()) return null;
+    if (!hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) return null;
+    const challengeHash = input.challengeHash.toLowerCase();
     return await this.store.consume(challengeHash, computeApplicationChallengeBindingHash(parsedBinding.data), this.now())
       ? challengeHash
       : null;

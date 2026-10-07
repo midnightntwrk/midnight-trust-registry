@@ -76,6 +76,12 @@ arbitrary 32-byte scope digest is not accepted. The caller must supply a
 policy-authorized VP verifier, evidence signer, authorized verifier keys,
 and a trusted proposal binding. The intake consumes the challenge once before
 signing and proposing; a later failure does not make the challenge reusable.
+The VP verifier must derive the nonce and subject DID from the verified proof,
+not echo the expected callback arguments. The reference tests use a fixture
+verifier, not a production VC/VP verifier. Static policy configuration and the
+nonce/hash pair are checked before VP work; only the store's atomic consume
+decides whether a challenge is live, so a production route must also apply
+request limits and VP verification timeouts.
 The existing `POST /v1/applications` route is a local operator workspace route,
 not a public VC/VP-verified membership endpoint.
 

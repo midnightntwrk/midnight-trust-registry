@@ -104,8 +104,9 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       challengeHash: issued.challengeHash,
     };
     expect(binding.scopeCommitment).not.toBe(sha256Hex(binding.governedResource.id));
-    const verifyPresentation = vi.fn(async (_presentation: unknown, nonce: string, subjectDid: string) => ({
-      nonce, subjectDid,
+    const verifyPresentation = vi.fn(async (presentation: unknown, _nonce: string, _subjectDid: string) => ({
+      nonce: (presentation as { proofNonce: string }).proofNonce,
+      subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
       verifiedAt: VERIFIED_AT,
@@ -122,7 +123,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       expectedBinding: binding,
       nonce: issued.nonce,
       challengeHash: issued.challengeHash,
-      presentation: { privateVp: "holder-secret-not-for-ledger" },
+      presentation: { privateVp: "holder-secret-not-for-ledger", proofNonce: issued.nonce, proofSubjectDid: binding.subjectDid },
       verifyPresentation,
       signEvidence: async (commitment: string) => harness.signApplicationEvidenceCommitment(commitment),
       authorizedVerifiers: [harness.evidenceVerifier],
@@ -169,23 +170,15 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
     })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
 
-    verifyPresentation.mockImplementationOnce(async (_presentation, nonce, subjectDid) => ({
-      nonce: `${nonce}-wrong`, subjectDid,
-      presentationHash: `0x${"2".repeat(64)}`,
-      claimsCommitment: `0x${"3".repeat(64)}`,
-      verifiedAt: VERIFIED_AT,
-      expiresAt: EXPIRES_AT,
-    }));
-    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/Presentation does not match/);
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      presentation: { ...input.presentation, proofNonce: `0x${"f".repeat(64)}` },
+    })).rejects.toThrow(/Presentation does not match/);
 
-    verifyPresentation.mockImplementationOnce(async (_presentation, nonce) => ({
-      nonce, subjectDid: "did:midnight:wrong-subject",
-      presentationHash: `0x${"2".repeat(64)}`,
-      claimsCommitment: `0x${"3".repeat(64)}`,
-      verifiedAt: VERIFIED_AT,
-      expiresAt: EXPIRES_AT,
-    }));
-    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/Presentation does not match/);
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      presentation: { ...input.presentation, proofSubjectDid: "did:midnight:wrong-subject" },
+    })).rejects.toThrow(/Presentation does not match/);
 
     const commitment = await consumeChallengeAndSubmitApplication(input);
     expect(commitment).toBeInstanceOf(Uint8Array);
@@ -197,6 +190,12 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         ? { ...binding.scope, registryId: "registry:other:trusted" }
         : { ...binding.scope, requestProfileId: "request-profile:other" };
     expect(() => propose(signedEvidence, { ...expected, scope: wrongResourceScope })).toThrow(/proposal scope does not match/);
+    if (role === "issuer" && binding.scope.role === "issuer") {
+      for (const field of ["schemaId", "credentialDefinitionId"] as const) {
+        const scope = { ...binding.scope, [field]: `${field}:substituted` };
+        expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
+      }
+    }
     for (const [field, value, message] of [
       ["scopeCommitment", `0x${"a".repeat(64)}`, /scopeCommitment/],
       ["challengeHash", `0x${"b".repeat(64)}`, /challengeHash/],
@@ -233,6 +232,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       challengeService: expiredService,
       nonce: expired.nonce,
       challengeHash: expired.challengeHash,
+      presentation: { ...input.presentation, proofNonce: expired.nonce },
     })).rejects.toThrow(/invalid or already consumed/);
     expect(proposeWithEvidence).toHaveBeenCalledOnce();
   });

@@ -4,6 +4,7 @@ import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./i
 import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
+export const ApplicationEvidenceEvaluationTimeSchema = TimestampSchema;
 const NonEmptyStringSchema = z.string().trim().min(1);
 const KeyReferenceSchema = z
   .string()
