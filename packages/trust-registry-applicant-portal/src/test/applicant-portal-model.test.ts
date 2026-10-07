@@ -18,6 +18,7 @@ const HASH_B = `0x${"2".repeat(64)}`;
 const HASH_C = `0x${"3".repeat(64)}`;
 const HASH_D = `0x${"4".repeat(64)}`;
 const HASH_E = `0x${"5".repeat(64)}`;
+const STATUS_POLICY_BINDING_COMMITMENT = "0x2bd4155f627f06c4d2bf046e68cb53aa1355d876fd36b21f1a5fa8f174a80b30";
 
 type EvidenceBundle = PublicInspection["activeIssuers"][number]["evidence"];
 
@@ -136,7 +137,7 @@ const createAuthorizationMutationResponse = (
         resourceId: target === "issuer" ? "degree-scope" : "age-gate",
         policyId: "policy:default",
         trustLevel: target === "issuer" ? "gold" : "silver",
-        ...(target === "issuer" ? { statusPolicyBindingCommitment: HASH_E } : {}),
+        ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),
         status: "proposed",
         lifecycleEventRoot: HASH_A,
         proposedAt: "2026-05-23T05:00:00Z",
@@ -165,12 +166,24 @@ const createAuthorizationMutationResponse = (
           resourceId: target === "issuer" ? "degree-scope" : "age-gate",
           policyId: "policy:default",
           trustLevel: target === "issuer" ? "gold" : "silver",
-          ...(target === "issuer" ? { statusPolicyBindingCommitment: HASH_E } : {}),
+          ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),
           status: "proposed",
           lifecycleEventRoot: HASH_A,
           proposedAt: "2026-05-23T05:00:00Z",
           evidenceHash: HASH_B,
         },
+        ...(target === "issuer" ? {
+          statusPolicyBinding: {
+            version: "tr-issuer-status-policy-v1",
+            trustRegistryId: "registry:kanon-portal",
+            issuerAuthorizationId: "auth:issuer:degree:v1",
+            statusRegistryId: HASH_A,
+            statusAuthorityVerificationMethod: "did:midnight:testnet:issuer#status-key",
+            statusPolicyId: "policy:status:degree",
+            statusPolicyVersion: "v1",
+            statusPolicyContentCommitment: HASH_B,
+          },
+        } : {}),
       },
     },
   });
