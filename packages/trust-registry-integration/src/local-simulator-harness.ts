@@ -1561,6 +1561,7 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch is stale for this evidence bundle");
     }
 
+    // External callers can bypass the TypeScript tuple type at runtime.
     if (bundle.epoch.maintainerSignatures.length !== 1) {
       throw new Error("Epoch commitment must include exactly one maintainer signature");
     }
@@ -1568,7 +1569,12 @@ export class LocalTrustRegistryIntegrationHarness {
     if (maintainerSignature.algorithm !== "jubjub-schnorr") {
       throw new Error("Epoch maintainer signature algorithm is unsupported");
     }
-    const signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+    let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+    try {
+      signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+    } catch (error) {
+      throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
+    }
     const payloadHash = computeCreateEpochCommitmentPayloadHash(
       bytes32Commitment(bundle.epoch.epochId),
       hashHexToBytes32(bundle.epoch.stateRoot),
@@ -1580,15 +1586,27 @@ export class LocalTrustRegistryIntegrationHarness {
     const maintainerRecord = this.simulator
       .getLedger()
       .maintainerRecords.lookup(epochRecord.maintainerKeyId);
-    const verified = verifyPolicyBoundMaintainerAction(
-      maintainerRecord.publicKey,
-      this.registryIdCommitment,
-      epochRecord.publicationPolicyCommitment,
-      CREATE_EPOCH_ACTION_KIND,
-      payloadHash,
-      epochRecord.publishedAtSequence,
-      signature,
-    );
+    if (
+      !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+      || epochRecord.publicationPolicyCommitment.length !== 32
+      || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
+    ) {
+      throw new Error("Epoch publication policy commitment is missing or malformed");
+    }
+    let verified = false;
+    try {
+      verified = verifyPolicyBoundMaintainerAction(
+        maintainerRecord.publicKey,
+        this.registryIdCommitment,
+        epochRecord.publicationPolicyCommitment,
+        CREATE_EPOCH_ACTION_KIND,
+        payloadHash,
+        epochRecord.publishedAtSequence,
+        signature,
+      );
+    } catch {
+      // Unexpected verification failures must not authenticate the epoch.
+    }
     if (!verified) {
       throw new Error("Epoch maintainer signature is invalid");
     }
