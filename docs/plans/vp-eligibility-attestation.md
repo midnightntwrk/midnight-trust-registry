@@ -1,7 +1,9 @@
 # VC/VP Eligibility Attestation For 0.1.0
 
-Status: implementation plan for #76, stacked after the #127 challenge-to-proposal
-bridge. This plan does not claim production VP or revocation verification.
+Status: local partial implementation for #76, stacked after the #127
+challenge-to-proposal bridge. The published-package proof/DID port and
+issuer-fixture adversarial tests exist; four-role policy fixtures, #127 intake
+connection, production family/status adapters, and public route remain open.
 
 ## Published Package Boundary
 

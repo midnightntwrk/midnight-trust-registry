@@ -26,6 +26,15 @@ Current coverage:
   Run it with `pnpm run test:light` in this package. This is a
   compiler/runtime compatibility and typed-envelope test, not a proof of
   applicant eligibility, issuer authorization, or live credential status.
+- a fixture-backed application VP verifier port using published VC 0.2.0
+  proof circuits and DID resolution. It verifies issuer/holder method binding,
+  issuance and presentation signatures, nonce, holder binding, proof time,
+  and status-reference structure, then calls explicit trusted adapters for
+  issuer authorization, live status, and role claims. The port returns only
+  redacted commitment-sized results. It is not a public intake route or a
+  standalone non-revocation verifier; callers must supply trustworthy family
+  body roots and the three eligibility adapters. Run its focused tests with
+  `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
 
 The published VC Compact package targets Compact 0.31.1 and runtime 0.16.0.
 The repository pins that compiler in `.compact-version` and Nix. The probe
