@@ -75,10 +75,12 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     binding,
     evaluatedAt: input.evaluatedAt,
   });
+  const verifiedScopeCommitment = HashHexSchema.safeParse(verified.scopeCommitment);
   if (
     verified.nonce !== input.nonce ||
     verified.subjectDid !== binding.subjectDid ||
-    HashHexSchema.parse(verified.scopeCommitment).toLowerCase() !== binding.scopeCommitment.toLowerCase()
+    !verifiedScopeCommitment.success ||
+    verifiedScopeCommitment.data.toLowerCase() !== binding.scopeCommitment.toLowerCase()
   ) {
     throw new Error("Presentation does not match the application challenge, subject DID, or scope");
   }
@@ -100,6 +102,13 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     presentationHash: verified.presentationHash,
     claimsCommitment: verified.claimsCommitment,
   });
+  const evaluatedAt = Date.parse(input.evaluatedAt);
+  if (evaluatedAt < Date.parse(envelope.verifiedAt)) {
+    throw new Error("Application evidence is not yet valid at the governed transition");
+  }
+  if (evaluatedAt >= Date.parse(envelope.expiresAt)) {
+    throw new Error("Application evidence is expired at the governed transition");
+  }
   const consumedHash = await input.challengeService.consume(challengeInput);
   if (consumedHash === null || consumedHash !== envelope.challengeHash) {
     throw new Error("Application challenge is invalid or already consumed");

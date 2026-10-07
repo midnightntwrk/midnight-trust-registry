@@ -125,6 +125,24 @@ describe("challenge-backed application intake", () => {
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
   });
 
+  it("keeps the challenge live for malformed scope and locally invalid VP time windows", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    const verified = await input.verifyPresentation(input.presentation, { binding });
+    for (const [override, error] of [
+      [{ scopeCommitment: "malformed" }, /Presentation does not match/],
+      [{ verifiedAt: "2026-10-06T00:00:00.500Z" }, /not yet valid/],
+      [{ verifiedAt: "2026-10-05T23:59:59.000Z", expiresAt: input.evaluatedAt }, /expired/],
+    ] as const) {
+      input.verifyPresentation.mockResolvedValueOnce({ ...verified, ...override });
+      await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(error);
+      expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    }
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
   it("does not consume on a failed VP binding, but spends a challenge after signing fails", async () => {
     const binding = bindingFor("issuer");
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);

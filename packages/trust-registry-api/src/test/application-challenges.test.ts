@@ -117,6 +117,15 @@ describe("application challenge lifecycle", () => {
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
+  it("replaces a same-binding challenge at capacity without losing the applicant's retry", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(1), () => START);
+    const first = await service.issue(binding);
+    const second = await service.issue(binding);
+    expect(second.supersededPrevious).toBe(true);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
+    expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
   it("distinguishes a fresh retry after expiry from superseding a live tab", async () => {
     let now = START;
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
