@@ -8,7 +8,7 @@ import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 
-import { assertUiIndexResponse, collectEmittedJavaScriptAssets } from "./demo-smoke-assets.mjs";
+import { assertUiIndexResponse, collectEmittedModuleAssets } from "./demo-smoke-assets.mjs";
 import { describeChildExit, stopChild } from "./demo-smoke-process.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -176,9 +176,9 @@ const waitForUi = async (url, child, title, distDir) => {
     if (!html.includes(`<title>${title}</title>`)) {
       throw new Error(`${title} served an unexpected index.html`);
     }
-    const modules = collectEmittedJavaScriptAssets(distDir);
+    const modules = collectEmittedModuleAssets(distDir, title);
     for (const [asset, contentType] of [
-      ...modules.map((file) => [file, "text/javascript"]),
+      ...modules.map((file) => [file, file.endsWith(".json") ? "application/json" : "text/javascript"]),
       ["styles.css", "text/css"],
     ]) {
       const assetPath = asset.split("/").map(encodeURIComponent).join("/");
@@ -249,6 +249,12 @@ const workspaceDir = options.workspacePath === undefined
 const workspacePath = options.workspacePath ?? path.join(workspaceDir, "workspace.json");
 const snapshotPath = path.join(workspaceDir, "demo-snapshot.json");
 const workspaceDirExisted = options.workspacePath !== undefined && fs.existsSync(workspaceDir);
+let existingWorkspaceAncestor = workspaceDir;
+if (options.workspacePath !== undefined) {
+  while (!fs.existsSync(existingWorkspaceAncestor)) {
+    existingWorkspaceAncestor = path.dirname(existingWorkspaceAncestor);
+  }
+}
 
 for (const target of [workspacePath, snapshotPath]) {
   if (fs.existsSync(target)) {
@@ -309,6 +315,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 let primaryError;
 const cleanupProblems = [];
+let retainedWorkspacePath;
 try {
   const health = await waitForHealth(baseUrl, apiProcess);
   if (health.sourceMode !== "workspace") {
@@ -429,7 +436,19 @@ try {
     if (!workspaceDirExisted) {
       try {
         if (options.workspacePath === undefined) fs.rmSync(workspaceDir, { force: true, recursive: true });
-        else fs.rmdirSync(workspaceDir);
+        else {
+          let createdDir = workspaceDir;
+          while (createdDir !== existingWorkspaceAncestor) {
+            try {
+              fs.rmdirSync(createdDir);
+            } catch (error) {
+              if (error?.code !== "ENOTEMPTY") throw error;
+              retainedWorkspacePath = createdDir;
+              break;
+            }
+            createdDir = path.dirname(createdDir);
+          }
+        }
       } catch (error) {
         cleanupProblems.push(`could not remove generated directory ${workspaceDir}: ${String(error)}`);
       }
@@ -447,10 +466,10 @@ if (primaryError !== undefined || cleanupProblems.length > 0) {
       service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
     ]),
     ...cleanupProblems.map((problem) => `[demo-smoke] cleanup: ${problem}`),
-    (keepArtifacts || cleanupProblems.length > 0) && `[demo-smoke] artifacts: ${workspaceDir}`,
+    (fs.existsSync(workspaceDir) || retainedWorkspacePath !== undefined) && `[demo-smoke] artifacts: ${retainedWorkspacePath ?? workspaceDir}`,
   ].filter(Boolean).join("\n\n"), { cause: primaryError });
 }
 
 console.log(
-  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts ? ` Artifacts: ${workspaceDir}` : ""}`,
+  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
 );
