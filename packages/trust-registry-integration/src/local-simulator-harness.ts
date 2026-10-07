@@ -1150,9 +1150,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   approveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.recognitionId}:authorize`,
-    );
+    const authorizedEvidenceHash = this.simulator.getRecognition(
+      fixture.recognitionIdCommitment,
+    ).evidenceHash;
     const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
     const authorizeSignature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
@@ -1176,7 +1176,9 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:activate`);
+    const evidenceHash = this.simulator.getRecognition(
+      fixture.recognitionIdCommitment,
+    ).evidenceHash;
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
