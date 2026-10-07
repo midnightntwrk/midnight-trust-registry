@@ -115,9 +115,13 @@ and validation logic, not by the JSON Schema alone.
 
 ### Participant
 
-A participant is a DID-identified issuer, verifier, maintainer, or authority.
+A participant is a DID-identified root governor, registry maintainer, authority,
+issuer, verifier, or auditor. The root governor initializes the first
+maintainer set; it does not bypass the governed application and quorum flow for
+later membership changes. A recognized external authority is a peer trust
+statement, not automatically a local authority authorization.
 
-Required fields:
+Core participant record fields:
 
 - `participantId`
 - `participantDid`
@@ -129,18 +133,22 @@ Required fields:
 - `metadataUri`
 - `status`
 - `effectiveFrom`
+- `lifecycleEventRoot`
+
+Lifecycle-dependent fields, present only when the corresponding transition
+has occurred:
+
 - `effectiveUntil`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `lifecycleEventRoot`
 
 ### Authorization
 
 An authorization grants a participant a scoped right inside one registry.
 
-Required fields:
+Core authorization record fields:
 
 - `authorizationId`
 - `registryId`
@@ -152,33 +160,47 @@ Required fields:
 - `trustLevel`
 - `status`
 - `proposedAt`
+- `evidenceHash`
+- `lifecycleEventRoot`
+
+The issuer role also requires `statusPolicyBindingCommitment`. The
+`authorizedAt` field is required after proposal; `activeFrom` is required for
+active or historical grants. Other lifecycle timestamps are conditional:
+
 - `authorizedAt`
 - `activeFrom`
 - `issuedAt`
+- `effectiveUntil`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `evidenceHash`
-- `lifecycleEventRoot`
 
-`trustLevel` is policy-defined in v1. The registry record stores the value selected by the governing policy, and the evidence bundle must include the policy version that defines the scale. A later schema pass should decide whether common scales become enums or remain policy-local strings.
+`trustLevel` is policy-defined rather than a global enum. The registry record
+stores the value selected by the governing policy, and the evidence bundle
+must identify the policy version that defines its scale.
 
-An authorization produced from a governed application MUST bind an
-`applicationEvidenceCommitment`, evidence-verifier identity, verification
-window, and immutable policy version. The normative envelope, privacy rules,
-and contract inputs are defined in the
+Issuer, verifier, auditor, and non-bootstrap maintainer applications MUST bind
+the signed `applicationEvidenceCommitment`, evidence-verifier identity,
+verification window, and policy version. The proposal record's `evidenceHash`
+refers to that commitment; the bootstrap maintainer entry has no applicant VP
+and uses its explicitly defined initialization evidence instead. The normative
+envelope, privacy rules, and contract inputs are defined in the
 [Application Evidence Protocol](application-evidence.md).
 
-Authorization and activation of a maintainer, issuer, verifier, or auditor
-MUST preserve the proposal's `evidenceHash`. A different proposal evidence
-commitment requires a new application rather than a later-stage substitution.
+Approval and activation MUST preserve the proposal's `evidenceHash`; replacing
+the application commitment during those transitions requires a new proposal.
+Later suspension, revocation, and archival actions MAY replace the current
+record's `evidenceHash` with action-specific evidence. They MUST NOT rewrite
+the original proposal commitment in the append-only
+[lifecycle events](#6-state-model). The current record and its
+historical proposal answer different questions.
 
 ### Recognition
 
 Recognition records that a registry accepts an external authority or registry for a scoped domain. Recognition is not the same as local authorization.
 
-Required fields:
+Core recognition record fields:
 
 - `recognitionId`
 - `registryId`
@@ -187,23 +209,30 @@ Required fields:
 - `scope`
 - `policyId`
 - `trustLevel`
-- `effectiveFrom`
-- `effectiveUntil`
 - `evidenceHash`
 - `status`
 - `proposedAt`
+- `lifecycleEventRoot`
+
+`authorizedAt` is required after proposal, and `effectiveFrom` is required
+for active or historical recognition. Other lifecycle timestamps are
+conditional:
+
+- `effectiveFrom`
+- `effectiveUntil`
 - `authorizedAt`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `lifecycleEventRoot`
 
 Authorization and activation MUST preserve the recognition proposal's
-`evidenceHash`; a different proposal evidence commitment requires a new
-proposal. Suspension, revocation, and archival may replace the record's current
-`evidenceHash` with action-specific evidence, but the original proposal remains
-in the lifecycle event history.
+`evidenceHash`; different proposal evidence requires a new recognition
+proposal. Recognition does not use the local application-evidence envelope or
+`applicationEvidenceCommitment`. Later suspension, revocation, and archival
+MAY replace the current record's `evidenceHash` with action-specific evidence,
+but MUST preserve the original proposal in the append-only
+[lifecycle events](#6-state-model).
 
 ### Resource Authorization
 
@@ -282,8 +311,8 @@ The expected Compact contract split is:
 | Surface | Purpose |
 | --- | --- |
 | Root governance registry | Creates registries and installs governance policy roots. |
-| Participant registry | Tracks maintainers, authorities, issuers, and verifiers. |
-| Authorization registry | Tracks role-scoped issuer and verifier authorization. |
+| Participant registry | Tracks governors, maintainers, authorities, issuers, verifiers, and auditors. |
+| Authorization registry | Tracks role-scoped issuer, verifier, auditor, maintainer, and local authority authorization. |
 | Recognition registry | Tracks recognized external authorities and registries. |
 | Epoch anchor | Publishes state roots and maintainer signatures for query/evidence packages. |
 
