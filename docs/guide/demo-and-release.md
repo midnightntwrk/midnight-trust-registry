@@ -49,13 +49,20 @@ That command:
 - publishes an epoch
 - verifies that the resulting trust state is queryable
 - starts both UI servers on ephemeral loopback ports and fetches their HTML,
-  JavaScript modules, and CSS assets
+  recursively emitted JavaScript modules, and CSS assets; missing relative
+  imports fail before HTTP probing, while empty type-only modules are allowed
 
 Each default run uses a unique temporary directory under
 `artifacts/trust-registry/demo-smoke/`, so retained or interrupted runs do not
 block later smoke runs. Pass `--keep-artifacts` to retain the generated files;
 the command prints their location. An explicit `--workspace` path is never
 overwritten, and cleanup removes only files created by that run.
+An interrupted default run can leave a `run-*` directory under
+`artifacts/trust-registry/demo-smoke/`; inspect those directories before
+manually removing them. The smoke runner never recursively removes a
+user-provided `--workspace` directory. If shutdown needs SIGKILL or cleanup
+fails, the command reports the original failure, cleanup problem, and retained
+artifact path together.
 
 The main and milestone CI workflows run the same smoke command after
 `./run.sh --light`, so missing build outputs or broken local startup fail from a

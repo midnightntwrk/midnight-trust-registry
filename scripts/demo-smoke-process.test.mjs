@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { describeChildExit, stopChild } from "./demo-smoke-process.mjs";
+
+const smokeScript = fileURLToPath(new URL("./demo-smoke.mjs", import.meta.url));
+
+const fakeChild = (onKill) => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = (signal) => onKill(child, signal);
+  child.unref = () => {};
+  return child;
+};
+
+test("reports signal termination instead of an absent exit code", () => {
+  assert.equal(describeChildExit({ exitCode: null, signalCode: "SIGTERM" }), "signal SIGTERM");
+  assert.equal(describeChildExit({ exitCode: 2, signalCode: null }), "code 2");
+});
+
+test("graceful child shutdown is not reported as forced", async () => {
+  const child = fakeChild((process, signal) => {
+    process.signalCode = signal;
+    process.emit("exit", null, signal);
+  });
+  assert.deepEqual(await stopChild(child, { graceMs: 5, hardMs: 20 }), { forced: false, timedOut: false });
+});
+
+test("a child that ignores SIGTERM reports forced SIGKILL", async () => {
+  const signals = [];
+  const child = fakeChild((process, signal) => {
+    signals.push(signal);
+    if (signal === "SIGKILL") {
+      process.signalCode = signal;
+      process.emit("exit", null, signal);
+    }
+  });
+  assert.deepEqual(await stopChild(child, { graceMs: 5, hardMs: 30 }), { forced: true, timedOut: false });
+  assert.deepEqual(signals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("hard timeout reports a potentially orphaned child", async () => {
+  const child = fakeChild(() => {});
+  assert.deepEqual(await stopChild(child, { graceMs: 5, hardMs: 20 }), { forced: true, timedOut: true });
+});
+
+test("requires a value for --workspace before building anything", () => {
+  const result = spawnSync(process.execPath, [smokeScript, "--workspace"], { encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--workspace requires a path/);
+});
+
+test("never overwrites an explicit workspace file", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tr-demo-workspace-"));
+  const workspace = path.join(dir, "workspace.json");
+  try {
+    fs.writeFileSync(workspace, "user-owned\n");
+    const result = spawnSync(process.execPath, [smokeScript, "--workspace", workspace], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /refusing to overwrite existing demo smoke file/);
+    assert.equal(fs.readFileSync(workspace, "utf8"), "user-owned\n");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
