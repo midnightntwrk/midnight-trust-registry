@@ -195,8 +195,13 @@ const waitForUi = async (url, child, title, distDir) => {
     try {
       fs.writeFileSync(secretPath, "outside-dist-secret\n");
       fs.symlinkSync(secretPath, linkPath);
+      const absoluteIndex = await requestRawPath(url, `${url}/index.html`);
+      if (absoluteIndex.status !== 200 || !absoluteIndex.body.includes(`<title>${title}</title>`)) {
+        throw new Error(`${title} did not serve an absolute-form index request`);
+      }
       for (const [pathname, expectedStatus] of [
         [`/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`${url}/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
         [`/%2e%2e/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
         [`/${linkName}`, 403],
         ["/missing-static-asset.txt", 404],
