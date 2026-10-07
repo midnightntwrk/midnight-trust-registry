@@ -387,6 +387,27 @@ describe("application challenge lifecycle", () => {
     })).toBe(issued.challengeHash);
   });
 
+  it("rejects case variants of challenge identifiers without creating parallel live challenges", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    for (const changed of [
+      { applicationId: "Application:Issuer:One" },
+      { policyId: "Policy:Kanon:V1" },
+    ]) {
+      await expect(service.issue({ ...binding, ...changed })).rejects.toThrow(/canonical lowercase/i);
+      expect(await service.consume({
+        binding: { ...binding, ...changed },
+        nonce: issued.nonce,
+        challengeHash: issued.challengeHash,
+      })).toBeNull();
+    }
+    expect(await service.consume({
+      binding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBe(issued.challengeHash);
+  });
+
   it("fails closed if the store reports repeated challenge hash collisions", async () => {
     let attempts = 0;
     const store: ApplicationChallengeStore = {

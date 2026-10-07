@@ -18,17 +18,18 @@ const MAX_IN_MEMORY_CHALLENGES = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
+const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
+  (value) => value === value.toLowerCase(),
+  "Challenge identifier must be canonical lowercase",
+);
 
 export const ApplicationChallengeBindingSchema = z.strictObject({
-  registryId: ScopedIdentifierSchema.refine(
-    (value) => value === value.toLowerCase(),
-    "Registry ID must be canonical lowercase",
-  ),
-  applicationId: ScopedIdentifierSchema,
+  registryId: CanonicalIdentifierSchema,
+  applicationId: CanonicalIdentifierSchema,
   subjectDid: DidSchema.startsWith("did:midnight:"),
   evidenceVerifierDid: DidSchema,
   role: ApplicationEvidenceRoleSchema,
-  policyId: ScopedIdentifierSchema,
+  policyId: CanonicalIdentifierSchema,
   policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
   scope: AuthorizationScopeSchema,
   scopeCommitment: HashSchema,
