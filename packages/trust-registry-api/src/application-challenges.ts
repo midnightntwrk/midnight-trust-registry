@@ -32,13 +32,15 @@ export const ApplicationChallengeBindingSchema = z.strictObject({
 }).superRefine((binding, ctx) => {
   const scope = AuthorizationScopeSchema.safeParse(binding.scope);
   if (!scope.success) return;
+  const commitment = HashSchema.safeParse(binding.scopeCommitment);
+  if (!commitment.success) return;
   if (scope.data.role !== binding.role) {
     ctx.addIssue({ code: "custom", path: ["scope", "role"], message: "Scope role must match application role" });
   }
   if (scope.data.role === "maintainer" && scope.data.registryId !== binding.registryId) {
     ctx.addIssue({ code: "custom", path: ["scope", "registryId"], message: "Maintainer scope registry must match application registry" });
   }
-  if (computeAuthorizationScopeCommitment(scope.data) !== binding.scopeCommitment.toLowerCase()) {
+  if (computeAuthorizationScopeCommitment(scope.data) !== commitment.data.toLowerCase()) {
     ctx.addIssue({ code: "custom", path: ["scopeCommitment"], message: "Scope commitment does not match canonical scope" });
   }
 });

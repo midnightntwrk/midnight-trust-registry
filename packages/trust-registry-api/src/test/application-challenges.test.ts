@@ -331,6 +331,11 @@ describe("application challenge lifecycle", () => {
       challengeHash: issued.challengeHash,
     })).toBeNull();
     expect(await service.consume({
+      binding: { ...binding, scopeCommitment: null } as unknown as ApplicationChallengeBinding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBeNull();
+    expect(await service.consume({
       binding,
       nonce: issued.nonce,
       challengeHash: issued.challengeHash,
