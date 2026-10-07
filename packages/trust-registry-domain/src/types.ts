@@ -262,6 +262,7 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
   resourceId: ScopedIdentifierSchema,
   policyId: ScopedIdentifierSchema,
   trustLevel: TrustLevelSchema,
+  statusPolicyBindingCommitment: HashHexSchema.optional(),
   proposedAt: TimestampSchema,
   authorizedAt: TimestampSchema.optional(),
   activeFrom: TimestampSchema.optional(),
@@ -273,6 +274,20 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
   archivedAt: TimestampSchema.optional(),
   evidenceHash: HashHexSchema,
 }).superRefine((record, ctx) => {
+  if (record.role === "issuer" && record.statusPolicyBindingCommitment === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization requires a status policy binding commitment",
+      path: ["statusPolicyBindingCommitment"],
+    });
+  }
+  if (record.role !== "issuer" && record.statusPolicyBindingCommitment !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Only issuer authorization may carry a status policy binding commitment",
+      path: ["statusPolicyBindingCommitment"],
+    });
+  }
   if (record.status !== "proposed" && record.authorizedAt === undefined) {
     ctx.addIssue({
       code: "custom",

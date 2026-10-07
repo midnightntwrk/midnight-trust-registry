@@ -12,6 +12,7 @@ import {
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
   deriveGovernancePolicySnapshot,
@@ -248,6 +249,29 @@ const assertInclusionProof = (
   }
 };
 
+const assertIssuerStatusPolicyBinding = (
+  bundle: TrustRegistryEvidenceBundle,
+): void => {
+  if (bundle.authorization?.role !== "issuer") return;
+  if (bundle.statusPolicyBinding === undefined) {
+    throw new Error("Issuer status policy binding preimage is missing");
+  }
+  if (
+    bundle.statusPolicyBinding.trustRegistryId !== bundle.registryId
+    || bundle.statusPolicyBinding.issuerAuthorizationId !== bundle.authorization.authorizationId
+    || computeIssuerStatusPolicyBindingCommitment(bundle.statusPolicyBinding)
+      !== bundle.authorization.statusPolicyBindingCommitment
+  ) {
+    throw new Error("Issuer status policy binding does not match governed authorization");
+  }
+  if (
+    bundle.referencedStatusRegistryId !== undefined
+    || bundle.referencedStatusPolicyUri !== undefined
+  ) {
+    throw new Error("Unanchored issuer status metadata is not accepted");
+  }
+};
+
 /** Verifies consistency with the caller's anchor, not that anchor's provenance. */
 export const verifyTrustRegistryEvidenceBundle = (
   bundleInput: TrustRegistryEvidenceBundle,
@@ -266,6 +290,7 @@ export const verifyTrustRegistryEvidenceBundle = (
   assertEpochAnchor(bundle, options);
   assertPolicyAnchor(bundle, options);
   assertInclusionProof(bundle);
+  assertIssuerStatusPolicyBinding(bundle);
 
   return bundle;
 };

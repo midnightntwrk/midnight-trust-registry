@@ -203,6 +203,7 @@ describe("record schemas", () => {
       policyId: "policy:university:v1",
       trustLevel: "approved",
       status: "active",
+      statusPolicyBindingCommitment: HASH_B,
       proposedAt: "2026-05-20T00:00:00Z",
       authorizedAt: "2026-05-20T01:00:00Z",
       activeFrom: "2026-05-20T01:00:00Z",

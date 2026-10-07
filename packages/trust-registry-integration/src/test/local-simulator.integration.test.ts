@@ -14,6 +14,7 @@ import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-cli
 import {
   computeApplicationEvidenceCommitment,
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   deriveGovernancePolicySnapshot,
   resolveGovernancePolicyTemplate,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -190,7 +191,11 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.authorization?.resourceId).toBe(issuer.resourceId);
     expect(bundle.subjectDid).toBe(issuer.subjectDid);
     expect(bundle.registryId).toBe(harness.registryId);
-    expect(bundle.referencedStatusRegistryId).toBe(issuer.referencedStatusRegistryId);
+    expect(bundle.statusPolicyBinding?.statusRegistryId).toBe(issuer.statusRegistryId);
+    expect(bundle.authorization?.statusPolicyBindingCommitment).toBe(
+      computeIssuerStatusPolicyBindingCommitment(bundle.statusPolicyBinding!),
+    );
+    expect(bundle.referencedStatusRegistryId).toBeUndefined();
     expect(bundle.epoch.maintainerSignatures).toHaveLength(1);
   });
 
@@ -204,15 +209,21 @@ describe("trust registry local simulator integration", () => {
     expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
     const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(suspendedBundle.authorization?.status).toBe("suspended");
+    const anchoredStatusPolicy = suspendedBundle.authorization?.statusPolicyBindingCommitment;
+    expect(anchoredStatusPolicy).toBe(
+      computeIssuerStatusPolicyBindingCommitment(suspendedBundle.statusPolicyBinding!),
+    );
 
     harness.revokeIssuer(issuer);
     expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
     const revokedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(revokedBundle.authorization?.status).toBe("revoked");
+    expect(revokedBundle.authorization?.statusPolicyBindingCommitment).toBe(anchoredStatusPolicy);
 
     harness.archiveIssuer(issuer);
     const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
+    expect(archivedBundle.authorization?.statusPolicyBindingCommitment).toBe(anchoredStatusPolicy);
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 

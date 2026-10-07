@@ -13,6 +13,7 @@ import {
   GovernancePolicyRecordSchema,
   RecognitionRecordSchema,
 } from "./types.js";
+import { IssuerStatusPolicyBindingSchema } from "./status-policy.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 
@@ -30,8 +31,9 @@ const sortStringRecord = (
 
 export const computeAuthorizationStatementLeafHash = (
   authorization: z.infer<typeof AuthorizationRecordSchema>,
-): string =>
-  sha256Hex(
+): string => {
+  AuthorizationRecordSchema.parse(authorization);
+  return sha256Hex(
     JSON.stringify({
       recordType: "authorization",
       authorizationId: authorization.authorizationId,
@@ -42,6 +44,9 @@ export const computeAuthorizationStatementLeafHash = (
       resourceId: authorization.resourceId,
       policyId: authorization.policyId,
       trustLevel: authorization.trustLevel,
+      ...(authorization.role === "issuer"
+        ? { statusPolicyBindingCommitment: authorization.statusPolicyBindingCommitment }
+        : {}),
       status: authorization.status,
       lifecycleEventRoot: authorization.lifecycleEventRoot,
       proposedAt: authorization.proposedAt,
@@ -56,6 +61,7 @@ export const computeAuthorizationStatementLeafHash = (
       evidenceHash: authorization.evidenceHash,
     }),
   );
+};
 
 export const computeRecognitionStatementLeafHash = (
   recognition: z.infer<typeof RecognitionRecordSchema>,
@@ -164,6 +170,7 @@ export const TrustRegistryEvidenceBundleSchema = z
     epoch: EpochCommitmentSchema,
     inclusionProof: InclusionProofSchema,
     authorization: AuthorizationRecordSchema.optional(),
+    statusPolicyBinding: IssuerStatusPolicyBindingSchema.optional(),
     recognition: RecognitionRecordSchema.optional(),
     referencedStatusRegistryId: ScopedIdentifierSchema.optional(),
     referencedStatusPolicyUri: UriSchema.optional(),

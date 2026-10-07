@@ -201,7 +201,8 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(
       midnightMetadata.authorization_bundle?.authorization?.resourceId,
     ).toBe(bundle.authorization?.resourceId);
-    expect(bundle.referencedStatusRegistryId).toBeDefined();
+    expect(bundle.statusPolicyBinding?.statusRegistryId).toBeDefined();
+    expect(bundle.authorization?.statusPolicyBindingCommitment).toBeDefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusRegistryId).toBeUndefined();
     expect(midnightMetadata.authorization_bundle?.referencedStatusPolicyUri).toBeUndefined();
 
