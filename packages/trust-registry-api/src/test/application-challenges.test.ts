@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
+  computeAuthorizationScopeCommitment,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
@@ -13,6 +14,16 @@ import {
   type ApplicationChallengeStore,
 } from "../application-challenges.js";
 
+const scope = {
+  version: "tr-scope-v1",
+  role: "issuer",
+  credentialFamilyId: "credential-family:organization",
+  schemaId: "schema:organization",
+  schemaVersion: "1.0.0",
+  credentialDefinitionId: "credential-definition:organization",
+  statusMethod: "midnight-status-registry-v1",
+} as const;
+
 const binding: ApplicationChallengeBinding = {
   registryId: "registry:kanon:trusted",
   applicationId: "application:issuer:one",
@@ -21,7 +32,8 @@ const binding: ApplicationChallengeBinding = {
   role: "issuer",
   policyId: "policy:kanon:v1",
   policyVersion: "v1",
-  scopeCommitment: `0x${"1".repeat(64)}`,
+  scope,
+  scopeCommitment: computeAuthorizationScopeCommitment(scope),
 };
 
 const START = Date.parse("2026-10-06T00:00:00.000Z");
@@ -85,7 +97,8 @@ describe("application challenge lifecycle", () => {
 
   it("keeps distinct full bindings live even when the application id matches", async () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
-    const otherBinding = { ...binding, scopeCommitment: `0x${"2".repeat(64)}` };
+    const otherScope = { ...scope, schemaVersion: "2.0.0" };
+    const otherBinding = { ...binding, scope: otherScope, scopeCommitment: computeAuthorizationScopeCommitment(otherScope) };
     const first = await service.issue(binding);
     const second = await service.issue(otherBinding);
     expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
@@ -131,13 +144,12 @@ describe("application challenge lifecycle", () => {
     const webBinding = {
       ...binding,
       evidenceVerifierDid: "did:web:verifier.example",
-      scopeCommitment: `0x${"a".repeat(64)}`,
     };
     const issued = await service.issue(webBinding);
     const envelopeHash = `0x${issued.challengeHash.slice(2).toUpperCase()}`;
 
     const consumedChallengeHash = await service.consume({
-      binding: { ...webBinding, scopeCommitment: `0x${"A".repeat(64)}` },
+      binding: { ...webBinding, scopeCommitment: webBinding.scopeCommitment.toUpperCase().replace(/^0X/, "0x") },
       nonce: issued.nonce,
       challengeHash: envelopeHash,
     });
@@ -265,6 +277,44 @@ describe("application challenge lifecycle", () => {
     await expect(valid.issue({ ...binding, scopeCommitment: "not-a-hash" })).rejects.toThrow();
     await expect(valid.issue({ ...binding, policyVersion: " v1 " })).rejects.toThrow();
     await expect(valid.issue({ ...binding, policyVersion: "1.0.0" })).rejects.toThrow();
+  });
+
+  it("binds the canonical role-specific scope rather than trusting an opaque digest", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const reorderedScope = {
+      role: scope.role,
+      version: scope.version,
+      statusMethod: scope.statusMethod,
+      credentialDefinitionId: scope.credentialDefinitionId,
+      schemaVersion: scope.schemaVersion,
+      schemaId: scope.schemaId,
+      credentialFamilyId: scope.credentialFamilyId,
+    };
+    expect(await service.consume({
+      binding: { ...binding, scope: reorderedScope },
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBe(issued.challengeHash);
+
+    await expect(service.issue({ ...binding, scope: { ...scope, schemaVersion: "2.0.0" } })).rejects.toThrow(/Scope commitment/);
+    const verifierScope = {
+      version: "tr-scope-v1" as const,
+      role: "verifier" as const,
+      requestProfileId: "request-profile:admission",
+      purpose: "admission",
+      credentialScopeCommitment: binding.scopeCommitment,
+      allowedAttributes: ["degree"],
+      allowedPredicates: ["age-over-18"],
+      disclosureLevel: "minimum",
+    };
+    await expect(service.issue({
+      ...binding,
+      scope: verifierScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(verifierScope),
+    })).rejects.toThrow(/Scope role/);
+    await expect(service.issue({ ...binding, scope: { ...scope, schemaId: "schema:*" } })).rejects.toThrow();
+    await expect(service.issue({ ...binding, scope: { ...scope, extra: "ignored" } as typeof scope })).rejects.toThrow();
   });
 
   it("fails closed if the store reports repeated challenge hash collisions", async () => {

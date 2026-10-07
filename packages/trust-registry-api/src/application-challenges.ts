@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 
 import {
   ApplicationEvidenceRoleSchema,
+  AuthorizationScopeSchema,
+  computeAuthorizationScopeCommitment,
   DidSchema,
   HashHexSchema,
   ScopedIdentifierSchema,
@@ -25,7 +27,15 @@ export const ApplicationChallengeBindingSchema = z.strictObject({
   role: ApplicationEvidenceRoleSchema,
   policyId: ScopedIdentifierSchema,
   policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
+  scope: AuthorizationScopeSchema,
   scopeCommitment: HashSchema,
+}).superRefine((binding, ctx) => {
+  if (binding.scope.role !== binding.role) {
+    ctx.addIssue({ code: "custom", path: ["scope", "role"], message: "Scope role must match application role" });
+  }
+  if (computeAuthorizationScopeCommitment(binding.scope) !== binding.scopeCommitment.toLowerCase()) {
+    ctx.addIssue({ code: "custom", path: ["scopeCommitment"], message: "Scope commitment does not match canonical scope" });
+  }
 });
 
 export type ApplicationChallengeBinding = z.infer<typeof ApplicationChallengeBindingSchema>;
