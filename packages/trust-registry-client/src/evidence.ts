@@ -165,6 +165,7 @@ const assertEpochAnchor = (
   }
 
   let validSignature = false;
+  let verificationFault: unknown;
   try {
     validSignature = verifyPolicyBoundMaintainerAction(
       options.maintainerPublicKey,
@@ -175,11 +176,11 @@ const assertEpochAnchor = (
       epochRecord.publishedAtSequence,
       signature,
     );
-  } catch {
-    // Unexpected verification failures must not authenticate the epoch.
+  } catch (error) {
+    verificationFault = error;
   }
   if (!validSignature) {
-    throw new Error("Epoch maintainer signature is invalid");
+    throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
   }
 };
 

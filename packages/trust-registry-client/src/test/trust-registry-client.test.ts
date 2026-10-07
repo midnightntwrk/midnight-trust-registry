@@ -258,11 +258,26 @@ describe("trust registry client", () => {
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
-    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
-      epochRecord,
-      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
-      registryIdCommitment: new Uint8Array(31),
-    })).toThrow(/Registry ID commitment is missing or malformed/);
+    for (const malformed of [new Uint8Array(31), new Uint8Array(33), "not-bytes"]) {
+      expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+        epochRecord,
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: malformed as never,
+      })).toThrow(/Registry ID commitment is missing or malformed/);
+    }
+
+    let verifierFault: unknown;
+    try {
+      verifyTrustRegistryEvidenceBundle(bundle, {
+        epochRecord: { ...epochRecord, publishedAtSequence: "invalid" as never },
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: bytes32Commitment(harness.registryId),
+      });
+    } catch (error) {
+      verifierFault = error;
+    }
+    expect(verifierFault).toHaveProperty("message", "Epoch maintainer signature is invalid");
+    expect((verifierFault as Error).cause).toBeInstanceOf(Error);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
