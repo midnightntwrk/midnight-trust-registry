@@ -2,8 +2,9 @@
 
 Status: local partial implementation for #76, stacked after the #127
 challenge-to-proposal bridge. The published-package proof/DID port and
-issuer-fixture adversarial tests exist; four-role policy fixtures, #127 intake
-connection, production family/status adapters, and public route remain open.
+issuer-fixture adversarial tests and a typed #127 intake callback adapter exist;
+four-role policy fixtures, end-to-end intake wiring, production family/status
+adapters, and public route remain open.
 
 ## Published Package Boundary
 

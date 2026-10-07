@@ -12,6 +12,7 @@ import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createApplicationVpIntakeVerifier,
   verifyApplicationVp,
   type ApplicationVpFamilyAdapter,
   type ApplicationVpMaterial,
@@ -108,6 +109,23 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("adapts proof-observed bindings for challenge intake rather than echoing expected inputs", async () => {
+    const { input } = await fixture();
+    const verifyPresentation = createApplicationVpIntakeVerifier({
+      scope: input.scope,
+      evaluatedAtMs: input.evaluatedAtMs,
+      resolver: input.resolver,
+      family: input.family,
+    });
+    const verified = await verifyPresentation(input.submission, input.nonce, input.expectedSubjectDid);
+    expect(verified.subjectDid).toBe(input.expectedSubjectDid);
+    expect(verified.nonce).toBe(input.nonce);
+    await expect(verifyPresentation(input.submission, `0x${"22".repeat(32)}`, input.expectedSubjectDid))
+      .rejects.toMatchObject({ category: "invalid_presentation" });
+    await expect(verifyPresentation(input.submission, input.nonce, createMidnightDid("other-holder")))
+      .rejects.toMatchObject({ category: "invalid_presentation" });
+  });
+
   it("checks real issuance/presentation proofs, DID methods, challenge, and trusted eligibility ports", async () => {
     const { input, family } = await fixture();
     const verified = await verifyApplicationVp(input);

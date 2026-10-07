@@ -178,6 +178,21 @@ export async function verifyApplicationVp<Submission>(input: {
   };
 }
 
+/** Adapts proof-observed bindings to the challenge intake callback; family.prepare must parse untrusted input. */
+export function createApplicationVpIntakeVerifier<Submission>(config: {
+  scope: AuthorizationScope;
+  evaluatedAtMs: number;
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  family: ApplicationVpFamilyAdapter<Submission>;
+}): (presentation: unknown, nonce: string, subjectDid: string) => Promise<ApplicationVpVerifierResult> {
+  return async (presentation, nonce, subjectDid) => verifyApplicationVp({
+    ...config,
+    submission: presentation as Submission,
+    nonce,
+    expectedSubjectDid: subjectDid,
+  });
+}
+
 function assertProofMethod(
   proof: Proof,
   method: Awaited<ReturnType<typeof resolveMidnightDIDMethodBinding>>,
