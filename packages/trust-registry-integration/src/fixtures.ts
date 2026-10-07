@@ -8,6 +8,7 @@ import {
 import {
   createScopedIdentifier,
   sha256Hex,
+  type AuthorizationScope,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMaintainerFixture as createContractMaintainerFixture,
@@ -102,6 +103,59 @@ export type MaintainerScenarioFixture = {
   seed: Uint8Array;
   trustLevel: string;
 };
+
+export const createIssuerAuthorizationScopeFixture = (
+  fixture: IssuerScenarioFixture,
+): Extract<AuthorizationScope, { role: "issuer" }> => {
+  if (fixture.resourceType !== IssuerResourceType.credentialFamily) {
+    throw new Error("Issuer scope fixture requires a credential-family resource");
+  }
+  return {
+    version: "tr-scope-v1",
+    role: "issuer",
+    credentialFamilyId: fixture.resourceId,
+    schemaId: createScopedIdentifier("schema", fixture.resourceId),
+    schemaVersion: "1.0.0",
+    credentialDefinitionId: createScopedIdentifier("credential-definition", fixture.resourceId),
+    statusMethod: "midnight-status-registry-v1",
+  };
+};
+
+const createRequestAuthorizationScopeFixture = (
+  role: "verifier" | "auditor",
+  fixture: VerifierScenarioFixture | AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" | "auditor" }> => ({
+  version: "tr-scope-v1",
+  role,
+  requestProfileId: fixture.requestProfileId,
+  purpose: "admission",
+  credentialScopeCommitment: sha256Hex(`credential-scope:${fixture.requestProfileId}`),
+  allowedAttributes: [fixture.allowedAttributeSetId],
+  allowedPredicates: [fixture.allowedPredicateSetId],
+  disclosureLevel: fixture.disclosureLevelId,
+});
+
+export const createVerifierAuthorizationScopeFixture = (
+  fixture: VerifierScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" }> => ({
+  ...createRequestAuthorizationScopeFixture("verifier", fixture),
+  role: "verifier",
+});
+
+export const createAuditorAuthorizationScopeFixture = (
+  fixture: AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "auditor" }> => ({
+  ...createRequestAuthorizationScopeFixture("auditor", fixture),
+  role: "auditor",
+});
+
+export const createMaintainerAuthorizationScopeFixture = (
+  registryId: string,
+): Extract<AuthorizationScope, { role: "maintainer" }> => ({
+  version: "tr-scope-v1",
+  role: "maintainer",
+  registryId,
+});
 
 export const createIssuerScenarioFixture = (
   label: string,

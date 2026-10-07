@@ -1,14 +1,15 @@
 # Challenge-To-Proposal Bridge
 
-Status: implementation plan for #127, stacked on #126. This is not a claim
-that challenge-backed proposal intake is implemented.
+Status: reference intake and simulator bridge implemented locally for #127,
+stacked on #126. Public route and production VP verification are out of scope.
 
 ## Boundary
 
 The challenge service in `packages/trust-registry-api` commits the canonical
-`tr-scope-v1` object. The simulator currently puts a resource-ID hash in the
-application envelope's `scopeCommitment` and uses a deterministic challenge
-hash. Neither value can be substituted for the challenge service's values.
+`tr-scope-v1` object. Simulator fixture helpers now derive the same canonical
+scope commitment; only their deterministic challenge hash is a test fixture.
+The challenge-backed proposal path supplies the consumed random challenge
+hash explicitly and never substitutes the fixture hash.
 The governed resource ID and the canonical scope commitment are separate
 inputs and must remain separately checked.
 
@@ -18,8 +19,8 @@ package owns canonical binding and scope/resource consistency checks. The API
 owns nonce storage and an intake orchestration seam that accepts a trusted VP
 verifier, evidence signer, and proposal callback. The simulator can exercise
 the same protocol through injected callbacks without importing API. API-level
-tests exercise the real store and one-use consumer; a public route and
-simulator proposal connection remain to be implemented.
+tests exercise the real store, one-use consumer, JubJub evidence signature,
+and all four Compact proposal circuits. A public route remains unimplemented.
 
 ## Ordered Flow
 

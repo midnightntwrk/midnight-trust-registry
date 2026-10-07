@@ -19,6 +19,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
+  createIssuerAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -64,7 +65,7 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
     });
     const decodedSignature = decodeJubjubSignature(
       Buffer.from(validEvidence.signature.value.slice(2), "hex"),
@@ -154,7 +155,7 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
     });
     harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
     harness.proposeVerifier(verifier);
@@ -633,7 +634,7 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer" as const,
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
     };
     const applicationEvidence = harness.createApplicationEvidence(applicationInput);
     const client = new TrustRegistrySimulatorClient(harness.simulator);

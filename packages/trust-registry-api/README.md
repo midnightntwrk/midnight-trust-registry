@@ -68,9 +68,23 @@ Workspace-backed mutation routes:
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 
-The exported application-challenge service is not yet an HTTP route. Its
-binding requires the versioned role-specific scope object and a matching
-canonical scope commitment; an arbitrary 32-byte scope digest is not accepted.
+The exported application-challenge service and
+`consumeChallengeAndSubmitApplication` reference intake are not HTTP routes.
+Their binding requires the versioned role-specific scope object, a separately
+checked governed resource, and a matching canonical scope commitment; an
+arbitrary 32-byte scope digest is not accepted. The caller must supply a
+policy-authorized VP verifier, evidence signer, authorized verifier keys,
+and a trusted proposal binding. The intake consumes the challenge once before
+signing and proposing; a later failure does not make the challenge reusable.
+The existing `POST /v1/applications` route is a local operator workspace route,
+not a public VC/VP-verified membership endpoint.
+
+Run the reference challenge-to-Compact proposal scenarios without adding
+their simulator cost to the light gate:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-api integration
+```
 
 Example applicant submission:
 

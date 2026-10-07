@@ -145,11 +145,14 @@ The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding before calling a trusted VP verifier,
 consumes the challenge once only after the VP nonce and subject DID match, and
 passes a signed evidence envelope to an injected proposal callback. The seam
-does not itself implement the official VC verifier or a public route. The
-simulator's synthetic application-evidence envelope still uses a resource-ID
-commitment under `scopeCommitment`; that value MUST NOT be interchanged with
-the canonical role-specific scope digest. Proposal integration must replace
-the stand-in and test each applicant role before this boundary is complete.
+does not itself implement the official VC verifier or a public route. An
+integration-only test uses the real challenge service and JubJub signing with
+all four simulator proposal circuits; the simulator verifies the consumed
+challenge hash and canonical scope commitment supplied by the trusted intake
+context. Its separate deterministic challenge fixture still uses the same
+canonical scope commitment, but MUST NOT be used as a production nonce source.
+Production use still needs an authenticated public issuance route, official
+VP verification, and a durable atomic store.
 
 The reference API package exposes an in-memory store for local tests only. It
 caps live entries and schedules expiry cleanup even without another request;
