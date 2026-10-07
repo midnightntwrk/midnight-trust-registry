@@ -156,6 +156,12 @@ Refresh published DID and VC dependencies with validation:
 pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
 ```
 
+`pnpm run check:workspace-manifests` validates checked-in manifests before
+dependencies are installed. After `pnpm install`, run
+`pnpm run check:installed-identity-runtime` to verify the effective DID/VC
+packages, pnpm overrides, and resolved Compact runtime. The light gate runs
+both checks in that order.
+
 For docs-only edits, the minimum fallback remains:
 
 ```bash
