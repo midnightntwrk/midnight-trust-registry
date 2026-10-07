@@ -1,13 +1,11 @@
 import { randomBytes } from "node:crypto";
 
 import {
-  ApplicationEvidenceRoleSchema,
-  AuthorizationScopeSchema,
-  computeAuthorizationScopeCommitment,
-  DidSchema,
+  ApplicationChallengeBindingSchema,
   HashHexSchema,
-  ScopedIdentifierSchema,
+  computeApplicationChallengeBindingHash,
   sha256Hex,
+  type ApplicationChallengeBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
@@ -18,38 +16,8 @@ const MAX_IN_MEMORY_CHALLENGES = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
-const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
-  (value) => value === value.toLowerCase(),
-  "Challenge identifier must be canonical lowercase",
-);
-
-export const ApplicationChallengeBindingSchema = z.strictObject({
-  registryId: CanonicalIdentifierSchema,
-  applicationId: CanonicalIdentifierSchema,
-  subjectDid: DidSchema.startsWith("did:midnight:"),
-  evidenceVerifierDid: DidSchema,
-  role: ApplicationEvidenceRoleSchema,
-  policyId: CanonicalIdentifierSchema,
-  policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
-  scope: AuthorizationScopeSchema,
-  scopeCommitment: HashSchema,
-}).superRefine((binding, ctx) => {
-  const scope = AuthorizationScopeSchema.safeParse(binding.scope);
-  if (!scope.success) return;
-  const commitment = HashSchema.safeParse(binding.scopeCommitment);
-  if (!commitment.success) return;
-  if (scope.data.role !== binding.role) {
-    ctx.addIssue({ code: "custom", path: ["scope", "role"], message: "Scope role must match application role" });
-  }
-  if (scope.data.role === "maintainer" && scope.data.registryId !== binding.registryId) {
-    ctx.addIssue({ code: "custom", path: ["scope", "registryId"], message: "Maintainer scope registry must match application registry" });
-  }
-  if (computeAuthorizationScopeCommitment(scope.data) !== commitment.data.toLowerCase()) {
-    ctx.addIssue({ code: "custom", path: ["scopeCommitment"], message: "Scope commitment does not match canonical scope" });
-  }
-});
-
-export type ApplicationChallengeBinding = z.infer<typeof ApplicationChallengeBindingSchema>;
+export { ApplicationChallengeBindingSchema };
+export type { ApplicationChallengeBinding };
 
 export type ApplicationChallengeRecord = {
   challengeHash: string;
@@ -150,7 +118,7 @@ export class ApplicationChallengeService {
     const binding = ApplicationChallengeBindingSchema.parse(bindingInput);
     const issuedAtMs = this.now();
     const expiresAtMs = issuedAtMs + CHALLENGE_TTL_MS;
-    const bindingHash = hashBinding(binding);
+    const bindingHash = computeApplicationChallengeBindingHash(binding);
 
     for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
       const nonceBytes = randomBytes(NONCE_BYTES);
@@ -180,7 +148,7 @@ export class ApplicationChallengeService {
 
     const challengeHash = sha256Hex(Buffer.from(input.nonce.slice(2), "hex"));
     if (challengeHash !== input.challengeHash.toLowerCase()) return null;
-    return await this.store.consume(challengeHash, hashBinding(parsedBinding.data), this.now())
+    return await this.store.consume(challengeHash, computeApplicationChallengeBindingHash(parsedBinding.data), this.now())
       ? challengeHash
       : null;
   }
@@ -192,18 +160,4 @@ export class ApplicationChallengeService {
     }
     return value;
   }
-}
-
-function hashBinding(binding: ApplicationChallengeBinding): string {
-  return sha256Hex(JSON.stringify([
-    "tr:application:challenge:v1",
-    binding.registryId,
-    binding.applicationId,
-    binding.subjectDid,
-    binding.evidenceVerifierDid,
-    binding.role,
-    binding.policyId,
-    binding.policyVersion,
-    binding.scopeCommitment.toLowerCase(),
-  ]));
 }
