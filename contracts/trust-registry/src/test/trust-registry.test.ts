@@ -394,7 +394,7 @@ const createEpochCommitmentFixture = (label: string, policyRoot: Uint8Array) => 
 
 describe("trust registry contract", () => {
   it("keeps distinct long and multibyte fixture labels distinct", () => {
-    const shared = "evidence:verifier:application:";
+    const shared = "evidence:verifier:application:".padEnd(32, "x");
     const proposal = labelToBytes32(`${shared}propose`);
     const authorization = labelToBytes32(`${shared}authorize`);
     const activation = labelToBytes32(`${shared}activate`);

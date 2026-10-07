@@ -50,3 +50,8 @@ after a policy revision. Verify the signature against the publication
 commitment; use `policyRoot` to interpret the epoch's historical window. The
 full approving quorum is bound into the governance-event chain through the
 signer-set hash.
+
+The exported `./testing` helper `labelToBytes32` is fixture-only: labels at
+most 32 UTF-8 bytes retain Compact's zero-padded representation, while longer
+labels use a domain-separated SHA-256 digest to avoid silent truncation
+collisions. It is not a production identifier encoder or migration format.

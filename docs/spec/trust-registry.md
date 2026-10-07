@@ -167,8 +167,6 @@ The issuer role also requires `statusPolicyBindingCommitment`. The
 `authorizedAt` field is required after proposal; `activeFrom` is required for
 active or historical grants. Other lifecycle timestamps are conditional:
 
-- `authorizedAt`
-- `activeFrom`
 - `issuedAt`
 - `effectiveUntil`
 - `suspendedAt`
@@ -218,9 +216,7 @@ Core recognition record fields:
 for active or historical recognition. Other lifecycle timestamps are
 conditional:
 
-- `effectiveFrom`
 - `effectiveUntil`
-- `authorizedAt`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
