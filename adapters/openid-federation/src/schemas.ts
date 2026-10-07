@@ -6,6 +6,7 @@ import {
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  assertIssuerStatusPolicyBindingMatchesAuthorization,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
@@ -15,7 +16,18 @@ const JwksSchema = z.object({
   keys: z.array(JwkSchema).min(1),
 });
 
-const FederationEvidenceBundleSchema = TrustRegistryEvidenceBundleSchema.transform((bundle) => {
+export const FederationEvidenceBundleSchema = TrustRegistryEvidenceBundleSchema.transform((bundle) => {
+  if (bundle.authorization?.role === "issuer") {
+    if (bundle.statusPolicyBinding === undefined) {
+      throw new Error("Issuer status policy binding preimage is missing");
+    }
+    assertIssuerStatusPolicyBindingMatchesAuthorization(
+      bundle.statusPolicyBinding,
+      bundle.registryId,
+      bundle.authorization.authorizationId,
+      bundle.authorization.statusPolicyBindingCommitment,
+    );
+  }
   const publication = { ...bundle };
   delete publication.referencedStatusRegistryId;
   delete publication.referencedStatusPolicyUri;

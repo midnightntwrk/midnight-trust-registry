@@ -47,3 +47,18 @@ export function computeIssuerStatusPolicyBindingCommitment(input: IssuerStatusPo
   preimage.set(canonical, domain.length + 1);
   return sha256Hex(preimage);
 }
+
+export function assertIssuerStatusPolicyBindingMatchesAuthorization(
+  binding: IssuerStatusPolicyBinding,
+  registryId: string,
+  authorizationId: string,
+  commitment: string,
+): void {
+  if (
+    binding.trustRegistryId !== registryId
+    || binding.issuerAuthorizationId !== authorizationId
+    || computeIssuerStatusPolicyBindingCommitment(binding) !== commitment
+  ) {
+    throw new Error("Issuer status policy binding does not match governed authorization");
+  }
+}
