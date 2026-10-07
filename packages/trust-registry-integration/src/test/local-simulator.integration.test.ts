@@ -623,6 +623,40 @@ describe("trust registry local simulator integration", () => {
     );
   });
 
+  it("rejects evidence from an incompatible contract format at both verification boundaries", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("format-boundary");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const ledger = harness.simulator.getLedger();
+    const spy = vi.spyOn(harness.simulator, "getLedger").mockReturnValue({
+      ...ledger,
+      contractVersion: 2n,
+    });
+    const epochRead = vi.spyOn(client, "getEpochCommitmentById").mockImplementation(() => {
+      throw new Error("Epoch read should not precede the format gate");
+    });
+    const simulatorEpochRead = vi.spyOn(harness.simulator, "getEpochCommitment").mockImplementation(() => {
+      throw new Error("Simulator epoch read should not precede the format gate");
+    });
+    try {
+      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
+      expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
+      expect(epochRead).not.toHaveBeenCalled();
+      expect(simulatorEpochRead).not.toHaveBeenCalled();
+      expect(() => new TrustRegistrySimulatorClient(harness.simulator)).toThrow(/Unsupported trust registry format/);
+    } finally {
+      simulatorEpochRead.mockRestore();
+      epochRead.mockRestore();
+      spy.mockRestore();
+    }
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      policy: { ...bundle.policy, version: "vx" },
+    })).toThrow("Policy version is invalid");
+  });
+
   it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("university");

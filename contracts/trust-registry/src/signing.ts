@@ -12,7 +12,6 @@ import {
   JUBJUB_SIGNATURE_LENGTH_BYTES,
   normalizeScalar,
   seedBytesToJubjubSecretScalar,
-  signJubjubDigest,
   signJubjubDigestFromSeed,
   TWO_248,
   type JubjubDigest,
@@ -392,13 +391,7 @@ export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
     archivalThreshold,
   );
 
-export const signMaintainerActionDigest = (
-  secretScalar: bigint,
-  digest: TrustRegistryActionDigest,
-  nonceSeed?: Uint8Array,
-): TrustRegistryJubjubSignature => signJubjubDigest(secretScalar, digest, nonceSeed);
-
-export const signMaintainerActionDigestFromSeed = (
+const signMaintainerActionDigestFromSeed = (
   seedBytes: Uint8Array,
   digest: TrustRegistryActionDigest,
 ): TrustRegistryJubjubSignature =>
@@ -423,7 +416,7 @@ export const signPolicyBoundMaintainerActionFromSeed = (
     ),
   );
 
-export const verifyMaintainerActionDigest = (
+const verifyMaintainerActionDigest = (
   publicKey: JubjubPoint,
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
