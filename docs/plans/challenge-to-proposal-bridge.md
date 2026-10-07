@@ -13,12 +13,13 @@ The governed resource ID and the canonical scope commitment are separate
 inputs and must remain separately checked.
 
 `api -> cli -> integration` is an existing package dependency path. Importing
-the API challenge service into integration would introduce a cycle. Put the
-shared intake protocol and scope/resource consistency checks below both API
-and integration, leaving random challenge storage and operational controls in
-API. The simulator can exercise the same protocol through an injected
-one-use challenge consumer without importing API. An API-level test must
-exercise the real store and consumer implementation.
+the API challenge service into integration would introduce a cycle. The domain
+package owns canonical binding and scope/resource consistency checks. The API
+owns nonce storage and an intake orchestration seam that accepts a trusted VP
+verifier, evidence signer, and proposal callback. The simulator can exercise
+the same protocol through injected callbacks without importing API. API-level
+tests exercise the real store and one-use consumer; a public route and
+simulator proposal connection remain to be implemented.
 
 ## Ordered Flow
 

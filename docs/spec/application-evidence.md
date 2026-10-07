@@ -105,13 +105,16 @@ textual hex representation.
 
 The off-ledger challenge store retains only `challengeHash`, an expiry, and a
 domain-separated commitment to registry id, application id, subject DID,
-evidence-verifier DID, role, policy id/version, and scope commitment. It MUST
+evidence-verifier DID, role, policy id/version, governed resource type/id, and
+scope commitment. It MUST
 derive or validate the scope commitment against the versioned canonical
 role-specific scope object before issuing the challenge; a valid-length opaque
 hash alone is insufficient. Registry, application, and policy IDs in a
 challenge binding MUST use canonical lowercase spelling. The scope role MUST
 match the application role, and a maintainer scope's registry ID MUST equal
-the challenge registry ID.
+the challenge registry ID. The separately governed resource MUST match the
+role-specific scope: an issuer's credential family, verifier/auditor request
+profile, or maintainer registry. Its identifier is not the scope commitment.
 The scope object is not stored in the challenge record, but is supplied again
 when the challenge is consumed and checked against the same commitment. It MUST
 perform collision-safe insertion, replacement of an earlier live challenge
@@ -138,14 +141,15 @@ submission field. The evidence validator compares challenge hashes by byte value
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
 
-The process-local challenge service is not yet connected to proposal intake.
-Its `scopeCommitment` is the canonical role-specific scope digest, whereas the
-simulator's synthetic application-evidence envelope currently uses a
-resource-ID commitment under the same field name. Those values MUST NOT be
-interchanged. A public challenge-to-proposal flow must replace the simulator
-stand-in with a single canonical scope digest, verify the VP challenge against
-the consumed nonce, and test each applicant role before this boundary is
-considered integrated.
+The API package has a reference challenge-to-proposal intake seam. It checks
+the complete canonical governed binding before calling a trusted VP verifier,
+consumes the challenge once only after the VP nonce and subject DID match, and
+passes a signed evidence envelope to an injected proposal callback. The seam
+does not itself implement the official VC verifier or a public route. The
+simulator's synthetic application-evidence envelope still uses a resource-ID
+commitment under `scopeCommitment`; that value MUST NOT be interchanged with
+the canonical role-specific scope digest. Proposal integration must replace
+the stand-in and test each applicant role before this boundary is complete.
 
 The reference API package exposes an in-memory store for local tests only. It
 caps live entries and schedules expiry cleanup even without another request;
