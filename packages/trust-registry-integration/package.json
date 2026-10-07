@@ -36,7 +36,6 @@
     "build:light": "pnpm run build"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/credential-compact": "0.2.0",
     "@midnight-ntwrk/credential-did-midnight": "0.2.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",
@@ -45,5 +44,8 @@
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
   }
 }

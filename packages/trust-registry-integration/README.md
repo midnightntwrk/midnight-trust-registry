@@ -20,7 +20,9 @@ Current coverage:
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,
   claim roots, or issuer methods. The upstream generic relation deliberately
-  does not compare holder bindings; the probe tests that limitation explicitly.
+  does not compare holder bindings; the application evidence profile must check
+  them separately. The probe tests claim-root, issuer-method, and schema links,
+  but does not assert that the generic relation accepts a holder mismatch.
   Run it with `pnpm run test:light` in this package. This is a
   compiler/runtime compatibility and typed-envelope test, not a proof of
   applicant eligibility, issuer authorization, or live credential status.
@@ -28,4 +30,7 @@ Current coverage:
 The published VC Compact package targets Compact 0.31.1 and runtime 0.16.0.
 The repository pins that compiler in `.compact-version` and Nix. The probe
 resolves the npm-exported `composable.compact` directory as a compiler include
-path; no VC source or generated output is vendored into this repository.
+path; no VC source or generated output is vendored into this repository. Its
+generated module uses the probe package's dev dependency on Compact runtime;
+direct consumers pin runtime 0.16.0 exactly, and the light gate checks that
+published DID/VC package requirements match before running the probe.

@@ -102,7 +102,7 @@ importers:
   contracts/trust-registry:
     dependencies:
       '@midnight-ntwrk/compact-runtime':
-        specifier: ^0.16.0
+        specifier: 0.16.0
         version: 0.16.0
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
         specifier: 0.7.0
@@ -156,7 +156,7 @@ importers:
   packages/trust-registry-client:
     dependencies:
       '@midnight-ntwrk/compact-runtime':
-        specifier: ^0.16.0
+        specifier: 0.16.0
         version: 0.16.0
       '@midnight-ntwrk/trust-registry-contract':
         specifier: workspace:0.1.0
@@ -176,9 +176,6 @@ importers:
 
   packages/trust-registry-integration:
     dependencies:
-      '@midnight-ntwrk/compact-runtime':
-        specifier: 0.16.0
-        version: 0.16.0
       '@midnight-ntwrk/credential-compact':
         specifier: 0.2.0
         version: 0.2.0
@@ -203,6 +200,10 @@ importers:
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
+    devDependencies:
+      '@midnight-ntwrk/compact-runtime':
+        specifier: 0.16.0
+        version: 0.16.0
 
 packages:
 
