@@ -77,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- defined a canonical V1 issuer status-policy binding preimage and fixed digest
+  vector; ledger anchoring and supported status verification remain pending
 - added a five-minute, one-use off-ledger application challenge service with
   context binding, exact evidence-envelope matching, and an in-memory
   reference store for local testing
