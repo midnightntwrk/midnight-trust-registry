@@ -365,6 +365,24 @@ const createMaintainerCoAuthorizer = (
   ),
 });
 
+const expectSignedEvidenceMismatch = (
+  registry: ReturnType<typeof createInitializedRegistryFixture>,
+  actionKind: Uint8Array,
+  payloadHash: Uint8Array,
+  invoke: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) => void,
+  diagnostic: RegExp,
+): void => {
+  const signature = signPolicyBoundMaintainerActionFromSeed(
+    registry.bootstrapMaintainer.seed,
+    registry.registryId,
+    registry.simulator.getLedger().governancePolicyCommitment,
+    actionKind,
+    payloadHash,
+    registry.simulator.getLedger().governanceActionCount,
+  );
+  expect(() => invoke(signature)).toThrow(diagnostic);
+};
+
 const createEpochCommitmentFixture = (label: string, policyRoot: Uint8Array) => ({
   epochId: labelToBytes32(`epoch:${label}`),
   stateRoot: labelToBytes32(`state-root:${label}`),
@@ -375,6 +393,19 @@ const createEpochCommitmentFixture = (label: string, policyRoot: Uint8Array) => 
 });
 
 describe("trust registry contract", () => {
+  it("keeps distinct long and multibyte fixture labels distinct", () => {
+    const shared = "evidence:verifier:application:";
+    const proposal = labelToBytes32(`${shared}propose`);
+    const authorization = labelToBytes32(`${shared}authorize`);
+    const activation = labelToBytes32(`${shared}activate`);
+    expect(Buffer.from(proposal)).not.toEqual(Buffer.from(authorization));
+    expect(Buffer.from(proposal)).not.toEqual(Buffer.from(activation));
+    expect(Buffer.from(authorization)).not.toEqual(Buffer.from(activation));
+    expect(Buffer.from(labelToBytes32("é".repeat(17)))).not.toEqual(Buffer.from(labelToBytes32("é".repeat(16) + "a")));
+    expect(Buffer.from(labelToBytes32("short"))).toEqual(Buffer.concat([Buffer.from("short"), Buffer.alloc(27)]));
+    expect(() => labelToBytes32("short\0")).toThrow(/NUL bytes/);
+  });
+
   it("binds action payload hashes to a nonempty policy commitment", () => {
     const policyV1 = labelToBytes32("policy:snapshot:v1");
     const policyV2 = labelToBytes32("policy:snapshot:v2");
@@ -562,12 +593,13 @@ describe("trust registry contract", () => {
   });
 
   it("governs maintainer membership through proposal, approval, activation, suspension, revocation, and archival", () => {
+    const registry = createInitializedRegistryFixture(11);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(11);
+    } = registry;
     const candidate = createMaintainerMembershipFixture("governed", 12);
 
     const proposeActionSequence = simulator.getLedger().governanceActionCount;
@@ -606,6 +638,25 @@ describe("trust registry contract", () => {
     );
     expect(proposedMembership.status).toEqual(AuthorizationStatus.proposed);
 
+    const substitutedEvidence = labelToBytes32("evidence:governed:authorize:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      AUTHORIZE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        proposedMembership.lifecycleEventHash,
+        substitutedEvidence,
+      ),
+      (signature) => simulator.authorizeMaintainerMembership(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        candidate.maintainerId,
+        substitutedEvidence,
+      ),
+      /maintainer authorization evidence must match the proposed application/i,
+    );
+
     const authorizeEvidenceHash = candidate.evidenceHash;
     const authorizeActionSequence = simulator.getLedger().governanceActionCount;
     const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -633,6 +684,25 @@ describe("trust registry contract", () => {
       candidate.maintainerId,
     );
     expect(authorizedMembership.status).toEqual(AuthorizationStatus.authorized);
+
+    const substitutedActivationEvidence = labelToBytes32("evidence:governed:activate:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      ACTIVATE_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        authorizedMembership.lifecycleEventHash,
+        substitutedActivationEvidence,
+      ),
+      (signature) => simulator.activateMaintainerMembership(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        candidate.maintainerId,
+        substitutedActivationEvidence,
+      ),
+      /maintainer activation evidence must match the proposed application/i,
+    );
 
     const activateEvidenceHash = candidate.evidenceHash;
     const activateActionSequence = simulator.getLedger().governanceActionCount;
@@ -1646,12 +1716,13 @@ describe("trust registry contract", () => {
   });
 
   it("moves an issuer authorization through proposed, authorized, and active states", () => {
+    const registry = createInitializedRegistryFixture(19);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(19);
+    } = registry;
     const issuerAuthorization = createIssuerAuthorizationFixture("application");
     const proposalEvidenceHash = labelToBytes32("evidence:application:propose");
     const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -1803,6 +1874,25 @@ describe("trust registry contract", () => {
         issuerAuthorization.resourceId,
       ),
     ).toThrow(/not active/i);
+
+    const substitutedActivationEvidence = labelToBytes32("evidence:application:activate:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      ACTIVATE_ISSUER_ACTION_KIND,
+      computeUpdateIssuerAuthorizationPayloadHash(
+        issuerAuthorization.authorizationId,
+        authorizedRecord.lifecycleEventHash,
+        substitutedActivationEvidence,
+      ),
+      (signature) => simulator.activateIssuerAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        issuerAuthorization.authorizationId,
+        substitutedActivationEvidence,
+      ),
+      /issuer activation evidence must match the proposed application/i,
+    );
 
     const activationEvidenceHash = proposalEvidenceHash;
     const activationSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -2401,12 +2491,13 @@ describe("trust registry contract", () => {
   });
 
   it("moves a verifier authorization through proposed, authorized, and active states", () => {
+    const registry = createInitializedRegistryFixture(35);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(35);
+    } = registry;
     const verifierAuthorization = createVerifierAuthorizationFixture("employment-application");
     const proposalEvidenceHash = labelToBytes32("evidence:employment:proposal");
 
@@ -2449,6 +2540,25 @@ describe("trust registry contract", () => {
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
     expect(simulator.getLedger().activeVerifierAuthorizationCount).toEqual(0n);
 
+    const substitutedAuthorizationEvidence = labelToBytes32("evidence:employment:authorize:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      AUTHORIZE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        proposedRecord.lifecycleEventHash,
+        substitutedAuthorizationEvidence,
+      ),
+      (signature) => simulator.authorizeVerifierAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        verifierAuthorization.authorizationId,
+        substitutedAuthorizationEvidence,
+      ),
+      /verifier authorization evidence must match the proposed application/i,
+    );
+
     const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -2474,6 +2584,25 @@ describe("trust registry contract", () => {
     );
     expect(authorizedRecord.status).toEqual(AuthorizationStatus.authorized);
     expect(simulator.getLedger().activeVerifierAuthorizationCount).toEqual(0n);
+
+    const substitutedActivationEvidence = labelToBytes32("evidence:employment:activate:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      ACTIVATE_VERIFIER_ACTION_KIND,
+      computeUpdateVerifierAuthorizationPayloadHash(
+        verifierAuthorization.authorizationId,
+        authorizedRecord.lifecycleEventHash,
+        substitutedActivationEvidence,
+      ),
+      (signature) => simulator.activateVerifierAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        verifierAuthorization.authorizationId,
+        substitutedActivationEvidence,
+      ),
+      /verifier activation evidence must match the proposed application/i,
+    );
 
     const activateSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -3189,12 +3318,13 @@ describe("trust registry contract", () => {
   });
 
   it("creates and governs auditor authorizations across proposal, activation, and archival paths", () => {
+    const registry = createInitializedRegistryFixture(57);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(57);
+    } = registry;
     const auditorAuthorization = createAuditorAuthorizationFixture("iso-27001");
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -3235,6 +3365,25 @@ describe("trust registry contract", () => {
     );
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
 
+    const substitutedAuthorizationEvidence = labelToBytes32("evidence:iso-27001:authorize:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      AUTHORIZE_AUDITOR_ACTION_KIND,
+      computeUpdateAuditorAuthorizationPayloadHash(
+        auditorAuthorization.authorizationId,
+        proposedRecord.lifecycleEventHash,
+        substitutedAuthorizationEvidence,
+      ),
+      (signature) => simulator.authorizeAuditorAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        auditorAuthorization.authorizationId,
+        substitutedAuthorizationEvidence,
+      ),
+      /auditor authorization evidence must match the proposed application/i,
+    );
+
     const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
@@ -3259,6 +3408,25 @@ describe("trust registry contract", () => {
       auditorAuthorization.authorizationId,
     );
     expect(authorizedRecord.status).toEqual(AuthorizationStatus.authorized);
+
+    const substitutedActivationEvidence = labelToBytes32("evidence:iso-27001:activate:substituted");
+    expectSignedEvidenceMismatch(
+      registry,
+      ACTIVATE_AUDITOR_ACTION_KIND,
+      computeUpdateAuditorAuthorizationPayloadHash(
+        auditorAuthorization.authorizationId,
+        authorizedRecord.lifecycleEventHash,
+        substitutedActivationEvidence,
+      ),
+      (signature) => simulator.activateAuditorAuthorization(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        signature,
+        auditorAuthorization.authorizationId,
+        substitutedActivationEvidence,
+      ),
+      /auditor activation evidence must match the proposed application/i,
+    );
 
     const activateSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,

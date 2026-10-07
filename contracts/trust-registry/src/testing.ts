@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 
 import {
   type CircuitContext,
@@ -29,8 +30,17 @@ import {
 } from "./witnesses.js";
 
 export const labelToBytes32 = (label: string): Uint8Array => {
+  if (label.includes("\0")) throw new Error("Fixture labels must not contain NUL bytes");
+  const encoded = Buffer.from(label, "utf8");
+  // Compact action-kind fixtures keep their short ASCII encoding; long labels get distinct test-only digests.
+  if (encoded.length > 32) {
+    return new Uint8Array(createHash("sha256")
+      .update("tr:test-fixture-label:v1\0")
+      .update(encoded)
+      .digest());
+  }
   const bytes = new Uint8Array(32);
-  bytes.set(Buffer.from(label).subarray(0, 32));
+  bytes.set(encoded);
   return bytes;
 };
 
