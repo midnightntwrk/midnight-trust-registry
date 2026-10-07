@@ -68,6 +68,10 @@ Workspace-backed mutation routes:
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 
+The exported application-challenge service is not yet an HTTP route. Its
+binding requires the versioned role-specific scope object and a matching
+canonical scope commitment; an arbitrary 32-byte scope digest is not accepted.
+
 Example applicant submission:
 
 ```bash

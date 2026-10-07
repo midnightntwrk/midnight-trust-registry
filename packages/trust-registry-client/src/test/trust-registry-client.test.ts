@@ -25,6 +25,7 @@ describe("trust registry client", () => {
   it("rejects every raw record read if the ledger format changes after construction", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const client = new TrustRegistrySimulatorClient(harness.simulator);
+    expect(Reflect.get(client, "simulator")).toBeUndefined();
     const ledger = harness.simulator.getLedger();
     const wrongFormat = vi.spyOn(harness.simulator, "getLedger").mockImplementation(() => ({
       ...ledger,

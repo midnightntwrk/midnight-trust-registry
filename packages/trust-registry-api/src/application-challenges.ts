@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 
 import {
   ApplicationEvidenceRoleSchema,
+  AuthorizationScopeSchema,
+  computeAuthorizationScopeCommitment,
   DidSchema,
   HashHexSchema,
   ScopedIdentifierSchema,
@@ -16,16 +18,35 @@ const MAX_IN_MEMORY_CHALLENGES = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
+const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
+  (value) => value === value.toLowerCase(),
+  "Challenge identifier must be canonical lowercase",
+);
 
 export const ApplicationChallengeBindingSchema = z.strictObject({
-  registryId: ScopedIdentifierSchema,
-  applicationId: ScopedIdentifierSchema,
+  registryId: CanonicalIdentifierSchema,
+  applicationId: CanonicalIdentifierSchema,
   subjectDid: DidSchema.startsWith("did:midnight:"),
   evidenceVerifierDid: DidSchema,
   role: ApplicationEvidenceRoleSchema,
-  policyId: ScopedIdentifierSchema,
+  policyId: CanonicalIdentifierSchema,
   policyVersion: z.string().regex(/^v[1-9][0-9]*$/u),
+  scope: AuthorizationScopeSchema,
   scopeCommitment: HashSchema,
+}).superRefine((binding, ctx) => {
+  const scope = AuthorizationScopeSchema.safeParse(binding.scope);
+  if (!scope.success) return;
+  const commitment = HashSchema.safeParse(binding.scopeCommitment);
+  if (!commitment.success) return;
+  if (scope.data.role !== binding.role) {
+    ctx.addIssue({ code: "custom", path: ["scope", "role"], message: "Scope role must match application role" });
+  }
+  if (scope.data.role === "maintainer" && scope.data.registryId !== binding.registryId) {
+    ctx.addIssue({ code: "custom", path: ["scope", "registryId"], message: "Maintainer scope registry must match application registry" });
+  }
+  if (computeAuthorizationScopeCommitment(scope.data) !== commitment.data.toLowerCase()) {
+    ctx.addIssue({ code: "custom", path: ["scopeCommitment"], message: "Scope commitment does not match canonical scope" });
+  }
 });
 
 export type ApplicationChallengeBinding = z.infer<typeof ApplicationChallengeBindingSchema>;

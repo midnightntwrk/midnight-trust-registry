@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require canonical role-specific scope preimages and matching commitments at
+  application-challenge issue and consume boundaries
 - restricted generic maintainer audit events to a fixed action kind so raw
   authorization cannot emit a lifecycle or epoch event without its transition
 - reject incompatible contract formats before simulator evidence, status, and
