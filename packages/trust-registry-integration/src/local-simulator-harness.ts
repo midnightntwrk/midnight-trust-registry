@@ -1375,6 +1375,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertIssuerAuthorized(
       fixture.subjectDidCommitment,
@@ -1389,6 +1390,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readIssuerAuthorizationStatus(
     fixture: IssuerScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1397,6 +1399,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1413,6 +1416,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: VerifierScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
@@ -1429,6 +1433,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readVerifierAuthorizationStatus(
     fixture: VerifierScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1437,6 +1442,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildVerifierHistoricalEvidence(
     fixture: VerifierScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getVerifierAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1453,6 +1459,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: AuditorScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
@@ -1470,6 +1477,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: RecognitionScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertRecognitionActive(
       fixture.recognizedAuthorityDidCommitment,
@@ -1615,6 +1623,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildRecognitionHistoricalEvidence(
     fixture: RecognitionScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getRecognition(fixture.recognitionIdCommitment);
     const recognition = this.buildRecognitionRecord(fixture, record);
     return this.buildEvidenceBundle({
@@ -1627,6 +1636,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readRecognitionStatus(
     fixture: RecognitionScenarioFixture,
   ): RecognitionRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
     );
@@ -1635,6 +1645,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildAuditorHistoricalEvidence(
     fixture: AuditorScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getAuditorAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1928,6 +1939,12 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error(
         `Trust registry mismatch: expected ${expectedRegistryId}, got ${this.registryId}`,
       );
+    }
+  }
+
+  private assertSupportedContractFormat(): void {
+    if (this.simulator.getLedger().contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
     }
   }
 

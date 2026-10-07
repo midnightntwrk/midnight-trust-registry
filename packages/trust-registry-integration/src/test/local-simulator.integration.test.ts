@@ -640,13 +640,32 @@ describe("trust registry local simulator integration", () => {
     const simulatorEpochRead = vi.spyOn(harness.simulator, "getEpochCommitment").mockImplementation(() => {
       throw new Error("Simulator epoch read should not precede the format gate");
     });
+    const issuerRecordRead = vi.spyOn(harness.simulator, "getIssuerAuthorization").mockImplementation(() => {
+      throw new Error("Issuer record read should not precede the format gate");
+    });
     try {
       expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.readIssuerAuthorizationStatus(issuer)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.buildIssuerHistoricalEvidence(issuer)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/Unsupported trust registry format/);
+      const verifier = createVerifierScenarioFixture("format-boundary");
+      expect(() => harness.readVerifierAuthorizationStatus(verifier)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.buildVerifierHistoricalEvidence(verifier)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/Unsupported trust registry format/);
+      const auditor = createAuditorScenarioFixture("format-boundary");
+      expect(() => harness.buildAuditorHistoricalEvidence(auditor)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/Unsupported trust registry format/);
+      const recognition = createRecognitionScenarioFixture("format-boundary");
+      expect(() => harness.readRecognitionStatus(recognition)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.buildRecognitionHistoricalEvidence(recognition)).toThrow(/Unsupported trust registry format/);
+      expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(/Unsupported trust registry format/);
       expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
       expect(epochRead).not.toHaveBeenCalled();
       expect(simulatorEpochRead).not.toHaveBeenCalled();
+      expect(issuerRecordRead).not.toHaveBeenCalled();
       expect(() => new TrustRegistrySimulatorClient(harness.simulator)).toThrow(/Unsupported trust registry format/);
     } finally {
+      issuerRecordRead.mockRestore();
       simulatorEpochRead.mockRestore();
       epochRead.mockRestore();
       spy.mockRestore();

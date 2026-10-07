@@ -28,6 +28,11 @@ import {
 
 const EPOCH_PUBLISH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
+/**
+ * Caller-authenticated epoch context. These values are not authenticated by
+ * the free bundle verifier: resolve them from a format-one registry ledger or
+ * another independently trusted source before treating its result as trust.
+ */
 export type EpochAnchorVerificationContext = {
   epochRecord: EpochCommitmentRecord;
   maintainerPublicKey: JubjubPoint;
@@ -243,6 +248,7 @@ const assertInclusionProof = (
   }
 };
 
+/** Verifies consistency with the caller's anchor, not that anchor's provenance. */
 export const verifyTrustRegistryEvidenceBundle = (
   bundleInput: TrustRegistryEvidenceBundle,
   options: BundleVerificationOptions,
