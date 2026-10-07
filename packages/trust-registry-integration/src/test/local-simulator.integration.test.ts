@@ -48,6 +48,12 @@ describe("trust registry local simulator integration", () => {
         type: (["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const)[resourceType]!,
         id: issuer.resourceId,
       };
+      expect(() => harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+      })).toThrow(/explicit governed resource/);
       expect(() => harness.proposeIssuerWithApplicationEvidence(
         issuer,
         harness.createApplicationEvidence({
@@ -104,6 +110,7 @@ describe("trust registry local simulator integration", () => {
       subjectDid: issuer.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     const decodedSignature = decodeJubjubSignature(
       Buffer.from(validEvidence.signature.value.slice(2), "hex"),
@@ -194,6 +201,7 @@ describe("trust registry local simulator integration", () => {
       subjectDid: issuer.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
     harness.proposeVerifier(verifier);
@@ -683,6 +691,7 @@ describe("trust registry local simulator integration", () => {
       subjectDid: issuer.subjectDid,
       role: "issuer" as const,
       scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily" as const, id: issuer.resourceId },
     };
     const applicationEvidence = harness.createApplicationEvidence(applicationInput);
     const client = new TrustRegistrySimulatorClient(harness.simulator);

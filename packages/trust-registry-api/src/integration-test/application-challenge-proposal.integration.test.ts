@@ -20,7 +20,7 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-  type ApplicationEvidenceExpectation,
+  type SimulatorApplicationEvidenceExpectation,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
@@ -37,7 +37,7 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
   let subjectDid: string;
   let scope: AuthorizationScope;
   let governedResource: { type: string; id: string };
-  let propose: (evidence: ApplicationEvidenceSubmission, expected: ApplicationEvidenceExpectation) => Uint8Array;
+  let propose: (evidence: ApplicationEvidenceSubmission, expected: SimulatorApplicationEvidenceExpectation) => Uint8Array;
 
   switch (role) {
     case "issuer": {
@@ -105,9 +105,10 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       governedResource: binding.governedResource,
     };
     expect(binding.scopeCommitment).not.toBe(sha256Hex(binding.governedResource.id));
-    const verifyPresentation = vi.fn(async (presentation: unknown, _nonce: string, _subjectDid: string) => ({
+    const verifyPresentation = vi.fn(async (presentation: unknown, context: { binding: ApplicationChallengeBinding }) => ({
       nonce: (presentation as { proofNonce: string }).proofNonce,
       subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
+      scopeCommitment: context.binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
       verifiedAt: VERIFIED_AT,
@@ -183,6 +184,11 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
 
     const commitment = await consumeChallengeAndSubmitApplication(input);
     expect(commitment).toBeInstanceOf(Uint8Array);
+    expect(verifyPresentation).toHaveBeenLastCalledWith(input.presentation, {
+      nonce: issued.nonce,
+      binding,
+      evaluatedAt: VERIFIED_AT,
+    });
     expect(proposeWithEvidence).toHaveBeenCalledOnce();
     const signedEvidence = proposeWithEvidence.mock.calls[0]![0].evidence;
     const wrongResourceScope = binding.scope.role === "issuer"
@@ -270,9 +276,10 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       nonce: issued.nonce,
       challengeHash: issued.challengeHash,
       presentation: { proofNonce: issued.nonce, proofSubjectDid: binding.subjectDid },
-      verifyPresentation: async (presentation: unknown) => ({
+      verifyPresentation: async (presentation: unknown, context) => ({
         nonce: (presentation as { proofNonce: string }).proofNonce,
         subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
+        scopeCommitment: context.binding.scopeCommitment,
         presentationHash: `0x${"2".repeat(64)}`,
         claimsCommitment: `0x${"3".repeat(64)}`,
         verifiedAt: VERIFIED_AT,

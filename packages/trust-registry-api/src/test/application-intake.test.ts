@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   computeAuthorizationScopeCommitment,
+  sha256Hex,
   type ApplicationChallengeBinding,
   type AuthorizationScope,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -64,9 +65,10 @@ function intakeInput(binding: ApplicationChallengeBinding, service: ApplicationC
     nonce,
     challengeHash,
     presentation: { rawVp: "private-holder-presentation", proofNonce: nonce, proofSubjectDid: binding.subjectDid },
-    verifyPresentation: vi.fn(async (presentation: unknown, _expectedNonce: string, _subjectDid: string) => ({
+    verifyPresentation: vi.fn(async (presentation: unknown, context: { binding: ApplicationChallengeBinding }) => ({
       subjectDid: (presentation as { proofSubjectDid: string }).proofSubjectDid,
       nonce: (presentation as { proofNonce: string }).proofNonce,
+      scopeCommitment: context.binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
       verifiedAt: "2026-10-06T00:00:00.000Z",
@@ -97,6 +99,11 @@ describe("challenge-backed application intake", () => {
 
     const proposal = await consumeChallengeAndSubmitApplication(input);
     expect(input.verifyPresentation).toHaveBeenCalledOnce();
+    expect(input.verifyPresentation).toHaveBeenCalledWith(input.presentation, {
+      nonce: issued.nonce,
+      binding,
+      evaluatedAt: input.evaluatedAt,
+    });
     expect(input.signEvidence).toHaveBeenCalledOnce();
     expect(input.propose).toHaveBeenCalledOnce();
     expect(proposal.evidence.envelope.challengeHash).toBe(issued.challengeHash);
@@ -118,6 +125,25 @@ describe("challenge-backed application intake", () => {
     input.signEvidence.mockRejectedValueOnce(new Error("signer failed"));
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/signer failed/);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
+  });
+
+  it("rejects a VP verifier that evaluated a different scope before challenge consumption", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    input.verifyPresentation.mockResolvedValueOnce({
+      subjectDid: binding.subjectDid,
+      nonce: issued.nonce,
+      scopeCommitment: `0x${"f".repeat(64)}`,
+      presentationHash: `0x${"2".repeat(64)}`,
+      claimsCommitment: `0x${"3".repeat(64)}`,
+      verifiedAt: input.evaluatedAt,
+      expiresAt: "2026-10-06T01:00:00.000Z",
+    });
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/subject DID, or scope/);
+    expect(input.signEvidence).not.toHaveBeenCalled();
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
   });
 
   it("rejects a binding that differs from the governed proposal before VP verification", async () => {
@@ -156,5 +182,23 @@ describe("challenge-backed application intake", () => {
       .rejects.toThrow(/nonce or hash/);
     expect(input.verifyPresentation).not.toHaveBeenCalled();
     await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it("rejects fabricated, expired, and spent challenges before VP verification", async () => {
+    const binding = bindingFor("issuer");
+    let now = START;
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    const fakeNonce = `0x${"f".repeat(64)}`;
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      nonce: fakeNonce,
+      challengeHash: sha256Hex(Buffer.from(fakeNonce.slice(2), "hex")),
+    })).rejects.toThrow(/invalid or already consumed/);
+    expect(input.verifyPresentation).not.toHaveBeenCalled();
+    now += 5 * 60_000;
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/invalid or already consumed/);
+    expect(input.verifyPresentation).not.toHaveBeenCalled();
   });
 });

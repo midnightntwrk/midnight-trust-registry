@@ -120,14 +120,14 @@ const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 
-export type ApplicationEvidenceExpectation = {
+export type SimulatorApplicationEvidenceExpectation = {
   scope: AuthorizationScope;
   challengeHash: string;
   governedResource: GovernedResource;
 };
 
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
-  if (scope.role === "issuer") return { type: "credentialFamily", id: scope.credentialFamilyId };
+  if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
   return { type: "requestProfile", id: scope.requestProfileId };
 };
@@ -746,7 +746,7 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeMaintainerWithApplicationEvidence(
     fixture: MaintainerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
-    expectedEvidence: ApplicationEvidenceExpectation = {
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createMaintainerAuthorizationScopeFixture(this.registryId),
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
       governedResource: { type: "registry", id: this.registryId },
@@ -906,7 +906,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-    expectedEvidence: ApplicationEvidenceExpectation = {
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createIssuerAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: issuerGovernedResource(fixture),
@@ -1092,7 +1092,7 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeVerifierWithApplicationEvidence(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
-    expectedEvidence: ApplicationEvidenceExpectation = {
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createVerifierAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.requestProfileId },
@@ -1342,7 +1342,7 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeAuditorWithApplicationEvidence(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
-    expectedEvidence: ApplicationEvidenceExpectation = {
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createAuditorAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.requestProfileId },

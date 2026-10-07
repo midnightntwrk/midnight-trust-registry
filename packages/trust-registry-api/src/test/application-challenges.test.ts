@@ -48,6 +48,7 @@ describe("application challenge lifecycle", () => {
         return true;
       },
       consume: async () => false,
+      isLive: async () => false,
     };
     const service = new ApplicationChallengeService(store, () => START);
     const first = await service.issue(binding);
@@ -73,6 +74,7 @@ describe("application challenge lifecycle", () => {
     const underlying = new InMemoryApplicationChallengeStore();
     const yieldingStore: ApplicationChallengeStore = {
       insert: (record, nowMs) => underlying.insert(record, nowMs),
+      isLive: (challengeHash, bindingHash, nowMs) => underlying.isLive(challengeHash, bindingHash, nowMs),
       consume: async (challengeHash, bindingHash, nowMs) => {
         await Promise.resolve();
         return underlying.consume(challengeHash, bindingHash, nowMs);
@@ -86,6 +88,21 @@ describe("application challenge lifecycle", () => {
     expect(results).toContain(null);
     expect(results).toContain(issued.challengeHash);
     expect(await service.consume(input)).toBeNull();
+  });
+
+  it("preflights only the live exact binding without spending the challenge", async () => {
+    let now = START;
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
+    const issued = await service.issue(binding);
+    const input = { binding, nonce: issued.nonce, challengeHash: issued.challengeHash };
+    expect(await service.isLive(input)).toBe(true);
+    expect(await service.isLive({ ...input, binding: { ...binding, applicationId: "application:other" } })).toBe(false);
+    expect(await service.isLive(input)).toBe(true);
+    expect(await service.consume(input)).toBe(issued.challengeHash);
+    expect(await service.isLive(input)).toBe(false);
+    const next = await service.issue(binding);
+    now += 5 * 60_000;
+    expect(await service.isLive({ binding, nonce: next.nonce, challengeHash: next.challengeHash })).toBe(false);
   });
 
   it("supersedes the prior live challenge for the same binding", async () => {
@@ -479,6 +496,7 @@ describe("application challenge lifecycle", () => {
         return false;
       },
       consume: async () => false,
+      isLive: async () => false,
     };
     const service = new ApplicationChallengeService(store, () => START);
 

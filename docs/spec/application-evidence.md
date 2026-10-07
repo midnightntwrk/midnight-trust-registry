@@ -148,8 +148,16 @@ so accepted hex casing does not change challenge identity or the signed envelope
 The same byte-value comparison applies to `scopeCommitment`.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
-the complete canonical governed binding before calling a trusted VP verifier,
-consumes the challenge once only after the VP nonce and subject DID match, and
+the complete canonical governed binding and performs a non-consuming live
+challenge lookup before expensive VP verification. That lookup is only a cheap
+preflight; atomic check-and-delete remains the replay boundary. The trusted
+VP verifier receives the full parsed binding (including role, scope, policy,
+and governed resource), nonce, and evaluation time. It MUST evaluate those
+fields rather than trusting a scope fixed when the verifier was constructed,
+and return the evaluated canonical scope commitment. Intake rejects a result
+whose commitment differs from the live challenge before it spends the nonce.
+The intake then consumes the challenge once only after the VP nonce and subject
+DID match, and
 passes a signed evidence envelope to an injected proposal callback. The seam
 does not itself implement the official VC verifier or a public route. An
 integration-only test uses the real challenge service and JubJub signing with

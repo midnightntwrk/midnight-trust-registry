@@ -22,6 +22,7 @@ describe("application evidence DID assertion-key fixture", () => {
       subjectDid: issuer.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     const did = parseMidnightDIDString(harness.evidenceVerifier.did);
     const resolver = createMidnightDidResolver([

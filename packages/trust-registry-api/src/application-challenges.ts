@@ -33,9 +33,10 @@ export type ApplicationChallengeRecord = {
   expiresAtMs: number;
 };
 
-/** A production adapter must atomically replace the live challenge for an application and check-and-delete on consume. */
+/** A production adapter must atomically replace per application and check-and-delete on consume. */
 export interface ApplicationChallengeStore {
   insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean>;
+  isLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
   consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
 }
 
@@ -96,6 +97,16 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     if (current.record.bindingHash !== bindingHash) return false;
     this.remove(challengeHash);
     return true;
+  }
+
+  async isLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
+    const current = this.records.get(challengeHash);
+    if (current === undefined) return false;
+    if (nowMs >= current.record.expiresAtMs) {
+      this.remove(challengeHash);
+      return false;
+    }
+    return current.record.bindingHash === bindingHash;
   }
 
   private remove(challengeHash: string): void {
@@ -161,6 +172,21 @@ export class ApplicationChallengeService {
     return await this.store.consume(challengeHash, computeApplicationChallengeBindingHash(parsedBinding.data), this.now())
       ? challengeHash
       : null;
+  }
+
+  /** Advisory preflight only; consume remains the atomic replay boundary. */
+  async isLive(input: {
+    binding: ApplicationChallengeBinding;
+    nonce: string;
+    challengeHash: string;
+  }): Promise<boolean> {
+    const parsedBinding = ApplicationChallengeBindingSchema.safeParse(input.binding);
+    if (!parsedBinding.success || !hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) return false;
+    return this.store.isLive(
+      input.challengeHash.toLowerCase(),
+      computeApplicationChallengeBindingHash(parsedBinding.data),
+      this.now(),
+    );
   }
 
   private now(): number {

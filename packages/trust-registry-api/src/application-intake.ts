@@ -3,6 +3,7 @@ import {
   ApplicationEvidenceEvaluationTimeSchema,
   ApplicationEvidenceEnvelopeSchema,
   AuthorizedEvidenceVerifierSchema,
+  HashHexSchema,
   assertValidApplicationEvidence,
   computeApplicationChallengeBindingHash,
   computeApplicationEvidenceCommitment,
@@ -18,6 +19,7 @@ import { ApplicationChallengeService, hasMatchingApplicationChallengeHash } from
 export type VerifiedApplicationPresentation = {
   subjectDid: string;
   nonce: string;
+  scopeCommitment: string;
   presentationHash: string;
   claimsCommitment: string;
   verifiedAt: string;
@@ -29,6 +31,12 @@ export type ApplicationProposalInput = {
   evidence: ApplicationEvidenceSubmission;
 };
 
+export type ApplicationPresentationContext = {
+  nonce: string;
+  binding: ApplicationChallengeBinding;
+  evaluatedAt: string;
+};
+
 /** The caller supplies a policy-authorized VP verifier that derives bindings from the verified proof, not expected inputs. */
 export async function consumeChallengeAndSubmitApplication<Result>(input: {
   challengeService: ApplicationChallengeService;
@@ -37,7 +45,7 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   nonce: string;
   challengeHash: string;
   presentation: unknown;
-  verifyPresentation: (presentation: unknown, nonce: string, subjectDid: string) => Promise<VerifiedApplicationPresentation>;
+  verifyPresentation: (presentation: unknown, context: ApplicationPresentationContext) => Promise<VerifiedApplicationPresentation>;
   signEvidence: (commitment: string) => Promise<ApplicationEvidenceSignature>;
   authorizedVerifiers: readonly AuthorizedEvidenceVerifier[];
   verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier;
@@ -57,16 +65,24 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   if (!hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) {
     throw new Error("Application challenge nonce or hash is invalid");
   }
-  const verified = await input.verifyPresentation(input.presentation, input.nonce, binding.subjectDid);
-  if (verified.nonce !== input.nonce || verified.subjectDid !== binding.subjectDid) {
-    throw new Error("Presentation does not match the application challenge or subject DID");
+  const challengeInput = { binding, nonce: input.nonce, challengeHash: input.challengeHash };
+  if (!(await input.challengeService.isLive(challengeInput))) {
+    throw new Error("Application challenge is invalid or already consumed");
+  }
+  const verified = await input.verifyPresentation(input.presentation, {
+    nonce: input.nonce,
+    binding,
+    evaluatedAt: input.evaluatedAt,
+  });
+  if (
+    verified.nonce !== input.nonce ||
+    verified.subjectDid !== binding.subjectDid ||
+    HashHexSchema.parse(verified.scopeCommitment).toLowerCase() !== binding.scopeCommitment.toLowerCase()
+  ) {
+    throw new Error("Presentation does not match the application challenge, subject DID, or scope");
   }
 
-  const consumedHash = await input.challengeService.consume({
-    binding,
-    nonce: input.nonce,
-    challengeHash: input.challengeHash,
-  });
+  const consumedHash = await input.challengeService.consume(challengeInput);
   if (consumedHash === null) throw new Error("Application challenge is invalid or already consumed");
 
   const envelope = ApplicationEvidenceEnvelopeSchema.parse({
