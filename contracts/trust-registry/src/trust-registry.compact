@@ -1831,14 +1831,13 @@ circuit requireEpochCommitmentRecord(
   return epochCommitmentRecords.lookup(epochId);
 }
 
-export circuit authorizeMaintainerAction(
+export circuit authorizeMaintainerAuditEvent(
   authorizationBundle: MaintainerAuthorizationBundle,
-  actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>
 ): Bytes<32> {
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
-    actionKind,
+    pad(32, "tr:audit:generic"),
     actionPayloadHash
   );
   return authorizedAction.eventHash;

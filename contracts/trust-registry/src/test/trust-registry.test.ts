@@ -67,6 +67,7 @@ const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = labelToBytes32(
   "tr:policy:thresholds:update",
 );
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const GENERIC_AUDIT_ACTION_KIND = labelToBytes32("tr:audit:generic");
 
 const createInitializedRegistryFixture = (seedByte: number) => {
   const simulator = new TrustRegistrySimulator();
@@ -825,7 +826,7 @@ describe("trust registry contract", () => {
     ).toThrow(/threshold policy/i);
   });
 
-  it("authorizes a signed maintainer action for the bootstrap maintainer", () => {
+  it("records a signed generic audit event without a lifecycle transition", () => {
     const simulator = new TrustRegistrySimulator();
     const registryId = labelToBytes32("registry:kanon");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
@@ -846,7 +847,7 @@ describe("trust registry contract", () => {
       1n,
     );
 
-    const actionKind = labelToBytes32("tr:authorize:issuer");
+    const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
     const actionSequence = simulator.getLedger().governanceActionCount;
     const signature = signPolicyBoundMaintainerActionFromSeed(
@@ -870,11 +871,26 @@ describe("trust registry contract", () => {
       ),
     ).toBe(true);
 
-    const eventHash = simulator.authorizeMaintainerAction(
+    const lifecycleSignature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      REVOKE_ISSUER_ACTION_KIND,
+      actionPayloadHash,
+      actionSequence,
+    );
+    expect(() => simulator.authorizeMaintainerAuditEvent(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      lifecycleSignature,
+      actionPayloadHash,
+    )).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(actionSequence);
+
+    const eventHash = simulator.authorizeMaintainerAuditEvent(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       signature,
-      actionKind,
       actionPayloadHash,
     );
     const state = simulator.getLedger();
@@ -892,6 +908,7 @@ describe("trust registry contract", () => {
       true,
     );
     expect(state.governanceActionCount).toEqual(2n);
+    expect(state.issuerAuthorizationCount).toEqual(0n);
     expect(Buffer.from(state.lastAuthorizedActionKind)).toEqual(
       Buffer.from(actionKind),
     );
@@ -1503,7 +1520,7 @@ describe("trust registry contract", () => {
   it("rejects maintainer actions before initialization and rejects tampered authorization", () => {
     const simulator = new TrustRegistrySimulator();
     const registryId = labelToBytes32("registry:kanon");
-    const actionKind = labelToBytes32("tr:authorize:issuer");
+    const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
     const bootstrapMaintainer = createMaintainerFixture("bootstrap", 5);
     const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
@@ -1519,11 +1536,10 @@ describe("trust registry contract", () => {
     );
 
     expect(() =>
-      simulator.authorizeMaintainerAction(
+      simulator.authorizeMaintainerAuditEvent(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         signatureBeforeInit,
-        actionKind,
         actionPayloadHash,
       ),
     ).toThrow(/not initialized/i);
@@ -1554,31 +1570,28 @@ describe("trust registry contract", () => {
     };
 
     expect(() =>
-      simulator.authorizeMaintainerAction(
+      simulator.authorizeMaintainerAuditEvent(
         labelToBytes32("maintainer:wrong"),
         bootstrapPublicKey,
         validSignature,
-        actionKind,
         actionPayloadHash,
       ),
     ).toThrow(/not registered/i);
 
     expect(() =>
-      simulator.authorizeMaintainerAction(
+      simulator.authorizeMaintainerAuditEvent(
         bootstrapMaintainer.keyId,
         deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(19)),
         validSignature,
-        actionKind,
         actionPayloadHash,
       ),
     ).toThrow(/does not match the registered key/i);
 
     expect(() =>
-      simulator.authorizeMaintainerAction(
+      simulator.authorizeMaintainerAuditEvent(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         tamperedSignature,
-        actionKind,
         actionPayloadHash,
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
