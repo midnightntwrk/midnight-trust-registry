@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const packageDir = resolve(scriptDir, "..");
 const distDir = resolve(packageDir, "dist");
-const realDistDir = await realpath(distDir);
 const isInsideDist = (path, root) => path === root || path.startsWith(`${root}${sep}`);
 
 const args = new Map();
@@ -61,8 +60,9 @@ const server = createServer(async (request, response) => {
   }
 
   let realFilePath;
+  let realDistDir;
   try {
-    realFilePath = await realpath(filePath);
+    [realFilePath, realDistDir] = await Promise.all([realpath(filePath), realpath(distDir)]);
   } catch {
     response.statusCode = 404;
     response.end("not found\n");

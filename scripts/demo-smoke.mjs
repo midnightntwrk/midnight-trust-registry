@@ -136,8 +136,14 @@ const requestRawPath = async (url, pathname) =>
       response.setEncoding("utf8");
       response.on("data", (chunk) => { body += chunk; });
       response.on("end", () => resolve({ status: response.statusCode, body }));
+      response.on("error", reject);
+      response.on("aborted", () => reject(new Error(`Static asset response aborted for ${pathname}`)));
+      response.on("close", () => {
+        if (!response.complete) reject(new Error(`Static asset response closed early for ${pathname}`));
+      });
     });
     request.on("error", reject);
+    request.setTimeout(5_000, () => request.destroy(new Error(`Static asset request timed out for ${pathname}`)));
     request.end();
   });
 
@@ -197,7 +203,10 @@ const waitForUi = async (url, child, title, distDir) => {
         ["/%zz", 400],
       ]) {
         const result = await requestRawPath(url, pathname);
-        if (result.status !== expectedStatus || result.body.includes("outside-dist-secret")) {
+        if (result.body.includes("outside-dist-secret")) {
+          throw new Error(`${title} exposed a file outside dist through ${pathname}`);
+        }
+        if (result.status !== expectedStatus) {
           throw new Error(`${title} served ${pathname} with HTTP ${result.status}, expected ${expectedStatus}`);
         }
       }
