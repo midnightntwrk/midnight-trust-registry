@@ -6,15 +6,17 @@ import { extname, join, normalize, sep } from "node:path";
 const isInside = (path, root) => path === root || path.startsWith(`${root}${sep}`);
 
 function rawPathname(target) {
-  if (target.startsWith("/")) return target.split("?")[0];
-  if (!/^https?:\/\/[^/?#]+(?:[/?#]|$)/u.test(target)) return null;
+  const withoutSuffix = (path) => path.split(/[?#]/u)[0];
+  if (target.startsWith("/")) return withoutSuffix(target);
+  const authority = /^https?:\/\/[^/?#]+/iu.exec(target);
+  if (authority === null) return null;
   try {
     new URL(target);
   } catch {
     return null;
   }
-  const authorityEnd = target.indexOf("/", target.indexOf("://") + 3);
-  return authorityEnd < 0 ? "/" : target.slice(authorityEnd).split("?")[0];
+  const suffix = target.slice(authority[0].length);
+  return suffix.startsWith("/") ? withoutSuffix(suffix) : "/";
 }
 
 function contentTypeForPath(path) {

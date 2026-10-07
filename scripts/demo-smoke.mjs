@@ -199,6 +199,16 @@ const waitForUi = async (url, child, title, distDir) => {
       if (absoluteIndex.status !== 200 || !absoluteIndex.body.includes(`<title>${title}</title>`)) {
         throw new Error(`${title} did not serve an absolute-form index request`);
       }
+      for (const target of [
+        `${url}?redirect=/styles.css`,
+        "/index.html#fragment",
+        `${url.replace(/^http:/u, "HTTP:")}/index.html`,
+      ]) {
+        const result = await requestRawPath(url, target);
+        if (result.status !== 200 || !result.body.includes(`<title>${title}</title>`)) {
+          throw new Error(`${title} did not serve index.html for ${target}`);
+        }
+      }
       for (const [pathname, expectedStatus] of [
         [`/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
         [`${url}/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
