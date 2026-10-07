@@ -317,6 +317,63 @@ describe("application challenge lifecycle", () => {
     await expect(service.issue({ ...binding, scope: { ...scope, extra: "ignored" } as typeof scope })).rejects.toThrow();
   });
 
+  it("rejects malformed nested scope on consume without throwing or consuming the challenge", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const malformed = {
+      ...binding,
+      scope: { ...scope, schemaId: "schema:*", schemaVersion: "1.0" },
+    } as unknown as ApplicationChallengeBinding;
+
+    expect(await service.consume({
+      binding: malformed,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBeNull();
+    expect(await service.consume({
+      binding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBe(issued.challengeHash);
+  });
+
+  it("binds maintainer scope to the same registry as the challenge", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const maintainerScope = {
+      version: "tr-scope-v1" as const,
+      role: "maintainer" as const,
+      registryId: binding.registryId,
+    };
+    const maintainerBinding = {
+      ...binding,
+      role: "maintainer" as const,
+      scope: maintainerScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(maintainerScope),
+    };
+    const issued = await service.issue(maintainerBinding);
+    const wrongRegistryScope = {
+      ...maintainerScope,
+      registryId: "registry:other:trusted",
+    };
+    const wrongRegistryBinding = {
+      ...maintainerBinding,
+      scope: wrongRegistryScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(wrongRegistryScope),
+    };
+
+    await expect(service.issue(wrongRegistryBinding)).rejects.toThrow(/Maintainer scope registry/);
+    expect(await service.consume({
+      binding: wrongRegistryBinding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBeNull();
+    expect(await service.consume({
+      binding: maintainerBinding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+    })).toBe(issued.challengeHash);
+  });
+
   it("fails closed if the store reports repeated challenge hash collisions", async () => {
     let attempts = 0;
     const store: ApplicationChallengeStore = {
