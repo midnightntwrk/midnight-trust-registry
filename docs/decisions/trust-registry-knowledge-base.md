@@ -109,6 +109,13 @@ Current VC dependency posture:
   authority evidence and a live TR-to-VC anchor still require follow-up work
 - `referencedStatusRegistryId` in the evidence bundle is metadata outside the
   signed authorization leaf; never treat it as authenticated status policy
+- the local #90 status-anchor foundation defines a strict V1 preimage and
+  fixed digest vector for status-registry ID, authority DID method, and policy
+  identity/content; it is not yet in the governed issuer record or signed
+  evidence leaf, so no client or federation status claim may rely on it
+- the VC status-registry package still documents prototype authority and
+  root-verification limitations; do not represent its current helpers as a
+  supported non-revocation proof until those upstream gates are satisfied
 - Trust Registry remains the owner of governance and authorization logic
 - `midnight-did` remains the owner of DID lifecycle and resolver behavior
 - `midnight-verifiable-credentials` remains the owner of VC/VP and status
