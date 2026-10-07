@@ -1494,10 +1494,7 @@ export class LocalTrustRegistryIntegrationHarness {
     bundle: TrustRegistryEvidenceBundle,
     options: { evaluationTime?: string } = {},
   ): void {
-    const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 1n) {
-      throw new Error("Unsupported trust registry format");
-    }
+    const ledger = this.assertSupportedContractFormat();
     this.assertRegistryId(bundle.registryId);
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
@@ -1942,10 +1939,12 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
-  private assertSupportedContractFormat(): void {
-    if (this.simulator.getLedger().contractVersion !== 1n) {
+  private assertSupportedContractFormat(): ReturnType<TrustRegistrySimulator["getLedger"]> {
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 1n) {
       throw new Error("Unsupported trust registry format");
     }
+    return ledger;
   }
 
   private buildIssuerAuthorizationRecord(

@@ -20,5 +20,6 @@ key's historical maintainer status, or check the ledger contract format. A
 relying party must establish those facts from a format-one registry ledger or
 another independently trusted anchor before using the result as an
 authorization decision. `TrustRegistrySimulatorClient` binds these inputs to
-its simulator and rejects incompatible ledger formats before evidence reads;
+its simulator and rejects incompatible ledger formats before evidence and raw
+record reads, including when the ledger changes after client construction;
 that simulator is a local reference, not a production trust source.
