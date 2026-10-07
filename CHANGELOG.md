@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- restricted generic maintainer audit events to a fixed action kind so raw
+  authorization cannot emit a lifecycle or epoch event without its transition
+- reject incompatible contract formats before simulator evidence, status, and
+  raw client record reads
 - require exactly one epoch maintainer signature in the pre-release evidence
   bundle schema, matching the signature persisted by the format-one contract;
   multi-signature prototype bundles are not accepted. Malformed encoding now
@@ -62,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- removed the pre-release `authorizeMaintainerAction` circuit and simulator
+  wrapper with caller-supplied action kinds; use `authorizeMaintainerAuditEvent`
+  for a fixed-kind generic audit event
 - removed pre-release direct-create verifier, auditor, and recognition
   circuits and simulator wrappers; all four roles use the governed
   proposal, authorization, and activation state machine

@@ -289,6 +289,12 @@ The expected Compact contract split is:
 
 Status and revocation stay in the VC status registry. TR records can require a status method, but they do not replace revocation state.
 
+The format-one generic maintainer audit circuit records only the fixed
+`tr:audit:generic` action kind and a signed payload hash. It does not change a
+participant lifecycle record. Lifecycle and epoch event kinds are emitted only
+by their corresponding state-transition circuits; a caller cannot supply one
+through the generic audit circuit.
+
 ## 8. Query and Evidence Surfaces
 
 The query layer should align with ToIP TRQP concepts while staying implementation-neutral in v1.
@@ -318,6 +324,13 @@ Minimum evidence bundle fields:
 - Epoch commitment
 - Inclusion proof or signed registry statement
 - Relevant maintainer signatures
+
+Free bundle-verification helpers check internal proof consistency against the
+epoch record, maintainer key, and registry commitment supplied by the caller.
+They do not establish that those inputs came from an accepted format-one
+ledger. Relying parties must authenticate that provenance and historical key
+status independently, or use a ledger-bound client that does so before
+interpreting bundle records.
 
 ## 9. DID and VC Integration
 

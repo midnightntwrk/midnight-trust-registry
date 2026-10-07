@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 
 import {
@@ -21,6 +21,46 @@ import {
 } from "../index.js";
 
 describe("trust registry client", () => {
+  it("rejects every raw record read if the ledger format changes after construction", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const ledger = harness.simulator.getLedger();
+    const wrongFormat = vi.spyOn(harness.simulator, "getLedger").mockImplementation(() => ({
+      ...ledger,
+      contractVersion: 2n,
+    }));
+    const id = new Uint8Array(32);
+    const request = {
+      subjectDid: id,
+      requestProfileId: id,
+      allowedAttributeSetCommitment: id,
+      allowedPredicateSetCommitment: id,
+      disclosureLevelCommitment: id,
+    };
+    try {
+      const reads = [
+        () => client.getIssuerAuthorizationById(id),
+        () => client.getCurrentIssuerAuthorization({ subjectDid: id, resourceType: createIssuerScenarioFixture("format").resourceType, resourceId: id }),
+        () => client.getVerifierAuthorizationById(id),
+        () => client.getCurrentVerifierAuthorization(request),
+        () => client.getAuditorAuthorizationById(id),
+        () => client.getCurrentAuditorAuthorization(request),
+        () => client.getRecognitionById(id),
+        () => client.getCurrentRecognition({ recognizedAuthorityDid: id, recognizedRegistryId: id, scopeResourceType: id, scopeResourceId: id }),
+        () => client.getEpochCommitmentById(id),
+        () => client.getCurrentEpochCommitment(),
+        () => client.getMaintainerMembershipById(id),
+        () => client.getCurrentMaintainerMembership(id),
+        () => client.getMaintainerRecordByKeyId(id),
+      ];
+      for (const read of reads) {
+        expect(read).toThrow(/Unsupported trust registry format/);
+      }
+    } finally {
+      wrongFormat.mockRestore();
+    }
+  });
+
   it("queries current and historical issuer state plus the published epoch anchor", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");

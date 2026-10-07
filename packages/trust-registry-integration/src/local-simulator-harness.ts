@@ -289,7 +289,7 @@ export class LocalTrustRegistryIntegrationHarness {
     role: ApplicationEvidenceRole;
     scopeCommitment: Uint8Array;
   }): ApplicationEvidenceSubmission {
-    const verifiedAt = timestampForSequence(this.simulator.getLedger().governanceActionCount);
+    const verifiedAt = timestampForSequence(this.assertSupportedContractFormat().governanceActionCount);
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
       version: "tr-application-evidence-v1" as const,
@@ -332,6 +332,7 @@ export class LocalTrustRegistryIntegrationHarness {
     role: ApplicationEvidenceRole;
     scopeCommitment: Uint8Array;
   }): Uint8Array {
+    const ledger = this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
       {
@@ -343,7 +344,7 @@ export class LocalTrustRegistryIntegrationHarness {
         policyVersion: this.policyRecord.version,
         scopeCommitment: bytes32Hex(input.scopeCommitment),
         challengeHash: sha256Hex(`challenge:${input.applicationId}`),
-        evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
+        evaluatedAt: timestampForSequence(ledger.governanceActionCount),
       },
       [this.evidenceVerifier],
       (commitment, signature, verifier) => {
@@ -1375,6 +1376,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertIssuerAuthorized(
       fixture.subjectDidCommitment,
@@ -1389,6 +1391,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readIssuerAuthorizationStatus(
     fixture: IssuerScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1397,6 +1400,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1413,6 +1417,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: VerifierScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
@@ -1429,6 +1434,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readVerifierAuthorizationStatus(
     fixture: VerifierScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1437,6 +1443,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildVerifierHistoricalEvidence(
     fixture: VerifierScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getVerifierAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1453,6 +1460,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: AuditorScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
@@ -1470,6 +1478,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: RecognitionScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertRecognitionActive(
       fixture.recognizedAuthorityDidCommitment,
@@ -1486,10 +1495,7 @@ export class LocalTrustRegistryIntegrationHarness {
     bundle: TrustRegistryEvidenceBundle,
     options: { evaluationTime?: string } = {},
   ): void {
-    const ledger = this.simulator.getLedger();
-    if (ledger.contractVersion !== 1n) {
-      throw new Error("Unsupported trust registry format");
-    }
+    const ledger = this.assertSupportedContractFormat();
     this.assertRegistryId(bundle.registryId);
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
@@ -1615,6 +1621,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildRecognitionHistoricalEvidence(
     fixture: RecognitionScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getRecognition(fixture.recognitionIdCommitment);
     const recognition = this.buildRecognitionRecord(fixture, record);
     return this.buildEvidenceBundle({
@@ -1627,6 +1634,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readRecognitionStatus(
     fixture: RecognitionScenarioFixture,
   ): RecognitionRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
     );
@@ -1635,6 +1643,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildAuditorHistoricalEvidence(
     fixture: AuditorScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getAuditorAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1931,6 +1940,14 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
+  private assertSupportedContractFormat(): ReturnType<TrustRegistrySimulator["getLedger"]> {
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
+    }
+    return ledger;
+  }
+
   private buildIssuerAuthorizationRecord(
     fixture: IssuerScenarioFixture,
     record: ContractIssuerAuthorizationRecord,
@@ -2066,6 +2083,7 @@ export class LocalTrustRegistryIntegrationHarness {
     lifecycleEventRoot: string;
     statementStatus: string;
   }): EpochCommitment {
+    this.assertSupportedContractFormat();
     const epochId = createScopedIdentifier(
       "epoch",
       this.registryId,
@@ -2138,6 +2156,7 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    const ledger = this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.ensurePublishedEpochCommitment({
       statementId,
@@ -2147,7 +2166,7 @@ export class LocalTrustRegistryIntegrationHarness {
         statementStatus: this.registryRecord.status,
         lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       }),
-      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lastStatusSequence: ledger.governanceActionCount,
       lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       statementStatus: this.registryRecord.status,
     });

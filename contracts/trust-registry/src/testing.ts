@@ -172,16 +172,15 @@ export class TrustRegistrySimulator {
     );
   }
 
-  authorizeMaintainerAction(
+  authorizeMaintainerAuditEvent(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
     signature: { announcement: JubjubPoint; response: bigint },
-    actionKind: Uint8Array,
     actionPayloadHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
-      this.contract.impureCircuits.authorizeMaintainerAction(
+      this.contract.impureCircuits.authorizeMaintainerAuditEvent(
         this.circuitContext,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
@@ -189,7 +188,6 @@ export class TrustRegistrySimulator {
           signature,
           coAuthorizers,
         ),
-        actionKind,
         actionPayloadHash,
       ),
     );
