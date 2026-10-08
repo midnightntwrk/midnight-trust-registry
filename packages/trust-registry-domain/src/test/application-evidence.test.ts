@@ -10,6 +10,7 @@ const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const ISSUER_RESOURCE_ID = `tr:issuer-resource:v1:${"a".repeat(64)}`;
 
 const createSubmission = (): ApplicationEvidenceSubmission => {
   const envelope = {
@@ -21,7 +22,7 @@ const createSubmission = (): ApplicationEvidenceSubmission => {
     policyId: "policy:kanon:v1",
     policyVersion: "v1",
     scopeCommitment: HASH_A,
-    governedResource: { type: "credentialFamily" as const, id: "credential-family:acme" },
+    governedResource: { type: "credentialFamily" as const, id: ISSUER_RESOURCE_ID },
     evidenceVerifierDid: "did:midnight:evidence-verifier:one",
     verifiedAt: "2026-07-27T00:00:00Z",
     expiresAt: "2026-07-28T00:00:00Z",
@@ -48,7 +49,7 @@ const expectation = {
   policyId: "policy:kanon:v1",
   policyVersion: "v1",
   scopeCommitment: HASH_A,
-  governedResource: { type: "credentialFamily" as const, id: "credential-family:acme" },
+  governedResource: { type: "credentialFamily" as const, id: ISSUER_RESOURCE_ID },
   challengeHash: HASH_B,
   evaluatedAt: "2026-07-27T12:00:00Z",
 };
@@ -60,6 +61,14 @@ const authorizedVerifier = {
 };
 
 describe("application evidence", () => {
+  it("rejects bare issuer resource IDs before signing an envelope", () => {
+    const envelope = createSubmission().envelope;
+    expect(() => computeApplicationEvidenceCommitment({
+      ...envelope,
+      governedResource: { type: "schemaVersion", id: "1.0.0" },
+    })).toThrow(/canonical composite issuer resource id/);
+  });
+
   it("binds a valid application envelope to its governed authorization", () => {
     expect(() =>
       assertValidApplicationEvidence(
@@ -100,8 +109,8 @@ describe("application evidence", () => {
     ["wrong role", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, role: "verifier" as const } }), /role/],
     ["wrong policy", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, policyId: "policy:kanon:v2" } }), /policyId/],
     ["wrong scope", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, scopeCommitment: HASH_B } }), /scopeCommitment/],
-    ["wrong resource type", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "schemaVersion" as const, id: "credential-family:acme" } } }), /governedResource.type/],
-    ["wrong resource id", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "credentialFamily" as const, id: "credential-family:other" } } }), /governedResource.id/],
+    ["wrong resource type", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "schemaVersion" as const, id: ISSUER_RESOURCE_ID } } }), /governedResource.type/],
+    ["wrong resource id", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "credentialFamily" as const, id: `tr:issuer-resource:v1:${"b".repeat(64)}` } } }), /governedResource.id/],
     ["wrong challenge", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, challengeHash: HASH_C } }), /challengeHash/],
   ])("rejects %s", (_name, mutate, expectedError) => {
     const submission = mutate(createSubmission());

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { IssuerGovernedResourceTypeSchema } from "./scope.js";
 import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -25,6 +26,17 @@ export const GovernedResourceSchema = z.strictObject({
     "registry",
   ]),
   id: z.string().min(1),
+}).superRefine((resource, ctx) => {
+  if (
+    IssuerGovernedResourceTypeSchema.safeParse(resource.type).success
+    && !/^tr:issuer-resource:v1:[0-9a-f]{64}$/u.test(resource.id)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["id"],
+      message: "Issuer resource id must be a canonical composite issuer resource id",
+    });
+  }
 });
 
 export const ApplicationEvidenceEnvelopeSchema = z

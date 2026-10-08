@@ -52,6 +52,8 @@ describe("authorization scope v1", () => {
       expect(issuerGovernedResourceId(otherSchema, type)).not.toBe(issuerGovernedResourceId(issuer, type));
       expect(issuerGovernedResourceId(otherFamily, type)).not.toBe(issuerGovernedResourceId(issuer, type));
     }
+    expect(() => issuerGovernedResourceId(issuer, undefined as never)).toThrow();
+    expect(() => issuerGovernedResourceId(issuer, "unknown" as never)).toThrow();
   });
 
   it("normalizes object fields and unordered request arrays", () => {

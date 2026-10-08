@@ -168,7 +168,9 @@ export const createIssuerScenarioFixture = (
   const resourceKinds = [
     "credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement",
   ] as const;
-  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKinds[resourceType]!);
+  const resourceKind = resourceKinds[resourceType];
+  if (resourceKind === undefined) throw new RangeError("Unsupported issuer resource type");
+  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKind);
 
   return {
     authorizationId,
