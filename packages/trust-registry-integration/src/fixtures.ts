@@ -71,7 +71,9 @@ export type VerifierScenarioFixture = {
   subjectDid: string;
   subjectDidCommitment: Uint8Array;
   requestProfileId: string;
-  requestProfileIdCommitment: Uint8Array;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
   allowedAttributeSetId: string;
   allowedAttributeSetCommitment: Uint8Array;
   allowedPredicateSetId: string;
@@ -103,7 +105,9 @@ export type AuditorScenarioFixture = {
   subjectDid: string;
   subjectDidCommitment: Uint8Array;
   requestProfileId: string;
-  requestProfileIdCommitment: Uint8Array;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
   allowedAttributeSetId: string;
   allowedAttributeSetCommitment: Uint8Array;
   allowedPredicateSetId: string;
@@ -135,8 +139,8 @@ const createRequestAuthorizationScopeFixture = (
   version: "tr-scope-v1",
   role,
   requestProfileId: fixture.requestProfileId,
-  purpose: "admission",
-  credentialScopeCommitment: sha256Hex(`credential-scope:${fixture.requestProfileId}`),
+  purpose: fixture.purpose,
+  credentialScopeCommitment: fixture.credentialScopeCommitment,
   allowedAttributes: [fixture.allowedAttributeSetId],
   allowedPredicates: [fixture.allowedPredicateSetId],
   disclosureLevel: fixture.disclosureLevelId,
@@ -256,12 +260,14 @@ export const createVerifierScenarioFixture = (
     label,
     "selective",
   );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
   const scopeResourceId = requestGovernedResourceId({
     version: "tr-scope-v1",
     role: "verifier",
     requestProfileId,
-    purpose: "admission",
-    credentialScopeCommitment: sha256Hex(`credential-scope:${requestProfileId}`),
+    purpose,
+    credentialScopeCommitment,
     allowedAttributes: [allowedAttributeSetId],
     allowedPredicates: [allowedPredicateSetId],
     disclosureLevel: disclosureLevelId,
@@ -273,7 +279,9 @@ export const createVerifierScenarioFixture = (
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
     requestProfileId,
-    requestProfileIdCommitment: bytes32Commitment(requestProfileId),
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
     allowedAttributeSetId,
     allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
     allowedPredicateSetId,
@@ -320,12 +328,14 @@ export const createAuditorScenarioFixture = (
     label,
     "restricted",
   );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
   const scopeResourceId = requestGovernedResourceId({
     version: "tr-scope-v1",
     role: "auditor",
     requestProfileId,
-    purpose: "admission",
-    credentialScopeCommitment: sha256Hex(`credential-scope:${requestProfileId}`),
+    purpose,
+    credentialScopeCommitment,
     allowedAttributes: [allowedAttributeSetId],
     allowedPredicates: [allowedPredicateSetId],
     disclosureLevel: disclosureLevelId,
@@ -337,7 +347,9 @@ export const createAuditorScenarioFixture = (
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
     requestProfileId,
-    requestProfileIdCommitment: bytes32Commitment(requestProfileId),
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
     allowedAttributeSetId,
     allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
     allowedPredicateSetId,

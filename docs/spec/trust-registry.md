@@ -246,6 +246,10 @@ V1 issuer and verifier scopes use exact canonical identifiers. Wildcard,
 delegation, version-range, and transitive external matching are excluded until
 a later policy version explicitly defines them. See
 [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md).
+Verifier and auditor grants use a composite resource ID derived from the entire
+role-specific request scope, not the bare request-profile ID. Purpose and
+credential-scope commitment therefore participate in current authorization
+keys. See [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md).
 
 Verifier-scoped resources:
 

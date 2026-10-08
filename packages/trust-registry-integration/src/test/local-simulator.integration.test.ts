@@ -17,12 +17,15 @@ import {
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   deriveGovernancePolicySnapshot,
+  requestGovernedResourceId,
   resolveGovernancePolicyTemplate,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
   createIssuerAuthorizationScopeFixture,
+  createVerifierAuthorizationScopeFixture,
+  createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -482,6 +485,33 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(verifier.subjectDid);
   });
 
+  it("keeps same-profile verifier purposes distinct in current and historical evidence", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const first = createVerifierScenarioFixture("same-profile-purpose");
+    const otherPurpose = "research";
+    const otherResourceId = requestGovernedResourceId({
+      ...createVerifierAuthorizationScopeFixture(first),
+      purpose: otherPurpose,
+    });
+    const authorizationId = "auth:verifier:same-profile-purpose:research:v1";
+    const second = {
+      ...first,
+      authorizationId,
+      authorizationIdCommitment: bytes32Commitment(authorizationId),
+      purpose: otherPurpose,
+      scopeResourceId: otherResourceId,
+      requestResourceIdCommitment: bytes32Commitment(otherResourceId),
+    };
+    harness.authorizeVerifier(first);
+    harness.authorizeVerifier(second);
+    expect(Buffer.from(harness.simulator.getVerifierAuthorization(second.authorizationIdCommitment).requestResourceId))
+      .toEqual(Buffer.from(bytes32Commitment(otherResourceId)));
+    expect(harness.evaluateCurrentVerifierDecision(first).authorization?.resourceId).toBe(first.scopeResourceId);
+    expect(harness.evaluateCurrentVerifierDecision(second).authorization?.resourceId).toBe(otherResourceId);
+    expect(harness.buildVerifierHistoricalEvidence(first).authorization?.authorizationId).toBe(first.authorizationId);
+    expect(harness.buildVerifierHistoricalEvidence(second).authorization?.authorizationId).toBe(authorizationId);
+  });
+
   it("preserves verifier application history before activation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("employment-application");
@@ -666,6 +696,33 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.authorization?.resourceType).toBe("request-profile");
     expect(bundle.authorization?.resourceId).toBe(auditor.scopeResourceId);
     expect(bundle.subjectDid).toBe(auditor.subjectDid);
+  });
+
+  it("keeps same-profile auditor credential scopes distinct in current and historical evidence", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const first = createAuditorScenarioFixture("same-profile-credential-scope");
+    const credentialScopeCommitment = sha256Hex("audit:other-credential-scope");
+    const otherResourceId = requestGovernedResourceId({
+      ...createAuditorAuthorizationScopeFixture(first),
+      credentialScopeCommitment,
+    });
+    const authorizationId = "auth:auditor:same-profile-credential-scope:other:v1";
+    const second = {
+      ...first,
+      authorizationId,
+      authorizationIdCommitment: bytes32Commitment(authorizationId),
+      credentialScopeCommitment,
+      scopeResourceId: otherResourceId,
+      requestResourceIdCommitment: bytes32Commitment(otherResourceId),
+    };
+    harness.authorizeAuditor(first);
+    harness.authorizeAuditor(second);
+    expect(Buffer.from(harness.simulator.getAuditorAuthorization(second.authorizationIdCommitment).requestResourceId))
+      .toEqual(Buffer.from(bytes32Commitment(otherResourceId)));
+    expect(harness.evaluateCurrentAuditorDecision(first).authorization?.resourceId).toBe(first.scopeResourceId);
+    expect(harness.evaluateCurrentAuditorDecision(second).authorization?.resourceId).toBe(otherResourceId);
+    expect(harness.buildAuditorHistoricalEvidence(first).authorization?.authorizationId).toBe(first.authorizationId);
+    expect(harness.buildAuditorHistoricalEvidence(second).authorization?.authorizationId).toBe(authorizationId);
   });
 
   it("rejects current auditor trust after suspension and revocation but preserves historical evidence through archival", () => {

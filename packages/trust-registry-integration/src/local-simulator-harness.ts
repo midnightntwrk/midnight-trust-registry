@@ -1108,7 +1108,7 @@ export class LocalTrustRegistryIntegrationHarness {
       computeCreateVerifierAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
+        fixture.requestResourceIdCommitment,
         fixture.allowedAttributeSetCommitment,
         fixture.allowedPredicateSetCommitment,
         fixture.disclosureLevelCommitment,
@@ -1124,7 +1124,7 @@ export class LocalTrustRegistryIntegrationHarness {
       proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1358,7 +1358,7 @@ export class LocalTrustRegistryIntegrationHarness {
       computeCreateAuditorAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
+        fixture.requestResourceIdCommitment,
         fixture.allowedAttributeSetCommitment,
         fixture.allowedPredicateSetCommitment,
         fixture.disclosureLevelCommitment,
@@ -1374,7 +1374,7 @@ export class LocalTrustRegistryIntegrationHarness {
       proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1539,7 +1539,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1582,7 +1582,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,

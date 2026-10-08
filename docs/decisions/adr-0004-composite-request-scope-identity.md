@@ -36,6 +36,10 @@ For the verifier request vector in ADR-0002, the resource ID is
 `tr:request-resource:v1:f86e27170e169eae8c8e185911ea0b56b556e9da9c27bfcb202cb68e49fff6e5`
 and the 32-byte Compact commitment is
 `0xd960e89a62d3f51b12bcd906261dc3df026badb50f8650e7314746c2d2309823`.
+Changing only its role to `auditor` gives resource ID
+`tr:request-resource:v1:31c2d80f368b0e66c767a5cd86862e51048a2caddc2b423a6d2d2700d0c90a7e`
+and Compact commitment
+`0xeafc1934d592b84b1575c273bcb2f00c0cad015bd976da337fa984e2a35bf741`.
 
 The scoped `resourceId` is the `requestProfile` governed-resource ID in the
 challenge binding, signed application envelope, authorization record, current
@@ -46,6 +50,11 @@ not itself an authorization key. The contract receives the opaque
 scope keys. Its fields and circuit parameters must be named for the resource
 commitment, not mislabeled as the bare profile commitment. The contract does
 not parse scope JSON; authenticated intake derives and attests the binding.
+The existing allowed-attribute, allowed-predicate, and disclosure commitments
+remain separate ledger fields, but the full-scope resource commitment is the
+non-colliding key component. A raw contract caller can still submit opaque
+bytes; without matching authenticated scope evidence, those bytes do not
+establish a canonical 0.1.0 verifier or auditor grant.
 
 Challenge issuance MUST validate the canonical scope and recompute the ID
 before reserving a nonce. The signed evidence envelope MUST recompute the ID

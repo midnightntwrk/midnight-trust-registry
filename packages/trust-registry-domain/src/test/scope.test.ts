@@ -99,7 +99,10 @@ describe("authorization scope v1", () => {
     expect(requestGovernedResourceId({ ...request, allowedPredicates: ["age_over_21"] })).not.toBe(base);
     expect(requestGovernedResourceId({ ...request, disclosureLevel: "full" })).not.toBe(base);
     expect(requestGovernedResourceId({ ...request, requestProfileId: "https://profiles.midnight.network/research/v1" })).not.toBe(base);
-    expect(requestGovernedResourceId({ ...request, role: "auditor" })).not.toBe(base);
+    const auditorId = requestGovernedResourceId({ ...request, role: "auditor" });
+    expect(auditorId).toBe("tr:request-resource:v1:31c2d80f368b0e66c767a5cd86862e51048a2caddc2b423a6d2d2700d0c90a7e");
+    expect(sha256Hex(auditorId)).toBe("0xeafc1934d592b84b1575c273bcb2f00c0cad015bd976da337fa984e2a35bf741");
+    expect(auditorId).not.toBe(base);
     expect(() => requestGovernedResourceId({ ...request, allowedAttributes: ["degree", "degree"] })).toThrow();
     expect(() => requestGovernedResourceIdFromScopeCommitment(`0x${"A".repeat(64)}`)).toThrow();
   });

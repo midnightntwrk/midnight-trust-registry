@@ -6,6 +6,7 @@ import {
   createScopedIdentifier,
   GovernancePolicyRecordSchema,
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
   ParticipantRecordSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
@@ -235,6 +236,20 @@ describe("record schemas", () => {
     expect(authorization.role).toBe("issuer");
     expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceId: "1.0.0" }).success).toBe(false);
     expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceType: "request-profile" }).success).toBe(false);
+    for (const role of ["verifier", "auditor"] as const) {
+      const requestRecord = {
+        ...authorization,
+        role,
+        resourceType: "request-profile",
+        resourceId: requestGovernedResourceIdFromScopeCommitment(HASH_A),
+        statusPolicyBindingCommitment: undefined,
+      };
+      expect(AuthorizationRecordSchema.safeParse(requestRecord).success).toBe(true);
+      expect(AuthorizationRecordSchema.safeParse({
+        ...requestRecord,
+        resourceId: "request-profile:admission",
+      }).success).toBe(false);
+    }
     expect(recognition.scope.resourceId).toBe("vc-type:degree:v1");
   });
 

@@ -292,6 +292,46 @@ describe("application challenge lifecycle", () => {
       .toBe(issued.challengeHash);
   });
 
+  it.each(["verifier", "auditor"] as const)("keeps same-profile %s challenges for different full request scopes separate", async (role) => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const baseScope = {
+      version: "tr-scope-v1" as const,
+      role,
+      requestProfileId: "request-profile:admission",
+      purpose: "admission",
+      credentialScopeCommitment: `0x${"1".repeat(64)}`,
+      allowedAttributes: ["degree"],
+      allowedPredicates: ["age-over-18"],
+      disclosureLevel: "minimum",
+    };
+    const otherScope = {
+      ...baseScope,
+      purpose: "research",
+      credentialScopeCommitment: `0x${"2".repeat(64)}`,
+    };
+    const firstBinding = {
+      ...binding,
+      role,
+      applicationId: `application:${role}:first`,
+      scope: baseScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(baseScope),
+      governedResource: { type: "requestProfile" as const, id: requestGovernedResourceId(baseScope) },
+    };
+    const secondBinding = {
+      ...firstBinding,
+      applicationId: `application:${role}:second`,
+      scope: otherScope,
+      scopeCommitment: computeAuthorizationScopeCommitment(otherScope),
+      governedResource: { type: "requestProfile" as const, id: requestGovernedResourceId(otherScope) },
+    };
+    const first = await service.issue(firstBinding);
+    const second = await service.issue(secondBinding);
+    expect(firstBinding.governedResource.id).not.toBe(secondBinding.governedResource.id);
+    expect(await service.consume({ binding: secondBinding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
+    expect(await service.consume({ binding: firstBinding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(first.challengeHash);
+    expect(await service.consume({ binding: secondBinding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
   it("binds an issued challenge to the evidence envelope before one-use consumption", async () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(binding);

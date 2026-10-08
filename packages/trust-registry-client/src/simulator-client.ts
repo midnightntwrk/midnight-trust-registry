@@ -76,7 +76,7 @@ export class TrustRegistrySimulatorClient {
 
   getCurrentVerifierAuthorization(input: {
     subjectDid: string | Uint8Array;
-    requestProfileId: string | Uint8Array;
+    requestResourceId: string | Uint8Array;
     allowedAttributeSetCommitment: string | Uint8Array;
     allowedPredicateSetCommitment: string | Uint8Array;
     disclosureLevelCommitment: string | Uint8Array;
@@ -84,7 +84,7 @@ export class TrustRegistrySimulatorClient {
     this.requireSupportedLedger();
     return this.#simulator.getCurrentVerifierAuthorization(
       this.asBytes32(input.subjectDid),
-      this.asBytes32(input.requestProfileId),
+      this.asBytes32(input.requestResourceId),
       this.asBytes32(input.allowedAttributeSetCommitment),
       this.asBytes32(input.allowedPredicateSetCommitment),
       this.asBytes32(input.disclosureLevelCommitment),
@@ -100,7 +100,7 @@ export class TrustRegistrySimulatorClient {
 
   getCurrentAuditorAuthorization(input: {
     subjectDid: string | Uint8Array;
-    requestProfileId: string | Uint8Array;
+    requestResourceId: string | Uint8Array;
     allowedAttributeSetCommitment: string | Uint8Array;
     allowedPredicateSetCommitment: string | Uint8Array;
     disclosureLevelCommitment: string | Uint8Array;
@@ -108,7 +108,7 @@ export class TrustRegistrySimulatorClient {
     this.requireSupportedLedger();
     return this.#simulator.getCurrentAuditorAuthorization(
       this.asBytes32(input.subjectDid),
-      this.asBytes32(input.requestProfileId),
+      this.asBytes32(input.requestResourceId),
       this.asBytes32(input.allowedAttributeSetCommitment),
       this.asBytes32(input.allowedPredicateSetCommitment),
       this.asBytes32(input.disclosureLevelCommitment),
