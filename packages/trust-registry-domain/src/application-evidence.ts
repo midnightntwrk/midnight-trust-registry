@@ -4,6 +4,7 @@ import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./i
 import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
+export const ApplicationEvidenceEvaluationTimeSchema = TimestampSchema;
 const NonEmptyStringSchema = z.string().trim().min(1);
 const KeyReferenceSchema = z
   .string()
@@ -12,6 +13,19 @@ const KeyReferenceSchema = z
 export const ApplicationEvidenceRoleSchema = AuthorizationRoleSchema.exclude([
   "authority",
 ]);
+
+export const GovernedResourceSchema = z.strictObject({
+  type: z.enum([
+    "credentialFamily",
+    "schema",
+    "schemaVersion",
+    "credentialDefinition",
+    "statusMethodRequirement",
+    "requestProfile",
+    "registry",
+  ]),
+  id: z.string().min(1),
+});
 
 export const ApplicationEvidenceEnvelopeSchema = z
   .object({
@@ -23,6 +37,7 @@ export const ApplicationEvidenceEnvelopeSchema = z
     policyId: ScopedIdentifierSchema,
     policyVersion: NonEmptyStringSchema,
     scopeCommitment: HashHexSchema,
+    governedResource: GovernedResourceSchema,
     evidenceVerifierDid: DidSchema,
     verifiedAt: TimestampSchema,
     expiresAt: TimestampSchema,
@@ -62,6 +77,7 @@ export type ApplicationEvidenceEnvelope = z.infer<typeof ApplicationEvidenceEnve
 export type ApplicationEvidenceRole = z.infer<typeof ApplicationEvidenceRoleSchema>;
 export type ApplicationEvidenceSignature = z.infer<typeof ApplicationEvidenceSignatureSchema>;
 export type ApplicationEvidenceSubmission = z.infer<typeof ApplicationEvidenceSubmissionSchema>;
+export type GovernedResource = z.infer<typeof GovernedResourceSchema>;
 export type AuthorizedEvidenceVerifier = z.infer<typeof AuthorizedEvidenceVerifierSchema>;
 
 export type ApplicationEvidenceExpectation = {
@@ -72,6 +88,7 @@ export type ApplicationEvidenceExpectation = {
   policyId: string;
   policyVersion: string;
   scopeCommitment: string;
+  governedResource: GovernedResource;
   challengeHash: string;
   evaluatedAt: string;
 };
@@ -113,6 +130,8 @@ export function assertValidApplicationEvidence(
   assertEqual("role", parsed.envelope.role, expectation.role);
   assertEqual("policyId", parsed.envelope.policyId, expectation.policyId);
   assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
+  assertEqual("governedResource.type", parsed.envelope.governedResource.type, expectation.governedResource.type);
+  assertEqual("governedResource.id", parsed.envelope.governedResource.id, expectation.governedResource.id);
   if (!HashHexSchema.safeParse(expectation.scopeCommitment).success) {
     throw new Error("Application evidence expected scopeCommitment is invalid");
   }
