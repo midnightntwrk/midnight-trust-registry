@@ -131,6 +131,10 @@ importers:
       zod:
         specifier: ^4.1.0
         version: 4.4.3
+    devDependencies:
+      '@midnight-ntwrk/trust-registry-integration':
+        specifier: workspace:0.1.0
+        version: link:../trust-registry-integration
 
   packages/trust-registry-applicant-portal:
     dependencies:

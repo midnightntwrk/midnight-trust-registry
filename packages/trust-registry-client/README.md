@@ -13,6 +13,12 @@ Current scope:
 
 This package is the consumer-facing layer on top of the Compact contract.
 
+For challenge-backed application proposals, `scopeCommitment` means the
+canonical `tr-scope-v1` authorization-scope digest, not a hash of the governed
+resource ID. The resource ID remains a separate proposal input. The
+integration simulator derives this same scope digest for its test fixtures;
+its deterministic challenge values must not be treated as applicant evidence.
+
 The exported free `verify*Bundle` functions verify a bundle against a
 caller-supplied epoch record, maintainer key, and registry commitment. They do
 not fetch a ledger, establish that the epoch was accepted, authenticate the

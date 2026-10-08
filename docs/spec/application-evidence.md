@@ -61,6 +61,7 @@ following fields are required before canonical serialization:
   "policyId": "tr:policy:membership",
   "policyVersion": "v1",
   "scopeCommitment": "0x...32-byte-hex...",
+  "governedResource": { "type": "credentialFamily", "id": "credential-family:acme:v1" },
   "evidenceVerifierDid": "did:midnight:...",
   "verifiedAt": "2026-07-27T00:00:00Z",
   "expiresAt": "2027-07-27T00:00:00Z",
@@ -74,6 +75,9 @@ following fields are required before canonical serialization:
 not the VP or claim values. `scopeCommitment` binds the role-specific issuer,
 verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 `Z` suffix. Hex values are lowercase and encode exactly 32 bytes.
+The governed resource type and ID are signed separately because one issuer
+scope can authorize several resource kinds. Proposal intake MUST compare both
+fields against the proposed resource, not only the scope commitment.
 
 The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
@@ -103,22 +107,29 @@ is bound to that exact nonce and the applicant DID before consuming it. The
 envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
 textual hex representation.
 
-The off-ledger challenge store retains only `challengeHash`, an expiry, and a
-domain-separated commitment to registry id, application id, subject DID,
-evidence-verifier DID, role, policy id/version, and scope commitment. It MUST
+The off-ledger challenge store retains only `challengeHash`, an expiry, a
+registry/application identity hash for replacement, and a domain-separated
+binding commitment to registry id, application id, subject DID,
+evidence-verifier DID, role, policy id/version, governed resource type/id, and
+scope commitment. It MUST
 derive or validate the scope commitment against the versioned canonical
 role-specific scope object before issuing the challenge; a valid-length opaque
 hash alone is insufficient. Registry, application, and policy IDs in a
 challenge binding MUST use canonical lowercase spelling. The scope role MUST
 match the application role, and a maintainer scope's registry ID MUST equal
-the challenge registry ID.
+the challenge registry ID. The separately governed resource MUST match the
+role-specific scope: an issuer's credential family, verifier/auditor request
+profile, or maintainer registry. Its identifier is not the scope commitment.
 The scope object is not stored in the challenge record, but is supplied again
 when the challenge is consumed and checked against the same commitment. It MUST
-perform collision-safe insertion, replacement of an earlier live challenge
-for the same binding, and check-and-delete atomically across all API replicas.
-The newest challenge supersedes the old one for that binding. Any future public
-issuance route MUST authenticate the applicant before it permits replacement;
-otherwise a third party could invalidate the applicant's outstanding challenge.
+perform collision-safe insertion, same-binding replacement, and
+check-and-delete atomically across all API replicas. A live challenge for the
+same registry/application pair but a different subject, scope, policy, or
+governed resource MUST NOT be replaced without an authenticated applicant
+transition. The reference store rejects such changes; a future public route
+MUST authenticate the applicant before allowing either replacement or
+same-binding retries, so a third party cannot invalidate an outstanding
+challenge.
 Consumption succeeds only
 when the submitted nonce hashes to the envelope value, the complete binding
 matches, and the challenge has not expired; retry, mismatch, and expiry all
@@ -138,14 +149,26 @@ submission field. The evidence validator compares challenge hashes by byte value
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
 
-The process-local challenge service is not yet connected to proposal intake.
-Its `scopeCommitment` is the canonical role-specific scope digest, whereas the
-simulator's synthetic application-evidence envelope currently uses a
-resource-ID commitment under the same field name. Those values MUST NOT be
-interchanged. A public challenge-to-proposal flow must replace the simulator
-stand-in with a single canonical scope digest, verify the VP challenge against
-the consumed nonce, and test each applicant role before this boundary is
-considered integrated.
+The API package has a reference challenge-to-proposal intake seam. It checks
+the complete canonical governed binding and performs a non-consuming live
+challenge lookup before expensive VP verification. That lookup is only a cheap
+preflight; atomic check-and-delete remains the replay boundary. The trusted
+VP verifier receives the full parsed binding (including role, scope, policy,
+and governed resource), nonce, and evaluation time. It MUST evaluate those
+fields rather than trusting a scope fixed when the verifier was constructed,
+and return the evaluated canonical scope commitment. Intake rejects a result
+whose commitment differs from the live challenge before it spends the nonce.
+The intake then consumes the challenge once only after the VP nonce and subject
+DID match, and
+passes a signed evidence envelope to an injected proposal callback. The seam
+does not itself implement the official VC verifier or a public route. An
+integration-only test uses the real challenge service and JubJub signing with
+all four simulator proposal circuits; the simulator verifies the consumed
+challenge hash and canonical scope commitment supplied by the trusted intake
+context. Its separate deterministic challenge fixture still uses the same
+canonical scope commitment, but MUST NOT be used as a production nonce source.
+Production use still needs an authenticated public issuance route, official
+VP verification, and a durable atomic store.
 
 The reference API package exposes an in-memory store for local tests only. It
 caps live entries and schedules expiry cleanup even without another request;

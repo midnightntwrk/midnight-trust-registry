@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
-import { bytes32Commitment, createIssuerScenarioFixture } from "../fixtures.js";
+import { bytes32Commitment, createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("application evidence DID assertion-key fixture", () => {
@@ -21,7 +21,8 @@ describe("application evidence DID assertion-key fixture", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     const did = parseMidnightDIDString(harness.evidenceVerifier.did);
     const resolver = createMidnightDidResolver([
