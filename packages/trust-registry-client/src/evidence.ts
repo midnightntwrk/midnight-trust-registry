@@ -160,6 +160,7 @@ const assertEpochAnchor = (
   if (
     !(options.registryIdCommitment instanceof Uint8Array)
     || options.registryIdCommitment.length !== 32
+    || options.registryIdCommitment.every((byte) => byte === 0)
   ) {
     throw new Error("Registry ID commitment is missing or malformed");
   }

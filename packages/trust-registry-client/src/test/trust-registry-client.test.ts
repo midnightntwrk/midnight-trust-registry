@@ -258,7 +258,7 @@ describe("trust registry client", () => {
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
-    for (const malformed of [new Uint8Array(31), new Uint8Array(33), "not-bytes"]) {
+    for (const malformed of [new Uint8Array(31), new Uint8Array(33), new Uint8Array(32), "not-bytes"]) {
       expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
         epochRecord,
         maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
