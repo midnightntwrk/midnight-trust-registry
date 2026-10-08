@@ -399,6 +399,13 @@ pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
   return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
 }
 
+pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
+  assert(
+    jubjubPointX(point) != 0 || jubjubPointY(point) != 1,
+    "Jubjub signer point must not be identity"
+  );
+}
+
 pure circuit issuerResourceTypeLabel(
   resourceType: IssuerResourceType
 ): Bytes<32> {
@@ -995,6 +1002,7 @@ export pure circuit createMaintainerMembershipPayloadHash(
   trustLevel: Bytes<32>,
   evidenceHash: Bytes<32>
 ): Bytes<32> {
+  assertNonIdentitySignerPoint(publicKey);
   assertMaintainerMembershipFields(
     maintainerId,
     maintainerDidCommitment,
@@ -1200,6 +1208,7 @@ export circuit initializeRegistry(
     bootstrapMaintainerKeyId != pad(32, ""),
     "Bootstrap maintainer key id must be set"
   );
+  assertNonIdentitySignerPoint(bootstrapMaintainerPublicKey);
   assertValidMaintainerThreshold(1, nextMaintainerThreshold);
 
   const disclosedRegistryId = disclose(nextRegistryId);
@@ -1362,6 +1371,9 @@ circuit verifyAuthorizedMaintainerSigner(
 ): Bytes<32> {
   const disclosedMaintainerKeyId = disclose(signer.keyId);
   const disclosedMaintainerPublicKey = disclose(signer.publicKey);
+
+  assertNonIdentitySignerPoint(disclosedMaintainerPublicKey);
+  assertNonIdentitySignerPoint(signer.signature.announcement);
 
   assert(
     disclosedMaintainerKeyId != pad(32, ""),

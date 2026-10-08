@@ -51,28 +51,27 @@ export const encodeCompactActionKind = (kind: string): Uint8Array => {
   return bytes;
 };
 
-const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean => {
-  const structurallyValid = signature !== null
-  && signature !== undefined
-  && typeof signature.response === "bigint"
-  && signature.announcement !== null
-  && signature.announcement !== undefined
-  && typeof signature.announcement.x === "bigint"
-  && typeof signature.announcement.y === "bigint"
-  && signature.response >= 0n
-  && signature.response < JUBJUB_ORDER
-  && signature.announcement.x >= 0n
-  && signature.announcement.x <= MAX_FIELD
-  && signature.announcement.y >= 0n
-  && signature.announcement.y <= MAX_FIELD;
-  if (!structurallyValid) return false;
+const isNonIdentityJubjubPoint = (point: JubjubPoint): boolean => {
+  if (point === null || point === undefined
+    || typeof point.x !== "bigint" || typeof point.y !== "bigint"
+    || point.x < 0n || point.x > MAX_FIELD
+    || point.y < 0n || point.y > MAX_FIELD
+    || (point.x === 0n && point.y === 1n)) return false;
   try {
-    ecMul(signature.announcement, 1n);
+    ecMul(point, 1n);
     return true;
   } catch {
     return false;
   }
 };
+
+const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
+  signature !== null
+  && signature !== undefined
+  && typeof signature.response === "bigint"
+  && signature.response >= 0n
+  && signature.response < JUBJUB_ORDER
+  && isNonIdentityJubjubPoint(signature.announcement);
 
 export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJubjubSignature => {
   if (
@@ -122,7 +121,7 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   commitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
   try {
     return verifyJubjubDigest(publicKey, digest, signature);
@@ -435,7 +434,7 @@ const verifyMaintainerActionDigest = (
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(publicKey, digest, signature);
   } catch {

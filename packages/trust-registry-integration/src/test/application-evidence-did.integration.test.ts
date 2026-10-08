@@ -67,7 +67,8 @@ describe("application evidence DID assertion-key fixture", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     const did = parseMidnightDIDString(harness.evidenceVerifier.did);
     const firstKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41));

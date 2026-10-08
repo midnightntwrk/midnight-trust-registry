@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-import { payloadToJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { ecMulGenerator } from "@midnight-ntwrk/compact-runtime";
+import { payloadToJubjubDigest, verifyJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -119,6 +120,11 @@ describe("application evidence commitment signing", () => {
       response: signature.response,
     })).toString("hex")}`;
     expect(() => decodeCanonicalJubjubSignatureHex(offCurve)).toThrow(/encoding is invalid/);
+    const identityAnnouncement = `0x${Buffer.from(encodeJubjubSignature({
+      announcement: { x: 0n, y: 1n },
+      response: signature.response,
+    })).toString("hex")}`;
+    expect(() => decodeCanonicalJubjubSignatureHex(identityAnnouncement)).toThrow(/encoding is invalid/);
   });
 
   it("fails closed for malformed structured maintainer signatures", () => {
@@ -137,6 +143,25 @@ describe("application evidence commitment signing", () => {
     expect(verify(signature)).toBe(true);
     expect(verify({ ...signature, response: signature.response + JUBJUB_ORDER })).toBe(false);
     expect(verify({ announcement: { x: 3n, y: 5n }, response: signature.response })).toBe(false);
+    expect(verify({ announcement: { x: 0n, y: 1n }, response: signature.response })).toBe(false);
+    expect(verifyPolicyBoundMaintainerAction(
+      { x: 0n, y: 1n }, registryId, policyCommitment, actionKind, payloadHash, 1n, signature,
+    )).toBe(false);
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      { x: 0n, y: 1n }, keyIdCommitment, commitment,
+      signApplicationEvidenceCommitmentFromSeed(seed, keyIdCommitment, commitment),
+    )).toBe(false);
     expect(verify(null as unknown as typeof signature)).toBe(false);
+  });
+
+  it("rejects a forged identity-key signature that passes the raw Schnorr equation", () => {
+    const identity = { x: 0n, y: 1n };
+    const forged = { announcement: ecMulGenerator(1n), response: 1n };
+    const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
+
+    expect(verifyJubjubDigest(identity, digest, forged)).toBe(true);
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      identity, keyIdCommitment, commitment, forged,
+    )).toBe(false);
   });
 });
