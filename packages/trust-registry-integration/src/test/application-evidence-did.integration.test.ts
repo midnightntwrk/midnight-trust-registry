@@ -5,6 +5,7 @@ import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import {
   decodeJubjubSignature,
   deriveJubjubPublicKeyFromSeed,
+  signApplicationEvidenceCommitmentFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
@@ -57,5 +58,60 @@ describe("application evidence DID assertion-key fixture", () => {
       verificationMethodId: "#assertion-1",
       relationship: "capabilityInvocation",
     })).rejects.toThrow(/not authorized/);
+  });
+
+  it("selects the named assertion key and rejects a retired key after rotation", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("did-key-rotation");
+    const evidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scopeCommitment: issuer.resourceIdCommitment,
+    });
+    const did = parseMidnightDIDString(harness.evidenceVerifier.did);
+    const firstKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41));
+    const secondSeed = new Uint8Array(32).fill(42);
+    const secondKey = deriveJubjubPublicKeyFromSeed(secondSeed);
+    const methods = [
+      { id: "assertion-1", publicKey: firstKey },
+      { id: "assertion-2", publicKey: secondKey },
+    ];
+    const resolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAssertionMethods: methods }),
+    ]);
+    const first = await resolveMidnightDIDMethodBinding({
+      resolver, did, verificationMethodId: "#assertion-1", relationship: "assertionMethod",
+    });
+    const second = await resolveMidnightDIDMethodBinding({
+      resolver, did, verificationMethodId: "#assertion-2", relationship: "assertionMethod",
+    });
+    const commitment = Buffer.from(evidence.commitment.slice(2), "hex");
+    const firstSignature = decodeJubjubSignature(Buffer.from(evidence.signature.value.slice(2), "hex"));
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      first.publicKey, bytes32Commitment(evidence.signature.keyId), commitment, firstSignature,
+    )).toBe(true);
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      second.publicKey, bytes32Commitment(evidence.signature.keyId), commitment, firstSignature,
+    )).toBe(false);
+
+    const rotatedResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, {
+        schnorrJubjubAssertionMethods: [methods[1]!], version: 2n, updated: 3n,
+      }),
+    ]);
+    await expect(resolveMidnightDIDMethodBinding({
+      resolver: rotatedResolver, did, verificationMethodId: "#assertion-1", relationship: "assertionMethod",
+    })).rejects.toThrow();
+    const active = await resolveMidnightDIDMethodBinding({
+      resolver: rotatedResolver, did, verificationMethodId: "#assertion-2", relationship: "assertionMethod",
+    });
+    const activeKeyId = `${did}#assertion-2`;
+    const activeSignature = signApplicationEvidenceCommitmentFromSeed(
+      secondSeed, bytes32Commitment(activeKeyId), commitment,
+    );
+    expect(verifyApplicationEvidenceCommitmentSignature(
+      active.publicKey, bytes32Commitment(activeKeyId), commitment, activeSignature,
+    )).toBe(true);
   });
 });

@@ -76,3 +76,5 @@ compare each signer key ID and public key against an active maintainer record,
 verify the Schnorr digest in-circuit, and enforce the policy-bound quorum.
 Textual encoding checks and application-evidence DID key selection are
 off-chain ingress responsibilities, not claims made by the Compact circuit.
+The two-key DID resolver fixture covers key selection and a rotated snapshot;
+governed evidence-verifier key rotation in Compact remains tracked by #67.
