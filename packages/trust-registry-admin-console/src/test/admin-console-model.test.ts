@@ -280,6 +280,11 @@ describe("trust registry admin console model", () => {
   it("rejects a wrong-role authorization row from the auditor API list", () => {
     expect(() => buildReviewCards({ ...board, auditors: [board.verifiers[0]!] }))
       .toThrow(/Cannot render verifier authorization as auditor review card/);
+    const auditor = board.auditors[0]!;
+    expect(() => buildReviewCards({ ...board, auditors: [{
+      ...auditor,
+      authorization: { ...auditor.authorization, resourceId: "https://profiles.example/audit" },
+    }] })).toThrow(/canonical composite request resource ID/);
   });
 
   it("confirms auditor actions with exact role and ID before mutation", async () => {

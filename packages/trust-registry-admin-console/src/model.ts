@@ -137,6 +137,10 @@ export const toAuthorizationReviewCard = (
   if (entry.authorization.role !== target) {
     throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
   }
+  if (target === "auditor" && (entry.authorization.resourceType !== "request-profile"
+    || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(entry.authorization.resourceId))) {
+    throw new Error("Cannot render auditor authorization without a canonical composite request resource ID");
+  }
   return {
     detailRows: [
       { label: "Authorization ID", value: entry.authorization.authorizationId },
