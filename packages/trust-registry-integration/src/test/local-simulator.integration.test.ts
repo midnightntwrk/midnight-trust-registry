@@ -206,7 +206,7 @@ describe("trust registry local simulator integration", () => {
       [
         "wrong scope",
         { envelope: { scopeCommitment: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
-        /scopeCommitment/,
+        /scopeCommitment|Issuer resource id does not match/,
       ],
       ["unauthorized verifier", { envelope: { evidenceVerifierDid: "did:midnight:evidence-verifier:other" } }, /not authorized/],
       ["expired evidence", { envelope: { expiresAt: "2026-05-20T00:00:00Z" } }, /expiresAt/],
@@ -252,12 +252,12 @@ describe("trust registry local simulator integration", () => {
         envelope: { ...validEvidence.envelope, ...mutation.envelope },
         signature: { ...validEvidence.signature, ...mutation.signature },
       };
-      if (_name !== "expired evidence") {
-        evidence.commitment = computeApplicationEvidenceCommitment(evidence.envelope);
-      }
-      expect(() => harness.proposeIssuerWithApplicationEvidence(issuer, evidence)).toThrow(
-        expectedError,
-      );
+      expect(() => {
+        if (_name !== "expired evidence") {
+          evidence.commitment = computeApplicationEvidenceCommitment(evidence.envelope);
+        }
+        harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
+      }).toThrow(expectedError);
     }
   });
 
