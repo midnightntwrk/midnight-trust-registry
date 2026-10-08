@@ -68,9 +68,33 @@ Workspace-backed mutation routes:
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 
-The exported application-challenge service is not yet an HTTP route. Its
-binding requires the versioned role-specific scope object and a matching
-canonical scope commitment; an arbitrary 32-byte scope digest is not accepted.
+The exported application-challenge service and
+`consumeChallengeAndSubmitApplication` reference intake are not HTTP routes.
+Their binding requires the versioned role-specific scope object, a separately
+checked governed resource, and a matching canonical scope commitment; an
+arbitrary 32-byte scope digest is not accepted. The caller must supply a
+policy-authorized VP verifier, evidence signer, authorized verifier keys,
+and a trusted proposal binding. It parses the verifier-produced envelope
+before consuming the challenge; after atomic consumption, signing or proposal
+failure does not make the challenge reusable. A different live binding for the
+same registry/application is rejected rather than evicting the prior challenge.
+Public issuance still requires applicant authentication and rate limits even
+for same-binding retries.
+The VP verifier must derive the nonce and subject DID from the verified proof,
+not echo the expected callback arguments. The reference tests use a fixture
+verifier, not a production VC/VP verifier. Static policy configuration and the
+nonce/hash pair are checked before VP work; only the store's atomic consume
+decides whether a challenge is live, so a production route must also apply
+request limits and VP verification timeouts.
+The existing `POST /v1/applications` route is a local operator workspace route,
+not a public VC/VP-verified membership endpoint.
+
+Run the reference challenge-to-Compact proposal scenarios without adding
+their simulator cost to the light gate:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-api integration
+```
 
 Example applicant submission:
 

@@ -36,12 +36,16 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
+  AuthorizationScopeSchema,
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
+  computeAuthorizationScopeCommitment,
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   EpochCommitmentSchema,
   type ApplicationEvidenceSubmission,
+  type ApplicationEvidenceSignature,
+  type AuthorizationScope,
   type ApplicationEvidenceRole,
   type AuthorizedEvidenceVerifier,
   type EpochCommitment,
@@ -53,6 +57,7 @@ import {
   type AuthorizationRecord,
   type IssuerStatusPolicyBinding,
   type GovernancePolicyRecord,
+  type GovernedResource,
   type RecognitionRecord,
   type TrustRegistryEvidenceBundle,
   assertGovernancePolicyRevision,
@@ -62,12 +67,17 @@ import {
   computeSingleStatementStateRoot,
   createScopedIdentifier,
   deriveGovernancePolicySnapshot,
+  governedResourceInScope,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   type AuditorScenarioFixture,
   bytes32Commitment,
+  createAuditorAuthorizationScopeFixture,
+  createIssuerAuthorizationScopeFixture,
+  createMaintainerAuthorizationScopeFixture,
   createMidnightDid,
+  createVerifierAuthorizationScopeFixture,
   type IssuerScenarioFixture,
   type MaintainerScenarioFixture,
   type RecognitionScenarioFixture,
@@ -110,6 +120,30 @@ const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = labelToBytes32(
 const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
+
+export type SimulatorApplicationEvidenceExpectation = {
+  scope: AuthorizationScope;
+  challengeHash: string;
+  governedResource: GovernedResource;
+};
+
+const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
+  if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
+  if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
+  return { type: "requestProfile", id: scope.requestProfileId };
+};
+
+const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
+  const type = ([
+    "credentialFamily",
+    "schema",
+    "schemaVersion",
+    "credentialDefinition",
+    "statusMethodRequirement",
+  ] as const)[fixture.resourceType];
+  if (type === undefined) throw new Error("Issuer resource type is invalid");
+  return { type, id: fixture.resourceId };
+};
 
 const bytes32Hex = (value: Uint8Array): string =>
   `0x${Buffer.from(value).toString("hex")}`;
@@ -289,8 +323,15 @@ export class LocalTrustRegistryIntegrationHarness {
     applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
-    scopeCommitment: Uint8Array;
+    scope: AuthorizationScope;
+    governedResource?: GovernedResource;
   }): ApplicationEvidenceSubmission {
+    const scope = AuthorizationScopeSchema.parse(input.scope);
+    if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
     const verifiedAt = timestampForSequence(this.assertSupportedContractFormat().governanceActionCount);
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
@@ -301,7 +342,8 @@ export class LocalTrustRegistryIntegrationHarness {
       role: input.role,
       policyId: this.policyId,
       policyVersion: this.policyRecord.version,
-      scopeCommitment: bytes32Hex(input.scopeCommitment),
+      scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      governedResource,
       evidenceVerifierDid: this.evidenceVerifier.did,
       verifiedAt,
       expiresAt,
@@ -310,6 +352,14 @@ export class LocalTrustRegistryIntegrationHarness {
       claimsCommitment: sha256Hex(`claims:${input.applicationId}`),
     };
     const commitment = computeApplicationEvidenceCommitment(envelope);
+    return {
+      envelope,
+      commitment,
+      signature: this.signApplicationEvidenceCommitment(commitment),
+    };
+  }
+
+  signApplicationEvidenceCommitment(commitment: string) {
     const keyId = this.evidenceVerifier.keyIds[0]!;
     const signature = signApplicationEvidenceCommitmentFromSeed(
       this.evidenceVerifierKey.seed,
@@ -317,14 +367,32 @@ export class LocalTrustRegistryIntegrationHarness {
       hashHexToBytes32(commitment),
     );
     return {
-      envelope,
-      commitment,
-      signature: {
-        keyId,
-        algorithm: "jubjub-schnorr",
-        value: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
-      },
+      keyId,
+      algorithm: "jubjub-schnorr" as const,
+      value: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
     };
+  }
+
+  verifyApplicationEvidenceSignature(
+    commitment: string,
+    signature: ApplicationEvidenceSignature,
+    verifier: AuthorizedEvidenceVerifier,
+  ): boolean {
+    if (
+      verifier.did !== this.evidenceVerifier.did ||
+      signature.keyId !== this.evidenceVerifier.keyIds[0]
+    ) return false;
+    try {
+      // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
+      return verifyApplicationEvidenceCommitmentSignature(
+        this.evidenceVerifierPublicKey,
+        bytes32Commitment(signature.keyId),
+        hashHexToBytes32(commitment),
+        decodeCanonicalJubjubSignatureHex(signature.value),
+      );
+    } catch {
+      return false;
+    }
   }
 
   assertApplicationEvidence(input: {
@@ -332,8 +400,16 @@ export class LocalTrustRegistryIntegrationHarness {
     applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
-    scopeCommitment: Uint8Array;
+    scope: AuthorizationScope;
+    challengeHash?: string;
+    governedResource?: GovernedResource;
   }): Uint8Array {
+    const scope = AuthorizationScopeSchema.parse(input.scope);
+    if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
     const ledger = this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
@@ -344,28 +420,13 @@ export class LocalTrustRegistryIntegrationHarness {
         role: input.role,
         policyId: this.policyId,
         policyVersion: this.policyRecord.version,
-        scopeCommitment: bytes32Hex(input.scopeCommitment),
-        challengeHash: sha256Hex(`challenge:${input.applicationId}`),
+        scopeCommitment: computeAuthorizationScopeCommitment(scope),
+        governedResource,
+        challengeHash: input.challengeHash ?? sha256Hex(`challenge:${input.applicationId}`),
         evaluatedAt: timestampForSequence(ledger.governanceActionCount),
       },
       [this.evidenceVerifier],
-      (commitment, signature, verifier) => {
-        if (
-          verifier.did !== this.evidenceVerifier.did ||
-          signature.keyId !== this.evidenceVerifier.keyIds[0]
-        ) return false;
-        try {
-          // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
-          return verifyApplicationEvidenceCommitmentSignature(
-            this.evidenceVerifierPublicKey,
-            bytes32Commitment(signature.keyId),
-            hashHexToBytes32(commitment),
-            decodeCanonicalJubjubSignatureHex(signature.value),
-          );
-        } catch {
-          return false;
-        }
-      },
+      (commitment, signature, verifier) => this.verifyApplicationEvidenceSignature(commitment, signature, verifier),
     );
     return hashHexToBytes32(parsed.commitment);
   }
@@ -680,18 +741,41 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
-    const proposedEvidenceHash = this.assertApplicationEvidence({
-      evidence: this.createApplicationEvidence({
+    return this.proposeMaintainerWithApplicationEvidence(
+      fixture,
+      this.createApplicationEvidence({
         applicationId: fixture.maintainerId,
         subjectDid: fixture.subjectDid,
         role: "maintainer",
-        scopeCommitment: fixture.maintainerIdCommitment,
+        scope: createMaintainerAuthorizationScopeFixture(this.registryId),
       }),
+    );
+  }
+
+  proposeMaintainerWithApplicationEvidence(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): Uint8Array {
+    if (
+      expectedEvidence.scope.role !== "maintainer" ||
+      expectedEvidence.scope.registryId !== this.registryId ||
+      expectedEvidence.governedResource.type !== "registry" ||
+      expectedEvidence.governedResource.id !== this.registryId
+    ) {
+      throw new Error("Maintainer proposal scope does not match governed registry");
+    }
+    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence,
       applicationId: fixture.maintainerId,
       subjectDid: fixture.subjectDid,
       role: "maintainer",
-      scopeCommitment: fixture.maintainerIdCommitment,
+      ...expectedEvidence,
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = this.signMaintainerActionFromSeed(
@@ -820,7 +904,8 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "issuer",
-        scopeCommitment: fixture.resourceIdCommitment,
+        scope: createIssuerAuthorizationScopeFixture(fixture),
+        governedResource: issuerGovernedResource(fixture),
       }),
       additionalMaintainers,
     );
@@ -830,13 +915,34 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createIssuerAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: issuerGovernedResource(fixture),
+    },
   ): Uint8Array {
+    if (
+      expectedEvidence.scope.role !== "issuer" ||
+      expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
+      expectedEvidence.governedResource.id !== fixture.resourceId ||
+      ([
+        expectedEvidence.scope.credentialFamilyId,
+        expectedEvidence.scope.schemaId,
+        expectedEvidence.scope.schemaVersion,
+        expectedEvidence.scope.credentialDefinitionId,
+        expectedEvidence.scope.statusMethod,
+      ][fixture.resourceType] !== fixture.resourceId) ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Issuer proposal scope does not match governed resource");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "issuer",
-      scopeCommitment: fixture.resourceIdCommitment,
+      ...expectedEvidence,
     });
     const statusPolicyBindingCommitment = hashHexToBytes32(
       computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
@@ -987,7 +1093,7 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "verifier",
-        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+        scope: createVerifierAuthorizationScopeFixture(fixture),
       }),
     );
   }
@@ -995,13 +1101,27 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeVerifierWithApplicationEvidence(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createVerifierAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
+    },
   ): Uint8Array {
+    if (
+      expectedEvidence.scope.role !== "verifier" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createVerifierAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Verifier proposal scope does not match governed request profile");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "verifier",
-      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      ...expectedEvidence,
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = this.signMaintainerActionFromSeed(
@@ -1223,7 +1343,7 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "auditor",
-        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+        scope: createAuditorAuthorizationScopeFixture(fixture),
       }),
     );
   }
@@ -1231,13 +1351,27 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeAuditorWithApplicationEvidence(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
+    },
   ): Uint8Array {
+    if (
+      expectedEvidence.scope.role !== "auditor" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createAuditorAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Auditor proposal scope does not match governed request profile");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "auditor",
-      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      ...expectedEvidence,
     });
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
     const proposeSignature = this.signMaintainerActionFromSeed(

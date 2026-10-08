@@ -36,4 +36,5 @@ jobs:
       - run: pnpm install --frozen-lockfile --prefer-offline
       - run: ./run.sh --light
       - run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+      - run: pnpm --filter @midnight-ntwrk/trust-registry-api run integration
       - run: pnpm run demo:smoke

@@ -26,6 +26,30 @@ Current coverage:
   Run it with `pnpm run test:light` in this package. This is a
   compiler/runtime compatibility and typed-envelope test, not a proof of
   applicant eligibility, issuer authorization, or live credential status.
+- a fixture-backed application VP verifier port using published VC 0.2.0
+  proof circuits and DID resolution. It verifies issuer/holder method binding,
+  issuance and presentation signatures, nonce, holder binding, proof time,
+  and status-reference structure, then calls explicit trusted adapters for
+  credential-body binding, issuer authorization, live status, and role claims.
+  The body-binding adapter is responsible for establishing that the holder,
+  status, expiry, and role claims came from the signed credential body root;
+  the published generic proof circuits alone do not establish that relation.
+  No production credential-family adapter is provided in this slice, so this
+  fixture-backed port must not be exposed as a public eligibility verifier.
+  The role-claims adapter is not passed the requested scope and
+  must return the scope commitment derived from claims bound to the verified
+  credential body root; echoing the requested scope is not sufficient. The
+  port rejects a different attested scope. It allows 60 seconds of future
+  proof-clock skew, accepts presentations at most five minutes old, and caps
+  evidence validity at the earliest of credential expiry, status validity,
+  and 24 hours. The port returns only
+  redacted commitment-sized results. It is not a public intake route or a
+  standalone non-revocation verifier; callers must supply trustworthy family
+  body roots and all four family assertions. Retryable DID/status dependency
+  outages produce a redacted `unavailable` result rather than an eligibility
+  denial; adapters must signal their own infrastructure outages explicitly.
+  Run its focused tests with
+  `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
 
 The published VC Compact package targets Compact 0.31.1 and runtime 0.16.0.
 The repository pins that compiler in `.compact-version` and Nix. The probe
