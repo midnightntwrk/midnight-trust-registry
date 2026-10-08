@@ -5,6 +5,7 @@ import {
   buildReviewCards,
   describeActionConfirmation,
   describeMutation,
+  executeEpochPublication,
   executeReviewAction,
   getReviewActions,
   groupReviewCards,
@@ -150,7 +151,7 @@ const board: ReviewBoard = {
         role: "verifier",
         subjectDid: "did:midnight:testnet:verifier",
         resourceType: "request-profile",
-        resourceId: "age-gate",
+        resourceId: `tr:request-resource:v1:${"c".repeat(64)}`,
         policyId: "policy:default",
         trustLevel: "silver",
         status: "authorized",
@@ -285,6 +286,21 @@ describe("trust registry admin console model", () => {
       ...auditor,
       authorization: { ...auditor.authorization, resourceId: "https://profiles.example/audit" },
     }] })).toThrow(/canonical composite request resource ID/);
+    const verifier = board.verifiers[0]!;
+    expect(() => buildReviewCards({ ...board, verifiers: [{
+      ...verifier,
+      authorization: { ...verifier.authorization, resourceId: "https://profiles.example/age" },
+    }] })).toThrow(/canonical composite request resource ID/);
+  });
+
+  it("confirms epoch publication before calling the mutation endpoint", async () => {
+    const publish = vi.fn(async () => ({ recordKind: "epoch" }) as ReviewBoardMutation);
+    expect(await executeEpochPublication("audit-round", () => false, publish)).toBeNull();
+    expect(publish).not.toHaveBeenCalled();
+    const confirm = vi.fn(async () => true);
+    await executeEpochPublication("audit-round", confirm, publish);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("anchors the current state root"));
+    expect(publish).toHaveBeenCalledExactlyOnceWith("audit-round");
   });
 
   it("confirms auditor actions with exact role and ID before mutation", async () => {

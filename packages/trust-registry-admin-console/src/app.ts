@@ -10,6 +10,7 @@ import {
   REVIEW_STATUS_LABELS,
   buildReviewCards,
   describeMutation,
+  executeEpochPublication,
   executeReviewAction,
   getReviewActions,
   groupReviewCards,
@@ -125,17 +126,20 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
+    if (state.loading || state.publishing) return;
     const card = selectedCard();
     if (card === undefined) {
       return;
     }
 
+    setState({ loading: true, error: undefined, flash: undefined });
     try {
-      const result = await executeReviewAction(card, action, confirm, async (target, id, confirmedAction) => {
-        setState({ loading: true, error: undefined, flash: undefined });
-        return getClient().mutate(target, id, confirmedAction);
-      });
-      if (result === null) return;
+      const result = await executeReviewAction(card, action, confirm, (target, id, confirmedAction) =>
+        getClient().mutate(target, id, confirmedAction));
+      if (result === null) {
+        setState({ loading: false });
+        return;
+      }
       await refreshBoard(describeMutation(result));
     } catch (error) {
       setState({
@@ -147,9 +151,15 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
+    if (state.loading || state.publishing) return;
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
-      const result = await getClient().publishEpoch(label);
+      const result = await executeEpochPublication(label, confirm, (confirmedLabel) =>
+        getClient().publishEpoch(confirmedLabel));
+      if (result === null) {
+        setState({ publishing: false });
+        return;
+      }
       await refreshBoard(describeMutation(result));
       const input = root.querySelector<HTMLInputElement>("[data-epoch-label]");
       if (input !== null) {

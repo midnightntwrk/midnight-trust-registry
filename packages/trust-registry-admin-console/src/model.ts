@@ -130,6 +130,17 @@ export const executeReviewAction = async (
   return mutate(card.target, card.id, action);
 };
 
+export const executeEpochPublication = async (
+  label: string,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  publish: (label: string) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!(await confirm(`Confirm publishing a new registry epoch${label.trim().length === 0 ? "" : ` (${label.trim()})`}? This anchors the current state root.`))) {
+    return null;
+  }
+  return publish(label);
+};
+
 export const toAuthorizationReviewCard = (
   target: Extract<ReviewTarget, "issuer" | "verifier" | "auditor">,
   entry: TrustRegistryAuthorizationSnapshotEntry,
@@ -137,9 +148,9 @@ export const toAuthorizationReviewCard = (
   if (entry.authorization.role !== target) {
     throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
   }
-  if (target === "auditor" && (entry.authorization.resourceType !== "request-profile"
+  if (target !== "issuer" && (entry.authorization.resourceType !== "request-profile"
     || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(entry.authorization.resourceId))) {
-    throw new Error("Cannot render auditor authorization without a canonical composite request resource ID");
+    throw new Error(`Cannot render ${target} authorization without a canonical composite request resource ID`);
   }
   return {
     detailRows: [
