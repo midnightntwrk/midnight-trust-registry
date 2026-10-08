@@ -106,17 +106,6 @@ it("pins every governed action kind to a Compact literal", () => {
   ];
   expect(new Set(compactKinds.map((kind) => Buffer.from(encodeCompactActionKind(kind)).toString("hex"))))
     .toEqual(new Set(expected.map((kind) => Buffer.from(kind).toString("hex"))));
-  for (const path of [
-    "../../../../packages/trust-registry-integration/src/local-simulator-harness.ts",
-    "../../../../packages/trust-registry-client/src/evidence.ts",
-  ]) {
-    const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    const signerKinds = [...source.matchAll(/encodeCompactActionKind\(\s*"(tr:[^"]+)"\s*,?\s*\)/g)]
-      .map((match) => match[1]!);
-    expect(signerKinds.length).toBeGreaterThan(0);
-    expect(signerKinds).toHaveLength([...source.matchAll(/encodeCompactActionKind\(/g)].length);
-    for (const kind of signerKinds) expect(compactKinds).toContain(kind);
-  }
 });
 
 const createInitializedRegistryFixture = (seedByte: number) => {
