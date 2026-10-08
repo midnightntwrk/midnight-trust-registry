@@ -86,13 +86,6 @@ export const ApplicationEvidenceEnvelopeSchema = z
         message: "expiresAt must be later than verifiedAt",
       });
     }
-    if (expiresAtMs - verifiedAtMs > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["expiresAt"],
-        message: "Application evidence exceeds the maximum 24-hour lifetime",
-      });
-    }
   });
 
 export const ApplicationEvidenceSignatureSchema = z.object({
@@ -162,6 +155,10 @@ export function assertValidApplicationEvidence(
   const expectedCommitment = computeApplicationEvidenceCommitment(parsed.envelope);
   if (parsed.commitment !== expectedCommitment) {
     throw new Error("Application evidence commitment does not match its envelope");
+  }
+  if (Date.parse(parsed.envelope.expiresAt) - Date.parse(parsed.envelope.verifiedAt)
+    > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
+    throw new Error("Application evidence exceeds the maximum 24-hour lifetime");
   }
 
   assertEqual("registryId", parsed.envelope.registryId, expectation.registryId);

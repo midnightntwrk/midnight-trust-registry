@@ -83,11 +83,13 @@ describe("application evidence", () => {
   });
 
   it("rejects a signed envelope longer than the 24-hour reference policy", () => {
-    const envelope = createSubmission().envelope;
-    expect(() => computeApplicationEvidenceCommitment({
-      ...envelope,
-      expiresAt: "2026-07-28T00:00:00.001Z",
-    })).toThrow(/maximum 24-hour lifetime/);
+    const submission = createSubmission();
+    submission.envelope.expiresAt = "2026-07-28T00:00:00.001Z";
+    submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);
+    expect(submission.commitment).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(() => assertValidApplicationEvidence(
+      submission, expectation, [authorizedVerifier], () => true,
+    )).toThrow(/maximum 24-hour lifetime/);
   });
 
   it("binds a valid application envelope to its governed authorization", () => {

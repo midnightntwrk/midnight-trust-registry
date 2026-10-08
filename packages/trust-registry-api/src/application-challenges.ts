@@ -56,8 +56,8 @@ export class ApplicationChallengeCapacityError extends Error {
 
 export class ApplicationChallengeClockError extends RangeError {
   readonly code = "CHALLENGE_CLOCK_INVALID";
-  constructor() {
-    super("Application challenge clock is invalid");
+  constructor(message = "Application challenge clock is invalid") {
+    super(message);
     this.name = "ApplicationChallengeClockError";
   }
 }
@@ -99,7 +99,7 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
 
   async insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number = Date.now): Promise<ApplicationChallengeInsertResult> {
     if (!Number.isSafeInteger(record.issuedAtMs) || record.issuedAtMs < 0 || record.issuedAtMs > nowMs) {
-      throw new RangeError("Application challenge issuance time is invalid");
+      throw new ApplicationChallengeClockError("Application challenge issuance time is invalid");
     }
     if (record.expiresAtMs <= nowMs) return { inserted: false, supersededPrevious: false };
     const delayMs = record.expiresAtMs - nowMs;
@@ -135,7 +135,9 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
   async consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
     const current = this.records.get(challengeHash);
     if (current === undefined) return false;
-    if (nowMs < current.record.issuedAtMs) throw new RangeError("Application challenge clock precedes issuance");
+    if (nowMs < current.record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge clock precedes issuance");
+    }
     if (nowMs >= current.record.expiresAtMs) {
       this.remove(challengeHash);
       return false;
@@ -148,7 +150,9 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
   async readLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<ApplicationChallengeRecord | null> {
     const current = this.records.get(challengeHash);
     if (current === undefined) return null;
-    if (nowMs < current.record.issuedAtMs) throw new RangeError("Application challenge clock precedes issuance");
+    if (nowMs < current.record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge clock precedes issuance");
+    }
     if (nowMs >= current.record.expiresAtMs) {
       this.remove(challengeHash);
       return null;
@@ -269,12 +273,18 @@ export class ApplicationChallengeService {
   }): Promise<{ issuedAtMs: number; expiresAtMs: number } | null> {
     const parsedBinding = ApplicationChallengeBindingSchema.safeParse(input.binding);
     if (!parsedBinding.success || !hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) return null;
-    const record = await this.store.readLive(
-      input.challengeHash.toLowerCase(),
-      computeApplicationChallengeBindingHash(parsedBinding.data),
-      this.now(),
-    );
-    return record === null ? null : { issuedAtMs: record.issuedAtMs, expiresAtMs: record.expiresAtMs };
+    const challengeHash = input.challengeHash.toLowerCase();
+    const bindingHash = computeApplicationChallengeBindingHash(parsedBinding.data);
+    const nowMs = this.now();
+    const record = await this.store.readLive(challengeHash, bindingHash, nowMs);
+    if (record === null) return null;
+    if (record === undefined || record.challengeHash !== challengeHash || record.bindingHash !== bindingHash
+      || !Number.isSafeInteger(record.issuedAtMs) || !Number.isSafeInteger(record.expiresAtMs)
+      || record.issuedAtMs < 0 || record.issuedAtMs > nowMs
+      || record.expiresAtMs <= nowMs || record.expiresAtMs <= record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge store returned an invalid live window");
+    }
+    return { issuedAtMs: record.issuedAtMs, expiresAtMs: record.expiresAtMs };
   }
 
   private now(): number {

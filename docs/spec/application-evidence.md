@@ -144,7 +144,11 @@ The signed evidence expiry MUST be after verification and no more than 24
 hours later. Evidence may remain valid after the five-minute challenge expires;
 the challenge proves VP freshness, whereas the evidence window bounds later
 governed approval. The service MUST read the window from the challenge store,
-not from a caller-supplied issuance response or verifier timestamp. A
+validate its numeric issuance and expiry instants, and fail closed if that
+window is malformed; it MUST NOT use a caller-supplied issuance response or
+verifier timestamp as the window. Canonical envelope hashing remains available
+for structurally valid historical envelopes even when the current intake
+profile would reject their validity duration. A
 deployment requiring nonzero skew must define and test that tolerance as an
 explicit policy value before changing this profile. A backward challenge
 clock jump is an operational failure, not a reason to accept earlier evidence.

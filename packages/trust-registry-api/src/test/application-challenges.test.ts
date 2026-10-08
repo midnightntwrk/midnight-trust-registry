@@ -111,14 +111,39 @@ describe("application challenge lifecycle", () => {
     expect(await service.isLive({ binding, nonce: next.nonce, challengeHash: next.challengeHash })).toBe(false);
   });
 
+  it.each([undefined, Number.NaN])("rejects a malformed store issuance time %s", async (issuedAtMs) => {
+    let saved: ApplicationChallengeRecord | undefined;
+    const store: ApplicationChallengeStore = {
+      insert: async (record) => {
+        saved = record;
+        return { inserted: true, supersededPrevious: false };
+      },
+      readLive: async () => saved === undefined ? null : {
+        ...saved,
+        issuedAtMs: issuedAtMs as number,
+      },
+      consume: async () => false,
+    };
+    const service = new ApplicationChallengeService(store, () => START);
+    const issued = await service.issue(binding);
+    await expect(service.liveWindow({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash }))
+      .rejects.toMatchObject({ code: "CHALLENGE_CLOCK_INVALID", name: "ApplicationChallengeClockError" });
+  });
+
   it("fails closed on clock rollback without spending the live challenge", async () => {
     let now = START;
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
     const issued = await service.issue(binding);
     const input = { binding, nonce: issued.nonce, challengeHash: issued.challengeHash };
     now = START - 1;
-    await expect(service.liveWindow(input)).rejects.toThrow(/clock precedes issuance/);
-    await expect(service.consume(input)).rejects.toThrow(/clock precedes issuance/);
+    await expect(service.liveWindow(input)).rejects.toMatchObject({
+      code: "CHALLENGE_CLOCK_INVALID",
+      message: expect.stringMatching(/clock precedes issuance/),
+    });
+    await expect(service.consume(input)).rejects.toMatchObject({
+      code: "CHALLENGE_CLOCK_INVALID",
+      message: expect.stringMatching(/clock precedes issuance/),
+    });
     now = START;
     expect(await service.isLive(input)).toBe(true);
     expect(await service.consume(input)).toBe(issued.challengeHash);
