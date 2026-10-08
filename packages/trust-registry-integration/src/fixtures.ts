@@ -7,6 +7,7 @@ import {
 } from "@midnight-ntwrk/midnight-did";
 import {
   createScopedIdentifier,
+  issuerGovernedResourceId,
   sha256Hex,
   type AuthorizationScope,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -164,13 +165,10 @@ export const createIssuerScenarioFixture = (
     credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
     statusMethod: "midnight-status-registry-v1",
   };
-  const resourceId = [
-    authorizationScope.credentialFamilyId,
-    authorizationScope.schemaId,
-    authorizationScope.schemaVersion,
-    authorizationScope.credentialDefinitionId,
-    authorizationScope.statusMethod,
-  ][resourceType]!;
+  const resourceKinds = [
+    "credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement",
+  ] as const;
+  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKinds[resourceType]!);
 
   return {
     authorizationId,

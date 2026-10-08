@@ -74,6 +74,12 @@ export const AuthorizationScopeSchema = z.discriminatedUnion("role", [
 ]);
 
 export type AuthorizationScope = z.infer<typeof AuthorizationScopeSchema>;
+export type IssuerGovernedResourceType =
+  | "credentialFamily"
+  | "schema"
+  | "schemaVersion"
+  | "credentialDefinition"
+  | "statusMethodRequirement";
 
 /** V1 scopes contain only strings and string arrays, so JSON string escaping is JCS-compatible. */
 export function canonicalizeAuthorizationScope(scope: AuthorizationScope): string {
@@ -94,6 +100,19 @@ export function encodeAuthorizationScope(scope: AuthorizationScope): Uint8Array 
 
 export function computeAuthorizationScopeCommitment(scope: AuthorizationScope): string {
   return sha256Hex(encodeAuthorizationScope(scope));
+}
+
+export function issuerGovernedResourceId(
+  scope: z.infer<typeof IssuerScopeSchema>,
+  type: IssuerGovernedResourceType,
+): string {
+  const parsedScope = IssuerScopeSchema.parse(scope);
+  const preimage = JSON.stringify([
+    "tr:issuer-resource:v1",
+    type,
+    computeAuthorizationScopeCommitment(parsedScope),
+  ]);
+  return ScopedIdentifierSchema.parse(`tr:issuer-resource:v1:${sha256Hex(preimage).slice(2)}`);
 }
 
 function isUnicodeScalar(value: string): boolean {

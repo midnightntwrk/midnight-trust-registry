@@ -925,13 +925,7 @@ export class LocalTrustRegistryIntegrationHarness {
       expectedEvidence.scope.role !== "issuer" ||
       expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
       expectedEvidence.governedResource.id !== fixture.resourceId ||
-      ([
-        expectedEvidence.scope.credentialFamilyId,
-        expectedEvidence.scope.schemaId,
-        expectedEvidence.scope.schemaVersion,
-        expectedEvidence.scope.credentialDefinitionId,
-        expectedEvidence.scope.statusMethod,
-      ][fixture.resourceType] !== fixture.resourceId) ||
+      governedResourceInScope(expectedEvidence.scope, expectedEvidence.governedResource.type) !== fixture.resourceId ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(fixture))
     ) {

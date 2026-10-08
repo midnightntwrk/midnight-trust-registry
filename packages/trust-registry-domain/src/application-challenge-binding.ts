@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import { ApplicationEvidenceRoleSchema, GovernedResourceSchema } from "./application-evidence.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
-import { AuthorizationScopeSchema, computeAuthorizationScopeCommitment } from "./scope.js";
+import {
+  AuthorizationScopeSchema,
+  computeAuthorizationScopeCommitment,
+  issuerGovernedResourceId,
+} from "./scope.js";
 
 const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
@@ -64,11 +68,11 @@ export function governedResourceInScope(
 ): string | null {
   if (scope.role === "issuer") {
     switch (type) {
-      case "credentialFamily": return scope.credentialFamilyId;
-      case "schema": return scope.schemaId;
-      case "schemaVersion": return scope.schemaVersion;
-      case "credentialDefinition": return scope.credentialDefinitionId;
-      case "statusMethodRequirement": return scope.statusMethod;
+      case "credentialFamily":
+      case "schema":
+      case "schemaVersion":
+      case "credentialDefinition":
+      case "statusMethodRequirement": return issuerGovernedResourceId(scope, type);
       default: return null;
     }
   }
