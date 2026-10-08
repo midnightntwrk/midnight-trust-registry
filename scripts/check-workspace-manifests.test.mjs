@@ -17,8 +17,9 @@ test("manifest lint works before packages are installed", () => {
       "package.json",
       "scripts/check-workspace-manifests.mjs",
       "scripts/trust-registry-workspace-catalog.mjs",
-      ...workspaceCatalog.flatMap(({ workspace }) => [
-        `${workspace}/package.json`, `${workspace}/README.md`,
+      ...workspaceCatalog.flatMap(({ workspace, artifactPackage }) => [
+        `${workspace}/package.json`,
+        ...(artifactPackage ? [`${workspace}/README.md`] : []),
       ]),
     ]) {
       const destination = join(root, file);

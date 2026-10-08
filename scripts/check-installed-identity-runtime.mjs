@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
+import { globSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import semver from "semver";
@@ -16,23 +15,28 @@ const declarations = (manifest, name) => runtimeSections.flatMap((section) =>
 const isIdentity = (name) => /^@midnight-ntwrk\/(?:midnight-did(?:-|$)|credential-)/.test(name);
 const overrideValues = (overrides, name) => Object.entries(overrides)
   .filter(([selector]) => {
-    const target = selector.split(">").at(-1);
+    const target = selector.split(/>(?=@midnight-ntwrk\/)/u).at(-1);
     return target === name || target.startsWith(`${name}@`);
   })
   .map(([, value]) => value);
 
 function resolvedPackageManifest(fromManifest, name) {
-  const packageRequire = createRequire(fromManifest);
-  let directory = dirname(packageRequire.resolve(name));
+  let directory = dirname(fromManifest);
   while (true) {
     try {
-      const manifest = readJson(join(directory, "package.json"));
-      if (manifest.name === name) return { manifest, manifestPath: join(directory, "package.json") };
+      const manifestPath = realpathSync(join(directory, "node_modules", name, "package.json"));
+      const manifest = readJson(manifestPath);
+      if (manifest.name !== name) throw new Error(`${name} resolves to unexpected package ${manifest.name}`);
+      return { manifest, manifestPath };
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
     const parent = dirname(directory);
-    if (parent === directory) throw new Error(`could not locate resolved ${name} package manifest`);
+    if (parent === directory) {
+      const error = new Error(`could not locate resolved ${name} package manifest`);
+      error.code = "MODULE_NOT_FOUND";
+      throw error;
+    }
     directory = parent;
   }
 }
@@ -46,9 +50,24 @@ export function checkInstalledIdentityRuntime(directory = root) {
   }
 
   const overrides = yaml.load(readFileSync(join(directory, "pnpm-workspace.yaml"), "utf8"))?.overrides ?? {};
-  const identities = Object.entries(rootManifest.dependencies ?? {})
-    .filter(([name]) => isIdentity(name));
-  if (identities.length === 0) throw new Error("no root identity dependencies found");
+  const identities = new Map();
+  const addIdentities = (manifest, manifestPath) => {
+    for (const [name, pin] of Object.entries(manifest.dependencies ?? {})) {
+      if (!isIdentity(name)) continue;
+      const existing = identities.get(name);
+      if (existing && existing.pin !== pin) throw new Error(`${name} has conflicting workspace pins`);
+      if (existing) existing.sources.push(manifestPath);
+      else identities.set(name, { pin, sources: [manifestPath] });
+    }
+  };
+  addIdentities(rootManifest, join(directory, "package.json"));
+  for (const pattern of rootManifest.workspaces ?? []) {
+    for (const relativePath of globSync(`${pattern}/package.json`, { cwd: directory })) {
+      const manifestPath = join(directory, relativePath);
+      addIdentities(readJson(manifestPath), manifestPath);
+    }
+  }
+  if (identities.size === 0) throw new Error("no workspace identity dependencies found");
   const installed = new Map();
 
   for (const value of overrideValues(overrides, runtimeName)) {
@@ -57,23 +76,26 @@ export function checkInstalledIdentityRuntime(directory = root) {
     }
   }
 
-  for (const [name, pinnedVersion] of identities) {
+  for (const [name, { pin: pinnedVersion, sources }] of identities) {
     const values = overrideValues(overrides, name);
     if (values.length === 0 || values.some((value) => value !== pinnedVersion)) {
       throw new Error(`${name} override ${values.join(", ") || "missing"} does not match ${pinnedVersion}`);
     }
-    let manifestPath;
-    try {
-      manifestPath = realpathSync(join(directory, "node_modules", name, "package.json"));
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      throw new Error(`Missing installed identity package ${name}`, { cause: error });
+    const resolved = [];
+    for (const source of sources) {
+      let entry;
+      try {
+        entry = resolvedPackageManifest(source, name);
+      } catch (error) {
+        if (error.code !== "MODULE_NOT_FOUND") throw error;
+        throw new Error(`Missing installed identity package ${name} from ${source}`, { cause: error });
+      }
+      if (entry.manifest.version !== pinnedVersion) {
+        throw new Error(`${name} installed ${entry.manifest.version} does not match ${pinnedVersion}`);
+      }
+      resolved.push(entry);
     }
-    const manifest = readJson(manifestPath);
-    if (manifest.version !== pinnedVersion) {
-      throw new Error(`${name} installed ${manifest.version} does not match ${pinnedVersion}`);
-    }
-    installed.set(name, { manifest, manifestPath });
+    installed.set(name, resolved);
   }
 
   const verified = new Set();
@@ -85,8 +107,18 @@ export function checkInstalledIdentityRuntime(directory = root) {
       throw new Error(`${manifest.name} declares Compact runtime ${declared.join(", ")}, expected ${runtimePin}`);
     }
     const directRuntime = declared.length > 0;
-    const delegates = runtimeSections.flatMap((section) => Object.entries(manifest[section] ?? {}))
-      .filter(([dependency]) => isIdentity(dependency));
+    const delegates = runtimeSections.flatMap((section) => Object.entries(manifest[section] ?? {})
+      .filter(([dependency]) => isIdentity(dependency))
+      .filter(([dependency]) => {
+        if (section !== "peerDependencies" || manifest.peerDependenciesMeta?.[dependency]?.optional !== true) return true;
+        try {
+          resolvedPackageManifest(manifestPath, dependency);
+          return true;
+        } catch (error) {
+          if (error.code === "MODULE_NOT_FOUND") return false;
+          throw error;
+        }
+      }));
     if (!directRuntime && delegates.length === 0) {
       throw new Error(`${manifest.name} neither declares Compact runtime nor delegates to a verified identity package`);
     }
@@ -102,7 +134,7 @@ export function checkInstalledIdentityRuntime(directory = root) {
       if (!semver.satisfies(resolved.manifest.version, declaredVersion)) {
         throw new Error(`${manifest.name} resolves ${delegate}@${resolved.manifest.version}, incompatible with ${declaredVersion}`);
       }
-      const rootPin = rootManifest.dependencies?.[delegate];
+      const rootPin = identities.get(delegate)?.pin;
       if (rootPin && resolved.manifest.version !== rootPin) {
         throw new Error(`${manifest.name} resolves ${delegate}@${resolved.manifest.version}, expected ${rootPin}`);
       }
@@ -120,11 +152,13 @@ export function checkInstalledIdentityRuntime(directory = root) {
     }
     verified.add(manifestPath);
   };
-  for (const [name] of identities) verifyDelegation(installed.get(name));
+  for (const entries of installed.values()) {
+    for (const entry of entries) verifyDelegation(entry);
+  }
   return {
     runtimePin,
-    identityCount: identities.length,
-    directRuntimeCount: [...installed.values()].filter(({ manifest }) => declarations(manifest, runtimeName).length > 0).length,
+    identityCount: identities.size,
+    directRuntimeCount: [...installed.values()].filter((entries) => declarations(entries[0].manifest, runtimeName).length > 0).length,
   };
 }
 

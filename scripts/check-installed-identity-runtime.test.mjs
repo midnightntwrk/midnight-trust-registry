@@ -58,8 +58,8 @@ test("peer dependency may delegate through a second umbrella", () => withFixture
   assert.deepEqual(checkInstalledIdentityRuntime(root), { runtimePin: pin, identityCount: 3, directRuntimeCount: 1 });
 }));
 
-test("package export maps need not expose package.json", () => withFixture(({ root, save, leafManifest }) => {
-  leafManifest.exports = { ".": "./index.js" };
+test("package export maps need not expose a root entry or package.json", () => withFixture(({ root, save, leafManifest }) => {
+  leafManifest.exports = { "./feature": "./index.js" };
   save();
   assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
 }));
@@ -105,6 +105,33 @@ test("non-identity Midnight packages are outside the identity graph", () => with
   assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
 }));
 
+test("workspace-only identity dependencies remain in the installed graph", () => withFixture(({ root, save, put, rootManifest }) => {
+  rootManifest.workspaces = ["packages/*"];
+  delete rootManifest.dependencies[leaf];
+  save();
+  put("packages/trust-registry-domain/package.json", { dependencies: { [leaf]: "0.7.0" } });
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+}));
+
+test("optional identity peers need not be installed", () => withFixture(({ root, save, umbrellaManifest }) => {
+  const optional = `${scope}/credential-did-midnight`;
+  umbrellaManifest.peerDependencies = { [optional]: "^0.2.0" };
+  umbrellaManifest.peerDependenciesMeta = { [optional]: { optional: true } };
+  save();
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+}));
+
+test("installed optional identity peers are still audited", () => withFixture(({ root, save, put, umbrellaManifest }) => {
+  const optional = `${scope}/credential-did-midnight`;
+  umbrellaManifest.peerDependencies = { [optional]: "^0.2.0" };
+  umbrellaManifest.peerDependenciesMeta = { [optional]: { optional: true } };
+  save();
+  put(`node_modules/${umbrella}/node_modules/${optional}/package.json`, {
+    name: optional, version: "0.2.0", peerDependencies: { [runtime]: "0.15.0" },
+  });
+  assert.throws(() => checkInstalledIdentityRuntime(root), /declares Compact runtime/);
+}));
+
 test("compatible published delegate ranges are checked against resolved versions", () => withFixture(({ root, save, umbrellaManifest }) => {
   umbrellaManifest.dependencies[leaf] = "^0.7.0";
   save();
@@ -139,9 +166,9 @@ test("missing declared runtime has gate context", () => withFixture(({ root }) =
 }));
 
 test("selector overrides are checked for both identity and runtime pins", () => withFixture(({ root, put }) => {
-  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@^0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@^0.16.0": 0.16.0\n`);
+  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@>=0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@>=0.16.0": 0.16.0\n`);
   assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
-  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@^0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@^0.16.0": 0.15.0\n`);
+  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@>=0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@>=0.16.0": 0.15.0\n`);
   assert.throws(() => checkInstalledIdentityRuntime(root), /Compact runtime override 0\.15\.0/);
 }));
 
