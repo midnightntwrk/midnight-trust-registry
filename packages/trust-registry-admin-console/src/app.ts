@@ -25,6 +25,7 @@ type AppState = {
   apiBase: string;
   board: ReviewBoard | undefined;
   cards: readonly ReviewCard[];
+  epochLabel: string;
   error: string | undefined;
   flash: string | undefined;
   loading: boolean;
@@ -78,6 +79,7 @@ export const createAdminConsoleApp = (
     apiBase: normalizeApiBaseUrl(queryBase ?? rememberedBase ?? "http://127.0.0.1:4400"),
     board: undefined,
     cards: [],
+    epochLabel: "",
     error: undefined,
     flash: undefined,
     loading: false,
@@ -161,10 +163,6 @@ export const createAdminConsoleApp = (
         return;
       }
       await refreshBoard(describeMutation(result));
-      const input = root.querySelector<HTMLInputElement>("[data-epoch-label]");
-      if (input !== null) {
-        input.value = "";
-      }
     } catch (error) {
       setState({
         error: formatApiError(error),
@@ -173,7 +171,7 @@ export const createAdminConsoleApp = (
       });
       return;
     }
-    setState({ publishing: false });
+    setState({ publishing: false, epochLabel: "" });
   };
 
   const bindEvents = () => {
@@ -197,10 +195,12 @@ export const createAdminConsoleApp = (
       void refreshBoard();
     });
 
+    root.querySelector<HTMLInputElement>("[data-epoch-label]")?.addEventListener("input", (event) => {
+      state.epochLabel = (event.currentTarget as HTMLInputElement).value;
+    });
     root.querySelector<HTMLFormElement>("[data-epoch-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
-      const input = root.querySelector<HTMLInputElement>("[data-epoch-label]");
-      void publishEpoch(input?.value ?? "");
+      void publishEpoch(state.epochLabel);
     });
 
     root.querySelectorAll<HTMLElement>("[data-select-key]").forEach((element) => {
@@ -296,7 +296,7 @@ export const createAdminConsoleApp = (
               <dd><code>${escapeHtml(row.value)}</code></dd>
             </div>
           `).join("")}
-          ${card.target === "auditor" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
+          ${card.target === "auditor" || card.target === "verifier" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
           <div>
             <dt>Last update</dt>
             <dd>${escapeHtml(card.updatedAt)}</dd>
@@ -304,7 +304,7 @@ export const createAdminConsoleApp = (
         </dl>
         <div class="actions">
           ${getReviewActions(card.status).map((action) => `
-            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading ? " disabled" : ""}>
+            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing ? " disabled" : ""}>
               ${escapeHtml(action)}
             </button>
           `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
@@ -339,9 +339,9 @@ export const createAdminConsoleApp = (
             <form class="epoch-panel" data-epoch-form>
               <label>
                 Publish epoch label
-                <input class="input" data-epoch-label type="text" placeholder="optional operator label" />
+                <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
               </label>
-              <button class="button" type="submit"${state.publishing ? " disabled" : ""}>Publish epoch</button>
+              <button class="button" type="submit"${state.loading || state.publishing ? " disabled" : ""}>Publish epoch</button>
             </form>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}

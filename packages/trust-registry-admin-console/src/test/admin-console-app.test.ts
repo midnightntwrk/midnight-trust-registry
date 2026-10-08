@@ -39,10 +39,12 @@ describe("admin console browser handlers", () => {
     document.body.replaceChildren(root);
     const confirm = vi.fn(() => false);
     const postedPaths: string[] = [];
+    const postedBodies: (string | undefined)[] = [];
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (init?.method === "POST") {
         postedPaths.push(path);
+        postedBodies.push(init.body?.toString());
         return Response.json({
           recordKind: "epoch",
           epoch: { epochId: "epoch:2" },
@@ -79,19 +81,27 @@ describe("admin console browser handlers", () => {
     await vi.waitFor(() => expect(root.querySelector("[data-action='suspend']")?.hasAttribute("disabled")).toBe(false));
     expect(postedPaths).toEqual([]);
 
+    const labelInput = root.querySelector<HTMLInputElement>("[data-epoch-label]")!;
+    labelInput.value = "audit-round";
+    labelInput.dispatchEvent(new Event("input", { bubbles: true }));
     root.querySelector<HTMLFormElement>("[data-epoch-form]")!.dispatchEvent(
       new Event("submit", { bubbles: true, cancelable: true }),
     );
+    expect(root.querySelector("[data-epoch-form] button")?.hasAttribute("disabled")).toBe(true);
+    expect(root.querySelector("[data-action='suspend']")?.hasAttribute("disabled")).toBe(true);
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("anchors the current state root"),
     ));
     await vi.waitFor(() => expect(root.querySelector("[data-epoch-form] button")?.hasAttribute("disabled")).toBe(false));
     expect(postedPaths).toEqual([]);
+    expect(root.querySelector<HTMLInputElement>("[data-epoch-label]")?.value).toBe("audit-round");
 
     confirm.mockReturnValue(true);
     root.querySelector<HTMLFormElement>("[data-epoch-form]")!.dispatchEvent(
       new Event("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => expect(postedPaths).toEqual(["/v1/epochs/publish"]));
+    expect(postedBodies).toEqual([JSON.stringify({ label: "audit-round" })]);
+    await vi.waitFor(() => expect(root.querySelector<HTMLInputElement>("[data-epoch-label]")?.value).toBe(""));
   });
 });
