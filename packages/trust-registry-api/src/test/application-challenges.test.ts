@@ -40,7 +40,7 @@ const binding: ApplicationChallengeBinding = {
 const START = Date.parse("2026-10-06T00:00:00.000Z");
 
 describe("application challenge lifecycle", () => {
-  it("issues a random nonce but stores only its hash, binding hash, and expiry", async () => {
+  it("issues a random nonce but stores only its hash, binding hash, and trusted window", async () => {
     const records: ApplicationChallengeRecord[] = [];
     const store: ApplicationChallengeStore = {
       insert: async (record) => {
@@ -48,7 +48,7 @@ describe("application challenge lifecycle", () => {
         return { inserted: true, supersededPrevious: false };
       },
       consume: async () => false,
-      isLive: async () => false,
+      readLive: async () => null,
     };
     const service = new ApplicationChallengeService(store, () => START);
     const first = await service.issue(binding);
@@ -65,6 +65,7 @@ describe("application challenge lifecycle", () => {
       challengeHash: first.challengeHash,
       bindingHash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
       applicationHash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      issuedAtMs: START,
       expiresAtMs: START + 5 * 60 * 1000,
     });
     expect(JSON.stringify(records)).not.toContain(first.nonce);
@@ -75,7 +76,7 @@ describe("application challenge lifecycle", () => {
     const underlying = new InMemoryApplicationChallengeStore();
     const yieldingStore: ApplicationChallengeStore = {
       insert: (record, nowMs, readNow) => underlying.insert(record, nowMs, readNow),
-      isLive: (challengeHash, bindingHash, nowMs) => underlying.isLive(challengeHash, bindingHash, nowMs),
+      readLive: (challengeHash, bindingHash, nowMs) => underlying.readLive(challengeHash, bindingHash, nowMs),
       consume: async (challengeHash, bindingHash, nowMs) => {
         await Promise.resolve();
         return underlying.consume(challengeHash, bindingHash, nowMs);
@@ -96,6 +97,10 @@ describe("application challenge lifecycle", () => {
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
     const issued = await service.issue(binding);
     const input = { binding, nonce: issued.nonce, challengeHash: issued.challengeHash };
+    expect(await service.liveWindow(input)).toEqual({
+      issuedAtMs: START,
+      expiresAtMs: START + 5 * 60_000,
+    });
     expect(await service.isLive(input)).toBe(true);
     expect(await service.isLive({ ...input, binding: { ...binding, applicationId: "application:other" } })).toBe(false);
     expect(await service.isLive(input)).toBe(true);
@@ -104,6 +109,19 @@ describe("application challenge lifecycle", () => {
     const next = await service.issue(binding);
     now += 5 * 60_000;
     expect(await service.isLive({ binding, nonce: next.nonce, challengeHash: next.challengeHash })).toBe(false);
+  });
+
+  it("fails closed on clock rollback without spending the live challenge", async () => {
+    let now = START;
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
+    const issued = await service.issue(binding);
+    const input = { binding, nonce: issued.nonce, challengeHash: issued.challengeHash };
+    now = START - 1;
+    await expect(service.liveWindow(input)).rejects.toThrow(/clock precedes issuance/);
+    await expect(service.consume(input)).rejects.toThrow(/clock precedes issuance/);
+    now = START;
+    expect(await service.isLive(input)).toBe(true);
+    expect(await service.consume(input)).toBe(issued.challengeHash);
   });
 
   it("supersedes the prior live challenge for the same binding", async () => {
@@ -324,6 +342,7 @@ describe("application challenge lifecycle", () => {
       challengeHash: `0x${"a".repeat(64)}`,
       bindingHash: `0x${"b".repeat(64)}`,
       applicationHash: `0x${"c".repeat(64)}`,
+      issuedAtMs: START,
       expiresAtMs: START + 1,
     };
     expect(await store.insert(record, START, () => START)).toEqual({ inserted: true, supersededPrevious: false });
@@ -338,13 +357,14 @@ describe("application challenge lifecycle", () => {
       challengeHash: `0x${"a".repeat(64)}`,
       bindingHash: `0x${"b".repeat(64)}`,
       applicationHash: `0x${"c".repeat(64)}`,
+      issuedAtMs: START,
       expiresAtMs: START + 5 * 60_000,
     };
     await store.insert(record, START, () => START);
     record.bindingHash = `0x${"d".repeat(64)}`;
     record.expiresAtMs = START - 1;
-    expect(await store.isLive(record.challengeHash, `0x${"b".repeat(64)}`, START)).toBe(true);
-    expect(await store.isLive(record.challengeHash, record.bindingHash, START)).toBe(false);
+    expect(await store.readLive(record.challengeHash, `0x${"b".repeat(64)}`, START)).not.toBeNull();
+    expect(await store.readLive(record.challengeHash, record.bindingHash, START)).toBeNull();
   });
 
   it("does not evict a logically live challenge when the wall timer fires after clock rollback", async () => {
@@ -355,7 +375,8 @@ describe("application challenge lifecycle", () => {
       const first = await service.issue(binding);
       now = START - 1000;
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      expect(await service.isLive({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBe(true);
+      await expect(service.isLive({ binding, nonce: first.nonce, challengeHash: first.challengeHash }))
+        .rejects.toThrow(/clock precedes issuance/);
       await expect(service.issue({ ...binding, applicationId: "application:other" }))
         .rejects.toMatchObject({ code: "CHALLENGE_CAPACITY", name: "ApplicationChallengeCapacityError" });
       now = START + 5 * 60_000;
@@ -402,6 +423,7 @@ describe("application challenge lifecycle", () => {
       challengeHash: `0x${"a".repeat(64)}`,
       bindingHash: `0x${"b".repeat(64)}`,
       applicationHash: `0x${"c".repeat(64)}`,
+      issuedAtMs: START,
       expiresAtMs: START + 2_147_483_648,
     }, START, () => START)).rejects.toMatchObject({ code: "CHALLENGE_EXPIRY_RANGE", name: "ApplicationChallengeExpiryError" });
   });
@@ -600,7 +622,7 @@ describe("application challenge lifecycle", () => {
         return { inserted: false, supersededPrevious: false };
       },
       consume: async () => false,
-      isLive: async () => false,
+      readLive: async () => null,
     };
     const service = new ApplicationChallengeService(store, () => START);
 

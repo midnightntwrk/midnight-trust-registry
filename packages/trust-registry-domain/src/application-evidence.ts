@@ -10,6 +10,7 @@ import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 export const ApplicationEvidenceEvaluationTimeSchema = TimestampSchema;
+export const MAX_APPLICATION_EVIDENCE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const NonEmptyStringSchema = z.string().trim().min(1);
 const KeyReferenceSchema = z
   .string()
@@ -76,11 +77,20 @@ export const ApplicationEvidenceEnvelopeSchema = z
         });
       }
     }
-    if (Date.parse(envelope.expiresAt) <= Date.parse(envelope.verifiedAt)) {
+    const verifiedAtMs = Date.parse(envelope.verifiedAt);
+    const expiresAtMs = Date.parse(envelope.expiresAt);
+    if (expiresAtMs <= verifiedAtMs) {
       ctx.addIssue({
         code: "custom",
         path: ["expiresAt"],
         message: "expiresAt must be later than verifiedAt",
+      });
+    }
+    if (expiresAtMs - verifiedAtMs > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["expiresAt"],
+        message: "Application evidence exceeds the maximum 24-hour lifetime",
       });
     }
   });
