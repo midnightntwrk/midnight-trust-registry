@@ -8,6 +8,8 @@ import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
+  computeMerkleRootFromProof,
+  computeRecognitionStatementLeafHash,
   type AuthorizationRecord,
   type EpochCommitment,
   type GovernancePolicyRecord,
@@ -47,6 +49,31 @@ export const TrustRegistryRecognitionSnapshotEntrySchema = z.object({
 export type TrustRegistryRecognitionSnapshotEntry = z.infer<
   typeof TrustRegistryRecognitionSnapshotEntrySchema
 >;
+
+const hasConsistentSnapshotProof = (
+  bundle: TrustRegistryEvidenceBundle,
+  leafHash: string,
+  epochs: readonly EpochCommitment[],
+  registryId: string,
+): boolean => {
+  const epoch = epochs.find((candidate) => candidate.epochId === bundle.epoch.epochId);
+  if (epoch === undefined
+    || JSON.stringify(epoch) !== JSON.stringify(bundle.epoch)
+    || bundle.epoch.registryId !== registryId
+    || bundle.policy.registryId !== registryId
+    || bundle.inclusionProof.leafHash !== leafHash
+    || bundle.inclusionProof.root !== bundle.epoch.stateRoot
+    || bundle.inclusionProof.path[0] !== bundle.epoch.eventRoot) return false;
+  try {
+    return computeMerkleRootFromProof(
+      leafHash,
+      bundle.inclusionProof.path,
+      bundle.inclusionProof.leafIndex,
+    ) === bundle.epoch.stateRoot;
+  } catch {
+    return false;
+  }
+};
 
 export const TrustRegistryOperatorWorkspaceOperationSchema = z.discriminatedUnion(
   "operation",
@@ -114,18 +141,38 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
     for (const [index, entry] of entries.entries()) {
       const expectedLeafHash = computeAuthorizationStatementLeafHash(entry.authorization);
       if (entry.authorization.role !== role
+        || entry.authorization.registryId !== snapshot.registry.registryId
+        || entry.evidence.authorization === undefined
         || entry.evidence.authorization?.authorizationId !== entry.authorization.authorizationId
         || entry.evidence.authorization?.role !== role
         || entry.evidence.registryId !== snapshot.registry.registryId
-        || entry.evidence.authorization === undefined
         || computeAuthorizationStatementLeafHash(entry.evidence.authorization) !== expectedLeafHash
-        || entry.evidence.inclusionProof.leafHash !== expectedLeafHash) {
+        || !hasConsistentSnapshotProof(
+          entry.evidence, expectedLeafHash, snapshot.epochs, snapshot.registry.registryId,
+        )) {
         ctx.addIssue({
           code: "custom",
           path: [`${role}Entries`, index],
-          message: `${role} entry must contain matching authorization statement and proof leaf for this registry`,
+          message: `${role} entry must contain a matching statement and internally consistent snapshot proof`,
         });
       }
+    }
+  }
+  for (const [index, entry] of snapshot.recognitionEntries.entries()) {
+    const expectedLeafHash = computeRecognitionStatementLeafHash(entry.recognition);
+    if (entry.recognition.registryId !== snapshot.registry.registryId
+      || entry.evidence.recognition === undefined
+      || entry.evidence.recognition?.recognitionId !== entry.recognition.recognitionId
+      || computeRecognitionStatementLeafHash(entry.evidence.recognition) !== expectedLeafHash
+      || entry.evidence.registryId !== snapshot.registry.registryId
+      || !hasConsistentSnapshotProof(
+        entry.evidence, expectedLeafHash, snapshot.epochs, snapshot.registry.registryId,
+      )) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recognitionEntries", index],
+        message: "recognition entry must contain a matching statement and internally consistent snapshot proof",
+      });
     }
   }
 });

@@ -173,6 +173,25 @@ describe("trust registry api", () => {
     }
   });
 
+  it("returns a conflict rather than an internal error for duplicate auditor submissions", async () => {
+    const workspacePath = join(tempDir, "auditor-workspace.json");
+    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "auditor-duplicate" }));
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    const submit = () => fetch(`${server.url}/v1/applications`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: "auditor", label: "compliance" }),
+    });
+    try {
+      expect((await submit()).status).toBe(201);
+      const duplicate = await submit();
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json()).type).toMatch(/duplicate-application$/);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("does not collapse same-profile auditor grants with different purposes", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("auditor-scope-query");
     const first = createAuditorScenarioFixture("same-profile");

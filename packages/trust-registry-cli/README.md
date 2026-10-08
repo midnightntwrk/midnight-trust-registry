@@ -72,3 +72,5 @@ The unreleased v1 operator snapshot requires a separate `auditorEntries`
 collection. CLI and API role lookups never treat a verifier entry as an
 auditor grant. The returned lifecycle state must be checked: archived evidence
 preserves history but does not establish current authorization.
+Local snapshots and workspaces created before this field was added must be
+regenerated; there is no compatibility fallback for the unreleased format.

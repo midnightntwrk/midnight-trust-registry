@@ -54,6 +54,38 @@ describe("trust registry operator CLI", () => {
         },
       }],
     }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [{
+        ...auditor,
+        evidence: {
+          ...auditor.evidence,
+          inclusionProof: {
+            ...auditor.evidence.inclusionProof,
+            path: ["0".repeat(64)],
+          },
+        },
+      }],
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [{
+        ...auditor,
+        evidence: {
+          ...auditor.evidence,
+          epoch: { ...auditor.evidence.epoch, epochId: "epoch:unpublished" },
+        },
+      }],
+    }).success).toBe(false);
+    const recognition = snapshot.recognitionEntries[0];
+    const otherRecognition = snapshot.recognitionEntries[1];
+    if (recognition === undefined || otherRecognition === undefined) {
+      throw new Error("expected recognition snapshot entries");
+    }
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      recognitionEntries: [{ ...recognition, evidence: otherRecognition.evidence }],
+    }).success).toBe(false);
   });
   it(
     "creates a deterministic demo snapshot and summarizes it as JSON",

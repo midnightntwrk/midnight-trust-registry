@@ -403,11 +403,8 @@ const mapMutationError = (
         error.message,
       );
     }
-    if (
-      error.message.startsWith("issuer label already submitted:")
-      || error.message.startsWith("verifier label already submitted:")
-      || error.message.startsWith("recognition label already submitted:")
-    ) {
+    if (["issuer", "verifier", "auditor", "recognition"].some((role) =>
+      error.message.startsWith(`${role} label already submitted:`))) {
       throw jsonProblem(
         problemBaseUri,
         "duplicate-application",
