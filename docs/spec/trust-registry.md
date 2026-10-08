@@ -342,9 +342,18 @@ Minimum query answers:
 - Participant metadata by DID.
 - Issuer authorization for a credential resource.
 - Verifier authorization for a request profile.
+- Auditor authorization for an exact audit request scope.
 - Recognized authority for a scoped domain.
 - Historical state at an epoch or timestamp.
 - Evidence bundle for a decision.
+
+The Midnight operator query projection MUST keep issuer, verifier, and auditor
+entries role-disjoint. Verifier and auditor queries MUST use the complete
+canonical request-resource ID; a bare request-profile ID is not sufficient.
+Historical auditor evidence may remain queryable after archival, but it is not
+a current active grant. TRQP `issue` and `verify` map only to issuer and
+verifier respectively; this specification does not invent a TRQP auditor
+action.
 
 Minimum evidence bundle fields:
 

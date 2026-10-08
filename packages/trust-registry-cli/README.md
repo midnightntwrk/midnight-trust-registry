@@ -8,11 +8,11 @@ Current scope:
 - create a mutable operator workspace backed by an append-only CLI action journal
 - inspect registry, policy, authorization, recognition, and epoch records from a
   saved snapshot or a saved operator workspace
-- submit, approve, activate, suspend, revoke, and archive issuer, verifier, and
-  recognition records without raw simulator access
+- submit, approve, activate, suspend, revoke, and archive issuer, verifier,
+  auditor, and recognition records without raw simulator access
 - publish a registry epoch anchor from the local operator workspace
-- export anchored issuer, verifier, and recognition evidence bundles as JSON
-- inspect historical issuer, verifier, recognition, and epoch state at a
+- export anchored issuer, verifier, auditor, and recognition evidence bundles as JSON
+- inspect historical issuer, verifier, auditor, recognition, and epoch state at a
   specific timestamp
 - render deterministic human-readable audit reports from a saved snapshot or a
   saved operator workspace
@@ -67,3 +67,8 @@ node packages/trust-registry-cli/bin/trust-registry.mjs report \
   --workspace ./artifacts/trust-registry/workspace.json \
   --kind full
 ```
+
+The unreleased v1 operator snapshot requires a separate `auditorEntries`
+collection. CLI and API role lookups never treat a verifier entry as an
+auditor grant. The returned lifecycle state must be checked: archived evidence
+preserves history but does not establish current authorization.

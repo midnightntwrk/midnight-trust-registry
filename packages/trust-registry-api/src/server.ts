@@ -384,16 +384,8 @@ const mapMutationError = (
     throw error;
   }
   if (error instanceof Error) {
-    if (error.message.startsWith("unknown issuer authorization:")) {
-      throw jsonProblem(
-        problemBaseUri,
-        "authorization-not-found",
-        404,
-        "authorization not found",
-        error.message,
-      );
-    }
-    if (error.message.startsWith("unknown verifier authorization:")) {
+    if (["issuer", "verifier", "auditor"].some((role) =>
+      error.message.startsWith(`unknown ${role} authorization:`))) {
       throw jsonProblem(
         problemBaseUri,
         "authorization-not-found",

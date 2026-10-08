@@ -4,6 +4,7 @@ import {
   findEpochAtTimestamp,
   loadSnapshotFromFile,
   loadWorkspaceFromFile,
+  resolveAuditorEntryAtTimestamp,
   resolveIssuerEntryAtTimestamp,
   resolveRecognitionEntryAtTimestamp,
   resolveVerifierEntryAtTimestamp,
@@ -142,6 +143,8 @@ const authorizationEntriesForRole = (
       return snapshot.issuerEntries;
     case "verifier":
       return snapshot.verifierEntries;
+    case "auditor":
+      return snapshot.auditorEntries;
   }
 };
 
@@ -332,6 +335,13 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
     );
   }
 
+  if (request.role === "auditor") {
+    return resolveAuditorEntryAtTimestamp(
+      snapshot,
+      evaluatedAt,
+      (entry) => matchesAuthorizationRequest(entry, request),
+    );
+  }
   return resolveVerifierEntryAtTimestamp(
     snapshot,
     evaluatedAt,

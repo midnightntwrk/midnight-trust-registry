@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../cli.js";
+import { createDemoSnapshot } from "../demo-snapshot.js";
+import { TrustRegistryOperatorSnapshotSchema } from "../model.js";
 import { loadSnapshotFromFile } from "../snapshot.js";
 
 const CLI_TEST_TIMEOUT_MS = 20_000;
@@ -26,6 +28,33 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
+  it("rejects auditor snapshot rows with a substituted role or evidence record", () => {
+    const snapshot = createDemoSnapshot({ label: "auditor-snapshot-boundary" });
+    const auditor = snapshot.auditorEntries[0];
+    const otherAuditor = snapshot.auditorEntries[1];
+    const verifier = snapshot.verifierEntries[0];
+    if (auditor === undefined || otherAuditor === undefined || verifier === undefined) {
+      throw new Error("expected auditor and verifier snapshot entries");
+    }
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [verifier],
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [{ ...auditor, evidence: otherAuditor.evidence }],
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [{
+        ...auditor,
+        authorization: {
+          ...auditor.authorization,
+          resourceId: otherAuditor.authorization.resourceId,
+        },
+      }],
+    }).success).toBe(false);
+  });
   it(
     "creates a deterministic demo snapshot and summarizes it as JSON",
     async () => {
@@ -45,6 +74,7 @@ describe("trust registry operator CLI", () => {
       expect(snapshot.registryLabel).toBe("operator");
       expect(snapshot.issuerEntries).toHaveLength(2);
       expect(snapshot.verifierEntries).toHaveLength(2);
+      expect(snapshot.auditorEntries).toHaveLength(2);
       expect(snapshot.recognitionEntries).toHaveLength(2);
 
       const summaryResult = await captureCli([
@@ -58,12 +88,15 @@ describe("trust registry operator CLI", () => {
       const summary = JSON.parse(summaryResult.stdout) as {
         issuerCounts: { active: number; archived: number };
         verifierCounts: { active: number; archived: number };
+        auditorCounts: { active: number; archived: number };
         recognitionCounts: { active: number; archived: number };
       };
       expect(summary.issuerCounts.active).toBe(1);
       expect(summary.issuerCounts.archived).toBe(1);
       expect(summary.verifierCounts.active).toBe(1);
       expect(summary.verifierCounts.archived).toBe(1);
+      expect(summary.auditorCounts.active).toBe(1);
+      expect(summary.auditorCounts.archived).toBe(1);
       expect(summary.recognitionCounts.active).toBe(1);
       expect(summary.recognitionCounts.archived).toBe(1);
     },
@@ -152,6 +185,38 @@ describe("trust registry operator CLI", () => {
     expect(
       snapshot.epochs.some((epoch) => epoch.epochId === bundle.epoch.epochId),
     ).toBe(true);
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it("lists and inspects auditor evidence without treating archived state as current", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-auditor-"));
+    const snapshotPath = join(directory, "demo-snapshot.json");
+    await captureCli(["init-demo", "--output", snapshotPath]);
+    const snapshot = await loadSnapshotFromFile(snapshotPath);
+    const archived = snapshot.auditorEntries.find((entry) => entry.authorization.status === "archived");
+    if (archived?.authorization.activeFrom === undefined) {
+      throw new Error("expected archived auditor with active history");
+    }
+    const listed = await captureCli(["list", "--snapshot", snapshotPath, "--kind", "auditor", "--json"]);
+    expect(listed.exitCode).toBe(0);
+    expect(JSON.parse(listed.stdout)).toHaveLength(2);
+    const inspected = await captureCli([
+      "inspect", "--snapshot", snapshotPath, "--kind", "auditor",
+      "--id", archived.authorization.authorizationId, "--at", archived.authorization.activeFrom,
+    ]);
+    expect(inspected.exitCode).toBe(0);
+    expect(JSON.parse(inspected.stdout).trustedAtTime).toBe(true);
+    const report = await captureCli([
+      "report", "--snapshot", snapshotPath, "--kind", "auditor",
+      "--id", archived.authorization.authorizationId,
+    ]);
+    expect(report.exitCode).toBe(0);
+    expect(report.stdout).toContain("archived");
+    const evidence = await captureCli([
+      "export-evidence", "--snapshot", snapshotPath, "--kind", "auditor",
+      "--id", archived.authorization.authorizationId,
+    ]);
+    expect(evidence.exitCode).toBe(0);
+    expect(JSON.parse(evidence.stdout).authorization.status).toBe("archived");
   }, CLI_TEST_TIMEOUT_MS);
 
   it(
@@ -393,6 +458,31 @@ describe("trust registry operator CLI", () => {
     },
     CLI_TEST_TIMEOUT_MS,
   );
+
+  it("replays an auditor lifecycle into the operator workspace snapshot", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-auditor-workspace-"));
+    const workspacePath = join(directory, "workspace.json");
+    await captureCli(["init-workspace", "--workspace", workspacePath]);
+    const submitted = await captureCli([
+      "submit", "--workspace", workspacePath, "--kind", "auditor", "--label", "iso-audit", "--json",
+    ]);
+    expect(submitted.exitCode).toBe(0);
+    const authorizationId = JSON.parse(submitted.stdout).authorization.authorizationId as string;
+    for (const command of ["approve", "activate", "suspend", "revoke", "archive"] as const) {
+      const result = await captureCli([
+        command, "--workspace", workspacePath, "--kind", "auditor", "--id", authorizationId, "--json",
+      ]);
+      expect(result.exitCode).toBe(0);
+    }
+    const summary = await captureCli(["summary", "--workspace", workspacePath, "--json"]);
+    expect(summary.exitCode).toBe(0);
+    expect(JSON.parse(summary.stdout).auditorCounts.archived).toBe(1);
+    const evidence = await captureCli([
+      "export-evidence", "--workspace", workspacePath, "--kind", "auditor", "--id", authorizationId,
+    ]);
+    expect(evidence.exitCode).toBe(0);
+    expect(JSON.parse(evidence.stdout).authorization.status).toBe("archived");
+  }, CLI_TEST_TIMEOUT_MS);
 
   it(
     "manages verifier and recognition workflows inside a mutable operator workspace",

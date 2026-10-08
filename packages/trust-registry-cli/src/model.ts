@@ -7,6 +7,7 @@ import {
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  computeAuthorizationStatementLeafHash,
   type AuthorizationRecord,
   type EpochCommitment,
   type GovernancePolicyRecord,
@@ -21,6 +22,7 @@ const WorkspaceTargetIdSchema = z.string().trim().min(1);
 export const MutableSnapshotTargetSchema = z.enum([
   "issuer",
   "verifier",
+  "auditor",
   "recognition",
 ]);
 
@@ -100,8 +102,32 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
   epochs: z.array(EpochCommitmentSchema).min(1),
   issuerEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   verifierEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
+  auditorEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   recognitionEntries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
   notes: z.array(z.string()).default([]),
+}).superRefine((snapshot, ctx) => {
+  for (const [role, entries] of [
+    ["issuer", snapshot.issuerEntries],
+    ["verifier", snapshot.verifierEntries],
+    ["auditor", snapshot.auditorEntries],
+  ] as const) {
+    for (const [index, entry] of entries.entries()) {
+      const expectedLeafHash = computeAuthorizationStatementLeafHash(entry.authorization);
+      if (entry.authorization.role !== role
+        || entry.evidence.authorization?.authorizationId !== entry.authorization.authorizationId
+        || entry.evidence.authorization?.role !== role
+        || entry.evidence.registryId !== snapshot.registry.registryId
+        || entry.evidence.authorization === undefined
+        || computeAuthorizationStatementLeafHash(entry.evidence.authorization) !== expectedLeafHash
+        || entry.evidence.inclusionProof.leafHash !== expectedLeafHash) {
+        ctx.addIssue({
+          code: "custom",
+          path: [`${role}Entries`, index],
+          message: `${role} entry must contain matching authorization statement and proof leaf for this registry`,
+        });
+      }
+    }
+  }
 });
 
 export type TrustRegistryOperatorSnapshot = z.infer<
@@ -131,6 +157,7 @@ export type TrustRegistrySummary = {
   epochCount: number;
   issuerCounts: Record<AuthorizationRecord["status"], number>;
   verifierCounts: Record<AuthorizationRecord["status"], number>;
+  auditorCounts: Record<AuthorizationRecord["status"], number>;
   recognitionCounts: Record<RecognitionRecord["status"], number>;
 };
 
@@ -200,6 +227,7 @@ export const buildSummary = (
 ): TrustRegistrySummary => {
   const issuerCounts = defaultAuthorizationStatusCounts();
   const verifierCounts = defaultAuthorizationStatusCounts();
+  const auditorCounts = defaultAuthorizationStatusCounts();
   const recognitionCounts = defaultRecognitionStatusCounts();
 
   for (const entry of snapshot.issuerEntries) {
@@ -208,6 +236,10 @@ export const buildSummary = (
 
   for (const entry of snapshot.verifierEntries) {
     verifierCounts[entry.authorization.status] += 1;
+  }
+
+  for (const entry of snapshot.auditorEntries) {
+    auditorCounts[entry.authorization.status] += 1;
   }
 
   for (const entry of snapshot.recognitionEntries) {
@@ -225,6 +257,7 @@ export const buildSummary = (
     epochCount: snapshot.epochs.length,
     issuerCounts,
     verifierCounts,
+    auditorCounts,
     recognitionCounts,
   };
 };
@@ -238,6 +271,7 @@ export const serializeJson = (value: unknown): string =>
   `${JSON.stringify(value, null, 2)}\n`;
 
 export type SnapshotRegistryState = {
+  auditorEntries: readonly TrustRegistryAuthorizationSnapshotEntry[];
   currentEpoch: EpochCommitment;
   epochs: readonly EpochCommitment[];
   issuerEntries: readonly TrustRegistryAuthorizationSnapshotEntry[];

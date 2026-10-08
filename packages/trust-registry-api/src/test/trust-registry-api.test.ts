@@ -6,14 +6,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   applyWorkspaceOperation,
+  collectDistinctEpochs,
+  createDemoSnapshot,
   createOperatorWorkspace,
   resolveWorkspaceOperationRecord,
   writeSnapshotToFile,
   writeWorkspaceToFile,
+  TrustRegistryOperatorSnapshotSchema,
   type TrustRegistryAuthorizationSnapshotEntry,
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistryOperatorWorkspace,
 } from "@midnight-ntwrk/trust-registry-cli";
+import { requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  LocalTrustRegistryIntegrationHarness,
+  bytes32Commitment,
+  createAuditorAuthorizationScopeFixture,
+  createAuditorScenarioFixture,
+} from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   createInMemorySource,
@@ -108,6 +118,142 @@ describe("trust registry api", () => {
 
   afterEach(async () => {
     await rm(tempDir, { force: true, recursive: true });
+  });
+
+  it("keeps auditor current and historical lookups role-disjoint and scope-bound", async () => {
+    const snapshot = createDemoSnapshot({ label: "auditor-query" });
+    const [active, archived] = snapshot.auditorEntries;
+    if (active === undefined || archived === undefined) {
+      throw new Error("expected active and archived auditor fixtures");
+    }
+    const server = await startServer(createInMemorySource(snapshot));
+    const lookup = (role: string, resourceId: string, at?: string) => fetch(
+      `${server.url}/v1/authorizations/${at === undefined ? "resolve" : "evaluate"}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role,
+          subjectDid: active.authorization.subjectDid,
+          resourceId,
+          ...(at === undefined ? {} : { at }),
+        }),
+      },
+    );
+    try {
+      const summary = await (await fetch(`${server.url}/v1/registry/summary`)).json();
+      expect(summary.auditorCounts.active).toBe(1);
+      expect(summary.auditorCounts.archived).toBe(1);
+
+      const activeList = await fetch(`${server.url}/v1/authorizations/auditor?status=active`);
+      expect(activeList.status).toBe(200);
+      expect((await activeList.json()).entries[0].authorization.authorizationId).toBe(
+        active.authorization.authorizationId,
+      );
+      const archivedList = await fetch(`${server.url}/v1/authorizations/auditor?status=archived`);
+      expect(archivedList.status).toBe(200);
+      expect((await archivedList.json()).entries[0].authorization.authorizationId).toBe(
+        archived.authorization.authorizationId,
+      );
+
+      const resolved = await lookup("auditor", active.authorization.resourceId);
+      expect(resolved.status).toBe(200);
+      expect((await resolved.json()).authorization.authorizationId).toBe(active.authorization.authorizationId);
+      const current = await lookup("auditor", active.authorization.resourceId, active.authorization.activeFrom);
+      expect(current.status).toBe(200);
+      expect((await current.json()).trustedAtTime).toBe(true);
+      const historical = await fetch(`${server.url}/v1/authorizations/auditor/${archived.authorization.authorizationId}/evidence`);
+      expect(historical.status).toBe(200);
+      expect((await historical.json()).authorization.status).toBe("archived");
+
+      expect((await lookup("verifier", active.authorization.resourceId)).status).toBe(404);
+      expect((await lookup("auditor", "request-profile:compliance")).status).toBe(400);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("does not collapse same-profile auditor grants with different purposes", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("auditor-scope-query");
+    const first = createAuditorScenarioFixture("same-profile");
+    const secondAuthorizationId = "auth:auditor:same-profile:other-purpose:v1";
+    const secondPurpose = "financial-compliance";
+    const secondResourceId = requestGovernedResourceId({
+      ...createAuditorAuthorizationScopeFixture(first),
+      purpose: secondPurpose,
+    });
+    const second = {
+      ...first,
+      authorizationId: secondAuthorizationId,
+      authorizationIdCommitment: bytes32Commitment(secondAuthorizationId),
+      purpose: secondPurpose,
+      scopeResourceId: secondResourceId,
+      requestResourceIdCommitment: bytes32Commitment(secondResourceId),
+    };
+    expect(second.subjectDid).toBe(first.subjectDid);
+    expect(second.requestProfileId).toBe(first.requestProfileId);
+    expect(second.scopeResourceId).not.toBe(first.scopeResourceId);
+
+    harness.authorizeAuditor(first);
+    harness.authorizeAuditor(second);
+    harness.suspendAuditor(second);
+    harness.revokeAuditor(second);
+    harness.archiveAuditor(second);
+    const activeEvidence = harness.evaluateCurrentAuditorDecision(first);
+    const historicalEvidence = harness.buildAuditorHistoricalEvidence(second);
+    const currentEpoch = harness.publishRegistryEpoch("auditor-query-current");
+    const epochs = collectDistinctEpochs([activeEvidence, historicalEvidence]);
+    if (!epochs.some((epoch) => epoch.epochId === currentEpoch.epochId)) {
+      epochs.push(currentEpoch);
+    }
+    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
+      snapshotVersion: "1",
+      generatedAt: currentEpoch.validUntil,
+      registryLabel: "auditor-scope-query",
+      registry: harness.registryRecord,
+      policy: harness.policyRecord,
+      currentEpoch,
+      epochs,
+      issuerEntries: [],
+      verifierEntries: [],
+      auditorEntries: [
+        { label: "first", authorization: activeEvidence.authorization, evidence: activeEvidence },
+        { label: "second", authorization: historicalEvidence.authorization, evidence: historicalEvidence },
+      ],
+      recognitionEntries: [],
+      notes: [],
+    });
+    const server = await startServer(createInMemorySource(snapshot));
+    const lookup = (resourceId: string, at?: string) => fetch(
+      `${server.url}/v1/authorizations/${at === undefined ? "resolve" : "evaluate"}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "auditor",
+          subjectDid: first.subjectDid,
+          resourceId,
+          ...(at === undefined ? {} : { at }),
+        }),
+      },
+    );
+    try {
+      const firstResult = await lookup(first.scopeResourceId);
+      const secondResult = await lookup(second.scopeResourceId);
+      expect(firstResult.status).toBe(200);
+      expect(secondResult.status).toBe(200);
+      expect((await firstResult.json()).authorization.authorizationId).toBe(first.authorizationId);
+      expect((await secondResult.json()).authorization.authorizationId).toBe(second.authorizationId);
+      expect((await lookup(first.requestProfileId)).status).toBe(400);
+      const historical = await lookup(second.scopeResourceId, historicalEvidence.authorization?.activeFrom);
+      expect(historical.status).toBe(200);
+      expect((await historical.json()).trustedAtTime).toBe(true);
+      const noCurrentTrust = await lookup(second.scopeResourceId, historicalEvidence.authorization?.archivedAt);
+      expect(noCurrentTrust.status).toBe(200);
+      expect((await noCurrentTrust.json()).trustedAtTime).toBe(false);
+    } finally {
+      await server.close();
+    }
   });
 
   it("serves registry summary, scoped authorization resolution, and evidence from a workspace file", async () => {

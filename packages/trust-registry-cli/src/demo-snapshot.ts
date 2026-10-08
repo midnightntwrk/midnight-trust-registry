@@ -1,5 +1,6 @@
 import {
   LocalTrustRegistryIntegrationHarness,
+  createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
@@ -18,6 +19,8 @@ const ACTIVE_ISSUER_LABEL = "passport";
 const HISTORICAL_ISSUER_LABEL = "degree";
 const ACTIVE_VERIFIER_LABEL = "age-gate";
 const HISTORICAL_VERIFIER_LABEL = "employment";
+const ACTIVE_AUDITOR_LABEL = "compliance";
+const HISTORICAL_AUDITOR_LABEL = "retired-audit";
 const ACTIVE_RECOGNITION_LABEL = "gaia-x";
 const HISTORICAL_RECOGNITION_LABEL = "eidas";
 
@@ -43,6 +46,15 @@ const currentVerifierEntry = (
   evidence,
 });
 
+const currentAuditorEntry = (
+  label: string,
+  evidence: TrustRegistryEvidenceBundle,
+) => ({
+  label,
+  authorization: collectAuthorizationRecord(evidence, "auditor"),
+  evidence,
+});
+
 const currentRecognitionEntry = (
   label: string,
   evidence: TrustRegistryEvidenceBundle,
@@ -62,6 +74,8 @@ export const createDemoSnapshot = (
   const historicalIssuer = createIssuerScenarioFixture(HISTORICAL_ISSUER_LABEL);
   const activeVerifier = createVerifierScenarioFixture(ACTIVE_VERIFIER_LABEL);
   const historicalVerifier = createVerifierScenarioFixture(HISTORICAL_VERIFIER_LABEL);
+  const activeAuditor = createAuditorScenarioFixture(ACTIVE_AUDITOR_LABEL);
+  const historicalAuditor = createAuditorScenarioFixture(HISTORICAL_AUDITOR_LABEL);
   const activeRecognition = createRecognitionScenarioFixture(ACTIVE_RECOGNITION_LABEL);
   const historicalRecognition = createRecognitionScenarioFixture(
     HISTORICAL_RECOGNITION_LABEL,
@@ -78,6 +92,12 @@ export const createDemoSnapshot = (
   harness.suspendVerifier(historicalVerifier);
   harness.revokeVerifier(historicalVerifier);
   harness.archiveVerifier(historicalVerifier);
+
+  harness.authorizeAuditor(activeAuditor);
+  harness.authorizeAuditor(historicalAuditor);
+  harness.suspendAuditor(historicalAuditor);
+  harness.revokeAuditor(historicalAuditor);
+  harness.archiveAuditor(historicalAuditor);
 
   harness.authorizeRecognition(activeRecognition);
   harness.authorizeRecognition(historicalRecognition);
@@ -105,6 +125,16 @@ export const createDemoSnapshot = (
       harness.buildVerifierHistoricalEvidence(historicalVerifier),
     ),
   ];
+  const auditorEntries = [
+    currentAuditorEntry(
+      ACTIVE_AUDITOR_LABEL,
+      harness.evaluateCurrentAuditorDecision(activeAuditor),
+    ),
+    currentAuditorEntry(
+      HISTORICAL_AUDITOR_LABEL,
+      harness.buildAuditorHistoricalEvidence(historicalAuditor),
+    ),
+  ];
   const recognitionEntries = [
     currentRecognitionEntry(
       ACTIVE_RECOGNITION_LABEL,
@@ -119,6 +149,7 @@ export const createDemoSnapshot = (
   const bundles = [
     ...issuerEntries.map((entry) => entry.evidence),
     ...verifierEntries.map((entry) => entry.evidence),
+    ...auditorEntries.map((entry) => entry.evidence),
     ...recognitionEntries.map((entry) => entry.evidence),
   ];
   const epochs = collectDistinctEpochs(bundles);
@@ -137,6 +168,7 @@ export const createDemoSnapshot = (
     epochs,
     issuerEntries,
     verifierEntries,
+    auditorEntries,
     recognitionEntries,
     notes: [
       "Simulator-first operator snapshot for local trust-registry inspection.",

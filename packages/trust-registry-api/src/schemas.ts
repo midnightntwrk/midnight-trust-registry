@@ -22,6 +22,7 @@ export const TimestampSchema = z.string().datetime({ offset: true });
 export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
   "issuer",
   "verifier",
+  "auditor",
 ]);
 
 export const TrustRegistryApiApplicationTargetSchema =
@@ -67,6 +68,10 @@ export const TrustRegistryApiSummarySchema = z.object({
     AuthorizationRecordSchema.shape.status,
     z.number().int().nonnegative(),
   ),
+  auditorCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
   recognitionCounts: z.record(
     RecognitionRecordSchema.shape.status,
     z.number().int().nonnegative(),
@@ -102,7 +107,7 @@ const refineAuthorizationLookup = (
       message: "Issuer lookup requires a canonical composite issuer resource id",
     });
   }
-  if (request.role === "verifier"
+  if ((request.role === "verifier" || request.role === "auditor")
     && !RequestGovernedResourceIdSchema.safeParse(request.resourceId).success) {
     ctx.addIssue({
       code: "custom",
