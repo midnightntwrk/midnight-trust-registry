@@ -50,6 +50,7 @@ import {
   type AuthorizedEvidenceVerifier,
   type EpochCommitment,
   GovernancePolicyRecordSchema,
+  IssuerGovernedResourceTypeSchema,
   RecognitionRecordSchema,
   type RegistryRecord,
   RegistryRecordSchema,
@@ -134,13 +135,7 @@ const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource =>
 };
 
 const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
-  const type = ([
-    "credentialFamily",
-    "schema",
-    "schemaVersion",
-    "credentialDefinition",
-    "statusMethodRequirement",
-  ] as const)[fixture.resourceType];
+  const type = IssuerGovernedResourceTypeSchema.options[fixture.resourceType];
   if (type === undefined) throw new Error("Issuer resource type is invalid");
   return { type, id: fixture.resourceId };
 };

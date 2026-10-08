@@ -212,10 +212,13 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         : { ...binding.scope, requestProfileId: "request-profile:other" };
     expect(() => propose(signedEvidence, { ...expected, scope: wrongResourceScope })).toThrow(/proposal scope does not match/);
     if (role === "issuer" && binding.scope.role === "issuer") {
-      const schemaVersion = binding.scope.schemaVersion;
+      const substitutedResourceId = issuerGovernedResourceId(
+        { ...binding.scope, credentialFamilyId: "credential-family:substituted" },
+        "credentialFamily",
+      );
       expect(() => propose(signedEvidence, {
         ...expected,
-        governedResource: { type: "schemaVersion", id: schemaVersion },
+        governedResource: { type: "credentialFamily", id: substitutedResourceId },
       })).toThrow(/proposal scope does not match/);
     }
     if (role === "issuer" && binding.scope.role === "issuer") {

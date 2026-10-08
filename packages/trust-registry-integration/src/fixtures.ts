@@ -7,6 +7,7 @@ import {
 } from "@midnight-ntwrk/midnight-did";
 import {
   createScopedIdentifier,
+  IssuerGovernedResourceTypeSchema,
   issuerGovernedResourceId,
   sha256Hex,
   type AuthorizationScope,
@@ -165,10 +166,7 @@ export const createIssuerScenarioFixture = (
     credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
     statusMethod: "midnight-status-registry-v1",
   };
-  const resourceKinds = [
-    "credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement",
-  ] as const;
-  const resourceKind = resourceKinds[resourceType];
+  const resourceKind = IssuerGovernedResourceTypeSchema.options[resourceType];
   if (resourceKind === undefined) throw new RangeError("Unsupported issuer resource type");
   const resourceId = issuerGovernedResourceId(authorizationScope, resourceKind);
 

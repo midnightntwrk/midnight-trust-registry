@@ -7,6 +7,7 @@ import {
   issuerGovernedResourceId,
 } from "../scope.js";
 import { sha256Hex } from "../ids.js";
+import { governedResourceInScope } from "../application-challenge-binding.js";
 
 const issuer = {
   version: "tr-scope-v1" as const,
@@ -54,6 +55,11 @@ describe("authorization scope v1", () => {
     }
     expect(() => issuerGovernedResourceId(issuer, undefined as never)).toThrow();
     expect(() => issuerGovernedResourceId(issuer, "unknown" as never)).toThrow();
+  });
+
+  it("returns no governed resource for an invalid issuer scope", () => {
+    expect(governedResourceInScope({ ...issuer, schemaVersion: "^1.0.0" }, "credentialFamily"))
+      .toBeNull();
   });
 
   it("normalizes object fields and unordered request arrays", () => {

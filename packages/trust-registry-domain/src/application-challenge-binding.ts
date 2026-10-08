@@ -66,16 +66,18 @@ export function governedResourceInScope(
   scope: z.infer<typeof AuthorizationScopeSchema>,
   type: z.infer<typeof GovernedResourceSchema>["type"],
 ): string | null {
-  if (scope.role === "issuer") {
+  const parsedScope = AuthorizationScopeSchema.safeParse(scope);
+  if (!parsedScope.success) return null;
+  if (parsedScope.data.role === "issuer") {
     switch (type) {
       case "credentialFamily":
       case "schema":
       case "schemaVersion":
       case "credentialDefinition":
-      case "statusMethodRequirement": return issuerGovernedResourceId(scope, type);
+      case "statusMethodRequirement": return issuerGovernedResourceId(parsedScope.data, type);
       default: return null;
     }
   }
-  if (scope.role === "maintainer") return type === "registry" ? scope.registryId : null;
-  return type === "requestProfile" ? scope.requestProfileId : null;
+  if (parsedScope.data.role === "maintainer") return type === "registry" ? parsedScope.data.registryId : null;
+  return type === "requestProfile" ? parsedScope.data.requestProfileId : null;
 }
