@@ -125,6 +125,29 @@ describe("trust registry client", () => {
     }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
     const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
     const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const tamperedEpochRegistry = {
+      ...activeBundle,
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedEpochRegistry, {}))
+      .toThrow(/Epoch registry mismatch/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedEpochRegistry, {
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch registry mismatch/);
+    const tamperedRegistry = {
+      ...activeBundle,
+      registryId: "registry:evil",
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedRegistry, {}))
+      .toThrow(/does not match the simulator ledger/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedRegistry, {
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Registry ID commitment does not match/);
     expect(() => verifyTrustRegistryEvidenceBundle({
       ...activeBundle,
       statusPolicyBinding: {

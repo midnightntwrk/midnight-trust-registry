@@ -102,6 +102,9 @@ const assertEpochAnchor = (
   const { epochRecord } = options;
   const expectedEpochIdCommitment = bytes32Commitment(bundle.epoch.epochId);
 
+  if (bundle.epoch.registryId !== bundle.registryId) {
+    throw new Error("Epoch registry mismatch");
+  }
   if (!sameBytes32(expectedEpochIdCommitment, epochRecord.epochId)) {
     throw new Error("Epoch id mismatch");
   }
@@ -163,6 +166,9 @@ const assertEpochAnchor = (
     || options.registryIdCommitment.every((byte) => byte === 0)
   ) {
     throw new Error("Registry ID commitment is missing or malformed");
+  }
+  if (!sameBytes32(bytes32Commitment(bundle.registryId), options.registryIdCommitment)) {
+    throw new Error("Registry ID commitment does not match the evidence bundle");
   }
 
   let validSignature = false;
