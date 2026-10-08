@@ -1,5 +1,6 @@
 import {
   MAX_FIELD,
+  ecMul,
   type JubjubPoint,
 } from "@midnight-ntwrk/compact-runtime";
 import {
@@ -50,8 +51,8 @@ export const encodeCompactActionKind = (kind: string): Uint8Array => {
   return bytes;
 };
 
-const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
-  signature !== null
+const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean => {
+  const structurallyValid = signature !== null
   && signature !== undefined
   && typeof signature.response === "bigint"
   && signature.announcement !== null
@@ -64,6 +65,14 @@ const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): bo
   && signature.announcement.x <= MAX_FIELD
   && signature.announcement.y >= 0n
   && signature.announcement.y <= MAX_FIELD;
+  if (!structurallyValid) return false;
+  try {
+    ecMul(signature.announcement, 1n);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJubjubSignature => {
   if (

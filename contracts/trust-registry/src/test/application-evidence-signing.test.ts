@@ -114,6 +114,11 @@ describe("application evidence commitment signing", () => {
       response: signature.response + JUBJUB_ORDER,
     })).toString("hex")}`;
     expect(() => decodeCanonicalJubjubSignatureHex(highResponse)).toThrow(/encoding is invalid/);
+    const offCurve = `0x${Buffer.from(encodeJubjubSignature({
+      announcement: { x: 3n, y: 5n },
+      response: signature.response,
+    })).toString("hex")}`;
+    expect(() => decodeCanonicalJubjubSignatureHex(offCurve)).toThrow(/encoding is invalid/);
   });
 
   it("fails closed for malformed structured maintainer signatures", () => {
