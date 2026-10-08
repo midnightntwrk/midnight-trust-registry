@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 
 import {
   computeCreateAuditorAuthorizationPayloadHash,
@@ -67,6 +68,7 @@ const ARCHIVE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:
 const PROPOSE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:propose");
 const AUTHORIZE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:authorize");
 const ACTIVATE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:activate");
+const SUSPEND_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:suspend");
 const REVOKE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:revoke");
 const ARCHIVE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:archive");
 const PROPOSE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:propose");
@@ -80,6 +82,27 @@ const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
 );
 const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
+
+it("pins every governed action kind to a Compact literal", () => {
+  const compactSource = readFileSync(new URL("../trust-registry.compact", import.meta.url), "utf8");
+  const compactKinds = [...compactSource.matchAll(/pad\(32, "(tr:(?:maintainer|issuer|verifier|auditor|recognition|epoch|audit):[^"]+|tr:policy:thresholds:update)"\)/g)]
+    .map((match) => match[1]);
+  const expected = [
+    PROPOSE_ISSUER_ACTION_KIND, AUTHORIZE_ISSUER_ACTION_KIND, ACTIVATE_ISSUER_ACTION_KIND,
+    SUSPEND_ISSUER_ACTION_KIND, REVOKE_ISSUER_ACTION_KIND, ARCHIVE_ISSUER_ACTION_KIND,
+    PROPOSE_VERIFIER_ACTION_KIND, AUTHORIZE_VERIFIER_ACTION_KIND, ACTIVATE_VERIFIER_ACTION_KIND,
+    SUSPEND_VERIFIER_ACTION_KIND, REVOKE_VERIFIER_ACTION_KIND, ARCHIVE_VERIFIER_ACTION_KIND,
+    PROPOSE_RECOGNITION_ACTION_KIND, AUTHORIZE_RECOGNITION_ACTION_KIND, ACTIVATE_RECOGNITION_ACTION_KIND,
+    SUSPEND_RECOGNITION_ACTION_KIND, REVOKE_RECOGNITION_ACTION_KIND, ARCHIVE_RECOGNITION_ACTION_KIND,
+    PROPOSE_AUDITOR_ACTION_KIND, AUTHORIZE_AUDITOR_ACTION_KIND, ACTIVATE_AUDITOR_ACTION_KIND,
+    SUSPEND_AUDITOR_ACTION_KIND, REVOKE_AUDITOR_ACTION_KIND, ARCHIVE_AUDITOR_ACTION_KIND,
+    PROPOSE_MAINTAINER_ACTION_KIND, AUTHORIZE_MAINTAINER_ACTION_KIND, ACTIVATE_MAINTAINER_ACTION_KIND,
+    SUSPEND_MAINTAINER_ACTION_KIND, REVOKE_MAINTAINER_ACTION_KIND, ARCHIVE_MAINTAINER_ACTION_KIND,
+    UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, CREATE_EPOCH_ACTION_KIND, GENERIC_AUDIT_ACTION_KIND,
+  ];
+  expect(new Set(compactKinds.map((kind) => Buffer.from(encodeCompactActionKind(kind)).toString("hex"))))
+    .toEqual(new Set(expected.map((kind) => Buffer.from(kind).toString("hex"))));
+});
 
 const createInitializedRegistryFixture = (seedByte: number) => {
   const simulator = new TrustRegistrySimulator();
