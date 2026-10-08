@@ -23,6 +23,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./simulator": {
+      "types": "./dist/simulator-client.d.ts",
+      "import": "./dist/simulator-client.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "simulator": ["dist/simulator-client.d.ts"]
     }
   },
   "files": [

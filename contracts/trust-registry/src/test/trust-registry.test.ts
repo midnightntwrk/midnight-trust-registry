@@ -85,9 +85,9 @@ const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
 
 it("pins every governed action kind to a Compact literal", () => {
   const compactSource = readFileSync(new URL("../trust-registry.compact", import.meta.url), "utf8");
-  const compactKinds = [...compactSource.matchAll(/pad\(32, "(tr:[^"]+)"\)/g)]
-    .map((match) => match[1]!)
-    .filter((kind) => kind !== "tr:app:evidence:sig:v1" && kind !== "tr:policy:action:v1");
+  const compactKinds = [...compactSource.matchAll(
+    /performAuthorizedMaintainerAction\(\s*authorizationBundle,\s*pad\(32, "(tr:[^"]+)"\)/g,
+  )].map((match) => match[1]!);
   const expected = [
     PROPOSE_ISSUER_ACTION_KIND, AUTHORIZE_ISSUER_ACTION_KIND, ACTIVATE_ISSUER_ACTION_KIND,
     SUSPEND_ISSUER_ACTION_KIND, REVOKE_ISSUER_ACTION_KIND, ARCHIVE_ISSUER_ACTION_KIND,
@@ -103,6 +103,16 @@ it("pins every governed action kind to a Compact literal", () => {
   ];
   expect(new Set(compactKinds.map((kind) => Buffer.from(encodeCompactActionKind(kind)).toString("hex"))))
     .toEqual(new Set(expected.map((kind) => Buffer.from(kind).toString("hex"))));
+  for (const path of [
+    "../../../../packages/trust-registry-integration/src/local-simulator-harness.ts",
+    "../../../../packages/trust-registry-client/src/evidence.ts",
+  ]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    const signerKinds = [...source.matchAll(/encodeCompactActionKind\(\s*"(tr:[^"]+)"\s*\)/g)]
+      .map((match) => match[1]!);
+    expect(signerKinds.length).toBeGreaterThan(0);
+    for (const kind of signerKinds) expect(compactKinds).toContain(kind);
+  }
 });
 
 const createInitializedRegistryFixture = (seedByte: number) => {
