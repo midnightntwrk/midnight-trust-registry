@@ -40,6 +40,12 @@ it("encodes Compact action kinds exactly and rejects overlong values", () => {
   expect(() => encodeCompactActionKind(`tr:${"x".repeat(30)}`)).toThrow(/exceeds Compact Bytes<32>/);
 });
 
+it("rejects malformed fixture labels before UTF-8 replacement can alias them", () => {
+  expect(() => labelToBytes32(`${"x".repeat(31)}\ud800`)).toThrow(/valid UTF-16/);
+  expect(() => labelToBytes32(`${"x".repeat(31)}\udc00`)).toThrow(/valid UTF-16/);
+  expect(labelToBytes32("valid-\ud83d\ude00")).toHaveLength(32);
+});
+
 const PROPOSE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:propose");
 const AUTHORIZE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:authorize");
 const ACTIVATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:activate");

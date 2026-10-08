@@ -81,17 +81,13 @@ export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJ
   throw new Error("Jubjub signature encoding is invalid");
 };
 
-const ensure32Bytes = (value: Uint8Array): Buffer => {
-  const buffer = Buffer.from(value);
-  if (buffer.length === 32) return buffer;
-  if (buffer.length > 32) return buffer.subarray(0, 32);
-  return Buffer.concat([buffer, Buffer.alloc(32 - buffer.length)]);
-};
-
 const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   if (value.length !== 32) throw new RangeError(`${label} must be 32 bytes`);
   return Buffer.from(value);
 };
+
+const ensure32Bytes = (value: Uint8Array): Buffer =>
+  require32Bytes(value, "Compact payload field");
 
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
 export const applicationEvidenceSignatureDigest = (

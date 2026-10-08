@@ -31,6 +31,18 @@ import {
 
 export const labelToBytes32 = (label: string): Uint8Array => {
   if (label.includes("\0")) throw new Error("Fixture labels must not contain NUL bytes");
+  for (let index = 0; index < label.length; index += 1) {
+    const code = label.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = label.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff || Number.isNaN(next)) {
+        throw new Error("Fixture labels must contain valid UTF-16");
+      }
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new Error("Fixture labels must contain valid UTF-16");
+    }
+  }
   const encoded = Buffer.from(label, "utf8");
   // Compact action-kind fixtures keep their short ASCII encoding; long labels get distinct test-only digests.
   if (encoded.length > 32) {
