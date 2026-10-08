@@ -29,6 +29,7 @@ export type ReviewCard = {
 };
 
 export type ReviewBoard = {
+  auditors: readonly TrustRegistryAuthorizationSnapshotEntry[];
   recognitions: readonly TrustRegistryRecognitionSnapshotEntry[];
   summary: TrustRegistryApiSummary;
   verifiers: readonly TrustRegistryAuthorizationSnapshotEntry[];
@@ -110,27 +111,54 @@ export const getReviewActions = (
   status: ReviewStatus,
 ): readonly ReviewAction[] => REVIEW_ACTIONS_BY_STATUS[status];
 
+export const describeActionConfirmation = (
+  card: ReviewCard,
+  action: ReviewAction,
+): string =>
+  `Confirm ${action} for ${card.target} record ${card.id} (${card.status})? This governed action cannot be undone from the console.`;
+
+export const executeReviewAction = async (
+  card: ReviewCard,
+  action: ReviewAction,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  mutate: (target: ReviewTarget, id: string, action: ReviewAction) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!getReviewActions(card.status).includes(action)) {
+    throw new Error(`${action} is not available for ${card.status} ${card.target} record`);
+  }
+  if (!(await confirm(describeActionConfirmation(card, action)))) return null;
+  return mutate(card.target, card.id, action);
+};
+
 export const toAuthorizationReviewCard = (
-  target: Extract<ReviewTarget, "issuer" | "verifier">,
+  target: Extract<ReviewTarget, "issuer" | "verifier" | "auditor">,
   entry: TrustRegistryAuthorizationSnapshotEntry,
-): ReviewCard => ({
-  detailRows: [
-    { label: "Authorization ID", value: entry.authorization.authorizationId },
-    { label: "Subject DID", value: entry.authorization.subjectDid },
-    { label: "Scope", value: `${entry.authorization.resourceType}:${entry.authorization.resourceId}` },
-    { label: "Trust level", value: entry.authorization.trustLevel },
-    { label: "Policy", value: entry.authorization.policyId },
-  ],
-  id: entry.authorization.authorizationId,
-  key: `${target}:${entry.authorization.authorizationId}`,
-  label: entry.label,
-  scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
-  status: entry.authorization.status,
-  subject: entry.authorization.subjectDid,
-  target,
-  trustLevel: entry.authorization.trustLevel,
-  updatedAt: latestAuthorizationTimestamp(entry),
-});
+): ReviewCard => {
+  if (entry.authorization.role !== target) {
+    throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
+  }
+  return {
+    detailRows: [
+      { label: "Authorization ID", value: entry.authorization.authorizationId },
+      { label: "Subject DID", value: entry.authorization.subjectDid },
+      { label: "Scope", value: `${entry.authorization.resourceType}:${entry.authorization.resourceId}` },
+      { label: "Governed resource ID", value: entry.authorization.resourceId },
+      { label: "Trust level", value: entry.authorization.trustLevel },
+      { label: "Policy", value: entry.authorization.policyId },
+      { label: "Evidence epoch", value: entry.evidence.epoch.epochId },
+      { label: "Evidence state root", value: entry.evidence.epoch.stateRoot },
+    ],
+    id: entry.authorization.authorizationId,
+    key: `${target}:${entry.authorization.authorizationId}`,
+    label: entry.label,
+    scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
+    status: entry.authorization.status,
+    subject: entry.authorization.subjectDid,
+    target,
+    trustLevel: entry.authorization.trustLevel,
+    updatedAt: latestAuthorizationTimestamp(entry),
+  };
+};
 
 export const toRecognitionReviewCard = (
   entry: TrustRegistryRecognitionSnapshotEntry,
@@ -159,6 +187,7 @@ export const buildReviewCards = (
 ): readonly ReviewCard[] => [
   ...board.issuers.map((entry) => toAuthorizationReviewCard("issuer", entry)),
   ...board.verifiers.map((entry) => toAuthorizationReviewCard("verifier", entry)),
+  ...board.auditors.map((entry) => toAuthorizationReviewCard("auditor", entry)),
   ...board.recognitions.map(toRecognitionReviewCard),
 ].sort(statusSort);
 

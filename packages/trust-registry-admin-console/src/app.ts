@@ -10,6 +10,7 @@ import {
   REVIEW_STATUS_LABELS,
   buildReviewCards,
   describeMutation,
+  executeReviewAction,
   getReviewActions,
   groupReviewCards,
   type ReviewBoard,
@@ -53,6 +54,7 @@ const countCards = (
 ): number =>
   board.summary.issuerCounts[status]
   + board.summary.verifierCounts[status]
+  + board.summary.auditorCounts[status]
   + board.summary.recognitionCounts[status];
 
 export const createAdminConsoleApp = (
@@ -61,11 +63,13 @@ export const createAdminConsoleApp = (
     fetchImpl?: typeof fetch;
     initialUrl?: URL;
     storage?: Storage;
+    confirm?: (message: string) => boolean | Promise<boolean>;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  const confirm = options.confirm ?? window.confirm.bind(window);
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
 
@@ -126,9 +130,12 @@ export const createAdminConsoleApp = (
       return;
     }
 
-    setState({ loading: true, error: undefined, flash: undefined });
     try {
-      const result = await getClient().mutate(card.target, card.id, action);
+      const result = await executeReviewAction(card, action, confirm, async (target, id, confirmedAction) => {
+        setState({ loading: true, error: undefined, flash: undefined });
+        return getClient().mutate(target, id, confirmedAction);
+      });
+      if (result === null) return;
       await refreshBoard(describeMutation(result));
     } catch (error) {
       setState({
@@ -279,6 +286,7 @@ export const createAdminConsoleApp = (
               <dd><code>${escapeHtml(row.value)}</code></dd>
             </div>
           `).join("")}
+          ${card.target === "auditor" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
           <div>
             <dt>Last update</dt>
             <dd>${escapeHtml(card.updatedAt)}</dd>
@@ -304,7 +312,7 @@ export const createAdminConsoleApp = (
             <div>
               <p class="eyebrow">Governed Review Surface</p>
               <h1>Trust Registry Admin Console</h1>
-              <p>Review issuer, verifier, and recognition proposals from the local governed API. This slice stays local-first: it reads the same workspace-backed trust-registry state that the operator CLI and HTTP mutation surface already govern.</p>
+              <p>Review issuer, verifier, auditor, and recognition proposals from the local governed API. This slice stays local-first: it reads the same workspace-backed trust-registry state that the operator CLI and HTTP mutation surface already govern.</p>
             </div>
           </div>
           <div class="toolbar">
