@@ -94,9 +94,55 @@ test("missing runtime without a verified delegate fails", () => withFixture(({ r
 
 test("dev-only runtime is not a production declaration", () => withFixture(({ root, save, leafManifest }) => {
   delete leafManifest.peerDependencies;
-  leafManifest.devDependencies = { [runtime]: pin };
+  leafManifest.devDependencies = { [runtime]: "^0.15.0" };
   save();
   assert.throws(() => checkInstalledIdentityRuntime(root), /neither declares Compact runtime nor delegates/);
+}));
+
+test("non-identity Midnight packages are outside the identity graph", () => withFixture(({ root, save, rootManifest }) => {
+  rootManifest.dependencies[`${scope}/midnight-js-ledger`] = "3.0.0";
+  save();
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+}));
+
+test("compatible published delegate ranges are checked against resolved versions", () => withFixture(({ root, save, umbrellaManifest }) => {
+  umbrellaManifest.dependencies[leaf] = "^0.7.0";
+  save();
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+}));
+
+test("direct runtime packages still validate nested identities", () => withFixture(({ root, save, leafManifest, put }) => {
+  const nested = `${scope}/credential-compact`;
+  leafManifest.dependencies = { [nested]: "^0.2.0" };
+  save();
+  put(`node_modules/${leaf}/node_modules/${nested}/package.json`, {
+    name: nested, version: "0.2.0", peerDependencies: { [runtime]: "0.15.0" },
+  });
+  put(`node_modules/${leaf}/node_modules/${nested}/index.js`, "module.exports = {};\n");
+  assert.throws(() => checkInstalledIdentityRuntime(root), /declares Compact runtime/);
+}));
+
+test("delegation can use an identity package absent from root dependencies", () => withFixture(({ root, save, umbrellaManifest, put }) => {
+  const nested = `${scope}/credential-compact`;
+  umbrellaManifest.dependencies = { [nested]: "^0.2.0" };
+  save();
+  put(`node_modules/${umbrella}/node_modules/${nested}/package.json`, {
+    name: nested, version: "0.2.0", dependencies: { [leaf]: "^0.7.0" },
+  });
+  put(`node_modules/${umbrella}/node_modules/${nested}/index.js`, "module.exports = {};\n");
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+}));
+
+test("missing declared runtime has gate context", () => withFixture(({ root }) => {
+  rmSync(join(root, "node_modules", leaf, "node_modules", runtime), { recursive: true, force: true });
+  assert.throws(() => checkInstalledIdentityRuntime(root), /cannot resolve declared Compact runtime/);
+}));
+
+test("selector overrides are checked for both identity and runtime pins", () => withFixture(({ root, put }) => {
+  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@^0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@^0.16.0": 0.16.0\n`);
+  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
+  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}@^0.7.0": 0.7.0\n  "${umbrella}": 0.7.0\n  "${umbrella}>${runtime}@^0.16.0": 0.15.0\n`);
+  assert.throws(() => checkInstalledIdentityRuntime(root), /Compact runtime override 0\.15\.0/);
 }));
 
 test("umbrella cannot hide a drifted hoisted runtime", () => withFixture(({ root, put }) => {
@@ -108,12 +154,12 @@ test("umbrella cannot hide a drifted hoisted runtime", () => withFixture(({ root
 test("umbrella must resolve the verified delegate version", () => withFixture(({ root, put }) => {
   put(`node_modules/${umbrella}/node_modules/${leaf}/package.json`, { name: leaf, version: "0.6.0" });
   put(`node_modules/${umbrella}/node_modules/${leaf}/index.js`, "module.exports = {};\n");
-  assert.throws(() => checkInstalledIdentityRuntime(root), /resolves .*@0\.6\.0, expected 0\.7\.0/);
+  assert.throws(() => checkInstalledIdentityRuntime(root), /resolves .*@0\.6\.0, incompatible with 0\.7\.0/);
 }));
 
 test("new root identity dependency is discovered and must be installed", () => withFixture(({ root, save, rootManifest, overrides }) => {
   rootManifest.dependencies[`${scope}/credential-compact`] = "0.2.0";
   overrides[`${scope}/credential-compact`] = "0.2.0";
   save();
-  assert.throws(() => checkInstalledIdentityRuntime(root), /ENOENT/);
+  assert.throws(() => checkInstalledIdentityRuntime(root), /Missing installed identity package/);
 }));

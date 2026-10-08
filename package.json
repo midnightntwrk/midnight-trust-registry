@@ -65,6 +65,7 @@
     "eslint": "^9.29.0",
     "eslint-config-prettier": "^10.1.5",
     "js-yaml": "4.3.2",
+    "semver": "^7.8.1",
     "turbo": "^2.10.13",
     "typescript": "^5.8.3",
     "vitest": "^4.1.11"
