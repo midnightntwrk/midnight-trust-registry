@@ -12,7 +12,10 @@ import type {
   RecognitionRecord,
   VerifierAuthorizationRecord,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  TrustRegistryEvidenceBundleSchema,
+  type TrustRegistryEvidenceBundle,
+} from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   verifyAuditorAuthorizationBundle,
@@ -207,6 +210,10 @@ export class TrustRegistrySimulatorClient {
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
     const ledger = this.requireSupportedLedger();
+    if (typeof bundle?.registryId !== "string" || bundle.registryId.length === 0) {
+      throw new Error("Bundle registry ID is missing or malformed");
+    }
+    bundle = TrustRegistryEvidenceBundleSchema.parse(bundle);
     if (!sameBytes32(bytes32Commitment(bundle.registryId), ledger.registryId)) {
       throw new Error("Bundle registry ID does not match the simulator ledger");
     }

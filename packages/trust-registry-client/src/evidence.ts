@@ -105,6 +105,12 @@ const assertEpochAnchor = (
   if (bundle.epoch.registryId !== bundle.registryId) {
     throw new Error("Epoch registry mismatch");
   }
+  if (bundle.authorization !== undefined && bundle.authorization.registryId !== bundle.registryId) {
+    throw new Error("Authorization registry mismatch");
+  }
+  if (bundle.recognition !== undefined && bundle.recognition.registryId !== bundle.registryId) {
+    throw new Error("Recognition registry mismatch");
+  }
   if (!sameBytes32(expectedEpochIdCommitment, epochRecord.epochId)) {
     throw new Error("Epoch id mismatch");
   }

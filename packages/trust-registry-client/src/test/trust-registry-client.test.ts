@@ -136,10 +136,19 @@ describe("trust registry client", () => {
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch registry mismatch/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      registryId: undefined as never,
+    }, {})).toThrow(/Bundle registry ID is missing or malformed/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
+    }, {})).toThrow(/Authorization registry mismatch/);
     const tamperedRegistry = {
       ...activeBundle,
       registryId: "registry:evil",
       epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
     };
     expect(() => client.verifyIssuerAuthorizationBundle(tamperedRegistry, {}))
       .toThrow(/does not match the simulator ledger/);
@@ -374,6 +383,10 @@ describe("trust registry client", () => {
         expectedRecognizedRegistryId: recognition.recognizedRegistryId,
       }),
     ).not.toThrow();
+    expect(() => client.verifyRecognitionBundle({
+      ...recognitionBundle,
+      recognition: { ...recognitionBundle.recognition!, registryId: "registry:evil" },
+    }, {})).toThrow(/Recognition registry mismatch/);
   });
 
   it("rejects stale epochs and tampered maintainer signatures deterministically", () => {
