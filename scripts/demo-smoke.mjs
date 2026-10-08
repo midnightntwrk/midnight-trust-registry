@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { request as httpRequest } from "node:http";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -122,6 +124,29 @@ const requestJson = async (url, init) => {
   return payload;
 };
 
+const requestRawPath = async (url, pathname) =>
+  await new Promise((resolve, reject) => {
+    const address = new URL(url);
+    const request = httpRequest({
+      hostname: address.hostname,
+      port: Number(address.port),
+      path: pathname,
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, body }));
+      response.on("error", reject);
+      response.on("aborted", () => reject(new Error(`Static asset response aborted for ${pathname}`)));
+      response.on("close", () => {
+        if (!response.complete) reject(new Error(`Static asset response closed early for ${pathname}`));
+      });
+    });
+    request.on("error", reject);
+    request.setTimeout(5_000, () => request.destroy(new Error(`Static asset request timed out for ${pathname}`)));
+    request.end();
+  });
+
 const waitForUi = async (url, child, title, distDir) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
@@ -162,6 +187,47 @@ const waitForUi = async (url, child, title, distDir) => {
       if (!(await assetResponse.text()).trim()) {
         throw new Error(`${title} served an empty ${asset}`);
       }
+    }
+    const siblingDir = fs.mkdtempSync(`${distDir}-other-`);
+    const secretPath = path.join(siblingDir, "secret.txt");
+    const linkName = `outside-${randomUUID()}.txt`;
+    const linkPath = path.join(distDir, linkName);
+    try {
+      fs.writeFileSync(secretPath, "outside-dist-secret\n");
+      fs.symlinkSync(secretPath, linkPath);
+      const absoluteIndex = await requestRawPath(url, `${url}/index.html`);
+      if (absoluteIndex.status !== 200 || !absoluteIndex.body.includes(`<title>${title}</title>`)) {
+        throw new Error(`${title} did not serve an absolute-form index request`);
+      }
+      for (const target of [
+        `${url}?redirect=/styles.css`,
+        "/index.html#fragment",
+        `${url.replace(/^http:/u, "HTTP:")}/index.html`,
+      ]) {
+        const result = await requestRawPath(url, target);
+        if (result.status !== 200 || !result.body.includes(`<title>${title}</title>`)) {
+          throw new Error(`${title} did not serve index.html for ${target}`);
+        }
+      }
+      for (const [pathname, expectedStatus] of [
+        [`/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`${url}/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`/%2e%2e/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`/${linkName}`, 403],
+        ["/missing-static-asset.txt", 404],
+        ["/%zz", 400],
+      ]) {
+        const result = await requestRawPath(url, pathname);
+        if (result.body.includes("outside-dist-secret")) {
+          throw new Error(`${title} exposed a file outside dist through ${pathname}`);
+        }
+        if (result.status !== expectedStatus) {
+          throw new Error(`${title} served ${pathname} with HTTP ${result.status}, expected ${expectedStatus}`);
+        }
+      }
+    } finally {
+      fs.rmSync(linkPath, { force: true });
+      fs.rmSync(siblingDir, { recursive: true, force: true });
     }
     return;
   }

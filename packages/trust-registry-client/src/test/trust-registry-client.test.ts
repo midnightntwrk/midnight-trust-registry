@@ -21,6 +21,9 @@ import {
   verifyTrustRegistryEvidenceBundle,
 } from "../index.js";
 
+const changeLastHexNibble = (hash: string): string =>
+  `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
+
 describe("trust registry client", () => {
   it("rejects every raw record read if the ledger format changes after construction", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
@@ -169,7 +172,7 @@ describe("trust registry client", () => {
           ...activeBundle,
           inclusionProof: {
             ...activeBundle.inclusionProof,
-            leafHash: `${activeBundle.inclusionProof.leafHash.slice(0, -1)}0`,
+            leafHash: changeLastHexNibble(activeBundle.inclusionProof.leafHash),
           },
         },
         {
@@ -184,7 +187,7 @@ describe("trust registry client", () => {
           ...activeBundle,
           inclusionProof: {
             ...activeBundle.inclusionProof,
-            path: [`${activeBundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+            path: [changeLastHexNibble(activeBundle.inclusionProof.path[0]!)],
           },
         },
         {
