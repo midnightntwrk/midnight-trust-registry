@@ -1,8 +1,8 @@
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
-  TrustRegistrySimulator,
   type IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
 import type {
   AuditorAuthorizationRecord,
   EpochCommitmentRecord,

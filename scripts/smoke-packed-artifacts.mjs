@@ -121,6 +121,11 @@ try {
       "  await import(specifier);",
       "  console.log(`[smoke-packed-artifacts] imported ${specifier}`);",
       "}",
+      'const contract = await import("@midnight-ntwrk/trust-registry-contract");',
+      'const fixtures = await import("@midnight-ntwrk/trust-registry-contract/testing");',
+      'if ("labelToBytes32" in contract || typeof fixtures.labelToBytes32 !== "function") {',
+      '  throw new Error("Trust Registry contract fixture exports crossed the package boundary");',
+      '}',
     ].join("\n"),
   );
 
