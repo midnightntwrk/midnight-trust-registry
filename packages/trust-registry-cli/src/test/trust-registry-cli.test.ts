@@ -77,6 +77,16 @@ describe("trust registry operator CLI", () => {
         },
       }],
     }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      auditorEntries: [{
+        ...auditor,
+        evidence: {
+          ...auditor.evidence,
+          policy: { ...auditor.evidence.policy, policyUri: "https://example.net/substituted" },
+        },
+      }],
+    }).success).toBe(false);
     const recognition = snapshot.recognitionEntries[0];
     const otherRecognition = snapshot.recognitionEntries[1];
     if (recognition === undefined || otherRecognition === undefined) {

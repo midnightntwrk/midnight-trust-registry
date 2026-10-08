@@ -8,8 +8,10 @@ import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type EpochCommitment,
   type GovernancePolicyRecord,
@@ -50,6 +52,7 @@ export type TrustRegistryRecognitionSnapshotEntry = z.infer<
   typeof TrustRegistryRecognitionSnapshotEntrySchema
 >;
 
+// Snapshot consistency is not an independently authenticated epoch or quorum witness.
 const hasConsistentSnapshotProof = (
   bundle: TrustRegistryEvidenceBundle,
   leafHash: string,
@@ -65,7 +68,9 @@ const hasConsistentSnapshotProof = (
     || bundle.inclusionProof.root !== bundle.epoch.stateRoot
     || bundle.inclusionProof.path[0] !== bundle.epoch.eventRoot) return false;
   try {
-    return computeMerkleRootFromProof(
+    return computeGovernancePolicySnapshotCommitment(
+      deriveGovernancePolicySnapshot(bundle.policy),
+    ) === bundle.epoch.policyRoot && computeMerkleRootFromProof(
       leafHash,
       bundle.inclusionProof.path,
       bundle.inclusionProof.leafIndex,

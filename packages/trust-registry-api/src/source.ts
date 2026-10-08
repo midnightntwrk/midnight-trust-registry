@@ -327,26 +327,24 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
 ): Promise<SnapshotTemporalAuthorizationInspection | null> => {
   const snapshot = await source.loadSnapshot();
 
-  if (request.role === "issuer") {
-    return resolveIssuerEntryAtTimestamp(
-      snapshot,
-      evaluatedAt,
-      (entry) => matchesAuthorizationRequest(entry, request),
-    );
+  switch (request.role) {
+    case "issuer":
+      return resolveIssuerEntryAtTimestamp(
+        snapshot, evaluatedAt, (entry) => matchesAuthorizationRequest(entry, request),
+      );
+    case "auditor":
+      return resolveAuditorEntryAtTimestamp(
+        snapshot, evaluatedAt, (entry) => matchesAuthorizationRequest(entry, request),
+      );
+    case "verifier":
+      return resolveVerifierEntryAtTimestamp(
+        snapshot, evaluatedAt, (entry) => matchesAuthorizationRequest(entry, request),
+      );
+    default: {
+      const unsupportedRole: never = request.role;
+      throw new Error(`Unsupported authorization role: ${String(unsupportedRole)}`);
+    }
   }
-
-  if (request.role === "auditor") {
-    return resolveAuditorEntryAtTimestamp(
-      snapshot,
-      evaluatedAt,
-      (entry) => matchesAuthorizationRequest(entry, request),
-    );
-  }
-  return resolveVerifierEntryAtTimestamp(
-    snapshot,
-    evaluatedAt,
-    (entry) => matchesAuthorizationRequest(entry, request),
-  );
 };
 
 export const listRecognitionEntries = async (
