@@ -78,6 +78,10 @@ export const IssuerGovernedResourceTypeSchema = z.enum([
   "credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement",
 ]);
 export type IssuerGovernedResourceType = z.infer<typeof IssuerGovernedResourceTypeSchema>;
+export const IssuerGovernedResourceIdSchema = ScopedIdentifierSchema.regex(
+  /^tr:issuer-resource:v1:[0-9a-f]{64}$/u,
+  "Issuer resource id must be a canonical composite issuer resource id",
+);
 
 /** V1 scopes contain only strings and string arrays, so JSON string escaping is JCS-compatible. */
 export function canonicalizeAuthorizationScope(scope: AuthorizationScope): string {
@@ -105,13 +109,21 @@ export function issuerGovernedResourceId(
   type: IssuerGovernedResourceType,
 ): string {
   const parsedScope = IssuerScopeSchema.parse(scope);
+  return issuerGovernedResourceIdFromScopeCommitment(computeAuthorizationScopeCommitment(parsedScope), type);
+}
+
+export function issuerGovernedResourceIdFromScopeCommitment(
+  scopeCommitment: string,
+  type: IssuerGovernedResourceType,
+): string {
   const parsedType = IssuerGovernedResourceTypeSchema.parse(type);
+  const parsedCommitment = ExactHashSchema.parse(scopeCommitment);
   const preimage = JSON.stringify([
     "tr:issuer-resource:v1",
     parsedType,
-    computeAuthorizationScopeCommitment(parsedScope),
+    parsedCommitment,
   ]);
-  return ScopedIdentifierSchema.parse(`tr:issuer-resource:v1:${sha256Hex(preimage).slice(2)}`);
+  return IssuerGovernedResourceIdSchema.parse(`tr:issuer-resource:v1:${sha256Hex(preimage).slice(2)}`);
 }
 
 function isUnicodeScalar(value: string): boolean {

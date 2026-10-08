@@ -50,7 +50,6 @@ import {
   type AuthorizedEvidenceVerifier,
   type EpochCommitment,
   GovernancePolicyRecordSchema,
-  IssuerGovernedResourceTypeSchema,
   RecognitionRecordSchema,
   type RegistryRecord,
   RegistryRecordSchema,
@@ -80,6 +79,7 @@ import {
   createMidnightDid,
   createVerifierAuthorizationScopeFixture,
   type IssuerScenarioFixture,
+  issuerResourceTypeDetails,
   type MaintainerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
@@ -135,7 +135,7 @@ const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource =>
 };
 
 const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
-  const type = IssuerGovernedResourceTypeSchema.options[fixture.resourceType];
+  const type = issuerResourceTypeDetails[fixture.resourceType]?.governedType;
   if (type === undefined) throw new Error("Issuer resource type is invalid");
   return { type, id: fixture.resourceId };
 };
@@ -172,22 +172,7 @@ const assertUnreachable = (value: never): never => {
 
 const issuerResourceTypeName = (
   resourceType: IssuerResourceType,
-): AuthorizationRecord["resourceType"] => {
-  switch (resourceType) {
-    case IssuerResourceType.credentialFamily:
-      return "credential-family";
-    case IssuerResourceType.schema:
-      return "schema";
-    case IssuerResourceType.schemaVersion:
-      return "schema-version";
-    case IssuerResourceType.credentialDefinition:
-      return "credential-definition";
-    case IssuerResourceType.statusMethodRequirement:
-      return "status-method-requirement";
-  }
-
-  return assertUnreachable(resourceType);
-};
+): AuthorizationRecord["resourceType"] => issuerResourceTypeDetails[resourceType].recordType;
 
 const contractStatusName = (
   status: ContractAuthorizationStatus,

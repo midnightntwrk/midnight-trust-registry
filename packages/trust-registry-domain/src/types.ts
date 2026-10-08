@@ -5,6 +5,7 @@ import {
   assertAscendingTimestamps,
   LifecycleStatusSchema,
 } from "./lifecycle.js";
+import { IssuerGovernedResourceIdSchema } from "./scope.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -274,6 +275,22 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
   archivedAt: TimestampSchema.optional(),
   evidenceHash: HashHexSchema,
 }).superRefine((record, ctx) => {
+  if (record.role === "issuer" && !IssuerGovernedResourceIdSchema.safeParse(record.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization resource id must be a canonical composite issuer resource id",
+      path: ["resourceId"],
+    });
+  }
+  if (record.role === "issuer" && ![
+    "credential-family", "schema", "schema-version", "credential-definition", "status-method-requirement",
+  ].includes(record.resourceType)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization resource type is invalid",
+      path: ["resourceType"],
+    });
+  }
   if (record.role === "issuer" && record.statusPolicyBindingCommitment === undefined) {
     ctx.addIssue({
       code: "custom",

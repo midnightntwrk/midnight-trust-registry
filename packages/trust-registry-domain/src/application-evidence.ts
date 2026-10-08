@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
-import { IssuerGovernedResourceTypeSchema } from "./scope.js";
+import {
+  IssuerGovernedResourceIdSchema,
+  IssuerGovernedResourceTypeSchema,
+  issuerGovernedResourceIdFromScopeCommitment,
+} from "./scope.js";
 import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -29,7 +33,7 @@ export const GovernedResourceSchema = z.strictObject({
 }).superRefine((resource, ctx) => {
   if (
     IssuerGovernedResourceTypeSchema.safeParse(resource.type).success
-    && !/^tr:issuer-resource:v1:[0-9a-f]{64}$/u.test(resource.id)
+    && !IssuerGovernedResourceIdSchema.safeParse(resource.id).success
   ) {
     ctx.addIssue({
       code: "custom",
@@ -58,6 +62,20 @@ export const ApplicationEvidenceEnvelopeSchema = z
     claimsCommitment: HashHexSchema,
   })
   .superRefine((envelope, ctx) => {
+    const issuerType = IssuerGovernedResourceTypeSchema.safeParse(envelope.governedResource.type);
+    if (envelope.role === "issuer" && issuerType.success) {
+      const expectedId = issuerGovernedResourceIdFromScopeCommitment(
+        envelope.scopeCommitment.toLowerCase(),
+        issuerType.data,
+      );
+      if (envelope.governedResource.id !== expectedId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["governedResource", "id"],
+          message: "Issuer resource id does not match the signed scope commitment and resource type",
+        });
+      }
+    }
     if (Date.parse(envelope.expiresAt) <= Date.parse(envelope.verifiedAt)) {
       ctx.addIssue({
         code: "custom",

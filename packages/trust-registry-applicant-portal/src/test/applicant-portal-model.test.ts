@@ -18,6 +18,7 @@ const HASH_B = `0x${"2".repeat(64)}`;
 const HASH_C = `0x${"3".repeat(64)}`;
 const HASH_D = `0x${"4".repeat(64)}`;
 const HASH_E = `0x${"5".repeat(64)}`;
+const ISSUER_RESOURCE_ID = `tr:issuer-resource:v1:${"a".repeat(64)}`;
 const STATUS_POLICY_BINDING_COMMITMENT = "0x2bd4155f627f06c4d2bf046e68cb53aa1355d876fd36b21f1a5fa8f174a80b30";
 
 type EvidenceBundle = PublicInspection["activeIssuers"][number]["evidence"];
@@ -134,7 +135,7 @@ const createAuthorizationMutationResponse = (
         subjectDid: `did:midnight:testnet:${target}`,
         role: target,
         resourceType: target === "issuer" ? "credential-family" : "request-profile",
-        resourceId: target === "issuer" ? "degree-scope" : "age-gate",
+        resourceId: target === "issuer" ? ISSUER_RESOURCE_ID : "age-gate",
         policyId: "policy:default",
         trustLevel: target === "issuer" ? "gold" : "silver",
         ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),
@@ -163,7 +164,7 @@ const createAuthorizationMutationResponse = (
           subjectDid: `did:midnight:testnet:${target}`,
           role: target,
           resourceType: target === "issuer" ? "credential-family" : "request-profile",
-          resourceId: target === "issuer" ? "degree-scope" : "age-gate",
+          resourceId: target === "issuer" ? ISSUER_RESOURCE_ID : "age-gate",
           policyId: "policy:default",
           trustLevel: target === "issuer" ? "gold" : "silver",
           ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),

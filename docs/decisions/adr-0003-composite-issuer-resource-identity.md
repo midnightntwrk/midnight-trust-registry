@@ -50,6 +50,12 @@ composite resource. The registry does not need to parse a scope in Compact.
 Application intake MUST recompute `resourceId` from the validated canonical
 scope and type before issuing or consuming a challenge. A signer or API client
 MUST NOT supply a bare version or status-method name as an issuer resource ID.
+The signed issuer envelope MUST also derive its resource ID from its signed
+scope commitment and resource type; a correctly shaped ID from another scope
+or type is invalid. Published issuer records and current/historical API lookup
+requests reject bare IDs. These record-level checks establish canonical shape,
+not the scope preimage: an independent relying party still needs authenticated
+scope evidence and must recompute the ID before accepting a VC signer decision.
 The on-chain contract still governs opaque 32-byte commitments; it relies on
 the authenticated intake boundary to attest that the committed bytes came from
 this canonical scope. A raw contract caller bypassing that boundary can create

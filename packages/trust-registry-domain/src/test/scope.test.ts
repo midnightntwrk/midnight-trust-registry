@@ -5,6 +5,7 @@ import {
   computeAuthorizationScopeCommitment,
   encodeAuthorizationScope,
   issuerGovernedResourceId,
+  issuerGovernedResourceIdFromScopeCommitment,
 } from "../scope.js";
 import { sha256Hex } from "../ids.js";
 import { governedResourceInScope } from "../application-challenge-binding.js";
@@ -40,6 +41,9 @@ describe("authorization scope v1", () => {
 
   it("gives each issuer resource type a type-separated full-scope identity", () => {
     const familyId = issuerGovernedResourceId(issuer, "credentialFamily");
+    expect(issuerGovernedResourceIdFromScopeCommitment(
+      computeAuthorizationScopeCommitment(issuer), "credentialFamily",
+    )).toBe(familyId);
     expect(familyId).toBe("tr:issuer-resource:v1:e4edbae272fdd78e6ceccde9e4018528ffa418094eeddae33782738293b3dd8d");
     expect(sha256Hex(familyId)).toBe("0xf4d2231e9d0bcb65bf7a39ab5b5893a4db0e199f209ee27ec1834344aee7162f");
     const types = [
