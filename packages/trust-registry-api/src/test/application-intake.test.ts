@@ -219,6 +219,17 @@ describe("challenge-backed application intake", () => {
     await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
   });
 
+  it("canonicalizes a mixed-case challenge hash before one-use consumption", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const mixedCaseHash = issued.challengeHash.toUpperCase().replace("0X", "0x");
+    const input = intakeInput(binding, service, issued.nonce, mixedCaseHash);
+    const proposal = await consumeChallengeAndSubmitApplication(input);
+    expect(proposal.evidence.envelope.challengeHash).toBe(issued.challengeHash);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(false);
+  });
+
   it("preserves the nonce when evidence expires before intake evaluation", async () => {
     const binding = bindingFor("issuer");
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
