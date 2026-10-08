@@ -85,8 +85,9 @@ const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
 
 it("pins every governed action kind to a Compact literal", () => {
   const compactSource = readFileSync(new URL("../trust-registry.compact", import.meta.url), "utf8");
-  const compactKinds = [...compactSource.matchAll(/pad\(32, "(tr:(?:maintainer|issuer|verifier|auditor|recognition|epoch|audit):[^"]+|tr:policy:thresholds:update)"\)/g)]
-    .map((match) => match[1]!);
+  const compactKinds = [...compactSource.matchAll(/pad\(32, "(tr:[^"]+)"\)/g)]
+    .map((match) => match[1]!)
+    .filter((kind) => kind !== "tr:app:evidence:sig:v1" && kind !== "tr:policy:action:v1");
   const expected = [
     PROPOSE_ISSUER_ACTION_KIND, AUTHORIZE_ISSUER_ACTION_KIND, ACTIVATE_ISSUER_ACTION_KIND,
     SUSPEND_ISSUER_ACTION_KIND, REVOKE_ISSUER_ACTION_KIND, ARCHIVE_ISSUER_ACTION_KIND,
