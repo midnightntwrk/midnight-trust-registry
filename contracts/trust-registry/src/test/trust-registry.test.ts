@@ -86,8 +86,11 @@ const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
 it("pins every governed action kind to a Compact literal", () => {
   const compactSource = readFileSync(new URL("../trust-registry.compact", import.meta.url), "utf8");
   const compactKinds = [...compactSource.matchAll(
-    /performAuthorizedMaintainerAction\(\s*authorizationBundle,\s*pad\(32, "(tr:[^"]+)"\)/g,
+    /performAuthorizedMaintainerAction\(\s*[A-Za-z_][A-Za-z0-9_]*\s*,\s*pad\(\s*32\s*,\s*"(tr:[^"]+)"\s*\)/g,
   )].map((match) => match[1]!);
+  expect(compactKinds).toHaveLength(
+    [...compactSource.matchAll(/performAuthorizedMaintainerAction\(/g)].length - 1,
+  );
   const expected = [
     PROPOSE_ISSUER_ACTION_KIND, AUTHORIZE_ISSUER_ACTION_KIND, ACTIVATE_ISSUER_ACTION_KIND,
     SUSPEND_ISSUER_ACTION_KIND, REVOKE_ISSUER_ACTION_KIND, ARCHIVE_ISSUER_ACTION_KIND,
@@ -108,9 +111,10 @@ it("pins every governed action kind to a Compact literal", () => {
     "../../../../packages/trust-registry-client/src/evidence.ts",
   ]) {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    const signerKinds = [...source.matchAll(/encodeCompactActionKind\(\s*"(tr:[^"]+)"\s*\)/g)]
+    const signerKinds = [...source.matchAll(/encodeCompactActionKind\(\s*"(tr:[^"]+)"\s*,?\s*\)/g)]
       .map((match) => match[1]!);
     expect(signerKinds.length).toBeGreaterThan(0);
+    expect(signerKinds).toHaveLength([...source.matchAll(/encodeCompactActionKind\(/g)].length);
     for (const kind of signerKinds) expect(compactKinds).toContain(kind);
   }
 });
