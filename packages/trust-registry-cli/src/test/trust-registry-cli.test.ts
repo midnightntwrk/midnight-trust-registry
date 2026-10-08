@@ -86,7 +86,7 @@ describe("trust registry operator CLI", () => {
       ...snapshot,
       recognitionEntries: [{ ...recognition, evidence: otherRecognition.evidence }],
     }).success).toBe(false);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
   it(
     "creates a deterministic demo snapshot and summarizes it as JSON",
     async () => {
