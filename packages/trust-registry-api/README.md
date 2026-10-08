@@ -84,8 +84,13 @@ The VP verifier must derive the nonce and subject DID from the verified proof,
 not echo the expected callback arguments. The reference tests use a fixture
 verifier, not a production VC/VP verifier. Static policy configuration and the
 nonce/hash pair are checked before VP work; only the store's atomic consume
-decides whether a challenge is live, so a production route must also apply
-request limits and VP verification timeouts.
+decides whether a challenge is spent. The process-local store uses the same
+injected clock for timer reclamation and consume, copies records on insertion,
+and reports whether issuing a new challenge superseded a live one for that
+application. Capacity, invalid-clock, expiry-range, and collision failures
+have stable `code` and `name` fields. A production route still needs an
+authenticated per-applicant quota, durable atomic storage, request limits,
+and VP verification timeouts before public exposure.
 The existing `POST /v1/applications` route is a local operator workspace route,
 not a public VC/VP-verified membership endpoint.
 

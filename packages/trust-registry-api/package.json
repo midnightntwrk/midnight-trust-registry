@@ -43,7 +43,7 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run",
+    "test": "vitest run src/test --testTimeout 30000",
     "build:light": "pnpm run build",
     "test:light": "vitest run src/test --testTimeout 30000",
     "integration": "vitest run src/integration-test --testTimeout 120000"

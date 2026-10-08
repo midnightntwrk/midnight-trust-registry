@@ -33,16 +33,47 @@ export type ApplicationChallengeRecord = {
   expiresAtMs: number;
 };
 
+export type ApplicationChallengeInsertResult = {
+  inserted: boolean;
+  supersededPrevious: boolean;
+};
+
 /** A production adapter must atomically replace per application and check-and-delete on consume. */
 export interface ApplicationChallengeStore {
-  insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean>;
+  insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number): Promise<ApplicationChallengeInsertResult>;
   isLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
   consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
 }
 
 export class ApplicationChallengeCapacityError extends Error {
+  readonly code = "CHALLENGE_CAPACITY";
   constructor() {
     super("Application challenge store is at capacity");
+    this.name = "ApplicationChallengeCapacityError";
+  }
+}
+
+export class ApplicationChallengeClockError extends RangeError {
+  readonly code = "CHALLENGE_CLOCK_INVALID";
+  constructor() {
+    super("Application challenge clock is invalid");
+    this.name = "ApplicationChallengeClockError";
+  }
+}
+
+export class ApplicationChallengeExpiryError extends RangeError {
+  readonly code = "CHALLENGE_EXPIRY_RANGE";
+  constructor() {
+    super("Application challenge expiry is outside the timer range");
+    this.name = "ApplicationChallengeExpiryError";
+  }
+}
+
+export class ApplicationChallengeCollisionError extends Error {
+  readonly code = "CHALLENGE_COLLISION";
+  constructor() {
+    super("Could not issue an application challenge");
+    this.name = "ApplicationChallengeCollisionError";
   }
 }
 
@@ -65,15 +96,15 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     }
   }
 
-  async insert(record: ApplicationChallengeRecord, nowMs: number): Promise<boolean> {
-    if (record.expiresAtMs <= nowMs) return false;
+  async insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number = Date.now): Promise<ApplicationChallengeInsertResult> {
+    if (record.expiresAtMs <= nowMs) return { inserted: false, supersededPrevious: false };
     const delayMs = record.expiresAtMs - nowMs;
     if (!Number.isSafeInteger(delayMs) || delayMs > MAX_TIMEOUT_MS) {
-      throw new RangeError("Application challenge expiry is outside the timer range");
+      throw new ApplicationChallengeExpiryError();
     }
     const existing = this.records.get(record.challengeHash);
     if (existing !== undefined) {
-      if (nowMs < existing.record.expiresAtMs) return false;
+      if (nowMs < existing.record.expiresAtMs) return { inserted: false, supersededPrevious: false };
       this.remove(record.challengeHash);
     }
     const previousHash = this.applicationHashes.get(record.applicationHash);
@@ -81,6 +112,7 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     if (previous !== undefined && nowMs < previous.record.expiresAtMs && previous.record.bindingHash !== record.bindingHash) {
       throw new ApplicationChallengeBindingConflictError();
     }
+    const supersededPrevious = previous !== undefined && nowMs < previous.record.expiresAtMs;
     if (previousHash !== undefined) this.remove(previousHash);
     if (this.records.size >= this.maxEntries) {
       for (const [hash, current] of this.records) {
@@ -88,15 +120,12 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       }
       if (this.records.size >= this.maxEntries) throw new ApplicationChallengeCapacityError();
     }
-    const timer = setTimeout(() => {
-      if (this.records.get(record.challengeHash)?.record === record) {
-        this.remove(record.challengeHash);
-      }
-    }, delayMs);
-    timer.unref();
-    this.records.set(record.challengeHash, { record, timer });
+    const saved = Object.freeze({ ...record });
+    const entry = { record: saved, timer: undefined as unknown as NodeJS.Timeout };
+    this.records.set(saved.challengeHash, entry);
+    this.scheduleExpiry(saved.challengeHash, entry, delayMs, readNow);
     this.applicationHashes.set(record.applicationHash, record.challengeHash);
-    return true;
+    return { inserted: true, supersededPrevious };
   }
 
   async consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
@@ -130,6 +159,30 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       this.applicationHashes.delete(current.record.applicationHash);
     }
   }
+
+  private scheduleExpiry(
+    challengeHash: string,
+    entry: { record: ApplicationChallengeRecord; timer: NodeJS.Timeout },
+    delayMs: number,
+    readNow: () => number,
+  ): void {
+    entry.timer = setTimeout(() => {
+      if (this.records.get(challengeHash) !== entry) return;
+      let remainingMs: number;
+      try {
+        remainingMs = entry.record.expiresAtMs - readNow();
+      } catch {
+        remainingMs = 1000;
+      }
+      if (!Number.isFinite(remainingMs)) remainingMs = 1000;
+      if (remainingMs <= 0) {
+        this.remove(challengeHash);
+      } else {
+        this.scheduleExpiry(challengeHash, entry, Math.max(1000, Math.min(MAX_TIMEOUT_MS, remainingMs)), readNow);
+      }
+    }, delayMs);
+    entry.timer.unref();
+  }
 }
 
 export type IssuedApplicationChallenge = {
@@ -137,6 +190,7 @@ export type IssuedApplicationChallenge = {
   challengeHash: string;
   issuedAt: string;
   expiresAt: string;
+  supersededPrevious: boolean;
 };
 
 export class ApplicationChallengeService {
@@ -159,16 +213,22 @@ export class ApplicationChallengeService {
     for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
       const nonceBytes = randomBytes(NONCE_BYTES);
       const challengeHash = sha256Hex(nonceBytes);
-      if (await this.store.insert({ challengeHash, bindingHash, applicationHash, expiresAtMs }, issuedAtMs)) {
+      const result = await this.store.insert(
+        { challengeHash, bindingHash, applicationHash, expiresAtMs },
+        issuedAtMs,
+        () => this.now(),
+      );
+      if (result.inserted) {
         return {
           nonce: `0x${nonceBytes.toString("hex")}`,
           challengeHash,
           issuedAt: new Date(issuedAtMs).toISOString(),
           expiresAt: new Date(expiresAtMs).toISOString(),
+          supersededPrevious: result.supersededPrevious,
         };
       }
     }
-    throw new Error("Could not issue an application challenge");
+    throw new ApplicationChallengeCollisionError();
   }
 
   /** Call only after the VP challenge has been verified against the returned nonce. */
@@ -204,7 +264,7 @@ export class ApplicationChallengeService {
   private now(): number {
     const value = this.clock();
     if (!Number.isSafeInteger(value) || value < 0 || value > Date.parse("9999-12-31T23:54:59.999Z")) {
-      throw new RangeError("Application challenge clock is invalid");
+      throw new ApplicationChallengeClockError();
     }
     return value;
   }
