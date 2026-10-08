@@ -95,6 +95,56 @@ describe("trust registry local simulator integration", () => {
     }
   });
 
+  it.each([
+    [IssuerResourceType.schemaVersion, "schemaVersion"],
+    [IssuerResourceType.statusMethodRequirement, "statusMethodRequirement"],
+  ] as const)("keeps two %s issuer resources with the same bare value distinct", (resourceType, resourceKind) => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const first = createIssuerScenarioFixture(`composite-first-${resourceKind}`, resourceType);
+    const secondFixture = createIssuerScenarioFixture(`composite-second-${resourceKind}`, resourceType);
+    const second = {
+      ...secondFixture,
+      subjectDid: first.subjectDid,
+      subjectDidCommitment: first.subjectDidCommitment,
+      statusAuthorityVerificationMethod: `${first.subjectDid}#status-1`,
+    };
+    expect(first.authorizationScope.schemaVersion).toBe(second.authorizationScope.schemaVersion);
+    expect(first.authorizationScope.statusMethod).toBe(second.authorizationScope.statusMethod);
+    expect(first.resourceId).not.toBe(second.resourceId);
+
+    expect(() => harness.createApplicationEvidence({
+      applicationId: second.authorizationId,
+      subjectDid: second.subjectDid,
+      role: "issuer",
+      scope: second.authorizationScope,
+      governedResource: { type: resourceKind, id: first.resourceId },
+    })).toThrow(/outside the scope/);
+
+    harness.authorizeIssuer(first);
+    harness.authorizeIssuer(second);
+    for (const fixture of [first, second]) {
+      const current = harness.simulator.getCurrentIssuerAuthorization(
+        fixture.subjectDidCommitment,
+        fixture.resourceType,
+        fixture.resourceIdCommitment,
+      );
+      expect(Buffer.from(current.authorizationId)).toEqual(Buffer.from(fixture.authorizationIdCommitment));
+      const historical = harness.buildIssuerHistoricalEvidence(fixture);
+      expect(historical.authorization?.resourceId).toBe(fixture.resourceId);
+      const active = harness.evaluateCurrentIssuerDecision(fixture);
+      expect(active.authorization?.authorizationId).toBe(fixture.authorizationId);
+    }
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    expect(() => client.verifyIssuerAuthorizationBundle(harness.buildIssuerHistoricalEvidence(second), {
+      expectedResourceId: first.resourceId,
+    })).toThrow(/resource mismatch/i);
+    expect(() => harness.simulator.assertIssuerAuthorized(
+      first.subjectDidCommitment,
+      resourceType,
+      bytes32Commitment(resourceKind === "schemaVersion" ? "1.0.0" : "midnight-status-registry-v1"),
+    )).toThrow();
+  });
+
   it("preserves issuer application history before activation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application");

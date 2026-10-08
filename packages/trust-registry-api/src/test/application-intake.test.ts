@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   computeAuthorizationScopeCommitment,
+  issuerGovernedResourceId,
   sha256Hex,
   type ApplicationChallengeBinding,
   type AuthorizationScope,
@@ -34,7 +35,7 @@ const REQUEST_SCOPE = {
 } as const;
 
 const cases = [
-  { role: "issuer", scope: ISSUER_SCOPE, resource: { type: "credentialFamily", id: ISSUER_SCOPE.credentialFamilyId } },
+  { role: "issuer", scope: ISSUER_SCOPE, resource: { type: "credentialFamily", id: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily") } },
   { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
   { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
   { role: "maintainer", scope: { version: "tr-scope-v1", role: "maintainer", registryId: "registry:kanon:trusted" }, resource: { type: "registry", id: "registry:kanon:trusted" } },
@@ -187,7 +188,10 @@ describe("challenge-backed application intake", () => {
         ...binding,
         scope: { ...ISSUER_SCOPE, credentialFamilyId: "credential-family:other" },
         scopeCommitment: computeAuthorizationScopeCommitment({ ...ISSUER_SCOPE, credentialFamilyId: "credential-family:other" }),
-        governedResource: { type: "credentialFamily" as const, id: "credential-family:other" },
+        governedResource: {
+          type: "credentialFamily" as const,
+          id: issuerGovernedResourceId({ ...ISSUER_SCOPE, credentialFamilyId: "credential-family:other" }, "credentialFamily"),
+        },
       },
     };
     await expect(consumeChallengeAndSubmitApplication(substituted)).rejects.toThrow(/governed proposal/);

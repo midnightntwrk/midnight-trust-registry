@@ -5,6 +5,8 @@ import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
+  governedResourceInScope,
+  issuerGovernedResourceId,
   sha256Hex,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
@@ -164,10 +166,13 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         ...binding,
         ...(role === "maintainer" ? {
           registryId: "registry:other:trusted",
-          governedResource: { type: "registry" as const, id: "registry:other:trusted" },
         } : {}),
         scope: substitutedScope,
         scopeCommitment: computeAuthorizationScopeCommitment(substitutedScope),
+        governedResource: {
+          ...binding.governedResource,
+          id: governedResourceInScope(substitutedScope, binding.governedResource.type)!,
+        },
       } as ApplicationChallengeBinding,
     })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
@@ -274,7 +279,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
     if (binding.scope.role !== "issuer") throw new Error("Expected issuer scope");
     const schemaBinding = ApplicationChallengeBindingSchema.parse({
       ...binding,
-      governedResource: { type: "schemaVersion", id: binding.scope.schemaVersion },
+      governedResource: { type: "schemaVersion", id: issuerGovernedResourceId(binding.scope, "schemaVersion") },
     });
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(schemaBinding);
