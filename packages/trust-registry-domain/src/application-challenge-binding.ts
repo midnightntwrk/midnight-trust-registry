@@ -6,6 +6,7 @@ import {
   AuthorizationScopeSchema,
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
+  requestGovernedResourceId,
 } from "./scope.js";
 
 const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
@@ -79,5 +80,5 @@ export function governedResourceInScope(
     }
   }
   if (parsedScope.data.role === "maintainer") return type === "registry" ? parsedScope.data.registryId : null;
-  return type === "requestProfile" ? parsedScope.data.requestProfileId : null;
+  return type === "requestProfile" ? requestGovernedResourceId(parsedScope.data) : null;
 }

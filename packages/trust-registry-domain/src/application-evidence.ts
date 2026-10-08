@@ -4,7 +4,9 @@ import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./i
 import {
   IssuerGovernedResourceIdSchema,
   IssuerGovernedResourceTypeSchema,
+  RequestGovernedResourceIdSchema,
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
 } from "./scope.js";
 import { AuthorizationRoleSchema } from "./types.js";
 
@@ -42,6 +44,13 @@ export const GovernedResourceSchema = z.strictObject({
       message: "Issuer resource id must be a canonical composite issuer resource id",
     });
   }
+  if (resource.type === "requestProfile" && !RequestGovernedResourceIdSchema.safeParse(resource.id).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["id"],
+      message: "Request resource id must be a canonical composite request resource id",
+    });
+  }
 });
 
 export const ApplicationEvidenceEnvelopeSchema = z
@@ -64,6 +73,18 @@ export const ApplicationEvidenceEnvelopeSchema = z
   })
   .superRefine((envelope, ctx) => {
     const issuerType = IssuerGovernedResourceTypeSchema.safeParse(envelope.governedResource.type);
+    const resourceMatchesRole = envelope.role === "issuer"
+      ? issuerType.success
+      : envelope.role === "maintainer"
+        ? envelope.governedResource.type === "registry"
+        : envelope.governedResource.type === "requestProfile";
+    if (!resourceMatchesRole) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["governedResource", "type"],
+        message: "Governed resource type does not match application role",
+      });
+    }
     if (envelope.role === "issuer" && issuerType.success) {
       const expectedId = issuerGovernedResourceIdFromScopeCommitment(
         envelope.scopeCommitment.toLowerCase(),
@@ -74,6 +95,17 @@ export const ApplicationEvidenceEnvelopeSchema = z
           code: "custom",
           path: ["governedResource", "id"],
           message: "Issuer resource id does not match the signed scope commitment and resource type",
+        });
+      }
+    }
+    if ((envelope.role === "verifier" || envelope.role === "auditor")
+      && envelope.governedResource.type === "requestProfile") {
+      const expectedId = requestGovernedResourceIdFromScopeCommitment(envelope.scopeCommitment.toLowerCase());
+      if (envelope.governedResource.id !== expectedId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["governedResource", "id"],
+          message: "Request resource id does not match the signed scope commitment",
         });
       }
     }

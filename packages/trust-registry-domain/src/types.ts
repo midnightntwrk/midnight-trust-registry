@@ -5,7 +5,7 @@ import {
   assertAscendingTimestamps,
   LifecycleStatusSchema,
 } from "./lifecycle.js";
-import { IssuerGovernedResourceIdSchema } from "./scope.js";
+import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -288,6 +288,21 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
     ctx.addIssue({
       code: "custom",
       message: "Issuer authorization resource type is invalid",
+      path: ["resourceType"],
+    });
+  }
+  if ((record.role === "verifier" || record.role === "auditor")
+    && !RequestGovernedResourceIdSchema.safeParse(record.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Request authorization resource id must be a canonical composite request resource id",
+      path: ["resourceId"],
+    });
+  }
+  if ((record.role === "verifier" || record.role === "auditor") && record.resourceType !== "request-profile") {
+    ctx.addIssue({
+      code: "custom",
+      message: "Request authorization resource type must be request-profile",
       path: ["resourceType"],
     });
   }

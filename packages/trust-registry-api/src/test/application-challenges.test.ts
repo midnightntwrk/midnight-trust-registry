@@ -4,6 +4,7 @@ import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
+  requestGovernedResourceId,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
@@ -276,11 +277,14 @@ describe("application challenge lifecycle", () => {
       role,
       scope: requestScope,
       scopeCommitment: computeAuthorizationScopeCommitment(requestScope),
-      governedResource: { type: "requestProfile" as const, id: requestScope.requestProfileId },
+      governedResource: { type: "requestProfile" as const, id: requestGovernedResourceId(requestScope) },
     };
     const issued = await service.issue(requestBinding);
     expect(await service.consume({
-      binding: { ...requestBinding, governedResource: { type: "requestProfile", id: "request-profile:other" } },
+      binding: { ...requestBinding, governedResource: { type: "requestProfile", id: requestGovernedResourceId({
+        ...requestScope,
+        purpose: "other",
+      }) } },
       nonce: issued.nonce,
       challengeHash: issued.challengeHash,
     })).toBeNull();

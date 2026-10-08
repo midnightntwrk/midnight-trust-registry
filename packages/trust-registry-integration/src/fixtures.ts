@@ -8,6 +8,7 @@ import {
 import {
   createScopedIdentifier,
   issuerGovernedResourceId,
+  requestGovernedResourceId,
   sha256Hex,
   type AuthorizationScope,
   type AuthorizationRecord,
@@ -255,14 +256,16 @@ export const createVerifierScenarioFixture = (
     label,
     "selective",
   );
-  const scopeResourceId = createScopedIdentifier(
-    "request-profile-scope",
-    label,
-    "v1",
-    "minimal",
-    "adult",
-    "selective",
-  );
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "verifier",
+    requestProfileId,
+    purpose: "admission",
+    credentialScopeCommitment: sha256Hex(`credential-scope:${requestProfileId}`),
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
 
   return {
     authorizationId,
@@ -317,14 +320,16 @@ export const createAuditorScenarioFixture = (
     label,
     "restricted",
   );
-  const scopeResourceId = createScopedIdentifier(
-    "audit-request-scope",
-    label,
-    "v1",
-    "minimal",
-    "compliance",
-    "restricted",
-  );
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "auditor",
+    requestProfileId,
+    purpose: "admission",
+    credentialScopeCommitment: sha256Hex(`credential-scope:${requestProfileId}`),
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
 
   return {
     authorizationId,
