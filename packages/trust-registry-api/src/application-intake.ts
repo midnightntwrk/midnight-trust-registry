@@ -4,6 +4,7 @@ import {
   ApplicationEvidenceEnvelopeSchema,
   AuthorizedEvidenceVerifierSchema,
   HashHexSchema,
+  MAX_APPLICATION_EVIDENCE_LIFETIME_MS,
   assertValidApplicationEvidence,
   computeApplicationChallengeBindingHash,
   computeApplicationEvidenceCommitment,
