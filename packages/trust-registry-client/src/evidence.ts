@@ -4,7 +4,7 @@ import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   computeCreateEpochCommitmentPayloadHash,
   decodeCanonicalJubjubSignatureHex,
-  labelToBytes32,
+  encodeCompactActionKind,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
@@ -27,7 +27,7 @@ import {
   type SequenceToTimestamp,
 } from "./utils.js";
 
-const EPOCH_PUBLISH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const EPOCH_PUBLISH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
 /**
  * Caller-authenticated epoch context. These values are not authenticated by

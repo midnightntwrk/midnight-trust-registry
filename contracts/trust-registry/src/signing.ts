@@ -40,6 +40,16 @@ export {
 export type TrustRegistryActionDigest = JubjubDigest;
 export type TrustRegistryJubjubSignature = JubjubSchnorrSignature;
 
+/** Compact action-kind literals use exact zero-padded bytes, never fixture hashing. */
+export const encodeCompactActionKind = (kind: string): Uint8Array => {
+  if (!/^tr:[\x21-\x7e]+$/u.test(kind)) throw new Error("Action kind must be printable ASCII with a tr: prefix");
+  const encoded = new TextEncoder().encode(kind);
+  if (encoded.length > 32) throw new Error("Action kind exceeds Compact Bytes<32>");
+  const bytes = new Uint8Array(32);
+  bytes.set(encoded);
+  return bytes;
+};
+
 const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
   signature !== null
   && signature !== undefined

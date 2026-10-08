@@ -16,6 +16,7 @@ import {
   computePolicyBoundActionPayloadHash,
   computePolicyBoundMaintainerActionDigest,
   deriveJubjubPublicKeyFromSeed,
+  encodeCompactActionKind,
   signPolicyBoundMaintainerActionFromSeed,
   verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
@@ -33,6 +34,11 @@ import {
 } from "../managed/trust-registry/contract/index.js";
 
 import { describe, expect, it } from "vitest";
+
+it("encodes Compact action kinds exactly and rejects overlong values", () => {
+  expect(encodeCompactActionKind("tr:epoch:publish")).toEqual(labelToBytes32("tr:epoch:publish"));
+  expect(() => encodeCompactActionKind(`tr:${"x".repeat(30)}`)).toThrow(/exceeds Compact Bytes<32>/);
+});
 
 const PROPOSE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:propose");
 const AUTHORIZE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:authorize");
