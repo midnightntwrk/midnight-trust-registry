@@ -20,6 +20,7 @@ Current route set:
 - `GET /health`
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
+- `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -60,6 +61,12 @@ Run locally against a saved workspace:
 pnpm --filter @midnight-ntwrk/trust-registry-api run build
 npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
 ```
+
+The read-only mutation context returns the current registry ID, predecessor
+epoch ID, and full workspace revision commitment. It is never cached. A signer
+must still expect a stale-context rejection if the workspace changes before
+the eventual atomic mutation; this endpoint does not authenticate or authorize
+the existing demo write routes.
 
 Workspace-backed mutation routes:
 
