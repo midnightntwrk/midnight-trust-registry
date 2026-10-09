@@ -51,10 +51,11 @@ Current coverage:
   Run its focused tests with
   `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
 
-The published VC Compact package targets Compact 0.31.1 and runtime 0.16.0.
-The repository pins that compiler in `.compact-version` and Nix. The probe
+The repository pins the compiler in `.compact-version` and Nix, and pins the
+runtime in `contracts/trust-registry/package.json`. The probe
 resolves the npm-exported `composable.compact` directory as a compiler include
 path; no VC source or generated output is vendored into this repository. Its
 generated module uses the probe package's dev dependency on Compact runtime;
-direct consumers pin runtime 0.16.0 exactly, and the light gate checks that
-published DID/VC package requirements match before running the probe.
+direct consumers pin that runtime exactly. The installed identity runtime gate
+checks published DID/VC package requirements and their resolved runtime before
+running the probe.

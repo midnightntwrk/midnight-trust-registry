@@ -4,7 +4,7 @@ import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   computeCreateEpochCommitmentPayloadHash,
   decodeCanonicalJubjubSignatureHex,
-  labelToBytes32,
+  encodeCompactActionKind,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
@@ -27,7 +27,7 @@ import {
   type SequenceToTimestamp,
 } from "./utils.js";
 
-const EPOCH_PUBLISH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const EPOCH_PUBLISH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
 /**
  * Caller-authenticated epoch context. These values are not authenticated by
@@ -102,6 +102,15 @@ const assertEpochAnchor = (
   const { epochRecord } = options;
   const expectedEpochIdCommitment = bytes32Commitment(bundle.epoch.epochId);
 
+  if (bundle.epoch.registryId !== bundle.registryId) {
+    throw new Error("Epoch registry mismatch");
+  }
+  if (bundle.authorization !== undefined && bundle.authorization.registryId !== bundle.registryId) {
+    throw new Error("Authorization registry mismatch");
+  }
+  if (bundle.recognition !== undefined && bundle.recognition.registryId !== bundle.registryId) {
+    throw new Error("Recognition registry mismatch");
+  }
   if (!sameBytes32(expectedEpochIdCommitment, epochRecord.epochId)) {
     throw new Error("Epoch id mismatch");
   }
@@ -160,11 +169,16 @@ const assertEpochAnchor = (
   if (
     !(options.registryIdCommitment instanceof Uint8Array)
     || options.registryIdCommitment.length !== 32
+    || options.registryIdCommitment.every((byte) => byte === 0)
   ) {
     throw new Error("Registry ID commitment is missing or malformed");
   }
+  if (!sameBytes32(bytes32Commitment(bundle.registryId), options.registryIdCommitment)) {
+    throw new Error("Registry ID commitment does not match the evidence bundle");
+  }
 
   let validSignature = false;
+  let verificationFault: unknown;
   try {
     validSignature = verifyPolicyBoundMaintainerAction(
       options.maintainerPublicKey,
@@ -175,11 +189,11 @@ const assertEpochAnchor = (
       epochRecord.publishedAtSequence,
       signature,
     );
-  } catch {
-    // Unexpected verification failures must not authenticate the epoch.
+  } catch (error) {
+    verificationFault = error;
   }
   if (!validSignature) {
-    throw new Error("Epoch maintainer signature is invalid");
+    throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
   }
 };
 

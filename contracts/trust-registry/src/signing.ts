@@ -40,6 +40,16 @@ export {
 export type TrustRegistryActionDigest = JubjubDigest;
 export type TrustRegistryJubjubSignature = JubjubSchnorrSignature;
 
+/** Compact action-kind literals use exact zero-padded bytes, never fixture hashing. */
+export const encodeCompactActionKind = (kind: string): Uint8Array => {
+  if (!/^tr:[\x21-\x7e]+$/u.test(kind)) throw new Error("Action kind must be printable ASCII with a tr: prefix");
+  const encoded = new TextEncoder().encode(kind);
+  if (encoded.length > 32) throw new Error("Action kind exceeds Compact Bytes<32>");
+  const bytes = new Uint8Array(32);
+  bytes.set(encoded);
+  return bytes;
+};
+
 const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
   signature !== null
   && signature !== undefined
@@ -71,17 +81,13 @@ export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJ
   throw new Error("Jubjub signature encoding is invalid");
 };
 
-const ensure32Bytes = (value: Uint8Array): Buffer => {
-  const buffer = Buffer.from(value);
-  if (buffer.length === 32) return buffer;
-  if (buffer.length > 32) return buffer.subarray(0, 32);
-  return Buffer.concat([buffer, Buffer.alloc(32 - buffer.length)]);
-};
-
 const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   if (value.length !== 32) throw new RangeError(`${label} must be 32 bytes`);
   return Buffer.from(value);
 };
+
+const ensure32Bytes = (value: Uint8Array): Buffer =>
+  require32Bytes(value, "Compact payload field");
 
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
 export const applicationEvidenceSignatureDigest = (

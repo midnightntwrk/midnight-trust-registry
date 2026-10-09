@@ -826,16 +826,24 @@ describe("trust registry local simulator integration", () => {
     const epochRecord = harness.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),
     );
-    const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
-      ...epochRecord,
-      publicationPolicyCommitment: new Uint8Array(32),
-    });
-    try {
-      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(
-        "Epoch publication policy commitment is missing or malformed",
-      );
-    } finally {
-      malformedLedger.mockRestore();
+    for (const malformed of [
+      undefined,
+      "not-bytes",
+      new Uint8Array(31),
+      new Uint8Array(33),
+      new Uint8Array(32),
+    ]) {
+      const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+        ...epochRecord,
+        publicationPolicyCommitment: malformed as never,
+      });
+      try {
+        expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(
+          "Epoch publication policy commitment is missing or malformed",
+        );
+      } finally {
+        malformedLedger.mockRestore();
+      }
     }
 
     expect(() =>
@@ -854,16 +862,39 @@ describe("trust registry local simulator integration", () => {
       }),
     ).toThrow(/invalid/i);
 
-    expect(() => harness.assertPublishedEpochEvidence({
-      ...bundle,
-      epoch: {
-        ...bundle.epoch,
-        maintainerSignatures: [{
-          ...originalSignature,
-          signature: originalSignature.signature.slice(0, -1),
-        }],
-      },
-    })).toThrow("Epoch maintainer signature encoding is invalid");
+    try {
+      harness.assertPublishedEpochEvidence({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: [{
+            ...originalSignature,
+            signature: originalSignature.signature.slice(0, -1),
+          }],
+        },
+      });
+      throw new Error("expected malformed signature rejection");
+    } catch (error) {
+      expect(error).toHaveProperty("message", "Epoch maintainer signature encoding is invalid");
+      expect(error).toHaveProperty("cause.message", "Jubjub signature encoding is invalid");
+    }
+
+    const malformedSequence = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+      ...epochRecord,
+      publishedAtSequence: "invalid" as never,
+    });
+    try {
+      let verifierFault: unknown;
+      try {
+        harness.assertPublishedEpochEvidence(bundle);
+      } catch (error) {
+        verifierFault = error;
+      }
+      expect(verifierFault).toHaveProperty("message", "Epoch maintainer signature is invalid");
+      expect((verifierFault as Error).cause).toBeInstanceOf(Error);
+    } finally {
+      malformedSequence.mockRestore();
+    }
 
     expect(() => harness.assertPublishedEpochEvidence({
       ...bundle,

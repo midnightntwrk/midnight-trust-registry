@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applicationEvidenceSignatureDigest,
+  computeUpdateIssuerAuthorizationPayloadHash,
   decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -75,6 +76,16 @@ describe("application evidence commitment signing", () => {
     expect(() => applicationEvidenceSignatureDigest(new Uint8Array(33), commitment)).toThrow(/32 bytes/);
     expect(() => applicationEvidenceSignatureDigest(keyIdCommitment, new Uint8Array(31))).toThrow(/32 bytes/);
     expect(() => signApplicationEvidenceCommitmentFromSeed(new Uint8Array(31), keyIdCommitment, commitment)).toThrow(/32 bytes/);
+    expect(() => computeUpdateIssuerAuthorizationPayloadHash(
+      keyIdCommitment,
+      commitment,
+      new Uint8Array(31),
+    )).toThrow(/Compact payload field must be 32 bytes/);
+    expect(() => computeUpdateIssuerAuthorizationPayloadHash(
+      keyIdCommitment,
+      commitment,
+      new Uint8Array(33),
+    )).toThrow(/Compact payload field must be 32 bytes/);
   });
 
   it("rejects noncanonical wire encodings before decoding a signature", () => {
