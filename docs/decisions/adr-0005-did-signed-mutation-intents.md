@@ -45,7 +45,9 @@ The 0.1.0 API preflight verifies the digest bytes with the actor's resolved
 Midnight DID JubJub key: applicant submissions require the DID
 `authentication` relationship and maintainer actions require
 `capabilityInvocation`. The DID signature check alone does not establish
-registry maintainer membership or consume a nonce.
+registry maintainer membership or consume a nonce. An unavailable DID resolver
+is a retryable error, not an invalid-signature decision; missing or inactive
+DID keys and bad signatures are rejected.
 
 The workspace commitment is the optimistic concurrency token for the *entire*
 operator workspace, including the operation log; an epoch ID alone is not
