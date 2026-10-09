@@ -1,14 +1,16 @@
-const managedPrefix = "dist/managed/trust-registry/";
-const lightContractPrefix = `${managedPrefix}contract/`;
+export const unexpectedLightContractArtifacts = (paths, managedDirectory) => {
+  const managedPrefix = `dist/managed/${managedDirectory}/`;
+  const lightContractPrefix = `${managedPrefix}contract/`;
+  return paths.filter((path) => path.startsWith(managedPrefix) && !path.startsWith(lightContractPrefix));
+};
 
-export const unexpectedLightContractArtifacts = (paths) => paths.filter((path) =>
-  path.startsWith(managedPrefix) && !path.startsWith(lightContractPrefix));
-
-export const missingFullContractArtifacts = (paths) => {
+export const missingFullContractArtifacts = (paths, managedDirectory) => {
+  const managedPrefix = `dist/managed/${managedDirectory}/`;
   const required = [
-    ["proving keys", /^dist\/managed\/trust-registry\/keys\/[^/]+\.prover$/u],
-    ["ZK IR", /^dist\/managed\/trust-registry\/zkir\/[^/]+\.zkir$/u],
+    ["proving keys", `${managedPrefix}keys/`, /^[^/]+\.prover$/u],
+    ["ZK IR", `${managedPrefix}zkir/`, /^[^/]+\.zkir$/u],
   ];
-  return required.filter(([, pattern]) => !paths.some((path) => pattern.test(path)))
+  return required.filter(([, prefix, pattern]) => !paths.some((path) =>
+    path.startsWith(prefix) && pattern.test(path.slice(prefix.length))))
     .map(([label]) => label);
 };

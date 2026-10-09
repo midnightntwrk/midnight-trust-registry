@@ -12,7 +12,7 @@ test("light contract artifacts contain only generated contract modules", () => {
     "dist/managed/trust-registry/zkir/proposeIssuerAuthorization.zkir",
     "dist/managed/trust-registry/compiler/contract-info.json",
   ];
-  assert.deepEqual(unexpectedLightContractArtifacts(paths), paths.slice(3));
+  assert.deepEqual(unexpectedLightContractArtifacts(paths, "trust-registry"), paths.slice(3));
 });
 
 test("full release artifacts require a proving key and ZK IR", () => {
@@ -21,7 +21,8 @@ test("full release artifacts require a proving key and ZK IR", () => {
     "dist/managed/trust-registry/keys/proposeIssuerAuthorization.prover",
     "dist/managed/trust-registry/zkir/proposeIssuerAuthorization.zkir",
   ];
-  assert.deepEqual(missingFullContractArtifacts(complete), []);
-  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 1)), ["proving keys", "ZK IR"]);
-  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 2)), ["ZK IR"]);
+  assert.deepEqual(missingFullContractArtifacts(complete, "trust-registry"), []);
+  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 1), "trust-registry"), ["proving keys", "ZK IR"]);
+  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 2), "trust-registry"), ["ZK IR"]);
+  assert.deepEqual(missingFullContractArtifacts(complete, "another-contract"), ["proving keys", "ZK IR"]);
 });

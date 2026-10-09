@@ -36,7 +36,7 @@
     "typecheck": "turbo run typecheck --continue",
     "typecheck:light": "turbo run typecheck --continue --only",
     "build": "turbo run build --continue",
-    "build:light": "turbo run build:light --continue",
+    "build:light": "rm -rf contracts/trust-registry/dist && turbo run build:light --continue",
     "test": "turbo run test --continue",
     "test:light": "turbo run test:light --continue",
     "quality": "pnpm run build && pnpm run typecheck && pnpm run audit",

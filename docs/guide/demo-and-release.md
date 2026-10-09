@@ -107,9 +107,12 @@ Pack and validate local artifact tarballs:
 
 ```bash
 pnpm run artifacts:pack
-pnpm run packages:check-contents
+pnpm run packages:check-contents:light
 pnpm run packed-artifacts:smoke
 ```
+
+For a full release build, run `pnpm run build` and then
+`pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
 
 ## Release Workflow
 
