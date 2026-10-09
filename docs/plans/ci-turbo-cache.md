@@ -27,9 +27,11 @@ audit threshold remains unchanged.
 
 ## Pinned Compact installer cache
 
-The four workflows that compile Compact restore an exact OS, architecture,
-and `.compact-version` cache of the launcher and `~/.compact/` compiler
-directory before calling `setup-compact-action`. On a hit,
+The four workflows that compile Compact use Ubuntu 24.04 and restore an exact
+runner, setup-action revision, architecture, and `.compact-version` cache of
+the launcher and `~/.compact/` compiler directory before calling
+`setup-compact-action`. Downloaded `artifact.zip` files are excluded from the
+cache; only the installed toolchain is needed on a hit. On a hit,
 they skip that action entirely: its current implementation calls
 `compact update` even when its own cache hits, which can fail on an unauthenticated
 GitHub release API rate limit. On a miss, the pinned action installs with its
@@ -39,7 +41,9 @@ There is no cross-version restore key. An invalid cached compiler fails closed
 instead of silently reinstalling or using the wrong version. The workflow
 diagnostic directs the operator to delete the specific immutable Actions cache
 entry before rerunning; the key is versioned to avoid the initial incomplete
-cache layout.
+cache layout. Rotate the key if the pinned setup action or runner generation
+changes. Cache deletion requires Actions write permission and is a deliberate
+operator action, never an automatic replacement of unverified content.
 
 If a miss fails during download or update, inspect the setup-action log and
 GitHub release API limit before retrying. A cache hit should need no release

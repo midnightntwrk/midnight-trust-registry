@@ -36,7 +36,7 @@ jobs:
     environment:
       name: npm-publish
       url: ${{ inputs.registry }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: Checkout repository
@@ -66,7 +66,8 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-          key: tr-compact-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+            !~/.compact/**/artifact.zip
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Set up Compact toolchain
         if: steps.compact-cache.outputs.cache-hit != 'true'
@@ -92,7 +93,8 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-          key: tr-compact-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+            !~/.compact/**/artifact.zip
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
