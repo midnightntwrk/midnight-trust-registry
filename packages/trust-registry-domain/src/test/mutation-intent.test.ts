@@ -45,6 +45,7 @@ describe("mutation intent v1", () => {
       { ...intent, actorDid: "did:example:alice" },
       { ...intent, actorDid: `${intent.actorDid}#key-1` },
       { ...intent, actorDid: intent.actorDid.toUpperCase() },
+      { ...intent, actorDid: `did:midnight:testnet:${"AA".repeat(32)}`, actorKeyId: `did:midnight:testnet:${"AA".repeat(32)}#assertion-1` },
       { ...intent, actorDid: `${intent.actorDid}/path` },
       { ...intent, actorDid: `${intent.actorDid}?svc=x` },
       { ...intent, actorDid: "did:midnight:testnet:alice with space" },
@@ -60,6 +61,8 @@ describe("mutation intent v1", () => {
       { ...intent, expiresAt: intent.issuedAt },
       { ...intent, actorRole: "applicant", action: "approve" },
       { ...intent, target: "epoch" },
+      { ...intent, version: "tr-mutation-intent-v2" },
+      { ...intent, actorRole: "maintainer", action: "publish-epoch", target: "epoch", targetId: "epoch:other" },
       { ...intent, target: "recognition", actorRole: "applicant" },
       { ...intent, target: "issuer", actorRole: "maintainer" },
       { ...intent, extra: "unsigned" },
@@ -74,7 +77,7 @@ describe("mutation intent v1", () => {
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "recognition" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "maintainer" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "applicant", target: "maintainer" }).success).toBe(true);
-    expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", action: "publish-epoch", target: "epoch" }).success).toBe(true);
+    expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", action: "publish-epoch", target: "epoch", targetId: intent.expectedEpochId }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "applicant", action: "publish-epoch", target: "epoch" }).success).toBe(false);
   });
 });

@@ -55,6 +55,9 @@ export const MutationIntentSchema = z.strictObject({
   if ((intent.action === "publish-epoch") !== (intent.target === "epoch")) {
     ctx.addIssue({ code: "custom", path: ["target"], message: "Epoch target is reserved for epoch publication" });
   }
+  if (intent.action === "publish-epoch" && intent.targetId !== intent.expectedEpochId) {
+    ctx.addIssue({ code: "custom", path: ["targetId"], message: "Epoch publication must target the expected predecessor epoch" });
+  }
   const lifetime = Date.parse(intent.expiresAt) - Date.parse(intent.issuedAt);
   if (lifetime <= 0 || lifetime > MAX_MUTATION_INTENT_LIFETIME_MS) {
     ctx.addIssue({ code: "custom", path: ["expiresAt"], message: "Intent lifetime must be positive and at most five minutes" });

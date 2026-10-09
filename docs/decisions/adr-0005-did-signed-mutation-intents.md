@@ -35,7 +35,11 @@ proposals require a maintainer. A maintainer proposal may be submitted by the
 candidate or an existing maintainer; neither path self-enrolls the candidate.
 Governed approval and activation still require authorized maintainers.
 Lifecycle and epoch actions require a maintainer; only `publish-epoch` may
-target an epoch.
+target an epoch. For publication, `targetId` is the predecessor epoch ID and
+MUST equal `expectedEpochId`; the new epoch ID is determined by the operation.
+The preimage reserves the `maintainer` target for UC-03, but the current
+operator workspace and HTTP API do not execute it. An adapter MUST reject
+unmapped targets rather than treating a valid signed intent as authorization.
 
 The workspace commitment is the optimistic concurrency token for the *entire*
 operator workspace, including the operation log; an epoch ID alone is not
