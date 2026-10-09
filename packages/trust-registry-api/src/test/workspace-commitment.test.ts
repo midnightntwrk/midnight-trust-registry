@@ -22,5 +22,9 @@ describe("operator workspace revision commitment", () => {
 
     const next = applyWorkspaceOperation(workspace, operation);
     expect(computeOperatorWorkspaceCommitment(next)).not.toBe(before);
+
+    const withUndefined = { ...workspace, operations: [...workspace.operations, { operation: "publish-epoch" as const, label: undefined }] };
+    const afterJsonRoundTrip = JSON.parse(JSON.stringify(withUndefined)) as typeof withUndefined;
+    expect(computeOperatorWorkspaceCommitment(withUndefined)).toBe(computeOperatorWorkspaceCommitment(afterJsonRoundTrip));
   });
 });

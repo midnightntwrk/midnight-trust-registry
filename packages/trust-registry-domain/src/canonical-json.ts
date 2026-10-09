@@ -9,6 +9,11 @@ export function canonicalizeJson(value: unknown): string {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) {
+        throw new TypeError("Canonical JSON cannot contain sparse arrays");
+      }
+    }
     return `[${value.map(canonicalizeJson).join(",")}]`;
   }
   if (typeof value === "object") {

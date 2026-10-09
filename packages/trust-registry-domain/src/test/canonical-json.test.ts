@@ -18,9 +18,14 @@ describe("canonical mutation payloads", () => {
   });
 
   it("rejects non-JSON and non-finite values rather than omitting them", () => {
+    const sparse = new Array<number>(3);
+    sparse[0] = 1;
+    sparse[2] = 2;
     for (const value of [undefined, { scope: undefined }, Number.NaN, Infinity, 1n]) {
       expect(() => canonicalizeJson(value)).toThrow(TypeError);
     }
+    expect(() => canonicalizeJson(sparse)).toThrow(TypeError);
+    expect(() => canonicalizeJson([1, undefined, 2])).toThrow(TypeError);
     expect(canonicalizeJson(["a", "b"])).not.toBe(canonicalizeJson(["b", "a"]));
   });
 });
