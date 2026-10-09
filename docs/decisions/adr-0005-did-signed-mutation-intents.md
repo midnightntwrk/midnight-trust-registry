@@ -21,17 +21,21 @@ workspace commitment, expected epoch ID (or `null`), issued-at, and expires-at.
 format. Unknown fields, mixed-case identifiers/commitments, noncanonical UTC
 timestamps, and intents lasting longer than five minutes are rejected. The
 0.1.0 signer profile uses a four-part `did:midnight` actor with a lowercase
-64-hex identifier and a DID-fragment assertion key. This is narrower than the
+64-hex identifier and a DID-fragment key. The signature signs the raw 32 digest
+bytes returned by `mutationIntentDigestBytes`, not the UTF-8 bytes of the `0x`
+hex display string. This is narrower than the
 DID package's accepted syntax (which can include uppercase on-chain hex and
-embedded off-chain state); those spellings are not accepted as signing
-identities until a canonical resolver profile prevents aliases. The fragment
+embedded off-chain state); off-chain DIDs and those alternative spellings are
+not accepted as signing identities until a canonical resolver profile prevents aliases. The fragment
 itself is case-sensitive and is signed exactly. Other DID methods require a
 separate verified key-resolution profile, not a permissive fallback.
 
-`submit` is an applicant action for a membership target. Lifecycle and epoch
-actions require a maintainer; only `publish-epoch` may target an epoch.
-Submitting a maintainer application does not self-enroll the applicant: the
-governed approval and activation still require authorized maintainers.
+Issuer, verifier, and auditor `submit` actions require an applicant. Recognition
+proposals require a maintainer. A maintainer proposal may be submitted by the
+candidate or an existing maintainer; neither path self-enrolls the candidate.
+Governed approval and activation still require authorized maintainers.
+Lifecycle and epoch actions require a maintainer; only `publish-epoch` may
+target an epoch.
 
 The workspace commitment is the optimistic concurrency token for the *entire*
 operator workspace, including the operation log; an epoch ID alone is not

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { computeMutationIntentDigest, MutationIntentSchema } from "../mutation-intent.js";
+import { computeMutationIntentDigest, mutationIntentDigestBytes, MutationIntentSchema } from "../mutation-intent.js";
 
 const intent = {
   version: "tr-mutation-intent-v1" as const,
@@ -31,6 +31,8 @@ describe("mutation intent v1", () => {
       intent.issuedAt, intent.expiresAt,
     ])).digest("hex");
     expect(computeMutationIntentDigest(intent)).toBe(`0x${expected}`);
+    expect(Buffer.from(mutationIntentDigestBytes(intent)).toString("hex")).toBe(expected);
+    expect(mutationIntentDigestBytes(intent)).toHaveLength(32);
     expect(computeMutationIntentDigest({ ...intent, targetId: "auth:auditor:other:v1" })).not.toBe(`0x${expected}`);
     expect(computeMutationIntentDigest({ ...intent, actorKeyId: `${intent.actorDid}#assertion-2` })).not.toBe(`0x${expected}`);
     expect(computeMutationIntentDigest({ ...intent, payloadCommitment: `0x${"55".repeat(32)}` })).not.toBe(`0x${expected}`);
@@ -46,6 +48,7 @@ describe("mutation intent v1", () => {
       { ...intent, actorDid: `${intent.actorDid}/path` },
       { ...intent, actorDid: `${intent.actorDid}?svc=x` },
       { ...intent, actorDid: "did:midnight:testnet:alice with space" },
+      { ...intent, actorDid: `did:midnight:offchain:${"aa".repeat(32)}`, actorKeyId: `did:midnight:offchain:${"aa".repeat(32)}#assertion-1` },
       { ...intent, actorKeyId: `did:midnight:testnet:${"bb".repeat(32)}#assertion-1` },
       { ...intent, nonce: `0x${"AA".repeat(32)}` },
       { ...intent, issuedAt: "hello" },
@@ -57,6 +60,8 @@ describe("mutation intent v1", () => {
       { ...intent, expiresAt: intent.issuedAt },
       { ...intent, actorRole: "applicant", action: "approve" },
       { ...intent, target: "epoch" },
+      { ...intent, target: "recognition", actorRole: "applicant" },
+      { ...intent, target: "issuer", actorRole: "maintainer" },
       { ...intent, extra: "unsigned" },
     ];
     for (const candidate of invalid) {
@@ -66,6 +71,9 @@ describe("mutation intent v1", () => {
 
   it("permits maintainer lifecycle and epoch intents but not applicant governance", () => {
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", action: "approve" }).success).toBe(true);
+    expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "recognition" }).success).toBe(true);
+    expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "maintainer" }).success).toBe(true);
+    expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "applicant", target: "maintainer" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", action: "publish-epoch", target: "epoch" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "applicant", action: "publish-epoch", target: "epoch" }).success).toBe(false);
   });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hexToBytes } from "@noble/hashes/utils.js";
 
 import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 
@@ -17,8 +18,8 @@ const CanonicalUtcTimestampSchema = z.string().datetime({ offset: false }).refin
   },
   "Timestamp must be canonical UTC with milliseconds",
 );
-const MidnightDidPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod|offchain):[0-9a-f]{64}$/u;
-const MidnightKeyPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod|offchain):[0-9a-f]{64}#[A-Za-z0-9:._-]+$/u;
+const MidnightDidPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod):[0-9a-f]{64}$/u;
+const MidnightKeyPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod):[0-9a-f]{64}#[A-Za-z0-9:._-]+$/u;
 
 export const MAX_MUTATION_INTENT_LIFETIME_MS = 5 * 60 * 1000;
 
@@ -42,8 +43,11 @@ export const MutationIntentSchema = z.strictObject({
   if (!intent.actorKeyId.startsWith(`${intent.actorDid}#`)) {
     ctx.addIssue({ code: "custom", path: ["actorKeyId"], message: "Verification method must belong to the actor DID" });
   }
-  if (intent.action === "submit" && (intent.actorRole !== "applicant" || intent.target === "epoch")) {
-    ctx.addIssue({ code: "custom", path: ["action"], message: "Only an applicant may submit a membership application" });
+  if (intent.action === "submit" && intent.target === "recognition" && intent.actorRole !== "maintainer") {
+    ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Recognition proposals require a maintainer" });
+  }
+  if (intent.action === "submit" && ["issuer", "verifier", "auditor"].includes(intent.target) && intent.actorRole !== "applicant") {
+    ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Membership applications require an applicant" });
   }
   if (intent.action !== "submit" && intent.actorRole !== "maintainer") {
     ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Governed actions require a maintainer" });
@@ -78,4 +82,8 @@ export function computeMutationIntentDigest(input: MutationIntent): string {
     intent.issuedAt,
     intent.expiresAt,
   ]));
+}
+
+export function mutationIntentDigestBytes(input: MutationIntent): Uint8Array {
+  return hexToBytes(computeMutationIntentDigest(input).slice(2));
 }
