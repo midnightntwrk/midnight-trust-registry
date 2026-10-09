@@ -13,6 +13,13 @@ import {
 
 type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
 
+export class MutationIntentDidResolutionUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Midnight DID resolver is unavailable", { cause });
+    this.name = "MutationIntentDidResolutionUnavailableError";
+  }
+}
+
 /** Verifies DID key control only; registry role, nonce, clock, and state checks remain separate. */
 export async function verifyMutationIntentDidSignature(
   intentInput: unknown,
@@ -24,10 +31,23 @@ export async function verifyMutationIntentDidSignature(
   if (!intent.success || !signature.success || signature.data.keyId !== intent.data.actorKeyId) {
     return false;
   }
+  let did: ReturnType<typeof parseMidnightDIDString>;
   try {
-    const did = parseMidnightDIDString(intent.data.actorDid);
+    did = parseMidnightDIDString(intent.data.actorDid);
+  } catch {
+    return false;
+  }
+
+  let resolved: Awaited<ReturnType<MidnightResolver["resolveResult"]>>;
+  try {
+    resolved = await resolver.resolveResult(did);
+  } catch (error) {
+    throw new MutationIntentDidResolutionUnavailableError(error);
+  }
+
+  try {
     const method = await resolveMidnightDIDMethodBinding({
-      resolver,
+      resolver: { resolveResult: async () => resolved },
       did,
       verificationMethodId: `#${intent.data.actorKeyId.split("#")[1]}`,
       relationship: intent.data.actorRole === "applicant" ? "authentication" : "capabilityInvocation",

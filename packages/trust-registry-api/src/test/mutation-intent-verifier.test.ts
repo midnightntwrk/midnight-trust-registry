@@ -13,7 +13,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
-import { verifyMutationIntentDidSignature } from "../mutation-intent-verifier.js";
+import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "../mutation-intent-verifier.js";
 
 const seed = new Uint8Array(32).fill(73);
 const did = createMidnightDid("mutation-intent-verifier");
@@ -70,5 +70,16 @@ describe("Midnight DID mutation-intent signatures", () => {
     expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent, new Uint8Array(32).fill(74)), resolver)).toBe(false);
     expect(await verifyMutationIntentDidSignature(intent, { ...signature, value: `0x${"ff".repeat(96)}` }, resolver)).toBe(false);
     expect(await verifyMutationIntentDidSignature({ ...intent, issuedAt: "not-a-time" }, signature, resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(intent, signature, { resolveResult: async () => null })).toBe(false);
+  });
+
+  it("distinguishes a retryable DID resolver outage from an invalid signature", async () => {
+    const outage = new Error("RPC unavailable");
+    await expect(verifyMutationIntentDidSignature(intent, signatureFor(intent), {
+      resolveResult: async () => { throw outage; },
+    })).rejects.toMatchObject({
+      name: MutationIntentDidResolutionUnavailableError.name,
+      cause: outage,
+    });
   });
 });
