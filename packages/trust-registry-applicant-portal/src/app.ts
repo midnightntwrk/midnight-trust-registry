@@ -1,5 +1,5 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
-import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type ApplicantTarget, type PublicInspection } from "./model.js";
+import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -80,7 +80,7 @@ export const createApplicantPortalApp = (
   };
 
   const submitApplication = async (
-    target: ApplicantTarget,
+    target: PortalSubmissionTarget,
     label: string,
   ) => {
     setState({ submitting: true, error: undefined, flash: undefined });
@@ -134,7 +134,12 @@ export const createApplicantPortalApp = (
       if (targetInput === null || labelInput === null) {
         return;
       }
-      void submitApplication(targetInput.value as ApplicantTarget, labelInput.value.trim());
+      const target = TARGET_OPTIONS.find((option) => option.value === targetInput.value)?.value;
+      if (target === undefined) {
+        setState({ error: "This portal does not support that application role." });
+        return;
+      }
+      void submitApplication(target, labelInput.value.trim());
     });
   };
 

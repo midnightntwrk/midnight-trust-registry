@@ -6,8 +6,10 @@ Current scope:
 
 - submit issuer, verifier, or recognition applications through the existing API
 - inspect current active issuer, verifier, auditor, and recognition records
-- keep auditor submission disabled until challenge-bound evidence admission
-  and authenticated mutation routes are available
+- do not offer auditor submission in this portal until challenge-bound evidence
+  admission and authenticated mutation routes are available. This UI restriction
+  is not an authorization boundary: the local demo API still accepts unsigned
+  auditor writes and must not be exposed as a public governed mutation service.
 - keep the first portal slice static and local-first instead of adding a second
   backend or browser persistence layer
 

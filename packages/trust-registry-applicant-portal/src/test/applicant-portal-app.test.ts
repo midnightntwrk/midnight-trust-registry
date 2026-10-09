@@ -53,6 +53,17 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).not.toContain("archived-auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
     expect(root.querySelector("option[value='auditor']")).toBeNull();
+    const target = root.querySelector<HTMLSelectElement>("[name='target']")!;
+    const injectedOption = document.createElement("option");
+    injectedOption.value = "auditor";
+    injectedOption.textContent = "Auditor";
+    target.add(injectedOption);
+    target.value = "auditor";
+    root.querySelector<HTMLInputElement>("[name='label']")!.value = "forged-auditor";
+    root.querySelector<HTMLFormElement>("[data-submit-form]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    expect(root.textContent).toContain("does not support that application role");
     expect(fetchImpl.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
   });
 });

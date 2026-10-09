@@ -1,13 +1,12 @@
 import type {
   TrustRegistryApiApplicationMutationResponse,
-  TrustRegistryApiApplicationTarget,
   TrustRegistryApiAuthorizationListResponse,
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
 
-import type { PublicInspection } from "./model.js";
+import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;
 
@@ -82,7 +81,7 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async submitApplication(
-    target: TrustRegistryApiApplicationTarget,
+    target: PortalSubmissionTarget,
     label: string,
   ): Promise<TrustRegistryApiApplicationMutationResponse> {
     return this.request<TrustRegistryApiApplicationMutationResponse>(

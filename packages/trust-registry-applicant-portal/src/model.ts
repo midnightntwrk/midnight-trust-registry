@@ -7,6 +7,7 @@ import type {
 } from "@midnight-ntwrk/trust-registry-api";
 
 export type ApplicantTarget = TrustRegistryApiApplicationTarget;
+export type PortalSubmissionTarget = "issuer" | "verifier" | "recognition";
 export type PublicIssuerEntry =
   TrustRegistryApiAuthorizationListResponse["entries"][number];
 export type PublicVerifierEntry =
@@ -37,7 +38,7 @@ export type PublicInspection = {
 export const TARGET_OPTIONS: readonly {
   description: string;
   label: string;
-  value: ApplicantTarget;
+  value: PortalSubmissionTarget;
 }[] = [
   {
     value: "issuer",
