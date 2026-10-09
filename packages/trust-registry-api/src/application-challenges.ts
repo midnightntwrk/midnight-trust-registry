@@ -30,6 +30,7 @@ export type ApplicationChallengeRecord = {
   challengeHash: string;
   bindingHash: string;
   applicationHash: string;
+  issuedAtMs: number;
   expiresAtMs: number;
 };
 
@@ -41,7 +42,7 @@ export type ApplicationChallengeInsertResult = {
 /** A production adapter must atomically replace per application and check-and-delete on consume. */
 export interface ApplicationChallengeStore {
   insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number): Promise<ApplicationChallengeInsertResult>;
-  isLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
+  readLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<ApplicationChallengeRecord | null>;
   consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean>;
 }
 
@@ -55,8 +56,8 @@ export class ApplicationChallengeCapacityError extends Error {
 
 export class ApplicationChallengeClockError extends RangeError {
   readonly code = "CHALLENGE_CLOCK_INVALID";
-  constructor() {
-    super("Application challenge clock is invalid");
+  constructor(message = "Application challenge clock is invalid") {
+    super(message);
     this.name = "ApplicationChallengeClockError";
   }
 }
@@ -97,6 +98,9 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
   }
 
   async insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number = Date.now): Promise<ApplicationChallengeInsertResult> {
+    if (!Number.isSafeInteger(record.issuedAtMs) || record.issuedAtMs < 0 || record.issuedAtMs > nowMs) {
+      throw new ApplicationChallengeClockError("Application challenge issuance time is invalid");
+    }
     if (record.expiresAtMs <= nowMs) return { inserted: false, supersededPrevious: false };
     const delayMs = record.expiresAtMs - nowMs;
     if (!Number.isSafeInteger(delayMs) || delayMs > MAX_TIMEOUT_MS) {
@@ -131,6 +135,9 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
   async consume(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
     const current = this.records.get(challengeHash);
     if (current === undefined) return false;
+    if (nowMs < current.record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge clock precedes issuance");
+    }
     if (nowMs >= current.record.expiresAtMs) {
       this.remove(challengeHash);
       return false;
@@ -140,14 +147,17 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
     return true;
   }
 
-  async isLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<boolean> {
+  async readLive(challengeHash: string, bindingHash: string, nowMs: number): Promise<ApplicationChallengeRecord | null> {
     const current = this.records.get(challengeHash);
-    if (current === undefined) return false;
+    if (current === undefined) return null;
+    if (nowMs < current.record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge clock precedes issuance");
+    }
     if (nowMs >= current.record.expiresAtMs) {
       this.remove(challengeHash);
-      return false;
+      return null;
     }
-    return current.record.bindingHash === bindingHash;
+    return current.record.bindingHash === bindingHash ? { ...current.record } : null;
   }
 
   private remove(challengeHash: string): void {
@@ -214,7 +224,7 @@ export class ApplicationChallengeService {
       const nonceBytes = randomBytes(NONCE_BYTES);
       const challengeHash = sha256Hex(nonceBytes);
       const result = await this.store.insert(
-        { challengeHash, bindingHash, applicationHash, expiresAtMs },
+        { challengeHash, bindingHash, applicationHash, issuedAtMs, expiresAtMs },
         issuedAtMs,
         () => this.now(),
       );
@@ -252,13 +262,29 @@ export class ApplicationChallengeService {
     nonce: string;
     challengeHash: string;
   }): Promise<boolean> {
+    return (await this.liveWindow(input)) !== null;
+  }
+
+  /** Advisory preflight; the returned window comes from the store, not the caller. */
+  async liveWindow(input: {
+    binding: ApplicationChallengeBinding;
+    nonce: string;
+    challengeHash: string;
+  }): Promise<{ issuedAtMs: number; expiresAtMs: number } | null> {
     const parsedBinding = ApplicationChallengeBindingSchema.safeParse(input.binding);
-    if (!parsedBinding.success || !hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) return false;
-    return this.store.isLive(
-      input.challengeHash.toLowerCase(),
-      computeApplicationChallengeBindingHash(parsedBinding.data),
-      this.now(),
-    );
+    if (!parsedBinding.success || !hasMatchingApplicationChallengeHash(input.nonce, input.challengeHash)) return null;
+    const challengeHash = input.challengeHash.toLowerCase();
+    const bindingHash = computeApplicationChallengeBindingHash(parsedBinding.data);
+    const nowMs = this.now();
+    const record = await this.store.readLive(challengeHash, bindingHash, nowMs);
+    if (record === null) return null;
+    if (record === undefined || record.challengeHash !== challengeHash || record.bindingHash !== bindingHash
+      || !Number.isSafeInteger(record.issuedAtMs) || !Number.isSafeInteger(record.expiresAtMs)
+      || record.issuedAtMs < 0 || record.issuedAtMs > nowMs
+      || record.expiresAtMs <= nowMs || record.expiresAtMs <= record.issuedAtMs) {
+      throw new ApplicationChallengeClockError("Application challenge store returned an invalid live window");
+    }
+    return { issuedAtMs: record.issuedAtMs, expiresAtMs: record.expiresAtMs };
   }
 
   private now(): number {
