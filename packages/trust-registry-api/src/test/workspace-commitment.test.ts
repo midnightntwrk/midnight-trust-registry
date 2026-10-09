@@ -10,6 +10,9 @@ describe("operator workspace revision commitment", () => {
     const before = computeOperatorWorkspaceCommitment(workspace);
     const reordered = Object.fromEntries(Object.entries(workspace).reverse());
     expect(computeOperatorWorkspaceCommitment(reordered as typeof workspace)).toBe(before);
+    const nestedRegistry = Object.fromEntries(Object.entries(workspace.snapshot.registry).reverse());
+    const nestedReordered = { ...workspace, snapshot: { ...workspace.snapshot, registry: nestedRegistry } };
+    expect(computeOperatorWorkspaceCommitment(nestedReordered as typeof workspace)).toBe(before);
 
     const operation = {
       operation: "submit",

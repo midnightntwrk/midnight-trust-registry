@@ -17,6 +17,10 @@ export function canonicalizeJson(value: unknown): string {
     return `[${value.map(canonicalizeJson).join(",")}]`;
   }
   if (typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Canonical JSON requires plain objects");
+    }
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record).sort().map((key) =>
       `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`).join(",")}}`;

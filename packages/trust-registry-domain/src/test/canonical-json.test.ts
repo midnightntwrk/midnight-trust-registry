@@ -21,7 +21,9 @@ describe("canonical mutation payloads", () => {
     const sparse = new Array<number>(3);
     sparse[0] = 1;
     sparse[2] = 2;
-    for (const value of [undefined, { scope: undefined }, Number.NaN, Infinity, 1n]) {
+    for (const value of [undefined, { scope: undefined }, Number.NaN, Infinity, 1n,
+      new Date("2026-10-10T00:00:00Z"), new Map([["a", 1]]), new Set([1]),
+      { nested: new Date("2026-10-10T00:00:00Z") }]) {
       expect(() => canonicalizeJson(value)).toThrow(TypeError);
     }
     expect(() => canonicalizeJson(sparse)).toThrow(TypeError);
