@@ -54,16 +54,18 @@ ID is rejected. The auditor role is not mapped to TRQP `issue` or `verify`.
 Current and historical API responses include lifecycle status and evidence;
 an archived response is not a current active trust decision.
 
-Timestamped TRQP evidence selects the matching epoch and a bundle for that
+TRQP evidence selects the matching epoch and a bundle for that
 record from the current entry or the snapshot's `evidenceArchive`. The archive
 must retain the prior bundle and epoch commitment before later lifecycle
-changes; otherwise the query returns 404 rather than attaching a later proof
+changes; otherwise the query returns 424 rather than attaching a later proof
 to an earlier decision. Snapshot parsing checks archive record identity,
 uniqueness, and internal Merkle/epoch consistency. Consumers still need an
 independently trusted epoch anchor and quorum verification before accepting
 the exported bundle as cryptographic proof. Each workspace operation retains
 the prior snapshot's displaced bundles and epochs; importing an external
 snapshot still requires its producer to supply the archive explicitly.
+Local snapshot/workspace JSON created before `evidenceArchive` was introduced
+must be regenerated; the unreleased format has no legacy-field fallback.
 
 Run locally against a saved workspace:
 

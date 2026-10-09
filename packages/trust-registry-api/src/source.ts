@@ -27,6 +27,10 @@ import type {
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
 import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
+import {
   compareRfc3339Instants,
   type EpochCommitment,
   type RegistryRecord,
