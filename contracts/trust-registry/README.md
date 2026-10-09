@@ -2,6 +2,12 @@
 
 Minimal Compact contract package for the Midnight trust registry.
 
+`build:light` emits the generated contract JavaScript and type declarations
+needed by local tests and package-import smoke checks. It deliberately excludes
+proving keys and ZK IR, even when a previous full compile left them in
+`src/managed`. The full `build` still copies all generated artifacts; this
+light path does not change release packaging or delete compiler outputs.
+
 Current scope:
 
 - registry initialization

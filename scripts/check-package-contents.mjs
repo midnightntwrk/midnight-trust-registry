@@ -5,8 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
+import { unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const lightMode = process.argv.includes("--light");
 
 const disallowedFilePatterns = [
   /^coverage\//u,
@@ -62,6 +64,13 @@ for (const workspace of artifactWorkspaces) {
     errors.push(
       `${workspace}: package contains development-only files: ${disallowed.join(", ")}`,
     );
+  }
+
+  if (lightMode && workspace === "contracts/trust-registry") {
+    const unexpected = unexpectedLightContractArtifacts(filePaths);
+    if (unexpected.length > 0) {
+      errors.push(`${workspace}: light package contains proving artifacts: ${unexpected.join(", ")}`);
+    }
   }
 
   const missingRequired = (expected?.requiredPackedPaths ?? []).filter(
