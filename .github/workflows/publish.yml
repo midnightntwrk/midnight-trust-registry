@@ -78,6 +78,9 @@ jobs:
       - name: Check workspace manifests
         run: pnpm run check:workspace-manifests
 
+      - name: Verify installed DID and VC runtime
+        run: pnpm run check:installed-identity-runtime
+
       - name: Build repository
         run: pnpm run build
 

@@ -9,6 +9,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
+  IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -17,9 +18,11 @@ import {
   computeIssuerStatusPolicyBindingCommitment,
   deriveGovernancePolicySnapshot,
   resolveGovernancePolicyTemplate,
+  sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
+  createIssuerAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -29,6 +32,69 @@ import {
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("trust registry local simulator integration", () => {
+  it("proposes every supported issuer resource against its canonical scope", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    for (const resourceType of [
+      IssuerResourceType.credentialFamily,
+      IssuerResourceType.schema,
+      IssuerResourceType.schemaVersion,
+      IssuerResourceType.credentialDefinition,
+      IssuerResourceType.statusMethodRequirement,
+    ]) {
+      const issuer = createIssuerScenarioFixture(`resource-${resourceType}`, resourceType);
+      expect(() => harness.proposeIssuer(issuer)).not.toThrow();
+      const scope = createIssuerAuthorizationScopeFixture(issuer);
+      const governedResource = {
+        type: (["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const)[resourceType]!,
+        id: issuer.resourceId,
+      };
+      expect(() => harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+        governedResource: { ...governedResource, id: "unapproved-resource" },
+      })).toThrow(/outside the scope/);
+      const validEvidence = harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+        governedResource,
+      });
+      expect(() => harness.assertApplicationEvidence({
+        evidence: validEvidence,
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+        governedResource: { ...governedResource, id: "unapproved-resource" },
+      })).toThrow(/outside the scope/);
+      expect(() => harness.createApplicationEvidence({
+        applicationId: issuer.authorizationId,
+        subjectDid: issuer.subjectDid,
+        role: "issuer",
+        scope,
+      })).toThrow(/explicit governed resource/);
+      expect(() => harness.proposeIssuerWithApplicationEvidence(
+        issuer,
+        harness.createApplicationEvidence({
+          applicationId: issuer.authorizationId,
+          subjectDid: issuer.subjectDid,
+          role: "issuer",
+          scope,
+          governedResource,
+        }),
+        [],
+        {
+          scope: { ...scope, statusMethod: "substituted-method" },
+          challengeHash: sha256Hex("unused"),
+          governedResource,
+        },
+      )).toThrow(/proposal scope does not match/);
+    }
+  });
+
   it("preserves issuer application history before activation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application");
@@ -65,7 +131,8 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     const decodedSignature = decodeJubjubSignature(
       Buffer.from(validEvidence.signature.value.slice(2), "hex"),
@@ -155,7 +222,8 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
     harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
     harness.proposeVerifier(verifier);
@@ -644,7 +712,8 @@ describe("trust registry local simulator integration", () => {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer" as const,
-      scopeCommitment: issuer.resourceIdCommitment,
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily" as const, id: issuer.resourceId },
     };
     const applicationEvidence = harness.createApplicationEvidence(applicationInput);
     const client = new TrustRegistrySimulatorClient(harness.simulator);

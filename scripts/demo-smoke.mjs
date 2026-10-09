@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { request as httpRequest } from "node:http";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
+
+import { assertUiIndexResponse, collectEmittedModuleAssets } from "./demo-smoke-assets.mjs";
+import { describeChildExit, stopChild } from "./demo-smoke-process.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -21,6 +26,9 @@ const parseArgs = () => {
       case "--":
         break;
       case "--workspace":
+        if (!args[index + 1] || args[index + 1].startsWith("--")) {
+          throw new Error("--workspace requires a path");
+        }
         options.workspacePath = path.resolve(repoRoot, args[++index]);
         break;
       case "--keep-artifacts":
@@ -56,7 +64,8 @@ const run = (command, args, options = {}) => {
   if (result.status !== 0) {
     throw new Error(
       [
-        `${command} ${args.join(" ")} failed with exit code ${result.status}`,
+        `${command} ${args.join(" ")} ${result.error ? "failed to start" : `failed with ${result.signal ? `signal ${result.signal}` : `exit code ${result.status}`}`}`,
+        result.error && `spawn error: ${result.error.message}`,
         result.stdout,
         result.stderr,
       ]
@@ -92,8 +101,9 @@ const findFreePort = async () =>
 const waitForHealth = async (url, child) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
-    if (child.exitCode !== null) {
-      throw new Error(`demo api exited early with code ${child.exitCode}`);
+    if (child.launchError) throw child.launchError;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`demo api exited early with ${describeChildExit(child)}`);
     }
 
     try {
@@ -122,11 +132,35 @@ const requestJson = async (url, init) => {
   return payload;
 };
 
+const requestRawPath = async (url, pathname) =>
+  await new Promise((resolve, reject) => {
+    const address = new URL(url);
+    const request = httpRequest({
+      hostname: address.hostname,
+      port: Number(address.port),
+      path: pathname,
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, body }));
+      response.on("error", reject);
+      response.on("aborted", () => reject(new Error(`Static asset response aborted for ${pathname}`)));
+      response.on("close", () => {
+        if (!response.complete) reject(new Error(`Static asset response closed early for ${pathname}`));
+      });
+    });
+    request.on("error", reject);
+    request.setTimeout(5_000, () => request.destroy(new Error(`Static asset request timed out for ${pathname}`)));
+    request.end();
+  });
+
 const waitForUi = async (url, child, title, distDir) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20_000) {
+    if (child.launchError) throw child.launchError;
     if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`${title} exited early with code ${child.exitCode ?? child.signalCode}`);
+      throw new Error(`${title} exited early with ${describeChildExit(child)}`);
     }
 
     let response;
@@ -140,62 +174,70 @@ const waitForUi = async (url, child, title, distDir) => {
       continue;
     }
 
-    if (!response.ok) {
-      throw new Error(`${title} served index.html with HTTP ${response.status}`);
-    }
+    assertUiIndexResponse(response, title);
     const html = await response.text();
     if (!html.includes(`<title>${title}</title>`)) {
       throw new Error(`${title} served an unexpected index.html`);
     }
-    const modules = fs.readdirSync(distDir).filter((file) => file.endsWith(".js"));
-    if (!modules.includes("index.js")) {
-      throw new Error(`${title} build is missing index.js`);
-    }
+    const modules = collectEmittedModuleAssets(distDir, title);
     for (const [asset, contentType] of [
-      ...modules.map((file) => [file, "text/javascript"]),
+      ...modules.map((file) => [file, file.endsWith(".json") ? "application/json" : "text/javascript"]),
       ["styles.css", "text/css"],
     ]) {
-      const assetResponse = await fetch(`${url}/${asset}`);
+      const assetPath = asset.split("/").map(encodeURIComponent).join("/");
+      const assetResponse = await fetch(`${url}/${assetPath}`);
       if (!assetResponse.ok || !assetResponse.headers.get("content-type")?.startsWith(contentType)) {
         throw new Error(`${title} did not serve ${asset} with ${contentType} (HTTP ${assetResponse.status})`);
       }
-      if (!(await assetResponse.text()).trim()) {
+      if ((asset === "index.js" || asset === "styles.css") && !(await assetResponse.text()).trim()) {
         throw new Error(`${title} served an empty ${asset}`);
       }
+    }
+    const siblingDir = fs.mkdtempSync(`${distDir}-other-`);
+    const secretPath = path.join(siblingDir, "secret.txt");
+    const linkName = `outside-${randomUUID()}.txt`;
+    const linkPath = path.join(distDir, linkName);
+    try {
+      fs.writeFileSync(secretPath, "outside-dist-secret\n");
+      fs.symlinkSync(secretPath, linkPath);
+      const absoluteIndex = await requestRawPath(url, `${url}/index.html`);
+      if (absoluteIndex.status !== 200 || !absoluteIndex.body.includes(`<title>${title}</title>`)) {
+        throw new Error(`${title} did not serve an absolute-form index request`);
+      }
+      for (const target of [
+        `${url}?redirect=/styles.css`,
+        "/index.html#fragment",
+        `${url.replace(/^http:/u, "HTTP:")}/index.html`,
+      ]) {
+        const result = await requestRawPath(url, target);
+        if (result.status !== 200 || !result.body.includes(`<title>${title}</title>`)) {
+          throw new Error(`${title} did not serve index.html for ${target}`);
+        }
+      }
+      for (const [pathname, expectedStatus] of [
+        [`/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`${url}/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`/%2e%2e/%2e%2e/${path.basename(siblingDir)}/secret.txt`, 403],
+        [`/${linkName}`, 403],
+        ["/missing-static-asset.txt", 404],
+        ["/%zz", 400],
+      ]) {
+        const result = await requestRawPath(url, pathname);
+        if (result.body.includes("outside-dist-secret")) {
+          throw new Error(`${title} exposed a file outside dist through ${pathname}`);
+        }
+        if (result.status !== expectedStatus) {
+          throw new Error(`${title} served ${pathname} with HTTP ${result.status}, expected ${expectedStatus}`);
+        }
+      }
+    } finally {
+      fs.rmSync(linkPath, { force: true });
+      fs.rmSync(siblingDir, { recursive: true, force: true });
     }
     return;
   }
 
   throw new Error(`timed out waiting for ${title} at ${url}`);
-};
-
-const stopChild = async (child) => {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-  await new Promise((resolve) => {
-    let graceTimer;
-    let hardTimer;
-    const finish = () => {
-      clearTimeout(graceTimer);
-      clearTimeout(hardTimer);
-      child.off("exit", finish);
-      resolve();
-    };
-    child.once("exit", finish);
-    graceTimer = setTimeout(() => child.kill("SIGKILL"), 2_000);
-    hardTimer = setTimeout(() => {
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      child.unref();
-      finish();
-    }, 4_000);
-    if (child.exitCode !== null || child.signalCode !== null) {
-      finish();
-      return;
-    }
-    child.kill("SIGTERM");
-  });
 };
 
 const options = parseArgs();
@@ -210,6 +252,12 @@ const workspaceDir = options.workspacePath === undefined
 const workspacePath = options.workspacePath ?? path.join(workspaceDir, "workspace.json");
 const snapshotPath = path.join(workspaceDir, "demo-snapshot.json");
 const workspaceDirExisted = options.workspacePath !== undefined && fs.existsSync(workspaceDir);
+let existingWorkspaceAncestor = workspaceDir;
+if (options.workspacePath !== undefined) {
+  while (!fs.existsSync(existingWorkspaceAncestor)) {
+    existingWorkspaceAncestor = path.dirname(existingWorkspaceAncestor);
+  }
+}
 
 for (const target of [workspacePath, snapshotPath]) {
   if (fs.existsSync(target)) {
@@ -219,6 +267,14 @@ for (const target of [workspacePath, snapshotPath]) {
 
 fs.mkdirSync(workspaceDir, { recursive: true });
 
+let apiProcess;
+let stdout = "";
+let stderr = "";
+const uiProcesses = [];
+let primaryError;
+const cleanupProblems = [];
+let retainedWorkspacePath;
+try {
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-cli", "run", "build"]);
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-api", "run", "build"]);
 run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-admin-console", "run", "build"]);
@@ -250,15 +306,13 @@ const apiArgs = [
   "--port",
   String(port),
 ];
-const apiProcess = spawn("node", apiArgs, {
+apiProcess = spawn("node", apiArgs, {
   cwd: repoRoot,
   env: process.env,
   stdio: ["ignore", "pipe", "pipe"],
 });
 
-let stdout = "";
-let stderr = "";
-const uiProcesses = [];
+apiProcess.on("error", (error) => { apiProcess.launchError = error; });
 apiProcess.stdout.on("data", (chunk) => {
   stdout += String(chunk);
 });
@@ -268,7 +322,6 @@ apiProcess.stderr.on("data", (chunk) => {
 
 const baseUrl = `http://127.0.0.1:${port}`;
 
-try {
   const health = await waitForHealth(baseUrl, apiProcess);
   if (health.sourceMode !== "workspace") {
     throw new Error(`expected workspace source mode, got ${health.sourceMode}`);
@@ -355,6 +408,7 @@ try {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const service = { name, child, stdout: "", stderr: "" };
+    child.on("error", (error) => { child.launchError = error; });
     child.stdout.on("data", (chunk) => {
       service.stdout += String(chunk);
     });
@@ -366,31 +420,63 @@ try {
     await waitForUi(`http://127.0.0.1:${uiPort}`, child, title, distDir);
   }
 } catch (error) {
-  throw new Error(
-    [
-      error instanceof Error ? error.message : String(error),
-      stdout && `[demo-smoke] api stdout:\n${stdout}`,
-      stderr && `[demo-smoke] api stderr:\n${stderr}`,
-      ...uiProcesses.flatMap((service) => [
-        service.stdout && `[demo-smoke] ${service.name} stdout:\n${service.stdout}`,
-        service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
-      ]),
-    ]
-      .filter(Boolean)
-      .join("\n\n"),
-  );
+  primaryError = error;
 } finally {
-  await Promise.all([apiProcess, ...uiProcesses.map(({ child }) => child)].map(stopChild));
+  const children = [...(apiProcess ? [{ name: "api", child: apiProcess }] : []), ...uiProcesses];
+  const stopped = await Promise.allSettled(children.map(({ child }) => stopChild(child)));
+  for (const [index, outcome] of stopped.entries()) {
+    const name = children[index].name;
+    if (outcome.status === "rejected") cleanupProblems.push(`${name} cleanup failed: ${String(outcome.reason)}`);
+    else if (outcome.value.timedOut) cleanupProblems.push(`${name} did not exit after SIGKILL`);
+    else if (outcome.value.forced) console.warn(`[demo-smoke] ${name} required SIGKILL during cleanup`);
+  }
 
   if (!keepArtifacts) {
-    fs.rmSync(workspacePath, { force: true });
-    fs.rmSync(snapshotPath, { force: true });
+    for (const createdFile of [workspacePath, snapshotPath]) {
+      try {
+        fs.rmSync(createdFile, { force: true });
+      } catch (error) {
+        cleanupProblems.push(`could not remove ${createdFile}: ${String(error)}`);
+      }
+    }
     if (!workspaceDirExisted) {
-      fs.rmSync(workspaceDir, { force: true, recursive: true });
+      try {
+        if (options.workspacePath === undefined) fs.rmSync(workspaceDir, { force: true, recursive: true });
+        else {
+          let createdDir = workspaceDir;
+          while (createdDir !== existingWorkspaceAncestor) {
+            try {
+              fs.rmdirSync(createdDir);
+            } catch (error) {
+              if (error?.code !== "ENOTEMPTY") throw error;
+              retainedWorkspacePath = createdDir;
+              break;
+            }
+            createdDir = path.dirname(createdDir);
+          }
+        }
+      } catch (error) {
+        cleanupProblems.push(`could not remove generated directory ${workspaceDir}: ${String(error)}`);
+      }
     }
   }
 }
 
+if (primaryError !== undefined || cleanupProblems.length > 0) {
+  throw new Error([
+    primaryError === undefined ? "demo smoke cleanup failed" : primaryError instanceof Error ? primaryError.message : String(primaryError),
+    stdout && `[demo-smoke] api stdout:\n${stdout}`,
+    stderr && `[demo-smoke] api stderr:\n${stderr}`,
+    ...uiProcesses.flatMap((service) => [
+      service.stdout && `[demo-smoke] ${service.name} stdout:\n${service.stdout}`,
+      service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
+    ]),
+    ...cleanupProblems.map((problem) => `[demo-smoke] cleanup: ${problem}`),
+    (keepArtifacts || retainedWorkspacePath !== undefined || (!workspaceDirExisted && fs.existsSync(workspaceDir)))
+      && `[demo-smoke] artifacts: ${retainedWorkspacePath ?? workspaceDir}`,
+  ].filter(Boolean).join("\n\n"), { cause: primaryError });
+}
+
 console.log(
-  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts ? ` Artifacts: ${workspaceDir}` : ""}`,
+  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
 );

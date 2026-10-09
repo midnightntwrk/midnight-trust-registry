@@ -60,6 +60,12 @@ importers:
       eslint-config-prettier:
         specifier: ^10.1.5
         version: 10.1.8(eslint@9.39.4)
+      js-yaml:
+        specifier: 4.3.2
+        version: 4.3.2
+      semver:
+        specifier: ^7.8.1
+        version: 7.8.1
       turbo:
         specifier: ^2.10.13
         version: 2.11.7
@@ -131,6 +137,10 @@ importers:
       zod:
         specifier: ^4.1.0
         version: 4.4.3
+    devDependencies:
+      '@midnight-ntwrk/trust-registry-integration':
+        specifier: workspace:0.1.0
+        version: link:../trust-registry-integration
 
   packages/trust-registry-applicant-portal:
     dependencies:

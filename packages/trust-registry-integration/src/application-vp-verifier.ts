@@ -1,0 +1,281 @@
+import { Buffer } from "node:buffer";
+
+import {
+  pureCircuits,
+  type ExplicitHolderBinding,
+  type Proof,
+  type RegistryBoundStatusBinding,
+} from "@midnight-ntwrk/credential-compact";
+import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
+import {
+  parseMidnightDIDString,
+  type MidnightDIDResolverInterface,
+} from "@midnight-ntwrk/midnight-did";
+import {
+  ApplicationChallengeBindingSchema,
+  ApplicationEvidenceEvaluationTimeSchema,
+  AuthorizationScopeSchema,
+  HashHexSchema,
+  computeAuthorizationScopeCommitment,
+  sha256Hex,
+  type ApplicationChallengeBinding,
+  type AuthorizationScope,
+} from "@midnight-ntwrk/trust-registry-domain";
+
+const MAX_PRESENTATION_AGE_MS = 5 * 60_000;
+const MAX_FUTURE_CLOCK_SKEW_MS = 60_000;
+const MAX_ATTESTATION_AGE_MS = 24 * 60 * 60_000;
+const NONCE_PATTERN = /^0x[0-9a-f]{64}$/u;
+
+export type ApplicationVpMaterial = {
+  issuerDid: string;
+  issuerMethodId: string;
+  subjectDid: string;
+  holderMethodId: string;
+  credentialProof: Proof;
+  presentationProof: Proof;
+  credentialBodyRoot: Uint8Array;
+  presentationBodyRoot: Uint8Array;
+  credentialHolderBinding: ExplicitHolderBinding;
+  presentationHolderBinding: ExplicitHolderBinding;
+  statusBinding: RegistryBoundStatusBinding;
+  credentialExpiresAtMs: number;
+};
+
+export type ApplicationVpVerifierResult = {
+  subjectDid: string;
+  nonce: string;
+  scopeCommitment: string;
+  presentationHash: string;
+  claimsCommitment: string;
+  verifiedAt: string;
+  expiresAt: string;
+};
+
+/** Only trusted family code may construct proof body roots or make these eligibility assertions. */
+export type ApplicationVpFamilyAdapter<Submission> = {
+  prepare(submission: Submission): Promise<ApplicationVpMaterial>;
+  /** Verify family claims, holder, status, and expiry against the signed credential body root. */
+  assertCredentialBodyBinding(material: ApplicationVpMaterial): Promise<true>;
+  assertIssuerEligible(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<true>;
+  assertStatusActive(material: ApplicationVpMaterial): Promise<{ validUntilMs: number }>;
+  /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
+  assertRoleClaims(material: ApplicationVpMaterial): Promise<{
+    claimsCommitment: string;
+    scopeCommitment: string;
+  }>;
+};
+
+export class ApplicationVpVerificationError extends Error {
+  constructor(readonly category: "invalid_presentation" | "ineligible" | "expired" | "unavailable") {
+    super(`Application VP ${category}`);
+  }
+}
+
+/** Trusted adapters use this for retryable resolver/status infrastructure failures. */
+export class ApplicationVpDependencyUnavailableError extends Error {
+  constructor() {
+    super("Application VP dependency unavailable");
+  }
+}
+
+export async function verifyApplicationVp<Submission>(input: {
+  submission: Submission;
+  nonce: string;
+  expectedSubjectDid: string;
+  scope: AuthorizationScope;
+  evaluatedAtMs: number;
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  family: ApplicationVpFamilyAdapter<Submission>;
+}): Promise<ApplicationVpVerifierResult> {
+  const scope = AuthorizationScopeSchema.safeParse(input.scope);
+  if (!NONCE_PATTERN.test(input.nonce) || !validTime(input.evaluatedAtMs) || !scope.success) {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  let material: ApplicationVpMaterial;
+  try {
+    material = await input.family.prepare(input.submission);
+  } catch (error) {
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  if (material === null || typeof material !== "object") {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  const expectedChallengeHash = Buffer.from(sha256Hex(Buffer.from(input.nonce.slice(2), "hex")).slice(2), "hex");
+  try {
+    if (
+      material.subjectDid !== input.expectedSubjectDid ||
+      !equalBytes(material.presentationProof.challengeHash, expectedChallengeHash)
+    ) throw new ApplicationVpVerificationError("invalid_presentation");
+  } catch {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  if (!validTime(material.credentialExpiresAtMs)) {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  if (material.credentialExpiresAtMs <= input.evaluatedAtMs) {
+    throw new ApplicationVpVerificationError("expired");
+  }
+  let presentationHash: string;
+  try {
+    const proofTime = material.presentationProof.createdAt;
+    const now = BigInt(input.evaluatedAtMs);
+    if (proofTime > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS)) {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+    if (proofTime < now - BigInt(MAX_PRESENTATION_AGE_MS)) {
+      throw new ApplicationVpVerificationError("expired");
+    }
+    if (material.credentialProof.createdAt > now + BigInt(MAX_FUTURE_CLOCK_SKEW_MS)) {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+  } catch (error) {
+    if (error instanceof ApplicationVpVerificationError) throw error;
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+
+  const guardedResolver: Pick<MidnightDIDResolverInterface, "resolveResult"> = {
+    resolveResult: async (did) => {
+      try {
+        return await input.resolver.resolveResult(did);
+      } catch {
+        throw new ApplicationVpDependencyUnavailableError();
+      }
+    },
+  };
+  try {
+    const [issuerMethod, holderMethod] = await Promise.all([
+      resolveMidnightDIDMethodBinding({
+        resolver: guardedResolver,
+        did: parseMidnightDIDString(material.issuerDid),
+        verificationMethodId: material.issuerMethodId,
+        relationship: "assertionMethod",
+      }),
+      resolveMidnightDIDMethodBinding({
+        resolver: guardedResolver,
+        did: parseMidnightDIDString(material.subjectDid),
+        verificationMethodId: material.holderMethodId,
+        relationship: "authentication",
+      }),
+    ]);
+    assertProofMethod(material.credentialProof, issuerMethod);
+    assertProofMethod(material.presentationProof, holderMethod);
+    requireBytes32(material.credentialBodyRoot);
+    requireBytes32(material.presentationBodyRoot);
+    pureCircuits.assertValidIssuanceContextProof(material.credentialBodyRoot, material.credentialProof);
+    pureCircuits.assertValidPresentationContextProof(material.presentationBodyRoot, material.presentationProof);
+    pureCircuits.assertMatchingExplicitHolderBindings(
+      material.credentialHolderBinding,
+      material.presentationHolderBinding,
+    );
+    pureCircuits.assertProofMatchesExplicitHolderBinding(
+      material.presentationHolderBinding,
+      material.presentationProof,
+    );
+    pureCircuits.assertValidRegistryBoundStatusBinding(material.statusBinding);
+    if (await input.family.assertCredentialBodyBinding(material) !== true) {
+      throw new Error("Credential body binding failed");
+    }
+    presentationHash = sha256Hex(pureCircuits.presentationProofPayloadRoot(
+      material.presentationBodyRoot,
+      material.presentationProof,
+    ));
+  } catch (error) {
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+
+  let status: { validUntilMs: number };
+  let claimsCommitment: string;
+  try {
+    if (await input.family.assertIssuerEligible(material, scope.data) !== true) {
+      throw new Error("Issuer is not eligible");
+    }
+    status = await input.family.assertStatusActive(material);
+    if (!validTime(status.validUntilMs) || status.validUntilMs <= input.evaluatedAtMs) {
+      throw new ApplicationVpVerificationError("expired");
+    }
+    const claims = await input.family.assertRoleClaims(material);
+    claimsCommitment = HashHexSchema.parse(claims.claimsCommitment).toLowerCase();
+    if (HashHexSchema.parse(claims.scopeCommitment).toLowerCase() !== computeAuthorizationScopeCommitment(scope.data)) {
+      throw new ApplicationVpVerificationError("ineligible");
+    }
+  } catch (error) {
+    if (error instanceof ApplicationVpVerificationError) throw error;
+    if (error instanceof ApplicationVpDependencyUnavailableError) {
+      throw new ApplicationVpVerificationError("unavailable");
+    }
+    throw new ApplicationVpVerificationError("ineligible");
+  }
+  const expiresAtMs = Math.min(
+    material.credentialExpiresAtMs,
+    status.validUntilMs,
+    input.evaluatedAtMs + MAX_ATTESTATION_AGE_MS,
+  );
+  return {
+    subjectDid: material.subjectDid,
+    nonce: input.nonce,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope.data),
+    presentationHash,
+    claimsCommitment,
+    verifiedAt: new Date(input.evaluatedAtMs).toISOString(),
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+}
+
+/** Adapts proof-observed bindings to the challenge intake callback; family.prepare must parse untrusted input. */
+export function createApplicationVpIntakeVerifier<Submission>(config: {
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  family: ApplicationVpFamilyAdapter<Submission>;
+}): (presentation: unknown, context: {
+  nonce: string;
+  binding: ApplicationChallengeBinding;
+  evaluatedAt: string;
+}) => Promise<ApplicationVpVerifierResult> {
+  return async (presentation, context) => {
+    let binding: ApplicationChallengeBinding;
+    try {
+      binding = ApplicationChallengeBindingSchema.parse(context.binding);
+      ApplicationEvidenceEvaluationTimeSchema.parse(context.evaluatedAt);
+    } catch {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+    return verifyApplicationVp({
+      ...config,
+      submission: presentation as Submission,
+      nonce: context.nonce,
+      expectedSubjectDid: binding.subjectDid,
+      scope: binding.scope,
+      evaluatedAtMs: Date.parse(context.evaluatedAt),
+    });
+  };
+}
+
+function assertProofMethod(
+  proof: Proof,
+  method: Awaited<ReturnType<typeof resolveMidnightDIDMethodBinding>>,
+): void {
+  if (
+    !equalBytes(proof.signerVerificationMethodRef.controllerAddress.bytes, method.verificationMethodRef.controllerAddress.bytes) ||
+    !equalBytes(proof.signerVerificationMethodRef.methodId, method.verificationMethodRef.methodId) ||
+    proof.publicKey.x !== method.publicKey.x ||
+    proof.publicKey.y !== method.publicKey.y
+  ) throw new Error("Proof method does not match resolved DID method");
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function requireBytes32(value: Uint8Array): void {
+  if (value.length !== 32) throw new Error("Proof body root must contain 32 bytes");
+}
+
+function validTime(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime());
+}
