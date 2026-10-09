@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -9,12 +9,13 @@ import { checkCompactVersion } from "./check-compact-version.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pinnedVersion = readFileSync(join(sourceRoot, ".compact-version"), "utf8").trim();
+const compactWorkflows = readdirSync(join(sourceRoot, ".github/workflows"))
+  .filter((file) => /\.ya?ml$/u.test(file))
+  .map((file) => `.github/workflows/${file}`)
+  .filter((path) => readFileSync(join(sourceRoot, path), "utf8").includes("setup-compact-action@"));
 const paths = [
   ".compact-version",
-  ".github/workflows/ci.yaml",
-  ".github/workflows/milestone-light.yaml",
-  ".github/workflows/quality.yaml",
-  ".github/workflows/publish.yml",
+  ...compactWorkflows,
   "nix/packages/compact-toolchain.nix",
   "turbo.json",
 ];
@@ -24,7 +25,7 @@ test("all Compact consumers use the shared version", () => {
 });
 
 test("cached Compact setup authenticates its release query in every workflow", () => {
-  for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
+  for (const path of compactWorkflows) {
     const workflow = readFileSync(join(sourceRoot, path), "utf8");
     const setup = workflow.split("setup-compact-action@")[1];
     assert.ok(setup, `${path} must use the pinned setup action`);
@@ -35,8 +36,8 @@ test("cached Compact setup authenticates its release query in every workflow", (
 });
 
 test("a pinned cache hit bypasses network setup and only verified installs are saved", () => {
-  const cacheKey = "tr-compact-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
-  for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
+  const cacheKey = "tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
+  for (const path of compactWorkflows) {
     const workflow = readFileSync(join(sourceRoot, path), "utf8");
     const steps = workflow.split(/\n\s{6}- /u).slice(1);
     const restore = steps.find((step) => step.includes("name: Restore pinned Compact installation"));
@@ -52,6 +53,7 @@ test("a pinned cache hit bypasses network setup and only verified installs are s
     assert.match(restore, /id: compact-cache/u, path);
     assert.match(restore, /actions\/cache\/restore@/u, path);
     assert.match(restore, /~\/\.compact\//u, `${path} must cache the installed compiler directory`);
+    assert.match(restore, /!~\/\.compact\/\*\*\/artifact\.zip/u, `${path} must exclude download archives`);
     assert.ok(!restore.includes("restore-keys:"), `${path} must not restore a different compiler version`);
     assert.match(setup, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
     assert.match(setup, /cache-enabled: 'false'/u, path);
@@ -59,9 +61,11 @@ test("a pinned cache hit bypasses network setup and only verified installs are s
     assert.match(save, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
     assert.match(save, /actions\/cache\/save@/u, path);
     assert.match(save, /~\/\.compact\//u, `${path} must save the installed compiler directory`);
+    assert.match(save, /!~\/\.compact\/\*\*\/artifact\.zip/u, `${path} must exclude download archives`);
     assert.match(verify, /TR_COMPACT_CACHE_HIT: \$\{\{ steps\.compact-cache\.outputs\.cache-hit \}\}/u, path);
     assert.ok(restore.includes(`key: ${cacheKey}`), `${path} restore must use the pinned version`);
     assert.ok(save.includes(`key: ${cacheKey}`), `${path} save must use the same pinned version`);
+    assert.match(workflow, /runs-on: ubuntu-24\.04/u, `${path} must pin the runner generation`);
   }
 });
 
@@ -133,7 +137,15 @@ test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () =
       "--check-installed",
     ], { encoding: "utf8", env: { ...env, TR_COMPACT_CACHE_HIT: "true" } });
     assert.notEqual(cachedMismatch.status, 0);
-    assert.match(cachedMismatch.stderr, /Delete the tr-compact-v2 Actions cache/);
+    assert.match(cachedMismatch.stderr, /Delete the tr-compact-v3 Actions cache/);
+    assert.doesNotMatch(cachedMismatch.stdout, /Compact compiler pin:/);
+
+    const invalidArgument = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--unknown",
+    ], { encoding: "utf8", env: { ...env, TR_COMPACT_CACHE_HIT: "true" } });
+    assert.notEqual(invalidArgument.status, 0);
+    assert.doesNotMatch(invalidArgument.stderr, /Delete the tr-compact-v3 Actions cache/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

@@ -90,26 +90,26 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       }
       appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
     } else if (process.argv[2] === "--check-installed") {
-      let installed;
       try {
-        installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
-      } catch (error) {
-        if (error.code === "ENOENT") {
-          throw new Error("Compact compiler not found; enter the Nix development shell");
+        const installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+        if (installed !== version) {
+          throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
         }
-        throw error;
-      }
-      if (installed !== version) {
-        throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
-      }
-      if (process.env.COMPACT_DIRECTORY) {
-        const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
-        if (existsSync(compiler)) {
-          const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
-          if (compilerVersion !== version) {
-            throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+        if (process.env.COMPACT_DIRECTORY) {
+          const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
+          if (existsSync(compiler)) {
+            const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
+            if (compilerVersion !== version) {
+              throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+            }
           }
         }
+      } catch (error) {
+        if (error.code === "ENOENT") {
+          error = new Error("Compact compiler not found; enter the Nix development shell");
+        }
+        error.installedCompilerFailure = true;
+        throw error;
       }
     } else if (process.argv.length > 2) {
       throw new Error(`Unknown argument: ${process.argv[2]}`);
@@ -117,8 +117,8 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
     console.log(`Compact compiler pin: ${version}`);
   } catch (error) {
     console.error(error.message);
-    if (process.argv[2] === "--check-installed" && process.env.TR_COMPACT_CACHE_HIT === "true") {
-      console.error("Pinned Compact cache hit is invalid. Delete the tr-compact-v2 Actions cache for this OS, architecture, and compiler version, then rerun; do not bypass the pin check.");
+    if (error.installedCompilerFailure && process.env.TR_COMPACT_CACHE_HIT === "true") {
+      console.error("Pinned Compact cache hit is invalid. Delete the tr-compact-v3 Actions cache for this runner and compiler version, then rerun; do not bypass the pin check.");
     }
     process.exitCode = 1;
   }
