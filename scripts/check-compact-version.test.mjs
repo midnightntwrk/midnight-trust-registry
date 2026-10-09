@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 import { checkCompactVersion } from "./check-compact-version.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,12 +26,13 @@ test("all Compact consumers use the shared version", () => {
 
 test("cached Compact setup authenticates its release query in every workflow", () => {
   for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
-    const workflow = readFileSync(join(sourceRoot, path), "utf8");
-    const setup = workflow.split("setup-compact-action@")[1];
-    assert.ok(setup, `${path} must use the pinned setup action`);
-    const nextStep = setup.search(/\n\s*-\s(?:name|uses|run):/u);
-    const setupStep = nextStep === -1 ? setup : setup.slice(0, nextStep);
-    assert.match(setupStep, /\benv:\n\s+GITHUB_TOKEN: \$\{\{ github\.token \}\}/u, path);
+    const workflow = yaml.load(readFileSync(join(sourceRoot, path), "utf8"));
+    const setups = Object.values(workflow.jobs).flatMap((job) => job.steps ?? [])
+      .filter((step) => step.uses?.startsWith("midnightntwrk/setup-compact-action@"));
+    assert.ok(setups.length > 0, `${path} must use the pinned setup action`);
+    for (const setup of setups) {
+      assert.equal(setup.env?.GITHUB_TOKEN, "${{ github.token }}", path);
+    }
   }
 });
 
@@ -112,6 +114,13 @@ test("workflow and Nix version drift fail validation", () => {
     assert.equal(checkCompactVersion(fixture), pinnedVersion);
 
     const workflowPath = join(fixture, ".github/workflows/milestone-light.yaml");
+    const originalWorkflow = readFileSync(workflowPath, "utf8");
+    writeFileSync(workflowPath, originalWorkflow
+      .replace("compact-version: ${{ steps.compact-version.outputs.version }}", "compact-version: '${{ steps.compact-version.outputs.version }}'")
+      .replace("run: node scripts/check-compact-version.mjs --check-installed", 'run: "node scripts/check-compact-version.mjs --check-installed"'));
+    assert.equal(checkCompactVersion(fixture), pinnedVersion);
+    writeFileSync(workflowPath, originalWorkflow);
+
     const otherVersion = pinnedVersion === "0.0.0" ? "99.99.99" : "0.0.0";
     writeFileSync(workflowPath, readFileSync(workflowPath, "utf8").replace(
       "compact-version: ${{ steps.compact-version.outputs.version }}",
@@ -121,9 +130,28 @@ test("workflow and Nix version drift fail validation", () => {
 
     writeFileSync(workflowPath, readFileSync(join(sourceRoot, ".github/workflows/milestone-light.yaml")));
     const roguePath = join(fixture, ".github/workflows/new-compact.yaml");
-    writeFileSync(roguePath, `steps:\n  - uses: midnightntwrk/setup-compact-action@abc\n    with:\n      compact-version: ${otherVersion}\n`);
+    writeFileSync(roguePath, `jobs:\n  bad:\n    steps:\n      - uses: midnightntwrk/setup-compact-action@abc\n        with:\n          compact-version: ${otherVersion}\n`);
     assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml/);
     rmSync(roguePath);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "compact-version: ${{ steps.compact-version.outputs.version }}",
+      `compact-version: ${otherVersion}`,
+    ).replace("name: Milestone Light", "name: setup-compact-action@ in a comment is not a step"));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "run: node scripts/check-compact-version.mjs --check-installed",
+      "run: echo skipped-installed-check",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "GITHUB_TOKEN: ${{ github.token }}",
+      "GITHUB_TOKEN: missing",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
 
     const qualityPath = join(fixture, ".github/workflows/quality.yaml");
     writeFileSync(qualityPath, readFileSync(qualityPath, "utf8").replace(
