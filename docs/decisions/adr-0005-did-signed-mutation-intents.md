@@ -41,6 +41,12 @@ The preimage reserves the `maintainer` target for UC-03, but the current
 operator workspace and HTTP API do not execute it. An adapter MUST reject
 unmapped targets rather than treating a valid signed intent as authorization.
 
+The 0.1.0 API preflight verifies the digest bytes with the actor's resolved
+Midnight DID JubJub key: applicant submissions require the DID
+`authentication` relationship and maintainer actions require
+`capabilityInvocation`. The DID signature check alone does not establish
+registry maintainer membership or consume a nonce.
+
 The workspace commitment is the optimistic concurrency token for the *entire*
 operator workspace, including the operation log; an epoch ID alone is not
 sufficient because multiple writes can occur within one epoch. It is SHA-256
