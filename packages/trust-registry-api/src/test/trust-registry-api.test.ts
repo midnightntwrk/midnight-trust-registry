@@ -679,12 +679,9 @@ describe("trust registry api", () => {
     const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
       operation: "revoke", target: "issuer", id: authorizationId,
     });
-    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
-      ...revokedWorkspace.snapshot,
-      epochs: [...revokedWorkspace.snapshot.epochs, activeBundle.epoch],
-      evidenceArchive: [activeBundle],
-    });
+    const snapshot = revokedWorkspace.snapshot;
     expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    expect(snapshot.evidenceArchive).toContainEqual(activeBundle);
     const server = await startServer(createInMemorySource(snapshot));
     try {
       const response = await fetch(`${server.url}/v1/trqp/authorizations/evidence`, {
@@ -737,11 +734,8 @@ describe("trust registry api", () => {
     const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
       operation: "revoke", target: "recognition", id: recognitionId,
     });
-    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
-      ...revokedWorkspace.snapshot,
-      epochs: [...revokedWorkspace.snapshot.epochs, activeBundle.epoch],
-      evidenceArchive: [activeBundle],
-    });
+    const snapshot = revokedWorkspace.snapshot;
+    expect(snapshot.evidenceArchive).toContainEqual(activeBundle);
     const server = await startServer(createInMemorySource(snapshot));
     try {
       const response = await fetch(`${server.url}/v1/trqp/recognitions/evidence`, {

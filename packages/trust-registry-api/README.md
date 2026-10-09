@@ -61,8 +61,9 @@ changes; otherwise the query returns 404 rather than attaching a later proof
 to an earlier decision. Snapshot parsing checks archive record identity,
 uniqueness, and internal Merkle/epoch consistency. Consumers still need an
 independently trusted epoch anchor and quorum verification before accepting
-the exported bundle as cryptographic proof. Workspace replay does not yet
-populate the archive automatically; #39 tracks that remaining work.
+the exported bundle as cryptographic proof. Each workspace operation retains
+the prior snapshot's displaced bundles and epochs; importing an external
+snapshot still requires its producer to supply the archive explicitly.
 
 Run locally against a saved workspace:
 
