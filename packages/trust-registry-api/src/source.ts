@@ -20,7 +20,9 @@ import {
   type TrustRegistrySummary,
 } from "@midnight-ntwrk/trust-registry-cli";
 import type {
+  TrqpAuthorizationDecision,
   TrqpAuthorizationRequest,
+  TrqpRecognitionDecision,
   TrqpRecognitionRequest,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
@@ -308,11 +310,10 @@ export const getAuthorizationEntryById = async (
   );
 };
 
-export const resolveAuthorizationEntry = async (
-  source: TrustRegistryApiStateSource,
+const resolveAuthorizationInSnapshot = (
+  snapshot: TrustRegistryOperatorSnapshot,
   request: TrustRegistryApiResolveAuthorizationRequest,
-): Promise<TrustRegistryAuthorizationSnapshotEntry | null> => {
-  const snapshot = await source.loadSnapshot();
+): TrustRegistryAuthorizationSnapshotEntry | null => {
   const matches = authorizationEntriesForRole(snapshot, request.role).filter(
     (entry) => matchesAuthorizationRequest(entry, request),
   );
@@ -320,13 +321,17 @@ export const resolveAuthorizationEntry = async (
   return sortAuthorizationEntries(matches).at(0) ?? null;
 };
 
-export const evaluateAuthorizationEntryAtTimestamp = async (
+export const resolveAuthorizationEntry = async (
   source: TrustRegistryApiStateSource,
   request: TrustRegistryApiResolveAuthorizationRequest,
-  evaluatedAt: string,
-): Promise<SnapshotTemporalAuthorizationInspection | null> => {
-  const snapshot = await source.loadSnapshot();
+): Promise<TrustRegistryAuthorizationSnapshotEntry | null> =>
+  resolveAuthorizationInSnapshot(await source.loadSnapshot(), request);
 
+const evaluateAuthorizationInSnapshot = (
+  snapshot: TrustRegistryOperatorSnapshot,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): SnapshotTemporalAuthorizationInspection | null => {
   switch (request.role) {
     case "issuer":
       return resolveIssuerEntryAtTimestamp(
@@ -346,6 +351,13 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
     }
   }
 };
+
+export const evaluateAuthorizationEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalAuthorizationInspection | null> =>
+  evaluateAuthorizationInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
 
 export const listRecognitionEntries = async (
   source: TrustRegistryApiStateSource,
@@ -371,11 +383,10 @@ export const getRecognitionEntryById = async (
   );
 };
 
-export const resolveRecognitionEntry = async (
-  source: TrustRegistryApiStateSource,
+const resolveRecognitionInSnapshot = (
+  snapshot: TrustRegistryOperatorSnapshot,
   request: TrustRegistryApiResolveRecognitionRequest,
-): Promise<TrustRegistryRecognitionSnapshotEntry | null> => {
-  const snapshot = await source.loadSnapshot();
+): TrustRegistryRecognitionSnapshotEntry | null => {
   const matches = snapshot.recognitionEntries.filter(
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
@@ -397,13 +408,19 @@ export const resolveRecognitionEntry = async (
   return sortRecognitionEntries(matches).at(0) ?? null;
 };
 
-export const evaluateRecognitionEntryAtTimestamp = async (
+export const resolveRecognitionEntry = async (
   source: TrustRegistryApiStateSource,
   request: TrustRegistryApiResolveRecognitionRequest,
+): Promise<TrustRegistryRecognitionSnapshotEntry | null> =>
+  resolveRecognitionInSnapshot(await source.loadSnapshot(), request);
+
+const evaluateRecognitionInSnapshot = (
+  snapshot: TrustRegistryOperatorSnapshot,
+  request: TrustRegistryApiResolveRecognitionRequest,
   evaluatedAt: string,
-): Promise<SnapshotTemporalRecognitionInspection | null> =>
+): SnapshotTemporalRecognitionInspection | null =>
   resolveRecognitionEntryAtTimestamp(
-    await source.loadSnapshot(),
+    snapshot,
     evaluatedAt,
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
@@ -422,6 +439,25 @@ export const evaluateRecognitionEntryAtTimestamp = async (
       ),
   );
 
+export const evaluateRecognitionEntryAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveRecognitionRequest,
+  evaluatedAt: string,
+): Promise<SnapshotTemporalRecognitionInspection | null> =>
+  evaluateRecognitionInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
+
+const bundleMatchesEpoch = (
+  bundle: TrustRegistryEvidenceBundle,
+  epoch: EpochCommitment | null,
+): boolean => epoch !== null
+  && bundle.epoch.epochId === epoch.epochId
+  && bundle.epoch.registryId === epoch.registryId
+  && bundle.epoch.stateRoot === epoch.stateRoot
+  && bundle.epoch.eventRoot === epoch.eventRoot
+  && bundle.epoch.policyRoot === epoch.policyRoot
+  && bundle.epoch.validFrom === epoch.validFrom
+  && bundle.epoch.validUntil === epoch.validUntil;
+
 export const createTrqpSourceFromStateSource = (
   source: TrustRegistryApiStateSource,
 ): TrustRegistryTrqpSource => ({
@@ -429,9 +465,9 @@ export const createTrqpSourceFromStateSource = (
     const snapshot = await source.loadSnapshot();
     return snapshot.registry.registryDid === authorityId ? snapshot.registry : null;
   },
-  async getAuthorizationBundle(
+  async getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): Promise<TrustRegistryEvidenceBundle | null> {
+  ): Promise<TrqpAuthorizationDecision | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -442,16 +478,31 @@ export const createTrqpSourceFromStateSource = (
       return null;
     }
 
-    const entry = await resolveAuthorizationEntry(source, {
+    const lookup = {
       role,
       subjectDid: request.entity_id,
       resourceId: request.resource,
-    });
-    return entry?.evidence ?? null;
+    };
+    if (request.context?.time !== undefined) {
+      const historical = evaluateAuthorizationInSnapshot(snapshot, lookup, request.context.time);
+      return historical !== null && bundleMatchesEpoch(historical.entry.evidence, historical.epoch)
+        ? {
+          bundle: historical.entry.evidence,
+          statusAtTime: historical.statusAtTime,
+          trustedAtTime: historical.trustedAtTime,
+        }
+        : null;
+    }
+    const entry = resolveAuthorizationInSnapshot(snapshot, lookup);
+    return entry === null ? null : {
+      bundle: entry.evidence,
+      statusAtTime: entry.authorization.status,
+      trustedAtTime: entry.authorization.status === "active",
+    };
   },
-  async getRecognitionBundle(
+  async getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): Promise<TrustRegistryEvidenceBundle | null> {
+  ): Promise<TrqpRecognitionDecision | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -462,7 +513,7 @@ export const createTrqpSourceFromStateSource = (
         ? request.context.recognized_registry_id
         : undefined;
 
-    const entry = await resolveRecognitionEntry(source, {
+    const lookup = {
       recognizedAuthorityDid: request.entity_id,
       recognizedRegistryId,
       scopeResourceId: request.resource,
@@ -471,8 +522,22 @@ export const createTrqpSourceFromStateSource = (
           TrustRegistryApiResolveRecognitionRequest["scopeResourceType"]
         >,
       }),
-    });
-
-    return entry?.evidence ?? null;
+    };
+    if (request.context?.time !== undefined) {
+      const historical = evaluateRecognitionInSnapshot(snapshot, lookup, request.context.time);
+      return historical !== null && bundleMatchesEpoch(historical.entry.evidence, historical.epoch)
+        ? {
+          bundle: historical.entry.evidence,
+          statusAtTime: historical.statusAtTime,
+          trustedAtTime: historical.trustedAtTime,
+        }
+        : null;
+    }
+    const entry = resolveRecognitionInSnapshot(snapshot, lookup);
+    return entry === null ? null : {
+      bundle: entry.evidence,
+      statusAtTime: entry.recognition.status,
+      trustedAtTime: entry.recognition.status === "active",
+    };
   },
 });

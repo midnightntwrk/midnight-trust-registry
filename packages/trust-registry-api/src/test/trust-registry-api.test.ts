@@ -451,12 +451,82 @@ describe("trust registry api", () => {
       const trqpEvidence = await trqpEvidenceResponse.json();
       expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
 
+      const historicalTrqpResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/evidence`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+            context: { time: evidence.epoch.validFrom },
+          }),
+        },
+      );
+      expect(historicalTrqpResponse.status).toBe(200);
+      const historicalTrqp = await historicalTrqpResponse.json();
+      expect(historicalTrqp.authorized).toBe(true);
+      expect(historicalTrqp.time_evaluated).toBe(evidence.epoch.validFrom);
+      expect(historicalTrqp.bundle.epoch.epochId).toBe(evidence.epoch.epochId);
+
+      const unanchoredTrqpResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/query`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+            context: { time: "2026-05-21T00:00:00Z" },
+          }),
+        },
+      );
+      expect(unanchoredTrqpResponse.status).toBe(404);
+
       const missingEpochResolveResponse = await fetch(
         `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
       );
       expect(missingEpochResolveResponse.status).toBe(404);
       const missingEpochResolveProblem = await missingEpochResolveResponse.json();
       expect(missingEpochResolveProblem.type).toMatch(/epoch-not-found$/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects historical TRQP evidence when a different overlapping epoch is selected", async () => {
+    const snapshot = createDemoSnapshot({ label: "epoch-mismatch" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const evidenceEpoch = entry.evidence.epoch;
+    const queryTime = new Date(Date.parse(evidenceEpoch.validFrom) + 1).toISOString();
+    expect(Date.parse(queryTime)).toBeLessThan(Date.parse(evidenceEpoch.validUntil));
+    const alteredSnapshot = {
+      ...snapshot,
+      epochs: [...snapshot.epochs, {
+        ...evidenceEpoch,
+        epochId: `${evidenceEpoch.epochId}:overlap`,
+        validFrom: queryTime,
+      }],
+    };
+    const server = await startServer(createInMemorySource(TrustRegistryOperatorSnapshotSchema.parse(alteredSnapshot)));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: queryTime },
+        }),
+      });
+      expect(response.status).toBe(404);
     } finally {
       await server.close();
     }

@@ -101,6 +101,9 @@ importers:
         specifier: ^4.1.0
         version: 4.4.3
     devDependencies:
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:0.1.0
+        version: link:../../packages/trust-registry-client
       '@midnight-ntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-integration

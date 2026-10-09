@@ -4,6 +4,10 @@ import type {
   RegistryRecord,
   TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
 
 import {
   createIssuerScenarioFixture,
@@ -17,11 +21,13 @@ import {
 import {
   TrustRegistryTrqpAdapter,
   type TrqpAdapterResult,
+  type TrqpAuthorizationDecision,
   type TrqpAuthorizationEvidenceResponse,
   type TrqpAuthorizationRequest,
   type TrqpAuthorizationResponse,
   type TrqpProblemDetails,
   type TrqpRecognitionEvidenceResponse,
+  type TrqpRecognitionDecision,
   type TrqpRecognitionRequest,
   type TrqpRecognitionResponse,
   type TrqpRegistryMetadataResponse,
@@ -46,9 +52,9 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       : null;
   }
 
-  getAuthorizationBundle(
+  getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): TrustRegistryEvidenceBundle | null {
+  ): TrqpAuthorizationDecision | null {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
     }
@@ -63,10 +69,10 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
         return null;
       }
 
-      return this.resolveCurrentOrHistorical(
+      return this.authorizationDecision(this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentIssuerDecision(fixture),
         () => this.harness.buildIssuerHistoricalEvidence(fixture),
-      );
+      ), request.context?.time);
     }
 
     if (request.action === "verify") {
@@ -79,18 +85,18 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
         return null;
       }
 
-      return this.resolveCurrentOrHistorical(
+      return this.authorizationDecision(this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentVerifierDecision(fixture),
         () => this.harness.buildVerifierHistoricalEvidence(fixture),
-      );
+      ), request.context?.time);
     }
 
     return null;
   }
 
-  getRecognitionBundle(
+  getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): TrustRegistryEvidenceBundle | null {
+  ): TrqpRecognitionDecision | null {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
     }
@@ -114,10 +120,32 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       return null;
     }
 
-    return this.resolveCurrentOrHistorical(
+    return this.recognitionDecision(this.resolveCurrentOrHistorical(
       () => this.harness.evaluateCurrentRecognitionDecision(fixture),
       () => this.harness.buildRecognitionHistoricalEvidence(fixture),
-    );
+    ), request.context?.time);
+  }
+
+  private authorizationDecision(bundle: TrustRegistryEvidenceBundle, time?: string): TrqpAuthorizationDecision {
+    const authorization = bundle.authorization;
+    if (authorization === undefined) throw new Error("expected authorization evidence");
+    const evaluation = time === undefined ? null : evaluateAuthorizationRecordAtTime(authorization, time);
+    return {
+      bundle,
+      statusAtTime: evaluation?.statusAtTime ?? authorization.status,
+      trustedAtTime: evaluation?.trustedAtTime ?? authorization.status === "active",
+    };
+  }
+
+  private recognitionDecision(bundle: TrustRegistryEvidenceBundle, time?: string): TrqpRecognitionDecision {
+    const recognition = bundle.recognition;
+    if (recognition === undefined) throw new Error("expected recognition evidence");
+    const evaluation = time === undefined ? null : evaluateRecognitionRecordAtTime(recognition, time);
+    return {
+      bundle,
+      statusAtTime: evaluation?.statusAtTime ?? recognition.status,
+      trustedAtTime: evaluation?.trustedAtTime ?? recognition.status === "active",
+    };
   }
 
   private resolveCurrentOrHistorical(
@@ -243,6 +271,49 @@ describe("trust registry TRQP adapter", () => {
       }),
     );
     expect(evidence.bundle.authorization?.status).toBe("revoked");
+
+    const activeFrom = evidence.bundle.authorization?.activeFrom;
+    if (activeFrom === undefined) throw new Error("expected an activation timestamp");
+    const historical = expectOk<TrqpAuthorizationEvidenceResponse>(
+      await adapter.getAuthorizationEvidence({
+        entity_id: issuer.subjectDid,
+        authority_id: harness.registryDid,
+        action: "issue",
+        resource: issuer.resourceId,
+        context: { time: activeFrom },
+      }),
+    );
+    expect(historical.authorized).toBe(true);
+    expect(historical.time_evaluated).toBe(activeFrom);
+    expect(historical.message).toMatch(/active.*evaluation time/i);
+    expect(historical.bundle.authorization?.status).toBe("revoked");
+  });
+
+  it("evaluates recognition at the requested time instead of its latest status", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("historical-recognition");
+    harness.authorizeRecognition(recognition);
+    harness.revokeRecognition(recognition);
+    const adapter = new TrustRegistryTrqpAdapter(
+      new LocalSimulatorTrqpSource(harness, { recognitions: [recognition] }),
+      { clock: () => FIXED_TIME },
+    );
+    const request = {
+      entity_id: recognition.recognizedAuthorityDid,
+      authority_id: harness.registryDid,
+      action: recognition.scopeResourceType,
+      resource: recognition.scopeResourceId,
+      context: { recognized_registry_id: recognition.recognizedRegistryId },
+    };
+    const latest = expectOk<TrqpRecognitionEvidenceResponse>(await adapter.getRecognitionEvidence(request));
+    expect(latest.recognized).toBe(false);
+    const activeFrom = latest.bundle.recognition?.effectiveFrom;
+    if (activeFrom === undefined) throw new Error("expected an effective timestamp");
+    const historical = expectOk<TrqpRecognitionEvidenceResponse>(
+      await adapter.getRecognitionEvidence({ ...request, context: { ...request.context, time: activeFrom } }),
+    );
+    expect(historical.recognized).toBe(true);
+    expect(historical.bundle.recognition?.status).toBe("revoked");
   });
 
   it("maps recognition plus registry metadata into TRQP-friendly responses", async () => {
