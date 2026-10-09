@@ -3,9 +3,11 @@ import { dirname } from "node:path";
 
 import {
   LocalTrustRegistryIntegrationHarness,
+  createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
+  type AuditorScenarioFixture,
   type IssuerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
@@ -35,12 +37,18 @@ type TrackedVerifierFixture = {
   label: string;
 };
 
+type TrackedAuditorFixture = {
+  fixture: AuditorScenarioFixture;
+  label: string;
+};
+
 type TrackedRecognitionFixture = {
   fixture: RecognitionScenarioFixture;
   label: string;
 };
 
 type TrackedFixtures = {
+  auditors: Map<string, TrackedAuditorFixture>;
   issuers: Map<string, TrackedIssuerFixture>;
   recognitions: Map<string, TrackedRecognitionFixture>;
   verifiers: Map<string, TrackedVerifierFixture>;
@@ -51,6 +59,7 @@ const assertNever = (value: never): never => {
 };
 
 const createTrackedFixtures = (): TrackedFixtures => ({
+  auditors: new Map<string, TrackedAuditorFixture>(),
   issuers: new Map<string, TrackedIssuerFixture>(),
   recognitions: new Map<string, TrackedRecognitionFixture>(),
   verifiers: new Map<string, TrackedVerifierFixture>(),
@@ -97,6 +106,16 @@ const currentOrHistoricalVerifierEvidence = (
   return harness.buildVerifierHistoricalEvidence(fixture);
 };
 
+const currentOrHistoricalAuditorEvidence = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  fixture: AuditorScenarioFixture,
+): TrustRegistryEvidenceBundle => {
+  const historical = harness.buildAuditorHistoricalEvidence(fixture);
+  return historical.authorization?.status === "active"
+    ? harness.evaluateCurrentAuditorDecision(fixture)
+    : historical;
+};
+
 const currentOrHistoricalRecognitionEvidence = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: RecognitionScenarioFixture,
@@ -132,6 +151,18 @@ const verifierEntryFromFixture = (
   };
 };
 
+const auditorEntryFromFixture = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  tracked: TrackedAuditorFixture,
+): TrustRegistryAuthorizationSnapshotEntry => {
+  const evidence = currentOrHistoricalAuditorEvidence(harness, tracked.fixture);
+  return {
+    label: tracked.label,
+    authorization: collectAuthorizationRecord(evidence, "auditor"),
+    evidence,
+  };
+};
+
 const recognitionEntryFromFixture = (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedRecognitionFixture,
@@ -161,6 +192,11 @@ const buildSnapshotFromTrackedFixtures = (
     .sort((left, right) =>
       left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
     );
+  const auditorEntries = Array.from(trackedFixtures.auditors.values())
+    .map((tracked) => auditorEntryFromFixture(harness, tracked))
+    .sort((left, right) =>
+      left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
+    );
   const recognitionEntries = Array.from(trackedFixtures.recognitions.values())
     .map((tracked) => recognitionEntryFromFixture(harness, tracked))
     .sort((left, right) =>
@@ -173,6 +209,7 @@ const buildSnapshotFromTrackedFixtures = (
   for (const epoch of collectDistinctEpochs([
     ...issuerEntries.map((entry) => entry.evidence),
     ...verifierEntries.map((entry) => entry.evidence),
+    ...auditorEntries.map((entry) => entry.evidence),
     ...recognitionEntries.map((entry) => entry.evidence),
   ])) {
     epochsById.set(epoch.epochId, epoch);
@@ -192,6 +229,7 @@ const buildSnapshotFromTrackedFixtures = (
     epochs,
     issuerEntries,
     verifierEntries,
+    auditorEntries,
     recognitionEntries,
     notes: [
       "Operator workspace snapshot derived from governed CLI operations.",
@@ -221,6 +259,17 @@ const requireVerifierFixture = (
     throw new Error(`unknown verifier authorization: ${authorizationId}`);
   }
 
+  return fixture.fixture;
+};
+
+const requireAuditorFixture = (
+  trackedFixtures: TrackedFixtures,
+  authorizationId: string,
+): AuditorScenarioFixture => {
+  const fixture = trackedFixtures.auditors.get(authorizationId);
+  if (fixture === undefined) {
+    throw new Error(`unknown auditor authorization: ${authorizationId}`);
+  }
   return fixture.fixture;
 };
 
@@ -268,6 +317,18 @@ const applyMutableOperation = (
           });
           return;
         }
+        case "auditor": {
+          const fixture = createAuditorScenarioFixture(operation.label);
+          if (trackedFixtures.auditors.has(fixture.authorizationId)) {
+            throw new Error(`auditor label already submitted: ${operation.label}`);
+          }
+          harness.proposeAuditor(fixture);
+          trackedFixtures.auditors.set(fixture.authorizationId, {
+            label: operation.label,
+            fixture,
+          });
+          return;
+        }
         case "recognition": {
           const fixture = createRecognitionScenarioFixture(operation.label);
           if (trackedFixtures.recognitions.has(fixture.recognitionId)) {
@@ -292,6 +353,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.approveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.approveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.approveRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -308,6 +372,9 @@ const applyMutableOperation = (
           return;
         case "verifier":
           harness.activateVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          return;
+        case "auditor":
+          harness.activateAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
           harness.activateRecognition(
@@ -326,6 +393,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.suspendVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.suspendAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.suspendRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -343,6 +413,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.revokeVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.revokeAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.revokeRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -359,6 +432,9 @@ const applyMutableOperation = (
           return;
         case "verifier":
           harness.archiveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          return;
+        case "auditor":
+          harness.archiveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
           harness.archiveRecognition(
@@ -482,6 +558,18 @@ export const resolveWorkspaceOperationRecord = (
           );
           if (entry === undefined) {
             throw new Error("expected verifier entry after workspace update");
+          }
+          return entry;
+        }
+        case "auditor": {
+          const expectedAuthorizationId = operation.operation === "submit"
+            ? createAuditorScenarioFixture(operation.label).authorizationId
+            : operation.id;
+          const entry = workspace.snapshot.auditorEntries.find(
+            (candidate) => candidate.authorization.authorizationId === expectedAuthorizationId,
+          );
+          if (entry === undefined) {
+            throw new Error("expected auditor entry after workspace update");
           }
           return entry;
         }

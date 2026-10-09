@@ -50,6 +50,15 @@ const summary: TrustRegistryApiSummary = {
     superseded: 0,
     archived: 0,
   },
+  auditorCounts: {
+    proposed: 0,
+    authorized: 0,
+    active: 0,
+    suspended: 0,
+    revoked: 0,
+    superseded: 0,
+    archived: 0,
+  },
   recognitionCounts: {
     proposed: 0,
     authorized: 0,

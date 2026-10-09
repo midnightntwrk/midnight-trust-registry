@@ -46,6 +46,14 @@ Current route set:
 - `POST /v1/applications/:target/:id/archive`
 - `POST /v1/epochs/publish`
 
+Authorization `:role` supports `issuer`, `verifier`, and `auditor`. Issuer
+lookups require a canonical `tr:issuer-resource:v1:<sha256>` ID; verifier and
+auditor lookups require a canonical `tr:request-resource:v1:<sha256>` ID
+derived from the complete role-specific request scope. A bare request-profile
+ID is rejected. The auditor role is not mapped to TRQP `issue` or `verify`.
+Current and historical API responses include lifecycle status and evidence;
+an archived response is not a current active trust decision.
+
 Run locally against a saved workspace:
 
 ```bash
@@ -58,7 +66,7 @@ Workspace-backed mutation routes:
 - require `--workspace`, not `--snapshot`
 - reuse the CLI workspace replay model instead of maintaining separate server
   state
-- currently support issuer, verifier, and recognition workflows plus registry
+- currently support issuer, verifier, auditor, and recognition workflows plus registry
   epoch publication
 - are intentionally local-operator only in this slice:
   - no authentication or authorization middleware is added here
@@ -124,7 +132,12 @@ curl -sS http://127.0.0.1:4400/v1/authorizations/evaluate \
   -d '{
     "role":"issuer",
     "subjectDid":"did:midnight:testnet:issuer",
-    "resourceId":"credential-family:degree",
+    "resourceId":"tr:issuer-resource:v1:0000000000000000000000000000000000000000000000000000000000000000",
     "at":"2026-05-20T00:30:00Z"
-  }'
+}'
 ```
+
+The resource ID above illustrates the required syntax, not a real grant.
+Relying parties must derive the ID from the authenticated scope preimage and
+check the returned registry, policy, epoch, lifecycle, and evidence before
+accepting the decision.

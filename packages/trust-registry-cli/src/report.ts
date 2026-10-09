@@ -11,6 +11,7 @@ import type {
 } from "./model.js";
 import {
   buildSnapshotSummary,
+  findAuditorEntry,
   findEpoch,
   findIssuerEntry,
   findRecognitionEntry,
@@ -24,6 +25,7 @@ export type AuditReportKind =
   | "policy"
   | "issuer"
   | "verifier"
+  | "auditor"
   | "recognition"
   | "epoch";
 
@@ -236,6 +238,7 @@ const renderSummarySection = (
     renderLines([
       `Issuers: ${renderStatusCounts(summary.issuerCounts)}`,
       `Verifiers: ${renderStatusCounts(summary.verifierCounts)}`,
+      `Auditors: ${renderStatusCounts(summary.auditorCounts)}`,
       `Recognitions: ${renderStatusCounts(summary.recognitionCounts)}`,
       `Epoch count: ${summary.epochCount}`,
     ]),
@@ -297,6 +300,10 @@ export const renderAuditReport = (
           "Verifier Authorizations",
           snapshot.verifierEntries,
         ),
+        renderAuthorizationCollection(
+          "Auditor Authorizations",
+          snapshot.auditorEntries,
+        ),
         renderRecognitionCollection(
           "Recognitions",
           snapshot.recognitionEntries,
@@ -350,6 +357,18 @@ export const renderAuditReport = (
           "Verifier Authorization",
           findVerifierEntry(snapshot, id),
         ),
+      ]);
+    }
+    case "auditor": {
+      if (id === undefined) {
+        return joinSections([
+          renderHeader(snapshot, "Trust Registry Auditor Authorization Audit"),
+          renderAuthorizationCollection("Auditor Authorizations", snapshot.auditorEntries),
+        ]);
+      }
+      return joinSections([
+        renderHeader(snapshot, "Trust Registry Auditor Authorization Audit"),
+        renderAuthorizationEntry("Auditor Authorization", findAuditorEntry(snapshot, id)),
       ]);
     }
     case "recognition": {
