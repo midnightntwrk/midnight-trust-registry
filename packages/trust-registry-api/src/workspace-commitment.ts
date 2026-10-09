@@ -6,7 +6,8 @@ import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-doma
 
 export function computeOperatorWorkspaceCommitment(workspace: TrustRegistryOperatorWorkspace): string {
   // Match persisted JSON semantics while normalizing key order and whitespace.
-  const serialized = TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(JSON.stringify(workspace)));
+  const validated = TrustRegistryOperatorWorkspaceSchema.parse(workspace);
+  const serialized = JSON.parse(JSON.stringify(validated)) as TrustRegistryOperatorWorkspace;
   return sha256Hex(JSON.stringify([
     "tr:workspace:revision:v1",
     canonicalizeJson(serialized),

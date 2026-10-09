@@ -38,6 +38,9 @@ describe("operator workspace revision commitment", () => {
     const withUndefined = { ...workspace, operations: [...workspace.operations, { operation: "publish-epoch" as const, label: undefined }] };
     const afterJsonRoundTrip = JSON.parse(JSON.stringify(withUndefined)) as typeof withUndefined;
     expect(computeOperatorWorkspaceCommitment(withUndefined)).toBe(computeOperatorWorkspaceCommitment(afterJsonRoundTrip));
+
+    const withUnknownProperty = { ...workspace, notPersisted: "different" };
+    expect(computeOperatorWorkspaceCommitment(withUnknownProperty)).toBe(before);
   });
 
   it("matches the workspace writer after schema normalization", async () => {
