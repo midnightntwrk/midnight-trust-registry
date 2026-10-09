@@ -46,6 +46,10 @@ const checkWorkflowSetup = (workflow, path) => {
   for (const job of workflowJobs(workflow)) {
     const steps = jobSteps(job);
     for (const [index, step] of steps.entries()) {
+      if (step.with?.["compact-version"] !== undefined
+        && step.with["compact-version"] !== outputReference) {
+        throw new Error(`${path} must read the checked-in Compact version for setup`);
+      }
       if (!setupStep(step)) continue;
       setupCount += 1;
       const pinIndex = steps.findIndex((candidate) => enabledStep(candidate) && candidate.id === "compact-version"
@@ -98,7 +102,7 @@ export function checkCompactVersion(directory = root) {
     .filter((key) => typeof key === "string" && key.startsWith("tr-turbo-v1-"));
   const restoreKeys = cacheSteps.filter((step) => step.uses.startsWith("actions/cache/restore@"))
     .flatMap((step) => typeof step.with?.["restore-keys"] === "string"
-    ? step.with["restore-keys"].split("\n").map((key) => key.trim()).filter(Boolean)
+    ? step.with["restore-keys"].split("\n").map((key) => key.trim()).filter((key) => key.startsWith("tr-turbo-v1-"))
     : []);
   if (
     cacheKeys.length < 2 ||

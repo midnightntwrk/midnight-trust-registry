@@ -28,7 +28,7 @@ test("cached Compact setup authenticates its release query in every workflow", (
   for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
     const workflow = yaml.load(readFileSync(join(sourceRoot, path), "utf8"));
     const setups = Object.values(workflow.jobs).flatMap((job) => job.steps ?? [])
-      .filter((step) => step.uses?.startsWith("midnightntwrk/setup-compact-action@"));
+      .filter((step) => step.uses?.toLowerCase().startsWith("midnightntwrk/setup-compact-action@"));
     assert.ok(setups.length > 0, `${path} must use the pinned setup action`);
     for (const setup of setups) {
       assert.equal(setup.env?.GITHUB_TOKEN, "${{ github.token }}", path);
@@ -68,6 +68,18 @@ test("pre-install pin command needs no workspace dependencies", () => {
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(output, "utf8"), `version=${pinnedVersion}\n`);
+
+    const bin = join(fixture, "bin");
+    mkdirSync(bin);
+    const compact = join(bin, "compact");
+    writeFileSync(compact, `#!/bin/sh\necho ${pinnedVersion}\n`);
+    chmodSync(compact, 0o755);
+    const installed = spawnSync(process.execPath, [join(fixture, "scripts/check-compact-version.mjs"), "--check-installed"], {
+      encoding: "utf8",
+      cwd: fixture,
+      env: { ...process.env, COMPACT_DIRECTORY: "", PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    assert.equal(installed.status, 0, installed.stderr);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -148,7 +160,7 @@ test("workflow and Nix version drift fail validation", () => {
     writeFileSync(workflowPath, originalWorkflow);
 
     const unrelatedPath = join(fixture, ".github/workflows/metadata.yaml");
-    writeFileSync(unrelatedPath, "name: unrelated\n");
+    writeFileSync(unrelatedPath, "# setup-compact-action@ is only a comment\nname: unrelated\n");
     assert.equal(checkCompactVersion(fixture), pinnedVersion);
     rmSync(unrelatedPath);
 
@@ -166,12 +178,15 @@ test("workflow and Nix version drift fail validation", () => {
     rmSync(roguePath);
 
     writeFileSync(workflowPath, originalWorkflow.replace(
-      "name: Milestone Light", "name: setup-compact-action@ in a comment is not a step",
-    ));
-    assert.equal(checkCompactVersion(fixture), pinnedVersion);
-    writeFileSync(workflowPath, originalWorkflow.replace(
       "compact-version: ${{ steps.compact-version.outputs.version }}",
       `compact-version: ${otherVersion}`,
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "- run: ./run.sh --light",
+      `- uses: example/other-compact-action@v1\n        with:\n          compact-version: ${otherVersion}\n      - run: ./run.sh --light`,
     ));
     assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
     writeFileSync(workflowPath, originalWorkflow);
@@ -201,6 +216,13 @@ test("workflow and Nix version drift fail validation", () => {
       "compact-unpinned-${{ hashFiles",
     ));
     assert.throws(() => checkCompactVersion(fixture), /Quality Turbo cache and restore keys/);
+    writeFileSync(qualityPath, readFileSync(join(sourceRoot, ".github/workflows/quality.yaml")));
+
+    writeFileSync(qualityPath, readFileSync(qualityPath, "utf8").replace(
+      "- name: Install dependencies",
+      "- uses: actions/cache/restore@v4\n        with:\n          key: unrelated-cache\n          restore-keys: unrelated-\n      - name: Install dependencies",
+    ));
+    assert.equal(checkCompactVersion(fixture), pinnedVersion);
     writeFileSync(qualityPath, readFileSync(join(sourceRoot, ".github/workflows/quality.yaml")));
 
     writeFileSync(qualityPath, readFileSync(qualityPath, "utf8").replace(
