@@ -38,7 +38,7 @@
     "build": "turbo run build --continue",
     "build:light": "rm -rf contracts/trust-registry/dist && turbo run build:light --continue",
     "test": "turbo run test --continue",
-    "test:light": "turbo run test:light --continue",
+    "test:light": "rm -rf contracts/trust-registry/dist && turbo run test:light --continue",
     "quality": "pnpm run build && pnpm run typecheck && pnpm run audit",
     "ci:integration": "pnpm run integration",
     "ci:lint": "pnpm run docs-check && pnpm run check:workspace-manifests && pnpm run check:compact-version && pnpm run test:artifact-workspaces && pnpm run test:package-contents-policy && pnpm run test:demo-smoke-scripts && pnpm run check:action-kind-parity && pnpm run lint",
