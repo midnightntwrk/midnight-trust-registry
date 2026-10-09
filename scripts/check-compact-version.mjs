@@ -1,10 +1,11 @@
 import { appendFileSync, existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 const requiredWorkflows = [
   ".github/workflows/ci.yaml",
   ".github/workflows/milestone-light.yaml",
@@ -17,12 +18,14 @@ const installedCommand = "node scripts/check-compact-version.mjs --check-install
 
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const setupStep = (step) => typeof step?.uses === "string"
-  && step.uses.startsWith("midnightntwrk/setup-compact-action@");
+  && step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
+const enabledStep = (step) => step.if !== false && String(step.if ?? "").trim().toLowerCase() !== "false";
 
-const readWorkflow = (directory, path) => {
+const readWorkflow = (directory, path, yaml, required = true) => {
   const workflow = yaml.load(readFileSync(resolve(directory, path), "utf8"));
   if (!isRecord(workflow) || !isRecord(workflow.jobs)) {
-    throw new Error(`${path} must contain workflow jobs`);
+    if (required) throw new Error(`${path} must contain workflow jobs`);
+    return null;
   }
   return workflow;
 };
@@ -45,11 +48,11 @@ const checkWorkflowSetup = (workflow, path) => {
     for (const [index, step] of steps.entries()) {
       if (!setupStep(step)) continue;
       setupCount += 1;
-      const pinIndex = steps.findIndex((candidate) => candidate.id === "compact-version"
+      const pinIndex = steps.findIndex((candidate) => enabledStep(candidate) && candidate.id === "compact-version"
         && typeof candidate.run === "string" && candidate.run.trim() === pinCommand);
-      const installedIndex = steps.findIndex((candidate, offset) => offset > index
+      const installedIndex = steps.findIndex((candidate, offset) => offset > index && enabledStep(candidate)
         && typeof candidate.run === "string" && candidate.run.trim() === installedCommand);
-      if (pinIndex < 0 || pinIndex >= index || installedIndex < 0
+      if (!enabledStep(step) || pinIndex < 0 || pinIndex >= index || installedIndex < 0
         || step.with?.["compact-version"] !== outputReference
         || step.env?.GITHUB_TOKEN !== "${{ github.token }}") {
         throw new Error(`${path} must read the checked-in Compact version for setup`);
@@ -61,29 +64,34 @@ const checkWorkflowSetup = (workflow, path) => {
   }
 };
 
-export function checkCompactVersion(directory = root) {
+export function readCompactPin(directory = root) {
   const pin = readFileSync(resolve(directory, ".compact-version"), "utf8");
   if (!/^\d+\.\d+\.\d+\n$/.test(pin)) {
     throw new Error(".compact-version must contain one stable semver and a newline");
   }
-  const version = pin.trimEnd();
+  return pin.trimEnd();
+}
+
+export function checkCompactVersion(directory = root) {
+  const version = readCompactPin(directory);
+  const yaml = require("js-yaml");
 
   const workflowDirectory = resolve(directory, ".github/workflows");
   const workflows = new Set(requiredWorkflows);
   for (const file of readdirSync(workflowDirectory)) {
     if (!/\.ya?ml$/u.test(file)) continue;
     const path = `.github/workflows/${file}`;
-    const workflow = readWorkflow(directory, path);
-    if (workflowJobs(workflow).some((job) => jobSteps(job).some(setupStep))) {
+    const workflow = readWorkflow(directory, path, yaml, false);
+    if (workflow && workflowJobs(workflow).some((job) => jobSteps(job).some(setupStep))) {
       workflows.add(path);
     }
   }
 
   for (const path of workflows) {
-    checkWorkflowSetup(readWorkflow(directory, path), path);
+    checkWorkflowSetup(readWorkflow(directory, path, yaml), path);
   }
 
-  const quality = readWorkflow(directory, ".github/workflows/quality.yaml");
+  const quality = readWorkflow(directory, ".github/workflows/quality.yaml", yaml);
   const cacheSteps = workflowJobs(quality).flatMap(jobSteps)
     .filter((step) => typeof step.uses === "string" && /^actions\/cache\/(?:restore|save)@/u.test(step.uses));
   const cacheKeys = cacheSteps.map((step) => step.with?.key)
@@ -122,7 +130,7 @@ export function checkCompactVersion(directory = root) {
 
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    const version = checkCompactVersion();
+    const version = process.argv.length === 2 ? checkCompactVersion() : readCompactPin();
     if (process.argv[2] === "--github-output") {
       if (!process.env.GITHUB_OUTPUT) {
         throw new Error("GITHUB_OUTPUT is required for --github-output");

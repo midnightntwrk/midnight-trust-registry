@@ -53,6 +53,26 @@ test("CLI emits the pin when invoked through a symlink", () => {
   }
 });
 
+test("pre-install pin command needs no workspace dependencies", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "tr-compact-preinstall-"));
+  try {
+    mkdirSync(join(fixture, "scripts"));
+    writeFileSync(join(fixture, ".compact-version"), `${pinnedVersion}\n`);
+    writeFileSync(join(fixture, "scripts/check-compact-version.mjs"),
+      readFileSync(join(sourceRoot, "scripts/check-compact-version.mjs")));
+    const output = join(fixture, "github-output");
+    const result = spawnSync(process.execPath, [join(fixture, "scripts/check-compact-version.mjs"), "--github-output"], {
+      encoding: "utf8",
+      cwd: fixture,
+      env: { ...process.env, GITHUB_OUTPUT: output },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(output, "utf8"), `version=${pinnedVersion}\n`);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () => {
   const fixture = mkdtempSync(join(tmpdir(), "tr-compact-installed-"));
   try {
@@ -121,6 +141,17 @@ test("workflow and Nix version drift fail validation", () => {
     assert.equal(checkCompactVersion(fixture), pinnedVersion);
     writeFileSync(workflowPath, originalWorkflow);
 
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "midnightntwrk/setup-compact-action@", "MidnightNtwRK/SETUP-COMPACT-ACTION@",
+    ));
+    assert.equal(checkCompactVersion(fixture), pinnedVersion);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    const unrelatedPath = join(fixture, ".github/workflows/metadata.yaml");
+    writeFileSync(unrelatedPath, "name: unrelated\n");
+    assert.equal(checkCompactVersion(fixture), pinnedVersion);
+    rmSync(unrelatedPath);
+
     const otherVersion = pinnedVersion === "0.0.0" ? "99.99.99" : "0.0.0";
     writeFileSync(workflowPath, readFileSync(workflowPath, "utf8").replace(
       "compact-version: ${{ steps.compact-version.outputs.version }}",
@@ -135,9 +166,20 @@ test("workflow and Nix version drift fail validation", () => {
     rmSync(roguePath);
 
     writeFileSync(workflowPath, originalWorkflow.replace(
+      "name: Milestone Light", "name: setup-compact-action@ in a comment is not a step",
+    ));
+    assert.equal(checkCompactVersion(fixture), pinnedVersion);
+    writeFileSync(workflowPath, originalWorkflow.replace(
       "compact-version: ${{ steps.compact-version.outputs.version }}",
       `compact-version: ${otherVersion}`,
-    ).replace("name: Milestone Light", "name: setup-compact-action@ in a comment is not a step"));
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "- run: node scripts/check-compact-version.mjs --check-installed",
+      "- if: false\n        run: node scripts/check-compact-version.mjs --check-installed",
+    ));
     assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
     writeFileSync(workflowPath, originalWorkflow);
 
