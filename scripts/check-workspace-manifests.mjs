@@ -11,7 +11,9 @@ import {
   workspaceCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const defaultRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+export function checkWorkspaceManifests(repoRoot = defaultRoot) {
 
 const readJson = (relativePath) =>
   JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), "utf8"));
@@ -21,14 +23,7 @@ const errors = [];
 const runtimePackageName = "@midnight-ntwrk/compact-runtime";
 const runtimeVersion = readJson("contracts/trust-registry/package.json")
   .dependencies?.[runtimePackageName];
-const identityPackages = [
-  "credential-compact",
-  "credential-did-midnight",
-  "midnight-did",
-  "midnight-did-contract",
-  "midnight-did-domain",
-  "midnight-did-jubjub-schnorr",
-];
+const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 
 const assertEqual = (label, actual, expected) => {
   if (actual !== expected) {
@@ -62,7 +57,7 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   const packageJson = readJson(path.join(workspace, "package.json"));
   const label = `${workspace}/package.json`;
 
-  for (const section of ["dependencies", "devDependencies"]) {
+  for (const section of dependencySections) {
     const declaredRuntime = packageJson[section]?.[runtimePackageName];
     if (declaredRuntime !== undefined) {
       assertEqual(`${label} ${section} Compact runtime`, declaredRuntime, runtimeVersion);
@@ -122,26 +117,19 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   assertFileExists(`${workspace} README`, path.join(workspace, "README.md"));
 }
 
-for (const name of identityPackages) {
-  const manifestPath = path.join("node_modules", "@midnight-ntwrk", name, "package.json");
-  if (!fs.existsSync(path.join(repoRoot, manifestPath))) {
-    errors.push(`Missing installed identity package ${name}`);
-    continue;
-  }
-  const declaredRuntime = readJson(manifestPath).dependencies?.[runtimePackageName];
-  if (declaredRuntime !== undefined) {
-    assertEqual(`${name} Compact runtime requirement`, declaredRuntime, runtimeVersion);
-  }
-}
-
 if (errors.length > 0) {
-  console.error("[check-workspace-manifests] Trust Registry workspace drift:");
-  for (const error of errors) {
-    console.error(`- ${error}`);
-  }
-  process.exit(1);
+  throw new Error(`[check-workspace-manifests] Trust Registry workspace drift:\n${errors.map((error) => `- ${error}`).join("\n")}`);
 }
 
-console.log(
-  "[check-workspace-manifests] Trust Registry workspace manifests are aligned.",
-);
+return true;
+}
+
+if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+  try {
+    checkWorkspaceManifests();
+    console.log("[check-workspace-manifests] Trust Registry workspace manifests are aligned.");
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

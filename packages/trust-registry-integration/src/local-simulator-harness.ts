@@ -17,7 +17,7 @@ import {
   decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  labelToBytes32,
+  encodeCompactActionKind,
   signApplicationEvidenceCommitmentFromSeed,
   type MaintainerCoAuthorizer,
   signPolicyBoundMaintainerActionFromSeed,
@@ -85,40 +85,40 @@ import {
   type VerifierScenarioFixture,
 } from "./fixtures.js";
 
-const PROPOSE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:propose");
-const AUTHORIZE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:authorize");
-const ACTIVATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:activate");
-const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
-const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
-const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
-const PROPOSE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:propose");
-const AUTHORIZE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:authorize");
-const ACTIVATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:activate");
-const SUSPEND_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:suspend");
-const REVOKE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:revoke");
-const ARCHIVE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:archive");
-const PROPOSE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:propose");
-const AUTHORIZE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:authorize");
-const ACTIVATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:activate");
-const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
-const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
-const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
-const PROPOSE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:propose");
-const AUTHORIZE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:authorize");
-const ACTIVATE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:activate");
-const SUSPEND_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:suspend");
-const REVOKE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:revoke");
-const ARCHIVE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:archive");
-const PROPOSE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:propose");
-const AUTHORIZE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:authorize");
-const ACTIVATE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:activate");
-const SUSPEND_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:suspend");
-const REVOKE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:revoke");
-const ARCHIVE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:archive");
-const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = labelToBytes32(
+const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
+const AUTHORIZE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:authorize");
+const ACTIVATE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:activate");
+const SUSPEND_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:suspend");
+const REVOKE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:revoke");
+const ARCHIVE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:archive");
+const PROPOSE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:propose");
+const AUTHORIZE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:authorize");
+const ACTIVATE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:activate");
+const SUSPEND_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:suspend");
+const REVOKE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:revoke");
+const ARCHIVE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:archive");
+const PROPOSE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:propose");
+const AUTHORIZE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:authorize");
+const ACTIVATE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:activate");
+const SUSPEND_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:suspend");
+const REVOKE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:revoke");
+const ARCHIVE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:archive");
+const PROPOSE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:propose");
+const AUTHORIZE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:authorize");
+const ACTIVATE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:activate");
+const SUSPEND_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:suspend");
+const REVOKE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:revoke");
+const ARCHIVE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:archive");
+const PROPOSE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:propose");
+const AUTHORIZE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:authorize");
+const ACTIVATE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:activate");
+const SUSPEND_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:suspend");
+const REVOKE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:revoke");
+const ARCHIVE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:archive");
+const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
-const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 
@@ -1715,6 +1715,7 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch publication policy commitment is missing or malformed");
     }
     let verified = false;
+    let verificationFault: unknown;
     try {
       verified = verifyPolicyBoundMaintainerAction(
         maintainerRecord.publicKey,
@@ -1725,11 +1726,11 @@ export class LocalTrustRegistryIntegrationHarness {
         epochRecord.publishedAtSequence,
         signature,
       );
-    } catch {
-      // Unexpected verification failures must not authenticate the epoch.
+    } catch (error) {
+      verificationFault = error;
     }
     if (!verified) {
-      throw new Error("Epoch maintainer signature is invalid");
+      throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
     }
   }
 

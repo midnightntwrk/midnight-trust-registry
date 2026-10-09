@@ -12,7 +12,10 @@ import type {
   RecognitionRecord,
   VerifierAuthorizationRecord,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  TrustRegistryEvidenceBundleSchema,
+  type TrustRegistryEvidenceBundle,
+} from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   verifyAuditorAuthorizationBundle,
@@ -21,7 +24,7 @@ import {
   verifyVerifierAuthorizationBundle,
   type BundleVerificationOptions,
 } from "./evidence.js";
-import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp } from "./utils.js";
+import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp, sameBytes32 } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<
   BundleVerificationOptions,
@@ -207,6 +210,13 @@ export class TrustRegistrySimulatorClient {
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
     const ledger = this.requireSupportedLedger();
+    if (typeof bundle?.registryId !== "string" || bundle.registryId.length === 0) {
+      throw new Error("Bundle registry ID is missing or malformed");
+    }
+    bundle = TrustRegistryEvidenceBundleSchema.parse(bundle);
+    if (!sameBytes32(bytes32Commitment(bundle.registryId), ledger.registryId)) {
+      throw new Error("Bundle registry ID does not match the simulator ledger");
+    }
     const epochRecord = this.getEpochCommitmentById(bundle.epoch.epochId);
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
@@ -233,7 +243,7 @@ export class TrustRegistrySimulatorClient {
     return {
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
-      registryIdCommitment: this.asBytes32(bundle.registryId),
+      registryIdCommitment: ledger.registryId,
       ...(policySupersededAt === undefined ? {} : { policySupersededAt }),
     };
   }
