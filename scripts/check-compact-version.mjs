@@ -91,7 +91,15 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
     } else if (process.argv[2] === "--check-installed") {
       try {
-        const installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+        let installed;
+        try {
+          installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+        } catch (error) {
+          if (error.code === "ENOENT") {
+            throw new Error("Compact launcher not found on PATH");
+          }
+          throw error;
+        }
         if (installed !== version) {
           throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
         }
@@ -105,9 +113,6 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
           }
         }
       } catch (error) {
-        if (error.code === "ENOENT") {
-          error = new Error("Compact compiler not found; enter the Nix development shell");
-        }
         error.installedCompilerFailure = true;
         throw error;
       }

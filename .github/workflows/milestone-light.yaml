@@ -36,7 +36,6 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-            !~/.compact/**/artifact.zip
           key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
       - uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         if: steps.compact-cache.outputs.cache-hit != 'true'
@@ -50,6 +49,10 @@ jobs:
       - run: node scripts/check-compact-version.mjs --check-installed
         env:
           TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
       - name: Save verified Compact installation
         if: steps.compact-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -57,7 +60,6 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-            !~/.compact/**/artifact.zip
           key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
       - run: pnpm install --frozen-lockfile --prefer-offline
       - run: ./run.sh --light

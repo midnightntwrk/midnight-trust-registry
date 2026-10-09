@@ -81,7 +81,6 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-            !~/.compact/**/artifact.zip
           key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Setup Compact toolchain
@@ -101,6 +100,10 @@ jobs:
         env:
           TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
 
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
       - name: Save verified Compact installation
         if: steps.compact-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -108,7 +111,6 @@ jobs:
           path: |
             ~/.local/bin/compact
             ~/.compact/
-            !~/.compact/**/artifact.zip
           key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Install dependencies

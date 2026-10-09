@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 import { checkCompactVersion } from "./check-compact-version.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,46 +27,52 @@ test("all Compact consumers use the shared version", () => {
 
 test("cached Compact setup authenticates its release query in every workflow", () => {
   for (const path of compactWorkflows) {
-    const workflow = readFileSync(join(sourceRoot, path), "utf8");
-    const setup = workflow.split("setup-compact-action@")[1];
-    assert.ok(setup, `${path} must use the pinned setup action`);
-    const nextStep = setup.search(/\n\s*-\s(?:name|uses|run):/u);
-    const setupStep = nextStep === -1 ? setup : setup.slice(0, nextStep);
-    assert.match(setupStep, /\benv:\n\s+GITHUB_TOKEN: \$\{\{ github\.token \}\}/u, path);
+    const workflow = yaml.load(readFileSync(join(sourceRoot, path), "utf8"));
+    const jobs = Object.values(workflow.jobs);
+    const compactJobs = jobs.filter((job) => job.steps?.some((step) =>
+      step.uses?.startsWith("midnightntwrk/setup-compact-action@")));
+    assert.equal(compactJobs.length, 1, `${path} must have one Compact job`);
+    const setup = compactJobs[0].steps.find((step) =>
+      step.uses?.startsWith("midnightntwrk/setup-compact-action@"));
+    assert.equal(setup.env.GITHUB_TOKEN, "${{ github.token }}", path);
   }
 });
 
 test("a pinned cache hit bypasses network setup and only verified installs are saved", () => {
   const cacheKey = "tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
   for (const path of compactWorkflows) {
-    const workflow = readFileSync(join(sourceRoot, path), "utf8");
-    const steps = workflow.split(/\n\s{6}- /u).slice(1);
-    const restore = steps.find((step) => step.includes("name: Restore pinned Compact installation"));
-    const setup = steps.find((step) => step.includes("setup-compact-action@"));
-    const addPath = steps.find((step) => step.includes("name: Add cached Compact to PATH"));
-    const verify = steps.find((step) => step.includes("run: node scripts/check-compact-version.mjs --check-installed"));
-    const save = steps.find((step) => step.includes("name: Save verified Compact installation"));
-    assert.ok(restore && setup && addPath && verify && save, `${path} must have the full Compact cache flow`);
+    const workflow = yaml.load(readFileSync(join(sourceRoot, path), "utf8"));
+    const jobs = Object.values(workflow.jobs);
+    assert.equal(jobs.length, 1, `${path} must keep the cache on its pinned runner`);
+    const job = jobs[0];
+    const steps = job.steps;
+    const restore = steps.find((step) => step.name === "Restore pinned Compact installation");
+    const setup = steps.find((step) => step.uses?.startsWith("midnightntwrk/setup-compact-action@"));
+    const addPath = steps.find((step) => step.name === "Add cached Compact to PATH");
+    const verify = steps.find((step) => step.run === "node scripts/check-compact-version.mjs --check-installed");
+    const verifyPaths = steps.find((step) => step.name === "Verify Compact cache paths");
+    const save = steps.find((step) => step.name === "Save verified Compact installation");
+    assert.ok(restore && setup && addPath && verify && verifyPaths && save, `${path} must have the full Compact cache flow`);
     assert.ok(steps.indexOf(restore) < steps.indexOf(setup), `${path} must restore before setup`);
     assert.ok(steps.indexOf(setup) < steps.indexOf(addPath), `${path} must set PATH after setup`);
     assert.ok(steps.indexOf(addPath) < steps.indexOf(verify), `${path} must verify the restored compiler`);
-    assert.ok(steps.indexOf(verify) < steps.indexOf(save), `${path} must verify before cache save`);
-    assert.match(restore, /id: compact-cache/u, path);
-    assert.match(restore, /actions\/cache\/restore@/u, path);
-    assert.match(restore, /~\/\.compact\//u, `${path} must cache the installed compiler directory`);
-    assert.match(restore, /!~\/\.compact\/\*\*\/artifact\.zip/u, `${path} must exclude download archives`);
-    assert.ok(!restore.includes("restore-keys:"), `${path} must not restore a different compiler version`);
-    assert.match(setup, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
-    assert.match(setup, /cache-enabled: 'false'/u, path);
-    assert.match(addPath, /\$HOME\/\.local\/bin/u, path);
-    assert.match(save, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
-    assert.match(save, /actions\/cache\/save@/u, path);
-    assert.match(save, /~\/\.compact\//u, `${path} must save the installed compiler directory`);
-    assert.match(save, /!~\/\.compact\/\*\*\/artifact\.zip/u, `${path} must exclude download archives`);
-    assert.match(verify, /TR_COMPACT_CACHE_HIT: \$\{\{ steps\.compact-cache\.outputs\.cache-hit \}\}/u, path);
-    assert.ok(restore.includes(`key: ${cacheKey}`), `${path} restore must use the pinned version`);
-    assert.ok(save.includes(`key: ${cacheKey}`), `${path} save must use the same pinned version`);
-    assert.match(workflow, /runs-on: ubuntu-24\.04/u, `${path} must pin the runner generation`);
+    assert.ok(steps.indexOf(verify) < steps.indexOf(verifyPaths), `${path} must verify before checking cache paths`);
+    assert.ok(steps.indexOf(verifyPaths) < steps.indexOf(save), `${path} must check cache paths before save`);
+    assert.equal(job["runs-on"], "ubuntu-24.04", `${path} must pin the runner generation`);
+    assert.equal(restore.id, "compact-cache", path);
+    assert.match(restore.uses, /^actions\/cache\/restore@/u, path);
+    assert.match(restore.with.path, /~\/\.compact\//u, `${path} must cache the compiler directory`);
+    assert.equal(restore.with["restore-keys"], undefined, `${path} must not restore another version`);
+    assert.equal(setup.if, "steps.compact-cache.outputs.cache-hit != 'true'", path);
+    assert.equal(setup.with["cache-enabled"], "false", path);
+    assert.match(addPath.run, /\$HOME\/\.local\/bin/u, path);
+    assert.match(verifyPaths.run, /test -x "\$HOME\/\.compact\/bin\/compactc"/u, path);
+    assert.equal(save.if, "steps.compact-cache.outputs.cache-hit != 'true'", path);
+    assert.match(save.uses, /^actions\/cache\/save@/u, path);
+    assert.match(save.with.path, /~\/\.compact\//u, `${path} must save the compiler directory`);
+    assert.equal(verify.env.TR_COMPACT_CACHE_HIT, "${{ steps.compact-cache.outputs.cache-hit }}", path);
+    assert.equal(restore.with.key, cacheKey, `${path} restore must use the pinned version`);
+    assert.equal(save.with.key, cacheKey, `${path} save must use the same pinned version`);
   }
 });
 
