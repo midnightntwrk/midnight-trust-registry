@@ -7,6 +7,8 @@ needed by local tests and package-import smoke checks. It deliberately excludes
 proving keys and ZK IR, even when a previous full compile left them in
 `src/managed`. The full `build` still copies all generated artifacts; this
 light path does not change release packaging or delete compiler outputs.
+The full package content gate also requires proving keys and ZK IR so a
+light build cannot silently be published as a release artifact.
 
 Current scope:
 

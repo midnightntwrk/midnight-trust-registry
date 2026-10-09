@@ -4,8 +4,12 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
-import { unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
+import {
+  artifactWorkspaces,
+  compactContractArtifactWorkspaces,
+  packageManifestCatalog,
+} from "./trust-registry-workspace-catalog.mjs";
+import { missingFullContractArtifacts, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const lightMode = process.argv.includes("--light");
@@ -66,10 +70,17 @@ for (const workspace of artifactWorkspaces) {
     );
   }
 
-  if (lightMode && workspace === "contracts/trust-registry") {
-    const unexpected = unexpectedLightContractArtifacts(filePaths);
-    if (unexpected.length > 0) {
-      errors.push(`${workspace}: light package contains proving artifacts: ${unexpected.join(", ")}`);
+  if (compactContractArtifactWorkspaces.includes(workspace)) {
+    if (lightMode) {
+      const unexpected = unexpectedLightContractArtifacts(filePaths);
+      if (unexpected.length > 0) {
+        errors.push(`${workspace}: light package contains unexpected generated artifacts: ${unexpected.join(", ")}`);
+      }
+    } else {
+      const missing = missingFullContractArtifacts(filePaths);
+      if (missing.length > 0) {
+        errors.push(`${workspace}: full package is missing ${missing.join(" and ")}`);
+      }
     }
   }
 

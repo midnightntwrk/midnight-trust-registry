@@ -13,6 +13,7 @@ export const workspaceCatalog = [
     workspace: "contracts/trust-registry",
     artifactPackage: true,
     publishPackage: true,
+    compactContractArtifacts: true,
     manifest: {
       name: "@midnight-ntwrk/trust-registry-contract",
       files: [
@@ -172,6 +173,10 @@ export const expectedWorkspaces = ["contracts/*", "packages/*", "adapters/*"];
 
 export const artifactWorkspaces = workspaceCatalog
   .filter(({ artifactPackage }) => artifactPackage)
+  .map(({ workspace }) => workspace);
+
+export const compactContractArtifactWorkspaces = workspaceCatalog
+  .filter(({ compactContractArtifacts }) => compactContractArtifacts)
   .map(({ workspace }) => workspace);
 
 export const publishWorkspaces = workspaceCatalog
