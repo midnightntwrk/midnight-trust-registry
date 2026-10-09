@@ -59,15 +59,38 @@ jobs:
         id: compact-version
         run: node scripts/check-compact-version.mjs --github-output
 
+      - name: Restore pinned Compact installation
+        id: compact-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.local/share/compact/
+          key: tr-compact-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
       - name: Set up Compact toolchain
+        if: steps.compact-cache.outputs.cache-hit != 'true'
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
           compact-version: ${{ steps.compact-version.outputs.version }}
+          cache-enabled: 'false'
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Add cached Compact to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Verify Compact installation
         run: node scripts/check-compact-version.mjs --check-installed
+
+      - name: Save verified Compact installation
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.local/share/compact/
+          key: tr-compact-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline

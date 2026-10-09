@@ -34,6 +34,34 @@ test("cached Compact setup authenticates its release query in every workflow", (
   }
 });
 
+test("a pinned cache hit bypasses network setup and only verified installs are saved", () => {
+  const cacheKey = "tr-compact-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
+  for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
+    const workflow = readFileSync(join(sourceRoot, path), "utf8");
+    const steps = workflow.split(/\n\s{6}- /u).slice(1);
+    const restore = steps.find((step) => step.includes("name: Restore pinned Compact installation"));
+    const setup = steps.find((step) => step.includes("setup-compact-action@"));
+    const addPath = steps.find((step) => step.includes("name: Add cached Compact to PATH"));
+    const verify = steps.find((step) => step.includes("run: node scripts/check-compact-version.mjs --check-installed"));
+    const save = steps.find((step) => step.includes("name: Save verified Compact installation"));
+    assert.ok(restore && setup && addPath && verify && save, `${path} must have the full Compact cache flow`);
+    assert.ok(steps.indexOf(restore) < steps.indexOf(setup), `${path} must restore before setup`);
+    assert.ok(steps.indexOf(setup) < steps.indexOf(addPath), `${path} must set PATH after setup`);
+    assert.ok(steps.indexOf(addPath) < steps.indexOf(verify), `${path} must verify the restored compiler`);
+    assert.ok(steps.indexOf(verify) < steps.indexOf(save), `${path} must verify before cache save`);
+    assert.match(restore, /id: compact-cache/u, path);
+    assert.match(restore, /actions\/cache\/restore@/u, path);
+    assert.ok(!restore.includes("restore-keys:"), `${path} must not restore a different compiler version`);
+    assert.match(setup, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
+    assert.match(setup, /cache-enabled: 'false'/u, path);
+    assert.match(addPath, /\$HOME\/\.local\/bin/u, path);
+    assert.match(save, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
+    assert.match(save, /actions\/cache\/save@/u, path);
+    assert.ok(restore.includes(`key: ${cacheKey}`), `${path} restore must use the pinned version`);
+    assert.ok(save.includes(`key: ${cacheKey}`), `${path} save must use the same pinned version`);
+  }
+});
+
 test("CLI emits the pin when invoked through a symlink", () => {
   const fixture = mkdtempSync(join(tmpdir(), "tr-compact-cli-"));
   try {
