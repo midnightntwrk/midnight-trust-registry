@@ -195,8 +195,8 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
           ...snapshot.verifierEntries,
           ...snapshot.auditorEntries,
         ].find((entry) => entry.authorization.authorizationId === recordId);
-    const sameIdentity = authorization === undefined
-      ? current !== undefined && "recognition" in current
+    const sameIdentity = current === undefined || (authorization === undefined
+      ? "recognition" in current
         && current.recognition.recognizedAuthorityDid === recognition?.recognizedAuthorityDid
         && current.recognition.recognizedRegistryId === recognition?.recognizedRegistryId
         && current.recognition.scope.resourceType === recognition?.scope.resourceType
@@ -205,15 +205,16 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
         && Object.entries(current.recognition.scope.context ?? {}).every(
           ([key, value]) => recognition?.scope.context?.[key] === value,
         )
-      : current !== undefined && "authorization" in current
+      : "authorization" in current
         && current.authorization.role === authorization.role
         && current.authorization.subjectDid === authorization.subjectDid
         && current.authorization.resourceType === authorization.resourceType
-        && current.authorization.resourceId === authorization.resourceId;
+        && current.authorization.resourceId === authorization.resourceId);
     const leafHash = authorization === undefined
       ? recognition === undefined ? null : computeRecognitionStatementLeafHash(recognition)
       : computeAuthorizationStatementLeafHash(authorization);
     if (archivedIds.has(archiveId) || !sameIdentity || leafHash === null
+      || (authorization?.registryId ?? recognition?.registryId) !== snapshot.registry.registryId
       || !hasConsistentSnapshotProof(bundle, leafHash, snapshot.epochs, snapshot.registry.registryId)) {
       ctx.addIssue({
         code: "custom",

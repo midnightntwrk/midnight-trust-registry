@@ -565,6 +565,10 @@ describe("trust registry operator CLI", () => {
     const keys = archived.snapshot.evidenceArchive.map((bundle) =>
       `${bundle.authorization?.authorizationId}:${bundle.epoch.epochId}`);
     expect(new Set(keys).size).toBe(keys.length);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...archived.snapshot,
+      issuerEntries: [],
+    }).success).toBe(true);
   }, CLI_TEST_TIMEOUT_MS);
 
   it(
