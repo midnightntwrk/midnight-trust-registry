@@ -4,7 +4,11 @@ import {
   canonicalizeAuthorizationScope,
   computeAuthorizationScopeCommitment,
   encodeAuthorizationScope,
+  issuerGovernedResourceId,
+  issuerGovernedResourceIdFromScopeCommitment,
 } from "../scope.js";
+import { sha256Hex } from "../ids.js";
+import { governedResourceInScope } from "../application-challenge-binding.js";
 
 const issuer = {
   version: "tr-scope-v1" as const,
@@ -33,6 +37,33 @@ describe("authorization scope v1", () => {
     expect(canonical).toBe('{"credentialDefinitionId":"did:midnight:credential-definition:organization-v1","credentialFamilyId":"https://schemas.midnight.network/credentials/organization","role":"issuer","schemaId":"https://schemas.midnight.network/organization/v1","schemaVersion":"1.0.0","statusMethod":"midnight-status-registry-v1","version":"tr-scope-v1"}');
     expect(encodeAuthorizationScope(issuer)).toEqual(new TextEncoder().encode(canonical));
     expect(computeAuthorizationScopeCommitment(issuer)).toBe("0xf9d7d610bba907f28353425136f9ba2bc65d5925421371fc7580716029b3c6c8");
+  });
+
+  it("gives each issuer resource type a type-separated full-scope identity", () => {
+    const familyId = issuerGovernedResourceId(issuer, "credentialFamily");
+    expect(issuerGovernedResourceIdFromScopeCommitment(
+      computeAuthorizationScopeCommitment(issuer), "credentialFamily",
+    )).toBe(familyId);
+    expect(familyId).toBe("tr:issuer-resource:v1:e4edbae272fdd78e6ceccde9e4018528ffa418094eeddae33782738293b3dd8d");
+    expect(sha256Hex(familyId)).toBe("0xf4d2231e9d0bcb65bf7a39ab5b5893a4db0e199f209ee27ec1834344aee7162f");
+    const types = [
+      "credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement",
+    ] as const;
+    const otherSchema = { ...issuer, schemaId: "https://schemas.midnight.network/organization/v2" };
+    const otherFamily = { ...issuer, credentialFamilyId: "https://schemas.midnight.network/credentials/company" };
+    const ids = types.map((type) => issuerGovernedResourceId(issuer, type));
+    expect(new Set(ids).size).toBe(types.length);
+    for (const type of types) {
+      expect(issuerGovernedResourceId(otherSchema, type)).not.toBe(issuerGovernedResourceId(issuer, type));
+      expect(issuerGovernedResourceId(otherFamily, type)).not.toBe(issuerGovernedResourceId(issuer, type));
+    }
+    expect(() => issuerGovernedResourceId(issuer, undefined as never)).toThrow();
+    expect(() => issuerGovernedResourceId(issuer, "unknown" as never)).toThrow();
+  });
+
+  it("returns no governed resource for an invalid issuer scope", () => {
+    expect(governedResourceInScope({ ...issuer, schemaVersion: "^1.0.0" }, "credentialFamily"))
+      .toBeNull();
   });
 
   it("normalizes object fields and unordered request arrays", () => {

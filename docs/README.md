@@ -21,7 +21,8 @@ remaining implementation and test work.
 10. [Decisions and open questions](decisions/trust-registry-decisions.md)
 11. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
 12. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
-13. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
+13. [ADR-0003: composite issuer resource identity](decisions/adr-0003-composite-issuer-resource-identity.md)
+14. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 

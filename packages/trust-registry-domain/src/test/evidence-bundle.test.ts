@@ -9,12 +9,14 @@ import {
   computeRecognitionStatementLeafHash,
   computeSingleStatementStateRoot,
   computeIssuerStatusPolicyBindingCommitment,
+  issuerGovernedResourceIdFromScopeCommitment,
 } from "../index.js";
 
 const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "credentialFamily");
 const STATUS_BINDING = {
   version: "tr-issuer-status-policy-v1",
   trustRegistryId: "registry:midnight:university",
@@ -139,7 +141,7 @@ describe("trust registry evidence bundle", () => {
         subjectDid: "did:midnight:issuer:1",
         role: "issuer",
         resourceType: "credential-family",
-        resourceId: "vc-type:birth:v1",
+        resourceId: ISSUER_RESOURCE_ID,
         policyId: "policy:university:v1",
         trustLevel: "approved",
         status: "active",
@@ -247,7 +249,7 @@ describe("trust registry evidence bundle", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "approved",
       statusPolicyBindingCommitment: HASH_B,
@@ -264,7 +266,7 @@ describe("trust registry evidence bundle", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "silver",
       statusPolicyBindingCommitment: HASH_B,

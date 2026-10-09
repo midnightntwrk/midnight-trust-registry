@@ -5,6 +5,8 @@ import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
+  governedResourceInScope,
+  issuerGovernedResourceId,
   sha256Hex,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
@@ -164,10 +166,13 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         ...binding,
         ...(role === "maintainer" ? {
           registryId: "registry:other:trusted",
-          governedResource: { type: "registry" as const, id: "registry:other:trusted" },
         } : {}),
         scope: substitutedScope,
         scopeCommitment: computeAuthorizationScopeCommitment(substitutedScope),
+        governedResource: {
+          ...binding.governedResource,
+          id: governedResourceInScope(substitutedScope, binding.governedResource.type)!,
+        },
       } as ApplicationChallengeBinding,
     })).rejects.toThrow(/governed proposal/);
     expect(verifyPresentation).not.toHaveBeenCalled();
@@ -207,10 +212,21 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         : { ...binding.scope, requestProfileId: "request-profile:other" };
     expect(() => propose(signedEvidence, { ...expected, scope: wrongResourceScope })).toThrow(/proposal scope does not match/);
     if (role === "issuer" && binding.scope.role === "issuer") {
-      const schemaVersion = binding.scope.schemaVersion;
+      const substitutedResourceId = issuerGovernedResourceId(
+        { ...binding.scope, credentialFamilyId: "credential-family:substituted" },
+        "credentialFamily",
+      );
+      const crossTypeResourceId = issuerGovernedResourceId(binding.scope, "schemaVersion");
       expect(() => propose(signedEvidence, {
         ...expected,
-        governedResource: { type: "schemaVersion", id: schemaVersion },
+        governedResource: { type: "credentialFamily", id: substitutedResourceId },
+      })).toThrow(/proposal scope does not match/);
+      expect(() => propose(signedEvidence, {
+        ...expected,
+        governedResource: {
+          type: "schemaVersion",
+          id: crossTypeResourceId,
+        },
       })).toThrow(/proposal scope does not match/);
     }
     if (role === "issuer" && binding.scope.role === "issuer") {
@@ -232,6 +248,11 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       ["challengeHash", `0x${"b".repeat(64)}`, /challengeHash/],
     ] as const) {
       const envelope = { ...signedEvidence.envelope, [field]: value };
+      if (role === "issuer" && field === "scopeCommitment") {
+        expect(() => computeApplicationEvidenceCommitment(envelope))
+          .toThrow(/Issuer resource id does not match/);
+        continue;
+      }
       const evidenceCommitment = computeApplicationEvidenceCommitment(envelope);
       expect(() => harness.assertApplicationEvidence({
         evidence: {
@@ -274,7 +295,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
     if (binding.scope.role !== "issuer") throw new Error("Expected issuer scope");
     const schemaBinding = ApplicationChallengeBindingSchema.parse({
       ...binding,
-      governedResource: { type: "schemaVersion", id: binding.scope.schemaVersion },
+      governedResource: { type: "schemaVersion", id: issuerGovernedResourceId(binding.scope, "schemaVersion") },
     });
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(schemaBinding);
