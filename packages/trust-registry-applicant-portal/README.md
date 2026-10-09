@@ -5,8 +5,9 @@ Local applicant and public-inspection portal for `midnight-trust-registry`.
 Current scope:
 
 - submit issuer, verifier, or recognition applications through the existing API
-- inspect the current active registry surface for issuer, verifier, and
-  recognition records
+- inspect current active issuer, verifier, auditor, and recognition records
+- keep auditor submission disabled until challenge-bound evidence admission
+  and authenticated mutation routes are available
 - keep the first portal slice static and local-first instead of adding a second
   backend or browser persistence layer
 

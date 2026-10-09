@@ -59,19 +59,25 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
-    const [summary, activeIssuers, activeVerifiers, activeRecognitions] =
+    const [summary, activeIssuers, activeVerifiers, activeAuditors, activeRecognitions] =
       await Promise.all([
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
         this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
         this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
+        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active"),
         this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
       ]);
 
     return {
       summary,
-      activeIssuers: activeIssuers.entries,
-      activeVerifiers: activeVerifiers.entries,
-      activeRecognitions: activeRecognitions.entries,
+      activeAuditors: activeAuditors.entries.filter((entry) =>
+        entry.authorization?.role === "auditor" && entry.authorization.status === "active"),
+      activeIssuers: activeIssuers.entries.filter((entry) =>
+        entry.authorization?.role === "issuer" && entry.authorization.status === "active"),
+      activeVerifiers: activeVerifiers.entries.filter((entry) =>
+        entry.authorization?.role === "verifier" && entry.authorization.status === "active"),
+      activeRecognitions: activeRecognitions.entries.filter((entry) =>
+        entry.recognition?.status === "active"),
     };
   }
 

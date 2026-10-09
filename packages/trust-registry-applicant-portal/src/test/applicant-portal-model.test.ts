@@ -283,6 +283,7 @@ const createEpochMutationResponse = (): TrustRegistryApiApplicationMutationRespo
 
 const inspection: PublicInspection = {
   summary,
+  activeAuditors: [],
   activeIssuers: [
     {
       label: "degree",
@@ -459,6 +460,28 @@ describe("trust registry applicant portal model", () => {
     expect(cards).toHaveLength(3);
     expect(cards[0]?.label).toBe("degree");
     expect(cards[2]?.target).toBe("recognition");
+
+    const verifier = inspection.activeVerifiers[0];
+    expect(verifier).toBeDefined();
+    if (verifier === undefined) return;
+    const auditorCards = toInspectionCards({
+      ...inspection,
+      activeAuditors: [{
+        ...verifier,
+        label: "identity-audit",
+        authorization: {
+          ...verifier.authorization,
+          authorizationId: "auth:auditor:identity-audit:v1",
+          role: "auditor",
+          subjectDid: "did:midnight:testnet:auditor",
+        },
+      }],
+    });
+    expect(auditorCards[0]).toMatchObject({
+      label: "identity-audit",
+      target: "auditor",
+      subject: "did:midnight:testnet:auditor",
+    });
   });
 
   it("describes authorization submissions in user-facing language", () => {
