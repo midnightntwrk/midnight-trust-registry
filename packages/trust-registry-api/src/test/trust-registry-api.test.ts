@@ -28,6 +28,7 @@ import {
 import {
   createInMemorySource,
   createSnapshotFileSource,
+  createTrqpSourceFromStateSource,
   createWorkspaceFileSource,
 } from "../source.js";
 import { createTrustRegistryApiServer } from "../server.js";
@@ -485,7 +486,8 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(unanchoredTrqpResponse.status).toBe(404);
+      expect(unanchoredTrqpResponse.status).toBe(424);
+      expect((await unanchoredTrqpResponse.json()).type).toMatch(/historical-evidence-unavailable$/);
 
       const missingEpochResolveResponse = await fetch(
         `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
@@ -498,7 +500,7 @@ describe("trust registry api", () => {
     }
   });
 
-  it("rejects historical TRQP evidence when a different overlapping epoch is selected", async () => {
+  it("uses a record-specific evidence epoch despite another overlapping epoch", async () => {
     const snapshot = createDemoSnapshot({ label: "epoch-mismatch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
@@ -526,10 +528,61 @@ describe("trust registry api", () => {
           context: { time: queryTime },
         }),
       });
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect((await response.json()).authorized).toBe(true);
+
+      const unavailable = await fetch(`${server.url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: new Date(Date.parse(evidenceEpoch.validUntil) + 1).toISOString() },
+        }),
+      });
+      expect(unavailable.status).toBe(424);
+      expect((await unavailable.json()).type).toMatch(/historical-evidence-unavailable$/);
     } finally {
       await server.close();
     }
+  });
+
+  it("does not project an expired active authorization as trusted at snapshot time", async () => {
+    const snapshot = createDemoSnapshot({ label: "expired-current-trqp" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry?.authorization.activeFrom === undefined) throw new Error("expected active issuer");
+    const effectiveUntil = new Date(Date.parse(entry.authorization.activeFrom) + 1).toISOString();
+    expect(Date.parse(effectiveUntil)).toBeLessThan(Date.parse(snapshot.generatedAt));
+    const expired = {
+      ...entry,
+      authorization: { ...entry.authorization, effectiveUntil },
+      evidence: {
+        ...entry.evidence,
+        authorization: { ...entry.authorization, effectiveUntil },
+      },
+    };
+    const source = createTrqpSourceFromStateSource({
+      mode: "memory",
+      async loadSnapshot() {
+        return {
+          ...snapshot,
+          issuerEntries: snapshot.issuerEntries.map((candidate) =>
+            candidate.authorization.authorizationId === entry.authorization.authorizationId ? expired : candidate),
+        };
+      },
+    });
+    const decision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    });
+    expect(decision).not.toBeNull();
+    if (decision === null || "evidenceUnavailable" in decision) throw new Error("expected a current decision");
+    expect(decision.statusAtTime).toBe("active");
+    expect(decision.trustedAtTime).toBe(false);
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {

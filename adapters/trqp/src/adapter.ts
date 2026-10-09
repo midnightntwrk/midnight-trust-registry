@@ -54,14 +54,16 @@ export type TrqpRecognitionDecision = {
   trustedAtTime: boolean;
 };
 
+export type TrqpEvidenceUnavailable = { evidenceUnavailable: true };
+
 export type TrustRegistryTrqpSource = {
   getRegistryRecord(authorityId: string): MaybePromise<RegistryRecord | null>;
   getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): MaybePromise<TrqpAuthorizationDecision | null>;
+  ): MaybePromise<TrqpAuthorizationDecision | TrqpEvidenceUnavailable | null>;
   getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): MaybePromise<TrqpRecognitionDecision | null>;
+  ): MaybePromise<TrqpRecognitionDecision | TrqpEvidenceUnavailable | null>;
 };
 
 export type TrustRegistryTrqpAdapterOptions = {
@@ -93,22 +95,35 @@ const invalidSourceProblem = (
   detail,
 });
 
+const evidenceUnavailableProblem = (
+  problemBaseUri: string,
+): TrqpProblemDetails => normalizeProblem({
+  type: `${problemBaseUri}/historical-evidence-unavailable`,
+  title: "historical evidence unavailable",
+  status: 424,
+  detail: "The trust statement exists, but no epoch-bound evidence is available for the requested time.",
+});
+
 const describeAuthorizationMessage = (
   status: string,
   trusted: boolean,
+  historical: boolean,
 ): string => {
+  const when = historical ? "at the requested time" : "in the source snapshot";
   return trusted
-    ? "Authorization is active for the requested scope at the evaluation time."
-    : `Authorization is not trusted at the evaluation time (status: ${status}).`;
+    ? `Authorization is active for the requested scope ${when}.`
+    : `Authorization is not trusted ${when} (status: ${status}).`;
 };
 
 const describeRecognitionMessage = (
   status: string,
   trusted: boolean,
+  historical: boolean,
 ): string => {
+  const when = historical ? "at the requested time" : "in the source snapshot";
   return trusted
-    ? "Recognition is active for the requested scope at the evaluation time."
-    : `Recognition is not trusted at the evaluation time (status: ${status}).`;
+    ? `Recognition is active for the requested scope ${when}.`
+    : `Recognition is not trusted ${when} (status: ${status}).`;
 };
 
 const timeRequestedFor = (
@@ -193,7 +208,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         authorized,
-        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized),
+        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized, request.context?.time !== undefined),
         context: request.context,
       }),
     };
@@ -222,7 +237,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         authorized,
-        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized),
+        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized, request.context?.time !== undefined),
         context: request.context,
         bundle: decision.bundle,
       }),
@@ -253,7 +268,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         recognized,
-        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized),
+        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized, request.context?.time !== undefined),
         context: request.context,
       }),
     };
@@ -282,7 +297,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         recognized,
-        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized),
+        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized, request.context?.time !== undefined),
         context: request.context,
         bundle: decision.bundle,
       }),
@@ -314,6 +329,9 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
+    if ("evidenceUnavailable" in decision) {
+      return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+    }
 
     const parsedBundle = TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
     if (parsedBundle.authorization === undefined) {
@@ -324,6 +342,13 @@ export class TrustRegistryTrqpAdapter {
           "Authorization query resolved to a bundle without an authorization statement.",
         ),
       };
+    }
+    if (request.context?.time !== undefined) {
+      const requestedAt = Date.parse(request.context.time);
+      if (requestedAt < Date.parse(parsedBundle.epoch.validFrom)
+        || requestedAt > Date.parse(parsedBundle.epoch.validUntil)) {
+        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      }
     }
     if (decision.trustedAtTime && decision.statusAtTime !== "active") {
       return {
@@ -363,6 +388,9 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
+    if ("evidenceUnavailable" in decision) {
+      return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+    }
 
     const parsedBundle = TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
     if (parsedBundle.recognition === undefined) {
@@ -373,6 +401,13 @@ export class TrustRegistryTrqpAdapter {
           "Recognition query resolved to a bundle without a recognition statement.",
         ),
       };
+    }
+    if (request.context?.time !== undefined) {
+      const requestedAt = Date.parse(request.context.time);
+      if (requestedAt < Date.parse(parsedBundle.epoch.validFrom)
+        || requestedAt > Date.parse(parsedBundle.epoch.validUntil)) {
+        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      }
     }
     if (decision.trustedAtTime && decision.statusAtTime !== "active") {
       return {

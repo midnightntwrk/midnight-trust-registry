@@ -187,6 +187,8 @@ describe("trust registry TRQP adapter", () => {
 
     harness.authorizeIssuer(issuer);
     harness.authorizeVerifier(verifier);
+    const issuerAt = harness.evaluateCurrentIssuerDecision(issuer).epoch.validFrom;
+    const verifierAt = harness.evaluateCurrentVerifierDecision(verifier).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
@@ -204,13 +206,11 @@ describe("trust registry TRQP adapter", () => {
         authority_id: harness.registryDid,
         action: "issue",
         resource: issuer.resourceId,
-        context: {
-          time: FIXED_TIME,
-        },
+        context: { time: issuerAt },
       }),
     );
     expect(issuerResponse.authorized).toBe(true);
-    expect(issuerResponse.time_requested).toBe(FIXED_TIME);
+    expect(issuerResponse.time_requested).toBe(issuerAt);
     expect(issuerResponse.authority_id).toBe(harness.registryDid);
     expect(issuerResponse.message).toMatch(/active/i);
 
@@ -221,7 +221,7 @@ describe("trust registry TRQP adapter", () => {
         action: "verify",
         resource: verifier.scopeResourceId,
         context: {
-          time: FIXED_TIME,
+          time: verifierAt,
         },
       }),
     );
@@ -251,9 +251,6 @@ describe("trust registry TRQP adapter", () => {
         authority_id: harness.registryDid,
         action: "issue",
         resource: issuer.resourceId,
-        context: {
-          time: FIXED_TIME,
-        },
       }),
     );
     expect(response.authorized).toBe(false);
@@ -265,16 +262,13 @@ describe("trust registry TRQP adapter", () => {
         authority_id: harness.registryDid,
         action: "issue",
         resource: issuer.resourceId,
-        context: {
-          time: FIXED_TIME,
-        },
       }),
     );
     expect(evidence.bundle.authorization?.status).toBe("revoked");
 
     const activeFrom = evidence.bundle.authorization?.activeFrom;
     if (activeFrom === undefined) throw new Error("expected an activation timestamp");
-    const historical = expectOk<TrqpAuthorizationEvidenceResponse>(
+    const historical = expectProblem(
       await adapter.getAuthorizationEvidence({
         entity_id: issuer.subjectDid,
         authority_id: harness.registryDid,
@@ -283,10 +277,8 @@ describe("trust registry TRQP adapter", () => {
         context: { time: activeFrom },
       }),
     );
-    expect(historical.authorized).toBe(true);
-    expect(historical.time_evaluated).toBe(activeFrom);
-    expect(historical.message).toMatch(/active.*evaluation time/i);
-    expect(historical.bundle.authorization?.status).toBe("revoked");
+    expect(historical.status).toBe(424);
+    expect(historical.type).toMatch(/historical-evidence-unavailable$/);
   });
 
   it("evaluates recognition at the requested time instead of its latest status", async () => {
@@ -309,11 +301,10 @@ describe("trust registry TRQP adapter", () => {
     expect(latest.recognized).toBe(false);
     const activeFrom = latest.bundle.recognition?.effectiveFrom;
     if (activeFrom === undefined) throw new Error("expected an effective timestamp");
-    const historical = expectOk<TrqpRecognitionEvidenceResponse>(
+    const historical = expectProblem(
       await adapter.getRecognitionEvidence({ ...request, context: { ...request.context, time: activeFrom } }),
     );
-    expect(historical.recognized).toBe(true);
-    expect(historical.bundle.recognition?.status).toBe("revoked");
+    expect(historical.status).toBe(424);
   });
 
   it("maps recognition plus registry metadata into TRQP-friendly responses", async () => {
@@ -321,6 +312,7 @@ describe("trust registry TRQP adapter", () => {
     const recognition = createRecognitionScenarioFixture("gaia-x");
 
     harness.authorizeRecognition(recognition);
+    const at = harness.evaluateCurrentRecognitionDecision(recognition).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
@@ -345,7 +337,7 @@ describe("trust registry TRQP adapter", () => {
         action: recognition.scopeResourceType,
         resource: recognition.scopeResourceId,
         context: {
-          time: FIXED_TIME,
+          time: at,
           recognized_registry_id: recognition.recognizedRegistryId,
         },
       }),
@@ -360,7 +352,7 @@ describe("trust registry TRQP adapter", () => {
         action: recognition.scopeResourceType,
         resource: recognition.scopeResourceId,
         context: {
-          time: FIXED_TIME,
+          time: at,
           recognized_registry_id: recognition.recognizedRegistryId,
         },
       }),

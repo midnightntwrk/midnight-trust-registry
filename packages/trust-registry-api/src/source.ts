@@ -24,8 +24,13 @@ import type {
   TrqpAuthorizationRequest,
   TrqpRecognitionDecision,
   TrqpRecognitionRequest,
+  TrqpEvidenceUnavailable,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
 import type {
   EpochCommitment,
   RegistryRecord,
@@ -458,6 +463,18 @@ const bundleMatchesEpoch = (
   && bundle.epoch.validFrom === epoch.validFrom
   && bundle.epoch.validUntil === epoch.validUntil;
 
+const bundleAvailableAt = (
+  bundle: TrustRegistryEvidenceBundle,
+  snapshot: TrustRegistryOperatorSnapshot,
+  at: string,
+): boolean => {
+  const epoch = snapshot.epochs.find((candidate) => candidate.epochId === bundle.epoch.epochId) ?? null;
+  const time = Date.parse(at);
+  return bundleMatchesEpoch(bundle, epoch)
+    && Date.parse(bundle.epoch.validFrom) <= time
+    && time <= Date.parse(bundle.epoch.validUntil);
+};
+
 export const createTrqpSourceFromStateSource = (
   source: TrustRegistryApiStateSource,
 ): TrustRegistryTrqpSource => ({
@@ -467,7 +484,7 @@ export const createTrqpSourceFromStateSource = (
   },
   async getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): Promise<TrqpAuthorizationDecision | null> {
+  ): Promise<TrqpAuthorizationDecision | TrqpEvidenceUnavailable | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -485,24 +502,27 @@ export const createTrqpSourceFromStateSource = (
     };
     if (request.context?.time !== undefined) {
       const historical = evaluateAuthorizationInSnapshot(snapshot, lookup, request.context.time);
-      return historical !== null && bundleMatchesEpoch(historical.entry.evidence, historical.epoch)
+      if (historical === null) return null;
+      return bundleAvailableAt(historical.entry.evidence, snapshot, request.context.time)
         ? {
           bundle: historical.entry.evidence,
           statusAtTime: historical.statusAtTime,
           trustedAtTime: historical.trustedAtTime,
         }
-        : null;
+        : { evidenceUnavailable: true };
     }
     const entry = resolveAuthorizationInSnapshot(snapshot, lookup);
-    return entry === null ? null : {
+    if (entry === null) return null;
+    const current = evaluateAuthorizationRecordAtTime(entry.authorization, snapshot.generatedAt);
+    return {
       bundle: entry.evidence,
-      statusAtTime: entry.authorization.status,
-      trustedAtTime: entry.authorization.status === "active",
+      statusAtTime: current.statusAtTime,
+      trustedAtTime: current.trustedAtTime,
     };
   },
   async getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): Promise<TrqpRecognitionDecision | null> {
+  ): Promise<TrqpRecognitionDecision | TrqpEvidenceUnavailable | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -525,19 +545,22 @@ export const createTrqpSourceFromStateSource = (
     };
     if (request.context?.time !== undefined) {
       const historical = evaluateRecognitionInSnapshot(snapshot, lookup, request.context.time);
-      return historical !== null && bundleMatchesEpoch(historical.entry.evidence, historical.epoch)
+      if (historical === null) return null;
+      return bundleAvailableAt(historical.entry.evidence, snapshot, request.context.time)
         ? {
           bundle: historical.entry.evidence,
           statusAtTime: historical.statusAtTime,
           trustedAtTime: historical.trustedAtTime,
         }
-        : null;
+        : { evidenceUnavailable: true };
     }
     const entry = resolveRecognitionInSnapshot(snapshot, lookup);
-    return entry === null ? null : {
+    if (entry === null) return null;
+    const current = evaluateRecognitionRecordAtTime(entry.recognition, snapshot.generatedAt);
+    return {
       bundle: entry.evidence,
-      statusAtTime: entry.recognition.status,
-      trustedAtTime: entry.recognition.status === "active",
+      statusAtTime: current.statusAtTime,
+      trustedAtTime: current.trustedAtTime,
     };
   },
 });

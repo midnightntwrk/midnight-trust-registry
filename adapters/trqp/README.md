@@ -12,8 +12,11 @@ Current scope:
 
 When `context.time` is supplied, authorization and recognition decisions use
 the record's lifecycle at that time, not its current status. The API-backed
-source returns historical evidence only when the selected epoch is present
-and matches the stored bundle's epoch commitment. A snapshot with only a later
-bundle cannot prove an earlier epoch, so that request returns not found rather
-than a positive unanchored answer. Retaining and exporting every historical
-bundle is follow-on work under [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).
+source requires a bundle for that record whose epoch commitment is in the
+snapshot and whose validity window contains the requested time. A snapshot
+with only a later bundle cannot prove an earlier decision; the adapter returns
+`historical-evidence-unavailable` (424), distinct from a missing statement
+(404). Without `context.time`, the decision is as of the source snapshot's
+generation time, not a claim that the operator snapshot is fresh today.
+Retaining and exporting every historical bundle is follow-on work under
+[#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).
