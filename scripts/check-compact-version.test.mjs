@@ -35,7 +35,7 @@ test("cached Compact setup authenticates its release query in every workflow", (
 });
 
 test("a pinned cache hit bypasses network setup and only verified installs are saved", () => {
-  const cacheKey = "tr-compact-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
+  const cacheKey = "tr-compact-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}";
   for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
     const workflow = readFileSync(join(sourceRoot, path), "utf8");
     const steps = workflow.split(/\n\s{6}- /u).slice(1);
@@ -51,12 +51,15 @@ test("a pinned cache hit bypasses network setup and only verified installs are s
     assert.ok(steps.indexOf(verify) < steps.indexOf(save), `${path} must verify before cache save`);
     assert.match(restore, /id: compact-cache/u, path);
     assert.match(restore, /actions\/cache\/restore@/u, path);
+    assert.match(restore, /~\/\.compact\//u, `${path} must cache the installed compiler directory`);
     assert.ok(!restore.includes("restore-keys:"), `${path} must not restore a different compiler version`);
     assert.match(setup, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
     assert.match(setup, /cache-enabled: 'false'/u, path);
     assert.match(addPath, /\$HOME\/\.local\/bin/u, path);
     assert.match(save, /if: steps\.compact-cache\.outputs\.cache-hit != 'true'/u, path);
     assert.match(save, /actions\/cache\/save@/u, path);
+    assert.match(save, /~\/\.compact\//u, `${path} must save the installed compiler directory`);
+    assert.match(verify, /TR_COMPACT_CACHE_HIT: \$\{\{ steps\.compact-cache\.outputs\.cache-hit \}\}/u, path);
     assert.ok(restore.includes(`key: ${cacheKey}`), `${path} restore must use the pinned version`);
     assert.ok(save.includes(`key: ${cacheKey}`), `${path} save must use the same pinned version`);
   }
@@ -124,6 +127,13 @@ test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () =
     ], { encoding: "utf8", env });
     assert.notEqual(hostMismatch.status, 0);
     assert.match(hostMismatch.stderr, /Installed Compact 0\.0\.0 does not match pin/);
+
+    const cachedMismatch = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env: { ...env, TR_COMPACT_CACHE_HIT: "true" } });
+    assert.notEqual(cachedMismatch.status, 0);
+    assert.match(cachedMismatch.stderr, /Delete the tr-compact-v2 Actions cache/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

@@ -117,6 +117,9 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
     console.log(`Compact compiler pin: ${version}`);
   } catch (error) {
     console.error(error.message);
+    if (process.argv[2] === "--check-installed" && process.env.TR_COMPACT_CACHE_HIT === "true") {
+      console.error("Pinned Compact cache hit is invalid. Delete the tr-compact-v2 Actions cache for this OS, architecture, and compiler version, then rerun; do not bypass the pin check.");
+    }
     process.exitCode = 1;
   }
 }

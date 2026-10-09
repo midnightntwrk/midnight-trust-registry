@@ -21,18 +21,25 @@ it does not download the Quality archive.
   before claiming a speedup.
 
 This does not fix the docs-only full-build routing problem tracked in [#84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84).
+The audit advisories that made the 2026-10-04 `Quality` job red are tracked in
+[#86](https://github.com/midnightntwrk/midnight-trust-registry/issues/86); the
+audit threshold remains unchanged.
 
 ## Pinned Compact installer cache
 
 The four workflows that compile Compact restore an exact OS, architecture,
-and `.compact-version` cache before calling `setup-compact-action`. On a hit,
+and `.compact-version` cache of the launcher and `~/.compact/` compiler
+directory before calling `setup-compact-action`. On a hit,
 they skip that action entirely: its current implementation calls
 `compact update` even when its own cache hits, which can fail on an unauthenticated
 GitHub release API rate limit. On a miss, the pinned action installs with its
 internal cache disabled. The workflow then checks `compact compile --version`
 against `.compact-version` and saves the installation only after that check.
 There is no cross-version restore key. An invalid cached compiler fails closed
-instead of silently reinstalling or using the wrong version.
+instead of silently reinstalling or using the wrong version. The workflow
+diagnostic directs the operator to delete the specific immutable Actions cache
+entry before rerunning; the key is versioned to avoid the initial incomplete
+cache layout.
 
 If a miss fails during download or update, inspect the setup-action log and
 GitHub release API limit before retrying. A cache hit should need no release
@@ -40,10 +47,6 @@ API call. Compare setup duration and cache-hit status in the first successful
 miss and subsequent hit runs before claiming a measured CI speedup. Compact
 cache entries saved by PR runs remain scoped to those PRs; the separate Turbo
 cache above is still published only on trusted pushes.
-
-The audit advisories that made the 2026-10-04 `Quality` job red are tracked in
-[#86](https://github.com/midnightntwrk/midnight-trust-registry/issues/86); the
-audit threshold remains unchanged.
 
 References: [Turborepo GitHub Actions caching](https://turborepo.dev/docs/guides/ci-vendors/github-actions),
 [Turborepo cache directory](https://turborepo.dev/docs/reference/configuration),
