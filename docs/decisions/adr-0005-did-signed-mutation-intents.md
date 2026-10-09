@@ -43,11 +43,20 @@ unmapped targets rather than treating a valid signed intent as authorization.
 
 The workspace commitment is the optimistic concurrency token for the *entire*
 operator workspace, including the operation log; an epoch ID alone is not
-sufficient because multiple writes can occur within one epoch. The API must
-publish the commitment computed from a canonical workspace serialization,
-check it inside the atomic write boundary, and reject stale intents. The
-payload commitment must be independently recomputed from the exact validated
-request body; fields may not be defaulted or changed after that check. Nonces
+sufficient because multiple writes can occur within one epoch. It is SHA-256
+over a two-element JSON array containing `tr:workspace:revision:v1` and the
+canonical, validated workspace JSON string. `computeOperatorWorkspaceCommitment`
+is the executable implementation. The API must publish this token, check it
+inside the atomic write boundary, and reject stale intents. It is an off-ledger
+revision token, not an independently verified ledger or epoch proof. The payload
+commitment uses the same construction with domain `tr:mutation:payload:v1`
+and the canonical JSON string of the *validated* governed request body
+(`computeMutationPayloadCommitment`). The server MUST independently recompute
+this commitment from the exact validated body and compare it before executing;
+fields may not be defaulted or changed after that check. A non-JSON value or
+explicit undefined field is rejected. The workspace commitment instead
+normalizes optional undefined fields to the JSON form persisted on disk.
+Nonces
 are one-use per registry and actor and remain consumed only after a successful
 atomic mutation. API clock checks are off-ledger; Midnight contract circuits
 must not infer wall-clock time from these timestamps.
