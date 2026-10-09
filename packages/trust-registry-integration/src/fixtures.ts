@@ -15,7 +15,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMaintainerFixture as createContractMaintainerFixture,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";

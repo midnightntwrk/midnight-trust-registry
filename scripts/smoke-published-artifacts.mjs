@@ -159,6 +159,16 @@ try {
       "  await import(specifier);",
       "  console.log(`[smoke-published-artifacts] imported ${specifier}`);",
       "}",
+      'const contract = await import("@midnight-ntwrk/trust-registry-contract");',
+      'const fixtures = await import("@midnight-ntwrk/trust-registry-contract/testing");',
+      'const client = await import("@midnight-ntwrk/trust-registry-client");',
+      'const simulator = await import("@midnight-ntwrk/trust-registry-client/simulator");',
+      'if ("labelToBytes32" in contract || typeof fixtures.labelToBytes32 !== "function") {',
+      '  throw new Error("Trust Registry contract fixture exports crossed the package boundary");',
+      '}',
+      'if ("TrustRegistrySimulatorClient" in client || typeof simulator.TrustRegistrySimulatorClient !== "function") {',
+      '  throw new Error("Trust Registry client simulator exports crossed the package boundary");',
+      '}',
     ].join("\n"),
   );
 

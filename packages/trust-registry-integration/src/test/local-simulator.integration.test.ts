@@ -11,7 +11,7 @@ import {
   AuthorizationStatus as ContractAuthorizationStatus,
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import {
   computeApplicationEvidenceCommitment,
   computeGovernancePolicySnapshotCommitment,

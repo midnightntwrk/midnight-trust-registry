@@ -13,18 +13,20 @@ import {
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
-  createMaintainerFixture,
   decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   encodeCompactActionKind,
   signApplicationEvidenceCommitmentFromSeed,
-  type MaintainerCoAuthorizer,
   signPolicyBoundMaintainerActionFromSeed,
-  TrustRegistrySimulator,
   verifyApplicationEvidenceCommitmentSignature,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
+import {
+  createMaintainerFixture,
+  type MaintainerCoAuthorizer,
+  TrustRegistrySimulator,
+} from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,

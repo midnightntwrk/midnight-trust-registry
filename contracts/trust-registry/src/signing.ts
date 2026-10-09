@@ -86,9 +86,6 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
-const ensure32Bytes = (value: Uint8Array): Buffer =>
-  require32Bytes(value, "Compact payload field");
-
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
 export const applicationEvidenceSignatureDigest = (
   keyIdCommitment: Uint8Array,
@@ -155,9 +152,9 @@ export const computeIssuerAuthorizationScopeKey = (
   resourceId: Uint8Array,
 ): Uint8Array =>
   pureCircuits.issuerAuthorizationScopeKey(
-    ensure32Bytes(subjectDidCommitment),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
     resourceType,
-    ensure32Bytes(resourceId),
+    require32Bytes(resourceId, "Resource id"),
   );
 
 export const computeCreateIssuerAuthorizationPayloadHash = (
@@ -171,14 +168,14 @@ export const computeCreateIssuerAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.createIssuerAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(subjectDidCommitment),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
     resourceType,
-    ensure32Bytes(resourceId),
-    ensure32Bytes(policyId),
-    ensure32Bytes(statusPolicyBindingCommitment),
-    ensure32Bytes(trustLevel),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(resourceId, "Resource id"),
+    require32Bytes(policyId, "Policy id"),
+    require32Bytes(statusPolicyBindingCommitment, "Status policy binding commitment"),
+    require32Bytes(trustLevel, "Trust level"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateIssuerAuthorizationPayloadHash = (
@@ -187,9 +184,9 @@ export const computeUpdateIssuerAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.updateIssuerAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(previousLifecycleEventHash),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeVerifierAuthorizationScopeKey = (
@@ -200,11 +197,11 @@ export const computeVerifierAuthorizationScopeKey = (
   disclosureLevelCommitment: Uint8Array,
 ): Uint8Array =>
   pureCircuits.verifierAuthorizationScopeKey(
-    ensure32Bytes(subjectDidCommitment),
-    ensure32Bytes(requestProfileId),
-    ensure32Bytes(allowedAttributeSetCommitment),
-    ensure32Bytes(allowedPredicateSetCommitment),
-    ensure32Bytes(disclosureLevelCommitment),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
+    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
+    require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
+    require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
   );
 
 export const computeAuditorAuthorizationScopeKey = (
@@ -215,11 +212,11 @@ export const computeAuditorAuthorizationScopeKey = (
   disclosureLevelCommitment: Uint8Array,
 ): Uint8Array =>
   pureCircuits.auditorAuthorizationScopeKey(
-    ensure32Bytes(subjectDidCommitment),
-    ensure32Bytes(requestProfileId),
-    ensure32Bytes(allowedAttributeSetCommitment),
-    ensure32Bytes(allowedPredicateSetCommitment),
-    ensure32Bytes(disclosureLevelCommitment),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
+    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
+    require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
+    require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
   );
 
 export const computeRecognitionScopeKey = (
@@ -229,10 +226,10 @@ export const computeRecognitionScopeKey = (
   scopeResourceId: Uint8Array,
 ): Uint8Array =>
   pureCircuits.recognitionScopeKey(
-    ensure32Bytes(recognizedAuthorityDidCommitment),
-    ensure32Bytes(recognizedRegistryId),
-    ensure32Bytes(scopeResourceType),
-    ensure32Bytes(scopeResourceId),
+    require32Bytes(recognizedAuthorityDidCommitment, "Recognized authority DID commitment"),
+    require32Bytes(recognizedRegistryId, "Recognized registry id"),
+    require32Bytes(scopeResourceType, "Scope resource type"),
+    require32Bytes(scopeResourceId, "Scope resource id"),
   );
 
 export const computeCreateVerifierAuthorizationPayloadHash = (
@@ -247,15 +244,15 @@ export const computeCreateVerifierAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.createVerifierAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(subjectDidCommitment),
-    ensure32Bytes(requestProfileId),
-    ensure32Bytes(allowedAttributeSetCommitment),
-    ensure32Bytes(allowedPredicateSetCommitment),
-    ensure32Bytes(disclosureLevelCommitment),
-    ensure32Bytes(policyId),
-    ensure32Bytes(trustLevel),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
+    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
+    require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
+    require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
+    require32Bytes(policyId, "Policy id"),
+    require32Bytes(trustLevel, "Trust level"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeCreateRecognitionPayloadHash = (
@@ -269,14 +266,14 @@ export const computeCreateRecognitionPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.createRecognitionPayloadHash(
-    ensure32Bytes(recognitionId),
-    ensure32Bytes(recognizedAuthorityDidCommitment),
-    ensure32Bytes(recognizedRegistryId),
-    ensure32Bytes(scopeResourceType),
-    ensure32Bytes(scopeResourceId),
-    ensure32Bytes(policyId),
-    ensure32Bytes(trustLevel),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(recognitionId, "Recognition id"),
+    require32Bytes(recognizedAuthorityDidCommitment, "Recognized authority DID commitment"),
+    require32Bytes(recognizedRegistryId, "Recognized registry id"),
+    require32Bytes(scopeResourceType, "Scope resource type"),
+    require32Bytes(scopeResourceId, "Scope resource id"),
+    require32Bytes(policyId, "Policy id"),
+    require32Bytes(trustLevel, "Trust level"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeCreateAuditorAuthorizationPayloadHash = (
@@ -291,15 +288,15 @@ export const computeCreateAuditorAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.createAuditorAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(subjectDidCommitment),
-    ensure32Bytes(requestProfileId),
-    ensure32Bytes(allowedAttributeSetCommitment),
-    ensure32Bytes(allowedPredicateSetCommitment),
-    ensure32Bytes(disclosureLevelCommitment),
-    ensure32Bytes(policyId),
-    ensure32Bytes(trustLevel),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(subjectDidCommitment, "Subject DID commitment"),
+    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
+    require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
+    require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
+    require32Bytes(policyId, "Policy id"),
+    require32Bytes(trustLevel, "Trust level"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeCreateEpochCommitmentPayloadHash = (
@@ -311,10 +308,10 @@ export const computeCreateEpochCommitmentPayloadHash = (
   validUntilSequence: bigint,
 ): Uint8Array =>
   pureCircuits.createEpochCommitmentPayloadHash(
-    ensure32Bytes(epochId),
-    ensure32Bytes(stateRoot),
-    ensure32Bytes(eventRoot),
-    ensure32Bytes(policyRoot),
+    require32Bytes(epochId, "Epoch id"),
+    require32Bytes(stateRoot, "State root"),
+    require32Bytes(eventRoot, "Event root"),
+    require32Bytes(policyRoot, "Policy root"),
     validFromSequence,
     validUntilSequence,
   );
@@ -329,13 +326,13 @@ export const computeCreateMaintainerMembershipPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.createMaintainerMembershipPayloadHash(
-    ensure32Bytes(maintainerId),
-    ensure32Bytes(maintainerDidCommitment),
-    ensure32Bytes(keyId),
+    require32Bytes(maintainerId, "Maintainer id"),
+    require32Bytes(maintainerDidCommitment, "Maintainer DID commitment"),
+    require32Bytes(keyId, "Key id"),
     publicKey,
-    ensure32Bytes(policyId),
-    ensure32Bytes(trustLevel),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(policyId, "Policy id"),
+    require32Bytes(trustLevel, "Trust level"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateVerifierAuthorizationPayloadHash = (
@@ -344,9 +341,9 @@ export const computeUpdateVerifierAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.updateVerifierAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(previousLifecycleEventHash),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateRecognitionPayloadHash = (
@@ -355,9 +352,9 @@ export const computeUpdateRecognitionPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.updateRecognitionPayloadHash(
-    ensure32Bytes(recognitionId),
-    ensure32Bytes(previousLifecycleEventHash),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(recognitionId, "Recognition id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateAuditorAuthorizationPayloadHash = (
@@ -366,9 +363,9 @@ export const computeUpdateAuditorAuthorizationPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.updateAuditorAuthorizationPayloadHash(
-    ensure32Bytes(authorizationId),
-    ensure32Bytes(previousLifecycleEventHash),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(authorizationId, "Authorization id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateMaintainerMembershipPayloadHash = (
@@ -377,9 +374,9 @@ export const computeUpdateMaintainerMembershipPayloadHash = (
   evidenceHash: Uint8Array,
 ): Uint8Array =>
   pureCircuits.updateMaintainerMembershipPayloadHash(
-    ensure32Bytes(maintainerId),
-    ensure32Bytes(previousLifecycleEventHash),
-    ensure32Bytes(evidenceHash),
+    require32Bytes(maintainerId, "Maintainer id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
   );
 
 export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
@@ -391,8 +388,8 @@ export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
   archivalThreshold: bigint,
 ): Uint8Array =>
   pureCircuits.updateMaintainerThresholdPolicyPayloadHash(
-    ensure32Bytes(previousPolicyCommitment),
-    ensure32Bytes(nextPolicyCommitment),
+    require32Bytes(previousPolicyCommitment, "Previous policy commitment"),
+    require32Bytes(nextPolicyCommitment, "Next policy commitment"),
     nextPolicyVersion,
     defaultThreshold,
     emergencyThreshold,
@@ -403,7 +400,7 @@ const signMaintainerActionDigestFromSeed = (
   seedBytes: Uint8Array,
   digest: TrustRegistryActionDigest,
 ): TrustRegistryJubjubSignature =>
-  signJubjubDigestFromSeed(ensure32Bytes(seedBytes), digest);
+  signJubjubDigestFromSeed(require32Bytes(seedBytes, "Maintainer seed"), digest);
 
 export const signPolicyBoundMaintainerActionFromSeed = (
   seedBytes: Uint8Array,

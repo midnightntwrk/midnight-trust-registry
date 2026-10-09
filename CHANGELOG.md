@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- moved pre-release contract fixture and client simulator exports to explicit
+  `/testing` and `/simulator` subpaths instead of shipping them from production
+  package roots; packaged smoke checks enforce those boundaries
 - require canonical role-specific scope preimages and matching commitments at
   application-challenge issue and consume boundaries
 - restricted generic maintainer audit events to a fixed action kind so raw
