@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 
 const CanonicalIdSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
@@ -11,20 +11,22 @@ const CanonicalHashSchema = HashHexSchema.refine(
   "Commitment must be lowercase",
 );
 const CanonicalUtcTimestampSchema = z.string().datetime({ offset: false }).refine(
-  (value) => new Date(value).toISOString() === value,
+  (value) => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+  },
   "Timestamp must be canonical UTC with milliseconds",
 );
+const MidnightDidPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod|offchain):[0-9a-f]{64}$/u;
+const MidnightKeyPattern = /^did:midnight:(?:undeployed|devnet|testnet|mainnet|preview|preprod|offchain):[0-9a-f]{64}#[A-Za-z0-9:._-]+$/u;
 
 export const MAX_MUTATION_INTENT_LIFETIME_MS = 5 * 60 * 1000;
 
 export const MutationIntentSchema = z.strictObject({
   version: z.literal("tr-mutation-intent-v1"),
   registryId: CanonicalIdSchema,
-  actorDid: DidSchema.startsWith("did:midnight:").refine(
-    (value) => !/[\s#]/u.test(value),
-    "Actor must be a DID without whitespace or a fragment",
-  ),
-  actorKeyId: z.string().regex(/^did:midnight:[^\s#]+#[A-Za-z0-9:._-]+$/u),
+  actorDid: z.string().regex(MidnightDidPattern, "Actor DID must be a canonical four-part Midnight DID"),
+  actorKeyId: z.string().regex(MidnightKeyPattern, "Actor key must use a canonical Midnight DID fragment"),
   actorRole: z.enum(["applicant", "maintainer"]),
   action: z.enum(["submit", "approve", "activate", "suspend", "revoke", "archive", "publish-epoch"]),
   target: z.enum(["issuer", "verifier", "auditor", "recognition", "maintainer", "epoch"]),

@@ -6,8 +6,8 @@ import { computeMutationIntentDigest, MutationIntentSchema } from "../mutation-i
 const intent = {
   version: "tr-mutation-intent-v1" as const,
   registryId: "tr:registry:demo",
-  actorDid: "did:midnight:testnet:alice",
-  actorKeyId: "did:midnight:testnet:alice#assertion-1",
+  actorDid: `did:midnight:testnet:${"aa".repeat(32)}`,
+  actorKeyId: `did:midnight:testnet:${"aa".repeat(32)}#assertion-1`,
   actorRole: "applicant" as const,
   action: "submit" as const,
   target: "auditor" as const,
@@ -32,7 +32,7 @@ describe("mutation intent v1", () => {
     ])).digest("hex");
     expect(computeMutationIntentDigest(intent)).toBe(`0x${expected}`);
     expect(computeMutationIntentDigest({ ...intent, targetId: "auth:auditor:other:v1" })).not.toBe(`0x${expected}`);
-    expect(computeMutationIntentDigest({ ...intent, actorKeyId: "did:midnight:testnet:alice#assertion-2" })).not.toBe(`0x${expected}`);
+    expect(computeMutationIntentDigest({ ...intent, actorKeyId: `${intent.actorDid}#assertion-2` })).not.toBe(`0x${expected}`);
     expect(computeMutationIntentDigest({ ...intent, payloadCommitment: `0x${"55".repeat(32)}` })).not.toBe(`0x${expected}`);
     expect(computeMutationIntentDigest({ ...intent, expectedEpochId: null })).not.toBe(`0x${expected}`);
   });
@@ -41,10 +41,16 @@ describe("mutation intent v1", () => {
     const invalid = [
       { ...intent, registryId: "TR:REGISTRY:DEMO" },
       { ...intent, actorDid: "did:example:alice" },
-      { ...intent, actorDid: "did:midnight:testnet:alice#key-1" },
+      { ...intent, actorDid: `${intent.actorDid}#key-1` },
+      { ...intent, actorDid: intent.actorDid.toUpperCase() },
+      { ...intent, actorDid: `${intent.actorDid}/path` },
+      { ...intent, actorDid: `${intent.actorDid}?svc=x` },
       { ...intent, actorDid: "did:midnight:testnet:alice with space" },
-      { ...intent, actorKeyId: "did:midnight:testnet:bob#assertion-1" },
+      { ...intent, actorKeyId: `did:midnight:testnet:${"bb".repeat(32)}#assertion-1` },
       { ...intent, nonce: `0x${"AA".repeat(32)}` },
+      { ...intent, issuedAt: "hello" },
+      { ...intent, issuedAt: "2026-13-10T00:00:00.000Z" },
+      { ...intent, issuedAt: "2026-10-10T00:00:60.000Z" },
       { ...intent, issuedAt: "2026-10-10T08:00:00.000+08:00" },
       { ...intent, expiresAt: "2026-10-10T00:05:00Z" },
       { ...intent, expiresAt: "2026-10-10T00:05:00.001Z" },

@@ -20,7 +20,12 @@ workspace commitment, expected epoch ID (or `null`), issued-at, and expires-at.
 `MutationIntentSchema` and `computeMutationIntentDigest` are the executable
 format. Unknown fields, mixed-case identifiers/commitments, noncanonical UTC
 timestamps, and intents lasting longer than five minutes are rejected. The
-0.1.0 signer profile uses a `did:midnight` actor. Other DID methods require a
+0.1.0 signer profile uses a four-part `did:midnight` actor with a lowercase
+64-hex identifier and a DID-fragment assertion key. This is narrower than the
+DID package's accepted syntax (which can include uppercase on-chain hex and
+embedded off-chain state); those spellings are not accepted as signing
+identities until a canonical resolver profile prevents aliases. The fragment
+itself is case-sensitive and is signed exactly. Other DID methods require a
 separate verified key-resolution profile, not a permissive fallback.
 
 `submit` is an applicant action for a membership target. Lifecycle and epoch
