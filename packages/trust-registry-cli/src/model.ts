@@ -136,6 +136,7 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
   verifierEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   auditorEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   recognitionEntries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
+  evidenceArchive: z.array(TrustRegistryEvidenceBundleSchema),
   notes: z.array(z.string()).default([]),
 }).superRefine((snapshot, ctx) => {
   for (const [role, entries] of [
@@ -179,6 +180,48 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
         message: "recognition entry must contain a matching statement and internally consistent snapshot proof",
       });
     }
+  }
+  const archivedIds = new Set<string>();
+  for (const [index, bundle] of snapshot.evidenceArchive.entries()) {
+    const authorization = bundle.authorization;
+    const recognition = bundle.recognition;
+    const recordId = authorization?.authorizationId ?? recognition?.recognitionId;
+    const recordKind = authorization?.role ?? "recognition";
+    const archiveId = `${recordKind}:${recordId ?? "missing"}:${bundle.epoch.epochId}`;
+    const current = authorization === undefined
+      ? snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === recordId)
+      : [
+          ...snapshot.issuerEntries,
+          ...snapshot.verifierEntries,
+          ...snapshot.auditorEntries,
+        ].find((entry) => entry.authorization.authorizationId === recordId);
+    const sameIdentity = authorization === undefined
+      ? current !== undefined && "recognition" in current
+        && current.recognition.recognizedAuthorityDid === recognition?.recognizedAuthorityDid
+        && current.recognition.recognizedRegistryId === recognition?.recognizedRegistryId
+        && current.recognition.scope.resourceType === recognition?.scope.resourceType
+        && current.recognition.scope.resourceId === recognition?.scope.resourceId
+        && Object.keys(current.recognition.scope.context ?? {}).length === Object.keys(recognition?.scope.context ?? {}).length
+        && Object.entries(current.recognition.scope.context ?? {}).every(
+          ([key, value]) => recognition?.scope.context?.[key] === value,
+        )
+      : current !== undefined && "authorization" in current
+        && current.authorization.role === authorization.role
+        && current.authorization.subjectDid === authorization.subjectDid
+        && current.authorization.resourceType === authorization.resourceType
+        && current.authorization.resourceId === authorization.resourceId;
+    const leafHash = authorization === undefined
+      ? recognition === undefined ? null : computeRecognitionStatementLeafHash(recognition)
+      : computeAuthorizationStatementLeafHash(authorization);
+    if (archivedIds.has(archiveId) || !sameIdentity || leafHash === null
+      || !hasConsistentSnapshotProof(bundle, leafHash, snapshot.epochs, snapshot.registry.registryId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["evidenceArchive", index],
+        message: "archived evidence must have a unique record and epoch with a matching snapshot proof",
+      });
+    }
+    archivedIds.add(archiveId);
   }
 });
 

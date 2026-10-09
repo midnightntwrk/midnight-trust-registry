@@ -231,6 +231,7 @@ const buildSnapshotFromTrackedFixtures = (
     verifierEntries,
     auditorEntries,
     recognitionEntries,
+    evidenceArchive: [],
     notes: [
       "Operator workspace snapshot derived from governed CLI operations.",
       `Replayed operations: ${operationCount.toString()}.`,

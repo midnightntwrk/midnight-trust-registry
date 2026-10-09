@@ -242,6 +242,7 @@ describe("trust registry api", () => {
         { label: "second", authorization: historicalEvidence.authorization, evidence: historicalEvidence },
       ],
       recognitionEntries: [],
+      evidenceArchive: [],
       notes: [],
     });
     const server = await startServer(createInMemorySource(snapshot));
@@ -658,6 +659,113 @@ describe("trust registry api", () => {
     if (decision === null) throw new Error("expected a current decision");
     expect(decision.statusAtTime).toBe("active");
     expect(decision.trustedAtTime).toBe(false);
+  });
+
+  it("serves archived issuer evidence for its epoch after a later revocation", async () => {
+    let workspace = createOperatorWorkspace({ label: "trqp-issuer-archive" });
+    const submitted = applyOperation(workspace, {
+      operation: "submit", target: "issuer", label: "archived-degree",
+    });
+    workspace = submitted.nextWorkspace;
+    const authorizationId = asAuthorizationRecord(submitted.record).authorization.authorizationId;
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "approve", target: "issuer", id: authorizationId,
+    });
+    const activeWorkspace = applyWorkspaceOperation(workspace, {
+      operation: "activate", target: "issuer", id: authorizationId,
+    });
+    const activeBundle = activeWorkspace.snapshot.issuerEntries[0]?.evidence;
+    if (activeBundle?.authorization === undefined) throw new Error("expected active issuer evidence");
+    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+      operation: "revoke", target: "issuer", id: authorizationId,
+    });
+    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
+      ...revokedWorkspace.snapshot,
+      epochs: [...revokedWorkspace.snapshot.epochs, activeBundle.epoch],
+      evidenceArchive: [activeBundle],
+    });
+    expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: activeBundle.authorization.resourceId,
+          context: { time: activeBundle.epoch.validFrom },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.authorized).toBe(true);
+      expect(result.bundle.authorization.status).toBe("active");
+      expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+    } finally {
+      await server.close();
+    }
+
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      evidenceArchive: [activeBundle, activeBundle],
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      evidenceArchive: [{ ...activeBundle, inclusionProof: {
+        ...activeBundle.inclusionProof, leafHash: "0".repeat(64),
+      } }],
+    }).success).toBe(false);
+  });
+
+  it("serves archived recognition evidence without using its later revoked bundle", async () => {
+    let workspace = createOperatorWorkspace({ label: "trqp-recognition-archive" });
+    const submitted = applyOperation(workspace, {
+      operation: "submit", target: "recognition", label: "archived-registry",
+    });
+    workspace = submitted.nextWorkspace;
+    const recognitionId = asRecognitionRecord(submitted.record).recognition.recognitionId;
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "approve", target: "recognition", id: recognitionId,
+    });
+    const activeWorkspace = applyWorkspaceOperation(workspace, {
+      operation: "activate", target: "recognition", id: recognitionId,
+    });
+    const activeBundle = activeWorkspace.snapshot.recognitionEntries[0]?.evidence;
+    if (activeBundle?.recognition === undefined) throw new Error("expected active recognition evidence");
+    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+      operation: "revoke", target: "recognition", id: recognitionId,
+    });
+    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
+      ...revokedWorkspace.snapshot,
+      epochs: [...revokedWorkspace.snapshot.epochs, activeBundle.epoch],
+      evidenceArchive: [activeBundle],
+    });
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/recognitions/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.recognition.recognizedAuthorityDid,
+          authority_id: snapshot.registry.registryDid,
+          action: activeBundle.recognition.scope.resourceType,
+          resource: activeBundle.recognition.scope.resourceId,
+          context: {
+            recognized_registry_id: activeBundle.recognition.recognizedRegistryId,
+            time: activeBundle.epoch.validFrom,
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.recognized).toBe(true);
+      expect(result.bundle.recognition.status).toBe("active");
+      expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+    } finally {
+      await server.close();
+    }
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {
