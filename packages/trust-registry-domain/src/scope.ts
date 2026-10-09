@@ -60,6 +60,13 @@ export const AuditorScopeSchema = z.strictObject({
   role: z.literal("auditor"),
 });
 
+export const RequestScopeSchema = z.discriminatedUnion("role", [VerifierScopeSchema, AuditorScopeSchema]);
+export type RequestScope = z.infer<typeof RequestScopeSchema>;
+export const RequestGovernedResourceIdSchema = ScopedIdentifierSchema.regex(
+  /^tr:request-resource:v1:[0-9a-f]{64}$/u,
+  "Request resource id must be a canonical composite request resource id",
+);
+
 export const MaintainerScopeSchema = z.strictObject({
   ...ScopeBase,
   role: z.literal("maintainer"),
@@ -124,6 +131,18 @@ export function issuerGovernedResourceIdFromScopeCommitment(
     parsedCommitment,
   ]);
   return IssuerGovernedResourceIdSchema.parse(`tr:issuer-resource:v1:${sha256Hex(preimage).slice(2)}`);
+}
+
+export function requestGovernedResourceId(scope: RequestScope): string {
+  return requestGovernedResourceIdFromScopeCommitment(
+    computeAuthorizationScopeCommitment(RequestScopeSchema.parse(scope)),
+  );
+}
+
+export function requestGovernedResourceIdFromScopeCommitment(scopeCommitment: string): string {
+  const parsedCommitment = ExactHashSchema.parse(scopeCommitment);
+  const preimage = JSON.stringify(["tr:request-resource:v1", parsedCommitment]);
+  return RequestGovernedResourceIdSchema.parse(`tr:request-resource:v1:${sha256Hex(preimage).slice(2)}`);
 }
 
 function isUnicodeScalar(value: string): boolean {

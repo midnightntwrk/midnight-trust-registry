@@ -214,7 +214,7 @@ const activateIssuerAuthorizationFixture = (
 const createVerifierAuthorizationFixture = (label: string) => ({
   authorizationId: labelToBytes32(`verifier-auth:${label}`),
   subjectDidCommitment: labelToBytes32(`did:midnight:verifier:${label}`),
-  requestProfileId: labelToBytes32(`request-profile:${label}:v1`),
+  requestResourceId: labelToBytes32(`request-resource:${label}:v1`),
   allowedAttributeSetCommitment: labelToBytes32(`attr-set:${label}:minimal`),
   allowedPredicateSetCommitment: labelToBytes32(`pred-set:${label}:adult`),
   disclosureLevelCommitment: labelToBytes32(`disclosure:${label}:selective`),
@@ -256,7 +256,7 @@ const activateVerifierAuthorizationFixture = (
     sign(PROPOSE_VERIFIER_ACTION_KIND, computeCreateVerifierAuthorizationPayloadHash(
       authorization.authorizationId,
       authorization.subjectDidCommitment,
-      authorization.requestProfileId,
+      authorization.requestResourceId,
       authorization.allowedAttributeSetCommitment,
       authorization.allowedPredicateSetCommitment,
       authorization.disclosureLevelCommitment,
@@ -266,7 +266,7 @@ const activateVerifierAuthorizationFixture = (
     )),
     authorization.authorizationId,
     authorization.subjectDidCommitment,
-    authorization.requestProfileId,
+    authorization.requestResourceId,
     authorization.allowedAttributeSetCommitment,
     authorization.allowedPredicateSetCommitment,
     authorization.disclosureLevelCommitment,
@@ -361,7 +361,7 @@ const activateRecognitionFixture = (
 const createAuditorAuthorizationFixture = (label: string) => ({
   authorizationId: labelToBytes32(`auditor-auth:${label}`),
   subjectDidCommitment: labelToBytes32(`did:midnight:auditor:${label}`),
-  requestProfileId: labelToBytes32(`audit-request-profile:${label}:v1`),
+  requestResourceId: labelToBytes32(`audit-request-resource:${label}:v1`),
   allowedAttributeSetCommitment: labelToBytes32(`audit-attr-set:${label}:minimal`),
   allowedPredicateSetCommitment: labelToBytes32(`audit-pred-set:${label}:compliance`),
   disclosureLevelCommitment: labelToBytes32(`audit-disclosure:${label}:restricted`),
@@ -369,6 +369,68 @@ const createAuditorAuthorizationFixture = (label: string) => ({
   trustLevel: labelToBytes32("audit-approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
+
+const activateAuditorAuthorizationFixture = (
+  registry: ReturnType<typeof createInitializedRegistryFixture>,
+  authorization: ReturnType<typeof createAuditorAuthorizationFixture>,
+): void => {
+  const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
+    signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      actionKind,
+      payloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+  simulator.proposeAuditorAuthorization(
+    bootstrapMaintainer.keyId,
+    bootstrapPublicKey,
+    sign(PROPOSE_AUDITOR_ACTION_KIND, computeCreateAuditorAuthorizationPayloadHash(
+      authorization.authorizationId,
+      authorization.subjectDidCommitment,
+      authorization.requestResourceId,
+      authorization.allowedAttributeSetCommitment,
+      authorization.allowedPredicateSetCommitment,
+      authorization.disclosureLevelCommitment,
+      authorization.policyId,
+      authorization.trustLevel,
+      authorization.evidenceHash,
+    )),
+    authorization.authorizationId,
+    authorization.subjectDidCommitment,
+    authorization.requestResourceId,
+    authorization.allowedAttributeSetCommitment,
+    authorization.allowedPredicateSetCommitment,
+    authorization.disclosureLevelCommitment,
+    authorization.policyId,
+    authorization.trustLevel,
+    authorization.evidenceHash,
+  );
+  simulator.authorizeAuditorAuthorization(
+    bootstrapMaintainer.keyId,
+    bootstrapPublicKey,
+    sign(AUTHORIZE_AUDITOR_ACTION_KIND, computeUpdateAuditorAuthorizationPayloadHash(
+      authorization.authorizationId,
+      simulator.getAuditorAuthorization(authorization.authorizationId).lifecycleEventHash,
+      authorization.evidenceHash,
+    )),
+    authorization.authorizationId,
+    authorization.evidenceHash,
+  );
+  simulator.activateAuditorAuthorization(
+    bootstrapMaintainer.keyId,
+    bootstrapPublicKey,
+    sign(ACTIVATE_AUDITOR_ACTION_KIND, computeUpdateAuditorAuthorizationPayloadHash(
+      authorization.authorizationId,
+      simulator.getAuditorAuthorization(authorization.authorizationId).lifecycleEventHash,
+      authorization.evidenceHash,
+    )),
+    authorization.authorizationId,
+    authorization.evidenceHash,
+  );
+};
 
 const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
   const candidate = createMaintainerFixture(label, seedByte);
@@ -2516,7 +2578,7 @@ describe("trust registry contract", () => {
     );
     const recordByScope = simulator.getCurrentVerifierAuthorization(
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2537,7 +2599,7 @@ describe("trust registry contract", () => {
     expect(() =>
       simulator.assertVerifierAuthorized(
         verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestProfileId,
+        verifierAuthorization.requestResourceId,
         verifierAuthorization.allowedAttributeSetCommitment,
         verifierAuthorization.allowedPredicateSetCommitment,
         verifierAuthorization.disclosureLevelCommitment,
@@ -2546,12 +2608,37 @@ describe("trust registry contract", () => {
     expect(() =>
       simulator.getCurrentVerifierAuthorization(
         verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestProfileId,
+        verifierAuthorization.requestResourceId,
         verifierAuthorization.allowedAttributeSetCommitment,
         labelToBytes32("pred-set:age-gate:different"),
         verifierAuthorization.disclosureLevelCommitment,
       ),
     ).toThrow(/scope is not registered/i);
+  });
+
+  it("keeps two full request resources for one verifier and partial request tuple distinct", () => {
+    const registry = createInitializedRegistryFixture(32);
+    const first = createVerifierAuthorizationFixture("same-profile");
+    const second = {
+      ...first,
+      authorizationId: labelToBytes32("verifier-auth:same-profile:other-purpose"),
+      requestResourceId: labelToBytes32("request-resource:same-profile:other-purpose"),
+      evidenceHash: labelToBytes32("evidence:same-profile:other-purpose"),
+    };
+    expect(Buffer.from(second.requestResourceId)).not.toEqual(Buffer.from(first.requestResourceId));
+    activateVerifierAuthorizationFixture(registry, first);
+    activateVerifierAuthorizationFixture(registry, second);
+    expect(registry.simulator.getLedger().activeVerifierAuthorizationCount).toBe(2n);
+    for (const authorization of [first, second]) {
+      const current = registry.simulator.getCurrentVerifierAuthorization(
+        authorization.subjectDidCommitment,
+        authorization.requestResourceId,
+        authorization.allowedAttributeSetCommitment,
+        authorization.allowedPredicateSetCommitment,
+        authorization.disclosureLevelCommitment,
+      );
+      expect(Buffer.from(current.authorizationId)).toEqual(Buffer.from(authorization.authorizationId));
+    }
   });
 
   it("moves a verifier authorization through proposed, authorized, and active states", () => {
@@ -2573,7 +2660,7 @@ describe("trust registry contract", () => {
       computeCreateVerifierAuthorizationPayloadHash(
         verifierAuthorization.authorizationId,
         verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestProfileId,
+        verifierAuthorization.requestResourceId,
         verifierAuthorization.allowedAttributeSetCommitment,
         verifierAuthorization.allowedPredicateSetCommitment,
         verifierAuthorization.disclosureLevelCommitment,
@@ -2589,7 +2676,7 @@ describe("trust registry contract", () => {
       proposeSignature,
       verifierAuthorization.authorizationId,
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2690,7 +2777,7 @@ describe("trust registry contract", () => {
 
     const activeRecord = simulator.getCurrentVerifierAuthorization(
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2736,7 +2823,7 @@ describe("trust registry contract", () => {
 
     const suspendedRecord = simulator.getCurrentVerifierAuthorization(
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2746,7 +2833,7 @@ describe("trust registry contract", () => {
     expect(() =>
       simulator.assertVerifierAuthorized(
         verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestProfileId,
+        verifierAuthorization.requestResourceId,
         verifierAuthorization.allowedAttributeSetCommitment,
         verifierAuthorization.allowedPredicateSetCommitment,
         verifierAuthorization.disclosureLevelCommitment,
@@ -2802,7 +2889,7 @@ describe("trust registry contract", () => {
 
     const archivedRecord = simulator.getCurrentVerifierAuthorization(
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2827,7 +2914,7 @@ describe("trust registry contract", () => {
     expect(() =>
       simulator.getCurrentVerifierAuthorization(
         verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestProfileId,
+        verifierAuthorization.requestResourceId,
         verifierAuthorization.allowedAttributeSetCommitment,
         verifierAuthorization.allowedPredicateSetCommitment,
         verifierAuthorization.disclosureLevelCommitment,
@@ -2837,7 +2924,7 @@ describe("trust registry contract", () => {
     const proposePayloadHash = computeCreateVerifierAuthorizationPayloadHash(
       verifierAuthorization.authorizationId,
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2862,7 +2949,7 @@ describe("trust registry contract", () => {
       tamperedProposeSignature,
       verifierAuthorization.authorizationId,
       verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestProfileId,
+      verifierAuthorization.requestResourceId,
       verifierAuthorization.allowedAttributeSetCommitment,
       verifierAuthorization.allowedPredicateSetCommitment,
       verifierAuthorization.disclosureLevelCommitment,
@@ -2888,7 +2975,7 @@ describe("trust registry contract", () => {
         computeCreateVerifierAuthorizationPayloadHash(
           duplicate.authorizationId,
           duplicate.subjectDidCommitment,
-          duplicate.requestProfileId,
+          duplicate.requestResourceId,
           duplicate.allowedAttributeSetCommitment,
           duplicate.allowedPredicateSetCommitment,
           duplicate.disclosureLevelCommitment,
@@ -2900,7 +2987,7 @@ describe("trust registry contract", () => {
       ),
       duplicate.authorizationId,
       duplicate.subjectDidCommitment,
-      duplicate.requestProfileId,
+      duplicate.requestResourceId,
       duplicate.allowedAttributeSetCommitment,
       duplicate.allowedPredicateSetCommitment,
       duplicate.disclosureLevelCommitment,
@@ -3381,6 +3468,31 @@ describe("trust registry contract", () => {
     ).toThrow(/authorized, active, or suspended/i);
   });
 
+  it("keeps two full request resources for one auditor and partial request tuple distinct", () => {
+    const registry = createInitializedRegistryFixture(56);
+    const first = createAuditorAuthorizationFixture("same-profile");
+    const second = {
+      ...first,
+      authorizationId: labelToBytes32("auditor-auth:same-profile:other-purpose"),
+      requestResourceId: labelToBytes32("audit-request-resource:alt"),
+      evidenceHash: labelToBytes32("evidence:audit-same-profile:other-purpose"),
+    };
+    expect(Buffer.from(second.requestResourceId)).not.toEqual(Buffer.from(first.requestResourceId));
+    activateAuditorAuthorizationFixture(registry, first);
+    activateAuditorAuthorizationFixture(registry, second);
+    expect(registry.simulator.getLedger().activeAuditorAuthorizationCount).toBe(2n);
+    for (const authorization of [first, second]) {
+      const current = registry.simulator.getCurrentAuditorAuthorization(
+        authorization.subjectDidCommitment,
+        authorization.requestResourceId,
+        authorization.allowedAttributeSetCommitment,
+        authorization.allowedPredicateSetCommitment,
+        authorization.disclosureLevelCommitment,
+      );
+      expect(Buffer.from(current.authorizationId)).toEqual(Buffer.from(authorization.authorizationId));
+    }
+  });
+
   it("creates and governs auditor authorizations across proposal, activation, and archival paths", () => {
     const registry = createInitializedRegistryFixture(57);
     const {
@@ -3399,7 +3511,7 @@ describe("trust registry contract", () => {
       computeCreateAuditorAuthorizationPayloadHash(
         auditorAuthorization.authorizationId,
         auditorAuthorization.subjectDidCommitment,
-        auditorAuthorization.requestProfileId,
+        auditorAuthorization.requestResourceId,
         auditorAuthorization.allowedAttributeSetCommitment,
         auditorAuthorization.allowedPredicateSetCommitment,
         auditorAuthorization.disclosureLevelCommitment,
@@ -3415,7 +3527,7 @@ describe("trust registry contract", () => {
       proposeSignature,
       auditorAuthorization.authorizationId,
       auditorAuthorization.subjectDidCommitment,
-      auditorAuthorization.requestProfileId,
+      auditorAuthorization.requestResourceId,
       auditorAuthorization.allowedAttributeSetCommitment,
       auditorAuthorization.allowedPredicateSetCommitment,
       auditorAuthorization.disclosureLevelCommitment,
@@ -3514,7 +3626,7 @@ describe("trust registry contract", () => {
 
     const activeRecord = simulator.getCurrentAuditorAuthorization(
       auditorAuthorization.subjectDidCommitment,
-      auditorAuthorization.requestProfileId,
+      auditorAuthorization.requestResourceId,
       auditorAuthorization.allowedAttributeSetCommitment,
       auditorAuthorization.allowedPredicateSetCommitment,
       auditorAuthorization.disclosureLevelCommitment,
@@ -3524,7 +3636,7 @@ describe("trust registry contract", () => {
     expect(() =>
       simulator.assertAuditorAuthorized(
         auditorAuthorization.subjectDidCommitment,
-        auditorAuthorization.requestProfileId,
+        auditorAuthorization.requestResourceId,
         auditorAuthorization.allowedAttributeSetCommitment,
         auditorAuthorization.allowedPredicateSetCommitment,
         auditorAuthorization.disclosureLevelCommitment,

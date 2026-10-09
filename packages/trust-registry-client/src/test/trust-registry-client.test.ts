@@ -42,7 +42,7 @@ describe("trust registry client", () => {
     const id = new Uint8Array(32);
     const request = {
       subjectDid: id,
-      requestProfileId: id,
+      requestResourceId: id,
       allowedAttributeSetCommitment: id,
       allowedPredicateSetCommitment: id,
       disclosureLevelCommitment: id,

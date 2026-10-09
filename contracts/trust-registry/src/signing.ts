@@ -191,14 +191,14 @@ export const computeUpdateIssuerAuthorizationPayloadHash = (
 
 export const computeVerifierAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,
-  requestProfileId: Uint8Array,
+  requestResourceId: Uint8Array,
   allowedAttributeSetCommitment: Uint8Array,
   allowedPredicateSetCommitment: Uint8Array,
   disclosureLevelCommitment: Uint8Array,
 ): Uint8Array =>
   pureCircuits.verifierAuthorizationScopeKey(
     require32Bytes(subjectDidCommitment, "Subject DID commitment"),
-    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(requestResourceId, "Request resource id"),
     require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
     require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
     require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
@@ -206,14 +206,14 @@ export const computeVerifierAuthorizationScopeKey = (
 
 export const computeAuditorAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,
-  requestProfileId: Uint8Array,
+  requestResourceId: Uint8Array,
   allowedAttributeSetCommitment: Uint8Array,
   allowedPredicateSetCommitment: Uint8Array,
   disclosureLevelCommitment: Uint8Array,
 ): Uint8Array =>
   pureCircuits.auditorAuthorizationScopeKey(
     require32Bytes(subjectDidCommitment, "Subject DID commitment"),
-    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(requestResourceId, "Request resource id"),
     require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
     require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
     require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
@@ -235,7 +235,7 @@ export const computeRecognitionScopeKey = (
 export const computeCreateVerifierAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   subjectDidCommitment: Uint8Array,
-  requestProfileId: Uint8Array,
+  requestResourceId: Uint8Array,
   allowedAttributeSetCommitment: Uint8Array,
   allowedPredicateSetCommitment: Uint8Array,
   disclosureLevelCommitment: Uint8Array,
@@ -246,7 +246,7 @@ export const computeCreateVerifierAuthorizationPayloadHash = (
   pureCircuits.createVerifierAuthorizationPayloadHash(
     require32Bytes(authorizationId, "Authorization id"),
     require32Bytes(subjectDidCommitment, "Subject DID commitment"),
-    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(requestResourceId, "Request resource id"),
     require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
     require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
     require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),
@@ -279,7 +279,7 @@ export const computeCreateRecognitionPayloadHash = (
 export const computeCreateAuditorAuthorizationPayloadHash = (
   authorizationId: Uint8Array,
   subjectDidCommitment: Uint8Array,
-  requestProfileId: Uint8Array,
+  requestResourceId: Uint8Array,
   allowedAttributeSetCommitment: Uint8Array,
   allowedPredicateSetCommitment: Uint8Array,
   disclosureLevelCommitment: Uint8Array,
@@ -290,7 +290,7 @@ export const computeCreateAuditorAuthorizationPayloadHash = (
   pureCircuits.createAuditorAuthorizationPayloadHash(
     require32Bytes(authorizationId, "Authorization id"),
     require32Bytes(subjectDidCommitment, "Subject DID commitment"),
-    require32Bytes(requestProfileId, "Request profile id"),
+    require32Bytes(requestResourceId, "Request resource id"),
     require32Bytes(allowedAttributeSetCommitment, "Allowed attribute set commitment"),
     require32Bytes(allowedPredicateSetCommitment, "Allowed predicate set commitment"),
     require32Bytes(disclosureLevelCommitment, "Disclosure level commitment"),

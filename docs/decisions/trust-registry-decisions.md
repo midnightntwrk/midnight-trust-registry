@@ -9,6 +9,8 @@ The formal decisions for application evidence and scope canonicalization are
 [ADR-0002](adr-0002-resource-and-request-profile-canonicalization.md), with
 [ADR-0003](adr-0003-composite-issuer-resource-identity.md) specifying the
 type-separated full-scope issuer resource identity.
+[ADR-0004](adr-0004-composite-request-scope-identity.md) extends this exact
+scope binding to verifier and auditor request resources.
 
 - Use Midnight DID by default for party and registry identifiers.
 - Use Midnight VC and VP packages as the default application evidence surface.

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
+  requestGovernedResourceId,
   sha256Hex,
   type ApplicationChallengeBinding,
   type AuthorizationScope,
@@ -25,19 +26,19 @@ const ISSUER_SCOPE = {
   statusMethod: "midnight-status-registry-v1",
 } as const;
 const REQUEST_SCOPE = {
-  version: "tr-scope-v1",
+  version: "tr-scope-v1" as const,
   requestProfileId: "request-profile:admission",
   purpose: "admission",
   credentialScopeCommitment: `0x${"1".repeat(64)}`,
   allowedAttributes: ["degree"],
   allowedPredicates: ["age-over-18"],
   disclosureLevel: "minimum",
-} as const;
+};
 
 const cases = [
   { role: "issuer", scope: ISSUER_SCOPE, resource: { type: "credentialFamily", id: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily") } },
-  { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
-  { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
+  { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "verifier" }) } },
+  { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "auditor" }) } },
   { role: "maintainer", scope: { version: "tr-scope-v1", role: "maintainer", registryId: "registry:kanon:trusted" }, resource: { type: "registry", id: "registry:kanon:trusted" } },
 ] as const;
 

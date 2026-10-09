@@ -10,6 +10,7 @@ import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
   IssuerGovernedResourceIdSchema,
+  RequestGovernedResourceIdSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
@@ -90,7 +91,7 @@ const AuthorizationLookupRequestBaseSchema = z.object({
   trustLevel: NonEmptyStringSchema.optional(),
 });
 
-const refineIssuerLookup = (
+const refineAuthorizationLookup = (
   request: z.infer<typeof AuthorizationLookupRequestBaseSchema>,
   ctx: z.RefinementCtx,
 ): void => {
@@ -101,15 +102,23 @@ const refineIssuerLookup = (
       message: "Issuer lookup requires a canonical composite issuer resource id",
     });
   }
+  if (request.role === "verifier"
+    && !RequestGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Request lookup requires a canonical composite request resource id",
+    });
+  }
 };
 
 export const TrustRegistryApiResolveAuthorizationRequestSchema =
-  AuthorizationLookupRequestBaseSchema.superRefine(refineIssuerLookup);
+  AuthorizationLookupRequestBaseSchema.superRefine(refineAuthorizationLookup);
 
 export const TrustRegistryApiEvaluateAuthorizationRequestSchema =
   AuthorizationLookupRequestBaseSchema.extend({
     at: TimestampSchema,
-  }).superRefine(refineIssuerLookup);
+  }).superRefine(refineAuthorizationLookup);
 
 export const TrustRegistryApiRecognitionListQuerySchema = z.object({
   status: RecognitionRecordSchema.shape.status.optional(),

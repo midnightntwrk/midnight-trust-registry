@@ -141,6 +141,9 @@ Issuer scope is the canonical tuple in
 credential family, schema ID/version, credential definition, and status method.
 Verifier and auditor scope is request profile, purpose, credential-scope
 commitment, sorted allowed attributes and predicates, and disclosure level.
+The on-ledger request resource ID commits the entire role-specific tuple per
+[ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md), rather
+than using the bare request-profile ID as a key.
 Comparison is exact. No wildcard, delegated grant, implicit schema-version
 range, or transitive recognition is valid in 0.1.0. Domain, contract adapters,
 client, and API MUST share test vectors for the same canonical commitment.
@@ -280,5 +283,5 @@ maintainer.
 - [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html): signed entity statements and trust chains for publisher authentication.
 - [OpenID Federation for Wallet Architectures draft](https://openid.net/specs/openid-federation-wallet-1_0.html): informative future wallet federation integration.
 - [VC signer authorization](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/spec/signer-authorization.md), [Compact implementation](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/packages/core/compact/src/credentials/signer-authorization.compact), and [conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json): current issuer/verifier authority-anchor contract.
-- [Application Evidence Protocol](application-evidence.md), [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md), and [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md) are the local v0.1 inputs.
+- [Application Evidence Protocol](application-evidence.md), [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md), [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md), [ADR-0003](../decisions/adr-0003-composite-issuer-resource-identity.md), and [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md) are the local v0.1 inputs.
 - [Research requirements memo](../research/trust-registry-requirements-memo.md) traces the Kanon, MIT issuer registry governance, and other research sources.

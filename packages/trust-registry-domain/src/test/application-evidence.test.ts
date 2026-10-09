@@ -4,6 +4,7 @@ import {
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
   type ApplicationEvidenceSubmission,
 } from "../index.js";
 
@@ -90,6 +91,25 @@ describe("application evidence", () => {
     expect(() => assertValidApplicationEvidence(
       submission, expectation, [authorizedVerifier], () => true,
     )).toThrow(/maximum 24-hour lifetime/);
+  });
+
+  it.each(["verifier", "auditor"] as const)("binds %s request evidence to its complete signed scope", (role) => {
+    const issuerEnvelope = createSubmission().envelope;
+    const resourceId = requestGovernedResourceIdFromScopeCommitment(HASH_A);
+    const envelope = {
+      ...issuerEnvelope,
+      role,
+      governedResource: { type: "requestProfile" as const, id: resourceId },
+    };
+    expect(() => computeApplicationEvidenceCommitment(envelope)).not.toThrow();
+    expect(() => computeApplicationEvidenceCommitment({
+      ...envelope,
+      scopeCommitment: HASH_B,
+    })).toThrow(/Request resource id does not match/);
+    expect(() => computeApplicationEvidenceCommitment({
+      ...envelope,
+      governedResource: { type: "requestProfile", id: "request-profile:admission" },
+    })).toThrow(/canonical composite request resource id/);
   });
 
   it("binds a valid application envelope to its governed authorization", () => {

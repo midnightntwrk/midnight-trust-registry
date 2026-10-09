@@ -82,6 +82,10 @@ For issuer applications, the resource ID is the type-separated composite of
 the entire canonical issuer scope, not the bare schema version or status-method
 name. All five issuer resource types use the same encoding defined in
 [ADR-0003](../decisions/adr-0003-composite-issuer-resource-identity.md).
+For verifier and auditor applications, the `requestProfile` governed-resource
+ID is the role-separated composite of the complete canonical request scope,
+not the bare profile ID. The signed scope commitment determines that ID as
+specified in [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md).
 
 The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
