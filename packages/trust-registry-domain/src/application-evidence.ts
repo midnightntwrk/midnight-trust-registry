@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { canonicalizeJson } from "./canonical-json.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 import {
   IssuerGovernedResourceIdSchema,
@@ -248,30 +249,4 @@ function assertEqual(field: string, actual: string, expected: string): void {
   if (actual !== expected) {
     throw new Error(`Application evidence ${field} does not match the governed authorization`);
   }
-}
-
-function canonicalizeJson(value: unknown): string {
-  if (value === null || typeof value === "boolean") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new TypeError("Application evidence cannot contain non-finite numbers");
-    }
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalizeJson).join(",")}]`;
-  }
-  if (typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`)
-      .join(",")}}`;
-  }
-  throw new TypeError("Application evidence must contain JSON values only");
 }
