@@ -30,13 +30,15 @@ audit threshold remains unchanged.
 The four workflows that compile Compact use Ubuntu 24.04 and restore an exact
 runner, setup-action revision, architecture, and `.compact-version` cache of
 the launcher and `~/.compact/` compiler directory before calling
-`setup-compact-action`. Downloaded `artifact.zip` files are excluded from the
-cache; only the installed toolchain is needed on a hit. On a hit,
+`setup-compact-action`. This also caches the upstream download archive because
+`actions/cache` recursively archives the directory; excluding it is a separate
+size optimization, not a correctness requirement. On a hit,
 they skip that action entirely: its current implementation calls
 `compact update` even when its own cache hits, which can fail on an unauthenticated
 GitHub release API rate limit. On a miss, the pinned action installs with its
 internal cache disabled. The workflow then checks `compact compile --version`
-against `.compact-version` and saves the installation only after that check.
+against `.compact-version`, checks that both launcher and installed compiler
+paths are executable, and saves the installation only after those checks.
 There is no cross-version restore key. An invalid cached compiler fails closed
 instead of silently reinstalling or using the wrong version. The workflow
 diagnostic directs the operator to delete the specific immutable Actions cache
