@@ -60,8 +60,8 @@ following fields are required before canonical serialization:
   "role": "issuer",
   "policyId": "tr:policy:membership",
   "policyVersion": "v1",
-  "scopeCommitment": "0x...32-byte-hex...",
-  "governedResource": { "type": "credentialFamily", "id": "credential-family:acme:v1" },
+  "scopeCommitment": "0xf9d7d610bba907f28353425136f9ba2bc65d5925421371fc7580716029b3c6c8",
+  "governedResource": { "type": "credentialFamily", "id": "tr:issuer-resource:v1:e4edbae272fdd78e6ceccde9e4018528ffa418094eeddae33782738293b3dd8d" },
   "evidenceVerifierDid": "did:midnight:...",
   "verifiedAt": "2026-07-27T00:00:00Z",
   "expiresAt": "2027-07-27T00:00:00Z",
@@ -78,6 +78,10 @@ verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 The governed resource type and ID are signed separately because one issuer
 scope can authorize several resource kinds. Proposal intake MUST compare both
 fields against the proposed resource, not only the scope commitment.
+For issuer applications, the resource ID is the type-separated composite of
+the entire canonical issuer scope, not the bare schema version or status-method
+name. All five issuer resource types use the same encoding defined in
+[ADR-0003](../decisions/adr-0003-composite-issuer-resource-identity.md).
 
 The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier

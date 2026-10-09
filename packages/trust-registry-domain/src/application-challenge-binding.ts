@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import { ApplicationEvidenceRoleSchema, GovernedResourceSchema } from "./application-evidence.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
-import { AuthorizationScopeSchema, computeAuthorizationScopeCommitment } from "./scope.js";
+import {
+  AuthorizationScopeSchema,
+  computeAuthorizationScopeCommitment,
+  issuerGovernedResourceId,
+} from "./scope.js";
 
 const CanonicalIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
@@ -62,16 +66,18 @@ export function governedResourceInScope(
   scope: z.infer<typeof AuthorizationScopeSchema>,
   type: z.infer<typeof GovernedResourceSchema>["type"],
 ): string | null {
-  if (scope.role === "issuer") {
+  const parsedScope = AuthorizationScopeSchema.safeParse(scope);
+  if (!parsedScope.success) return null;
+  if (parsedScope.data.role === "issuer") {
     switch (type) {
-      case "credentialFamily": return scope.credentialFamilyId;
-      case "schema": return scope.schemaId;
-      case "schemaVersion": return scope.schemaVersion;
-      case "credentialDefinition": return scope.credentialDefinitionId;
-      case "statusMethodRequirement": return scope.statusMethod;
+      case "credentialFamily":
+      case "schema":
+      case "schemaVersion":
+      case "credentialDefinition":
+      case "statusMethodRequirement": return issuerGovernedResourceId(parsedScope.data, type);
       default: return null;
     }
   }
-  if (scope.role === "maintainer") return type === "registry" ? scope.registryId : null;
-  return type === "requestProfile" ? scope.requestProfileId : null;
+  if (parsedScope.data.role === "maintainer") return type === "registry" ? parsedScope.data.registryId : null;
+  return type === "requestProfile" ? parsedScope.data.requestProfileId : null;
 }

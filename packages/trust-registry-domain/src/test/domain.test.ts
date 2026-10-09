@@ -5,6 +5,7 @@ import {
   AuthorizationRecordSchema,
   createScopedIdentifier,
   GovernancePolicyRecordSchema,
+  issuerGovernedResourceIdFromScopeCommitment,
   ParticipantRecordSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
@@ -16,6 +17,7 @@ const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "credentialFamily");
 
 const createPolicyTemplates = () => [
   {
@@ -199,7 +201,7 @@ describe("record schemas", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "approved",
       status: "active",
@@ -231,6 +233,8 @@ describe("record schemas", () => {
     });
 
     expect(authorization.role).toBe("issuer");
+    expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceId: "1.0.0" }).success).toBe(false);
+    expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceType: "request-profile" }).success).toBe(false);
     expect(recognition.scope.resourceId).toBe("vc-type:degree:v1");
   });
 
@@ -251,7 +255,7 @@ describe("record schemas", () => {
         subjectDid: "did:midnight:issuer:1",
         role: "issuer",
         resourceType: "credential-family",
-        resourceId: "vc-type:birth:v1",
+        resourceId: ISSUER_RESOURCE_ID,
         policyId: "policy:university:v1",
         trustLevel: "approved",
         status: "active",

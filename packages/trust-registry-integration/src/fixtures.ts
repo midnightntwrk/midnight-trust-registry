@@ -7,8 +7,11 @@ import {
 } from "@midnight-ntwrk/midnight-did";
 import {
   createScopedIdentifier,
+  issuerGovernedResourceId,
   sha256Hex,
   type AuthorizationScope,
+  type AuthorizationRecord,
+  type IssuerGovernedResourceType,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMaintainerFixture as createContractMaintainerFixture,
@@ -16,6 +19,17 @@ import {
 import {
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+
+export const issuerResourceTypeDetails = {
+  [IssuerResourceType.credentialFamily]: { governedType: "credentialFamily", recordType: "credential-family" },
+  [IssuerResourceType.schema]: { governedType: "schema", recordType: "schema" },
+  [IssuerResourceType.schemaVersion]: { governedType: "schemaVersion", recordType: "schema-version" },
+  [IssuerResourceType.credentialDefinition]: { governedType: "credentialDefinition", recordType: "credential-definition" },
+  [IssuerResourceType.statusMethodRequirement]: { governedType: "statusMethodRequirement", recordType: "status-method-requirement" },
+} as const satisfies Record<
+  IssuerResourceType,
+  { governedType: IssuerGovernedResourceType; recordType: AuthorizationRecord["resourceType"] }
+>;
 
 export const bytes32Commitment = (value: string): Uint8Array =>
   Buffer.from(sha256Hex(value).slice(2), "hex");
@@ -164,13 +178,9 @@ export const createIssuerScenarioFixture = (
     credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
     statusMethod: "midnight-status-registry-v1",
   };
-  const resourceId = [
-    authorizationScope.credentialFamilyId,
-    authorizationScope.schemaId,
-    authorizationScope.schemaVersion,
-    authorizationScope.credentialDefinitionId,
-    authorizationScope.statusMethod,
-  ][resourceType]!;
+  const resourceKind = issuerResourceTypeDetails[resourceType]?.governedType;
+  if (resourceKind === undefined) throw new RangeError("Unsupported issuer resource type");
+  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKind);
 
   return {
     authorizationId,
