@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { canonicalizeJson } from "./canonical-json.js";
 import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 import {
   GovernanceDecisionFamilySchema,
@@ -164,16 +165,4 @@ function sortedUnique(values: readonly string[]): string[] {
 
 function compareIds(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function canonicalizeJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string" || typeof value === "number") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalizeJson).join(",")}]`;
-  if (typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`).join(",")}}`;
-  }
-  throw new TypeError("Policy snapshot must contain JSON values only");
 }
