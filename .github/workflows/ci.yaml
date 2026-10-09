@@ -78,6 +78,8 @@ jobs:
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
           compact-version: ${{ steps.compact-version.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify Compact installation
         run: node scripts/check-compact-version.mjs --check-installed

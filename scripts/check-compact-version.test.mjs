@@ -23,6 +23,17 @@ test("all Compact consumers use the shared version", () => {
   assert.equal(checkCompactVersion(), pinnedVersion);
 });
 
+test("cached Compact setup authenticates its release query in every workflow", () => {
+  for (const path of paths.filter((candidate) => candidate.startsWith(".github/workflows/"))) {
+    const workflow = readFileSync(join(sourceRoot, path), "utf8");
+    const setup = workflow.split("setup-compact-action@")[1];
+    assert.ok(setup, `${path} must use the pinned setup action`);
+    const nextStep = setup.search(/\n\s*-\s(?:name|uses|run):/u);
+    const setupStep = nextStep === -1 ? setup : setup.slice(0, nextStep);
+    assert.match(setupStep, /\benv:\n\s+GITHUB_TOKEN: \$\{\{ github\.token \}\}/u, path);
+  }
+});
+
 test("CLI emits the pin when invoked through a symlink", () => {
   const fixture = mkdtempSync(join(tmpdir(), "tr-compact-cli-"));
   try {
