@@ -214,6 +214,7 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
       ? recognition === undefined ? null : computeRecognitionStatementLeafHash(recognition)
       : computeAuthorizationStatementLeafHash(authorization);
     if (archivedIds.has(archiveId) || !sameIdentity || leafHash === null
+      || bundle.registryId !== snapshot.registry.registryId
       || (authorization?.registryId ?? recognition?.registryId) !== snapshot.registry.registryId
       || !hasConsistentSnapshotProof(bundle, leafHash, snapshot.epochs, snapshot.registry.registryId)) {
       ctx.addIssue({
