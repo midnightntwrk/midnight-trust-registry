@@ -4,6 +4,7 @@ import {
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
   type ApplicationEvidenceSubmission,
 } from "../index.js";
 
@@ -80,6 +81,35 @@ describe("application evidence", () => {
       ...envelope,
       governedResource: { type: "schemaVersion", id: ISSUER_RESOURCE_ID },
     })).toThrow(/Issuer resource id does not match/);
+  });
+
+  it("rejects a signed envelope longer than the 24-hour reference policy", () => {
+    const submission = createSubmission();
+    submission.envelope.expiresAt = "2026-07-28T00:00:00.001Z";
+    submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);
+    expect(submission.commitment).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(() => assertValidApplicationEvidence(
+      submission, expectation, [authorizedVerifier], () => true,
+    )).toThrow(/maximum 24-hour lifetime/);
+  });
+
+  it.each(["verifier", "auditor"] as const)("binds %s request evidence to its complete signed scope", (role) => {
+    const issuerEnvelope = createSubmission().envelope;
+    const resourceId = requestGovernedResourceIdFromScopeCommitment(HASH_A);
+    const envelope = {
+      ...issuerEnvelope,
+      role,
+      governedResource: { type: "requestProfile" as const, id: resourceId },
+    };
+    expect(() => computeApplicationEvidenceCommitment(envelope)).not.toThrow();
+    expect(() => computeApplicationEvidenceCommitment({
+      ...envelope,
+      scopeCommitment: HASH_B,
+    })).toThrow(/Request resource id does not match/);
+    expect(() => computeApplicationEvidenceCommitment({
+      ...envelope,
+      governedResource: { type: "requestProfile", id: "request-profile:admission" },
+    })).toThrow(/canonical composite request resource id/);
   });
 
   it("binds a valid application envelope to its governed authorization", () => {

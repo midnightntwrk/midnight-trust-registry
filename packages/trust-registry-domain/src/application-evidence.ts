@@ -4,12 +4,15 @@ import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./i
 import {
   IssuerGovernedResourceIdSchema,
   IssuerGovernedResourceTypeSchema,
+  RequestGovernedResourceIdSchema,
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
 } from "./scope.js";
 import { AuthorizationRoleSchema } from "./types.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 export const ApplicationEvidenceEvaluationTimeSchema = TimestampSchema;
+export const MAX_APPLICATION_EVIDENCE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const NonEmptyStringSchema = z.string().trim().min(1);
 const KeyReferenceSchema = z
   .string()
@@ -41,6 +44,13 @@ export const GovernedResourceSchema = z.strictObject({
       message: "Issuer resource id must be a canonical composite issuer resource id",
     });
   }
+  if (resource.type === "requestProfile" && !RequestGovernedResourceIdSchema.safeParse(resource.id).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["id"],
+      message: "Request resource id must be a canonical composite request resource id",
+    });
+  }
 });
 
 export const ApplicationEvidenceEnvelopeSchema = z
@@ -63,6 +73,18 @@ export const ApplicationEvidenceEnvelopeSchema = z
   })
   .superRefine((envelope, ctx) => {
     const issuerType = IssuerGovernedResourceTypeSchema.safeParse(envelope.governedResource.type);
+    const resourceMatchesRole = envelope.role === "issuer"
+      ? issuerType.success
+      : envelope.role === "maintainer"
+        ? envelope.governedResource.type === "registry"
+        : envelope.governedResource.type === "requestProfile";
+    if (!resourceMatchesRole) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["governedResource", "type"],
+        message: "Governed resource type does not match application role",
+      });
+    }
     if (envelope.role === "issuer" && issuerType.success) {
       const expectedId = issuerGovernedResourceIdFromScopeCommitment(
         envelope.scopeCommitment.toLowerCase(),
@@ -76,7 +98,20 @@ export const ApplicationEvidenceEnvelopeSchema = z
         });
       }
     }
-    if (Date.parse(envelope.expiresAt) <= Date.parse(envelope.verifiedAt)) {
+    if ((envelope.role === "verifier" || envelope.role === "auditor")
+      && envelope.governedResource.type === "requestProfile") {
+      const expectedId = requestGovernedResourceIdFromScopeCommitment(envelope.scopeCommitment.toLowerCase());
+      if (envelope.governedResource.id !== expectedId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["governedResource", "id"],
+          message: "Request resource id does not match the signed scope commitment",
+        });
+      }
+    }
+    const verifiedAtMs = Date.parse(envelope.verifiedAt);
+    const expiresAtMs = Date.parse(envelope.expiresAt);
+    if (expiresAtMs <= verifiedAtMs) {
       ctx.addIssue({
         code: "custom",
         path: ["expiresAt"],
@@ -152,6 +187,10 @@ export function assertValidApplicationEvidence(
   const expectedCommitment = computeApplicationEvidenceCommitment(parsed.envelope);
   if (parsed.commitment !== expectedCommitment) {
     throw new Error("Application evidence commitment does not match its envelope");
+  }
+  if (Date.parse(parsed.envelope.expiresAt) - Date.parse(parsed.envelope.verifiedAt)
+    > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
+    throw new Error("Application evidence exceeds the maximum 24-hour lifetime");
   }
 
   assertEqual("registryId", parsed.envelope.registryId, expectation.registryId);

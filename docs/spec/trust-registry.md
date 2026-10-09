@@ -246,6 +246,10 @@ V1 issuer and verifier scopes use exact canonical identifiers. Wildcard,
 delegation, version-range, and transitive external matching are excluded until
 a later policy version explicitly defines them. See
 [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md).
+Verifier and auditor grants use a composite resource ID derived from the entire
+role-specific request scope, not the bare request-profile ID. Purpose and
+credential-scope commitment therefore participate in current authorization
+keys. See [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md).
 
 Verifier-scoped resources:
 
@@ -338,9 +342,18 @@ Minimum query answers:
 - Participant metadata by DID.
 - Issuer authorization for a credential resource.
 - Verifier authorization for a request profile.
+- Auditor authorization for an exact audit request scope.
 - Recognized authority for a scoped domain.
 - Historical state at an epoch or timestamp.
 - Evidence bundle for a decision.
+
+The Midnight operator query projection MUST keep issuer, verifier, and auditor
+entries role-disjoint. Verifier and auditor queries MUST use the complete
+canonical request-resource ID; a bare request-profile ID is not sufficient.
+Historical auditor evidence may remain queryable after archival, but it is not
+a current active grant. TRQP `issue` and `verify` map only to issuer and
+verifier respectively; this specification does not invent a TRQP auditor
+action.
 
 Minimum evidence bundle fields:
 

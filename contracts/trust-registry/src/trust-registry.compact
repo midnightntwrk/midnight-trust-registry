@@ -80,7 +80,7 @@ export struct IssuerAuthorizationRecord {
 export struct VerifierAuthorizationRecord {
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -101,7 +101,7 @@ export struct VerifierAuthorizationRecord {
 export struct AuditorAuthorizationRecord {
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -452,7 +452,7 @@ pure circuit assertIssuerAuthorizationFields(
 pure circuit assertVerifierAuthorizationFields(
   authorizationIdValue: Bytes<32>,
   subjectDidCommitmentValue: Bytes<32>,
-  requestProfileIdValue: Bytes<32>,
+  requestResourceIdValue: Bytes<32>,
   allowedAttributeSetCommitmentValue: Bytes<32>,
   allowedPredicateSetCommitmentValue: Bytes<32>,
   disclosureLevelCommitmentValue: Bytes<32>,
@@ -469,8 +469,8 @@ pure circuit assertVerifierAuthorizationFields(
     "Verifier subject DID commitment must be set"
   );
   assert(
-    requestProfileIdValue != pad(32, ""),
-    "Verifier request profile id must be set"
+    requestResourceIdValue != pad(32, ""),
+    "Verifier request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitmentValue != pad(32, ""),
@@ -501,7 +501,7 @@ pure circuit assertVerifierAuthorizationFields(
 pure circuit assertAuditorAuthorizationFields(
   authorizationIdValue: Bytes<32>,
   subjectDidCommitmentValue: Bytes<32>,
-  requestProfileIdValue: Bytes<32>,
+  requestResourceIdValue: Bytes<32>,
   allowedAttributeSetCommitmentValue: Bytes<32>,
   allowedPredicateSetCommitmentValue: Bytes<32>,
   disclosureLevelCommitmentValue: Bytes<32>,
@@ -518,8 +518,8 @@ pure circuit assertAuditorAuthorizationFields(
     "Auditor subject DID commitment must be set"
   );
   assert(
-    requestProfileIdValue != pad(32, ""),
-    "Auditor request profile id must be set"
+    requestResourceIdValue != pad(32, ""),
+    "Auditor request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitmentValue != pad(32, ""),
@@ -724,7 +724,7 @@ export pure circuit issuerAuthorizationScopeKey(
 
 export pure circuit verifierAuthorizationScopeKey(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -734,8 +734,8 @@ export pure circuit verifierAuthorizationScopeKey(
     "Verifier subject DID commitment must be set"
   );
   assert(
-    requestProfileId != pad(32, ""),
-    "Verifier request profile id must be set"
+    requestResourceId != pad(32, ""),
+    "Verifier request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitment != pad(32, ""),
@@ -751,7 +751,7 @@ export pure circuit verifierAuthorizationScopeKey(
   );
   return persistentHash<Vector<5, Bytes<32>>>([
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -760,7 +760,7 @@ export pure circuit verifierAuthorizationScopeKey(
 
 export pure circuit auditorAuthorizationScopeKey(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -770,8 +770,8 @@ export pure circuit auditorAuthorizationScopeKey(
     "Auditor subject DID commitment must be set"
   );
   assert(
-    requestProfileId != pad(32, ""),
-    "Auditor request profile id must be set"
+    requestResourceId != pad(32, ""),
+    "Auditor request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitment != pad(32, ""),
@@ -787,7 +787,7 @@ export pure circuit auditorAuthorizationScopeKey(
   );
   return persistentHash<Vector<5, Bytes<32>>>([
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -861,7 +861,7 @@ export pure circuit createIssuerAuthorizationPayloadHash(
 export pure circuit createVerifierAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -872,7 +872,7 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   assertVerifierAuthorizationFields(
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -883,7 +883,7 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   return persistentHash<Vector<9, Bytes<32>>>([
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -896,7 +896,7 @@ export pure circuit createVerifierAuthorizationPayloadHash(
 export pure circuit createAuditorAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -907,7 +907,7 @@ export pure circuit createAuditorAuthorizationPayloadHash(
   assertAuditorAuthorizationFields(
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -918,7 +918,7 @@ export pure circuit createAuditorAuthorizationPayloadHash(
   return persistentHash<Vector<9, Bytes<32>>>([
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -1731,7 +1731,7 @@ circuit requireVerifierAuthorizationRecord(
 
 circuit currentVerifierAuthorizationRecord(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -1739,7 +1739,7 @@ circuit currentVerifierAuthorizationRecord(
   const scopeKey = disclose(
     verifierAuthorizationScopeKey(
       disclose(subjectDidCommitment),
-      disclose(requestProfileId),
+      disclose(requestResourceId),
       disclose(allowedAttributeSetCommitment),
       disclose(allowedPredicateSetCommitment),
       disclose(disclosureLevelCommitment)
@@ -1770,7 +1770,7 @@ circuit requireAuditorAuthorizationRecord(
 
 circuit currentAuditorAuthorizationRecord(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -1778,7 +1778,7 @@ circuit currentAuditorAuthorizationRecord(
   const scopeKey = disclose(
     auditorAuthorizationScopeKey(
       disclose(subjectDidCommitment),
-      disclose(requestProfileId),
+      disclose(requestResourceId),
       disclose(allowedAttributeSetCommitment),
       disclose(allowedPredicateSetCommitment),
       disclose(disclosureLevelCommitment)
@@ -2799,7 +2799,7 @@ export circuit proposeVerifierAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -2809,7 +2809,7 @@ export circuit proposeVerifierAuthorization(
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
+  const disclosedRequestResourceId = disclose(requestResourceId);
   const disclosedAllowedAttributeSetCommitment = disclose(
     allowedAttributeSetCommitment
   );
@@ -2825,7 +2825,7 @@ export circuit proposeVerifierAuthorization(
   const scopeKey = disclose(
     verifierAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment
@@ -2835,7 +2835,7 @@ export circuit proposeVerifierAuthorization(
     createVerifierAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment,
@@ -2871,7 +2871,7 @@ export circuit proposeVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: disclosedAuthorizationId,
       subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
+      requestResourceId: disclosedRequestResourceId,
       allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
       allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
       disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
@@ -2931,7 +2931,7 @@ export circuit authorizeVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -2987,7 +2987,7 @@ export circuit activateVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3042,7 +3042,7 @@ export circuit suspendVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3099,7 +3099,7 @@ export circuit revokeVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3160,7 +3160,7 @@ export circuit archiveVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3196,7 +3196,7 @@ export circuit getVerifierAuthorization(
 
 export circuit getCurrentVerifierAuthorization(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3204,7 +3204,7 @@ export circuit getCurrentVerifierAuthorization(
   assert(initialized, "Trust registry is not initialized");
   return currentVerifierAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3213,7 +3213,7 @@ export circuit getCurrentVerifierAuthorization(
 
 export circuit assertVerifierAuthorized(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3221,7 +3221,7 @@ export circuit assertVerifierAuthorized(
   assert(initialized, "Trust registry is not initialized");
   const currentRecord = currentVerifierAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3236,7 +3236,7 @@ export circuit proposeAuditorAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -3246,7 +3246,7 @@ export circuit proposeAuditorAuthorization(
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
+  const disclosedRequestResourceId = disclose(requestResourceId);
   const disclosedAllowedAttributeSetCommitment = disclose(
     allowedAttributeSetCommitment
   );
@@ -3262,7 +3262,7 @@ export circuit proposeAuditorAuthorization(
   const scopeKey = disclose(
     auditorAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment
@@ -3272,7 +3272,7 @@ export circuit proposeAuditorAuthorization(
     createAuditorAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment,
@@ -3308,7 +3308,7 @@ export circuit proposeAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: disclosedAuthorizationId,
       subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
+      requestResourceId: disclosedRequestResourceId,
       allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
       allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
       disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
@@ -3368,7 +3368,7 @@ export circuit authorizeAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3424,7 +3424,7 @@ export circuit activateAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3479,7 +3479,7 @@ export circuit suspendAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3536,7 +3536,7 @@ export circuit revokeAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3597,7 +3597,7 @@ export circuit archiveAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3633,7 +3633,7 @@ export circuit getAuditorAuthorization(
 
 export circuit getCurrentAuditorAuthorization(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3641,7 +3641,7 @@ export circuit getCurrentAuditorAuthorization(
   assert(initialized, "Trust registry is not initialized");
   return currentAuditorAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3650,7 +3650,7 @@ export circuit getCurrentAuditorAuthorization(
 
 export circuit assertAuditorAuthorized(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3658,7 +3658,7 @@ export circuit assertAuditorAuthorized(
   assert(initialized, "Trust registry is not initialized");
   const currentRecord = currentAuditorAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment

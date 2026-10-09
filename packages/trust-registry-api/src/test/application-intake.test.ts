@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
+  requestGovernedResourceId,
   sha256Hex,
   type ApplicationChallengeBinding,
   type AuthorizationScope,
@@ -25,19 +26,19 @@ const ISSUER_SCOPE = {
   statusMethod: "midnight-status-registry-v1",
 } as const;
 const REQUEST_SCOPE = {
-  version: "tr-scope-v1",
+  version: "tr-scope-v1" as const,
   requestProfileId: "request-profile:admission",
   purpose: "admission",
   credentialScopeCommitment: `0x${"1".repeat(64)}`,
   allowedAttributes: ["degree"],
   allowedPredicates: ["age-over-18"],
   disclosureLevel: "minimum",
-} as const;
+};
 
 const cases = [
   { role: "issuer", scope: ISSUER_SCOPE, resource: { type: "credentialFamily", id: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily") } },
-  { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
-  { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: REQUEST_SCOPE.requestProfileId } },
+  { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "verifier" }) } },
+  { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "auditor" }) } },
   { role: "maintainer", scope: { version: "tr-scope-v1", role: "maintainer", registryId: "registry:kanon:trusted" }, resource: { type: "registry", id: "registry:kanon:trusted" } },
 ] as const;
 
@@ -135,7 +136,7 @@ describe("challenge-backed application intake", () => {
     for (const [override, error] of [
       [{ scopeCommitment: "malformed" }, /Presentation does not match/],
       [{ verifiedAt: "2026-10-06T00:00:00.500Z" }, /not yet valid/],
-      [{ verifiedAt: "2026-10-05T23:59:59.000Z", expiresAt: input.evaluatedAt }, /expired/],
+      [{ verifiedAt: "2026-10-05T23:59:59.000Z", expiresAt: input.evaluatedAt }, /outside the challenge window/],
     ] as const) {
       input.verifyPresentation.mockResolvedValueOnce({ ...verified, ...override });
       await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(error);
@@ -174,6 +175,109 @@ describe("challenge-backed application intake", () => {
     });
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/subject DID, or scope/);
     expect(input.signEvidence).not.toHaveBeenCalled();
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it.each([
+    ["backdated verification", -1, 60 * 60_000, /verification time/],
+    ["verification after evaluation", 1, 60 * 60_000, /verification time/],
+    ["verification at challenge expiry", 5 * 60_000, 60 * 60_000, /verification time/],
+    ["evidence beyond 24 hours", 0, 24 * 60 * 60_000 + 1, /maximum 24-hour lifetime/],
+  ] as const)("rejects %s before consuming the challenge", async (_case, verifiedOffsetMs, lifetimeMs, error) => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    input.verifyPresentation.mockResolvedValueOnce({
+      subjectDid: binding.subjectDid,
+      nonce: issued.nonce,
+      scopeCommitment: binding.scopeCommitment,
+      presentationHash: `0x${"2".repeat(64)}`,
+      claimsCommitment: `0x${"3".repeat(64)}`,
+      verifiedAt: new Date(START + verifiedOffsetMs).toISOString(),
+      expiresAt: new Date(START + verifiedOffsetMs + lifetimeMs).toISOString(),
+    });
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(error);
+    expect(input.signEvidence).not.toHaveBeenCalled();
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it("accepts evidence expiring exactly 24 hours after verification", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    input.verifyPresentation.mockResolvedValueOnce({
+      subjectDid: binding.subjectDid,
+      nonce: issued.nonce,
+      scopeCommitment: binding.scopeCommitment,
+      presentationHash: `0x${"2".repeat(64)}`,
+      claimsCommitment: `0x${"3".repeat(64)}`,
+      verifiedAt: new Date(START).toISOString(),
+      expiresAt: new Date(START + 24 * 60 * 60_000).toISOString(),
+    });
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it("canonicalizes a mixed-case challenge hash before one-use consumption", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const mixedCaseHash = issued.challengeHash.toUpperCase().replace("0X", "0x");
+    const input = intakeInput(binding, service, issued.nonce, mixedCaseHash);
+    const proposal = await consumeChallengeAndSubmitApplication(input);
+    expect(proposal.evidence.envelope.challengeHash).toBe(issued.challengeHash);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(false);
+  });
+
+  it("preserves the nonce when evidence expires before intake evaluation", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    input.verifyPresentation.mockResolvedValueOnce({
+      subjectDid: binding.subjectDid,
+      nonce: issued.nonce,
+      scopeCommitment: binding.scopeCommitment,
+      presentationHash: `0x${"2".repeat(64)}`,
+      claimsCommitment: `0x${"3".repeat(64)}`,
+      verifiedAt: new Date(START).toISOString(),
+      expiresAt: new Date(START + 1).toISOString(),
+    });
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      evaluatedAt: new Date(START + 2).toISOString(),
+    })).rejects.toThrow(/expired at intake/);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
+  it("allows only one proposal under concurrent valid intake", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const first = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    const second = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    const results = await Promise.allSettled([
+      consumeChallengeAndSubmitApplication(first),
+      consumeChallengeAndSubmitApplication(second),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(first.propose.mock.calls.length + second.propose.mock.calls.length).toBe(1);
+  });
+
+  it("rejects trusted evaluation outside the issued window without verifying the VP", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    for (const evaluatedAt of [new Date(START - 1).toISOString(), issued.expiresAt]) {
+      await expect(consumeChallengeAndSubmitApplication({ ...input, evaluatedAt }))
+        .rejects.toThrow(/evaluation time is outside/);
+    }
+    expect(input.verifyPresentation).not.toHaveBeenCalled();
     await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
   });
 

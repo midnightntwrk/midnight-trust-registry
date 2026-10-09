@@ -10,6 +10,8 @@ import {
   REVIEW_STATUS_LABELS,
   buildReviewCards,
   describeMutation,
+  executeEpochPublication,
+  executeReviewAction,
   getReviewActions,
   groupReviewCards,
   type ReviewBoard,
@@ -23,6 +25,7 @@ type AppState = {
   apiBase: string;
   board: ReviewBoard | undefined;
   cards: readonly ReviewCard[];
+  epochLabel: string;
   error: string | undefined;
   flash: string | undefined;
   loading: boolean;
@@ -53,6 +56,7 @@ const countCards = (
 ): number =>
   board.summary.issuerCounts[status]
   + board.summary.verifierCounts[status]
+  + board.summary.auditorCounts[status]
   + board.summary.recognitionCounts[status];
 
 export const createAdminConsoleApp = (
@@ -61,11 +65,13 @@ export const createAdminConsoleApp = (
     fetchImpl?: typeof fetch;
     initialUrl?: URL;
     storage?: Storage;
+    confirm?: (message: string) => boolean | Promise<boolean>;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  const confirm = options.confirm ?? window.confirm.bind(window);
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
 
@@ -73,6 +79,7 @@ export const createAdminConsoleApp = (
     apiBase: normalizeApiBaseUrl(queryBase ?? rememberedBase ?? "http://127.0.0.1:4400"),
     board: undefined,
     cards: [],
+    epochLabel: "",
     error: undefined,
     flash: undefined,
     loading: false,
@@ -121,6 +128,7 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
+    if (state.loading || state.publishing) return;
     const card = selectedCard();
     if (card === undefined) {
       return;
@@ -128,7 +136,12 @@ export const createAdminConsoleApp = (
 
     setState({ loading: true, error: undefined, flash: undefined });
     try {
-      const result = await getClient().mutate(card.target, card.id, action);
+      const result = await executeReviewAction(card, action, confirm, (target, id, confirmedAction) =>
+        getClient().mutate(target, id, confirmedAction));
+      if (result === null) {
+        setState({ loading: false });
+        return;
+      }
       await refreshBoard(describeMutation(result));
     } catch (error) {
       setState({
@@ -140,14 +153,16 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
+    if (state.loading || state.publishing) return;
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
-      const result = await getClient().publishEpoch(label);
-      await refreshBoard(describeMutation(result));
-      const input = root.querySelector<HTMLInputElement>("[data-epoch-label]");
-      if (input !== null) {
-        input.value = "";
+      const result = await executeEpochPublication(label, confirm, (confirmedLabel) =>
+        getClient().publishEpoch(confirmedLabel));
+      if (result === null) {
+        setState({ publishing: false });
+        return;
       }
+      await refreshBoard(describeMutation(result));
     } catch (error) {
       setState({
         error: formatApiError(error),
@@ -156,7 +171,7 @@ export const createAdminConsoleApp = (
       });
       return;
     }
-    setState({ publishing: false });
+    setState({ publishing: false, epochLabel: "" });
   };
 
   const bindEvents = () => {
@@ -180,10 +195,12 @@ export const createAdminConsoleApp = (
       void refreshBoard();
     });
 
+    root.querySelector<HTMLInputElement>("[data-epoch-label]")?.addEventListener("input", (event) => {
+      state.epochLabel = (event.currentTarget as HTMLInputElement).value;
+    });
     root.querySelector<HTMLFormElement>("[data-epoch-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
-      const input = root.querySelector<HTMLInputElement>("[data-epoch-label]");
-      void publishEpoch(input?.value ?? "");
+      void publishEpoch(state.epochLabel);
     });
 
     root.querySelectorAll<HTMLElement>("[data-select-key]").forEach((element) => {
@@ -279,6 +296,7 @@ export const createAdminConsoleApp = (
               <dd><code>${escapeHtml(row.value)}</code></dd>
             </div>
           `).join("")}
+          ${card.target === "auditor" || card.target === "verifier" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
           <div>
             <dt>Last update</dt>
             <dd>${escapeHtml(card.updatedAt)}</dd>
@@ -286,7 +304,7 @@ export const createAdminConsoleApp = (
         </dl>
         <div class="actions">
           ${getReviewActions(card.status).map((action) => `
-            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading ? " disabled" : ""}>
+            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing ? " disabled" : ""}>
               ${escapeHtml(action)}
             </button>
           `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
@@ -304,7 +322,7 @@ export const createAdminConsoleApp = (
             <div>
               <p class="eyebrow">Governed Review Surface</p>
               <h1>Trust Registry Admin Console</h1>
-              <p>Review issuer, verifier, and recognition proposals from the local governed API. This slice stays local-first: it reads the same workspace-backed trust-registry state that the operator CLI and HTTP mutation surface already govern.</p>
+              <p>Review issuer, verifier, auditor, and recognition proposals from the local governed API. This slice stays local-first: it reads the same workspace-backed trust-registry state that the operator CLI and HTTP mutation surface already govern.</p>
             </div>
           </div>
           <div class="toolbar">
@@ -321,9 +339,9 @@ export const createAdminConsoleApp = (
             <form class="epoch-panel" data-epoch-form>
               <label>
                 Publish epoch label
-                <input class="input" data-epoch-label type="text" placeholder="optional operator label" />
+                <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
               </label>
-              <button class="button" type="submit"${state.publishing ? " disabled" : ""}>Publish epoch</button>
+              <button class="button" type="submit"${state.loading || state.publishing ? " disabled" : ""}>Publish epoch</button>
             </form>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}

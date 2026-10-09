@@ -56,7 +56,7 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
       applicationId = fixture.authorizationId;
       subjectDid = fixture.subjectDid;
       scope = createVerifierAuthorizationScopeFixture(fixture);
-      governedResource = { type: "requestProfile", id: fixture.requestProfileId };
+      governedResource = { type: "requestProfile", id: fixture.scopeResourceId };
       propose = (evidence, expected) => harness.proposeVerifierWithApplicationEvidence(fixture, evidence, expected);
       break;
     }
@@ -65,7 +65,7 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
       applicationId = fixture.authorizationId;
       subjectDid = fixture.subjectDid;
       scope = createAuditorAuthorizationScopeFixture(fixture);
-      governedResource = { type: "requestProfile", id: fixture.requestProfileId };
+      governedResource = { type: "requestProfile", id: fixture.scopeResourceId };
       propose = (evidence, expected) => harness.proposeAuditorWithApplicationEvidence(fixture, evidence, expected);
       break;
     }
@@ -248,9 +248,9 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       ["challengeHash", `0x${"b".repeat(64)}`, /challengeHash/],
     ] as const) {
       const envelope = { ...signedEvidence.envelope, [field]: value };
-      if (role === "issuer" && field === "scopeCommitment") {
+      if (field === "scopeCommitment" && role !== "maintainer") {
         expect(() => computeApplicationEvidenceCommitment(envelope))
-          .toThrow(/Issuer resource id does not match/);
+          .toThrow(/(?:Issuer|Request) resource id does not match/);
         continue;
       }
       const evidenceCommitment = computeApplicationEvidenceCommitment(envelope);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
@@ -37,6 +38,17 @@ describe("issuer authorization query identity", () => {
       role: "verifier",
       resourceType: "request-profile",
       resourceId: "request-profile:admission",
+    }).success).toBe(false);
+    const requestResource = {
+      ...request,
+      role: "verifier",
+      resourceType: "request-profile",
+      resourceId: requestGovernedResourceIdFromScopeCommitment(`0x${"a".repeat(64)}`),
+    };
+    expect(TrustRegistryApiResolveAuthorizationRequestSchema.safeParse(requestResource).success).toBe(true);
+    expect(TrustRegistryApiEvaluateAuthorizationRequestSchema.safeParse({
+      ...requestResource,
+      at: "2026-10-08T00:00:00Z",
     }).success).toBe(true);
   });
 });

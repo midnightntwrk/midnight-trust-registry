@@ -384,16 +384,8 @@ const mapMutationError = (
     throw error;
   }
   if (error instanceof Error) {
-    if (error.message.startsWith("unknown issuer authorization:")) {
-      throw jsonProblem(
-        problemBaseUri,
-        "authorization-not-found",
-        404,
-        "authorization not found",
-        error.message,
-      );
-    }
-    if (error.message.startsWith("unknown verifier authorization:")) {
+    if (["issuer", "verifier", "auditor"].some((role) =>
+      error.message.startsWith(`unknown ${role} authorization:`))) {
       throw jsonProblem(
         problemBaseUri,
         "authorization-not-found",
@@ -411,11 +403,8 @@ const mapMutationError = (
         error.message,
       );
     }
-    if (
-      error.message.startsWith("issuer label already submitted:")
-      || error.message.startsWith("verifier label already submitted:")
-      || error.message.startsWith("recognition label already submitted:")
-    ) {
+    if (["issuer", "verifier", "auditor", "recognition"].some((role) =>
+      error.message.startsWith(`${role} label already submitted:`))) {
       throw jsonProblem(
         problemBaseUri,
         "duplicate-application",

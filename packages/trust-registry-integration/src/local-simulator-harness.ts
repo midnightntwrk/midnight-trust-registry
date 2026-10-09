@@ -13,18 +13,20 @@ import {
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
-  createMaintainerFixture,
   decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   encodeCompactActionKind,
   signApplicationEvidenceCommitmentFromSeed,
-  type MaintainerCoAuthorizer,
   signPolicyBoundMaintainerActionFromSeed,
-  TrustRegistrySimulator,
   verifyApplicationEvidenceCommitmentSignature,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
+import {
+  createMaintainerFixture,
+  type MaintainerCoAuthorizer,
+  TrustRegistrySimulator,
+} from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
@@ -68,6 +70,7 @@ import {
   createScopedIdentifier,
   deriveGovernancePolicySnapshot,
   governedResourceInScope,
+  requestGovernedResourceId,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -131,7 +134,7 @@ export type SimulatorApplicationEvidenceExpectation = {
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
-  return { type: "requestProfile", id: scope.requestProfileId };
+  return { type: "requestProfile", id: requestGovernedResourceId(scope) };
 };
 
 const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
@@ -1078,13 +1081,13 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createVerifierAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
-      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "verifier" ||
       expectedEvidence.governedResource.type !== "requestProfile" ||
-      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
+      expectedEvidence.governedResource.id !== fixture.scopeResourceId ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createVerifierAuthorizationScopeFixture(fixture))
     ) {
@@ -1105,7 +1108,7 @@ export class LocalTrustRegistryIntegrationHarness {
       computeCreateVerifierAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
+        fixture.requestResourceIdCommitment,
         fixture.allowedAttributeSetCommitment,
         fixture.allowedPredicateSetCommitment,
         fixture.disclosureLevelCommitment,
@@ -1121,7 +1124,7 @@ export class LocalTrustRegistryIntegrationHarness {
       proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1328,13 +1331,13 @@ export class LocalTrustRegistryIntegrationHarness {
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
       scope: createAuditorAuthorizationScopeFixture(fixture),
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
-      governedResource: { type: "requestProfile", id: fixture.requestProfileId },
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
   ): Uint8Array {
     if (
       expectedEvidence.scope.role !== "auditor" ||
       expectedEvidence.governedResource.type !== "requestProfile" ||
-      expectedEvidence.governedResource.id !== fixture.requestProfileId ||
+      expectedEvidence.governedResource.id !== fixture.scopeResourceId ||
       computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
         computeAuthorizationScopeCommitment(createAuditorAuthorizationScopeFixture(fixture))
     ) {
@@ -1355,7 +1358,7 @@ export class LocalTrustRegistryIntegrationHarness {
       computeCreateAuditorAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
+        fixture.requestResourceIdCommitment,
         fixture.allowedAttributeSetCommitment,
         fixture.allowedPredicateSetCommitment,
         fixture.disclosureLevelCommitment,
@@ -1371,7 +1374,7 @@ export class LocalTrustRegistryIntegrationHarness {
       proposeSignature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1536,7 +1539,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1579,7 +1582,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,

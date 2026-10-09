@@ -80,12 +80,20 @@ describe("application evidence commitment signing", () => {
       keyIdCommitment,
       commitment,
       new Uint8Array(31),
-    )).toThrow(/Compact payload field must be 32 bytes/);
+    )).toThrow(/Evidence hash must be 32 bytes/);
     expect(() => computeUpdateIssuerAuthorizationPayloadHash(
       keyIdCommitment,
       commitment,
       new Uint8Array(33),
-    )).toThrow(/Compact payload field must be 32 bytes/);
+    )).toThrow(/Evidence hash must be 32 bytes/);
+    expect(() => signPolicyBoundMaintainerActionFromSeed(
+      new Uint8Array(31),
+      keyIdCommitment,
+      keyIdCommitment,
+      keyIdCommitment,
+      commitment,
+      1n,
+    )).toThrow(/Maintainer seed must be 32 bytes/);
   });
 
   it("rejects noncanonical wire encodings before decoding a signature", () => {

@@ -17,14 +17,19 @@ import {
 
 import {
   bytes32Commitment,
-  TrustRegistrySimulatorClient,
   verifyTrustRegistryEvidenceBundle,
 } from "../index.js";
+import { TrustRegistrySimulatorClient } from "../simulator-client.js";
+import * as ClientRoot from "../index.js";
 
 const changeLastHexNibble = (hash: string): string =>
   `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
 describe("trust registry client", () => {
+  it("keeps simulator helpers out of the production root", () => {
+    expect(ClientRoot).not.toHaveProperty("TrustRegistrySimulatorClient");
+    expect(TrustRegistrySimulatorClient).toBeDefined();
+  });
   it("rejects every raw record read if the ledger format changes after construction", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const client = new TrustRegistrySimulatorClient(harness.simulator);
@@ -37,7 +42,7 @@ describe("trust registry client", () => {
     const id = new Uint8Array(32);
     const request = {
       subjectDid: id,
-      requestProfileId: id,
+      requestResourceId: id,
       allowedAttributeSetCommitment: id,
       allowedPredicateSetCommitment: id,
       disclosureLevelCommitment: id,

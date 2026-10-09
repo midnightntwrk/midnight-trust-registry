@@ -5,8 +5,10 @@ Local admin review console for `midnight-trust-registry`.
 Current scope:
 
 - inspect registry summary and epoch metadata from the API
-- review issuer, verifier, and recognition records grouped by lifecycle status
+- review issuer, verifier, auditor, and recognition records grouped by lifecycle status
 - approve, activate, suspend, revoke, and archive governed records
+- require explicit confirmation of the role, record ID, status, and action before
+  sending any governed mutation; contract maintainer quorum rules remain decisive
 - publish registry epochs from the same console
 - keep the first UI slice static and local-first instead of introducing a
   separate frontend build service
@@ -34,5 +36,9 @@ Notes:
 
 - the console expects the API server to run on loopback
 - the API package now serves permissive CORS headers for this local-only UI
+- auditor cards show the exact composite request-resource ID, policy, epoch,
+  evidence state root, and lifecycle status. The full request-scope preimage
+  is not present in the operator snapshot and is not inferred from the hash;
+  archived cards are historical evidence, not active authorization
 - this slice is admin-only: applicant submission and public inspection stay in
   the later portal slice

@@ -10,6 +10,7 @@ import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
   IssuerGovernedResourceIdSchema,
+  RequestGovernedResourceIdSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
@@ -21,6 +22,7 @@ export const TimestampSchema = z.string().datetime({ offset: true });
 export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
   "issuer",
   "verifier",
+  "auditor",
 ]);
 
 export const TrustRegistryApiApplicationTargetSchema =
@@ -66,6 +68,10 @@ export const TrustRegistryApiSummarySchema = z.object({
     AuthorizationRecordSchema.shape.status,
     z.number().int().nonnegative(),
   ),
+  auditorCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
   recognitionCounts: z.record(
     RecognitionRecordSchema.shape.status,
     z.number().int().nonnegative(),
@@ -90,7 +96,7 @@ const AuthorizationLookupRequestBaseSchema = z.object({
   trustLevel: NonEmptyStringSchema.optional(),
 });
 
-const refineIssuerLookup = (
+const refineAuthorizationLookup = (
   request: z.infer<typeof AuthorizationLookupRequestBaseSchema>,
   ctx: z.RefinementCtx,
 ): void => {
@@ -101,15 +107,23 @@ const refineIssuerLookup = (
       message: "Issuer lookup requires a canonical composite issuer resource id",
     });
   }
+  if ((request.role === "verifier" || request.role === "auditor")
+    && !RequestGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Request lookup requires a canonical composite request resource id",
+    });
+  }
 };
 
 export const TrustRegistryApiResolveAuthorizationRequestSchema =
-  AuthorizationLookupRequestBaseSchema.superRefine(refineIssuerLookup);
+  AuthorizationLookupRequestBaseSchema.superRefine(refineAuthorizationLookup);
 
 export const TrustRegistryApiEvaluateAuthorizationRequestSchema =
   AuthorizationLookupRequestBaseSchema.extend({
     at: TimestampSchema,
-  }).superRefine(refineIssuerLookup);
+  }).superRefine(refineAuthorizationLookup);
 
 export const TrustRegistryApiRecognitionListQuerySchema = z.object({
   status: RecognitionRecordSchema.shape.status.optional(),

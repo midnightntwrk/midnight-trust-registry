@@ -4,6 +4,7 @@ import {
   ApplicationEvidenceEnvelopeSchema,
   AuthorizedEvidenceVerifierSchema,
   HashHexSchema,
+  MAX_APPLICATION_EVIDENCE_LIFETIME_MS,
   assertValidApplicationEvidence,
   computeApplicationChallengeBindingHash,
   computeApplicationEvidenceCommitment,
@@ -57,7 +58,7 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   if (computeApplicationChallengeBindingHash(binding) !== computeApplicationChallengeBindingHash(expectedBinding)) {
     throw new Error("Application challenge binding does not match the governed proposal");
   }
-  ApplicationEvidenceEvaluationTimeSchema.parse(input.evaluatedAt);
+  const evaluatedAtMs = Date.parse(ApplicationEvidenceEvaluationTimeSchema.parse(input.evaluatedAt));
   const authorizedVerifiers = input.authorizedVerifiers.map((verifier) => AuthorizedEvidenceVerifierSchema.parse(verifier));
   if (!authorizedVerifiers.some((verifier) => verifier.did === binding.evidenceVerifierDid)) {
     throw new Error("Application evidence verifier is not authorized by policy");
@@ -67,8 +68,12 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   }
   const challengeHash = input.challengeHash.toLowerCase();
   const challengeInput = { binding, nonce: input.nonce, challengeHash };
-  if (!(await input.challengeService.isLive(challengeInput))) {
+  const challengeWindow = await input.challengeService.liveWindow(challengeInput);
+  if (challengeWindow === null) {
     throw new Error("Application challenge is invalid or already consumed");
+  }
+  if (evaluatedAtMs < challengeWindow.issuedAtMs || evaluatedAtMs >= challengeWindow.expiresAtMs) {
+    throw new Error("Application evaluation time is outside the live challenge window");
   }
   const verified = await input.verifyPresentation(input.presentation, {
     nonce: input.nonce,
@@ -102,12 +107,22 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     presentationHash: verified.presentationHash,
     claimsCommitment: verified.claimsCommitment,
   });
-  const evaluatedAt = Date.parse(input.evaluatedAt);
-  if (evaluatedAt < Date.parse(envelope.verifiedAt)) {
-    throw new Error("Application evidence is not yet valid at the governed transition");
+  const verifiedAtMs = Date.parse(envelope.verifiedAt);
+  const expiresAtMs = Date.parse(envelope.expiresAt);
+  if (
+    verifiedAtMs < challengeWindow.issuedAtMs
+    || verifiedAtMs >= challengeWindow.expiresAtMs
+  ) {
+    throw new Error("Presentation verification time is outside the challenge window");
   }
-  if (evaluatedAt >= Date.parse(envelope.expiresAt)) {
-    throw new Error("Application evidence is expired at the governed transition");
+  if (verifiedAtMs > evaluatedAtMs) {
+    throw new Error("Presentation verification time is not yet valid at the governed transition");
+  }
+  if (expiresAtMs - verifiedAtMs > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
+    throw new Error("Application evidence exceeds the maximum 24-hour lifetime");
+  }
+  if (expiresAtMs <= evaluatedAtMs) {
+    throw new Error("Application evidence is expired at intake");
   }
   const consumedHash = await input.challengeService.consume(challengeInput);
   if (consumedHash === null || consumedHash !== envelope.challengeHash) {

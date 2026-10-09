@@ -64,7 +64,7 @@ following fields are required before canonical serialization:
   "governedResource": { "type": "credentialFamily", "id": "tr:issuer-resource:v1:e4edbae272fdd78e6ceccde9e4018528ffa418094eeddae33782738293b3dd8d" },
   "evidenceVerifierDid": "did:midnight:...",
   "verifiedAt": "2026-07-27T00:00:00Z",
-  "expiresAt": "2027-07-27T00:00:00Z",
+  "expiresAt": "2026-07-28T00:00:00Z",
   "challengeHash": "0x...32-byte-hex...",
   "presentationHash": "0x...32-byte-hex...",
   "claimsCommitment": "0x...32-byte-hex..."
@@ -82,6 +82,10 @@ For issuer applications, the resource ID is the type-separated composite of
 the entire canonical issuer scope, not the bare schema version or status-method
 name. All five issuer resource types use the same encoding defined in
 [ADR-0003](../decisions/adr-0003-composite-issuer-resource-identity.md).
+For verifier and auditor applications, the `requestProfile` governed-resource
+ID is the role-separated composite of the complete canonical request scope,
+not the bare profile ID. The signed scope commitment determines that ID as
+specified in [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md).
 
 The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
@@ -111,9 +115,9 @@ is bound to that exact nonce and the applicant DID before consuming it. The
 envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
 textual hex representation.
 
-The off-ledger challenge store retains only `challengeHash`, an expiry, a
-registry/application identity hash for replacement, and a domain-separated
-binding commitment to registry id, application id, subject DID,
+The off-ledger challenge store retains only `challengeHash`, trusted issuance
+and expiry instants, a registry/application identity hash for replacement, and
+a domain-separated binding commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, governed resource type/id, and
 scope commitment. It MUST
 derive or validate the scope commitment against the versioned canonical
@@ -134,6 +138,27 @@ transition. The reference store rejects such changes; a future public route
 MUST authenticate the applicant before allowing either replacement or
 same-binding retries, so a third party cannot invalidate an outstanding
 challenge.
+
+The 0.1.0 reference intake profile permits zero clock skew between the
+challenge service and its trusted evaluation instant. A VP verification time
+MUST be at or after the stored challenge issuance instant, strictly before
+the stored challenge expiry, and no later than the trusted evaluation instant.
+The evaluation instant itself MUST be inside that half-open challenge window.
+The signed evidence expiry MUST be after verification and no more than 24
+hours later. Evidence may remain valid after the five-minute challenge expires;
+the challenge proves VP freshness, whereas the evidence window bounds later
+governed approval. The service MUST read the window from the challenge store,
+validate its numeric issuance and expiry instants, and fail closed if that
+window is malformed; it MUST NOT use a caller-supplied issuance response or
+verifier timestamp as the window. Canonical envelope hashing remains available
+for structurally valid historical envelopes even when the current intake
+profile would reject their validity duration. A
+deployment requiring nonzero skew must define and test that tolerance as an
+explicit policy value before changing this profile. A backward challenge
+clock jump is an operational failure, not a reason to accept earlier evidence.
+Every invalid time window MUST fail before nonce consumption and leave the
+live challenge available for a corrected attempt.
+
 Consumption succeeds only
 when the submitted nonce hashes to the envelope value, the complete binding
 matches, and the challenge has not expired; retry, mismatch, and expiry all
@@ -155,7 +180,8 @@ The same byte-value comparison applies to `scopeCommitment`.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live
-challenge lookup before expensive VP verification. That lookup is only a cheap
+challenge lookup, including the trusted stored time window, before expensive
+VP verification. That lookup is only a cheap
 preflight; atomic check-and-delete remains the replay boundary. The trusted
 VP verifier receives the full parsed binding (including role, scope, policy,
 and governed resource), nonce, and evaluation time. It MUST evaluate those

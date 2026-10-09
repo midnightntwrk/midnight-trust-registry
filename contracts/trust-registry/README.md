@@ -55,5 +55,8 @@ The exported `./testing` helper `labelToBytes32` is for fixtures: labels at
 most 32 UTF-8 bytes retain Compact's zero-padded representation, while longer
 labels use a domain-separated SHA-256 digest to avoid silent truncation
 collisions. It is not a production identifier encoder or migration format.
-Production action kinds use `encodeCompactActionKind`, which rejects labels
-that cannot be represented exactly as Compact `Bytes<32>` literals.
+Governed maintainer action kinds (the signed `tr:` literals) use
+`encodeCompactActionKind`, which rejects labels that cannot be represented
+exactly as Compact `Bytes<32>` literals. The contract's `midnight:tr:init`
+genesis marker and `midnight:tr:none` initial sentinel are not governed
+maintainer action kinds and are not inputs to this signer encoder.

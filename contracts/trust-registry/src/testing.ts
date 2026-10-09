@@ -611,7 +611,7 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -631,7 +631,7 @@ export class TrustRegistrySimulator {
         ),
         authorizationId,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
@@ -770,7 +770,7 @@ export class TrustRegistrySimulator {
 
   getCurrentVerifierAuthorization(
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -779,7 +779,7 @@ export class TrustRegistrySimulator {
       this.contract.impureCircuits.getCurrentVerifierAuthorization(
         this.circuitContext,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
@@ -971,7 +971,7 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     authorizationId: Uint8Array,
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -991,7 +991,7 @@ export class TrustRegistrySimulator {
         ),
         authorizationId,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
@@ -1130,7 +1130,7 @@ export class TrustRegistrySimulator {
 
   getCurrentAuditorAuthorization(
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -1139,7 +1139,7 @@ export class TrustRegistrySimulator {
       this.contract.impureCircuits.getCurrentAuditorAuthorization(
         this.circuitContext,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
@@ -1149,7 +1149,7 @@ export class TrustRegistrySimulator {
 
   assertAuditorAuthorized(
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -1158,7 +1158,7 @@ export class TrustRegistrySimulator {
       this.contract.impureCircuits.assertAuditorAuthorized(
         this.circuitContext,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
@@ -1235,7 +1235,7 @@ export class TrustRegistrySimulator {
 
   assertVerifierAuthorized(
     subjectDidCommitment: Uint8Array,
-    requestProfileId: Uint8Array,
+    requestResourceId: Uint8Array,
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
@@ -1244,7 +1244,7 @@ export class TrustRegistrySimulator {
       this.contract.impureCircuits.assertVerifierAuthorized(
         this.circuitContext,
         subjectDidCommitment,
-        requestProfileId,
+        requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
