@@ -8,7 +8,7 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { deriveJubjubPublicKey } from "@midnight-ntwrk/trust-registry-contract";
-import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -126,7 +126,7 @@ describe("published VC proof and DID application verifier port", () => {
       policyVersion: "v1",
       scope: input.scope,
       scopeCommitment: computeAuthorizationScopeCommitment(input.scope),
-      governedResource: { type: "credentialFamily", id: input.scope.credentialFamilyId },
+      governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(input.scope, "credentialFamily") },
     });
     const verifyPresentation = createApplicationVpIntakeVerifier({
       resolver: input.resolver,
@@ -163,7 +163,7 @@ describe("published VC proof and DID application verifier port", () => {
         ...binding,
         scope: otherScope,
         scopeCommitment: computeAuthorizationScopeCommitment(otherScope),
-        governedResource: { type: "credentialFamily", id: otherScope.credentialFamilyId },
+        governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(otherScope, "credentialFamily") },
       },
     })).rejects.toMatchObject({ category: "ineligible" });
   });
