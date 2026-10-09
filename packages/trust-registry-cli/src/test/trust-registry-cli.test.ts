@@ -569,6 +569,11 @@ describe("trust registry operator CLI", () => {
       ...archived.snapshot,
       issuerEntries: [],
     }).success).toBe(true);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...archived.snapshot,
+      evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
+        index === 0 ? { ...bundle, registryId: "registry:foreign:v1" } : bundle),
+    }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 
   it(
