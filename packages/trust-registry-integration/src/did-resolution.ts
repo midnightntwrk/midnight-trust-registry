@@ -53,6 +53,7 @@ export type MidnightDidLedgerFixtureOptions = {
     id: string;
     publicKey: { x: bigint; y: bigint };
   }>;
+  capabilityInvocation?: boolean;
   version?: bigint;
   created?: bigint;
   updated?: bigint;
@@ -113,7 +114,7 @@ export const createMidnightDidLedgerFixture = (
       nativeMethods.length === 0 ? [verificationMethodId] : nativeMethods.map(({ id }) => id),
     ),
     keyAgreementRelation: makeIterable<string>([]),
-    capabilityInvocationRelation: makeIterable<string>([]),
+    capabilityInvocationRelation: makeIterable<string>(options.capabilityInvocation ? [verificationMethodId] : []),
     capabilityDelegationRelation: makeIterable<string>([]),
     services: makeIterablePairs<string, unknown>([
       [

@@ -129,9 +129,21 @@ importers:
 
   packages/trust-registry-api:
     dependencies:
+      '@midnight-ntwrk/credential-did-midnight':
+        specifier: 0.2.0
+        version: 0.2.0
+      '@midnight-ntwrk/midnight-did':
+        specifier: 0.7.0
+        version: 0.7.0
+      '@midnight-ntwrk/midnight-did-jubjub-schnorr':
+        specifier: 0.7.0
+        version: 0.7.0
       '@midnight-ntwrk/trust-registry-cli':
         specifier: workspace:0.1.0
         version: link:../trust-registry-cli
+      '@midnight-ntwrk/trust-registry-contract':
+        specifier: workspace:0.1.0
+        version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain

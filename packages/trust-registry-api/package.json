@@ -49,7 +49,11 @@
     "integration": "vitest run src/integration-test --testTimeout 120000"
   },
   "dependencies": {
+    "@midnight-ntwrk/credential-did-midnight": "0.2.0",
+    "@midnight-ntwrk/midnight-did": "0.7.0",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.7.0",
     "@midnight-ntwrk/trust-registry-cli": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
     "zod": "^4.1.0"
