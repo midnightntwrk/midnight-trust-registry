@@ -58,10 +58,11 @@ export class TrustRegistryAdminConsoleClient {
   }
 
   async loadReviewBoard(): Promise<ReviewBoard> {
-    const [summary, issuers, verifiers, recognitions] = await Promise.all([
+    const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([
       this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
       this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer"),
       this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier"),
+      this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor"),
       this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions"),
     ]);
 
@@ -69,6 +70,7 @@ export class TrustRegistryAdminConsoleClient {
       summary,
       issuers: issuers.entries,
       verifiers: verifiers.entries,
+      auditors: auditors.entries,
       recognitions: recognitions.entries,
     };
   }
