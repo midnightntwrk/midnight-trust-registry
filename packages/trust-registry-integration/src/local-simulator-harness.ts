@@ -1741,6 +1741,7 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch publication policy commitment is missing or malformed");
     }
     let verified = false;
+    let verificationFault: unknown;
     try {
       verified = verifyPolicyBoundMaintainerAction(
         maintainerRecord.publicKey,
@@ -1751,11 +1752,11 @@ export class LocalTrustRegistryIntegrationHarness {
         epochRecord.publishedAtSequence,
         signature,
       );
-    } catch {
-      // Unexpected verification failures must not authenticate the epoch.
+    } catch (error) {
+      verificationFault = error;
     }
     if (!verified) {
-      throw new Error("Epoch maintainer signature is invalid");
+      throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
     }
   }
 

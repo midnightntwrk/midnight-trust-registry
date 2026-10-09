@@ -557,6 +557,19 @@ describe("trust registry contract", () => {
       simulator.initializeRegistry(
         labelToBytes32("registry:kanon"),
         labelToBytes32("did:midnight:registry"),
+        new Uint8Array(32),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        1n,
+      ),
+    ).toThrow(/Governance policy commitment must be set/);
+
+    expect(() =>
+      simulator.initializeRegistry(
+        labelToBytes32("registry:kanon"),
+        labelToBytes32("did:midnight:registry"),
         labelToBytes32("policy:kanon:v1"),
         bootstrapMaintainer.maintainerId,
         bootstrapMaintainer.didCommitment,
@@ -1160,6 +1173,18 @@ describe("trust registry contract", () => {
         2n,
       ),
     ).toThrow(/must not reuse/i);
+    expect(() =>
+      simulator.updateMaintainerThresholdPolicy(
+        bootstrapMaintainer.keyId,
+        bootstrapPublicKey,
+        thresholdPolicySignature,
+        new Uint8Array(32),
+        2n,
+        2n,
+        1n,
+        2n,
+      ),
+    ).toThrow(/Policy commitment must be set/);
     simulator.updateMaintainerThresholdPolicy(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,

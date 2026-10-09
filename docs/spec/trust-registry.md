@@ -283,6 +283,10 @@ the ledger retains signer 1's key and signature for the epoch anchor. The
 governed publish action can require a larger maintainer quorum, but this bundle
 alone does not prove the entire quorum. Multi-signer epoch provenance requires
 an explicit ledger-bound signer set and a revised bundle format.
+The contract rejects an all-zero governance policy commitment at bootstrap and
+policy revision. Each epoch record carries the nonzero publication policy
+commitment from the ledger; off-chain verifiers reject a missing, malformed, or
+all-zero value before checking the signature.
 
 ## 6. State Model
 

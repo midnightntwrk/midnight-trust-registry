@@ -128,6 +128,38 @@ describe("trust registry client", () => {
     }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
     const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
     const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const tamperedEpochRegistry = {
+      ...activeBundle,
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedEpochRegistry, {}))
+      .toThrow(/Epoch registry mismatch/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedEpochRegistry, {
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch registry mismatch/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      registryId: undefined as never,
+    }, {})).toThrow(/Bundle registry ID is missing or malformed/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
+    }, {})).toThrow(/Authorization registry mismatch/);
+    const tamperedRegistry = {
+      ...activeBundle,
+      registryId: "registry:evil",
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedRegistry, {}))
+      .toThrow(/does not match the simulator ledger/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedRegistry, {
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Registry ID commitment does not match/);
     expect(() => verifyTrustRegistryEvidenceBundle({
       ...activeBundle,
       statusPolicyBinding: {
@@ -261,11 +293,26 @@ describe("trust registry client", () => {
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
-    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
-      epochRecord,
-      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
-      registryIdCommitment: new Uint8Array(31),
-    })).toThrow(/Registry ID commitment is missing or malformed/);
+    for (const malformed of [new Uint8Array(31), new Uint8Array(33), new Uint8Array(32), "not-bytes"]) {
+      expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+        epochRecord,
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: malformed as never,
+      })).toThrow(/Registry ID commitment is missing or malformed/);
+    }
+
+    let verifierFault: unknown;
+    try {
+      verifyTrustRegistryEvidenceBundle(bundle, {
+        epochRecord: { ...epochRecord, publishedAtSequence: "invalid" as never },
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: bytes32Commitment(harness.registryId),
+      });
+    } catch (error) {
+      verifierFault = error;
+    }
+    expect(verifierFault).toHaveProperty("message", "Epoch maintainer signature is invalid");
+    expect((verifierFault as Error).cause).toBeInstanceOf(Error);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
@@ -339,6 +386,10 @@ describe("trust registry client", () => {
         expectedRecognizedRegistryId: recognition.recognizedRegistryId,
       }),
     ).not.toThrow();
+    expect(() => client.verifyRecognitionBundle({
+      ...recognitionBundle,
+      recognition: { ...recognitionBundle.recognition!, registryId: "registry:evil" },
+    }, {})).toThrow(/Recognition registry mismatch/);
   });
 
   it("rejects stale epochs and tampered maintainer signatures deterministically", () => {
