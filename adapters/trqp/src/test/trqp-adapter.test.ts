@@ -180,6 +180,32 @@ const expectProblem = <T>(result: TrqpAdapterResult<T>): TrqpProblemDetails => {
 };
 
 describe("trust registry TRQP adapter", () => {
+  it("reports the source evaluation time for an untimed decision", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("source-time");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const source: TrustRegistryTrqpSource = {
+      getRegistryRecord: () => harness.registryRecord,
+      getAuthorizationDecision: () => ({
+        bundle,
+        statusAtTime: "active",
+        trustedAtTime: true,
+        evaluatedAt: bundle.epoch.validFrom,
+      }),
+      getRecognitionDecision: () => null,
+    };
+    const adapter = new TrustRegistryTrqpAdapter(source, { clock: () => FIXED_TIME });
+    const response = expectOk(await adapter.queryAuthorization({
+      entity_id: issuer.subjectDid,
+      authority_id: harness.registryDid,
+      action: "issue",
+      resource: issuer.resourceId,
+    }));
+    expect(response.time_evaluated).toBe(bundle.epoch.validFrom);
+    expect(response.time_evaluated).not.toBe(FIXED_TIME);
+  });
+
   it("maps active issuer and verifier authorization into TRQP responses", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");
@@ -278,7 +304,7 @@ describe("trust registry TRQP adapter", () => {
       }),
     );
     expect(historical.status).toBe(424);
-    expect(historical.type).toMatch(/historical-evidence-unavailable$/);
+    expect(historical.type).toMatch(/epoch-evidence-unavailable$/);
   });
 
   it("evaluates recognition at the requested time instead of its latest status", async () => {

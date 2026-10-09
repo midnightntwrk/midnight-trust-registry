@@ -426,6 +426,7 @@ describe("trust registry api", () => {
             authority_id: workspace.snapshot.registry.registryDid,
             action: "issue",
             resource: list.entries[0].authorization.resourceId,
+            context: { time: evidence.epoch.validFrom },
           }),
         },
       );
@@ -448,9 +449,8 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(trqpEvidenceResponse.status).toBe(200);
-      const trqpEvidence = await trqpEvidenceResponse.json();
-      expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
+      expect(trqpEvidenceResponse.status).toBe(424);
+      expect((await trqpEvidenceResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
 
       const historicalTrqpResponse = await fetch(
         `${server.url}/v1/trqp/authorizations/evidence`,
@@ -487,7 +487,7 @@ describe("trust registry api", () => {
         },
       );
       expect(unanchoredTrqpResponse.status).toBe(424);
-      expect((await unanchoredTrqpResponse.json()).type).toMatch(/historical-evidence-unavailable$/);
+      expect((await unanchoredTrqpResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
 
       const missingEpochResolveResponse = await fetch(
         `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
@@ -543,7 +543,7 @@ describe("trust registry api", () => {
         }),
       });
       expect(unavailable.status).toBe(424);
-      expect((await unavailable.json()).type).toMatch(/historical-evidence-unavailable$/);
+      expect((await unavailable.json()).type).toMatch(/epoch-evidence-unavailable$/);
     } finally {
       await server.close();
     }
@@ -554,7 +554,8 @@ describe("trust registry api", () => {
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry?.authorization.activeFrom === undefined) throw new Error("expected active issuer");
     const effectiveUntil = new Date(Date.parse(entry.authorization.activeFrom) + 1).toISOString();
-    expect(Date.parse(effectiveUntil)).toBeLessThan(Date.parse(snapshot.generatedAt));
+    const generatedAt = entry.evidence.epoch.validUntil;
+    expect(Date.parse(effectiveUntil)).toBeLessThan(Date.parse(generatedAt));
     const expired = {
       ...entry,
       authorization: { ...entry.authorization, effectiveUntil },
@@ -568,6 +569,7 @@ describe("trust registry api", () => {
       async loadSnapshot() {
         return {
           ...snapshot,
+          generatedAt,
           issuerEntries: snapshot.issuerEntries.map((candidate) =>
             candidate.authorization.authorizationId === entry.authorization.authorizationId ? expired : candidate),
         };
@@ -583,6 +585,7 @@ describe("trust registry api", () => {
     if (decision === null || "evidenceUnavailable" in decision) throw new Error("expected a current decision");
     expect(decision.statusAtTime).toBe("active");
     expect(decision.trustedAtTime).toBe(false);
+    expect(decision.evaluatedAt).toBe(generatedAt);
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {
@@ -895,6 +898,7 @@ describe("trust registry api", () => {
             context: {
               recognized_registry_id:
                 recognition.recognition.recognizedRegistryId,
+              time: recognition.evidence.epoch.validFrom,
             },
           }),
         },
@@ -922,9 +926,8 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(trqpEvidenceResponse.status).toBe(200);
-      const trqpEvidence = await trqpEvidenceResponse.json();
-      expect(trqpEvidence.bundle.recognition.recognitionId).toBe(recognitionId);
+      expect(trqpEvidenceResponse.status).toBe(424);
+      expect((await trqpEvidenceResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
     } finally {
       await server.close();
     }

@@ -46,12 +46,14 @@ export type TrqpAuthorizationDecision = {
   bundle: TrustRegistryEvidenceBundle;
   statusAtTime: AuthorizationRecord["status"] | null;
   trustedAtTime: boolean;
+  evaluatedAt?: string;
 };
 
 export type TrqpRecognitionDecision = {
   bundle: TrustRegistryEvidenceBundle;
   statusAtTime: RecognitionRecord["status"] | null;
   trustedAtTime: boolean;
+  evaluatedAt?: string;
 };
 
 export type TrqpEvidenceUnavailable = { evidenceUnavailable: true };
@@ -98,10 +100,10 @@ const invalidSourceProblem = (
 const evidenceUnavailableProblem = (
   problemBaseUri: string,
 ): TrqpProblemDetails => normalizeProblem({
-  type: `${problemBaseUri}/historical-evidence-unavailable`,
-  title: "historical evidence unavailable",
+  type: `${problemBaseUri}/epoch-evidence-unavailable`,
+  title: "epoch evidence unavailable",
   status: 424,
-  detail: "The trust statement exists, but no epoch-bound evidence is available for the requested time.",
+  detail: "The trust statement exists, but no epoch-bound evidence is available for the evaluation time.",
 });
 
 const describeAuthorizationMessage = (
@@ -195,7 +197,7 @@ export class TrustRegistryTrqpAdapter {
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const authorized = decision.trustedAtTime;
 
     return {
@@ -225,7 +227,7 @@ export class TrustRegistryTrqpAdapter {
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const authorized = decision.trustedAtTime;
     return {
       ok: true,
@@ -255,7 +257,7 @@ export class TrustRegistryTrqpAdapter {
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const recognized = decision.trustedAtTime;
 
     return {
@@ -285,7 +287,7 @@ export class TrustRegistryTrqpAdapter {
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const recognized = decision.trustedAtTime;
     return {
       ok: true,

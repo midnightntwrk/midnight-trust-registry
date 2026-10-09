@@ -27,10 +27,6 @@ import type {
   TrqpEvidenceUnavailable,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
-import {
-  evaluateAuthorizationRecordAtTime,
-  evaluateRecognitionRecordAtTime,
-} from "@midnight-ntwrk/trust-registry-client";
 import type {
   EpochCommitment,
   RegistryRecord,
@@ -500,25 +496,17 @@ export const createTrqpSourceFromStateSource = (
       subjectDid: request.entity_id,
       resourceId: request.resource,
     };
-    if (request.context?.time !== undefined) {
-      const historical = evaluateAuthorizationInSnapshot(snapshot, lookup, request.context.time);
-      if (historical === null) return null;
-      return bundleAvailableAt(historical.entry.evidence, snapshot, request.context.time)
-        ? {
-          bundle: historical.entry.evidence,
-          statusAtTime: historical.statusAtTime,
-          trustedAtTime: historical.trustedAtTime,
-        }
-        : { evidenceUnavailable: true };
-    }
-    const entry = resolveAuthorizationInSnapshot(snapshot, lookup);
-    if (entry === null) return null;
-    const current = evaluateAuthorizationRecordAtTime(entry.authorization, snapshot.generatedAt);
-    return {
-      bundle: entry.evidence,
-      statusAtTime: current.statusAtTime,
-      trustedAtTime: current.trustedAtTime,
-    };
+    const evaluatedAt = request.context?.time ?? snapshot.generatedAt;
+    const inspection = evaluateAuthorizationInSnapshot(snapshot, lookup, evaluatedAt);
+    if (inspection === null) return null;
+    return bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
+      ? {
+        bundle: inspection.entry.evidence,
+        statusAtTime: inspection.statusAtTime,
+        trustedAtTime: inspection.trustedAtTime,
+        evaluatedAt,
+      }
+      : { evidenceUnavailable: true };
   },
   async getRecognitionDecision(
     request: TrqpRecognitionRequest,
@@ -543,24 +531,16 @@ export const createTrqpSourceFromStateSource = (
         >,
       }),
     };
-    if (request.context?.time !== undefined) {
-      const historical = evaluateRecognitionInSnapshot(snapshot, lookup, request.context.time);
-      if (historical === null) return null;
-      return bundleAvailableAt(historical.entry.evidence, snapshot, request.context.time)
-        ? {
-          bundle: historical.entry.evidence,
-          statusAtTime: historical.statusAtTime,
-          trustedAtTime: historical.trustedAtTime,
-        }
-        : { evidenceUnavailable: true };
-    }
-    const entry = resolveRecognitionInSnapshot(snapshot, lookup);
-    if (entry === null) return null;
-    const current = evaluateRecognitionRecordAtTime(entry.recognition, snapshot.generatedAt);
-    return {
-      bundle: entry.evidence,
-      statusAtTime: current.statusAtTime,
-      trustedAtTime: current.trustedAtTime,
-    };
+    const evaluatedAt = request.context?.time ?? snapshot.generatedAt;
+    const inspection = evaluateRecognitionInSnapshot(snapshot, lookup, evaluatedAt);
+    if (inspection === null) return null;
+    return bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
+      ? {
+        bundle: inspection.entry.evidence,
+        statusAtTime: inspection.statusAtTime,
+        trustedAtTime: inspection.trustedAtTime,
+        evaluatedAt,
+      }
+      : { evidenceUnavailable: true };
   },
 });

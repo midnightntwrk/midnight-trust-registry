@@ -135,9 +135,6 @@ importers:
       '@midnight-ntwrk/trust-registry-cli':
         specifier: workspace:0.1.0
         version: link:../trust-registry-cli
-      '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
-        version: link:../trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain

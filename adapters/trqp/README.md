@@ -15,8 +15,10 @@ the record's lifecycle at that time, not its current status. The API-backed
 source requires a bundle for that record whose epoch commitment is in the
 snapshot and whose validity window contains the requested time. A snapshot
 with only a later bundle cannot prove an earlier decision; the adapter returns
-`historical-evidence-unavailable` (424), distinct from a missing statement
-(404). Without `context.time`, the decision is as of the source snapshot's
-generation time, not a claim that the operator snapshot is fresh today.
+`epoch-evidence-unavailable` (424), distinct from a missing statement
+(404). Without `context.time`, the same epoch gate applies at the source
+snapshot's generation time. `time_evaluated` reports that source evaluation
+time, not the adapter's wall clock, and does not claim the snapshot is fresh
+today.
 Retaining and exporting every historical bundle is follow-on work under
 [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).
