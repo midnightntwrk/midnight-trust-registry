@@ -177,9 +177,24 @@ test("workflow and Nix version drift fail validation", () => {
     assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml/);
     rmSync(roguePath);
 
+    writeFileSync(roguePath, `jobs:\n  bad:\n    steps:\n      - uses: Untrusted/setup-compact-action@abc\n        with:\n          compact-version: ${otherVersion}\n`);
+    assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml/);
+    rmSync(roguePath);
+
+    writeFileSync(roguePath, "jobs: [\n");
+    assert.throws(() => checkCompactVersion(fixture), /new-compact.yaml: invalid workflow YAML/);
+    rmSync(roguePath);
+
     writeFileSync(workflowPath, originalWorkflow.replace(
-      "compact-version: ${{ steps.compact-version.outputs.version }}",
-      `compact-version: ${otherVersion}`,
+      "- run: node scripts/check-compact-version.mjs --check-installed",
+      "- if: ${{ false }}\n        run: node scripts/check-compact-version.mjs --check-installed",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "- run: pnpm run check:compact-version",
+      "- run: echo skipped-semantic-check",
     ));
     assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
     writeFileSync(workflowPath, originalWorkflow);

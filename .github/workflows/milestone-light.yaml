@@ -36,6 +36,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       - run: node scripts/check-compact-version.mjs --check-installed
       - run: pnpm install --frozen-lockfile --prefer-offline
+      - run: pnpm run check:compact-version
       - run: ./run.sh --light
       - run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
       - run: pnpm --filter @midnight-ntwrk/trust-registry-api run integration

@@ -87,6 +87,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      - name: Validate Compact workflow semantics
+        run: pnpm run check:compact-version
+
       - name: Run light validation
         run: ./run.sh --light
 

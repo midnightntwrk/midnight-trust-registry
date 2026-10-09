@@ -18,11 +18,17 @@ const installedCommand = "node scripts/check-compact-version.mjs --check-install
 
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const setupStep = (step) => typeof step?.uses === "string"
-  && step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
-const enabledStep = (step) => step.if !== false && String(step.if ?? "").trim().toLowerCase() !== "false";
+  && /\/setup-compact-action@/iu.test(step.uses);
+const trustedSetupStep = (step) => step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
+const unconditionalStep = (step) => step.if === undefined;
 
 const readWorkflow = (directory, path, yaml, required = true) => {
-  const workflow = yaml.load(readFileSync(resolve(directory, path), "utf8"));
+  let workflow;
+  try {
+    workflow = yaml.load(readFileSync(resolve(directory, path), "utf8"));
+  } catch (error) {
+    throw new Error(`${path}: invalid workflow YAML: ${error.message}`, { cause: error });
+  }
   if (!isRecord(workflow) || !isRecord(workflow.jobs)) {
     if (required) throw new Error(`${path} must contain workflow jobs`);
     return null;
@@ -52,11 +58,16 @@ const checkWorkflowSetup = (workflow, path) => {
       }
       if (!setupStep(step)) continue;
       setupCount += 1;
-      const pinIndex = steps.findIndex((candidate) => enabledStep(candidate) && candidate.id === "compact-version"
+      const pinIndex = steps.findIndex((candidate) => unconditionalStep(candidate) && candidate.id === "compact-version"
         && typeof candidate.run === "string" && candidate.run.trim() === pinCommand);
-      const installedIndex = steps.findIndex((candidate, offset) => offset > index && enabledStep(candidate)
+      const installedIndex = steps.findIndex((candidate, offset) => offset > index && unconditionalStep(candidate)
         && typeof candidate.run === "string" && candidate.run.trim() === installedCommand);
-      if (!enabledStep(step) || pinIndex < 0 || pinIndex >= index || installedIndex < 0
+      const installIndex = steps.findIndex((candidate, offset) => offset > installedIndex && unconditionalStep(candidate)
+        && typeof candidate.run === "string" && candidate.run.trim().startsWith("pnpm install "));
+      const semanticIndex = steps.findIndex((candidate, offset) => offset > installIndex && unconditionalStep(candidate)
+        && typeof candidate.run === "string" && candidate.run.trim() === "pnpm run check:compact-version");
+      if (!trustedSetupStep(step) || !unconditionalStep(step)
+        || pinIndex < 0 || pinIndex >= index || installedIndex < 0 || installIndex < 0 || semanticIndex < 0
         || step.with?.["compact-version"] !== outputReference
         || step.env?.GITHUB_TOKEN !== "${{ github.token }}") {
         throw new Error(`${path} must read the checked-in Compact version for setup`);
