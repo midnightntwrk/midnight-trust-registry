@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 
+import { MidnightNetwork } from "@midnight-ntwrk/midnight-did";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -81,5 +82,13 @@ describe("Midnight DID mutation-intent signatures", () => {
       name: MutationIntentDidResolutionUnavailableError.name,
       cause: outage,
     });
+    const wrongNetwork = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+      }),
+    ], MidnightNetwork.Testnet);
+    await expect(verifyMutationIntentDidSignature(intent, signatureFor(intent), wrongNetwork))
+      .resolves.toBe(false);
   });
 });

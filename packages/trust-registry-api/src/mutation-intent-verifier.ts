@@ -13,6 +13,15 @@ import {
 
 type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
 
+const isDeterministicDidResolutionError = (error: unknown): boolean => {
+  if (!(error instanceof Error) || !(
+    error.name === "ResolverRequestError" || error.name === "InvalidDIDDocumentError"
+  )) return false;
+  const code = (error as Error & { resolutionCode?: unknown }).resolutionCode;
+  return code === "invalidDid" || code === "methodNotSupported"
+    || code === "invalidPublicKey" || code === "notAllowedLocalDuplicateKey";
+};
+
 export class MutationIntentDidResolutionUnavailableError extends Error {
   constructor(cause: unknown) {
     super("Midnight DID resolver is unavailable", { cause });
@@ -42,6 +51,7 @@ export async function verifyMutationIntentDidSignature(
   try {
     resolved = await resolver.resolveResult(did);
   } catch (error) {
+    if (isDeterministicDidResolutionError(error)) return false;
     throw new MutationIntentDidResolutionUnavailableError(error);
   }
 
