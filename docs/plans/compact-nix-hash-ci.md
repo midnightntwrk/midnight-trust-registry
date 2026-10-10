@@ -6,7 +6,8 @@ issue or make the new check a protected-branch requirement by itself.
 When `.compact-version`, either Compact Nix expression, or their flake wiring
 changes, `Compact Nix Hash` builds `.#compact-toolchain` and
 `.#compact-midnight` on x86_64 Linux. It checks the installed `compactc`
-version against `.compact-version` and runs the additional `compact` binary.
+version against `.compact-version` and the additional `compact --version`
+against that package's Nix derivation version.
 The version check catches an old toolchain archive reused under an unchanged
 hash; an uncached stale hash causes Nix to fail the fetch. For each package,
 a second build in a temporary copied flake replaces only the native-platform

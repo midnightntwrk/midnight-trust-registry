@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fakeHash = `sha256-${"A".repeat(43)}=`;
 const packages = ["compact-toolchain", "compact-midnight"];
-const platforms = ["x86_64-linux", "aarch64-darwin"];
+export const supportedNixPlatforms = Object.freeze(["x86_64-linux", "aarch64-darwin"]);
 
 export const nativeNixPlatform = (platform = process.platform, architecture = process.arch) => {
   if (platform === "linux" && architecture === "x64") return "x86_64-linux";
@@ -16,7 +16,7 @@ export const nativeNixPlatform = (platform = process.platform, architecture = pr
 };
 
 export const withStalePlatformHash = (source, system) => {
-  if (!platforms.includes(system)) throw new Error(`Unsupported Compact Nix platform: ${system}`);
+  if (!supportedNixPlatforms.includes(system)) throw new Error(`Unsupported Compact Nix platform: ${system}`);
   const pattern = new RegExp(`(${system}\\s*=\\s*\\{[^}]*sha256\\s*=\\s*")[^"]+("\\s*;)`, "g");
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1 || matches[0]?.[0].includes(fakeHash)) {

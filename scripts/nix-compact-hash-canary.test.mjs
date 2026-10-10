@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { isFixedOutputHashMismatch, nativeNixPlatform, withStalePlatformHash } from "./nix-compact-hash-canary.mjs";
+import { isFixedOutputHashMismatch, nativeNixPlatform, supportedNixPlatforms, withStalePlatformHash } from "./nix-compact-hash-canary.mjs";
 
 const fakeHash = `sha256-${"A".repeat(43)}=`;
 const expressions = ["compact-toolchain", "compact-midnight"].map((name) =>
@@ -38,6 +38,17 @@ test("the canary selects only supported native Nix platforms", () => {
   assert.throws(() => nativeNixPlatform("darwin", "x64"), /Unsupported/);
 });
 
+test("canary platform coverage matches both Nix packages and the flake", () => {
+  const expected = [...supportedNixPlatforms].sort();
+  for (const expression of expressions) {
+    const platforms = [...expression.matchAll(/^    ([a-z0-9_-]+) = \{$/gm)].map((match) => match[1]);
+    assert.deepEqual(platforms.sort(), expected);
+  }
+  const flake = readFileSync(join(import.meta.dirname, "../flake.nix"), "utf8");
+  const systems = flake.match(/systems\s*=\s*\[([^\]]+)\]/)?.[1]?.match(/"[a-z0-9_-]+"/g)?.map((value) => value.slice(1, -1));
+  assert.deepEqual(systems?.sort(), expected);
+});
+
 test("only the deliberate fixed-output mismatch satisfies the canary", () => {
   assert.equal(isFixedOutputHashMismatch(`hash mismatch in fixed-output derivation: specified ${fakeHash}`), true);
   assert.equal(isFixedOutputHashMismatch("hash mismatch in fixed-output derivation: different hash"), false);
@@ -54,7 +65,9 @@ test("the CLI entrypoint runs when invoked through a symlink", () => {
       env: { ...process.env, NIX_BIN: join(directory, "missing-nix") },
     });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /ENOENT/);
+    const unsupportedHost = !((process.platform === "linux" && process.arch === "x64") ||
+      (process.platform === "darwin" && process.arch === "arm64"));
+    assert.match(result.stderr, unsupportedHost ? /Unsupported Compact Nix canary host/ : /ENOENT/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

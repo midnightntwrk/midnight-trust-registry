@@ -39,7 +39,7 @@ jobs:
   linux-hash:
     name: Linux Compact Nix hash
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -68,6 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           compiler="$(nix build --no-link --print-out-paths .#compact-midnight)"
-          "$compiler/bin/compact" --version
+          expected="$(nix eval --raw .#packages.x86_64-linux.compact-midnight.version)"
+          actual="$("$compiler/bin/compact" --version)"
+          if [[ "$actual" != "compact $expected" ]]; then
+            echo "::error::Nix Compact package is $actual, but its derivation requires compact $expected. Verify the fetch hash in nix/packages/compact-midnight.nix."
+            exit 1
+          fi
       - name: Prove stale Linux hashes fail closed
         run: node scripts/nix-compact-hash-canary.mjs
