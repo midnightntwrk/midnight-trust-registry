@@ -43,29 +43,27 @@ export type TrqpAdapterResult<T> =
     };
 
 export type TrqpAuthorizationDecision = {
-  bundle: TrustRegistryEvidenceBundle;
+  bundle?: TrustRegistryEvidenceBundle;
   statusAtTime: AuthorizationRecord["status"] | null;
   trustedAtTime: boolean;
-  evaluatedAt?: string;
 };
 
 export type TrqpRecognitionDecision = {
-  bundle: TrustRegistryEvidenceBundle;
+  bundle?: TrustRegistryEvidenceBundle;
   statusAtTime: RecognitionRecord["status"] | null;
   trustedAtTime: boolean;
-  evaluatedAt?: string;
 };
-
-export type TrqpEvidenceUnavailable = { evidenceUnavailable: true };
 
 export type TrustRegistryTrqpSource = {
   getRegistryRecord(authorityId: string): MaybePromise<RegistryRecord | null>;
   getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): MaybePromise<TrqpAuthorizationDecision | TrqpEvidenceUnavailable | null>;
+    evaluatedAt: string,
+  ): MaybePromise<TrqpAuthorizationDecision | null>;
   getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): MaybePromise<TrqpRecognitionDecision | TrqpEvidenceUnavailable | null>;
+    evaluatedAt: string,
+  ): MaybePromise<TrqpRecognitionDecision | null>;
 };
 
 export type TrustRegistryTrqpAdapterOptions = {
@@ -110,22 +108,30 @@ const describeAuthorizationMessage = (
   status: string,
   trusted: boolean,
   historical: boolean,
+  withEvidence = false,
 ): string => {
-  const when = historical ? "at the requested time" : "in the source snapshot";
+  const when = historical ? "at the requested time" : "at the source evaluation time";
+  const qualification = withEvidence
+    ? "evidence bundle attached; verify its anchor and proof independently"
+    : "this is a snapshot projection, not proof";
   return trusted
-    ? `Authorization is active for the requested scope ${when}.`
-    : `Authorization is not trusted ${when} (status: ${status}).`;
+    ? `Authorization is active for the requested scope ${when}; ${qualification}.`
+    : `Authorization is not trusted ${when} (status: ${status}); ${qualification}.`;
 };
 
 const describeRecognitionMessage = (
   status: string,
   trusted: boolean,
   historical: boolean,
+  withEvidence = false,
 ): string => {
-  const when = historical ? "at the requested time" : "in the source snapshot";
+  const when = historical ? "at the requested time" : "at the source evaluation time";
+  const qualification = withEvidence
+    ? "evidence bundle attached; verify its anchor and proof independently"
+    : "this is a snapshot projection, not proof";
   return trusted
-    ? `Recognition is active for the requested scope ${when}.`
-    : `Recognition is not trusted ${when} (status: ${status}).`;
+    ? `Recognition is active for the requested scope ${when}; ${qualification}.`
+    : `Recognition is not trusted ${when} (status: ${status}); ${qualification}.`;
 };
 
 const timeRequestedFor = (
@@ -190,14 +196,14 @@ export class TrustRegistryTrqpAdapter {
     requestInput: TrqpAuthorizationRequest,
   ): Promise<TrqpAdapterResult<TrqpAuthorizationResponse>> {
     const request = TrqpAuthorizationRequestSchema.parse(requestInput);
-    const decisionResult = await this.resolveAuthorizationDecision(request);
+    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const decisionResult = await this.resolveAuthorizationDecision(request, evaluatedAt, false);
 
     if (!decisionResult.ok) {
       return decisionResult;
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const authorized = decision.trustedAtTime;
 
     return {
@@ -220,14 +226,14 @@ export class TrustRegistryTrqpAdapter {
     requestInput: TrqpAuthorizationRequest,
   ): Promise<TrqpAdapterResult<TrqpAuthorizationEvidenceResponse>> {
     const request = TrqpAuthorizationRequestSchema.parse(requestInput);
-    const decisionResult = await this.resolveAuthorizationDecision(request);
+    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const decisionResult = await this.resolveAuthorizationDecision(request, evaluatedAt, true);
 
     if (!decisionResult.ok) {
       return decisionResult;
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const authorized = decision.trustedAtTime;
     return {
       ok: true,
@@ -239,7 +245,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         authorized,
-        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized, request.context?.time !== undefined),
+        message: describeAuthorizationMessage(decision.statusAtTime ?? "not yet proposed", authorized, request.context?.time !== undefined, true),
         context: request.context,
         bundle: decision.bundle,
       }),
@@ -250,14 +256,14 @@ export class TrustRegistryTrqpAdapter {
     requestInput: TrqpRecognitionRequest,
   ): Promise<TrqpAdapterResult<TrqpRecognitionResponse>> {
     const request = TrqpRecognitionRequestSchema.parse(requestInput);
-    const decisionResult = await this.resolveRecognitionDecision(request);
+    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const decisionResult = await this.resolveRecognitionDecision(request, evaluatedAt, false);
 
     if (!decisionResult.ok) {
       return decisionResult;
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const recognized = decision.trustedAtTime;
 
     return {
@@ -280,14 +286,14 @@ export class TrustRegistryTrqpAdapter {
     requestInput: TrqpRecognitionRequest,
   ): Promise<TrqpAdapterResult<TrqpRecognitionEvidenceResponse>> {
     const request = TrqpRecognitionRequestSchema.parse(requestInput);
-    const decisionResult = await this.resolveRecognitionDecision(request);
+    const evaluatedAt = timeEvaluatedFor(request.context, this.clock);
+    const decisionResult = await this.resolveRecognitionDecision(request, evaluatedAt, true);
 
     if (!decisionResult.ok) {
       return decisionResult;
     }
 
     const decision = decisionResult.value;
-    const evaluatedAt = decision.evaluatedAt ?? timeEvaluatedFor(request.context, this.clock);
     const recognized = decision.trustedAtTime;
     return {
       ok: true,
@@ -299,7 +305,7 @@ export class TrustRegistryTrqpAdapter {
         time_requested: timeRequestedFor(request.context),
         time_evaluated: evaluatedAt,
         recognized,
-        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized, request.context?.time !== undefined),
+        message: describeRecognitionMessage(decision.statusAtTime ?? "not yet proposed", recognized, request.context?.time !== undefined, true),
         context: request.context,
         bundle: decision.bundle,
       }),
@@ -308,6 +314,8 @@ export class TrustRegistryTrqpAdapter {
 
   private async resolveAuthorizationDecision(
     request: TrqpAuthorizationRequest,
+    evaluatedAt: string,
+    requireEvidence: boolean,
   ): Promise<TrqpAdapterResult<TrqpAuthorizationDecision>> {
     const record = await this.source.getRegistryRecord(request.authority_id);
 
@@ -321,7 +329,7 @@ export class TrustRegistryTrqpAdapter {
       };
     }
 
-    const decision = await this.source.getAuthorizationDecision(request);
+    const decision = await this.source.getAuthorizationDecision(request, evaluatedAt);
     if (decision === null) {
       return {
         ok: false,
@@ -331,12 +339,13 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
-    if ("evidenceUnavailable" in decision) {
+    if (requireEvidence && decision.bundle === undefined) {
       return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
     }
-
-    const parsedBundle = TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
-    if (parsedBundle.authorization === undefined) {
+    const parsedBundle = !requireEvidence || decision.bundle === undefined
+      ? undefined
+      : TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
+    if (parsedBundle !== undefined && parsedBundle.authorization === undefined) {
       return {
         ok: false,
         problem: invalidSourceProblem(
@@ -345,10 +354,10 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
-    if (request.context?.time !== undefined) {
-      const requestedAt = Date.parse(request.context.time);
-      if (requestedAt < Date.parse(parsedBundle.epoch.validFrom)
-        || requestedAt > Date.parse(parsedBundle.epoch.validUntil)) {
+    if (requireEvidence && parsedBundle !== undefined) {
+      const instant = Date.parse(evaluatedAt);
+      if (instant < Date.parse(parsedBundle.epoch.validFrom)
+        || instant > Date.parse(parsedBundle.epoch.validUntil)) {
         return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
       }
     }
@@ -361,12 +370,14 @@ export class TrustRegistryTrqpAdapter {
 
     return {
       ok: true,
-      value: { ...decision, bundle: parsedBundle },
+      value: { ...decision, ...(parsedBundle === undefined ? {} : { bundle: parsedBundle }) },
     };
   }
 
   private async resolveRecognitionDecision(
     request: TrqpRecognitionRequest,
+    evaluatedAt: string,
+    requireEvidence: boolean,
   ): Promise<TrqpAdapterResult<TrqpRecognitionDecision>> {
     const record = await this.source.getRegistryRecord(request.authority_id);
 
@@ -380,7 +391,7 @@ export class TrustRegistryTrqpAdapter {
       };
     }
 
-    const decision = await this.source.getRecognitionDecision(request);
+    const decision = await this.source.getRecognitionDecision(request, evaluatedAt);
     if (decision === null) {
       return {
         ok: false,
@@ -390,12 +401,13 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
-    if ("evidenceUnavailable" in decision) {
+    if (requireEvidence && decision.bundle === undefined) {
       return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
     }
-
-    const parsedBundle = TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
-    if (parsedBundle.recognition === undefined) {
+    const parsedBundle = !requireEvidence || decision.bundle === undefined
+      ? undefined
+      : TrustRegistryEvidenceBundleSchema.parse(decision.bundle);
+    if (parsedBundle !== undefined && parsedBundle.recognition === undefined) {
       return {
         ok: false,
         problem: invalidSourceProblem(
@@ -404,10 +416,10 @@ export class TrustRegistryTrqpAdapter {
         ),
       };
     }
-    if (request.context?.time !== undefined) {
-      const requestedAt = Date.parse(request.context.time);
-      if (requestedAt < Date.parse(parsedBundle.epoch.validFrom)
-        || requestedAt > Date.parse(parsedBundle.epoch.validUntil)) {
+    if (requireEvidence && parsedBundle !== undefined) {
+      const instant = Date.parse(evaluatedAt);
+      if (instant < Date.parse(parsedBundle.epoch.validFrom)
+        || instant > Date.parse(parsedBundle.epoch.validUntil)) {
         return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
       }
     }
@@ -420,7 +432,7 @@ export class TrustRegistryTrqpAdapter {
 
     return {
       ok: true,
-      value: { ...decision, bundle: parsedBundle },
+      value: { ...decision, ...(parsedBundle === undefined ? {} : { bundle: parsedBundle }) },
     };
   }
 }

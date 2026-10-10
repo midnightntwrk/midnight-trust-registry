@@ -82,8 +82,9 @@ const asRecognitionRecord = (
 
 const startServer = async (
   source: Parameters<typeof createTrustRegistryApiServer>[0]["source"],
+  clock?: () => string,
 ): Promise<ServerHarness> => {
-  const server = createTrustRegistryApiServer({ source });
+  const server = createTrustRegistryApiServer({ source, ...(clock === undefined ? {} : { clock }) });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
@@ -486,8 +487,10 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(unanchoredTrqpResponse.status).toBe(424);
-      expect((await unanchoredTrqpResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
+      expect(unanchoredTrqpResponse.status).toBe(200);
+      const unanchoredDecision = await unanchoredTrqpResponse.json();
+      expect(unanchoredDecision.time_evaluated).toBe("2026-05-21T00:00:00Z");
+      expect(unanchoredDecision.message).toMatch(/snapshot projection, not proof/);
 
       const missingEpochResolveResponse = await fetch(
         `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
@@ -542,10 +545,80 @@ describe("trust registry api", () => {
           context: { time: new Date(Date.parse(evidenceEpoch.validUntil) + 1).toISOString() },
         }),
       });
-      expect(unavailable.status).toBe(424);
-      expect((await unavailable.json()).type).toMatch(/epoch-evidence-unavailable$/);
+      expect(unavailable.status).toBe(200);
+      expect((await unavailable.json()).message).toMatch(/snapshot projection, not proof/);
     } finally {
       await server.close();
+    }
+  });
+
+  it("uses the same instant for implicit and explicit TRQP requests without overstating an unaccepted root", async () => {
+    const snapshot = createDemoSnapshot({ label: "trqp-current-projection" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const at = entry.evidence.epoch.validFrom;
+    const request = {
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    };
+    const epochSpelling = {
+      ...snapshot,
+      epochs: snapshot.epochs.map((epoch) => epoch.epochId === entry.evidence.epoch.epochId
+        ? { ...epoch,
+          validFrom: epoch.validFrom.replace(/Z$/, "+00:00"),
+          validUntil: epoch.validUntil.replace(/Z$/, "+00:00") }
+        : epoch),
+    };
+    const server = await startServer(createInMemorySource(epochSpelling), () => at);
+    const post = (path: string, body: object) => fetch(`${server.url}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    try {
+      const implicit = await post("/v1/trqp/authorizations/query", request);
+      const explicit = await post("/v1/trqp/authorizations/query", {
+        ...request, context: { time: at },
+      });
+      expect(implicit.status).toBe(200);
+      expect(explicit.status).toBe(200);
+      const implicitDecision = await implicit.json();
+      const explicitDecision = await explicit.json();
+      expect(implicitDecision.authorized).toBe(explicitDecision.authorized);
+      expect(implicitDecision.time_evaluated).toBe(at);
+      expect(explicitDecision.time_evaluated).toBe(at);
+      expect(implicitDecision.time_requested).toBeUndefined();
+      expect(explicitDecision.time_requested).toBe(at);
+      expect((await post("/v1/trqp/authorizations/evidence", request)).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+
+    const unaccepted = {
+      ...snapshot,
+      epochs: snapshot.epochs.map((epoch) => epoch.epochId === entry.evidence.epoch.epochId
+        ? { ...epoch, stateRoot: `0x${"f".repeat(64)}` }
+        : epoch),
+    };
+    // A custom source can project records, but cannot turn a mismatched root into evidence.
+    const unacceptedServer = await startServer({
+      mode: "memory",
+      async loadSnapshot() { return unaccepted; },
+    }, () => at);
+    try {
+      const query = await fetch(`${unacceptedServer.url}/v1/trqp/authorizations/query`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      const evidence = await fetch(`${unacceptedServer.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(query.status).toBe(200);
+      expect((await query.json()).message).toMatch(/snapshot projection, not proof/);
+      expect(evidence.status).toBe(424);
+    } finally {
+      await unacceptedServer.close();
     }
   });
 
@@ -580,12 +653,11 @@ describe("trust registry api", () => {
       authority_id: snapshot.registry.registryDid,
       action: "issue",
       resource: entry.authorization.resourceId,
-    });
+    }, generatedAt);
     expect(decision).not.toBeNull();
-    if (decision === null || "evidenceUnavailable" in decision) throw new Error("expected a current decision");
+    if (decision === null) throw new Error("expected a current decision");
     expect(decision.statusAtTime).toBe("active");
     expect(decision.trustedAtTime).toBe(false);
-    expect(decision.evaluatedAt).toBe(generatedAt);
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {

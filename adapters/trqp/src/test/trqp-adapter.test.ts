@@ -54,6 +54,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
 
   getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
+    evaluatedAt: string,
   ): TrqpAuthorizationDecision | null {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
@@ -72,7 +73,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       return this.authorizationDecision(this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentIssuerDecision(fixture),
         () => this.harness.buildIssuerHistoricalEvidence(fixture),
-      ), request.context?.time);
+      ), evaluatedAt);
     }
 
     if (request.action === "verify") {
@@ -88,7 +89,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       return this.authorizationDecision(this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentVerifierDecision(fixture),
         () => this.harness.buildVerifierHistoricalEvidence(fixture),
-      ), request.context?.time);
+      ), evaluatedAt);
     }
 
     return null;
@@ -96,6 +97,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
 
   getRecognitionDecision(
     request: TrqpRecognitionRequest,
+    evaluatedAt: string,
   ): TrqpRecognitionDecision | null {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
@@ -123,28 +125,28 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
     return this.recognitionDecision(this.resolveCurrentOrHistorical(
       () => this.harness.evaluateCurrentRecognitionDecision(fixture),
       () => this.harness.buildRecognitionHistoricalEvidence(fixture),
-    ), request.context?.time);
+    ), evaluatedAt);
   }
 
-  private authorizationDecision(bundle: TrustRegistryEvidenceBundle, time?: string): TrqpAuthorizationDecision {
+  private authorizationDecision(bundle: TrustRegistryEvidenceBundle, time: string): TrqpAuthorizationDecision {
     const authorization = bundle.authorization;
     if (authorization === undefined) throw new Error("expected authorization evidence");
-    const evaluation = time === undefined ? null : evaluateAuthorizationRecordAtTime(authorization, time);
+    const evaluation = evaluateAuthorizationRecordAtTime(authorization, time);
     return {
       bundle,
-      statusAtTime: evaluation?.statusAtTime ?? authorization.status,
-      trustedAtTime: evaluation?.trustedAtTime ?? authorization.status === "active",
+      statusAtTime: evaluation.statusAtTime,
+      trustedAtTime: evaluation.trustedAtTime,
     };
   }
 
-  private recognitionDecision(bundle: TrustRegistryEvidenceBundle, time?: string): TrqpRecognitionDecision {
+  private recognitionDecision(bundle: TrustRegistryEvidenceBundle, time: string): TrqpRecognitionDecision {
     const recognition = bundle.recognition;
     if (recognition === undefined) throw new Error("expected recognition evidence");
-    const evaluation = time === undefined ? null : evaluateRecognitionRecordAtTime(recognition, time);
+    const evaluation = evaluateRecognitionRecordAtTime(recognition, time);
     return {
       bundle,
-      statusAtTime: evaluation?.statusAtTime ?? recognition.status,
-      trustedAtTime: evaluation?.trustedAtTime ?? recognition.status === "active",
+      statusAtTime: evaluation.statusAtTime,
+      trustedAtTime: evaluation.trustedAtTime,
     };
   }
 
@@ -180,7 +182,7 @@ const expectProblem = <T>(result: TrqpAdapterResult<T>): TrqpProblemDetails => {
 };
 
 describe("trust registry TRQP adapter", () => {
-  it("reports the source evaluation time for an untimed decision", async () => {
+  it("uses one off-ledger clock instant for an untimed decision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("source-time");
     harness.authorizeIssuer(issuer);
@@ -191,7 +193,6 @@ describe("trust registry TRQP adapter", () => {
         bundle,
         statusAtTime: "active",
         trustedAtTime: true,
-        evaluatedAt: bundle.epoch.validFrom,
       }),
       getRecognitionDecision: () => null,
     };
@@ -202,8 +203,8 @@ describe("trust registry TRQP adapter", () => {
       action: "issue",
       resource: issuer.resourceId,
     }));
-    expect(response.time_evaluated).toBe(bundle.epoch.validFrom);
-    expect(response.time_evaluated).not.toBe(FIXED_TIME);
+    expect(response.time_evaluated).toBe(FIXED_TIME);
+    expect(response.time_requested).toBeUndefined();
   });
 
   it("maps active issuer and verifier authorization into TRQP responses", async () => {
@@ -239,6 +240,7 @@ describe("trust registry TRQP adapter", () => {
     expect(issuerResponse.time_requested).toBe(issuerAt);
     expect(issuerResponse.authority_id).toBe(harness.registryDid);
     expect(issuerResponse.message).toMatch(/active/i);
+    expect(issuerResponse.message).toMatch(/snapshot projection, not proof/);
 
     const verifierResponse = expectOk<TrqpAuthorizationResponse>(
       await adapter.queryAuthorization({
@@ -261,13 +263,14 @@ describe("trust registry TRQP adapter", () => {
 
     harness.authorizeIssuer(issuer);
     harness.revokeIssuer(issuer);
+    const revokedAt = harness.buildIssuerHistoricalEvidence(issuer).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
         issuers: [issuer],
       }),
       {
-        clock: () => FIXED_TIME,
+        clock: () => revokedAt,
       },
     );
 
@@ -291,6 +294,7 @@ describe("trust registry TRQP adapter", () => {
       }),
     );
     expect(evidence.bundle.authorization?.status).toBe("revoked");
+    expect(evidence.message).toMatch(/verify its anchor and proof independently/);
 
     const activeFrom = evidence.bundle.authorization?.activeFrom;
     if (activeFrom === undefined) throw new Error("expected an activation timestamp");
@@ -312,9 +316,10 @@ describe("trust registry TRQP adapter", () => {
     const recognition = createRecognitionScenarioFixture("historical-recognition");
     harness.authorizeRecognition(recognition);
     harness.revokeRecognition(recognition);
+    const revokedAt = harness.buildRecognitionHistoricalEvidence(recognition).epoch.validFrom;
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, { recognitions: [recognition] }),
-      { clock: () => FIXED_TIME },
+      { clock: () => revokedAt },
     );
     const request = {
       entity_id: recognition.recognizedAuthorityDid,

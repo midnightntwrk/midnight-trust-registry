@@ -161,9 +161,8 @@ export const selectAuthorizationEntryAtTime = <
   entries: readonly T[],
   evaluatedAt: string,
   predicate: (entry: T) => boolean = () => true,
-): T | null =>
-  selectLatestEntry(
-    entries.filter((entry) => {
+): T | null => {
+  const visible = entries.filter((entry) => {
       if (!predicate(entry)) {
         return false;
       }
@@ -171,9 +170,19 @@ export const selectAuthorizationEntryAtTime = <
         entry.authorization,
         evaluatedAt,
       ).statusAtTime !== null;
-    }),
+    });
+  const effective = visible.filter((entry) => {
+    const status = evaluateAuthorizationRecordAtTime(
+      entry.authorization,
+      evaluatedAt,
+    ).statusAtTime;
+    return status !== "proposed" && status !== "authorized";
+  });
+  return selectLatestEntry(
+    effective.length > 0 ? effective : visible,
     (entry) => entry.authorization.proposedAt,
   );
+};
 
 export const selectRecognitionEntryAtTime = <
   T extends { recognition: RecognitionRecord },
@@ -181,9 +190,8 @@ export const selectRecognitionEntryAtTime = <
   entries: readonly T[],
   evaluatedAt: string,
   predicate: (entry: T) => boolean = () => true,
-): T | null =>
-  selectLatestEntry(
-    entries.filter((entry) => {
+): T | null => {
+  const visible = entries.filter((entry) => {
       if (!predicate(entry)) {
         return false;
       }
@@ -191,6 +199,16 @@ export const selectRecognitionEntryAtTime = <
         entry.recognition,
         evaluatedAt,
       ).statusAtTime !== null;
-    }),
+    });
+  const effective = visible.filter((entry) => {
+    const status = evaluateRecognitionRecordAtTime(
+      entry.recognition,
+      evaluatedAt,
+    ).statusAtTime;
+    return status !== "proposed" && status !== "authorized";
+  });
+  return selectLatestEntry(
+    effective.length > 0 ? effective : visible,
     (entry) => entry.recognition.proposedAt,
   );
+};

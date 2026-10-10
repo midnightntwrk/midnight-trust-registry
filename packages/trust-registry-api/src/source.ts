@@ -24,7 +24,6 @@ import type {
   TrqpAuthorizationRequest,
   TrqpRecognitionDecision,
   TrqpRecognitionRequest,
-  TrqpEvidenceUnavailable,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
 import type {
@@ -456,8 +455,8 @@ const bundleMatchesEpoch = (
   && bundle.epoch.stateRoot === epoch.stateRoot
   && bundle.epoch.eventRoot === epoch.eventRoot
   && bundle.epoch.policyRoot === epoch.policyRoot
-  && bundle.epoch.validFrom === epoch.validFrom
-  && bundle.epoch.validUntil === epoch.validUntil;
+  && Date.parse(bundle.epoch.validFrom) === Date.parse(epoch.validFrom)
+  && Date.parse(bundle.epoch.validUntil) === Date.parse(epoch.validUntil);
 
 const bundleAvailableAt = (
   bundle: TrustRegistryEvidenceBundle,
@@ -480,7 +479,8 @@ export const createTrqpSourceFromStateSource = (
   },
   async getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
-  ): Promise<TrqpAuthorizationDecision | TrqpEvidenceUnavailable | null> {
+    evaluatedAt: string,
+  ): Promise<TrqpAuthorizationDecision | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -496,21 +496,20 @@ export const createTrqpSourceFromStateSource = (
       subjectDid: request.entity_id,
       resourceId: request.resource,
     };
-    const evaluatedAt = request.context?.time ?? snapshot.generatedAt;
     const inspection = evaluateAuthorizationInSnapshot(snapshot, lookup, evaluatedAt);
     if (inspection === null) return null;
-    return bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
-      ? {
-        bundle: inspection.entry.evidence,
-        statusAtTime: inspection.statusAtTime,
-        trustedAtTime: inspection.trustedAtTime,
-        evaluatedAt,
-      }
-      : { evidenceUnavailable: true };
+    return {
+      ...(bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
+        ? { bundle: inspection.entry.evidence }
+        : {}),
+      statusAtTime: inspection.statusAtTime,
+      trustedAtTime: inspection.trustedAtTime,
+    };
   },
   async getRecognitionDecision(
     request: TrqpRecognitionRequest,
-  ): Promise<TrqpRecognitionDecision | TrqpEvidenceUnavailable | null> {
+    evaluatedAt: string,
+  ): Promise<TrqpRecognitionDecision | null> {
     const snapshot = await source.loadSnapshot();
     if (snapshot.registry.registryDid !== request.authority_id) {
       return null;
@@ -531,16 +530,14 @@ export const createTrqpSourceFromStateSource = (
         >,
       }),
     };
-    const evaluatedAt = request.context?.time ?? snapshot.generatedAt;
     const inspection = evaluateRecognitionInSnapshot(snapshot, lookup, evaluatedAt);
     if (inspection === null) return null;
-    return bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
-      ? {
-        bundle: inspection.entry.evidence,
-        statusAtTime: inspection.statusAtTime,
-        trustedAtTime: inspection.trustedAtTime,
-        evaluatedAt,
-      }
-      : { evidenceUnavailable: true };
+    return {
+      ...(bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
+        ? { bundle: inspection.entry.evidence }
+        : {}),
+      statusAtTime: inspection.statusAtTime,
+      trustedAtTime: inspection.trustedAtTime,
+    };
   },
 });
