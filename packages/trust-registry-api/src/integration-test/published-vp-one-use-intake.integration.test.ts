@@ -10,6 +10,8 @@ import {
   createApplicationVpScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
   createMidnightDid,
   VP_FIXTURE_TIME_MS,
 } from "@midnight-ntwrk/trust-registry-integration";
@@ -71,5 +73,56 @@ describe("published VP proof through one-use application intake", () => {
     expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(false);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/u);
     expect(propose).toHaveBeenCalledOnce();
+  });
+
+  it("does not propose evidence when the signer DID assertion method retires during signing", async () => {
+    const scope = createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp"));
+    const verifierDid = createMidnightDid("vp-evidence-verifier");
+    const binding = ApplicationChallengeBindingSchema.parse({
+      registryId: "registry:vp:test",
+      applicationId: "application:vp:retired-signer",
+      subjectDid: createMidnightDid("vp-holder"),
+      evidenceVerifierDid: verifierDid,
+      role: "issuer",
+      policyId: "policy:vp:v1",
+      policyVersion: "v1",
+      scope,
+      scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(scope, "credentialFamily") },
+    });
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS);
+    const issued = await service.issue(binding);
+    const fixture = await createApplicationVpScenarioFixture(issued.nonce);
+    const retired = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(verifierDid, { verificationMethodId: "assertion-2" }),
+    ]);
+    const signer = {
+      ...fixture.signer,
+      signCommitment: async (keyId: Uint8Array, commitment: Uint8Array) => {
+        const signature = await fixture.signer.signCommitment(keyId, commitment);
+        vi.spyOn(fixture.input.resolver, "resolveResult").mockImplementation((did) => retired.resolveResult(did));
+        return signature;
+      },
+    };
+    const ports = await createApplicationVpIntakePorts({
+      resolver: fixture.input.resolver,
+      family: fixture.input.family,
+      signer,
+    });
+    const propose = vi.fn(async () => { throw new Error("retired evidence reached proposal"); });
+
+    await expect(consumeChallengeAndSubmitApplication({
+      challengeService: service,
+      binding,
+      expectedBinding: binding,
+      nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+      presentation: fixture.input.submission,
+      ...ports,
+      authorizedVerifiers: [{ did: signer.did, keyIds: [signer.keyId], algorithms: ["jubjub-schnorr" as const] }],
+      evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+      propose,
+    })).rejects.toThrow();
+    expect(propose).not.toHaveBeenCalled();
   });
 });
