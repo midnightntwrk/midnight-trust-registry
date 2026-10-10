@@ -2,9 +2,12 @@
 
 Status: local partial implementation for #76, stacked after the #127
 challenge-to-proposal bridge. The published-package proof/DID port and
-issuer-fixture adversarial tests and a typed #127 intake callback adapter exist;
-four-role policy fixtures, end-to-end intake wiring, production family/status
-adapters, and public route remain open.
+issuer-fixture adversarial tests and a typed #127 intake callback adapter exist.
+The API integration suite now exercises that adapter through the one-use
+challenge service with published VC proof fixtures, DID-bound signing, and
+redacted proposal evidence. The policy/status assertions in this fixture are
+test-only; four-role fixtures, production family/status adapters, durable
+challenge storage, and a public route remain open.
 
 ## Published Package Boundary
 
@@ -57,7 +60,8 @@ not a production verifier.
   packages; require injected family body-root and status/claims adapters.
 - Add positive issuer, verifier, auditor, and maintainer fixtures and
   adversarial challenge, subject, issuer, scope, status, expiry, and claim
-  cases. Connect the port to #127's intake callback and simulator proposals.
+  cases. The issuer proof fixture now reaches #127's one-use intake callback;
+  connecting this path to a Compact simulator proposal remains open.
 - Only then add an authenticated API route with bounded payloads, a durable
   atomic challenge store, rate limits, redacted errors, and retention policy.
 
