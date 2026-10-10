@@ -235,3 +235,60 @@ export const assertDecisionEvidencePolicyCommitment = (input: unknown): void => 
     throw new Error("Decision evidence policy root mismatch");
   }
 };
+
+export type DecisionEvidenceSelection = {
+  registryId: string;
+  networkId: string;
+  contractAddress: string;
+  subjectDid: string;
+  role: "issuer" | "verifier";
+  resourceType: z.infer<typeof ResourceTypeSchema>;
+  resourceId: string;
+  evaluationTime: string;
+};
+
+/** Compares claimed evidence with caller-selected context; no anchor is authenticated here. */
+export const assertDecisionEvidenceSelection = (
+  input: unknown,
+  expected: DecisionEvidenceSelection,
+): void => {
+  const evidence = DecisionEvidenceSchema.parse(input);
+  assertDecisionEvidenceInclusion(evidence);
+  assertDecisionEvidencePolicyCommitment(evidence);
+  if (
+    evidence.registry.registryId !== expected.registryId
+    || evidence.registry.networkId !== expected.networkId
+    || evidence.registry.contractAddress !== expected.contractAddress
+    || evidence.grant.subjectDid !== expected.subjectDid
+  ) {
+    throw new Error("Decision evidence registry or subject mismatch");
+  }
+  if (
+    evidence.role !== expected.role
+    || evidence.grant.resourceType !== expected.resourceType
+    || evidence.grant.resourceId !== expected.resourceId
+  ) {
+    throw new Error("Decision evidence role or resource scope mismatch");
+  }
+  if (
+    evidence.grant.status !== "active"
+    || evidence.grant.activeFrom === undefined
+    || evidence.grant.suspendedAt !== undefined
+    || evidence.grant.revokedAt !== undefined
+    || evidence.grant.supersededAt !== undefined
+    || evidence.grant.archivedAt !== undefined
+  ) {
+    throw new Error("Decision evidence grant is not active");
+  }
+  const at = Date.parse(TimestampSchema.parse(expected.evaluationTime));
+  if (
+    at < Date.parse(evidence.epoch.validFrom)
+    || at > Date.parse(evidence.epoch.validUntil)
+    || at < Date.parse(evidence.policy.effectiveFrom)
+    || (evidence.policy.effectiveUntil !== null && at >= Date.parse(evidence.policy.effectiveUntil))
+    || at < Date.parse(evidence.grant.activeFrom)
+    || (evidence.grant.effectiveUntil !== undefined && at > Date.parse(evidence.grant.effectiveUntil))
+  ) {
+    throw new Error("Decision evidence is outside its claimed active window");
+  }
+};

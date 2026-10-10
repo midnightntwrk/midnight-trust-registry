@@ -7,6 +7,7 @@ import {
   GovernancePolicySnapshotSchema,
   assertDecisionEvidenceInclusion,
   assertDecisionEvidencePolicyCommitment,
+  assertDecisionEvidenceSelection,
   computeAuthorizationStatementLeafHash,
   computeGovernancePolicySnapshotCommitment,
   computeMerkleRootFromProof,
@@ -103,6 +104,33 @@ const issuerEvidence = () => ({
   },
   decisionSequence: "11",
 });
+
+const consistentIssuerEvidence = (grantChanges: Record<string, unknown> = {}) => {
+  const evidence = issuerEvidence();
+  evidence.grant = { ...evidence.grant, ...grantChanges };
+  const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(evidence.grant));
+  const root = computeMerkleRootFromProof(leafHash, [B], 0n);
+  evidence.epoch.stateRoot = root;
+  evidence.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+    GovernancePolicySnapshotSchema.parse(evidence.policy),
+  );
+  evidence.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path: [B], leafIndex: "0" };
+  if (grantChanges.status === "superseded") {
+    Object.assign(evidence.governanceEvents, { supersession: E });
+  }
+  return evidence;
+};
+
+const expectedIssuerSelection = {
+  registryId: "registry:midnight:university",
+  networkId: "devnet",
+  contractAddress: A,
+  subjectDid: DID,
+  role: "issuer" as const,
+  resourceType: "credential-family" as const,
+  resourceId: `tr:issuer-resource:v1:${"f".repeat(64)}`,
+  evaluationTime: "2026-05-20T02:30:00Z",
+};
 
 describe("decision evidence envelope", () => {
   it("accepts structural issuer and verifier claims without authenticating them", () => {
@@ -245,5 +273,89 @@ describe("decision evidence envelope", () => {
       ...evidence,
       epoch: { ...evidence.epoch, policyRoot: D },
     })).toThrow(/policy root mismatch/u);
+  });
+
+  it("requires caller-selected registry, subject, role, scope, and active windows", () => {
+    const evidence = consistentIssuerEvidence();
+    expect(() => assertDecisionEvidenceSelection(evidence, expectedIssuerSelection)).not.toThrow();
+    for (const changed of [
+      { networkId: "mainnet" },
+      { contractAddress: B },
+      { subjectDid: MAINTAINER },
+      { role: "verifier" as const },
+      { resourceId: `tr:issuer-resource:v1:${"a".repeat(64)}` },
+      { evaluationTime: "2026-05-20T01:59:59Z" },
+      { evaluationTime: "2026-05-20T03:00:01Z" },
+    ]) {
+      expect(() => assertDecisionEvidenceSelection(evidence, { ...expectedIssuerSelection, ...changed })).toThrow();
+    }
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ status: "suspended", suspendedAt: "2026-05-20T02:15:00Z" }),
+      expectedIssuerSelection,
+    )).toThrow(/not active/u);
+    for (const [status, field] of [
+      ["revoked", "revokedAt"],
+      ["superseded", "supersededAt"],
+      ["archived", "archivedAt"],
+    ] as const) {
+      expect(() => assertDecisionEvidenceSelection(
+        consistentIssuerEvidence({ status, [field]: "2026-05-20T02:15:00Z" }),
+        expectedIssuerSelection,
+      )).toThrow(/not active/u);
+    }
+    for (const status of ["proposed", "authorized"] as const) {
+      expect(() => assertDecisionEvidenceSelection(
+        consistentIssuerEvidence({ status }),
+        expectedIssuerSelection,
+      )).toThrow(/not active/u);
+    }
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ effectiveUntil: "2026-05-20T02:15:00Z" }),
+      expectedIssuerSelection,
+    )).toThrow(/active window/u);
+    const base = consistentIssuerEvidence();
+    const expiredPolicy = {
+      ...base,
+      policy: { ...base.policy, effectiveUntil: "2026-05-20T02:15:00Z" },
+    };
+    expiredPolicy.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(expiredPolicy.policy),
+    );
+    expect(() => assertDecisionEvidenceSelection(expiredPolicy, expectedIssuerSelection)).toThrow(/active window/u);
+  });
+
+  it("checks an exact verifier request profile separately from issuer scope", () => {
+    const issuer = issuerEvidence();
+    const requestResourceId = `tr:request-resource:v1:${"f".repeat(64)}`;
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: requestResourceId,
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: { ...issuer.didMethod, relationship: "authentication" },
+    };
+    const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(verifier.grant));
+    const root = computeMerkleRootFromProof(leafHash, [B], 0n);
+    verifier.epoch.stateRoot = root;
+    verifier.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(verifier.policy),
+    );
+    verifier.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path: [B], leafIndex: "0" };
+    const expected = {
+      ...expectedIssuerSelection,
+      role: "verifier" as const,
+      resourceType: "request-profile" as const,
+      resourceId: requestResourceId,
+    };
+    expect(() => assertDecisionEvidenceSelection(verifier, expected)).not.toThrow();
+    expect(() => assertDecisionEvidenceSelection(verifier, {
+      ...expected,
+      resourceId: `tr:request-resource:v1:${"a".repeat(64)}`,
+    })).toThrow(/scope mismatch/u);
   });
 });

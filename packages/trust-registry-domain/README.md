@@ -30,6 +30,7 @@ Primary exports:
 - `DecisionEvidenceJsonSchema`
 - `assertDecisionEvidenceInclusion`
 - `assertDecisionEvidencePolicyCommitment`
+- `assertDecisionEvidenceSelection`
 - `assertLifecycleTransition`
 
 `DecisionEvidenceSchema` is structural only. Its epoch and DID anchor references
@@ -48,3 +49,8 @@ epoch root only; callers must independently authenticate that root, quorum,
 policy, current grant, and DID state before making a trust decision.
 `assertDecisionEvidencePolicyCommitment` similarly recomputes the snapshot
 commitment against the claimed epoch policy root without authenticating it.
+`assertDecisionEvidenceSelection` additionally requires an exact caller-selected
+registry, subject, role, resource, and evaluation instant. It rejects non-active
+or out-of-window claims but does not prove that the grant is current. Do not
+turn its success into a VC signer descriptor without independent registry and
+DID-state verification.
