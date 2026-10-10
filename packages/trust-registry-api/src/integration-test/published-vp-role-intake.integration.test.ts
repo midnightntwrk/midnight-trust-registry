@@ -57,6 +57,7 @@ function scenario(role: typeof roles[number], harness: LocalTrustRegistryIntegra
 describe("published VP proof for non-issuer application roles", () => {
   it.each(roles)("checks %s claims and consumes a challenge once", async (role) => {
     const harness = new LocalTrustRegistryIntegrationHarness();
+    harness.advanceEvidenceTimeBy(60_000);
     const applicant = scenario(role, harness);
     const binding = ApplicationChallengeBindingSchema.parse({
       registryId: harness.registryId,
