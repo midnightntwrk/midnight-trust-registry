@@ -98,6 +98,7 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
 describe("canonical challenge-to-Compact proposal bridge", () => {
   it.each(ROLE_NAMES)("uses one consumed %s challenge for signed canonical proposal evidence", async (role) => {
     const harness = new LocalTrustRegistryIntegrationHarness();
+    harness.advanceEvidenceTimeBy(60_000);
     const { binding, applicationId, propose } = scenario(role, harness);
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(binding);

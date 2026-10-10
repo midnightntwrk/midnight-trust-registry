@@ -938,6 +938,8 @@ describe("trust registry local simulator integration", () => {
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;
+    const flipLastNibble = (hash: string): string =>
+      `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
     expect(() =>
       harness.assertPublishedEpochEvidence({
@@ -1075,7 +1077,7 @@ describe("trust registry local simulator integration", () => {
           ...bundle,
           inclusionProof: {
             ...bundle.inclusionProof,
-            leafHash: `${bundle.inclusionProof.leafHash.slice(0, -1)}0`,
+            leafHash: flipLastNibble(bundle.inclusionProof.leafHash),
           },
         },
         {},
@@ -1088,7 +1090,7 @@ describe("trust registry local simulator integration", () => {
           ...bundle,
           inclusionProof: {
             ...bundle.inclusionProof,
-            path: [`${bundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+            path: [flipLastNibble(bundle.inclusionProof.path[0]!)],
           },
         },
         {},
