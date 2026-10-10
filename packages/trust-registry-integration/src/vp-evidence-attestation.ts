@@ -35,18 +35,21 @@ export async function createApplicationVpIntakePorts<Submission>(config: {
   if (!signer.keyId.startsWith(`${signer.did}#`)) {
     throw new Error("Application evidence signer key must belong to its DID");
   }
-  const signerMethod = await resolveMidnightDIDMethodBinding({
-    resolver: config.resolver,
-    did: parseMidnightDIDString(signer.did),
-    verificationMethodId: signer.keyId,
-    relationship: "assertionMethod",
-  });
-  if (
-    signerMethod.publicKey.x !== signer.publicKey.x
-    || signerMethod.publicKey.y !== signer.publicKey.y
-  ) {
-    throw new Error("Application evidence signer key does not match its DID assertion method");
-  }
+  const assertCurrentSignerMethod = async () => {
+    const signerMethod = await resolveMidnightDIDMethodBinding({
+      resolver: config.resolver,
+      did: parseMidnightDIDString(signer.did),
+      verificationMethodId: signer.keyId,
+      relationship: "assertionMethod",
+    });
+    if (
+      signerMethod.publicKey.x !== signer.publicKey.x
+      || signerMethod.publicKey.y !== signer.publicKey.y
+    ) {
+      throw new Error("Application evidence signer key does not match its DID assertion method");
+    }
+  };
+  await assertCurrentSignerMethod();
 
   const verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier = (
     commitment,
@@ -81,9 +84,11 @@ export async function createApplicationVpIntakePorts<Submission>(config: {
       if (!/^0x[0-9a-f]{64}$/u.test(commitment)) {
         throw new Error("Application evidence commitment must be canonical bytes32");
       }
+      await assertCurrentSignerMethod();
       const keyIdCommitment = bytes32Commitment(signer.keyId);
       const commitmentBytes = Buffer.from(commitment.slice(2), "hex");
       const signed = await signer.signCommitment(keyIdCommitment, commitmentBytes);
+      await assertCurrentSignerMethod();
       const signature: ApplicationEvidenceSignature = {
         keyId: signer.keyId,
         algorithm: "jubjub-schnorr",

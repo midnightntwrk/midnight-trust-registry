@@ -11,6 +11,12 @@ exercise the same one-use API intake boundary. Only the issuer fixture reaches
 a governed Compact proposal; the other roles use a callback spy. Policy/status
 assertions in these fixtures are test-only. Production family/status adapters,
 durable challenge storage, and a public route remain open.
+The fixture family's `prepare` callback ignores the submitted VP and supplies
+prebuilt proof material; these tests cover proof/intake wiring and rejection of
+stubbed policy decisions, not authenticity of submitted claims or live status.
+The evidence signer re-resolves its DID assertion method at signing time;
+the synchronous signature verifier checks the signed snapshot, not live DID
+revocation at a later governed transition.
 The non-issuer fixtures reject stale status, revoked-status adapter decisions,
 and expired credentials before challenge consumption.
 

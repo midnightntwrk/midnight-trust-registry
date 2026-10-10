@@ -18,6 +18,7 @@ import {
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
 } from "../application-vp-verifier.js";
+import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
 import { createApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
 import { createApplicationVpScenarioFixture, VP_FIXTURE_NONCE, VP_FIXTURE_TIME_MS } from "../vp-scenario-fixtures.js";
@@ -106,6 +107,32 @@ describe("published VC proof and DID application verifier port", () => {
       },
     });
     await expect(invalidPorts.signEvidence(commitment)).rejects.toThrow(/invalid signature/u);
+  });
+
+  it("rejects evidence signing when the DID assertion method rotates after port creation", async () => {
+    const { input } = await fixture();
+    const signerDid = createMidnightDid("vp-evidence-verifier");
+    const seed = new Uint8Array(32).fill(41);
+    const signer = {
+      did: signerDid,
+      keyId: `${signerDid}#assertion-1`,
+      publicKey: deriveJubjubPublicKeyFromSeed(seed),
+      signCommitment: (keyId: Uint8Array, commitment: Uint8Array) =>
+        signApplicationEvidenceCommitmentFromSeed(seed, keyId, commitment),
+    };
+    const ports = await createApplicationVpIntakePorts({
+      resolver: input.resolver, family: input.family, signer,
+    });
+    const rotated = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(signerDid, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: deriveJubjubPublicKey(31n),
+      }),
+    ]);
+    vi.spyOn(input.resolver, "resolveResult").mockImplementation((did) => rotated.resolveResult(did));
+    await expect(ports.signEvidence(sha256Hex("after-rotation"))).rejects.toThrow(
+      /does not match its DID assertion method/u,
+    );
   });
 
   it("adapts proof-observed bindings for challenge intake rather than echoing expected inputs", async () => {
