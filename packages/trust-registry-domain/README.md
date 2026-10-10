@@ -35,6 +35,8 @@ are untrusted lookup claims, not independently accepted anchors. A successful
 parse does not authenticate signatures, Merkle paths, DID state, policy
 currency, or signer authorization, and it does not produce a VC descriptor.
 The existing single-signature evidence bundle remains unchanged. Cross-field
-consistency checks in Zod (including declared quorum size) are not expressible
-in the exported JSON Schema; consumers must parse with Zod before attempting
-the later independent verification stages.
+consistency checks in Zod (including declared quorum size and the `uint64`
+range) are not expressible in the exported JSON Schema; consumers must parse
+with Zod before attempting the later independent verification stages.
+Ledger and DID state versions use canonical decimal `uint64` strings, not JSON
+numbers, so values above JavaScript's safe-integer limit are not truncated.

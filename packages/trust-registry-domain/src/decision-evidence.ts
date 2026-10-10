@@ -11,8 +11,14 @@ const IdentifierSchema = ScopedIdentifierSchema.regex(/^[a-z0-9][a-z0-9:._-]*$/u
 const MidnightDidSchema = z.string().regex(/^did:midnight:[a-z0-9]+:[0-9a-f]{64}$/u);
 const MethodIdSchema = z.string().regex(/^did:midnight:[a-z0-9]+:[0-9a-f]{64}#[A-Za-z0-9:._-]+$/u);
 const TimestampSchema = z.string().datetime({ offset: true });
-const SequenceSchema = z.number().int().safe().nonnegative();
-const PositiveSequenceSchema = z.number().int().safe().positive();
+const SequenceSchema = z.string().regex(/^(0|[1-9][0-9]*)$/u).refine(
+  (value) => BigInt(value) <= 18446744073709551615n,
+  "Sequence exceeds uint64",
+);
+const PositiveSequenceSchema = SequenceSchema.refine(
+  (value) => value !== "0",
+  "Sequence must be positive",
+);
 const SignatureSchema = z.strictObject({
   keyId: MethodIdSchema,
   algorithm: z.literal("jubjub-schnorr"),
