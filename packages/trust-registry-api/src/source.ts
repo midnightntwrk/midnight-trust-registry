@@ -26,6 +26,10 @@ import type {
   TrqpRecognitionRequest,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
 import type {
   EpochCommitment,
   RegistryRecord,
@@ -470,6 +474,46 @@ const bundleAvailableAt = (
     && time <= Date.parse(bundle.epoch.validUntil);
 };
 
+const authorizationEvidenceAtTime = (
+  snapshot: TrustRegistryOperatorSnapshot,
+  inspection: SnapshotTemporalAuthorizationInspection,
+  at: string,
+): TrustRegistryEvidenceBundle | null => {
+  const candidates = [inspection.entry.evidence, ...snapshot.evidenceArchive]
+    .filter((bundle) => bundleAvailableAt(bundle, snapshot, at))
+    .sort((left, right) =>
+      Date.parse(right.epoch.validFrom) - Date.parse(left.epoch.validFrom)
+      || right.epoch.epochId.localeCompare(left.epoch.epochId));
+  for (const bundle of candidates) {
+    const authorization = bundle.authorization;
+    if (authorization?.authorizationId !== inspection.entry.authorization.authorizationId) continue;
+    const decision = evaluateAuthorizationRecordAtTime(authorization, at);
+    if (decision.statusAtTime === inspection.statusAtTime
+      && decision.trustedAtTime === inspection.trustedAtTime) return bundle;
+  }
+  return null;
+};
+
+const recognitionEvidenceAtTime = (
+  snapshot: TrustRegistryOperatorSnapshot,
+  inspection: SnapshotTemporalRecognitionInspection,
+  at: string,
+): TrustRegistryEvidenceBundle | null => {
+  const candidates = [inspection.entry.evidence, ...snapshot.evidenceArchive]
+    .filter((bundle) => bundleAvailableAt(bundle, snapshot, at))
+    .sort((left, right) =>
+      Date.parse(right.epoch.validFrom) - Date.parse(left.epoch.validFrom)
+      || right.epoch.epochId.localeCompare(left.epoch.epochId));
+  for (const bundle of candidates) {
+    const recognition = bundle.recognition;
+    if (recognition?.recognitionId !== inspection.entry.recognition.recognitionId) continue;
+    const decision = evaluateRecognitionRecordAtTime(recognition, at);
+    if (decision.statusAtTime === inspection.statusAtTime
+      && decision.trustedAtTime === inspection.trustedAtTime) return bundle;
+  }
+  return null;
+};
+
 export const createTrqpSourceFromStateSource = (
   source: TrustRegistryApiStateSource,
 ): TrustRegistryTrqpSource => ({
@@ -498,10 +542,9 @@ export const createTrqpSourceFromStateSource = (
     };
     const inspection = evaluateAuthorizationInSnapshot(snapshot, lookup, evaluatedAt);
     if (inspection === null) return null;
+    const bundle = authorizationEvidenceAtTime(snapshot, inspection, evaluatedAt);
     return {
-      ...(bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
-        ? { bundle: inspection.entry.evidence }
-        : {}),
+      ...(bundle === null ? {} : { bundle }),
       statusAtTime: inspection.statusAtTime,
       trustedAtTime: inspection.trustedAtTime,
     };
@@ -532,10 +575,9 @@ export const createTrqpSourceFromStateSource = (
     };
     const inspection = evaluateRecognitionInSnapshot(snapshot, lookup, evaluatedAt);
     if (inspection === null) return null;
+    const bundle = recognitionEvidenceAtTime(snapshot, inspection, evaluatedAt);
     return {
-      ...(bundleAvailableAt(inspection.entry.evidence, snapshot, evaluatedAt)
-        ? { bundle: inspection.entry.evidence }
-        : {}),
+      ...(bundle === null ? {} : { bundle }),
       statusAtTime: inspection.statusAtTime,
       trustedAtTime: inspection.trustedAtTime,
     };

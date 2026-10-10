@@ -8,6 +8,12 @@ import { runCli } from "../cli.js";
 import { createDemoSnapshot } from "../demo-snapshot.js";
 import { TrustRegistryOperatorSnapshotSchema } from "../model.js";
 import { loadSnapshotFromFile } from "../snapshot.js";
+import {
+  applyWorkspaceOperation,
+  createOperatorWorkspace,
+  loadWorkspaceFromFile,
+  writeWorkspaceToFile,
+} from "../workspace.js";
 
 const CLI_TEST_TIMEOUT_MS = 20_000;
 
@@ -524,6 +530,50 @@ describe("trust registry operator CLI", () => {
     ]);
     expect(evidence.exitCode).toBe(0);
     expect(JSON.parse(evidence.stdout).authorization.status).toBe("archived");
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it("retains prior issuer evidence and epoch commitments across workspace writes", async () => {
+    let workspace = createOperatorWorkspace({ label: "issuer-archive" });
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "submit", target: "issuer", label: "degree-archive",
+    });
+    const id = workspace.snapshot.issuerEntries[0]?.authorization.authorizationId;
+    if (id === undefined) throw new Error("expected submitted issuer");
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "approve", target: "issuer", id,
+    });
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "activate", target: "issuer", id,
+    });
+    const activeEvidence = workspace.snapshot.issuerEntries[0]?.evidence;
+    if (activeEvidence === undefined) throw new Error("expected active issuer evidence");
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "revoke", target: "issuer", id,
+    });
+    expect(workspace.snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    expect(workspace.snapshot.evidenceArchive).toContainEqual(activeEvidence);
+    expect(workspace.snapshot.epochs).toContainEqual(activeEvidence.epoch);
+
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-archive-"));
+    const path = join(directory, "workspace.json");
+    await writeWorkspaceToFile(path, workspace);
+    const loaded = await loadWorkspaceFromFile(path);
+    const archived = applyWorkspaceOperation(loaded, {
+      operation: "archive", target: "issuer", id,
+    });
+    expect(archived.snapshot.evidenceArchive).toContainEqual(activeEvidence);
+    const keys = archived.snapshot.evidenceArchive.map((bundle) =>
+      `${bundle.authorization?.authorizationId}:${bundle.epoch.epochId}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...archived.snapshot,
+      issuerEntries: [],
+    }).success).toBe(true);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...archived.snapshot,
+      evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
+        index === 0 ? { ...bundle, registryId: "registry:foreign:v1" } : bundle),
+    }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 
   it(
