@@ -20,6 +20,8 @@ const PositiveSequenceSchema = SequenceSchema.refine(
   (value) => value !== "0",
   "Sequence must be positive",
 );
+const MAX_MERKLE_PATH_DEPTH = 256;
+const MerklePathSchema = z.array(HashSchema).min(1).max(MAX_MERKLE_PATH_DEPTH);
 const SignatureSchema = z.strictObject({
   keyId: MethodIdSchema,
   algorithm: z.literal("jubjub-schnorr"),
@@ -65,7 +67,7 @@ const DidStateEvidenceSchema = z.discriminatedUnion("evidenceType", [
     evidenceType: z.literal("state-proof"),
     stateRoot: HashSchema,
     leafHash: HashSchema,
-    path: z.array(HashSchema).min(1),
+    path: MerklePathSchema,
     leafIndex: SequenceSchema,
     blockHash: HashSchema,
   }),
@@ -136,7 +138,7 @@ const BaseEnvelope = {
     proofType: z.literal("merkle-inclusion"),
     root: HashSchema,
     leafHash: HashSchema,
-    path: z.array(HashSchema).min(1),
+    path: MerklePathSchema,
     leafIndex: SequenceSchema,
   }),
   governanceEvents: z.strictObject({
@@ -167,6 +169,9 @@ const DecisionEvidenceShape = z.discriminatedUnion("role", [
 export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidence, ctx) => {
   if (BigInt(evidence.decisionSequence) < BigInt(evidence.epoch.publicationSequence)) {
     ctx.addIssue({ code: "custom", path: ["decisionSequence"], message: "Decision sequence predates epoch publication" });
+  }
+  if (BigInt(evidence.decisionSequence) > BigInt(evidence.epoch.validUntilSequence)) {
+    ctx.addIssue({ code: "custom", path: ["decisionSequence"], message: "Decision sequence is outside the epoch window" });
   }
   if (Date.parse(evidence.epoch.validFrom) >= Date.parse(evidence.epoch.validUntil)) {
     ctx.addIssue({ code: "custom", path: ["epoch", "validUntil"], message: "Epoch validity window must increase" });

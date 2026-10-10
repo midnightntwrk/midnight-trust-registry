@@ -158,6 +158,47 @@ const acceptedEpoch = (evidence: ReturnType<typeof consistentIssuerEvidence>) =>
 });
 
 describe("decision evidence envelope", () => {
+  it("bounds the decision sequence by the epoch publication and inclusive end sequence", () => {
+    const evidence = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence: "10" }).success).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence: "20" }).success).toBe(true);
+    for (const decisionSequence of ["9", "21", "18446744073709551615"]) {
+      expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence }).success).toBe(false);
+    }
+  });
+
+  it("bounds claimed grant and DID-state proof depths before verification", () => {
+    const issuer = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse({
+      ...issuer,
+      inclusionProof: { ...issuer.inclusionProof, path: Array(257).fill(B) },
+    }).success).toBe(false);
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: `tr:request-resource:v1:${"f".repeat(64)}`,
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: {
+        ...issuer.didMethod,
+        relationship: "authentication",
+        stateEvidence: {
+          evidenceType: "state-proof",
+          stateRoot: A,
+          leafHash: B,
+          path: Array(257).fill(C),
+          leafIndex: "0",
+          blockHash: D,
+        },
+      },
+    };
+    expect(DecisionEvidenceSchema.safeParse(verifier).success).toBe(false);
+  });
+
   it("matches every epoch claim to a separately accepted publication context", () => {
     const evidence = consistentIssuerEvidence();
     const accepted = acceptedEpoch(evidence);

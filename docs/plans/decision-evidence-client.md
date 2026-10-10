@@ -47,6 +47,9 @@ explicit verifier configuration. The bundle contains:
   window, the publication policy commitment and sequence window used in the
   Compact signing payload, the full threshold signer set, and the Merkle path
   for the grant. Timestamps are off-ledger projections, not signed sequences.
+  The claimed decision sequence must be between publication and the inclusive
+  epoch end sequence; this range check does not establish finality or currency.
+  Grant and DID-state Merkle paths are limited to 256 siblings in this profile.
 - The subject `did:midnight`, absolute verification-method reference, native
   public key, observed positive DID state version, required relationship, and
   a DID state proof or authenticated ledger observation.
