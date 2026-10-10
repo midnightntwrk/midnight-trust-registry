@@ -118,7 +118,10 @@ const BaseEnvelope = {
     stateRoot: HashSchema,
     eventRoot: HashSchema,
     policyRoot: HashSchema,
+    publicationPolicyCommitment: HashSchema,
     publicationSequence: PositiveSequenceSchema,
+    validFromSequence: SequenceSchema,
+    validUntilSequence: PositiveSequenceSchema,
     validFrom: TimestampSchema,
     validUntil: TimestampSchema,
     quorum: z.strictObject({
@@ -165,6 +168,12 @@ export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidenc
   }
   if (Date.parse(evidence.epoch.validFrom) >= Date.parse(evidence.epoch.validUntil)) {
     ctx.addIssue({ code: "custom", path: ["epoch", "validUntil"], message: "Epoch validity window must increase" });
+  }
+  if (
+    BigInt(evidence.epoch.validFromSequence) > BigInt(evidence.epoch.publicationSequence)
+    || BigInt(evidence.epoch.validUntilSequence) <= BigInt(evidence.epoch.validFromSequence)
+  ) {
+    ctx.addIssue({ code: "custom", path: ["epoch", "validUntilSequence"], message: "Epoch sequence window is invalid" });
   }
   const grant = AuthorizationRecordSchema.safeParse(evidence.grant);
   if (!grant.success) {
@@ -225,7 +234,10 @@ export const AcceptedDecisionEpochSchema = z.strictObject({
   stateRoot: HashSchema,
   eventRoot: HashSchema,
   policyRoot: HashSchema,
+  publicationPolicyCommitment: HashSchema,
   publicationSequence: PositiveSequenceSchema,
+  validFromSequence: SequenceSchema,
+  validUntilSequence: PositiveSequenceSchema,
   publicationEventHash: HashSchema,
   validFrom: TimestampSchema,
   validUntil: TimestampSchema,
@@ -257,6 +269,8 @@ export const assertDecisionEvidenceMatchesAcceptedEpoch = (
     evidence.epoch.epochId !== accepted.epochId
     || evidence.epoch.registryId !== accepted.registryId
     || evidence.epoch.publicationSequence !== accepted.publicationSequence
+    || evidence.epoch.validFromSequence !== accepted.validFromSequence
+    || evidence.epoch.validUntilSequence !== accepted.validUntilSequence
     || evidence.governanceEvents.epochPublication !== accepted.publicationEventHash
   ) {
     throw new Error("Decision evidence accepted epoch publication mismatch");
@@ -265,6 +279,7 @@ export const assertDecisionEvidenceMatchesAcceptedEpoch = (
     evidence.epoch.stateRoot !== accepted.stateRoot
     || evidence.epoch.eventRoot !== accepted.eventRoot
     || evidence.epoch.policyRoot !== accepted.policyRoot
+    || evidence.epoch.publicationPolicyCommitment !== accepted.publicationPolicyCommitment
   ) {
     throw new Error("Decision evidence accepted epoch root mismatch");
   }

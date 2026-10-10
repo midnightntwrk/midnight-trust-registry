@@ -34,7 +34,9 @@ explicit verifier configuration. The bundle contains:
   exact issuer or verifier grant, resource scope, policy ID and version, and
   lifecycle status at the decision sequence.
 - An epoch ID, state/event/policy roots, publication sequence and validity
-  window, the full threshold signer set, and the Merkle path for the grant.
+  window, the publication policy commitment and sequence window used in the
+  Compact signing payload, the full threshold signer set, and the Merkle path
+  for the grant. Timestamps are off-ledger projections, not signed sequences.
 - The subject `did:midnight`, absolute verification-method reference, native
   public key, observed positive DID state version, required relationship, and
   a DID state proof or authenticated ledger observation.
