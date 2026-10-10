@@ -212,27 +212,34 @@ contract has a datetime primitive.
 
 ## 4. Contract Inputs And Checks
 
-The governed approval transition consumes:
+The governed proposal transition consumes:
 
 - `applicationEvidenceCommitment`
-- `policyId` and `policyVersion`
-- `evidenceVerifierDid` and its assertion key reference
-- `verifiedAt` and `expiresAt`
-- evidence-verifier signature over the commitment
+- the active policy commitment and version
+- the governed evidence-verifier authorization ID and assertion key reference
+- the evidence-verifier signature over the proposal-bound commitment
 - the maintainer signer bundle required for the decision family
 
-The contract MUST reject a transition when any of the following holds:
+The issuer pilot contract MUST reject a proposal when any of the following holds:
 
 - the application id, subject, role, registry, policy, or scope differs from the
-  application being approved;
-- the evidence verifier is not active for the policy at `verifiedAt`;
-- the evidence is not yet valid or is expired at approval or activation time;
+  signed proposal payload;
+- the evidence-verifier key is not active under the current policy snapshot;
 - the signature is invalid for the verifier key reference;
 - the required maintainer quorum is not satisfied; or
 - the same live authorization scope already exists for the subject.
 
-The contract MUST retain the commitment, policy snapshot, verifier identity,
-verification window, and governance event reference in append-only state.
+The issuer pilot MUST retain the commitment, policy snapshot, verifier identity
+and key reference, and governance event reference in append-only state. The
+envelope's `verifiedAt` and `expiresAt` remain off-ledger data committed by its
+canonical hash. The intake service MUST validate the evidence window against a
+trusted off-ledger clock when accepting the application and again before any
+later approval or activation. Compact cannot independently parse the envelope
+from its hash or compare its timestamps with a trusted wall clock. Therefore
+the pilot MUST NOT claim that expiry or verifier activity at historical
+`verifiedAt` was proven by the contract. A sequence-bound validity rule or an
+authenticated time attestation, with an on-ledger verification-window record,
+is required before the broader on-chain expiry rejection target is met.
 
 ## 5. Privacy And Retention
 
