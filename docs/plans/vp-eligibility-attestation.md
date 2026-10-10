@@ -6,9 +6,11 @@ issuer-fixture adversarial tests and a typed #127 intake callback adapter exist.
 The API integration suite now exercises that adapter through the one-use
 challenge service with published VC proof fixtures, DID-bound signing, and
 redacted proposal evidence, including a successful issuer proposal in the
-Compact simulator. The policy/status assertions in this fixture are test-only;
-four-role fixtures, production family/status adapters, durable challenge
-storage, and a public route remain open.
+Compact simulator. Issuer, verifier, auditor, and maintainer fixtures now
+exercise the same one-use API intake boundary. Only the issuer fixture reaches
+a governed Compact proposal; the other roles use a callback spy. Policy/status
+assertions in these fixtures are test-only. Production family/status adapters,
+durable challenge storage, and a public route remain open.
 
 ## Published Package Boundary
 
@@ -61,9 +63,10 @@ not a production verifier.
   packages; require injected family body-root and status/claims adapters.
 - Add positive issuer, verifier, auditor, and maintainer fixtures and
   adversarial challenge, subject, issuer, scope, status, expiry, and claim
-  cases. The issuer proof fixture now reaches #127's one-use intake callback
-  and a Compact simulator proposal; other roles and production eligibility
-  adapters remain open.
+  cases. All four roles now exercise #127's one-use intake callback and
+  wrong-scope pre-consumption rejection. The issuer proof fixture additionally
+  reaches a Compact simulator proposal; governed proposals for other roles
+  and production eligibility adapters remain open.
 - Only then add an authenticated API route with bounded payloads, a durable
   atomic challenge store, rate limits, redacted errors, and retention policy.
 

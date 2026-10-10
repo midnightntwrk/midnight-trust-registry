@@ -22,7 +22,7 @@ const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slic
 /** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
 export async function createApplicationVpScenarioFixture(
   nonce = VP_FIXTURE_NONCE,
-  options: { subjectDid?: string; evidenceVerifierDid?: string } = {},
+  options: { subjectDid?: string; evidenceVerifierDid?: string; scopeCommitment?: string } = {},
 ) {
   const issuerDid = createMidnightDid("vp-issuer");
   const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
@@ -99,7 +99,7 @@ export async function createApplicationVpScenarioFixture(
     assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000 }),
     assertRoleClaims: async () => ({
       claimsCommitment: sha256Hex("accepted-issuer-claims"),
-      scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      scopeCommitment: options.scopeCommitment ?? computeAuthorizationScopeCommitment(scope),
     }),
   };
   const verifierSeed = new Uint8Array(32).fill(41);
