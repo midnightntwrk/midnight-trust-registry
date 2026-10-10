@@ -10,6 +10,7 @@ Current scope:
 - epoch-anchor verification against published roots and maintainer signatures
 - consumer-side verification exercised by simulator, DID-backed, and VC-backed
   integration scenarios
+- a Midnight DID observation comparator for versioned decision evidence
 
 This package is the consumer-facing layer on top of the Compact contract.
 
@@ -32,3 +33,10 @@ commitment for signature verification, and rejects incompatible ledger formats
 before evidence and raw
 record reads, including when the ledger changes after client construction;
 that simulator is a local reference, not a production trust source.
+
+`assertDecisionEvidenceDidMethodMatchesObservation` parses a DID Document with
+the published Midnight DID package and matches the exact method, native JWK,
+controller, role relationship, block, and state version claimed by a decision
+evidence envelope. Its observation must come from a caller-authenticated,
+finalized DID-state source. The comparator does not validate a ledger proof or
+establish finality and must not be used alone to produce a VC signer descriptor.
