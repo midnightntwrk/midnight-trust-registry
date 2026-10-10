@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { encodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
 
 import {
   AuthorizationRecordSchema,
@@ -273,6 +274,26 @@ describe("decision evidence envelope", () => {
       ...verifier,
       didMethod: { ...verifier.didMethod, relationship: "capabilityInvocation" },
     }).success).toBe(true);
+  });
+
+  it("accepts canonical native coordinates outside the former four-suffix subset", () => {
+    const evidence = issuerEvidence();
+    const coordinate = encodeJubjubJwkCoordinate(1n);
+    expect(coordinate.endsWith("E")).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...evidence,
+      didMethod: {
+        ...evidence.didMethod,
+        publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, x: coordinate },
+      },
+    }).success).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...evidence,
+      didMethod: {
+        ...evidence.didMethod,
+        publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, x: `${coordinate.slice(0, -1)}F` },
+      },
+    }).success).toBe(false);
   });
 
   it("binds issuer status authority preimage to the governed grant and excludes it from verifier claims", () => {

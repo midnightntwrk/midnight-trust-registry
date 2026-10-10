@@ -49,5 +49,6 @@ implemented; only authenticated ledger observations are accepted in v1.
 with accepted-epoch equality, complete Compact publication signatures, exact
 grant inclusion/policy/scope/window checks, and a jointly observed decision
 sequence/evaluation time. It returns no descriptor. Callers must authenticate
-that joint observation and the other supplied contexts, then establish
+that joint observation, including the active policy root and current grant at
+the selected sequence, and the other supplied contexts, then establish
 finality and currentness separately; Midnight does not bind sequence to time.

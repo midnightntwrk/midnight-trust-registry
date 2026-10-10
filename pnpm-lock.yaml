@@ -209,6 +209,9 @@ importers:
 
   packages/trust-registry-domain:
     dependencies:
+      '@midnight-ntwrk/midnight-did-domain':
+        specifier: 0.7.0
+        version: 0.7.0
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0

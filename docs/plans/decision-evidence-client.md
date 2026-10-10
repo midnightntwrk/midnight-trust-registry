@@ -49,6 +49,11 @@ observation, and establish finality and currency separately.
 Local composition fixtures cover issuer assertion and verifier authentication
 methods with two real publication signers, exact request-profile rejection,
 and fail-closed suspended, revoked, superseded, and archived grant selection.
+The joint decision-point observation must also supply the active policy root
+at the selected sequence. An epoch whose policy has since been superseded
+cannot authorize a new current decision even if its included grant remains
+active. The caller authenticates that observation; comparing the roots does
+not establish provenance.
 
 The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
@@ -80,7 +85,10 @@ Registry Merkle algorithm must not be presumed to prove DID state.
   independently obtained observation; a block/version match alone is not enough.
   That observation must explicitly report a non-deactivated DID state.
 - Governance event references for the grant transition, quorum, policy
-  snapshot, and any supersession affecting the decision.
+  snapshot, and any supersession affecting the decision. Except for the
+  publication event checked by the epoch verifier, these are unverified
+  lookup hints until authenticated event evidence is supplied; consumers
+  must not infer those transitions from the hashes alone.
 
 Verifier configuration supplies an independently accepted registry contract
 identity and network, an epoch root accepted from that contract or an

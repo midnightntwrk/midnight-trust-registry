@@ -23,6 +23,10 @@ export type DecisionEvidenceSuppliedContext = {
   decisionPoint: {
     sequence: string;
     evaluationTime: string;
+    currentPolicy: {
+      root: string;
+      observedAtSequence: string;
+    };
     currentGrant: {
       authorizationId: string;
       lifecycleEventRoot: string;
@@ -40,6 +44,12 @@ export const assertDecisionEvidenceConsistentWithSuppliedContext = (
   const evidence = DecisionEvidenceSchema.parse(input);
   if (evidence.decisionSequence !== context.decisionPoint.sequence) {
     throw new Error("Decision evidence selected sequence mismatch");
+  }
+  if (
+    context.decisionPoint.currentPolicy.observedAtSequence !== context.decisionPoint.sequence
+    || context.decisionPoint.currentPolicy.root !== evidence.epoch.policyRoot
+  ) {
+    throw new Error("Decision evidence current policy mismatch");
   }
   const currentGrant = context.decisionPoint.currentGrant;
   if (

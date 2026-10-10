@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
 
 import { computeAuthorizationStatementLeafHash, computeMerkleRootFromProof } from "./evidence-bundle.js";
 import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
@@ -23,6 +24,14 @@ const PositiveSequenceSchema = SequenceSchema.refine(
 );
 const MAX_MERKLE_PATH_DEPTH = 256;
 const MerklePathSchema = z.array(HashSchema).min(1).max(MAX_MERKLE_PATH_DEPTH);
+const JubjubCoordinateSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u).refine((value) => {
+  try {
+    decodeJubjubJwkCoordinate(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "Jubjub coordinate must be a canonical 32-byte field element");
 const SignatureSchema = z.strictObject({
   keyId: MethodIdSchema,
   algorithm: z.literal("jubjub-schnorr"),
@@ -82,8 +91,8 @@ const DidMethodSchema = z.strictObject({
   publicKeyJwk: z.strictObject({
     kty: z.literal("EC"),
     crv: z.literal("Jubjub"),
-    x: z.string().regex(/^[A-Za-z0-9_-]{42}[AQgw]$/u),
-    y: z.string().regex(/^[A-Za-z0-9_-]{42}[AQgw]$/u),
+    x: JubjubCoordinateSchema,
+    y: JubjubCoordinateSchema,
   }),
   stateVersion: PositiveSequenceSchema,
   stateEvidence: DidStateEvidenceSchema,
@@ -142,6 +151,7 @@ const BaseEnvelope = {
     path: MerklePathSchema,
     leafIndex: SequenceSchema,
   }),
+  // Only epochPublication is verified below; other hashes are unverified lookup references.
   governanceEvents: z.strictObject({
     grantTransition: HashSchema,
     quorumApproval: HashSchema,

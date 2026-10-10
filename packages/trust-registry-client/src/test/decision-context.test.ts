@@ -242,6 +242,10 @@ function fixture(
     decisionPoint: {
       sequence: "11",
       evaluationTime: "2026-05-20T02:30:00Z",
+      currentPolicy: {
+        root: policyRoot,
+        observedAtSequence: "11",
+      },
       currentGrant: {
         authorizationId: grant.authorizationId,
         lifecycleEventRoot: grant.lifecycleEventRoot,
@@ -254,6 +258,24 @@ function fixture(
 }
 
 describe("decision evidence supplied-context composition", () => {
+  it("rejects a superseded policy even when the included grant remains active", () => {
+    const { evidence, context } = fixture();
+    const replacementPolicyRoot = computeGovernancePolicySnapshotCommitment({
+      ...evidence.policy,
+      policyId: "policy:university:v2",
+      policyVersion: "v2",
+    });
+    for (const currentPolicy of [
+      { root: replacementPolicyRoot, observedAtSequence: "11" },
+      { root: context.decisionPoint.currentPolicy.root, observedAtSequence: "10" },
+    ]) {
+      expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
+        ...context,
+        decisionPoint: { ...context.decisionPoint, currentPolicy },
+      })).toThrow(/current policy mismatch/i);
+    }
+  });
+
   it("rejects a grant replaced or changed after epoch inclusion", () => {
     const { evidence, context } = fixture();
     for (const currentGrant of [
