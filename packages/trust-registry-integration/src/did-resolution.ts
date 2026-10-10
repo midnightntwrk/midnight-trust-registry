@@ -49,6 +49,7 @@ export type MidnightDidLedgerFixtureOptions = {
   serviceType?: string;
   verificationMethodId?: string;
   schnorrJubjubPublicKey?: { x: bigint; y: bigint };
+  capabilityInvocation?: boolean;
   version?: bigint;
   created?: bigint;
   updated?: bigint;
@@ -105,7 +106,7 @@ export const createMidnightDidLedgerFixture = (
     authenticationRelation: makeIterable<string>([verificationMethodId]),
     assertionMethodRelation: makeIterable<string>([verificationMethodId]),
     keyAgreementRelation: makeIterable<string>([]),
-    capabilityInvocationRelation: makeIterable<string>([]),
+    capabilityInvocationRelation: makeIterable<string>(options.capabilityInvocation ? [verificationMethodId] : []),
     capabilityDelegationRelation: makeIterable<string>([]),
     services: makeIterablePairs<string, unknown>([
       [
