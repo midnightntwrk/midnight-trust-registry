@@ -91,6 +91,24 @@ const VerifierDidMethodSchema = DidMethodSchema.safeExtend({
   relationship: z.enum(["authentication", "capabilityInvocation"]),
 });
 
+export const DecisionEvidenceEpochSchema = z.strictObject({
+  epochId: IdentifierSchema,
+  registryId: IdentifierSchema,
+  stateRoot: HashSchema,
+  eventRoot: HashSchema,
+  policyRoot: HashSchema,
+  publicationPolicyCommitment: HashSchema,
+  publicationSequence: PositiveSequenceSchema,
+  validFromSequence: SequenceSchema,
+  validUntilSequence: PositiveSequenceSchema,
+  validFrom: TimestampSchema,
+  validUntil: TimestampSchema,
+  quorum: z.strictObject({
+    requiredSignatures: z.number().int().min(1).max(5),
+    signatures: z.array(SignatureSchema).min(1).max(5),
+  }),
+});
+
 const BaseEnvelope = {
   format: z.literal("tr-decision-evidence-v1"),
   registry: z.strictObject({
@@ -112,23 +130,7 @@ const BaseEnvelope = {
       blockHash: HashSchema,
     }),
   }),
-  epoch: z.strictObject({
-    epochId: IdentifierSchema,
-    registryId: IdentifierSchema,
-    stateRoot: HashSchema,
-    eventRoot: HashSchema,
-    policyRoot: HashSchema,
-    publicationPolicyCommitment: HashSchema,
-    publicationSequence: PositiveSequenceSchema,
-    validFromSequence: SequenceSchema,
-    validUntilSequence: PositiveSequenceSchema,
-    validFrom: TimestampSchema,
-    validUntil: TimestampSchema,
-    quorum: z.strictObject({
-      requiredSignatures: z.number().int().min(1).max(5),
-      signatures: z.array(SignatureSchema).min(1).max(5),
-    }),
-  }),
+  epoch: DecisionEvidenceEpochSchema,
   policy: GovernancePolicySnapshotSchema,
   inclusionProof: z.strictObject({
     proofType: z.literal("merkle-inclusion"),

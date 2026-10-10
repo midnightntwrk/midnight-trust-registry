@@ -20,6 +20,16 @@ separately supplied accepted context. The caller must authenticate that
 context; this comparator does not verify publication signatures, quorum,
 finality, currentness, or the DID state. It therefore cannot produce a
 positive signer descriptor on its own.
+`assertDecisionEpochPublicationSignatures` additionally reconstructs the
+Compact epoch payload, verifies each distinct active maintainer's
+policy-bound JubJub signature, and matches the ordered signer-set event hash.
+Its accepted epoch, threshold, registry/epoch commitments, first signer, and
+active-key set must all come from authenticated ledger state at publication;
+the helper does not fetch or authenticate them. It also does not prove that
+the decision grant remains current after the epoch.
+In this v1 profile, each absolute maintainer DID method ID must hash to its
+on-ledger key ID commitment; a matching public key alone cannot relabel the
+signer as another DID method.
 
 The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
