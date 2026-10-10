@@ -53,6 +53,9 @@ explicit verifier configuration. The bundle contains:
 - The subject `did:midnight`, absolute verification-method reference, native
   public key, observed positive DID state version, required relationship, and
   a DID state proof or authenticated ledger observation.
+  For a ledger-observation claim, its transaction hash must also match the
+  independently obtained observation; a block/version match alone is not enough.
+  That observation must explicitly report a non-deactivated DID state.
 - Governance event references for the grant transition, quorum, policy
   snapshot, and any supersession affecting the decision.
 

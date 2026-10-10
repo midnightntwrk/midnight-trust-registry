@@ -35,7 +35,9 @@ const document = () => ({
 const observation = () => ({
   networkId: "devnet",
   blockHash: BLOCK,
+  transactionHash: BLOCK,
   stateVersion: "3",
+  deactivated: false,
   didDocument: document(),
 });
 
@@ -57,12 +59,19 @@ describe("decision evidence DID observation", () => {
     for (const change of [
       { networkId: "mainnet" },
       { blockHash: `0x${"b".repeat(64)}` },
+      { transactionHash: `0x${"b".repeat(64)}` },
       { stateVersion: "4" },
+      { deactivated: true },
     ]) {
       expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
         issuerClaim, { ...observation(), ...change }, "devnet",
       )).toThrow(/state anchor mismatch/u);
     }
+    expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
+      issuerClaim,
+      { networkId: "devnet", blockHash: BLOCK, stateVersion: "3", deactivated: false, didDocument: document() },
+      "devnet",
+    )).toThrow(/state anchor mismatch/u);
     expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
       issuerClaim,
       {

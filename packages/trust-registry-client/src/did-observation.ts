@@ -4,7 +4,9 @@ import type { DecisionEvidence } from "@midnight-ntwrk/trust-registry-domain";
 export type DidStateObservation = {
   networkId: string;
   blockHash: string;
+  transactionHash?: string;
   stateVersion: string;
+  deactivated: boolean;
   didDocument: unknown;
 };
 
@@ -18,6 +20,9 @@ export const assertDecisionEvidenceDidMethodMatchesObservation = (
     observation.networkId !== expectedNetworkId
     || observation.blockHash !== claim.stateEvidence.blockHash
     || observation.stateVersion !== claim.stateVersion
+    || observation.deactivated !== false
+    || (claim.stateEvidence.evidenceType === "ledger-observation"
+      && observation.transactionHash !== claim.stateEvidence.transactionHash)
   ) {
     throw new Error("Decision evidence DID state anchor mismatch");
   }
