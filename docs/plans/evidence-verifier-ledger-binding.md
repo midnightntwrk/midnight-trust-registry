@@ -1,17 +1,19 @@
 # Evidence-verifier ledger binding for issue #67
 
-Status: implementation plan, not an implemented authorization path. The first
-delivery is an issuer pilot; maintainer, verifier, and auditor proposals remain
-out of scope until their existing circuits are migrated without bypasses.
+Status: local issuer-pilot implementation in progress. Maintainer, verifier,
+and auditor proposals remain out of scope until their existing circuits are
+migrated without bypasses.
 
 ## Current boundary
 
 `applicationEvidenceSignatureDigest` binds a key reference and canonical
-envelope commitment, but the contract does not look up a governed verifier
-key. All proposal circuits currently accept an opaque evidence hash after a
-maintainer quorum action. Off-ledger DID resolution and VP checks do not turn
-that hash into an on-ledger attestation. Adding a second, optional issuer
-proposal circuit would leave the existing unsigned circuit as a bypass.
+envelope commitment for off-ledger intake. The issuer pilot additionally
+looks up a governed verifier key and verifies a distinct proposal-bound
+signature. The other proposal circuits still accept an opaque evidence hash
+after a maintainer quorum action. Off-ledger DID resolution and VP checks do
+not by themselves turn that hash into an on-ledger attestation. A second,
+optional issuer proposal circuit would leave an unsigned bypass, so the pilot
+replaces the existing issuer entry point rather than adding one.
 
 ## Issuer pilot invariant
 

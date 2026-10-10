@@ -15,6 +15,7 @@ import {
   type EvidenceVerifierKeyRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
+  type IssuerProposalEvidenceRecord,
   type MaintainerAuthorizationBundle,
   type MaintainerAuthorizationSigner,
   type MaintainerMembershipRecord,
@@ -520,6 +521,15 @@ export class TrustRegistrySimulator {
     );
   }
 
+  getIssuerProposalEvidence(authorizationId: Uint8Array): IssuerProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getIssuerProposalEvidence(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
   proposeIssuerAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
@@ -532,6 +542,9 @@ export class TrustRegistrySimulator {
     statusPolicyBindingCommitment: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -551,6 +564,9 @@ export class TrustRegistrySimulator {
         statusPolicyBindingCommitment,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }

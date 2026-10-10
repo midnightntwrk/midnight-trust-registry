@@ -184,6 +184,19 @@ export struct JubjubSignature {
   response: Field,
 }
 
+export struct IssuerProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
+}
+
 export struct MaintainerAuthorizationSigner {
   keyId: Bytes<32>,
   publicKey: JubjubPoint,
@@ -245,6 +258,7 @@ export ledger issuerAuthorizationCount: Counter;
 export ledger activeIssuerAuthorizationCount: Uint<64>;
 export ledger issuerAuthorizationIds: Set<Bytes<32>>;
 export ledger issuerAuthorizationRecords: Map<Bytes<32>, IssuerAuthorizationRecord>;
+export ledger issuerProposalEvidenceRecords: Map<Bytes<32>, IssuerProposalEvidenceRecord>;
 export ledger currentIssuerAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 export ledger verifierAuthorizationCount: Counter;
 export ledger activeVerifierAuthorizationCount: Uint<64>;
@@ -361,6 +375,44 @@ export pure circuit applicationEvidenceSignatureDigest(
     transientHash<Bytes<32>>(keyIdCommitment),
     transientHash<Bytes<32>>(evidenceCommitment),
     1 as Field
+  ];
+}
+
+export pure circuit issuerEvidenceBoundProposalPayloadHash(
+  baseIssuerPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseIssuerPayloadHash != pad(32, ""), "Issuer proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:issuer:evidence:bound:v1"),
+    baseIssuerPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit issuerProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound issuer proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:issuer:evidence:sig:v1")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(boundPayloadHash)
   ];
 }
 
@@ -2571,7 +2623,10 @@ export circuit proposeIssuerAuthorization(
   policyId: Bytes<32>,
   statusPolicyBindingCommitment: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
@@ -2581,6 +2636,20 @@ export circuit proposeIssuerAuthorization(
   const disclosedStatusPolicyBindingCommitment = disclose(statusPolicyBindingCommitment);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const scopeKey = disclose(
     issuerAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
@@ -2588,7 +2657,7 @@ export circuit proposeIssuerAuthorization(
       disclosedResourceId
     )
   );
-  const actionPayloadHash = disclose(
+  const baseIssuerPayloadHash = disclose(
     createIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
@@ -2600,6 +2669,27 @@ export circuit proposeIssuerAuthorization(
       disclosedEvidenceHash
     )
   );
+  const actionPayloadHash = disclose(
+    issuerEvidenceBoundProposalPayloadHash(
+      baseIssuerPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    issuerProposalEvidenceSignatureDigest(
+      registryId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
+  );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
     pad(32, "tr:issuer:propose"),
@@ -2609,6 +2699,10 @@ export circuit proposeIssuerAuthorization(
   assert(
     !issuerAuthorizationIds.member(disclosedAuthorizationId),
     "Issuer authorization already exists"
+  );
+  assert(
+    !issuerProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Issuer proposal evidence already exists"
   );
   if (currentIssuerAuthorizationIdsByScopeKey.member(scopeKey)) {
     const currentRecord = issuerAuthorizationRecords.lookup(
@@ -2642,6 +2736,21 @@ export circuit proposeIssuerAuthorization(
       lastStatusSequence: authorizedAction.actionSequence,
       evidenceHash: disclosedEvidenceHash,
       lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  issuerProposalEvidenceRecords.insert(
+    disclosedAuthorizationId,
+    IssuerProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
     }
   );
   currentIssuerAuthorizationIdsByScopeKey.insert(scopeKey, disclosedAuthorizationId);
@@ -2934,6 +3043,18 @@ export circuit getIssuerAuthorization(
 ): IssuerAuthorizationRecord {
   assert(initialized, "Trust registry is not initialized");
   return requireIssuerAuthorizationRecord(disclose(authorizationId));
+}
+
+export circuit getIssuerProposalEvidence(
+  authorizationId: Bytes<32>
+): IssuerProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedAuthorizationId = disclose(authorizationId);
+  assert(
+    issuerProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Issuer proposal evidence is not registered"
+  );
+  return issuerProposalEvidenceRecords.lookup(disclosedAuthorizationId);
 }
 
 export circuit getCurrentIssuerAuthorization(

@@ -6,6 +6,7 @@ import {
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateEvidenceVerifierKeyPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
@@ -17,13 +18,16 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   encodeCompactActionKind,
+  computeIssuerEvidenceBoundProposalPayloadHash,
   signApplicationEvidenceCommitmentFromSeed,
+  signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
+  labelToBytes32,
   type MaintainerCoAuthorizer,
   TrustRegistrySimulator,
 } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -89,6 +93,7 @@ import {
 } from "./fixtures.js";
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
+const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
 const AUTHORIZE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:authorize");
 const ACTIVATE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:activate");
 const SUSPEND_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:suspend");
@@ -212,6 +217,8 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly maintainerDid: string;
   readonly maintainerDidCommitment: Uint8Array;
   readonly evidenceVerifier: AuthorizedEvidenceVerifier;
+  private currentEvidenceVerifierAuthorizationId!: Uint8Array;
+  private currentEvidenceVerifierKeyIdCommitment!: Uint8Array;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
   private readonly evidenceVerifierKey = createMaintainerFixture("evidence-verifier", 41);
@@ -300,6 +307,52 @@ export class LocalTrustRegistryIntegrationHarness {
       this.bootstrapPublicKey,
       1n,
     );
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+  }
+
+  private authorizeEvidenceVerifierForCurrentPolicy(): void {
+    const version = this.simulator.getLedger().governancePolicyVersion;
+    const keyId = `${this.evidenceVerifier.did}#assertion-${version.toString()}`;
+    const authorizationId = bytes32Commitment(
+      createScopedIdentifier("evidence-verifier-key", this.registryId, `v${version.toString()}`),
+    );
+    const didCommitment = bytes32Commitment(this.evidenceVerifier.did);
+    const keyIdCommitment = bytes32Commitment(keyId);
+    const actionPayloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
+      authorizationId,
+      didCommitment,
+      keyIdCommitment,
+      this.evidenceVerifierPublicKey,
+      labelToBytes32("jubjub-schnorr"),
+      this.governancePolicyCommitment,
+      version,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    this.simulator.registerEvidenceVerifierKey(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(
+        REGISTER_EVIDENCE_VERIFIER_ACTION_KIND,
+        actionPayloadHash,
+        actionSequence,
+      ),
+      authorizationId,
+      didCommitment,
+      keyIdCommitment,
+      this.evidenceVerifierPublicKey,
+      labelToBytes32("jubjub-schnorr"),
+      this.governancePolicyCommitment,
+      version,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        REGISTER_EVIDENCE_VERIFIER_ACTION_KIND,
+        actionPayloadHash,
+        actionSequence,
+      ),
+    );
+    this.currentEvidenceVerifierAuthorizationId = authorizationId;
+    this.currentEvidenceVerifierKeyIdCommitment = keyIdCommitment;
+    if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
   }
 
   createApplicationEvidence(input: {
@@ -455,6 +508,8 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:issuer:propose",
             "tr:issuer:authorize",
             "tr:issuer:activate",
+            "tr:evidence-verifier:register",
+            "tr:evidence-verifier:rotate",
             "tr:verifier:propose",
             "tr:verifier:authorize",
             "tr:verifier:activate",
@@ -474,6 +529,8 @@ export class LocalTrustRegistryIntegrationHarness {
           applicableActionKinds: [
             "tr:issuer:suspend",
             "tr:issuer:revoke",
+            "tr:evidence-verifier:suspend",
+            "tr:evidence-verifier:revoke",
             "tr:verifier:suspend",
             "tr:verifier:revoke",
             "tr:maintainer:suspend",
@@ -714,6 +771,7 @@ export class LocalTrustRegistryIntegrationHarness {
       commitment: nextPolicyCommitment,
       record: nextPolicyRecord,
     });
+    this.authorizeEvidenceVerifierForCurrentPolicy();
     return result;
   }
 
@@ -925,7 +983,7 @@ export class LocalTrustRegistryIntegrationHarness {
       computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
     );
     const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const actionPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
+    const baseIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
@@ -934,6 +992,19 @@ export class LocalTrustRegistryIntegrationHarness {
       statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
+    );
+    const actionPayloadHash = computeIssuerEvidenceBoundProposalPayloadHash(
+      baseIssuerPayloadHash,
+      this.currentEvidenceVerifierAuthorizationId,
+      this.currentEvidenceVerifierKeyIdCommitment,
+      this.governancePolicyCommitment,
+      this.simulator.getLedger().governancePolicyVersion,
+    );
+    const verifierSignature = signIssuerProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      this.registryIdCommitment,
+      this.currentEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash,
     );
     return this.simulator.proposeIssuerAuthorization(
       this.bootstrapMaintainer.keyId,
@@ -951,6 +1022,9 @@ export class LocalTrustRegistryIntegrationHarness {
       statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
+      this.currentEvidenceVerifierAuthorizationId,
+      this.currentEvidenceVerifierKeyIdCommitment,
+      verifierSignature,
       this.maintainerCoAuthorizers(
         additionalMaintainers,
         PROPOSE_ISSUER_ACTION_KIND,
