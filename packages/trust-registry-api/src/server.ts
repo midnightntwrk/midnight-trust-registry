@@ -28,7 +28,7 @@ import {
   type TrustRegistryApiMutationResult,
   type TrustRegistryApiStateSource,
 } from "./source.js";
-import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
+import { computeValidatedOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
   TrustRegistryApiApplicationMutationResponseSchema,
@@ -488,7 +488,7 @@ export const createTrustRegistryApiServer = (
         writeJson(response, 200, TrustRegistryApiMutationContextSchema.parse({
           registryId: workspace.snapshot.registry.registryId,
           expectedEpochId: workspace.snapshot.currentEpoch.epochId,
-          expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+          expectedWorkspaceCommitment: computeValidatedOperatorWorkspaceCommitment(workspace),
         }));
         return;
       }
