@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fakeHash = `sha256-${"A".repeat(43)}=`;
-const packages = ["compact-toolchain", "compact-midnight"];
+export const supportedNixPackages = Object.freeze(["compact-toolchain", "compact-midnight"]);
 export const supportedNixPlatforms = Object.freeze(["x86_64-linux", "aarch64-darwin"]);
 
 export const nativeNixPlatform = (platform = process.platform, architecture = process.arch) => {
@@ -29,7 +29,7 @@ export const isFixedOutputHashMismatch = (stderr) =>
   /hash mismatch in fixed-output derivation/i.test(stderr) && stderr.includes(fakeHash);
 
 export const checkStaleHashFails = (packageName, system = nativeNixPlatform()) => {
-  if (!packages.includes(packageName)) throw new Error(`Unsupported Compact Nix package: ${packageName}`);
+  if (!supportedNixPackages.includes(packageName)) throw new Error(`Unsupported Compact Nix package: ${packageName}`);
   const temporaryPath = mkdtempSync(join(tmpdir(), "tr-compact-nix-canary-"));
   const directory = realpathSync(temporaryPath);
   try {
@@ -60,7 +60,7 @@ export const checkStaleHashFails = (packageName, system = nativeNixPlatform()) =
 
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    for (const packageName of packages) checkStaleHashFails(packageName);
+    for (const packageName of supportedNixPackages) checkStaleHashFails(packageName);
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

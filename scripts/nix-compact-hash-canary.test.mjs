@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { isFixedOutputHashMismatch, nativeNixPlatform, supportedNixPlatforms, withStalePlatformHash } from "./nix-compact-hash-canary.mjs";
+import { isFixedOutputHashMismatch, nativeNixPlatform, supportedNixPackages, supportedNixPlatforms, withStalePlatformHash } from "./nix-compact-hash-canary.mjs";
 
 const fakeHash = `sha256-${"A".repeat(43)}=`;
 const expressions = ["compact-toolchain", "compact-midnight"].map((name) =>
@@ -49,6 +49,15 @@ test("canary platform coverage matches both Nix packages and the flake", () => {
   assert.deepEqual(systems?.sort(), expected);
 });
 
+test("canary package coverage matches exported Compact Nix packages", () => {
+  const index = readFileSync(join(import.meta.dirname, "../nix/packages/default.nix"), "utf8");
+  const compactPackages = [...index.matchAll(/^\s{8}(compact-[a-z0-9-]+)\s*=/gm)].map((match) => match[1]);
+  assert.deepEqual(compactPackages.sort(), [...supportedNixPackages].sort());
+  for (const name of compactPackages) {
+    assert.match(index, new RegExp(`${name}\\s*=\\s*pkgs\\.callPackage\\s+\\./${name}\\.nix\\s+\\{\\s*\\};`));
+  }
+});
+
 test("only the deliberate fixed-output mismatch satisfies the canary", () => {
   assert.equal(isFixedOutputHashMismatch(`hash mismatch in fixed-output derivation: specified ${fakeHash}`), true);
   assert.equal(isFixedOutputHashMismatch("hash mismatch in fixed-output derivation: different hash"), false);
@@ -67,7 +76,7 @@ test("the CLI entrypoint runs when invoked through a symlink", () => {
     assert.notEqual(result.status, 0);
     const unsupportedHost = !((process.platform === "linux" && process.arch === "x64") ||
       (process.platform === "darwin" && process.arch === "arm64"));
-    assert.match(result.stderr, unsupportedHost ? /Unsupported Compact Nix canary host/ : /ENOENT/);
+    assert.match(result.stderr, unsupportedHost ? /Unsupported Compact Nix canary host/ : /spawnSync .*missing-nix ENOENT/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
