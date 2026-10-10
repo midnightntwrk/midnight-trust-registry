@@ -193,11 +193,12 @@ export const createApplicantPortalApp = (
               <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
               <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.summary.issuerCounts.active ?? 0).toString()}</strong></div>
               <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.summary.verifierCounts.active ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${(state.inspection?.summary.auditorCounts.active ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active auditors</span><strong>${(state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
               <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.summary.recognitionCounts.active ?? 0).toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
+          ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">

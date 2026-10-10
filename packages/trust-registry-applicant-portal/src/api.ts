@@ -5,6 +5,7 @@ import type {
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
+import { evaluateAuthorizationRecordAtTime } from "@midnight-ntwrk/trust-registry-client";
 
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
@@ -58,25 +59,31 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
-    const [summary, activeIssuers, activeVerifiers, activeAuditors, activeRecognitions] =
+    const [summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
       await Promise.all([
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
         this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
         this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active"),
+        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active")
+          .then((value) => ({ value, failed: false as const }))
+          .catch(() => ({ failed: true as const })),
         this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
       ]);
 
+    const now = new Date().toISOString();
     return {
       summary,
-      activeAuditors: activeAuditors.entries.filter((entry) =>
-        entry.authorization?.role === "auditor" && entry.authorization.status === "active"),
+      activeAuditors: auditorResult.failed ? [] : auditorResult.value.entries.filter((entry) =>
+        entry.authorization?.role === "auditor"
+          && entry.authorization.status === "active"
+          && evaluateAuthorizationRecordAtTime(entry.authorization, now).trustedAtTime),
       activeIssuers: activeIssuers.entries.filter((entry) =>
         entry.authorization?.role === "issuer" && entry.authorization.status === "active"),
       activeVerifiers: activeVerifiers.entries.filter((entry) =>
         entry.authorization?.role === "verifier" && entry.authorization.status === "active"),
       activeRecognitions: activeRecognitions.entries.filter((entry) =>
         entry.recognition?.status === "active"),
+      ...(auditorResult.failed ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
     };
   }
 

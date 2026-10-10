@@ -20,7 +20,8 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0"
+    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0"
   },
   "devDependencies": {
     "happy-dom": "20.14.5"

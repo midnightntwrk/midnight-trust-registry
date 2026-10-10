@@ -151,6 +151,9 @@ importers:
       '@midnight-ntwrk/trust-registry-api':
         specifier: workspace:0.1.0
         version: link:../trust-registry-api
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:0.1.0
+        version: link:../trust-registry-client
     devDependencies:
       happy-dom:
         specifier: 20.14.5

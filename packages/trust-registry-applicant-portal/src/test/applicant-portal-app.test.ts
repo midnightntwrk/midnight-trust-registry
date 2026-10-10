@@ -22,6 +22,7 @@ describe("trust registry applicant portal app", () => {
         role: "auditor", status: "active", resourceType: "request-profile",
         resourceId: "tr:request-resource:v1:auditor-scope", trustLevel: "approved",
         subjectDid: "did:midnight:testnet:auditor",
+        proposedAt: "2020-01-01T00:00:00Z", activeFrom: "2020-01-02T00:00:00Z",
       },
     };
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
@@ -31,7 +32,7 @@ describe("trust registry applicant portal app", () => {
         return Response.json({
           registryLabel: "local", currentEpochId: "epoch:1",
           issuerCounts: counts(), verifierCounts: counts(),
-          auditorCounts: { ...counts(), active: 1 }, recognitionCounts: counts(),
+          recognitionCounts: counts(),
         });
       }
       return Response.json({ entries: url.pathname === "/v1/authorizations/auditor" ? [
