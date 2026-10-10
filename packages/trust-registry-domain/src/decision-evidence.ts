@@ -160,6 +160,12 @@ const DecisionEvidenceShape = z.discriminatedUnion("role", [
 ]);
 
 export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidence, ctx) => {
+  if (BigInt(evidence.decisionSequence) < BigInt(evidence.epoch.publicationSequence)) {
+    ctx.addIssue({ code: "custom", path: ["decisionSequence"], message: "Decision sequence predates epoch publication" });
+  }
+  if (Date.parse(evidence.epoch.validFrom) >= Date.parse(evidence.epoch.validUntil)) {
+    ctx.addIssue({ code: "custom", path: ["epoch", "validUntil"], message: "Epoch validity window must increase" });
+  }
   const grant = AuthorizationRecordSchema.safeParse(evidence.grant);
   if (!grant.success) {
     for (const issue of grant.error.issues) {
