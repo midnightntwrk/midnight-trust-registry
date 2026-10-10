@@ -202,6 +202,13 @@ describe("decision evidence envelope", () => {
     evidence.epoch.stateRoot = root;
     evidence.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path, leafIndex: index.toString() };
     expect(() => assertDecisionEvidenceInclusion(evidence)).not.toThrow();
+    const genericPath = [C, ...path.slice(1)];
+    const genericRoot = computeMerkleRootFromProof(leafHash, genericPath, index);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      epoch: { ...evidence.epoch, stateRoot: genericRoot },
+      inclusionProof: { ...evidence.inclusionProof, root: genericRoot, path: genericPath },
+    })).not.toThrow();
     expect(() => assertDecisionEvidenceInclusion({
       ...evidence,
       grant: { ...evidence.grant, evidenceHash: E },
@@ -213,7 +220,7 @@ describe("decision evidence envelope", () => {
     expect(() => assertDecisionEvidenceInclusion({
       ...evidence,
       inclusionProof: { ...evidence.inclusionProof, path: [C, ...path.slice(1)] },
-    })).toThrow(/event root sibling mismatch/u);
+    })).toThrow(/Merkle root mismatch/u);
     expect(() => assertDecisionEvidenceInclusion({
       ...evidence,
       epoch: { ...evidence.epoch, stateRoot: D },

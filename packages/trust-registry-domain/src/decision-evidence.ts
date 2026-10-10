@@ -222,9 +222,6 @@ export const assertDecisionEvidenceInclusion = (input: unknown): void => {
   if (proof.leafHash !== leafHash) {
     throw new Error("Decision evidence grant leaf hash mismatch");
   }
-  if (proof.path[0] !== evidence.epoch.eventRoot) {
-    throw new Error("Decision evidence event root sibling mismatch");
-  }
   const root = computeMerkleRootFromProof(leafHash, proof.path, BigInt(proof.leafIndex));
   if (root !== evidence.epoch.stateRoot) {
     throw new Error("Decision evidence Merkle root mismatch");
