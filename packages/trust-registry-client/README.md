@@ -42,3 +42,10 @@ also requires the observed DID state to be non-deactivated. The observation
 must come from a caller-authenticated,
 finalized DID-state source. The comparator does not validate a ledger proof or
 establish finality and must not be used alone to produce a VC signer descriptor.
+
+`assertDecisionEvidenceConsistentWithSuppliedContext` composes that DID check
+with accepted-epoch equality, complete Compact publication signatures, exact
+grant inclusion/policy/scope/window checks, and a jointly observed decision
+sequence/evaluation time. It returns no descriptor. Callers must authenticate
+that joint observation and the other supplied contexts, then establish
+finality and currentness separately; Midnight does not bind sequence to time.

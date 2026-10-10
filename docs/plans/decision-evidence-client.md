@@ -31,6 +31,16 @@ In this v1 profile, each absolute maintainer DID method ID must hash to its
 on-ledger key ID commitment; a matching public key alone cannot relabel the
 signer as another DID method.
 
+`assertDecisionEvidenceConsistentWithSuppliedContext` composes accepted-epoch
+equality, full publication signatures and event hash, grant inclusion/policy/
+scope/window checks, and DID-method observation matching. The selected
+sequence and evaluation time arrive as one caller-authenticated decision-point
+observation, not separate query inputs. Midnight does not itself establish a
+wall-clock timestamp for a sequence. This helper cannot authenticate their
+mapping. It returns no descriptor or authorization boolean: the caller must
+authenticate the accepted epoch, maintainer set, joint decision point, and DID
+observation, and establish finality and currency separately.
+
 The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
 JubJub point. Other suites require a separately specified verification path.
