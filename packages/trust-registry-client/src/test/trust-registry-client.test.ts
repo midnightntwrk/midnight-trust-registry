@@ -490,7 +490,7 @@ describe("trust registry client", () => {
         },
         {},
       ),
-    ).toThrow("Epoch maintainer signature is invalid");
+    ).toThrow("Epoch maintainer signature encoding is invalid");
 
     for (const malformed of [
       originalSignature.signature.slice(0, -1),

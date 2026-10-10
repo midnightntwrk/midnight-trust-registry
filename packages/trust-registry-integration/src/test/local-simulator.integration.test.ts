@@ -1012,7 +1012,7 @@ describe("trust registry local simulator integration", () => {
           signature: `0x${"00".repeat(96)}`,
         }],
       },
-    })).toThrow("Epoch maintainer signature is invalid");
+    })).toThrow("Epoch maintainer signature encoding is invalid");
 
     expect(() => harness.assertPublishedEpochEvidence({
       ...bundle,

@@ -681,6 +681,29 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/may not exceed active maintainer count/i);
 
+    expect(() =>
+      simulator.initializeRegistry(
+        labelToBytes32("registry:kanon"),
+        labelToBytes32("did:midnight:registry"),
+        labelToBytes32("policy:kanon:v1"),
+        bootstrapMaintainer.maintainerId,
+        bootstrapMaintainer.didCommitment,
+        bootstrapMaintainer.keyId,
+        { x: 0n, y: 1n },
+        1n,
+      ),
+    ).toThrow(/signer point must not be identity/i);
+
+    expect(() => pureCircuits.createMaintainerMembershipPayloadHash(
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
+      bootstrapMaintainer.keyId,
+      { x: 0n, y: 1n },
+      labelToBytes32("policy:maintainer"),
+      labelToBytes32("trust:level"),
+      labelToBytes32("evidence:hash"),
+    )).toThrow(/signer point must not be identity/i);
+
     simulator.initializeRegistry(
       labelToBytes32("registry:kanon"),
       labelToBytes32("did:midnight:registry"),
