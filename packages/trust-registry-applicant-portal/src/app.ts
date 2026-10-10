@@ -191,10 +191,10 @@ export const createApplicantPortalApp = (
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
               <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.summary.issuerCounts.active ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.summary.verifierCounts.active ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${(state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.summary.recognitionCounts.active ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.activeIssuers.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.activeVerifiers.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active auditors</span><strong>${state.inspection?.warnings?.length ? "n/a" : (state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.activeRecognitions.length ?? 0).toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}

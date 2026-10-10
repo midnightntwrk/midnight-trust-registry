@@ -20,7 +20,10 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
     const path = new URL(String(input)).pathname;
     if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
     if (path === "/v1/authorizations/auditor") return auditorResponse;
-    if (path === "/v1/authorizations/issuer") return Response.json({ entries: [{ label: "issuer", authorization: { role: "issuer", status: "active" } }] });
+    if (path === "/v1/authorizations/issuer") return Response.json({ entries: [
+      { label: "issuer", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z" } },
+      { label: "expired", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2024-01-01T00:00:00Z" } },
+    ] });
     return Response.json({ entries: [] });
   }) as typeof fetch,
 );
@@ -33,6 +36,7 @@ describe("public auditor inspection", () => {
     ] }));
     const inspection = await client.loadPublicInspection();
     expect(inspection.activeAuditors).toHaveLength(1);
+    expect(inspection.activeIssuers).toHaveLength(1);
     expect(inspection.warnings).toBeUndefined();
   });
 
@@ -43,5 +47,12 @@ describe("public auditor inspection", () => {
     expect(inspection.activeIssuers).toHaveLength(1);
     expect(inspection.activeAuditors).toHaveLength(0);
     expect(inspection.warnings).toEqual(["Auditor records are temporarily unavailable."]);
+  });
+
+  it("fails soft for a malformed auditor list", async () => {
+    const inspection = await inspectionClient(Response.json({ entries: null })).loadPublicInspection();
+    expect(inspection.activeIssuers).toHaveLength(1);
+    expect(inspection.activeAuditors).toHaveLength(0);
+    expect(inspection.warnings).toHaveLength(1);
   });
 });

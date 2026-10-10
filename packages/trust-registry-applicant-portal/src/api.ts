@@ -5,11 +5,21 @@ import type {
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
-import { evaluateAuthorizationRecordAtTime } from "@midnight-ntwrk/trust-registry-client";
-
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;
+
+const isCurrentlyActive = (
+  record: { status?: string; activeFrom?: string | undefined; effectiveUntil?: string | undefined } | undefined,
+  nowMs: number,
+): boolean => {
+  if (record?.status !== "active" || typeof record.activeFrom !== "string") return false;
+  if (record.effectiveUntil !== undefined && typeof record.effectiveUntil !== "string") return false;
+  const activeFrom = Date.parse(record.activeFrom);
+  const effectiveUntil = record.effectiveUntil === undefined ? Infinity : Date.parse(record.effectiveUntil);
+  return Number.isFinite(activeFrom) && !Number.isNaN(effectiveUntil)
+    && activeFrom <= nowMs && nowMs <= effectiveUntil;
+};
 
 export class TrustRegistryApplicantPortalApiError extends Error {
   constructor(
@@ -70,20 +80,21 @@ export class TrustRegistryApplicantPortalClient {
         this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
       ]);
 
-    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const auditorEntries = auditorResult.failed || !Array.isArray(auditorResult.value.entries)
+      ? null : auditorResult.value.entries;
     return {
       summary,
-      activeAuditors: auditorResult.failed ? [] : auditorResult.value.entries.filter((entry) =>
-        entry.authorization?.role === "auditor"
-          && entry.authorization.status === "active"
-          && evaluateAuthorizationRecordAtTime(entry.authorization, now).trustedAtTime),
+      activeAuditors: auditorEntries?.filter((entry) =>
+        entry?.authorization?.role === "auditor"
+          && isCurrentlyActive(entry.authorization, nowMs)) ?? [],
       activeIssuers: activeIssuers.entries.filter((entry) =>
-        entry.authorization?.role === "issuer" && entry.authorization.status === "active"),
+        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, nowMs)),
       activeVerifiers: activeVerifiers.entries.filter((entry) =>
-        entry.authorization?.role === "verifier" && entry.authorization.status === "active"),
+        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, nowMs)),
       activeRecognitions: activeRecognitions.entries.filter((entry) =>
-        entry.recognition?.status === "active"),
-      ...(auditorResult.failed ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
+        isCurrentlyActive(entry.recognition, nowMs)),
+      ...(auditorEntries === null ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
     };
   }
 
