@@ -7,7 +7,11 @@ import {
   signMidnightDIDPresentationProof,
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { deriveJubjubPublicKey } from "@midnight-ntwrk/trust-registry-contract";
+import {
+  deriveJubjubPublicKey,
+  deriveJubjubPublicKeyFromSeed,
+  signApplicationEvidenceCommitmentFromSeed,
+} from "@midnight-ntwrk/trust-registry-contract";
 import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
@@ -20,6 +24,7 @@ import {
 } from "../application-vp-verifier.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture, createMidnightDid } from "../fixtures.js";
+import { createApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
 
 const NOW = Date.parse("2026-05-20T00:01:00.000Z");
 const NONCE = `0x${"11".repeat(32)}`;
@@ -28,6 +33,7 @@ const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slic
 async function fixture() {
   const issuerDid = createMidnightDid("vp-issuer");
   const subjectDid = createMidnightDid("vp-holder");
+  const evidenceVerifierDid = createMidnightDid("vp-evidence-verifier");
   const issuerSecret = 19n;
   const holderSecret = 23n;
   const resolver = createMidnightDidResolver([
@@ -38,6 +44,10 @@ async function fixture() {
     createMidnightDidLedgerFixture(subjectDid, {
       verificationMethodId: "auth-1",
       schnorrJubjubPublicKey: deriveJubjubPublicKey(holderSecret),
+    }),
+    createMidnightDidLedgerFixture(evidenceVerifierDid, {
+      verificationMethodId: "assertion-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41)),
     }),
   ]);
   const issuerMethod = await resolveMidnightDIDMethodBinding({
@@ -114,6 +124,71 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("provides redacted VP and DID-bound signing ports for one-use intake", async () => {
+    const { input } = await fixture();
+    const verifierDid = createMidnightDid("vp-evidence-verifier");
+    const seed = new Uint8Array(32).fill(41);
+    const signer = {
+      did: verifierDid,
+      keyId: `${verifierDid}#assertion-1`,
+      publicKey: deriveJubjubPublicKeyFromSeed(seed),
+      signCommitment: (keyId: Uint8Array, commitment: Uint8Array) =>
+        signApplicationEvidenceCommitmentFromSeed(seed, keyId, commitment),
+    };
+    const binding = ApplicationChallengeBindingSchema.parse({
+      registryId: "registry:vp:test",
+      applicationId: "application:vp:signed",
+      subjectDid: input.expectedSubjectDid,
+      evidenceVerifierDid: verifierDid,
+      role: "issuer",
+      policyId: "policy:vp:v1",
+      policyVersion: "v1",
+      scope: input.scope,
+      scopeCommitment: computeAuthorizationScopeCommitment(input.scope),
+      governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(input.scope, "credentialFamily") },
+    });
+    const ports = await createApplicationVpIntakePorts({
+      resolver: input.resolver, family: input.family, signer,
+    });
+    const context = { nonce: NONCE, binding, evaluatedAt: new Date(NOW).toISOString() };
+    const verified = await ports.verifyPresentation(input.submission, context);
+    expect(verified.subjectDid).toBe(input.expectedSubjectDid);
+    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
+    expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
+    const commitment = sha256Hex("application-evidence-test");
+    const signature = await ports.signEvidence(commitment);
+    const authorized = { did: signer.did, keyIds: [signer.keyId], algorithms: ["jubjub-schnorr" as const] };
+    expect(ports.verifyEvidenceSignature(commitment, signature, authorized)).toBe(true);
+    expect(ports.verifyEvidenceSignature(sha256Hex("different"), signature, authorized)).toBe(false);
+    expect(ports.verifyEvidenceSignature(commitment, { ...signature, keyId: `${signer.did}#other` }, authorized)).toBe(false);
+    expect(ports.verifyEvidenceSignature(commitment, signature, { ...authorized, keyIds: [] })).toBe(false);
+    expect(JSON.stringify(signature)).not.toContain("private-presentation-payload");
+
+    await expect(createApplicationVpIntakePorts({
+      resolver: input.resolver,
+      family: input.family,
+      signer: { ...signer, did: createMidnightDid("wrong-verifier") },
+    })).rejects.toThrow();
+    await expect(createApplicationVpIntakePorts({
+      resolver: input.resolver,
+      family: input.family,
+      signer: { ...signer, publicKey: deriveJubjubPublicKey(31n) },
+    })).rejects.toThrow(/does not match its DID assertion method/u);
+    await expect(ports.verifyPresentation(input.submission, {
+      ...context, nonce: `0x${"22".repeat(32)}`,
+    })).rejects.toMatchObject({ category: "invalid_presentation" });
+    const invalidPorts = await createApplicationVpIntakePorts({
+      resolver: input.resolver,
+      family: input.family,
+      signer: {
+        ...signer,
+        signCommitment: (keyId: Uint8Array) =>
+          signApplicationEvidenceCommitmentFromSeed(seed, keyId, new Uint8Array(32).fill(7)),
+      },
+    });
+    await expect(invalidPorts.signEvidence(commitment)).rejects.toThrow(/invalid signature/u);
+  });
+
   it("adapts proof-observed bindings for challenge intake rather than echoing expected inputs", async () => {
     const { input, family } = await fixture();
     const binding = ApplicationChallengeBindingSchema.parse({

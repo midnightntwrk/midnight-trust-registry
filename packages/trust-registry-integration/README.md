@@ -50,6 +50,14 @@ Current coverage:
   denial; adapters must signal their own infrastructure outages explicitly.
   Run its focused tests with
   `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
+- `createApplicationVpIntakePorts` supplies the existing API one-use intake
+  with published VC/VP verification and DID-bound signing/verification
+  callbacks. It matches the configured signer key to its Midnight DID
+  assertion method and rejects an invalid signature. The API intake still
+  owns challenge consumption, authorized-verifier lookup, canonical envelope
+  construction, and proposal submission. The family adapter must authenticate
+  credential claims and status; these ports do not make the resolver trusted,
+  establish governed key membership, or create a public route.
 
 The repository pins the compiler in `.compact-version` and Nix, and pins the
 runtime in `contracts/trust-registry/package.json`. The probe
