@@ -29,6 +29,7 @@ Primary exports:
 - `DecisionEvidenceSchema`
 - `DecisionEvidenceJsonSchema`
 - `assertDecisionEvidenceInclusion`
+- `assertDecisionEvidencePolicyCommitment`
 - `assertLifecycleTransition`
 
 `DecisionEvidenceSchema` is structural only. Its epoch and DID anchor references
@@ -45,3 +46,5 @@ numbers, so values above JavaScript's safe-integer limit are not truncated.
 path with a bigint index. It checks consistency with the envelope's claimed
 epoch root only; callers must independently authenticate that root, quorum,
 policy, current grant, and DID state before making a trust decision.
+`assertDecisionEvidencePolicyCommitment` similarly recomputes the snapshot
+commitment against the claimed epoch policy root without authenticating it.

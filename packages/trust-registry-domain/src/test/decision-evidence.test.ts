@@ -4,8 +4,11 @@ import {
   AuthorizationRecordSchema,
   DecisionEvidenceJsonSchema,
   DecisionEvidenceSchema,
+  GovernancePolicySnapshotSchema,
   assertDecisionEvidenceInclusion,
+  assertDecisionEvidencePolicyCommitment,
   computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
   computeMerkleRootFromProof,
 } from "../index.js";
 
@@ -226,5 +229,21 @@ describe("decision evidence envelope", () => {
       epoch: { ...evidence.epoch, stateRoot: D },
       inclusionProof: { ...evidence.inclusionProof, root: D },
     })).toThrow(/Merkle root mismatch/u);
+  });
+
+  it("checks the policy snapshot against the claimed epoch root", () => {
+    const evidence = issuerEvidence();
+    evidence.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(evidence.policy),
+    );
+    expect(() => assertDecisionEvidencePolicyCommitment(evidence)).not.toThrow();
+    expect(() => assertDecisionEvidencePolicyCommitment({
+      ...evidence,
+      policy: { ...evidence.policy, contentCommitment: A },
+    })).toThrow(/policy root mismatch/u);
+    expect(() => assertDecisionEvidencePolicyCommitment({
+      ...evidence,
+      epoch: { ...evidence.epoch, policyRoot: D },
+    })).toThrow(/policy root mismatch/u);
   });
 });

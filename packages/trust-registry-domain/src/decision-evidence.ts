@@ -3,7 +3,7 @@ import { z } from "zod";
 import { computeAuthorizationStatementLeafHash, computeMerkleRootFromProof } from "./evidence-bundle.js";
 import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
 import { LifecycleStatusSchema } from "./lifecycle.js";
-import { GovernancePolicySnapshotSchema } from "./policy-snapshot.js";
+import { GovernancePolicySnapshotSchema, computeGovernancePolicySnapshotCommitment } from "./policy-snapshot.js";
 import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
 import { AuthorizationRecordSchema, ResourceTypeSchema } from "./types.js";
 
@@ -225,5 +225,13 @@ export const assertDecisionEvidenceInclusion = (input: unknown): void => {
   const root = computeMerkleRootFromProof(leafHash, proof.path, BigInt(proof.leafIndex));
   if (root !== evidence.epoch.stateRoot) {
     throw new Error("Decision evidence Merkle root mismatch");
+  }
+};
+
+/** Checks a claimed policy root; it does not authenticate the epoch or policy. */
+export const assertDecisionEvidencePolicyCommitment = (input: unknown): void => {
+  const evidence = DecisionEvidenceSchema.parse(input);
+  if (computeGovernancePolicySnapshotCommitment(evidence.policy) !== evidence.epoch.policyRoot) {
+    throw new Error("Decision evidence policy root mismatch");
   }
 };
