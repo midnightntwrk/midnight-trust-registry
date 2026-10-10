@@ -336,5 +336,18 @@ describe("trust registry evidence bundle", () => {
     expect(() =>
       computeMerkleRootFromProof(authorizationLeaf, [HASH_B], 2),
     ).toThrow(/out of range/i);
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], Number.MAX_SAFE_INTEGER + 1),
+    ).toThrow(/safe integer/i);
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], -1n),
+    ).toThrow(/out of range/i);
+    const deepPath = Array(54).fill(HASH_B) as string[];
+    expect(computeMerkleRootFromProof(authorizationLeaf, deepPath, 1n << 53n)).not.toBe(
+      computeMerkleRootFromProof(authorizationLeaf, deepPath, 0n),
+    );
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, deepPath, 1n << 54n),
+    ).toThrow(/out of range/i);
   });
 });
