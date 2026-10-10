@@ -31,6 +31,7 @@ import {
   createWorkspaceFileSource,
 } from "../source.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 type ServerHarness = {
   close: () => Promise<void>;
@@ -118,6 +119,47 @@ describe("trust registry api", () => {
 
   afterEach(async () => {
     await rm(tempDir, { force: true, recursive: true });
+  });
+
+  it("serves a non-cacheable mutation context only for a mutable workspace", async () => {
+    const workspacePath = join(tempDir, "mutation-context.json");
+    const workspace = createOperatorWorkspace({ label: "mutation-context" });
+    await writeWorkspaceToFile(workspacePath, workspace);
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const first = await fetch(`${server.url}/v1/registry/mutation-context`);
+      expect(first.status).toBe(200);
+      expect(first.headers.get("cache-control")).toBe("no-store");
+      const firstContext = await first.json();
+      expect(firstContext).toEqual({
+        registryId: workspace.snapshot.registry.registryId,
+        expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+        expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+      });
+      expect(JSON.stringify(firstContext)).not.toContain("operations");
+
+      const next = applyWorkspaceOperation(workspace, { operation: "submit", target: "issuer", label: "context-issuer" });
+      await writeWorkspaceToFile(workspacePath, next);
+      const second = await fetch(`${server.url}/v1/registry/mutation-context`);
+      expect(second.status).toBe(200);
+      expect(await second.json()).toEqual({
+        registryId: next.snapshot.registry.registryId,
+        expectedEpochId: next.snapshot.currentEpoch.epochId,
+        expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(next),
+      });
+      expect(computeOperatorWorkspaceCommitment(next)).not.toBe(firstContext.expectedWorkspaceCommitment);
+    } finally {
+      await server.close();
+    }
+
+    const snapshotServer = await startServer(createInMemorySource(workspace.snapshot));
+    try {
+      const unavailable = await fetch(`${snapshotServer.url}/v1/registry/mutation-context`);
+      expect(unavailable.status).toBe(409);
+      expect((await unavailable.json()).type).toMatch(/workspace-source-required/u);
+    } finally {
+      await snapshotServer.close();
+    }
   });
 
   it("keeps auditor current and historical lookups role-disjoint and scope-bound", async () => {
