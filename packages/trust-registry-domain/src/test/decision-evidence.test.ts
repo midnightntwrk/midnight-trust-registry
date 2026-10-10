@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DecisionEvidenceJsonSchema, DecisionEvidenceSchema } from "../index.js";
+import {
+  AuthorizationRecordSchema,
+  DecisionEvidenceJsonSchema,
+  DecisionEvidenceSchema,
+  assertDecisionEvidenceInclusion,
+  computeAuthorizationStatementLeafHash,
+  computeMerkleRootFromProof,
+} from "../index.js";
 
 const A = `0x${"a".repeat(64)}`;
 const B = `0x${"b".repeat(64)}`;
@@ -181,5 +188,33 @@ describe("decision evidence envelope", () => {
     expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"additionalProperties":false');
     expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"const":"tr-decision-evidence-v1"');
     expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"const":"verifier"');
+  });
+
+  it("checks exact grant inclusion using a uint64 leaf index without authenticating the root", () => {
+    const evidence = issuerEvidence();
+    const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(evidence.grant));
+    const index = 1n << 53n;
+    const path = Array(54).fill(B) as string[];
+    const root = computeMerkleRootFromProof(leafHash, path, index);
+    evidence.epoch.stateRoot = root;
+    evidence.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path, leafIndex: index.toString() };
+    expect(() => assertDecisionEvidenceInclusion(evidence)).not.toThrow();
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      grant: { ...evidence.grant, evidenceHash: E },
+    })).toThrow(/grant leaf hash mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      inclusionProof: { ...evidence.inclusionProof, leafIndex: "0" },
+    })).toThrow(/Merkle root mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      inclusionProof: { ...evidence.inclusionProof, path: [C, ...path.slice(1)] },
+    })).toThrow(/event root sibling mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      epoch: { ...evidence.epoch, stateRoot: D },
+      inclusionProof: { ...evidence.inclusionProof, root: D },
+    })).toThrow(/Merkle root mismatch/u);
   });
 });

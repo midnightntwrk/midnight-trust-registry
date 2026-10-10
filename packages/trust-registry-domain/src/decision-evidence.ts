@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { computeAuthorizationStatementLeafHash, computeMerkleRootFromProof } from "./evidence-bundle.js";
 import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
 import { LifecycleStatusSchema } from "./lifecycle.js";
 import { GovernancePolicySnapshotSchema } from "./policy-snapshot.js";
@@ -206,3 +207,20 @@ export const DecisionEvidenceJsonSchema = {
 };
 
 export type DecisionEvidence = z.infer<typeof DecisionEvidenceSchema>;
+
+/** Checks the claimed grant path only; it does not authenticate the epoch root. */
+export const assertDecisionEvidenceInclusion = (input: unknown): void => {
+  const evidence = DecisionEvidenceSchema.parse(input);
+  const proof = evidence.inclusionProof;
+  const leafHash = computeAuthorizationStatementLeafHash(evidence.grant);
+  if (proof.leafHash !== leafHash) {
+    throw new Error("Decision evidence grant leaf hash mismatch");
+  }
+  if (proof.path[0] !== evidence.epoch.eventRoot) {
+    throw new Error("Decision evidence event root sibling mismatch");
+  }
+  const root = computeMerkleRootFromProof(leafHash, proof.path, BigInt(proof.leafIndex));
+  if (root !== evidence.epoch.stateRoot) {
+    throw new Error("Decision evidence Merkle root mismatch");
+  }
+};

@@ -28,6 +28,7 @@ Primary exports:
 - `TrustRegistryEvidenceBundleJsonSchema`
 - `DecisionEvidenceSchema`
 - `DecisionEvidenceJsonSchema`
+- `assertDecisionEvidenceInclusion`
 - `assertLifecycleTransition`
 
 `DecisionEvidenceSchema` is structural only. Its epoch and DID anchor references
@@ -40,3 +41,7 @@ range) are not expressible in the exported JSON Schema; consumers must parse
 with Zod before attempting the later independent verification stages.
 Ledger and DID state versions use canonical decimal `uint64` strings, not JSON
 numbers, so values above JavaScript's safe-integer limit are not truncated.
+`assertDecisionEvidenceInclusion` recomputes the authorization leaf and Merkle
+path with a bigint index. It checks consistency with the envelope's claimed
+epoch root only; callers must independently authenticate that root, quorum,
+policy, current grant, and DID state before making a trust decision.
