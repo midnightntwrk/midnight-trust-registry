@@ -40,6 +40,9 @@ wall-clock timestamp for a sequence. This helper cannot authenticate their
 mapping. It returns no descriptor or authorization boolean: the caller must
 authenticate the accepted epoch, maintainer set, joint decision point, and DID
 observation, and establish finality and currency separately.
+Local composition fixtures cover issuer assertion and verifier authentication
+methods with two real publication signers, exact request-profile rejection,
+and fail-closed suspended, revoked, superseded, and archived grant selection.
 
 The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a

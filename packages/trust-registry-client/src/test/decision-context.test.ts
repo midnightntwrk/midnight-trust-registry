@@ -42,22 +42,31 @@ const KEY = {
   y: `${"B".repeat(42)}g`,
 };
 
-function fixture() {
+function fixture(
+  role: "issuer" | "verifier" = "issuer",
+  status: "active" | "suspended" | "revoked" | "superseded" | "archived" = "active",
+) {
   const grant = AuthorizationRecordSchema.parse({
-    authorizationId: "auth:issuer:birth:v1",
+    authorizationId: `auth:${role}:birth:v1`,
     registryId: REGISTRY,
     subjectDid: DID,
-    role: "issuer",
-    resourceType: "credential-family",
-    resourceId: `tr:issuer-resource:v1:${"f".repeat(64)}`,
+    role,
+    resourceType: role === "issuer" ? "credential-family" : "request-profile",
+    resourceId: role === "issuer"
+      ? `tr:issuer-resource:v1:${"f".repeat(64)}`
+      : `tr:request-resource:v1:${"f".repeat(64)}`,
     policyId: "policy:university:v1",
     trustLevel: "approved",
-    statusPolicyBindingCommitment: E,
-    status: "active",
+    ...(role === "issuer" ? { statusPolicyBindingCommitment: E } : {}),
+    status,
     lifecycleEventRoot: B,
     proposedAt: "2026-05-20T00:00:00Z",
     authorizedAt: "2026-05-20T01:00:00Z",
     activeFrom: "2026-05-20T01:00:00Z",
+    ...(status === "suspended" ? { suspendedAt: "2026-05-20T02:15:00Z" } : {}),
+    ...(status === "revoked" ? { revokedAt: "2026-05-20T02:15:00Z" } : {}),
+    ...(status === "superseded" ? { supersededAt: "2026-05-20T02:15:00Z" } : {}),
+    ...(status === "archived" ? { archivedAt: "2026-05-20T02:15:00Z" } : {}),
     evidenceHash: D,
   });
   const policy = GovernancePolicySnapshotSchema.parse({
@@ -139,7 +148,7 @@ function fixture() {
   };
   const evidence = DecisionEvidenceSchema.parse({
     format: "tr-decision-evidence-v1",
-    role: "issuer",
+    role,
     registry: { registryId: REGISTRY, registryDid: REGISTRY_DID, networkId: "devnet", contractAddress: A },
     anchorReferences: {
       registryEpoch: { networkId: "devnet", contractAddress: A, transactionHash: B, blockHash: C },
@@ -153,13 +162,19 @@ function fixture() {
       methodType: "JsonWebKey",
       controller: DID,
       publicKeyJwk: KEY,
-      relationship: "assertionMethod",
+      relationship: role === "issuer" ? "assertionMethod" : "authentication",
       stateVersion: "3",
       stateEvidence: { evidenceType: "ledger-observation", blockHash: D, transactionHash: E },
     },
     policy,
     inclusionProof: { proofType: "merkle-inclusion", root: stateRoot, leafHash, path: [B], leafIndex: "0" },
-    governanceEvents: { grantTransition: A, quorumApproval: B, epochPublication: publicationEventHash, policySnapshot: D },
+    governanceEvents: {
+      grantTransition: A,
+      quorumApproval: B,
+      epochPublication: publicationEventHash,
+      policySnapshot: D,
+      ...(status === "superseded" ? { supersession: E } : {}),
+    },
     decisionSequence: "11",
   });
   const context = {
@@ -200,6 +215,7 @@ function fixture() {
         id: DID,
         verificationMethod: [{ id: METHOD, type: "JsonWebKey", controller: DID, publicKeyJwk: KEY }],
         assertionMethod: [METHOD],
+        authentication: [METHOD],
       },
     },
     selection: {
@@ -207,8 +223,8 @@ function fixture() {
       networkId: "devnet",
       contractAddress: A,
       subjectDid: DID,
-      role: "issuer" as const,
-      resourceType: "credential-family" as const,
+      role,
+      resourceType: grant.resourceType,
       resourceId: grant.resourceId,
     },
     decisionPoint: { sequence: "11", evaluationTime: "2026-05-20T02:30:00Z" },
@@ -221,6 +237,29 @@ describe("decision evidence supplied-context composition", () => {
     const { evidence, context } = fixture();
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context)).not.toThrow();
   });
+
+  it("checks an exact verifier request profile and authentication method", () => {
+    const { evidence, context } = fixture("verifier");
+    expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context)).not.toThrow();
+    for (const supplied of [
+      { ...context, selection: { ...context.selection, resourceId: `tr:request-resource:v1:${"a".repeat(64)}` } },
+      { ...context, selection: { ...context.selection, networkId: "mainnet" } },
+      { ...context, didState: { ...context.didState, didDocument: {
+        ...context.didState.didDocument, authentication: [],
+      } } },
+    ]) {
+      expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, supplied)).toThrow();
+    }
+  });
+
+  it.each(["suspended", "revoked", "superseded", "archived"] as const)(
+    "rejects a %s grant even with an otherwise valid two-signer epoch and inclusion proof",
+    (status) => {
+      const { evidence, context } = fixture("issuer", status);
+      expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context))
+        .toThrow(/grant is not active/u);
+    },
+  );
 
   it("fails closed when any supplied context or claimed proof is substituted", () => {
     const { evidence, context } = fixture();
