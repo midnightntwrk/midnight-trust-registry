@@ -1952,6 +1952,35 @@ circuit requireActiveEvidenceVerifierKey(
   return record;
 }
 
+circuit assertCurrentIssuerProposalEvidence(
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    issuerProposalEvidenceRecords.member(authorizationId),
+    "Issuer proposal evidence is not registered"
+  );
+  const proposal = issuerProposalEvidenceRecords.lookup(authorizationId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Issuer proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Issuer proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Issuer proposal evidence verifier key has changed"
+  );
+}
+
 circuit currentVerifierAuthorizationRecord(
   subjectDidCommitment: Bytes<32>,
   requestResourceId: Bytes<32>,
@@ -2774,6 +2803,10 @@ export circuit authorizeIssuerAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Issuer authorization evidence must match the proposed application"
   );
+  assertCurrentIssuerProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -2827,6 +2860,10 @@ export circuit activateIssuerAuthorization(
   assert(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Issuer activation evidence must match the proposed application"
+  );
+  assertCurrentIssuerProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
   );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(

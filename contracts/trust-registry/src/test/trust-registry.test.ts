@@ -2000,6 +2000,98 @@ describe("trust registry contract", () => {
     expect(simulator.getLedger().issuerAuthorizationCount).toEqual(0n);
   });
 
+  it.each(["suspended-key-at-approval", "superseded-policy-at-activation"] as const)(
+    "rejects issuer lifecycle transition with %s evidence",
+    (scenario) => {
+      const registry = createInitializedRegistryFixture(39);
+      const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+      const issuer = createIssuerAuthorizationFixture(scenario);
+      const verifier = registerIssuerEvidenceVerifier(registry);
+      const proof = issuerProposalProof(registry, issuer, verifier);
+      const signAction = (kind: Uint8Array, payloadHash: Uint8Array) =>
+        signPolicyBoundMaintainerActionFromSeed(
+          bootstrapMaintainer.seed, registryId,
+          simulator.getLedger().governancePolicyCommitment,
+          kind, payloadHash, simulator.getLedger().governanceActionCount,
+        );
+
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId, bootstrapPublicKey,
+        signAction(PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash),
+        issuer.authorizationId, issuer.subjectDidCommitment, issuer.resourceType,
+        issuer.resourceId, issuer.policyId, issuer.statusPolicyBindingCommitment,
+        issuer.trustLevel, issuer.evidenceHash,
+        proof.verifierAuthorizationId, proof.verifierKeyIdCommitment,
+        proof.evidenceSignature,
+      );
+
+      const signIssuerTransition = (kind: Uint8Array) => signAction(
+        kind,
+        computeUpdateIssuerAuthorizationPayloadHash(
+          issuer.authorizationId,
+          simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+          issuer.evidenceHash,
+        ),
+      );
+      if (scenario === "superseded-policy-at-activation") {
+        simulator.authorizeIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signIssuerTransition(AUTHORIZE_ISSUER_ACTION_KIND),
+          issuer.authorizationId, issuer.evidenceHash,
+        );
+        const nextPolicy = labelToBytes32("policy:issuer:next");
+        simulator.updateMaintainerThresholdPolicy(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signAction(
+            UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+            computeUpdateMaintainerThresholdPolicyPayloadHash(
+              simulator.getLedger().governancePolicyCommitment,
+              nextPolicy, 2n, 1n, 1n, 1n,
+            ),
+          ),
+          nextPolicy, 2n, 1n, 1n, 1n,
+        );
+      } else {
+        const suspendEvidence = labelToBytes32("evidence:verifier:suspend-after-proposal");
+        simulator.suspendEvidenceVerifierKey(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signAction(
+            SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
+            computeUpdateEvidenceVerifierKeyPayloadHash(
+              verifier.authorizationId,
+              simulator.getEvidenceVerifierKey(verifier.authorizationId).lifecycleEventHash,
+              suspendEvidence,
+            ),
+          ),
+          verifier.authorizationId, suspendEvidence,
+        );
+      }
+
+      const sequence = simulator.getLedger().governanceActionCount;
+      const eventHash = simulator.getLedger().lastGovernanceEventHash;
+      const kind = scenario === "superseded-policy-at-activation"
+        ? ACTIVATE_ISSUER_ACTION_KIND : AUTHORIZE_ISSUER_ACTION_KIND;
+      const signature = signIssuerTransition(kind);
+      expect(() => scenario === "superseded-policy-at-activation"
+        ? simulator.activateIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+          issuer.authorizationId, issuer.evidenceHash,
+        )
+        : simulator.authorizeIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+          issuer.authorizationId, issuer.evidenceHash,
+        )).toThrow(scenario === "superseded-policy-at-activation"
+          ? /proposal evidence policy is not current/i
+          : /evidence verifier key is not active/i);
+      expect(simulator.getLedger().governanceActionCount).toBe(sequence);
+      expect(simulator.getLedger().lastGovernanceEventHash).toEqual(eventHash);
+      expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
+        scenario === "superseded-policy-at-activation"
+          ? AuthorizationStatus.authorized : AuthorizationStatus.proposed,
+      );
+    },
+  );
+
   it("moves an issuer authorization through proposed, authorized, and active states", () => {
     const registry = createInitializedRegistryFixture(19);
     const {

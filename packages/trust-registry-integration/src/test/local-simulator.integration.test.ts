@@ -201,11 +201,27 @@ describe("trust registry local simulator integration", () => {
       signature: harness.signApplicationEvidenceCommitment(commitment),
     });
     if (transition === "activation") harness.approveIssuer(issuer);
+    harness.advanceEvidenceTimeBy(minutes * 60_000);
 
     expect(() => transition === "approval"
       ? harness.approveIssuer(issuer)
       : harness.activateIssuer(issuer)).toThrow(/expiresAt|expired/);
     expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status).toBe(status);
+  });
+
+  it("expires an idle issuer proposal without advancing the governance sequence", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("idle-expiry");
+    harness.proposeIssuer(issuer);
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+
+    harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000);
+
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(() => harness.approveIssuer(issuer)).toThrow(/expiresAt|expired/);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status)
+      .toBe(ContractAuthorizationStatus.proposed);
   });
 
   it("rejects malformed application evidence before an issuer proposal reaches Compact", () => {

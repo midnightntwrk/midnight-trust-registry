@@ -231,6 +231,7 @@ export class LocalTrustRegistryIntegrationHarness {
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
   private readonly issuerApplicationEvidence = new Map<string, ApplicationEvidenceSubmission>();
   private policyRecordValue: GovernancePolicyRecord;
+  private evidenceTimeMs = BASE_TIMESTAMP_MS;
   private readonly policyRevisions: Array<{
     effectiveFromSequence: bigint;
     commitment: Uint8Array;
@@ -239,6 +240,24 @@ export class LocalTrustRegistryIntegrationHarness {
 
   get policyRecord(): GovernancePolicyRecord {
     return this.policyRecordValue;
+  }
+
+  advanceEvidenceTimeBy(milliseconds: number): void {
+    if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) {
+      throw new RangeError("Evidence clock advance must be a nonnegative safe integer");
+    }
+    const nextEvidenceTimeMs = this.evidenceTimeMs + milliseconds;
+    if (
+      !Number.isSafeInteger(nextEvidenceTimeMs)
+      || Number.isNaN(new Date(nextEvidenceTimeMs).getTime())
+    ) {
+      throw new RangeError("Evidence clock exceeds the supported timestamp range");
+    }
+    this.evidenceTimeMs = nextEvidenceTimeMs;
+  }
+
+  private evidenceTime(): string {
+    return new Date(this.evidenceTimeMs).toISOString();
   }
 
   constructor(label = "kanon") {
@@ -369,7 +388,8 @@ export class LocalTrustRegistryIntegrationHarness {
     if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
       throw new Error("Application evidence governed resource is outside the scope");
     }
-    const verifiedAt = timestampForSequence(this.assertSupportedContractFormat().governanceActionCount);
+    this.assertSupportedContractFormat();
+    const verifiedAt = this.evidenceTime();
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
       version: "tr-application-evidence-v1" as const,
@@ -447,7 +467,7 @@ export class LocalTrustRegistryIntegrationHarness {
     if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
       throw new Error("Application evidence governed resource is outside the scope");
     }
-    const ledger = this.assertSupportedContractFormat();
+    this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
       {
@@ -460,7 +480,7 @@ export class LocalTrustRegistryIntegrationHarness {
         scopeCommitment: computeAuthorizationScopeCommitment(scope),
         governedResource,
         challengeHash: input.challengeHash ?? sha256Hex(`challenge:${input.applicationId}`),
-        evaluatedAt: timestampForSequence(ledger.governanceActionCount),
+        evaluatedAt: this.evidenceTime(),
       },
       [this.evidenceVerifier],
       (commitment, signature, verifier) => this.verifyApplicationEvidenceSignature(commitment, signature, verifier),

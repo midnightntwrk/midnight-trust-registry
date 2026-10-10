@@ -35,6 +35,14 @@ record retains its existing evidence hash and event chain. Signature verificatio
 must not accept a valid commitment for another issuer, role, resource, policy,
 or registry. A verifier key revoked or suspended before proposal must fail;
 historical proposals retain the key/policy snapshot used at proposal time.
+Approval and activation of a pending issuer proposal also require that its
+recorded verifier key remains active and current under the same governance
+policy commitment/version. Suspension, revocation, rotation, or policy revision
+invalidates the pending transition; archive and reapply under current evidence
+instead of silently grandfathering it. The local simulator separately checks
+expiry against an independently advanceable evidence clock. Compact cannot
+prove wall-clock expiry, so production admission must enforce that off-ledger
+precondition before submitting approval or activation.
 
 ## Verifier-key lifecycle
 
