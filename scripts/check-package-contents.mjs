@@ -4,9 +4,17 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
+import {
+  artifactWorkspaces,
+  compactContractArtifactCatalog,
+  packageManifestCatalog,
+} from "./trust-registry-workspace-catalog.mjs";
+import { missingFullContractArtifacts, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const lightMode = process.argv.includes("--light");
+const compactManagedDirectories = new Map(compactContractArtifactCatalog.map((entry) =>
+  [entry.workspace, entry.compactManagedDirectory]));
 
 const disallowedFilePatterns = [
   /^coverage\//u,
@@ -62,6 +70,21 @@ for (const workspace of artifactWorkspaces) {
     errors.push(
       `${workspace}: package contains development-only files: ${disallowed.join(", ")}`,
     );
+  }
+
+  const compactManagedDirectory = compactManagedDirectories.get(workspace);
+  if (compactManagedDirectory !== undefined) {
+    if (lightMode) {
+      const unexpected = unexpectedLightContractArtifacts(filePaths, compactManagedDirectory);
+      if (unexpected.length > 0) {
+        errors.push(`${workspace}: light package contains unexpected generated artifacts: ${unexpected.join(", ")}`);
+      }
+    } else {
+      const missing = missingFullContractArtifacts(filePaths, compactManagedDirectory);
+      if (missing.length > 0) {
+        errors.push(`${workspace}: full package is missing ${missing.join(" and ")}`);
+      }
+    }
   }
 
   const missingRequired = (expected?.requiredPackedPaths ?? []).filter(

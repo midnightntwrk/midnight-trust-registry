@@ -83,14 +83,14 @@ jobs:
       - name: Verify installed DID and VC runtime
         run: pnpm run check:installed-identity-runtime
 
+      - name: Run light test suite before publish
+        run: pnpm run test:light
+
       - name: Build repository
         run: pnpm run build
 
       - name: Check package contents
         run: pnpm run packages:check-contents
-
-      - name: Run light test suite before publish
-        run: pnpm run test:light
 
       - name: Pack local release artifacts
         run: pnpm run artifacts:pack -- --output-dir artifacts/npm-release
