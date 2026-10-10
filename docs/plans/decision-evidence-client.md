@@ -35,10 +35,16 @@ signer as another DID method.
 equality, full publication signatures and event hash, grant inclusion/policy/
 scope/window checks, and DID-method observation matching. The selected
 sequence and evaluation time arrive as one caller-authenticated decision-point
-observation, not separate query inputs. Midnight does not itself establish a
+observation, not separate query inputs. That observation must also identify
+the current authorization for the exact scope at the selected sequence, with
+its active status and lifecycle event root matching the included grant. This
+rejects a historical epoch leaf after a later replacement or lifecycle change;
+the caller must authenticate the current-scope read, not copy it from the
+candidate bundle. Midnight does not itself establish a
 wall-clock timestamp for a sequence. This helper cannot authenticate their
 mapping. It returns no descriptor or authorization boolean: the caller must
-authenticate the accepted epoch, maintainer set, joint decision point, and DID
+authenticate the accepted epoch, maintainer set, joint decision point/current
+scope, and DID
 observation, and establish finality and currency separately.
 Local composition fixtures cover issuer assertion and verifier authentication
 methods with two real publication signers, exact request-profile rejection,

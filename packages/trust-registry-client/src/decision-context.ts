@@ -19,8 +19,17 @@ export type DecisionEvidenceSuppliedContext = {
   };
   didState: DidStateObservation;
   selection: Omit<DecisionEvidenceSelection, "evaluationTime">;
-  /** A joint sequence/time observation authenticated by the caller's ledger reader. */
-  decisionPoint: { sequence: string; evaluationTime: string };
+  /** One authenticated read at the selected sequence; a historical epoch leaf alone is insufficient. */
+  decisionPoint: {
+    sequence: string;
+    evaluationTime: string;
+    currentGrant: {
+      authorizationId: string;
+      lifecycleEventRoot: string;
+      status: string;
+      observedAtSequence: string;
+    };
+  };
 };
 
 /** Consistency only: the caller must authenticate every supplied ledger/DID context and establish finality. */
@@ -31,6 +40,15 @@ export const assertDecisionEvidenceConsistentWithSuppliedContext = (
   const evidence = DecisionEvidenceSchema.parse(input);
   if (evidence.decisionSequence !== context.decisionPoint.sequence) {
     throw new Error("Decision evidence selected sequence mismatch");
+  }
+  const currentGrant = context.decisionPoint.currentGrant;
+  if (
+    currentGrant.observedAtSequence !== context.decisionPoint.sequence
+    || currentGrant.authorizationId !== evidence.grant.authorizationId
+    || currentGrant.lifecycleEventRoot !== evidence.grant.lifecycleEventRoot
+    || currentGrant.status !== "active"
+  ) {
+    throw new Error("Decision evidence current grant mismatch");
   }
   assertDecisionEvidenceMatchesAcceptedEpoch(evidence, context.acceptedEpoch);
   assertDecisionEpochPublicationSignatures(

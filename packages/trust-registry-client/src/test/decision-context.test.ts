@@ -239,12 +239,36 @@ function fixture(
       resourceType: grant.resourceType,
       resourceId: grant.resourceId,
     },
-    decisionPoint: { sequence: "11", evaluationTime: "2026-05-20T02:30:00Z" },
+    decisionPoint: {
+      sequence: "11",
+      evaluationTime: "2026-05-20T02:30:00Z",
+      currentGrant: {
+        authorizationId: grant.authorizationId,
+        lifecycleEventRoot: grant.lifecycleEventRoot,
+        status: "active",
+        observedAtSequence: "11",
+      },
+    },
   };
   return { evidence, context };
 }
 
 describe("decision evidence supplied-context composition", () => {
+  it("rejects a grant replaced or changed after epoch inclusion", () => {
+    const { evidence, context } = fixture();
+    for (const currentGrant of [
+      { ...context.decisionPoint.currentGrant, authorizationId: "auth:issuer:replacement" },
+      { ...context.decisionPoint.currentGrant, lifecycleEventRoot: C },
+      { ...context.decisionPoint.currentGrant, status: "suspended" },
+      { ...context.decisionPoint.currentGrant, observedAtSequence: "10" },
+    ]) {
+      expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
+        ...context,
+        decisionPoint: { ...context.decisionPoint, currentGrant },
+      })).toThrow(/current grant mismatch/i);
+    }
+  });
+
   it("checks the full two-signer epoch, grant, scope, DID method, and selected sequence", () => {
     const { evidence, context } = fixture();
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context)).not.toThrow();
