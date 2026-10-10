@@ -11,6 +11,8 @@ exercise the same one-use API intake boundary. Only the issuer fixture reaches
 a governed Compact proposal; the other roles use a callback spy. Policy/status
 assertions in these fixtures are test-only. Production family/status adapters,
 durable challenge storage, and a public route remain open.
+The non-issuer fixtures reject stale status, revoked-status adapter decisions,
+and expired credentials before challenge consumption.
 
 ## Published Package Boundary
 

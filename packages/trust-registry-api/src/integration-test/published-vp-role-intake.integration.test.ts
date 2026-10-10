@@ -10,6 +10,7 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  ApplicationVpVerificationError,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createMaintainerAuthorizationScopeFixture,
@@ -113,6 +114,34 @@ describe("published VP proof for non-issuer application roles", () => {
     })).rejects.toMatchObject({ category: "ineligible" });
     expect(await challengeService.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
     expect(propose).not.toHaveBeenCalled();
+
+    for (const family of [
+      {
+        ...proof.input.family,
+        assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS }),
+      },
+      {
+        ...proof.input.family,
+        assertStatusActive: async (): Promise<{ validUntilMs: number }> => {
+          throw new ApplicationVpVerificationError("ineligible");
+        },
+      },
+      {
+        ...proof.input.family,
+        prepare: async () => ({ ...proof.material, credentialExpiresAtMs: VP_FIXTURE_TIME_MS }),
+      },
+    ]) {
+      const rejectedPorts = await createApplicationVpIntakePorts({
+        resolver: proof.input.resolver,
+        family,
+        signer: proof.signer,
+      });
+      await expect(consumeChallengeAndSubmitApplication({
+        ...input, ...rejectedPorts,
+      })).rejects.toMatchObject({ category: expect.stringMatching(/expired|ineligible/u) });
+      expect(await challengeService.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+      expect(propose).not.toHaveBeenCalled();
+    }
 
     const evidence = await consumeChallengeAndSubmitApplication(input);
     expect(evidence.envelope.role).toBe(role);
