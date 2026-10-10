@@ -5,6 +5,7 @@ import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
 import { LifecycleStatusSchema } from "./lifecycle.js";
 import { GovernancePolicySnapshotSchema, computeGovernancePolicySnapshotCommitment } from "./policy-snapshot.js";
 import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
+import { IssuerStatusPolicyBindingSchema, computeIssuerStatusPolicyBindingCommitment } from "./status-policy.js";
 import { AuthorizationRecordSchema, ResourceTypeSchema } from "./types.js";
 
 const HashSchema = HashHexSchema.regex(/^0x[0-9a-f]{64}$/u);
@@ -157,12 +158,14 @@ const DecisionEvidenceShape = z.discriminatedUnion("role", [
     role: z.literal("issuer"),
     grant: DecisionEvidenceGrantSchema.options[0],
     didMethod: IssuerDidMethodSchema,
+    statusPolicyBinding: IssuerStatusPolicyBindingSchema,
   }),
   z.strictObject({
     ...BaseEnvelope,
     role: z.literal("verifier"),
     grant: DecisionEvidenceGrantSchema.options[1],
     didMethod: VerifierDidMethodSchema,
+    statusPolicyBinding: z.never().optional(),
   }),
 ]);
 
@@ -218,6 +221,13 @@ export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidenc
   }
   if (evidence.grant.policyId !== evidence.policy.policyId) {
     ctx.addIssue({ code: "custom", path: ["policy", "policyId"], message: "Grant and policy identifiers must agree" });
+  }
+  if (evidence.role === "issuer" && (
+    evidence.statusPolicyBinding.trustRegistryId !== evidence.registry.registryId
+    || evidence.statusPolicyBinding.issuerAuthorizationId !== evidence.grant.authorizationId
+    || computeIssuerStatusPolicyBindingCommitment(evidence.statusPolicyBinding) !== evidence.grant.statusPolicyBindingCommitment
+  )) {
+    ctx.addIssue({ code: "custom", path: ["statusPolicyBinding"], message: "Issuer status policy binding does not match governed grant" });
   }
 });
 

@@ -122,7 +122,10 @@ evidence is `invalid-evidence`. Keep those outcomes distinct in the query
 layer.
 
 Issuer status-registry identity and authority must derive from the verified
-status-policy binding, not optional bundle URLs. Artifact and deployment
+status-policy binding preimage, not optional bundle URLs. An issuer decision
+evidence envelope carries the strict preimage and checks its registry ID,
+authorization ID, and hash against the committed grant; verifier envelopes
+must not carry issuer status policy. Artifact and deployment
 references are discovery metadata unless their digests appear in verified
 governance state. Applicant eligibility attestations are not post-approval
 signer authorization evidence.

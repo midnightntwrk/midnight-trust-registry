@@ -11,6 +11,7 @@ import {
   assertDecisionEvidenceSelection,
   computeAuthorizationStatementLeafHash,
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
 } from "../index.js";
 
@@ -23,6 +24,16 @@ const DID = `did:midnight:devnet:${"1".repeat(64)}`;
 const REGISTRY_DID = `did:midnight:devnet:${"2".repeat(64)}`;
 const MAINTAINER = `did:midnight:devnet:${"3".repeat(64)}`;
 const NOW = "2026-05-20T02:00:00Z";
+const STATUS_BINDING = {
+  version: "tr-issuer-status-policy-v1" as const,
+  trustRegistryId: "registry:midnight:university",
+  issuerAuthorizationId: "auth:issuer:birth:v1",
+  statusRegistryId: D,
+  statusAuthorityVerificationMethod: `${DID}#key-1`,
+  statusPolicyId: "policy:status:v1",
+  statusPolicyVersion: "v1",
+  statusPolicyContentCommitment: C,
+};
 
 const issuerEvidence = () => ({
   format: "tr-decision-evidence-v1",
@@ -66,7 +77,7 @@ const issuerEvidence = () => ({
     resourceId: `tr:issuer-resource:v1:${"f".repeat(64)}`,
     policyId: "policy:university:v1",
     trustLevel: "approved",
-    statusPolicyBindingCommitment: E,
+    statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(STATUS_BINDING),
     status: "active",
     lifecycleEventRoot: B,
     proposedAt: "2026-05-20T00:00:00Z",
@@ -84,6 +95,7 @@ const issuerEvidence = () => ({
     relationship: "assertionMethod",
     stateEvidence: { evidenceType: "ledger-observation", blockHash: D, transactionHash: E },
   },
+  statusPolicyBinding: STATUS_BINDING,
   policy: {
     format: "tr-policy-snapshot-v1",
     registryId: "registry:midnight:university",
@@ -176,6 +188,7 @@ describe("decision evidence envelope", () => {
     const verifier = {
       ...issuer,
       role: "verifier",
+      statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
         role: "verifier",
@@ -234,6 +247,7 @@ describe("decision evidence envelope", () => {
     const verifier = {
       ...issuer,
       role: "verifier",
+      statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
         role: "verifier",
@@ -259,6 +273,33 @@ describe("decision evidence envelope", () => {
       ...verifier,
       didMethod: { ...verifier.didMethod, relationship: "capabilityInvocation" },
     }).success).toBe(true);
+  });
+
+  it("binds issuer status authority preimage to the governed grant and excludes it from verifier claims", () => {
+    const issuer = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse(issuer).success).toBe(true);
+    for (const candidate of [
+      { ...issuer, statusPolicyBinding: undefined },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, statusRegistryId: E } },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, trustRegistryId: "registry:other" } },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, issuerAuthorizationId: "auth:other" } },
+      { ...issuer, grant: { ...issuer.grant, statusPolicyBindingCommitment: E } },
+    ]) {
+      expect(DecisionEvidenceSchema.safeParse(candidate).success).toBe(false);
+    }
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: `tr:request-resource:v1:${"f".repeat(64)}`,
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: { ...issuer.didMethod, relationship: "authentication" },
+    };
+    expect(DecisionEvidenceSchema.safeParse(verifier).success).toBe(false);
   });
 
   it("rejects wrong roles, absent DID version, malformed method/key/scope/root, and undersized quorum", () => {
@@ -429,6 +470,7 @@ describe("decision evidence envelope", () => {
     const verifier = {
       ...issuer,
       role: "verifier",
+      statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
         role: "verifier",

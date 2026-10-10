@@ -15,6 +15,7 @@ import {
   GovernancePolicySnapshotSchema,
   computeAuthorizationStatementLeafHash,
   computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -46,6 +47,16 @@ function fixture(
   role: "issuer" | "verifier" = "issuer",
   status: "active" | "suspended" | "revoked" | "superseded" | "archived" = "active",
 ) {
+  const statusPolicyBinding = {
+    version: "tr-issuer-status-policy-v1" as const,
+    trustRegistryId: REGISTRY,
+    issuerAuthorizationId: "auth:issuer:birth:v1",
+    statusRegistryId: D,
+    statusAuthorityVerificationMethod: METHOD,
+    statusPolicyId: "policy:status:v1",
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: C,
+  };
   const grant = AuthorizationRecordSchema.parse({
     authorizationId: `auth:${role}:birth:v1`,
     registryId: REGISTRY,
@@ -57,7 +68,7 @@ function fixture(
       : `tr:request-resource:v1:${"f".repeat(64)}`,
     policyId: "policy:university:v1",
     trustLevel: "approved",
-    ...(role === "issuer" ? { statusPolicyBindingCommitment: E } : {}),
+    ...(role === "issuer" ? { statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(statusPolicyBinding) } : {}),
     status,
     lifecycleEventRoot: B,
     proposedAt: "2026-05-20T00:00:00Z",
@@ -166,6 +177,7 @@ function fixture(
       stateVersion: "3",
       stateEvidence: { evidenceType: "ledger-observation", blockHash: D, transactionHash: E },
     },
+    ...(role === "issuer" ? { statusPolicyBinding } : {}),
     policy,
     inclusionProof: { proofType: "merkle-inclusion", root: stateRoot, leafHash, path: [B], leafIndex: "0" },
     governanceEvents: {
