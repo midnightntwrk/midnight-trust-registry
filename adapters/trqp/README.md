@@ -11,14 +11,16 @@ Current scope:
   local simulator
 
 When `context.time` is supplied, authorization and recognition decisions use
-the record's lifecycle at that time, not its current status. The API-backed
-source requires a bundle for that record whose epoch commitment is in the
-snapshot and whose validity window contains the requested time. A snapshot
-with only a later bundle cannot prove an earlier decision; the adapter returns
-`epoch-evidence-unavailable` (424), distinct from a missing statement
-(404). Without `context.time`, the same epoch gate applies at the source
-snapshot's generation time. `time_evaluated` reports that source evaluation
-time, not the adapter's wall clock, and does not claim the snapshot is fresh
-today.
+the record's lifecycle at that time, not its current status. Otherwise the
+adapter samples its off-ledger clock once. `time_evaluated` reports that
+instant, never `snapshot.generatedAt`. A plain query is a source-snapshot
+projection, not cryptographic proof. The evidence endpoint additionally
+requires a bundle for the selected record whose epoch commitment is accepted
+in the snapshot and whose validity window contains the selected instant. A
+snapshot with only an older bundle can answer a current query but cannot
+prove it; the evidence endpoint returns `epoch-evidence-unavailable` (424),
+distinct from a missing statement (404). Neither answer proves the snapshot
+is fresh relative to a later ledger state. See
+[`docs/spec/trqp-time-and-evidence.md`](../../docs/spec/trqp-time-and-evidence.md).
 Retaining and exporting every historical bundle is follow-on work under
 [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).
