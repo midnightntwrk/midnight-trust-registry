@@ -65,5 +65,21 @@ describe("canonical mutation payloads", () => {
     expect(canonicalizeJson({ left: shared, right: shared })).toBe(
       '{"left":{"value":1},"right":{"value":1}}',
     );
+
+    const proxy = new Proxy({ value: 1 }, {
+      get: () => { getterCalls += 1; return 99; },
+    });
+    expect(canonicalizeJson(proxy)).toBe('{"value":1}');
+    const proxyArray = new Proxy([1], {
+      get: () => { getterCalls += 1; return 99; },
+    });
+    expect(canonicalizeJson(proxyArray)).toBe("[1]");
+    expect(getterCalls).toBe(0);
+
+    let doubled: unknown = { value: 1 };
+    for (let index = 0; index < 25; index += 1) {
+      doubled = { left: doubled, right: doubled };
+    }
+    expect(() => canonicalizeJson(doubled)).toThrow(/maximum length/);
   });
 });
