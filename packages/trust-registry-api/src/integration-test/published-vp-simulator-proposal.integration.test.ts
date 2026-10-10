@@ -6,6 +6,7 @@ import {
   ApplicationChallengeBindingSchema,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
+  sha256Hex,
   type ApplicationEvidenceSubmission,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -71,6 +72,40 @@ describe("published VP proof to governed issuer proposal", () => {
         });
       },
     };
+
+    const wrongChallenge = await createApplicationVpIntakePorts({
+      resolver: proof.input.resolver,
+      family: {
+        ...proof.input.family,
+        prepare: async () => ({
+          ...proof.material,
+          presentationProof: {
+            ...proof.material.presentationProof,
+            challengeHash: new Uint8Array(32).fill(7),
+          },
+        }),
+      },
+      signer: proof.signer,
+    });
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input, ...wrongChallenge,
+    })).rejects.toMatchObject({ category: "invalid_presentation" });
+    const wrongScope = await createApplicationVpIntakePorts({
+      resolver: proof.input.resolver,
+      family: {
+        ...proof.input.family,
+        assertRoleClaims: async () => ({
+          claimsCommitment: sha256Hex("wrong-scope-claims"),
+          scopeCommitment: sha256Hex("different-scope"),
+        }),
+      },
+      signer: proof.signer,
+    });
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input, ...wrongScope,
+    })).rejects.toMatchObject({ category: "ineligible" });
+    expect(await challengeService.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
 
     const eventHash = await consumeChallengeAndSubmitApplication(input);
     const proposal = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
