@@ -229,6 +229,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
+  private readonly issuerApplicationEvidence = new Map<string, ApplicationEvidenceSubmission>();
   private policyRecordValue: GovernancePolicyRecord;
   private readonly policyRevisions: Array<{
     effectiveFromSequence: bigint;
@@ -1006,7 +1007,7 @@ export class LocalTrustRegistryIntegrationHarness {
       this.currentEvidenceVerifierKeyIdCommitment,
       actionPayloadHash,
     );
-    return this.simulator.proposeIssuerAuthorization(
+    const eventHash = this.simulator.proposeIssuerAuthorization(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
       this.bootstrapActionSignature(
@@ -1032,12 +1033,34 @@ export class LocalTrustRegistryIntegrationHarness {
         proposeActionSequence,
       ),
     );
+    this.issuerApplicationEvidence.set(fixture.authorizationId, evidence);
+    return eventHash;
+  }
+
+  private recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): void {
+    const evidence = this.issuerApplicationEvidence.get(fixture.authorizationId);
+    if (evidence === undefined) {
+      throw new Error("Issuer application evidence is unavailable for approval or activation");
+    }
+    const commitment = this.assertApplicationEvidence({
+      evidence,
+      applicationId: fixture.authorizationId,
+      subjectDid: fixture.subjectDid,
+      role: "issuer",
+      scope: createIssuerAuthorizationScopeFixture(fixture),
+      governedResource: issuerGovernedResource(fixture),
+    });
+    const proposal = this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment);
+    if (!Buffer.from(commitment).equals(Buffer.from(proposal.evidenceCommitment))) {
+      throw new Error("Issuer application evidence no longer matches the governed proposal");
+    }
   }
 
   approveIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
+    this.recheckIssuerApplicationEvidence(fixture);
     const authorizedEvidenceHash = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     ).evidenceHash;
@@ -1071,6 +1094,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
+    this.recheckIssuerApplicationEvidence(fixture);
     const evidenceHash = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     ).evidenceHash;

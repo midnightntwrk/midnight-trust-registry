@@ -177,6 +177,37 @@ describe("trust registry local simulator integration", () => {
     expect(activeBundle.authorization?.activeFrom).toBeDefined();
   });
 
+  it.each([
+    [1, "approval", ContractAuthorizationStatus.proposed],
+    [2, "activation", ContractAuthorizationStatus.authorized],
+  ] as const)("rejects evidence expired before issuer %s", (minutes, transition, status) => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture(`expires-before-${transition}`);
+    const original = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
+    });
+    const envelope = {
+      ...original.envelope,
+      expiresAt: new Date(Date.parse(original.envelope.verifiedAt) + minutes * 60_000).toISOString(),
+    };
+    const commitment = computeApplicationEvidenceCommitment(envelope);
+    harness.proposeIssuerWithApplicationEvidence(issuer, {
+      envelope,
+      commitment,
+      signature: harness.signApplicationEvidenceCommitment(commitment),
+    });
+    if (transition === "activation") harness.approveIssuer(issuer);
+
+    expect(() => transition === "approval"
+      ? harness.approveIssuer(issuer)
+      : harness.activateIssuer(issuer)).toThrow(/expiresAt|expired/);
+    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status).toBe(status);
+  });
+
   it("rejects malformed application evidence before an issuer proposal reaches Compact", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application-evidence-negative");
