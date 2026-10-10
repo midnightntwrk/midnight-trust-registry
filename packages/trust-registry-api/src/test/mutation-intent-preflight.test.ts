@@ -64,15 +64,15 @@ describe("mutation intent preflight", () => {
     const record = resolveWorkspaceOperationRecord(expected, operation);
     if (!("authorization" in record)) throw new Error("expected issuer authorization");
     const bound = { ...intent, targetId: record.authorization.authorizationId };
-    expect(applyIntentBoundWorkspaceOperation(bound, workspace, operation)).toEqual(expected);
+    expect(applyIntentBoundWorkspaceOperation(bound, workspace, operation, now)).toEqual(expected);
     for (const substituted of [
       { ...operation, target: "verifier" as const },
       { operation: "approve" as const, target: "issuer" as const, id: bound.targetId },
     ]) {
-      expect(() => applyIntentBoundWorkspaceOperation(bound, workspace, substituted))
+      expect(() => applyIntentBoundWorkspaceOperation(bound, workspace, substituted, now))
         .toThrow(/does not match the executable workspace operation/);
     }
-    expect(() => applyIntentBoundWorkspaceOperation({ ...bound, targetId: "auth:issuer:other:v1" }, workspace, operation))
+    expect(() => applyIntentBoundWorkspaceOperation({ ...bound, targetId: "auth:issuer:other:v1" }, workspace, operation, now))
       .toThrow(/does not match the executable workspace operation/);
   });
 
@@ -83,12 +83,51 @@ describe("mutation intent preflight", () => {
       action: "publish-epoch",
       target: "epoch",
       targetId: workspace.snapshot.currentEpoch.epochId,
+      payloadCommitment: computeMutationPayloadCommitment({ label: "next" }),
     };
     const operation = { operation: "publish-epoch" as const, label: "next" };
-    expect(applyIntentBoundWorkspaceOperation(publish, workspace, operation)).toEqual(
+    expect(applyIntentBoundWorkspaceOperation(publish, workspace, operation, now)).toEqual(
       applyWorkspaceOperation(workspace, operation),
     );
-    expect(() => applyIntentBoundWorkspaceOperation({ ...publish, expectedEpochId: "epoch:stale", targetId: "epoch:stale" }, workspace, operation))
+    expect(() => applyIntentBoundWorkspaceOperation({ ...publish, expectedEpochId: "epoch:stale", targetId: "epoch:stale" }, workspace, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
+    expect(() => applyIntentBoundWorkspaceOperation(publish, workspace, { ...operation, label: "other" }, now))
+      .toThrow(/does not match the executable workspace operation/);
+  });
+
+  it("rechecks context and expiry for non-epoch operations inside the write boundary", () => {
+    const operation = { operation: "submit" as const, target: "issuer" as const, label: "example" };
+    const otherWorkspace = createOperatorWorkspace({ label: "other-registry" });
+    expect(() => applyIntentBoundWorkspaceOperation(intent, otherWorkspace, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
+    const changed = { ...workspace, operations: [...workspace.operations, operation] };
+    expect(() => applyIntentBoundWorkspaceOperation(intent, changed, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
+    expect(() => applyIntentBoundWorkspaceOperation(intent, workspace, operation, new Date(intent.expiresAt)))
+      .toThrow(/does not match the executable workspace operation/);
+    const afterFirst = applyWorkspaceOperation(workspace, operation);
+    const replay = { ...intent, expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(afterFirst) };
+    expect(() => applyIntentBoundWorkspaceOperation(replay, afterFirst, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
+  });
+
+  it("binds a governed status transition to its target and operation payload", () => {
+    const submitted = applyWorkspaceOperation(workspace, { operation: "submit", target: "issuer", label: "example" });
+    const operation = { operation: "approve" as const, target: "issuer" as const, id: intent.targetId };
+    const approval: MutationIntent = {
+      ...intent,
+      actorRole: "maintainer",
+      action: "approve",
+      expectedEpochId: submitted.snapshot.currentEpoch.epochId,
+      expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(submitted),
+      payloadCommitment: computeMutationPayloadCommitment({ target: "issuer", id: intent.targetId }),
+    };
+    expect(preflightMutationIntent(approval, { target: "issuer", id: intent.targetId }, submitted, now))
+      .toEqual({ ok: true, intent: approval });
+    expect(applyIntentBoundWorkspaceOperation(approval, submitted, operation, now)).toEqual(
+      applyWorkspaceOperation(submitted, operation),
+    );
+    expect(() => applyIntentBoundWorkspaceOperation({ ...approval, payloadCommitment: intent.payloadCommitment }, submitted, operation, now))
       .toThrow(/does not match the executable workspace operation/);
   });
 

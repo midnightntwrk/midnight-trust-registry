@@ -75,15 +75,21 @@ export function preflightMutationIntent(
   return { ok: true, intent };
 }
 
-/** Use only inside a future atomic write boundary, after preflight and authorization. */
+/** Use inside an atomic write boundary after signature authorization; repeats context/payload preflight. */
 export function applyIntentBoundWorkspaceOperation(
   intentInput: MutationIntent,
   workspace: TrustRegistryOperatorWorkspace,
   operationInput: TrustRegistryOperatorWorkspaceOperation,
+  now: Date,
 ): TrustRegistryOperatorWorkspace {
   const intent = MutationIntentSchema.parse(intentInput);
   const operation = TrustRegistryOperatorWorkspaceOperationSchema.parse(operationInput);
   const target = operation.operation === "publish-epoch" ? "epoch" : operation.target;
+  const payload = operation.operation === "publish-epoch"
+    ? { ...(operation.label === undefined ? {} : { label: operation.label }) }
+    : operation.operation === "submit"
+      ? { target: operation.target, label: operation.label }
+      : { target: operation.target, id: operation.id };
   if (intent.action !== operation.operation || intent.target !== target
     || (operation.operation === "publish-epoch"
       && (intent.targetId !== workspace.snapshot.currentEpoch.epochId
@@ -92,8 +98,16 @@ export function applyIntentBoundWorkspaceOperation(
       && intent.targetId !== operation.id)) {
     throw new MutationIntentOperationMismatchError();
   }
+  if (!preflightMutationIntent(intent, payload, workspace, now).ok) {
+    throw new MutationIntentOperationMismatchError();
+  }
 
-  const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+  let nextWorkspace: TrustRegistryOperatorWorkspace;
+  try {
+    nextWorkspace = applyWorkspaceOperation(workspace, operation);
+  } catch {
+    throw new MutationIntentOperationMismatchError();
+  }
   if (operation.operation === "publish-epoch") return nextWorkspace;
   const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
   const recordId = "authorization" in record
