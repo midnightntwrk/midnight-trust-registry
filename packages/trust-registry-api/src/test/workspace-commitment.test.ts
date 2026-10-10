@@ -1,4 +1,4 @@
-import { applyWorkspaceOperation, createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { applyWorkspaceOperation, createOperatorWorkspace, TrustRegistryOperatorWorkspaceSchema } from "@midnight-ntwrk/trust-registry-cli";
 import { describe, expect, it } from "vitest";
 
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
@@ -29,5 +29,14 @@ describe("operator workspace revision commitment", () => {
     const withUndefined = { ...workspace, operations: [...workspace.operations, { operation: "publish-epoch" as const, label: undefined }] };
     const afterJsonRoundTrip = JSON.parse(JSON.stringify(withUndefined)) as typeof withUndefined;
     expect(computeOperatorWorkspaceCommitment(withUndefined)).toBe(computeOperatorWorkspaceCommitment(afterJsonRoundTrip));
+
+    const withUnknownProperty = { ...workspace, notPersisted: "different" };
+    expect(computeOperatorWorkspaceCommitment(withUnknownProperty)).toBe(before);
+
+    const withoutDefaultedNotes = JSON.parse(JSON.stringify(workspace)) as typeof workspace;
+    Reflect.deleteProperty(withoutDefaultedNotes.snapshot, "notes");
+    expect(computeOperatorWorkspaceCommitment(withoutDefaultedNotes)).toBe(
+      computeOperatorWorkspaceCommitment(TrustRegistryOperatorWorkspaceSchema.parse(withoutDefaultedNotes)),
+    );
   });
 });

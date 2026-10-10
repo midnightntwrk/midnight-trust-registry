@@ -64,6 +64,9 @@ this commitment from the exact validated body and compare it before executing;
 fields may not be defaulted or changed after that check. A non-JSON value or
 explicit undefined field is rejected. The workspace commitment instead
 normalizes optional undefined fields to the JSON form persisted on disk.
+The canonical serializer rejects output longer than 16 Mi UTF-16 code units to
+bound shared-object expansion. Inputs to public routes need tighter request-size
+limits before parsing; this serializer limit is not a substitute for them.
 Nonces
 are one-use per registry and actor and remain consumed only after a successful
 atomic mutation. API clock checks are off-ledger; Midnight contract circuits
