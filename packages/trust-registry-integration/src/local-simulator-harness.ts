@@ -229,7 +229,10 @@ export class LocalTrustRegistryIntegrationHarness {
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
-  private readonly issuerApplicationEvidence = new Map<string, ApplicationEvidenceSubmission>();
+  private readonly issuerApplicationEvidence = new Map<string, {
+    evidence: ApplicationEvidenceSubmission;
+    challengeHash: string;
+  }>();
   private policyRecordValue: GovernancePolicyRecord;
   private evidenceTimeMs = BASE_TIMESTAMP_MS;
   private readonly policyRevisions: Array<{
@@ -1053,21 +1056,25 @@ export class LocalTrustRegistryIntegrationHarness {
         proposeActionSequence,
       ),
     );
-    this.issuerApplicationEvidence.set(fixture.authorizationId, evidence);
+    this.issuerApplicationEvidence.set(fixture.authorizationId, {
+      evidence,
+      challengeHash: expectedEvidence.challengeHash,
+    });
     return eventHash;
   }
 
   private recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): void {
-    const evidence = this.issuerApplicationEvidence.get(fixture.authorizationId);
-    if (evidence === undefined) {
+    const accepted = this.issuerApplicationEvidence.get(fixture.authorizationId);
+    if (accepted === undefined) {
       throw new Error("Issuer application evidence is unavailable for approval or activation");
     }
     const commitment = this.assertApplicationEvidence({
-      evidence,
+      evidence: accepted.evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(fixture),
+      challengeHash: accepted.challengeHash,
       governedResource: issuerGovernedResource(fixture),
     });
     const proposal = this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment);
