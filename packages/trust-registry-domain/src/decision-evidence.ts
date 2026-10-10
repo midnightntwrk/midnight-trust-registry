@@ -214,6 +214,71 @@ export const DecisionEvidenceJsonSchema = {
 
 export type DecisionEvidence = z.infer<typeof DecisionEvidenceSchema>;
 
+export const AcceptedDecisionEpochSchema = z.strictObject({
+  registryId: IdentifierSchema,
+  registryDid: MidnightDidSchema,
+  networkId: IdentifierSchema,
+  contractAddress: HashSchema,
+  transactionHash: HashSchema,
+  blockHash: HashSchema,
+  epochId: IdentifierSchema,
+  stateRoot: HashSchema,
+  eventRoot: HashSchema,
+  policyRoot: HashSchema,
+  publicationSequence: PositiveSequenceSchema,
+  publicationEventHash: HashSchema,
+  validFrom: TimestampSchema,
+  validUntil: TimestampSchema,
+  requiredSignatures: z.number().int().min(1).max(5),
+});
+
+export type AcceptedDecisionEpoch = z.infer<typeof AcceptedDecisionEpochSchema>;
+
+/** Compares against a caller-authenticated epoch; it does not authenticate that source or verify signatures. */
+export const assertDecisionEvidenceMatchesAcceptedEpoch = (
+  input: unknown,
+  acceptedInput: unknown,
+): void => {
+  const evidence = DecisionEvidenceSchema.parse(input);
+  const accepted = AcceptedDecisionEpochSchema.parse(acceptedInput);
+  if (
+    evidence.registry.registryId !== accepted.registryId
+    || evidence.registry.registryDid !== accepted.registryDid
+    || evidence.registry.networkId !== accepted.networkId
+    || evidence.registry.contractAddress !== accepted.contractAddress
+    || evidence.anchorReferences.registryEpoch.networkId !== accepted.networkId
+    || evidence.anchorReferences.registryEpoch.contractAddress !== accepted.contractAddress
+    || evidence.anchorReferences.registryEpoch.transactionHash !== accepted.transactionHash
+    || evidence.anchorReferences.registryEpoch.blockHash !== accepted.blockHash
+  ) {
+    throw new Error("Decision evidence accepted epoch identity mismatch");
+  }
+  if (
+    evidence.epoch.epochId !== accepted.epochId
+    || evidence.epoch.registryId !== accepted.registryId
+    || evidence.epoch.publicationSequence !== accepted.publicationSequence
+    || evidence.governanceEvents.epochPublication !== accepted.publicationEventHash
+  ) {
+    throw new Error("Decision evidence accepted epoch publication mismatch");
+  }
+  if (
+    evidence.epoch.stateRoot !== accepted.stateRoot
+    || evidence.epoch.eventRoot !== accepted.eventRoot
+    || evidence.epoch.policyRoot !== accepted.policyRoot
+  ) {
+    throw new Error("Decision evidence accepted epoch root mismatch");
+  }
+  if (
+    evidence.epoch.validFrom !== accepted.validFrom
+    || evidence.epoch.validUntil !== accepted.validUntil
+  ) {
+    throw new Error("Decision evidence accepted epoch validity mismatch");
+  }
+  if (evidence.epoch.quorum.requiredSignatures !== accepted.requiredSignatures) {
+    throw new Error("Decision evidence accepted epoch threshold mismatch");
+  }
+};
+
 /** Checks the claimed grant path only; it does not authenticate the epoch root. */
 export const assertDecisionEvidenceInclusion = (input: unknown): void => {
   const evidence = DecisionEvidenceSchema.parse(input);

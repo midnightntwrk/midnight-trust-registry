@@ -14,6 +14,13 @@ that function nor an API `active` response may produce a trusted signer
 descriptor. A positive decision requires two independently accepted anchors:
 the registry epoch and the subject DID state.
 
+`assertDecisionEvidenceMatchesAcceptedEpoch` now compares every claimed epoch
+identity, root, publication reference, validity window, and threshold to a
+separately supplied accepted context. The caller must authenticate that
+context; this comparator does not verify publication signatures, quorum,
+finality, currentness, or the DID state. It therefore cannot produce a
+positive signer descriptor on its own.
+
 The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
 JubJub point. Other suites require a separately specified verification path.

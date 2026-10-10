@@ -6,6 +6,7 @@ import {
   DecisionEvidenceSchema,
   GovernancePolicySnapshotSchema,
   assertDecisionEvidenceInclusion,
+  assertDecisionEvidenceMatchesAcceptedEpoch,
   assertDecisionEvidencePolicyCommitment,
   assertDecisionEvidenceSelection,
   computeAuthorizationStatementLeafHash,
@@ -132,7 +133,51 @@ const expectedIssuerSelection = {
   evaluationTime: "2026-05-20T02:30:00Z",
 };
 
+const acceptedEpoch = (evidence: ReturnType<typeof consistentIssuerEvidence>) => ({
+  registryId: evidence.registry.registryId,
+  registryDid: evidence.registry.registryDid,
+  networkId: evidence.registry.networkId,
+  contractAddress: evidence.registry.contractAddress,
+  transactionHash: evidence.anchorReferences.registryEpoch.transactionHash,
+  blockHash: evidence.anchorReferences.registryEpoch.blockHash,
+  epochId: evidence.epoch.epochId,
+  stateRoot: evidence.epoch.stateRoot,
+  eventRoot: evidence.epoch.eventRoot,
+  policyRoot: evidence.epoch.policyRoot,
+  publicationSequence: evidence.epoch.publicationSequence,
+  publicationEventHash: evidence.governanceEvents.epochPublication,
+  validFrom: evidence.epoch.validFrom,
+  validUntil: evidence.epoch.validUntil,
+  requiredSignatures: evidence.epoch.quorum.requiredSignatures,
+});
+
 describe("decision evidence envelope", () => {
+  it("matches every epoch claim to a separately accepted publication context", () => {
+    const evidence = consistentIssuerEvidence();
+    const accepted = acceptedEpoch(evidence);
+    expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, accepted)).not.toThrow();
+    for (const changed of [
+      { registryId: "registry:other" },
+      { registryDid: DID },
+      { networkId: "mainnet" },
+      { contractAddress: B },
+      { transactionHash: A },
+      { blockHash: D },
+      { epochId: "epoch:other" },
+      { stateRoot: B },
+      { eventRoot: A },
+      { policyRoot: A },
+      { publicationSequence: "11" },
+      { publicationEventHash: A },
+      { validFrom: "2026-05-20T01:00:00Z" },
+      { validUntil: "2026-05-20T04:00:00Z" },
+      { requiredSignatures: 1 },
+    ]) {
+      expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, { ...accepted, ...changed })).toThrow();
+    }
+    expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, { ...accepted, accepted: true })).toThrow();
+  });
+
   it("accepts structural issuer and verifier claims without authenticating them", () => {
     expect(DecisionEvidenceSchema.safeParse(issuerEvidence()).success).toBe(true);
     const issuer = issuerEvidence();
