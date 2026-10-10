@@ -24,6 +24,7 @@ import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
 describe("published VP proof to governed issuer proposal", () => {
   it("submits one redacted, DID-signed evidence commitment to the Compact simulator", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
+    harness.advanceEvidenceTimeBy(60_000);
     const issuer = createIssuerScenarioFixture("vp");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
     const governedResource = { type: "credentialFamily", id: issuer.resourceId } as const;
