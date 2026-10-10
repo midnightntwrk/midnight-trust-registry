@@ -42,6 +42,8 @@ also requires the observed DID state to be non-deactivated. The observation
 must come from a caller-authenticated,
 finalized DID-state source. The comparator does not validate a ledger proof or
 establish finality and must not be used alone to produce a VC signer descriptor.
+Claims labeled `state-proof` fail closed until a DID-ledger proof verifier is
+implemented; only authenticated ledger observations are accepted in v1.
 
 `assertDecisionEvidenceConsistentWithSuppliedContext` composes that DID check
 with accepted-epoch equality, complete Compact publication signatures, exact

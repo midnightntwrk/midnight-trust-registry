@@ -264,6 +264,24 @@ describe("decision evidence supplied-context composition", () => {
     }
   });
 
+  it("rejects a claimed DID state proof even when its document matches the observed key", () => {
+    const { evidence, context } = fixture("verifier");
+    expect(() => assertDecisionEvidenceConsistentWithSuppliedContext({
+      ...evidence,
+      didMethod: {
+        ...evidence.didMethod,
+        stateEvidence: {
+          evidenceType: "state-proof",
+          stateRoot: D,
+          leafHash: D,
+          path: [D],
+          leafIndex: "0",
+          blockHash: D,
+        },
+      },
+    }, context)).toThrow(/requires a DID-ledger proof verifier/u);
+  });
+
   it.each(["suspended", "revoked", "superseded", "archived"] as const)(
     "rejects a %s grant even with an otherwise valid two-signer epoch and inclusion proof",
     (status) => {

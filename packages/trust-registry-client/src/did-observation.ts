@@ -16,6 +16,9 @@ export const assertDecisionEvidenceDidMethodMatchesObservation = (
   observation: DidStateObservation,
   expectedNetworkId: string,
 ): void => {
+  if (claim.stateEvidence.evidenceType === "state-proof") {
+    throw new Error("Decision evidence DID state proof requires a DID-ledger proof verifier");
+  }
   if (
     observation.networkId !== expectedNetworkId
     || observation.blockHash !== claim.stateEvidence.blockHash

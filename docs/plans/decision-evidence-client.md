@@ -65,7 +65,11 @@ explicit verifier configuration. The bundle contains:
   Grant and DID-state Merkle paths are limited to 256 siblings in this profile.
 - The subject `did:midnight`, absolute verification-method reference, native
   public key, observed positive DID state version, required relationship, and
-  a DID state proof or authenticated ledger observation.
+a DID state proof or authenticated ledger observation.
+The v1 client verifies authenticated ledger observations only. A
+`state-proof` claim is structurally representable but rejected by the client
+until a DID-ledger-specific proof verifier is available; the generic Trust
+Registry Merkle algorithm must not be presumed to prove DID state.
   For a ledger-observation claim, its transaction hash must also match the
   independently obtained observation; a block/version match alone is not enough.
   That observation must explicitly report a non-deactivated DID state.

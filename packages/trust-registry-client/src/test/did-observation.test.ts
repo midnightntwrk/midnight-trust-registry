@@ -42,6 +42,20 @@ const observation = () => ({
 });
 
 describe("decision evidence DID observation", () => {
+  it("rejects a state-proof claim until its DID-ledger proof can be verified", () => {
+    expect(() => assertDecisionEvidenceDidMethodMatchesObservation({
+      ...issuerClaim,
+      stateEvidence: {
+        evidenceType: "state-proof",
+        stateRoot: BLOCK,
+        leafHash: BLOCK,
+        path: [BLOCK],
+        leafIndex: "0",
+        blockHash: BLOCK,
+      },
+    }, observation(), "devnet")).toThrow(/requires a DID-ledger proof verifier/u);
+  });
+
   it("matches the published Midnight DID document method and role relationship", () => {
     expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
       issuerClaim, observation(), "devnet",
