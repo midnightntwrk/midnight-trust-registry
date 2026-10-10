@@ -38,6 +38,17 @@ export class MutationIntentOperationMismatchError extends Error {
   }
 }
 
+export function mutationPayloadForWorkspaceOperation(
+  operation: TrustRegistryOperatorWorkspaceOperation,
+): Record<string, string> {
+  if (operation.operation === "publish-epoch") {
+    return operation.label === undefined ? {} : { label: operation.label };
+  }
+  return operation.operation === "submit"
+    ? { target: operation.target, label: operation.label }
+    : { target: operation.target, id: operation.id };
+}
+
 /** Run again inside the atomic write boundary; this check does not consume a nonce. */
 export function preflightMutationIntent(
   intentInput: unknown,
@@ -85,11 +96,7 @@ export function applyIntentBoundWorkspaceOperation(
   const intent = MutationIntentSchema.parse(intentInput);
   const operation = TrustRegistryOperatorWorkspaceOperationSchema.parse(operationInput);
   const target = operation.operation === "publish-epoch" ? "epoch" : operation.target;
-  const payload = operation.operation === "publish-epoch"
-    ? { ...(operation.label === undefined ? {} : { label: operation.label }) }
-    : operation.operation === "submit"
-      ? { target: operation.target, label: operation.label }
-      : { target: operation.target, id: operation.id };
+  const payload = mutationPayloadForWorkspaceOperation(operation);
   if (intent.action !== operation.operation || intent.target !== target
     || (operation.operation === "publish-epoch"
       && (intent.targetId !== workspace.snapshot.currentEpoch.epochId
