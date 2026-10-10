@@ -130,6 +130,66 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   }
 };
 
+export const computeIssuerEvidenceBoundProposalPayloadHash = (
+  baseIssuerPayloadHash: Uint8Array,
+  evidenceVerifierAuthorizationId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  activePolicyCommitment: Uint8Array,
+  activePolicyVersion: bigint,
+): Uint8Array =>
+  pureCircuits.issuerEvidenceBoundProposalPayloadHash(
+    require32Bytes(baseIssuerPayloadHash, "Issuer proposal payload hash"),
+    require32Bytes(evidenceVerifierAuthorizationId, "Evidence verifier authorization id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(activePolicyCommitment, "Active policy commitment"),
+    activePolicyVersion,
+  );
+
+export const issuerProposalEvidenceSignatureDigest = (
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryActionDigest =>
+  pureCircuits.issuerProposalEvidenceSignatureDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(boundPayloadHash, "Bound issuer proposal payload hash"),
+  ) as TrustRegistryActionDigest;
+
+export const signIssuerProposalEvidenceFromSeed = (
+  seed: Uint8Array,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryJubjubSignature =>
+  signJubjubDigestFromSeed(
+    require32Bytes(seed, "Evidence verifier seed"),
+    issuerProposalEvidenceSignatureDigest(
+      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+    ),
+  );
+
+export const verifyIssuerProposalEvidenceSignature = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+  signature: TrustRegistryJubjubSignature,
+): boolean => {
+  if (!isCanonicalJubjubSignature(signature)) return false;
+  try {
+    return verifyJubjubDigest(
+      publicKey,
+      issuerProposalEvidenceSignatureDigest(
+        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      ),
+      signature,
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const computePolicyBoundActionPayloadHash = (
   policyCommitment: Uint8Array,
   actionPayloadHash: Uint8Array,
@@ -153,6 +213,49 @@ export const computePolicyBoundMaintainerActionDigest = (
     require32Bytes(actionPayloadHash, "Action payload hash"),
     actionSequence,
   ) as TrustRegistryActionDigest;
+
+export const computeCreateEvidenceVerifierKeyPayloadHash = (
+  authorizationId: Uint8Array,
+  didCommitment: Uint8Array,
+  keyIdCommitment: Uint8Array,
+  publicKey: JubjubPoint,
+  suite: Uint8Array,
+  policyCommitment: Uint8Array,
+  policyVersion: bigint,
+): Uint8Array =>
+  pureCircuits.createEvidenceVerifierKeyPayloadHash(
+    require32Bytes(authorizationId, "Evidence verifier authorization id"),
+    require32Bytes(didCommitment, "Evidence verifier DID commitment"),
+    require32Bytes(keyIdCommitment, "Evidence verifier key id commitment"),
+    publicKey,
+    require32Bytes(suite, "Evidence verifier signature suite"),
+    require32Bytes(policyCommitment, "Evidence verifier policy commitment"),
+    policyVersion,
+  );
+
+export const computeUpdateEvidenceVerifierKeyPayloadHash = (
+  authorizationId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateEvidenceVerifierKeyPayloadHash(
+    require32Bytes(authorizationId, "Evidence verifier authorization id"),
+    require32Bytes(previousLifecycleEventHash, "Previous evidence verifier event hash"),
+    require32Bytes(reasonHash, "Evidence verifier reason hash"),
+  );
+
+export const computeRotateEvidenceVerifierKeyPayloadHash = (
+  oldAuthorizationId: Uint8Array,
+  oldLifecycleEventHash: Uint8Array,
+  newCreatePayloadHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.rotateEvidenceVerifierKeyPayloadHash(
+    require32Bytes(oldAuthorizationId, "Old evidence verifier authorization id"),
+    require32Bytes(oldLifecycleEventHash, "Previous evidence verifier event hash"),
+    require32Bytes(newCreatePayloadHash, "New evidence verifier payload hash"),
+    require32Bytes(reasonHash, "Evidence verifier reason hash"),
+  );
 
 export const computeIssuerAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,
