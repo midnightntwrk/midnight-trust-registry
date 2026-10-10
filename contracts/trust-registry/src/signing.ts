@@ -154,6 +154,49 @@ export const computePolicyBoundMaintainerActionDigest = (
     actionSequence,
   ) as TrustRegistryActionDigest;
 
+export const computeCreateEvidenceVerifierKeyPayloadHash = (
+  authorizationId: Uint8Array,
+  didCommitment: Uint8Array,
+  keyIdCommitment: Uint8Array,
+  publicKey: JubjubPoint,
+  suite: Uint8Array,
+  policyCommitment: Uint8Array,
+  policyVersion: bigint,
+): Uint8Array =>
+  pureCircuits.createEvidenceVerifierKeyPayloadHash(
+    require32Bytes(authorizationId, "Evidence verifier authorization id"),
+    require32Bytes(didCommitment, "Evidence verifier DID commitment"),
+    require32Bytes(keyIdCommitment, "Evidence verifier key id commitment"),
+    publicKey,
+    require32Bytes(suite, "Evidence verifier signature suite"),
+    require32Bytes(policyCommitment, "Evidence verifier policy commitment"),
+    policyVersion,
+  );
+
+export const computeUpdateEvidenceVerifierKeyPayloadHash = (
+  authorizationId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.updateEvidenceVerifierKeyPayloadHash(
+    require32Bytes(authorizationId, "Evidence verifier authorization id"),
+    require32Bytes(previousLifecycleEventHash, "Previous evidence verifier event hash"),
+    require32Bytes(reasonHash, "Evidence verifier reason hash"),
+  );
+
+export const computeRotateEvidenceVerifierKeyPayloadHash = (
+  oldAuthorizationId: Uint8Array,
+  oldLifecycleEventHash: Uint8Array,
+  newCreatePayloadHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.rotateEvidenceVerifierKeyPayloadHash(
+    require32Bytes(oldAuthorizationId, "Old evidence verifier authorization id"),
+    require32Bytes(oldLifecycleEventHash, "Previous evidence verifier event hash"),
+    require32Bytes(newCreatePayloadHash, "New evidence verifier payload hash"),
+    require32Bytes(reasonHash, "Evidence verifier reason hash"),
+  );
+
 export const computeIssuerAuthorizationScopeKey = (
   subjectDidCommitment: Uint8Array,
   resourceType: IssuerResourceType,
