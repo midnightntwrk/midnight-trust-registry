@@ -1,5 +1,5 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
-import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type ApplicantTarget, type PublicInspection } from "./model.js";
+import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -80,7 +80,7 @@ export const createApplicantPortalApp = (
   };
 
   const submitApplication = async (
-    target: ApplicantTarget,
+    target: PortalSubmissionTarget,
     label: string,
   ) => {
     setState({ submitting: true, error: undefined, flash: undefined });
@@ -134,7 +134,12 @@ export const createApplicantPortalApp = (
       if (targetInput === null || labelInput === null) {
         return;
       }
-      void submitApplication(targetInput.value as ApplicantTarget, labelInput.value.trim());
+      const target = TARGET_OPTIONS.find((option) => option.value === targetInput.value)?.value;
+      if (target === undefined) {
+        setState({ error: "This portal does not support that application role." });
+        return;
+      }
+      void submitApplication(target, labelInput.value.trim());
     });
   };
 
@@ -163,6 +168,7 @@ export const createApplicantPortalApp = (
     const cards = state.inspection === undefined ? [] : toInspectionCards(state.inspection);
     const issuerCards = cards.filter((card) => card.target === "issuer");
     const verifierCards = cards.filter((card) => card.target === "verifier");
+    const auditorCards = cards.filter((card) => card.target === "auditor");
     const recognitionCards = cards.filter((card) => card.target === "recognition");
 
     root.innerHTML = `
@@ -170,7 +176,7 @@ export const createApplicantPortalApp = (
         <section class="hero">
           <p class="eyebrow">Public Trust Entry</p>
           <h1>Trust Registry Applicant Portal</h1>
-          <p>Submit a new issuer, verifier, or recognition application, then inspect the registry’s current active trust surface from the same local-first API. This slice intentionally leaves maintainer review actions in the separate admin console.</p>
+          <p>Submit a new issuer, verifier, or recognition application, then inspect active issuer, verifier, auditor, and recognition records from the same local-first API. Auditor submission awaits the governed evidence flow.</p>
           <div class="toolbar">
             <form class="panel" data-api-base-form>
               <label class="label">
@@ -185,12 +191,14 @@ export const createApplicantPortalApp = (
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
               <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.summary.issuerCounts.active ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.summary.verifierCounts.active ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.summary.recognitionCounts.active ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.activeIssuers.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.activeVerifiers.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active auditors</span><strong>${state.inspection?.warnings?.length ? "n/a" : (state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.activeRecognitions.length ?? 0).toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
+          ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">
@@ -212,6 +220,7 @@ export const createApplicantPortalApp = (
           <div class="lanes">
             ${renderInspectionLane("Active issuers", issuerCards)}
             ${renderInspectionLane("Active verifiers", verifierCards)}
+            ${renderInspectionLane("Active auditors", auditorCards)}
             ${renderInspectionLane("Active recognitions", recognitionCards)}
           </div>
         </section>
