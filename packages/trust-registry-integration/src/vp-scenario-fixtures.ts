@@ -20,10 +20,13 @@ export const VP_FIXTURE_NONCE = `0x${"11".repeat(32)}`;
 const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slice(2), "hex");
 
 /** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
-export async function createApplicationVpScenarioFixture(nonce = VP_FIXTURE_NONCE) {
+export async function createApplicationVpScenarioFixture(
+  nonce = VP_FIXTURE_NONCE,
+  options: { subjectDid?: string; evidenceVerifierDid?: string } = {},
+) {
   const issuerDid = createMidnightDid("vp-issuer");
-  const subjectDid = createMidnightDid("vp-holder");
-  const evidenceVerifierDid = createMidnightDid("vp-evidence-verifier");
+  const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
+  const evidenceVerifierDid = options.evidenceVerifierDid ?? createMidnightDid("vp-evidence-verifier");
   const issuerSecret = 19n;
   const holderSecret = 23n;
   const resolver = createMidnightDidResolver([
