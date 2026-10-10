@@ -9,6 +9,7 @@ This package owns:
   schemas
 - lifecycle transition validators
 - the first canonical evidence-bundle schema and JSON schema export
+- a separate strict `tr-decision-evidence-v1` envelope schema and JSON Schema
 
 This package does not own:
 
@@ -25,5 +26,15 @@ Primary exports:
 - `RecognitionRecordSchema`
 - `TrustRegistryEvidenceBundleSchema`
 - `TrustRegistryEvidenceBundleJsonSchema`
+- `DecisionEvidenceSchema`
+- `DecisionEvidenceJsonSchema`
 - `assertLifecycleTransition`
 
+`DecisionEvidenceSchema` is structural only. Its epoch and DID anchor references
+are untrusted lookup claims, not independently accepted anchors. A successful
+parse does not authenticate signatures, Merkle paths, DID state, policy
+currency, or signer authorization, and it does not produce a VC descriptor.
+The existing single-signature evidence bundle remains unchanged. Cross-field
+consistency checks in Zod (including declared quorum size) are not expressible
+in the exported JSON Schema; consumers must parse with Zod before attempting
+the later independent verification stages.
