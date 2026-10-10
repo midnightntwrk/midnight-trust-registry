@@ -157,6 +157,54 @@ describe("governed evidence verifier keys", () => {
     })).toThrow(/Jubjub Schnorr/);
   });
 
+  it("rejects an identity verifier key at registration and rotation", () => {
+    const registry = fixture();
+    const identity = { x: 0n, y: 1n };
+    expect(() => register(registry, {
+      ...key("identity", 33), publicKey: identity,
+    })).toThrow(/must not be identity/);
+    expect(registry.simulator.getLedger().evidenceVerifierKeyCount).toBe(0n);
+
+    const first = key("rotate-before-identity", 34);
+    register(registry, first);
+    const replacement = { ...key("rotate-to-identity", 35), publicKey: identity };
+    const reason = labelToBytes32("rotation:invalid-identity");
+    const oldRecord = registry.simulator.getEvidenceVerifierKey(first.authorizationId);
+    const newPayload = computeCreateEvidenceVerifierKeyPayloadHash(
+      replacement.authorizationId,
+      first.didCommitment,
+      replacement.keyIdCommitment,
+      replacement.publicKey,
+      first.suite,
+      registry.policyCommitment,
+      1n,
+    );
+    const payload = computeRotateEvidenceVerifierKeyPayloadHash(
+      first.authorizationId, oldRecord.lifecycleEventHash, newPayload, reason,
+    );
+    expect(() => registry.simulator.rotateEvidenceVerifierKey(
+      registry.maintainer.keyId, registry.maintainerPublicKey,
+      registry.sign(ROTATE, payload), first.authorizationId,
+      replacement.authorizationId, replacement.keyIdCommitment, replacement.publicKey, reason,
+    )).toThrow(/must not be identity/);
+    expect(registry.simulator.getEvidenceVerifierKey(first.authorizationId).status)
+      .toBe(EvidenceVerifierKeyStatus.active);
+  });
+
+  it("rejects a nonidentity low-order verifier key", () => {
+    const registry = fixture();
+    const orderTwoPoint = {
+      x: 0n,
+      y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+    };
+    // Compact's ecMul can reject this point before the subgroup assertion evaluates.
+    expect(() => register(registry, {
+      ...key("order-two", 36), publicKey: orderTwoPoint,
+    })).toThrow();
+    expect(registry.simulator.getLedger().evidenceVerifierKeyCount).toBe(0n);
+    expect(registry.simulator.getLedger().governanceActionCount).toBe(1n);
+  });
+
   it("prevents a maintainer from approving their own verifier DID", () => {
     const registry = fixture();
     const candidate = {

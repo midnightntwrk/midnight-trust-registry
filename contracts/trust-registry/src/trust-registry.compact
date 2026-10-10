@@ -436,6 +436,23 @@ pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
   );
 }
 
+circuit assertPrimeOrderEvidenceVerifierKey(publicKey: JubjubPoint): [] {
+  const x = jubjubPointX(publicKey);
+  const y = jubjubPointY(publicKey);
+  assert(x != 0 || y != 1, "Evidence verifier public key must not be identity");
+  const subgroupCheck = ecAdd(
+    ecMul(
+      publicKey,
+      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+    ),
+    publicKey
+  );
+  assert(
+    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    "Evidence verifier public key must have prime order"
+  );
+}
+
 pure circuit issuerResourceTypeLabel(
   resourceType: IssuerResourceType
 ): Bytes<32> {
@@ -2963,6 +2980,7 @@ export circuit registerEvidenceVerifierKey(
   const disclosedDidCommitment = disclose(verifierDidCommitment);
   const disclosedKeyIdCommitment = disclose(keyIdCommitment);
   const disclosedPublicKey = disclose(publicKey);
+  assertPrimeOrderEvidenceVerifierKey(disclosedPublicKey);
   const disclosedSuite = disclose(suite);
   const disclosedPolicyCommitment = disclose(policyCommitment);
   const disclosedPolicyVersion = disclose(policyVersion);
@@ -3144,6 +3162,7 @@ export circuit rotateEvidenceVerifierKey(
   const disclosedNewAuthorizationId = disclose(newAuthorizationId);
   const disclosedNewKeyIdCommitment = disclose(newKeyIdCommitment);
   const disclosedNewPublicKey = disclose(newPublicKey);
+  assertPrimeOrderEvidenceVerifierKey(disclosedNewPublicKey);
   const oldRecord = requireEvidenceVerifierKeyRecord(disclosedOldAuthorizationId);
   assert(
     oldRecord.status == EvidenceVerifierKeyStatus.active,
