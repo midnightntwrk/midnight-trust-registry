@@ -66,6 +66,14 @@ export const MutationIntentSchema = z.strictObject({
 
 export type MutationIntent = z.infer<typeof MutationIntentSchema>;
 
+export const MutationIntentSignatureSchema = z.strictObject({
+  keyId: z.string().regex(MidnightKeyPattern),
+  algorithm: z.literal("jubjub-schnorr"),
+  value: z.string().regex(/^0x[0-9a-f]{192}$/u),
+});
+
+export type MutationIntentSignature = z.infer<typeof MutationIntentSignatureSchema>;
+
 export function computeMutationIntentDigest(input: MutationIntent): string {
   const intent = MutationIntentSchema.parse(input);
   return sha256Hex(JSON.stringify([
