@@ -7,9 +7,12 @@ import type {
 } from "@midnight-ntwrk/trust-registry-api";
 
 export type ApplicantTarget = TrustRegistryApiApplicationTarget;
+export type PortalSubmissionTarget = Exclude<ApplicantTarget, "auditor">;
 export type PublicIssuerEntry =
   TrustRegistryApiAuthorizationListResponse["entries"][number];
 export type PublicVerifierEntry =
+  TrustRegistryApiAuthorizationListResponse["entries"][number];
+export type PublicAuditorEntry =
   TrustRegistryApiAuthorizationListResponse["entries"][number];
 export type PublicRecognitionEntry =
   TrustRegistryApiRecognitionListResponse["entries"][number];
@@ -25,16 +28,18 @@ export type InspectionCard = {
 };
 
 export type PublicInspection = {
+  activeAuditors: readonly PublicAuditorEntry[];
   activeIssuers: readonly PublicIssuerEntry[];
   activeRecognitions: readonly PublicRecognitionEntry[];
   activeVerifiers: readonly PublicVerifierEntry[];
   summary: TrustRegistryApiSummary;
+  warnings?: readonly string[];
 };
 
 export const TARGET_OPTIONS: readonly {
   description: string;
   label: string;
-  value: ApplicantTarget;
+  value: PortalSubmissionTarget;
 }[] = [
   {
     value: "issuer",
@@ -56,6 +61,15 @@ export const TARGET_OPTIONS: readonly {
 export const toInspectionCards = (
   inspection: PublicInspection,
 ): readonly InspectionCard[] => [
+  ...inspection.activeAuditors.map((entry) => ({
+    id: entry.authorization.authorizationId,
+    label: entry.label,
+    scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
+    status: entry.authorization.status,
+    subject: entry.authorization.subjectDid,
+    target: "auditor" as const,
+    trustLevel: entry.authorization.trustLevel,
+  })),
   ...inspection.activeIssuers.map((entry) => ({
     id: entry.authorization.authorizationId,
     label: entry.label,
