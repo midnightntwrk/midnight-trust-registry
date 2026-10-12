@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { TrustRegistryEvidenceBundleSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import { runCli } from "../cli.js";
 import { createDemoSnapshot } from "../demo-snapshot.js";
@@ -573,6 +574,23 @@ describe("trust registry operator CLI", () => {
       ...archived.snapshot,
       evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
         index === 0 ? { ...bundle, registryId: "registry:foreign:v1" } : bundle),
+    }).success).toBe(false);
+    const recognition = createDemoSnapshot({ label: "archive-dual-statement" })
+      .recognitionEntries[0]?.recognition;
+    if (recognition === undefined) throw new Error("expected demo recognition");
+    const dualBundle = {
+      ...activeEvidence,
+      recognition: {
+        ...recognition,
+        registryId: activeEvidence.registryId,
+        recognizedAuthorityDid: activeEvidence.subjectDid,
+      },
+    };
+    expect(TrustRegistryEvidenceBundleSchema.safeParse(dualBundle).success).toBe(true);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...archived.snapshot,
+      evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
+        index === 0 ? dualBundle : bundle),
     }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 

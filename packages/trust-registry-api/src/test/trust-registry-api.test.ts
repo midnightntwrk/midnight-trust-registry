@@ -173,6 +173,7 @@ describe("trust registry api", () => {
     } finally {
       await server.close();
     }
+
   });
 
   it("returns a conflict rather than an internal error for duplicate auditor submissions", async () => {
@@ -802,6 +803,42 @@ describe("trust registry api", () => {
       expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
     } finally {
       await server.close();
+    }
+
+    const verifier = createDemoSnapshot({ label: "dual-recognition-proof" })
+      .verifierEntries[0]?.authorization;
+    if (verifier === undefined) throw new Error("expected demo verifier");
+    const dualBundle = {
+      ...activeBundle,
+      authorization: {
+        ...verifier,
+        registryId: activeBundle.registryId,
+        subjectDid: activeBundle.subjectDid,
+      },
+    };
+    const poisonedServer = await startServer(createInMemorySource({
+      ...snapshot,
+      evidenceArchive: snapshot.evidenceArchive.map((bundle) =>
+        bundle.bundleId === activeBundle.bundleId ? dualBundle : bundle),
+    }));
+    try {
+      const response = await fetch(`${poisonedServer.url}/v1/trqp/recognitions/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.recognition.recognizedAuthorityDid,
+          authority_id: snapshot.registry.registryDid,
+          action: activeBundle.recognition.scope.resourceType,
+          resource: activeBundle.recognition.scope.resourceId,
+          context: {
+            recognized_registry_id: activeBundle.recognition.recognizedRegistryId,
+            time: activeBundle.epoch.validFrom,
+          },
+        }),
+      });
+      expect(response.status).toBe(424);
+    } finally {
+      await poisonedServer.close();
     }
   });
 

@@ -486,6 +486,7 @@ const authorizationEvidenceAtTime = (
       || right.epoch.epochId.localeCompare(left.epoch.epochId));
   for (const bundle of candidates) {
     const authorization = bundle.authorization;
+    if (bundle.recognition !== undefined) continue;
     if (authorization?.authorizationId !== inspection.entry.authorization.authorizationId) continue;
     const decision = evaluateAuthorizationRecordAtTime(authorization, at);
     if (decision.statusAtTime === inspection.statusAtTime
@@ -506,6 +507,7 @@ const recognitionEvidenceAtTime = (
       || right.epoch.epochId.localeCompare(left.epoch.epochId));
   for (const bundle of candidates) {
     const recognition = bundle.recognition;
+    if (bundle.authorization !== undefined) continue;
     if (recognition?.recognitionId !== inspection.entry.recognition.recognitionId) continue;
     const decision = evaluateRecognitionRecordAtTime(recognition, at);
     if (decision.statusAtTime === inspection.statusAtTime
