@@ -3,6 +3,7 @@ export * from "./application-challenge-binding.js";
 export * from "./evidence-bundle.js";
 export * from "./ids.js";
 export * from "./lifecycle.js";
+export * from "./mutation-intent.js";
 export * from "./policy-snapshot.js";
 export * from "./scope.js";
 export * from "./status-policy.js";

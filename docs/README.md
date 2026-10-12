@@ -23,7 +23,8 @@ remaining implementation and test work.
 12. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
 13. [ADR-0003: composite issuer resource identity](decisions/adr-0003-composite-issuer-resource-identity.md)
 14. [ADR-0004: composite verifier and auditor request identity](decisions/adr-0004-composite-request-scope-identity.md)
-15. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
+15. [ADR-0005: DID-signed mutation intents](decisions/adr-0005-did-signed-mutation-intents.md)
+16. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 
