@@ -25,6 +25,35 @@ The audit advisories that made the 2026-10-04 `Quality` job red are tracked in
 [#86](https://github.com/midnightntwrk/midnight-trust-registry/issues/86); the
 audit threshold remains unchanged.
 
+## Pinned Compact installer cache
+
+The four workflows that compile Compact use Ubuntu 24.04 and restore an exact
+runner, setup-action revision, architecture, and `.compact-version` cache of
+the launcher and `~/.compact/` compiler directory before calling
+`setup-compact-action`. This also caches the upstream download archive because
+`actions/cache` recursively archives the directory; excluding it is a separate
+size optimization, not a correctness requirement. On a hit,
+they skip that action entirely: its current implementation calls
+`compact update` even when its own cache hits, which can fail on an unauthenticated
+GitHub release API rate limit. On a miss, the pinned action installs with its
+internal cache disabled. The workflow then checks `compact compile --version`
+against `.compact-version`, checks that both launcher and installed compiler
+paths are executable, and saves the installation only after those checks.
+There is no cross-version restore key. An invalid cached compiler fails closed
+instead of silently reinstalling or using the wrong version. The workflow
+diagnostic directs the operator to delete the specific immutable Actions cache
+entry before rerunning; the key is versioned to avoid the initial incomplete
+cache layout. Rotate the key if the pinned setup action or runner generation
+changes. Cache deletion requires Actions write permission and is a deliberate
+operator action, never an automatic replacement of unverified content.
+
+If a miss fails during download or update, inspect the setup-action log and
+GitHub release API limit before retrying. A cache hit should need no release
+API call. Compare setup duration and cache-hit status in the first successful
+miss and subsequent hit runs before claiming a measured CI speedup. Compact
+cache entries saved by PR runs remain scoped to those PRs; the separate Turbo
+cache above is still published only on trusted pushes.
+
 References: [Turborepo GitHub Actions caching](https://turborepo.dev/docs/guides/ci-vendors/github-actions),
 [Turborepo cache directory](https://turborepo.dev/docs/reference/configuration),
 [Turborepo 2.10 cache eviction](https://turborepo.dev/blog/2-10),

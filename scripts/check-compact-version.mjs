@@ -21,6 +21,20 @@ const setupStep = (step) => typeof step?.uses === "string"
   && /\/setup-compact-action@/iu.test(step.uses);
 const trustedSetupStep = (step) => step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
 const unconditionalStep = (step) => step.if === undefined;
+const verifiedCacheMissSetup = (steps, index, step, pinIndex) => {
+  if (step.if !== "steps.compact-cache.outputs.cache-hit != 'true'"
+    || step.with?.["cache-enabled"] !== "false") return false;
+  const restoreIndex = steps.findIndex((candidate) => candidate.id === "compact-cache");
+  const restore = steps[restoreIndex];
+  return restoreIndex > pinIndex && restoreIndex < index
+    && unconditionalStep(restore)
+    && /^actions\/cache\/restore@/u.test(restore.uses ?? "")
+    && typeof restore.with?.key === "string"
+    && restore.with.key.includes(outputReference)
+    && restore.with["restore-keys"] === undefined
+    && typeof restore.with.path === "string"
+    && restore.with.path.includes("~/.compact/");
+};
 
 const readWorkflow = (directory, path, yaml, required = true) => {
   let workflow;
@@ -66,7 +80,8 @@ const checkWorkflowSetup = (workflow, path) => {
         && typeof candidate.run === "string" && candidate.run.trim().startsWith("pnpm install "));
       const semanticIndex = steps.findIndex((candidate, offset) => offset > installIndex && unconditionalStep(candidate)
         && typeof candidate.run === "string" && candidate.run.trim() === "pnpm run check:compact-version");
-      if (!trustedSetupStep(step) || !unconditionalStep(step)
+      if (!trustedSetupStep(step)
+        || !(unconditionalStep(step) || verifiedCacheMissSetup(steps, index, step, pinIndex))
         || pinIndex < 0 || pinIndex >= index || installedIndex < 0 || installIndex < 0 || semanticIndex < 0
         || step.with?.["compact-version"] !== outputReference
         || step.env?.GITHUB_TOKEN !== "${{ github.token }}") {
@@ -152,26 +167,31 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
       }
       appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
     } else if (process.argv[2] === "--check-installed") {
-      let installed;
       try {
-        installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
-      } catch (error) {
-        if (error.code === "ENOENT") {
-          throw new Error("Compact compiler not found; enter the Nix development shell");
+        let installed;
+        try {
+          installed = execFileSync("compact", ["compile", "--version"], { encoding: "utf8" }).trim();
+        } catch (error) {
+          if (error.code === "ENOENT") {
+            throw new Error("Compact launcher not found on PATH");
+          }
+          throw error;
         }
-        throw error;
-      }
-      if (installed !== version) {
-        throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
-      }
-      if (process.env.COMPACT_DIRECTORY) {
-        const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
-        if (existsSync(compiler)) {
-          const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
-          if (compilerVersion !== version) {
-            throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+        if (installed !== version) {
+          throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
+        }
+        if (process.env.COMPACT_DIRECTORY) {
+          const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
+          if (existsSync(compiler)) {
+            const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
+            if (compilerVersion !== version) {
+              throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
+            }
           }
         }
+      } catch (error) {
+        error.installedCompilerFailure = true;
+        throw error;
       }
     } else if (process.argv.length > 2) {
       throw new Error(`Unknown argument: ${process.argv[2]}`);
@@ -179,6 +199,9 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
     console.log(`Compact compiler pin: ${version}`);
   } catch (error) {
     console.error(error.message);
+    if (error.installedCompilerFailure && process.env.TR_COMPACT_CACHE_HIT === "true") {
+      console.error("Pinned Compact cache hit is invalid. Delete the tr-compact-v3 Actions cache for this runner and compiler version, then rerun; do not bypass the pin check.");
+    }
     process.exitCode = 1;
   }
 }
