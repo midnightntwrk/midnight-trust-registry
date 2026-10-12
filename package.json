@@ -20,7 +20,7 @@
     "audit": "pnpm audit --audit-level low",
     "check:workspace-manifests": "node --test scripts/check-workspace-manifests.test.mjs && node scripts/check-workspace-manifests.mjs",
     "check:installed-identity-runtime": "node --test scripts/check-installed-identity-runtime.test.mjs && node scripts/check-installed-identity-runtime.mjs",
-    "check:compact-version": "node --test scripts/check-compact-version.test.mjs scripts/compile-compact.test.mjs && node scripts/check-compact-version.mjs",
+    "check:compact-version": "node --test scripts/check-compact-version.test.mjs scripts/compile-compact.test.mjs scripts/nix-compact-hash-canary.test.mjs && node scripts/check-compact-version.mjs",
     "check:compact-installed": "node scripts/check-compact-version.mjs --check-installed",
     "packages:check-contents": "node scripts/check-package-contents.mjs",
     "artifacts:pack": "node scripts/pack-artifacts.mjs",
