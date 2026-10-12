@@ -40,6 +40,7 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
   let scope: AuthorizationScope;
   let governedResource: { type: string; id: string };
   let propose: (evidence: ApplicationEvidenceSubmission, expected: SimulatorApplicationEvidenceExpectation) => Uint8Array;
+  let completeIssuerLifecycle: (() => void) | undefined;
 
   switch (role) {
     case "issuer": {
@@ -49,6 +50,10 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
       scope = createIssuerAuthorizationScopeFixture(fixture);
       governedResource = { type: "credentialFamily", id: fixture.resourceId };
       propose = (evidence, expected) => harness.proposeIssuerWithApplicationEvidence(fixture, evidence, [], expected);
+      completeIssuerLifecycle = () => {
+        harness.approveIssuer(fixture);
+        harness.activateIssuer(fixture);
+      };
       break;
     }
     case "verifier": {
@@ -92,13 +97,14 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
     scopeCommitment: computeAuthorizationScopeCommitment(scope),
     governedResource,
   });
-  return { binding, applicationId, propose };
+  return { binding, applicationId, propose, completeIssuerLifecycle };
 }
 
 describe("canonical challenge-to-Compact proposal bridge", () => {
   it.each(ROLE_NAMES)("uses one consumed %s challenge for signed canonical proposal evidence", async (role) => {
     const harness = new LocalTrustRegistryIntegrationHarness();
-    const { binding, applicationId, propose } = scenario(role, harness);
+    harness.advanceEvidenceTimeBy(60_000);
+    const { binding, applicationId, propose, completeIssuerLifecycle } = scenario(role, harness);
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
     const issued = await service.issue(binding);
     const expected = {
@@ -266,6 +272,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         ...expected,
       })).toThrow(message);
     }
+    completeIssuerLifecycle?.();
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
     const serializedLedger = JSON.stringify(harness.simulator.getLedger(), (_key, value: unknown) =>
       typeof value === "bigint" ? value.toString() : value);

@@ -177,6 +177,53 @@ describe("trust registry local simulator integration", () => {
     expect(activeBundle.authorization?.activeFrom).toBeDefined();
   });
 
+  it.each([
+    [1, "approval", ContractAuthorizationStatus.proposed],
+    [2, "activation", ContractAuthorizationStatus.authorized],
+  ] as const)("rejects evidence expired before issuer %s", (minutes, transition, status) => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture(`expires-before-${transition}`);
+    const original = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
+    });
+    const envelope = {
+      ...original.envelope,
+      expiresAt: new Date(Date.parse(original.envelope.verifiedAt) + minutes * 60_000).toISOString(),
+    };
+    const commitment = computeApplicationEvidenceCommitment(envelope);
+    harness.proposeIssuerWithApplicationEvidence(issuer, {
+      envelope,
+      commitment,
+      signature: harness.signApplicationEvidenceCommitment(commitment),
+    });
+    if (transition === "activation") harness.approveIssuer(issuer);
+    harness.advanceEvidenceTimeBy(minutes * 60_000);
+
+    expect(() => transition === "approval"
+      ? harness.approveIssuer(issuer)
+      : harness.activateIssuer(issuer)).toThrow(/expiresAt|expired/);
+    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status).toBe(status);
+  });
+
+  it("expires an idle issuer proposal without advancing the governance sequence", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("idle-expiry");
+    harness.proposeIssuer(issuer);
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+
+    harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000);
+
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(() => harness.approveIssuer(issuer)).toThrow(/expiresAt|expired/);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status)
+      .toBe(ContractAuthorizationStatus.proposed);
+  });
+
   it("rejects malformed application evidence before an issuer proposal reaches Compact", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application-evidence-negative");
@@ -891,6 +938,8 @@ describe("trust registry local simulator integration", () => {
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;
+    const flipLastNibble = (hash: string): string =>
+      `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
     expect(() =>
       harness.assertPublishedEpochEvidence({
@@ -1028,7 +1077,7 @@ describe("trust registry local simulator integration", () => {
           ...bundle,
           inclusionProof: {
             ...bundle.inclusionProof,
-            leafHash: `${bundle.inclusionProof.leafHash.slice(0, -1)}0`,
+            leafHash: flipLastNibble(bundle.inclusionProof.leafHash),
           },
         },
         {},
@@ -1041,7 +1090,7 @@ describe("trust registry local simulator integration", () => {
           ...bundle,
           inclusionProof: {
             ...bundle.inclusionProof,
-            path: [`${bundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+            path: [flipLastNibble(bundle.inclusionProof.path[0]!)],
           },
         },
         {},

@@ -7,6 +7,9 @@ import {
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateEvidenceVerifierKeyPayloadHash,
+  computeUpdateEvidenceVerifierKeyPayloadHash,
+  computeIssuerEvidenceBoundProposalPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
@@ -19,6 +22,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
   signPolicyBoundMaintainerActionFromSeed,
+  signIssuerProposalEvidenceFromSeed,
   verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
 import {
@@ -77,6 +81,10 @@ const ACTIVATE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:a
 const SUSPEND_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:suspend");
 const REVOKE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:revoke");
 const ARCHIVE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:archive");
+const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
+const SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:suspend");
+const REVOKE_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:revoke");
+const ROTATE_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:rotate");
 const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
@@ -102,6 +110,8 @@ it("pins every governed action kind to a Compact literal", () => {
     SUSPEND_AUDITOR_ACTION_KIND, REVOKE_AUDITOR_ACTION_KIND, ARCHIVE_AUDITOR_ACTION_KIND,
     PROPOSE_MAINTAINER_ACTION_KIND, AUTHORIZE_MAINTAINER_ACTION_KIND, ACTIVATE_MAINTAINER_ACTION_KIND,
     SUSPEND_MAINTAINER_ACTION_KIND, REVOKE_MAINTAINER_ACTION_KIND, ARCHIVE_MAINTAINER_ACTION_KIND,
+    REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
+    REVOKE_EVIDENCE_VERIFIER_ACTION_KIND, ROTATE_EVIDENCE_VERIFIER_ACTION_KIND,
     UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, CREATE_EPOCH_ACTION_KIND, GENERIC_AUDIT_ACTION_KIND,
   ];
   expect(new Set(compactKinds.map((kind) => Buffer.from(encodeCompactActionKind(kind)).toString("hex"))))
@@ -150,11 +160,83 @@ const createIssuerAuthorizationFixture = (label: string) => ({
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
 
+type RegistryFixture = ReturnType<typeof createInitializedRegistryFixture>;
+type IssuerFixture = ReturnType<typeof createIssuerAuthorizationFixture>;
+const evidenceVerifiers = new WeakMap<TrustRegistrySimulator, ReturnType<typeof createMaintainerFixture> & {
+  authorizationId: Uint8Array;
+  publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
+}>();
+
+const registerIssuerEvidenceVerifier = (
+  registry: RegistryFixture,
+  coMaintainer?: ReturnType<typeof createMaintainerMembershipFixture>,
+) => {
+  const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const existing = evidenceVerifiers.get(simulator);
+  if (existing) return existing;
+  const verifier = {
+    ...createMaintainerFixture("issuer-evidence-verifier", 97),
+    authorizationId: labelToBytes32("evidence-verifier:issuer"),
+    publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(97)),
+  };
+  const policyCommitment = simulator.getLedger().governancePolicyCommitment;
+  const policyVersion = simulator.getLedger().governancePolicyVersion;
+  const payloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
+    verifier.authorizationId, verifier.didCommitment, verifier.keyId, verifier.publicKey,
+    labelToBytes32("jubjub-schnorr"), policyCommitment, policyVersion,
+  );
+  const sequence = simulator.getLedger().governanceActionCount;
+  simulator.registerEvidenceVerifierKey(
+    bootstrapMaintainer.keyId, bootstrapPublicKey,
+    signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId, policyCommitment,
+      REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, sequence,
+    ),
+    verifier.authorizationId, verifier.didCommitment, verifier.keyId, verifier.publicKey,
+    labelToBytes32("jubjub-schnorr"), policyCommitment, policyVersion,
+    coMaintainer ? [createMaintainerCoAuthorizer(
+      coMaintainer, simulator, registryId, REGISTER_EVIDENCE_VERIFIER_ACTION_KIND,
+      payloadHash, sequence,
+    )] : [],
+  );
+  evidenceVerifiers.set(simulator, verifier);
+  return verifier;
+};
+
+const issuerProposalProof = (
+  registry: RegistryFixture,
+  issuer: IssuerFixture,
+  verifier: ReturnType<typeof registerIssuerEvidenceVerifier>,
+) => {
+  const { simulator, registryId } = registry;
+  const baseHash = computeCreateIssuerAuthorizationPayloadHash(
+    issuer.authorizationId, issuer.subjectDidCommitment, issuer.resourceType,
+    issuer.resourceId, issuer.policyId, issuer.statusPolicyBindingCommitment,
+    issuer.trustLevel, issuer.evidenceHash,
+  );
+  const payloadHash = computeIssuerEvidenceBoundProposalPayloadHash(
+    baseHash, verifier.authorizationId, verifier.keyId,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  return {
+    payloadHash,
+    verifierAuthorizationId: verifier.authorizationId,
+    verifierKeyIdCommitment: verifier.keyId,
+    evidenceSignature: signIssuerProposalEvidenceFromSeed(
+      verifier.seed, registryId, verifier.keyId, payloadHash,
+    ),
+  };
+};
+
 const activateIssuerAuthorizationFixture = (
   registry: ReturnType<typeof createInitializedRegistryFixture>,
   authorization: ReturnType<typeof createIssuerAuthorizationFixture>,
 ): Uint8Array => {
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const proof = issuerProposalProof(
+    registry, authorization, registerIssuerEvidenceVerifier(registry),
+  );
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
     signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -168,16 +250,7 @@ const activateIssuerAuthorizationFixture = (
   simulator.proposeIssuerAuthorization(
     bootstrapMaintainer.keyId,
     bootstrapPublicKey,
-    sign(PROPOSE_ISSUER_ACTION_KIND, computeCreateIssuerAuthorizationPayloadHash(
-      authorization.authorizationId,
-      authorization.subjectDidCommitment,
-      authorization.resourceType,
-      authorization.resourceId,
-      authorization.policyId,
-      authorization.statusPolicyBindingCommitment,
-      authorization.trustLevel,
-      authorization.evidenceHash,
-    )),
+    sign(PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash),
     authorization.authorizationId,
     authorization.subjectDidCommitment,
     authorization.resourceType,
@@ -186,6 +259,9 @@ const activateIssuerAuthorizationFixture = (
     authorization.statusPolicyBindingCommitment,
     authorization.trustLevel,
     authorization.evidenceHash,
+    proof.verifierAuthorizationId,
+    proof.verifierKeyIdCommitment,
+    proof.evidenceSignature,
   );
   simulator.authorizeIssuerAuthorization(
     bootstrapMaintainer.keyId,
@@ -1131,12 +1207,13 @@ describe("trust registry contract", () => {
   });
 
   it("updates quorum thresholds and enforces scoped multi-maintainer execution", () => {
+    const registry = createInitializedRegistryFixture(15);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(15);
+    } = registry;
     const secondMaintainer = createMaintainerMembershipFixture("second", 16);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
@@ -1343,16 +1420,11 @@ describe("trust registry contract", () => {
 
     const issuer = createIssuerAuthorizationFixture("quorum");
     const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
-    const proposeIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
-      issuer.authorizationId,
-      issuer.subjectDidCommitment,
-      issuer.resourceType,
-      issuer.resourceId,
-      issuer.policyId,
-      issuer.statusPolicyBindingCommitment,
-      issuer.trustLevel,
-      proposedEvidenceHash,
+    const issuerProof = issuerProposalProof(
+      registry, { ...issuer, evidenceHash: proposedEvidenceHash },
+      registerIssuerEvidenceVerifier(registry, secondMaintainer),
     );
+    const proposeIssuerPayloadHash = issuerProof.payloadHash;
 
     const singleSignerSequence = simulator.getLedger().governanceActionCount;
     const singleSignerSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -1376,6 +1448,9 @@ describe("trust registry contract", () => {
         issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
+        issuerProof.verifierAuthorizationId,
+        issuerProof.verifierKeyIdCommitment,
+        issuerProof.evidenceSignature,
       ),
     ).toThrow(/must satisfy the action threshold/i);
 
@@ -1417,6 +1492,9 @@ describe("trust registry contract", () => {
         issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
+        issuerProof.verifierAuthorizationId,
+        issuerProof.verifierKeyIdCommitment,
+        issuerProof.evidenceSignature,
         [secondIssuerProposer],
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
@@ -1432,6 +1510,9 @@ describe("trust registry contract", () => {
       issuer.statusPolicyBindingCommitment,
       issuer.trustLevel,
       proposedEvidenceHash,
+      issuerProof.verifierAuthorizationId,
+      issuerProof.verifierKeyIdCommitment,
+      issuerProof.evidenceSignature,
       [secondIssuerProposer],
     );
     expect(Buffer.from(simulator.getLedger().lastAuthorizedPolicyCommitment)).toEqual(
@@ -1580,12 +1661,13 @@ describe("trust registry contract", () => {
   });
 
   it("rejects duplicate maintainer signers in quorum execution", () => {
+    const registry = createInitializedRegistryFixture(17);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(17);
+    } = registry;
     const secondMaintainer = createMaintainerMembershipFixture("duplicate", 18);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
@@ -1695,16 +1777,11 @@ describe("trust registry contract", () => {
     const proposedEvidenceHash = labelToBytes32(
       "evidence:duplicate:issuer:propose",
     );
-    const proposeIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
-      issuer.authorizationId,
-      issuer.subjectDidCommitment,
-      issuer.resourceType,
-      issuer.resourceId,
-      issuer.policyId,
-      issuer.statusPolicyBindingCommitment,
-      issuer.trustLevel,
-      proposedEvidenceHash,
+    const issuerProof = issuerProposalProof(
+      registry, { ...issuer, evidenceHash: proposedEvidenceHash },
+      registerIssuerEvidenceVerifier(registry, secondMaintainer),
     );
+    const proposeIssuerPayloadHash = issuerProof.payloadHash;
     const proposeIssuerSequence = simulator.getLedger().governanceActionCount;
     const proposeIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -1740,6 +1817,9 @@ describe("trust registry contract", () => {
         issuer.statusPolicyBindingCommitment,
         issuer.trustLevel,
         proposedEvidenceHash,
+        issuerProof.verifierAuthorizationId,
+        issuerProof.verifierKeyIdCommitment,
+        issuerProof.evidenceSignature,
         [duplicateBootstrapAuthorizer],
       ),
     ).toThrow(/must not contain duplicates/i);
@@ -1864,6 +1944,154 @@ describe("trust registry contract", () => {
     ).not.toThrow();
   });
 
+  it("requires issuer proposal evidence from the registered active verifier for the exact payload", () => {
+    const registry = createInitializedRegistryFixture(18);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const issuer = createIssuerAuthorizationFixture("evidence-bound");
+    const verifier = registerIssuerEvidenceVerifier(registry);
+    const proof = issuerProposalProof(registry, issuer, verifier);
+    const signature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash,
+      simulator.getLedger().governanceActionCount,
+    );
+    const propose = (
+      fields: IssuerFixture = issuer,
+      keyId = proof.verifierKeyIdCommitment,
+      evidenceSignature = proof.evidenceSignature,
+    ) => simulator.proposeIssuerAuthorization(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+      fields.authorizationId, fields.subjectDidCommitment, fields.resourceType,
+      fields.resourceId, fields.policyId, fields.statusPolicyBindingCommitment,
+      fields.trustLevel, fields.evidenceHash,
+      proof.verifierAuthorizationId, keyId, evidenceSignature,
+    );
+
+    expect(() => propose(issuer, labelToBytes32("verifier:key:wrong")))
+      .toThrow(/key id does not match/i);
+    expect(() => propose({ ...issuer, subjectDidCommitment: labelToBytes32("did:issuer:altered") }))
+      .toThrow(/invalid jubjub schnorr signature/i);
+    expect(() => propose({ ...issuer, resourceId: labelToBytes32("resource:altered") }))
+      .toThrow(/invalid jubjub schnorr signature/i);
+    expect(() => propose({ ...issuer, evidenceHash: labelToBytes32("evidence:altered") }))
+      .toThrow(/invalid jubjub schnorr signature/i);
+    expect(() => propose(issuer, proof.verifierKeyIdCommitment, {
+      ...proof.evidenceSignature, response: 0n,
+    })).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().issuerAuthorizationCount).toEqual(0n);
+
+    const suspendPayload = computeUpdateEvidenceVerifierKeyPayloadHash(
+      verifier.authorizationId,
+      simulator.getEvidenceVerifierKey(verifier.authorizationId).lifecycleEventHash,
+      labelToBytes32("verifier:suspended"),
+    );
+    simulator.suspendEvidenceVerifierKey(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId,
+        simulator.getLedger().governancePolicyCommitment,
+        SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND, suspendPayload,
+        simulator.getLedger().governanceActionCount,
+      ),
+      verifier.authorizationId, labelToBytes32("verifier:suspended"),
+    );
+    expect(() => propose()).toThrow(/evidence verifier key is not active/i);
+    expect(simulator.getLedger().issuerAuthorizationCount).toEqual(0n);
+  });
+
+  it.each(["suspended-key-at-approval", "superseded-policy-at-activation"] as const)(
+    "rejects issuer lifecycle transition with %s evidence",
+    (scenario) => {
+      const registry = createInitializedRegistryFixture(39);
+      const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+      const issuer = createIssuerAuthorizationFixture(scenario);
+      const verifier = registerIssuerEvidenceVerifier(registry);
+      const proof = issuerProposalProof(registry, issuer, verifier);
+      const signAction = (kind: Uint8Array, payloadHash: Uint8Array) =>
+        signPolicyBoundMaintainerActionFromSeed(
+          bootstrapMaintainer.seed, registryId,
+          simulator.getLedger().governancePolicyCommitment,
+          kind, payloadHash, simulator.getLedger().governanceActionCount,
+        );
+
+      simulator.proposeIssuerAuthorization(
+        bootstrapMaintainer.keyId, bootstrapPublicKey,
+        signAction(PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash),
+        issuer.authorizationId, issuer.subjectDidCommitment, issuer.resourceType,
+        issuer.resourceId, issuer.policyId, issuer.statusPolicyBindingCommitment,
+        issuer.trustLevel, issuer.evidenceHash,
+        proof.verifierAuthorizationId, proof.verifierKeyIdCommitment,
+        proof.evidenceSignature,
+      );
+
+      const signIssuerTransition = (kind: Uint8Array) => signAction(
+        kind,
+        computeUpdateIssuerAuthorizationPayloadHash(
+          issuer.authorizationId,
+          simulator.getIssuerAuthorization(issuer.authorizationId).lifecycleEventHash,
+          issuer.evidenceHash,
+        ),
+      );
+      if (scenario === "superseded-policy-at-activation") {
+        simulator.authorizeIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signIssuerTransition(AUTHORIZE_ISSUER_ACTION_KIND),
+          issuer.authorizationId, issuer.evidenceHash,
+        );
+        const nextPolicy = labelToBytes32("policy:issuer:next");
+        simulator.updateMaintainerThresholdPolicy(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signAction(
+            UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+            computeUpdateMaintainerThresholdPolicyPayloadHash(
+              simulator.getLedger().governancePolicyCommitment,
+              nextPolicy, 2n, 1n, 1n, 1n,
+            ),
+          ),
+          nextPolicy, 2n, 1n, 1n, 1n,
+        );
+      } else {
+        const suspendEvidence = labelToBytes32("evidence:verifier:suspend-after-proposal");
+        simulator.suspendEvidenceVerifierKey(
+          bootstrapMaintainer.keyId, bootstrapPublicKey,
+          signAction(
+            SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
+            computeUpdateEvidenceVerifierKeyPayloadHash(
+              verifier.authorizationId,
+              simulator.getEvidenceVerifierKey(verifier.authorizationId).lifecycleEventHash,
+              suspendEvidence,
+            ),
+          ),
+          verifier.authorizationId, suspendEvidence,
+        );
+      }
+
+      const sequence = simulator.getLedger().governanceActionCount;
+      const eventHash = simulator.getLedger().lastGovernanceEventHash;
+      const kind = scenario === "superseded-policy-at-activation"
+        ? ACTIVATE_ISSUER_ACTION_KIND : AUTHORIZE_ISSUER_ACTION_KIND;
+      const signature = signIssuerTransition(kind);
+      expect(() => scenario === "superseded-policy-at-activation"
+        ? simulator.activateIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+          issuer.authorizationId, issuer.evidenceHash,
+        )
+        : simulator.authorizeIssuerAuthorization(
+          bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+          issuer.authorizationId, issuer.evidenceHash,
+        )).toThrow(scenario === "superseded-policy-at-activation"
+          ? /proposal evidence policy is not current/i
+          : /evidence verifier key is not active/i);
+      expect(simulator.getLedger().governanceActionCount).toBe(sequence);
+      expect(simulator.getLedger().lastGovernanceEventHash).toEqual(eventHash);
+      expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
+        scenario === "superseded-policy-at-activation"
+          ? AuthorizationStatus.authorized : AuthorizationStatus.proposed,
+      );
+    },
+  );
+
   it("moves an issuer authorization through proposed, authorized, and active states", () => {
     const registry = createInitializedRegistryFixture(19);
     const {
@@ -1874,21 +2102,16 @@ describe("trust registry contract", () => {
     } = registry;
     const issuerAuthorization = createIssuerAuthorizationFixture("application");
     const proposalEvidenceHash = labelToBytes32("evidence:application:propose");
+    const proposalProof = issuerProposalProof(
+      registry, { ...issuerAuthorization, evidenceHash: proposalEvidenceHash },
+      registerIssuerEvidenceVerifier(registry),
+    );
     const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_ISSUER_ACTION_KIND,
-      computeCreateIssuerAuthorizationPayloadHash(
-        issuerAuthorization.authorizationId,
-        issuerAuthorization.subjectDidCommitment,
-        issuerAuthorization.resourceType,
-        issuerAuthorization.resourceId,
-        issuerAuthorization.policyId,
-        issuerAuthorization.statusPolicyBindingCommitment,
-        issuerAuthorization.trustLevel,
-        proposalEvidenceHash,
-      ),
+      proposalProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     expect(() =>
@@ -1904,8 +2127,16 @@ describe("trust registry contract", () => {
         new Uint8Array(32),
         issuerAuthorization.trustLevel,
         proposalEvidenceHash,
+        proposalProof.verifierAuthorizationId,
+        proposalProof.verifierKeyIdCommitment,
+        proposalProof.evidenceSignature,
       ),
     ).toThrow(/issuer status policy binding commitment must be set/i);
+    const substitutedPolicyProof = issuerProposalProof(registry, {
+      ...issuerAuthorization,
+      evidenceHash: proposalEvidenceHash,
+      statusPolicyBindingCommitment: labelToBytes32("status-policy:substituted"),
+    }, registerIssuerEvidenceVerifier(registry));
     expect(() =>
       simulator.proposeIssuerAuthorization(
         bootstrapMaintainer.keyId,
@@ -1919,6 +2150,9 @@ describe("trust registry contract", () => {
         labelToBytes32("status-policy:substituted"),
         issuerAuthorization.trustLevel,
         proposalEvidenceHash,
+        proposalProof.verifierAuthorizationId,
+        proposalProof.verifierKeyIdCommitment,
+        substitutedPolicyProof.evidenceSignature,
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
     const proposalEventHash = simulator.proposeIssuerAuthorization(
@@ -1933,12 +2167,33 @@ describe("trust registry contract", () => {
       issuerAuthorization.statusPolicyBindingCommitment,
       issuerAuthorization.trustLevel,
       proposalEvidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
     const proposedRecord = simulator.getIssuerAuthorization(
       issuerAuthorization.authorizationId,
     );
+    const proposalEvidence = simulator.getIssuerProposalEvidence(
+      issuerAuthorization.authorizationId,
+    );
 
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
+    expect(Buffer.from(proposalEvidence.evidenceCommitment)).toEqual(
+      Buffer.from(proposalEvidenceHash),
+    );
+    expect(Buffer.from(proposalEvidence.evidenceVerifierAuthorizationId)).toEqual(
+      Buffer.from(proposalProof.verifierAuthorizationId),
+    );
+    expect(Buffer.from(proposalEvidence.evidenceVerifierKeyIdCommitment)).toEqual(
+      Buffer.from(proposalProof.verifierKeyIdCommitment),
+    );
+    expect(proposalEvidence.verifierSignatureResponse).toEqual(
+      proposalProof.evidenceSignature.response,
+    );
+    expect(Buffer.from(proposalEvidence.proposalGovernanceEventHash)).toEqual(
+      Buffer.from(proposalEventHash),
+    );
     expect(Buffer.from(proposedRecord.statusPolicyBindingCommitment)).toEqual(
       Buffer.from(issuerAuthorization.statusPolicyBindingCommitment),
     );
@@ -2090,30 +2345,24 @@ describe("trust registry contract", () => {
   });
 
   it("archives proposed issuer applications and revokes authorized issuer applications before activation", () => {
+    const registry = createInitializedRegistryFixture(21);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(21);
+    } = registry;
     const archivedProposal = createIssuerAuthorizationFixture("archivable");
     const revocableAuthorization = createIssuerAuthorizationFixture("revocable");
+    const verifier = registerIssuerEvidenceVerifier(registry);
+    const archivedProof = issuerProposalProof(registry, archivedProposal, verifier);
 
     const archivedProposalSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_ISSUER_ACTION_KIND,
-      computeCreateIssuerAuthorizationPayloadHash(
-        archivedProposal.authorizationId,
-        archivedProposal.subjectDidCommitment,
-        archivedProposal.resourceType,
-        archivedProposal.resourceId,
-        archivedProposal.policyId,
-        archivedProposal.statusPolicyBindingCommitment,
-        archivedProposal.trustLevel,
-        archivedProposal.evidenceHash,
-      ),
+      archivedProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeIssuerAuthorization(
@@ -2128,6 +2377,9 @@ describe("trust registry contract", () => {
       archivedProposal.statusPolicyBindingCommitment,
       archivedProposal.trustLevel,
       archivedProposal.evidenceHash,
+      archivedProof.verifierAuthorizationId,
+      archivedProof.verifierKeyIdCommitment,
+      archivedProof.evidenceSignature,
     );
     const proposedRecord = simulator.getIssuerAuthorization(
       archivedProposal.authorizationId,
@@ -2156,21 +2408,13 @@ describe("trust registry contract", () => {
       simulator.getIssuerAuthorization(archivedProposal.authorizationId).status,
     ).toEqual(AuthorizationStatus.archived);
 
+    const revocableProof = issuerProposalProof(registry, revocableAuthorization, verifier);
     const revocableProposalSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_ISSUER_ACTION_KIND,
-      computeCreateIssuerAuthorizationPayloadHash(
-        revocableAuthorization.authorizationId,
-        revocableAuthorization.subjectDidCommitment,
-        revocableAuthorization.resourceType,
-        revocableAuthorization.resourceId,
-        revocableAuthorization.policyId,
-        revocableAuthorization.statusPolicyBindingCommitment,
-        revocableAuthorization.trustLevel,
-        revocableAuthorization.evidenceHash,
-      ),
+      revocableProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeIssuerAuthorization(
@@ -2185,6 +2429,9 @@ describe("trust registry contract", () => {
       revocableAuthorization.statusPolicyBindingCommitment,
       revocableAuthorization.trustLevel,
       revocableAuthorization.evidenceHash,
+      revocableProof.verifierAuthorizationId,
+      revocableProof.verifierKeyIdCommitment,
+      revocableProof.evidenceSignature,
     );
     const revocableProposedRecord = simulator.getIssuerAuthorization(
       revocableAuthorization.authorizationId,
@@ -2345,6 +2592,7 @@ describe("trust registry contract", () => {
     const registry = createInitializedRegistryFixture(29);
     const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
     const issuerAuthorization = createIssuerAuthorizationFixture("license");
+    const verifier = registerIssuerEvidenceVerifier(registry);
 
     expect(() =>
       simulator.getIssuerAuthorization(labelToBytes32("issuer-auth:missing")),
@@ -2357,16 +2605,8 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/scope is not registered/i);
 
-    const proposalPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
-      issuerAuthorization.authorizationId,
-      issuerAuthorization.subjectDidCommitment,
-      issuerAuthorization.resourceType,
-      issuerAuthorization.resourceId,
-      issuerAuthorization.policyId,
-      issuerAuthorization.statusPolicyBindingCommitment,
-      issuerAuthorization.trustLevel,
-      issuerAuthorization.evidenceHash,
-    );
+    const proof = issuerProposalProof(registry, issuerAuthorization, verifier);
+    const proposalPayloadHash = proof.payloadHash;
     const tamperedProposalSignature = {
       ...signPolicyBoundMaintainerActionFromSeed(
         bootstrapMaintainer.seed,
@@ -2392,26 +2632,25 @@ describe("trust registry contract", () => {
         issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         issuerAuthorization.evidenceHash,
+        proof.verifierAuthorizationId,
+        proof.verifierKeyIdCommitment,
+        proof.evidenceSignature,
       ),
     ).toThrow(/invalid jubjub schnorr signature/i);
 
     const proposalAuthorizationId = labelToBytes32("issuer-auth:license:proposal");
     const proposalEvidenceHash = labelToBytes32("evidence:license:proposal");
+    const proposalProof = issuerProposalProof(
+      registry,
+      { ...issuerAuthorization, authorizationId: proposalAuthorizationId, evidenceHash: proposalEvidenceHash },
+      verifier,
+    );
     const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_ISSUER_ACTION_KIND,
-      computeCreateIssuerAuthorizationPayloadHash(
-        proposalAuthorizationId,
-        issuerAuthorization.subjectDidCommitment,
-        issuerAuthorization.resourceType,
-        issuerAuthorization.resourceId,
-        issuerAuthorization.policyId,
-        issuerAuthorization.statusPolicyBindingCommitment,
-        issuerAuthorization.trustLevel,
-        proposalEvidenceHash,
-      ),
+      proposalProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeIssuerAuthorization(
@@ -2426,7 +2665,16 @@ describe("trust registry contract", () => {
       issuerAuthorization.statusPolicyBindingCommitment,
       issuerAuthorization.trustLevel,
       proposalEvidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
+
+    const duplicateProof = issuerProposalProof(registry, {
+      ...issuerAuthorization,
+      authorizationId: labelToBytes32("issuer-auth:license:proposal:duplicate"),
+      evidenceHash: labelToBytes32("evidence:license:proposal:duplicate"),
+    }, verifier);
 
     expect(() =>
       simulator.proposeIssuerAuthorization(
@@ -2437,16 +2685,7 @@ describe("trust registry contract", () => {
           registryId,
           simulator.getLedger().governancePolicyCommitment,
           PROPOSE_ISSUER_ACTION_KIND,
-          computeCreateIssuerAuthorizationPayloadHash(
-            labelToBytes32("issuer-auth:license:proposal:duplicate"),
-            issuerAuthorization.subjectDidCommitment,
-            issuerAuthorization.resourceType,
-            issuerAuthorization.resourceId,
-            issuerAuthorization.policyId,
-            issuerAuthorization.statusPolicyBindingCommitment,
-            issuerAuthorization.trustLevel,
-            labelToBytes32("evidence:license:proposal:duplicate"),
-          ),
+          duplicateProof.payloadHash,
           simulator.getLedger().governanceActionCount,
         ),
         labelToBytes32("issuer-auth:license:proposal:duplicate"),
@@ -2457,6 +2696,9 @@ describe("trust registry contract", () => {
         issuerAuthorization.statusPolicyBindingCommitment,
         issuerAuthorization.trustLevel,
         labelToBytes32("evidence:license:proposal:duplicate"),
+        duplicateProof.verifierAuthorizationId,
+        duplicateProof.verifierKeyIdCommitment,
+        duplicateProof.evidenceSignature,
       ),
     ).toThrow(/live authorization/i);
 
@@ -2484,6 +2726,11 @@ describe("trust registry contract", () => {
 
     const activeIssuerAuthorization = createIssuerAuthorizationFixture("license-active");
     activateIssuerAuthorizationFixture(registry, activeIssuerAuthorization);
+    const activeDuplicateProof = issuerProposalProof(registry, {
+      ...activeIssuerAuthorization,
+      authorizationId: labelToBytes32("issuer-auth:license-active:duplicate"),
+      evidenceHash: labelToBytes32("evidence:license-active:duplicate"),
+    }, verifier);
 
     expect(() =>
       simulator.proposeIssuerAuthorization(
@@ -2494,16 +2741,7 @@ describe("trust registry contract", () => {
           registryId,
           simulator.getLedger().governancePolicyCommitment,
           PROPOSE_ISSUER_ACTION_KIND,
-          computeCreateIssuerAuthorizationPayloadHash(
-            labelToBytes32("issuer-auth:license-active:duplicate"),
-            activeIssuerAuthorization.subjectDidCommitment,
-            activeIssuerAuthorization.resourceType,
-            activeIssuerAuthorization.resourceId,
-            activeIssuerAuthorization.policyId,
-            activeIssuerAuthorization.statusPolicyBindingCommitment,
-            activeIssuerAuthorization.trustLevel,
-            labelToBytes32("evidence:license-active:duplicate"),
-          ),
+          activeDuplicateProof.payloadHash,
           simulator.getLedger().governanceActionCount,
         ),
         labelToBytes32("issuer-auth:license-active:duplicate"),
@@ -2514,6 +2752,9 @@ describe("trust registry contract", () => {
         activeIssuerAuthorization.statusPolicyBindingCommitment,
         activeIssuerAuthorization.trustLevel,
         labelToBytes32("evidence:license-active:duplicate"),
+        activeDuplicateProof.verifierAuthorizationId,
+        activeDuplicateProof.verifierKeyIdCommitment,
+        activeDuplicateProof.evidenceSignature,
       ),
     ).toThrow(/live authorization/i);
 
