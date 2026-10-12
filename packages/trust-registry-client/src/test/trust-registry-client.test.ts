@@ -133,6 +133,15 @@ describe("trust registry client", () => {
     }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
     const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
     const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const equivalentEpochSpelling = {
+      ...activeBundle,
+      epoch: {
+        ...activeBundle.epoch,
+        validFrom: activeBundle.epoch.validFrom.replace(/Z$/, "+00:00"),
+        validUntil: activeBundle.epoch.validUntil.replace(/Z$/, "+00:00"),
+      },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(equivalentEpochSpelling, {})).not.toThrow();
     const tamperedEpochRegistry = {
       ...activeBundle,
       epoch: { ...activeBundle.epoch, registryId: "registry:evil" },

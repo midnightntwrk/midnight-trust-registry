@@ -124,10 +124,10 @@ const assertEpochAnchor = (
   if (bundle.epoch.policyRoot !== `0x${Buffer.from(epochRecord.policyRoot).toString("hex")}`) {
     throw new Error("Epoch policy root mismatch");
   }
-  if (bundle.epoch.validFrom !== sequenceToTimestamp(epochRecord.validFromSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validFrom, sequenceToTimestamp(epochRecord.validFromSequence)) !== 0) {
     throw new Error("Epoch validFrom mismatch");
   }
-  if (bundle.epoch.validUntil !== sequenceToTimestamp(epochRecord.validUntilSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validUntil, sequenceToTimestamp(epochRecord.validUntilSequence)) !== 0) {
     throw new Error("Epoch validUntil mismatch");
   }
 
