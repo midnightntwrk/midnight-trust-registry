@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +10,7 @@ import {
   compactContractArtifactCatalog,
   packageManifestCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
-import { missingFullContractArtifacts, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
+import { missingFullContractArtifacts, proofCircuitNames, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const lightMode = process.argv.includes("--light");
@@ -80,9 +81,19 @@ for (const workspace of artifactWorkspaces) {
         errors.push(`${workspace}: light package contains unexpected generated artifacts: ${unexpected.join(", ")}`);
       }
     } else {
-      const missing = missingFullContractArtifacts(filePaths, compactManagedDirectory);
-      if (missing.length > 0) {
-        errors.push(`${workspace}: full package is missing ${missing.join(" and ")}`);
+      const contractInfoPath = `dist/managed/${compactManagedDirectory}/compiler/contract-info.json`;
+      if (!filePaths.includes(contractInfoPath)) {
+        errors.push(`${workspace}: full package is missing ${contractInfoPath}`);
+      } else {
+        try {
+          const contractInfo = JSON.parse(readFileSync(path.join(repoRoot, workspace, contractInfoPath), "utf8"));
+          const missing = missingFullContractArtifacts(filePaths, compactManagedDirectory, proofCircuitNames(contractInfo));
+          if (missing.length > 0) {
+            errors.push(`${workspace}: full package has incomplete proof artifacts: ${missing.join(" and ")}`);
+          }
+        } catch (error) {
+          errors.push(`${workspace}: cannot validate Compact contract info: ${error.message}`);
+        }
       }
     }
   }

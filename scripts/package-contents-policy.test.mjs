@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import yaml from "js-yaml";
 
-import { missingFullContractArtifacts, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
+import { missingFullContractArtifacts, proofCircuitNames, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 test("light contract artifacts contain only generated contract modules", () => {
   const paths = [
@@ -28,14 +28,30 @@ test("full release artifacts require a proving key and ZK IR", () => {
     "dist/managed/trust-registry/keys/proposeIssuerAuthorization.verifier",
     "dist/managed/trust-registry/zkir/proposeIssuerAuthorization.zkir",
   ];
-  assert.deepEqual(missingFullContractArtifacts(complete, "trust-registry"), []);
-  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 1), "trust-registry"), ["ZK IR", "proving keys", "verification keys"]);
-  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 2), "trust-registry"), ["ZK IR", "verification keys", "ZK IR for proposeIssuerAuthorization", "verification key for proposeIssuerAuthorization"]);
-  assert.deepEqual(missingFullContractArtifacts(complete, "another-contract"), ["ZK IR", "proving keys", "verification keys"]);
-  assert.deepEqual(missingFullContractArtifacts([...complete, "dist/managed/trust-registry/zkir/activateIssuerAuthorization.zkir"], "trust-registry"), [
+  const expected = ["proposeIssuerAuthorization"];
+  assert.deepEqual(missingFullContractArtifacts(complete, "trust-registry", expected), []);
+  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 1), "trust-registry", expected), ["ZK IR", "proving keys", "verification keys", "ZK IR for proposeIssuerAuthorization", "proving key for proposeIssuerAuthorization", "verification key for proposeIssuerAuthorization"]);
+  assert.deepEqual(missingFullContractArtifacts(complete.slice(0, 2), "trust-registry", expected), ["ZK IR", "verification keys", "ZK IR for proposeIssuerAuthorization", "verification key for proposeIssuerAuthorization"]);
+  assert.deepEqual(missingFullContractArtifacts(complete, "another-contract", expected), ["ZK IR", "proving keys", "verification keys", "ZK IR for proposeIssuerAuthorization", "proving key for proposeIssuerAuthorization", "verification key for proposeIssuerAuthorization"]);
+  assert.deepEqual(missingFullContractArtifacts([...complete, "dist/managed/trust-registry/zkir/activateIssuerAuthorization.zkir"], "trust-registry", expected), [
+    "unexpected proof artifacts for activateIssuerAuthorization",
+  ]);
+  assert.deepEqual(missingFullContractArtifacts(complete, "trust-registry", [...expected, "activateIssuerAuthorization"]), [
+    "ZK IR for activateIssuerAuthorization",
     "proving key for activateIssuerAuthorization",
     "verification key for activateIssuerAuthorization",
   ]);
+});
+
+test("full release circuit inventory comes from validated Compact metadata", () => {
+  assert.deepEqual(proofCircuitNames({ circuits: [
+    { name: "pureHelper", proof: false },
+    { name: "proposeIssuerAuthorization", proof: true },
+  ] }), ["proposeIssuerAuthorization"]);
+  assert.throws(() => proofCircuitNames({ circuits: [] }), /no valid/);
+  assert.throws(() => proofCircuitNames({ circuits: [{ name: "a", proof: true }, { name: "a", proof: true }] }), /unique/);
+  assert.throws(() => proofCircuitNames({ circuits: [{ name: "../a", proof: true }] }), /valid/);
+  assert.throws(() => proofCircuitNames({}), /circuits array/);
 });
 
 test("publish workflow runs light tests before full build and package gate", () => {
