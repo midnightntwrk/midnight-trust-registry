@@ -445,12 +445,12 @@ repo-local harness is specified in
 `docs/plans/milestone-0.1.0-delivery-harness.md`: issue-backed PRs, documented
 exact-head review, light, Quality, and scan gates, bounded review rounds, and
 guarded merging. PR #82's receipt gate was rejected as a self-declared policy
-check; replacement PR #91 removes it. `.github/CODEOWNERS` plus required
-code-owner review protects workflow and policy changes after the bootstrap.
-The bootstrap itself is not yet protected by those controls; a canary must be
-blocked before autonomous milestone merges start. Only the milestone branch
-permits zero-general-human-review product merges. Policy changes still require
-code-owner review; `develop` and `main` remain human-controlled.
+check; replacement PR #91 removes it. On 2026-10-12, the operator clarified
+that this temporary milestone branch does not need GitHub branch protection.
+Its manual merge gates are green current-head CI and documented current-head
+LLM review, internal or external. `CODEOWNERS` routes review but does not
+require approval on the milestone branch. The earlier code-owner canary and
+protection plan is superseded; `develop` and `main` remain human-controlled.
 
 ## Application evidence signing slice (2026-10-06)
 
