@@ -500,7 +500,7 @@ describe("trust registry local simulator integration", () => {
     )).toThrow(/not committed to the ledger/i);
     expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
       evaluationTime: "not-a-date",
-    })).toThrow(/evaluation time is invalid/i);
+    })).toThrow(/invalid timestamp/i);
     expect(() =>
       client.verifyIssuerAuthorizationBundle(
         {
