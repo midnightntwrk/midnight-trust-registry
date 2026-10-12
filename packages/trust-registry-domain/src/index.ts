@@ -1,5 +1,6 @@
 export * from "./application-evidence.js";
 export * from "./application-challenge-binding.js";
+export * from "./canonical-json.js";
 export * from "./evidence-bundle.js";
 export * from "./ids.js";
 export * from "./lifecycle.js";
