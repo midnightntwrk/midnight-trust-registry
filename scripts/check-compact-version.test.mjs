@@ -208,6 +208,20 @@ test("workflow and Nix version drift fail validation", () => {
     writeFileSync(workflowPath, originalWorkflow);
 
     writeFileSync(workflowPath, originalWorkflow.replace(
+      "if: steps.compact-cache.outputs.cache-hit != 'true'",
+      "if: false",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
+      "key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}",
+      "key: tr-compact-v3-unpinned",
+    ));
+    assert.throws(() => checkCompactVersion(fixture), /milestone-light.yaml/);
+    writeFileSync(workflowPath, originalWorkflow);
+
+    writeFileSync(workflowPath, originalWorkflow.replace(
       "midnightntwrk/setup-compact-action@", "MidnightNtwRK/SETUP-COMPACT-ACTION@",
     ));
     assert.equal(checkCompactVersion(fixture), pinnedVersion);

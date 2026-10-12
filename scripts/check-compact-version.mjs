@@ -21,6 +21,20 @@ const setupStep = (step) => typeof step?.uses === "string"
   && /\/setup-compact-action@/iu.test(step.uses);
 const trustedSetupStep = (step) => step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
 const unconditionalStep = (step) => step.if === undefined;
+const verifiedCacheMissSetup = (steps, index, step, pinIndex) => {
+  if (step.if !== "steps.compact-cache.outputs.cache-hit != 'true'"
+    || step.with?.["cache-enabled"] !== "false") return false;
+  const restoreIndex = steps.findIndex((candidate) => candidate.id === "compact-cache");
+  const restore = steps[restoreIndex];
+  return restoreIndex > pinIndex && restoreIndex < index
+    && unconditionalStep(restore)
+    && /^actions\/cache\/restore@/u.test(restore.uses ?? "")
+    && typeof restore.with?.key === "string"
+    && restore.with.key.includes(outputReference)
+    && restore.with["restore-keys"] === undefined
+    && typeof restore.with.path === "string"
+    && restore.with.path.includes("~/.compact/");
+};
 
 const readWorkflow = (directory, path, yaml, required = true) => {
   let workflow;
@@ -66,7 +80,8 @@ const checkWorkflowSetup = (workflow, path) => {
         && typeof candidate.run === "string" && candidate.run.trim().startsWith("pnpm install "));
       const semanticIndex = steps.findIndex((candidate, offset) => offset > installIndex && unconditionalStep(candidate)
         && typeof candidate.run === "string" && candidate.run.trim() === "pnpm run check:compact-version");
-      if (!trustedSetupStep(step) || !unconditionalStep(step)
+      if (!trustedSetupStep(step)
+        || !(unconditionalStep(step) || verifiedCacheMissSetup(steps, index, step, pinIndex))
         || pinIndex < 0 || pinIndex >= index || installedIndex < 0 || installIndex < 0 || semanticIndex < 0
         || step.with?.["compact-version"] !== outputReference
         || step.env?.GITHUB_TOKEN !== "${{ github.token }}") {
