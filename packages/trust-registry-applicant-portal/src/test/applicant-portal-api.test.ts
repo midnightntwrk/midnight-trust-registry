@@ -8,6 +8,10 @@ const auditorEntry = (effectiveUntil: string | undefined) => ({
     authorizationId: "auth:auditor:inspection:v1",
     role: "auditor",
     status: "active",
+    resourceType: "request-profile",
+    resourceId: "audit-scope",
+    trustLevel: "approved",
+    subjectDid: "did:midnight:testnet:auditor",
     proposedAt: "2020-01-01T00:00:00Z",
     activeFrom: "2020-01-02T00:00:00Z",
     effectiveUntil,
@@ -24,6 +28,10 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
       { label: "issuer", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z" } },
       { label: "expired", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2024-01-01T00:00:00Z" } },
     ] });
+    if (path === "/v1/recognitions") return Response.json({ entries: [
+      { label: "recognized-active", recognition: { status: "active", effectiveFrom: "2020-01-01T00:00:00Z" } },
+      { label: "recognized-expired", recognition: { status: "active", effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2024-01-01T00:00:00Z" } },
+    ] });
     return Response.json({ entries: [] });
   }) as typeof fetch,
 );
@@ -37,6 +45,7 @@ describe("public auditor inspection", () => {
     const inspection = await client.loadPublicInspection();
     expect(inspection.activeAuditors).toHaveLength(1);
     expect(inspection.activeIssuers).toHaveLength(1);
+    expect(inspection.activeRecognitions.map((entry) => entry.label)).toEqual(["recognized-active"]);
     expect(inspection.warnings).toBeUndefined();
   });
 
@@ -50,9 +59,16 @@ describe("public auditor inspection", () => {
   });
 
   it("fails soft for a malformed auditor list", async () => {
-    const inspection = await inspectionClient(Response.json({ entries: null })).loadPublicInspection();
-    expect(inspection.activeIssuers).toHaveLength(1);
-    expect(inspection.activeAuditors).toHaveLength(0);
-    expect(inspection.warnings).toHaveLength(1);
+    for (const response of [
+      Response.json(null),
+      Response.json({ entries: null }),
+      Response.json({ entries: [{ label: "broken", authorization: { role: "auditor", status: "active", activeFrom: "2020-01-01T00:00:00Z" } }] }),
+    ]) {
+      const inspection = await inspectionClient(response).loadPublicInspection();
+      expect(inspection.activeIssuers).toHaveLength(1);
+      expect(inspection.activeRecognitions).toHaveLength(1);
+      expect(inspection.activeAuditors).toHaveLength(0);
+      expect(inspection.warnings).toEqual(["Auditor records are temporarily unavailable."]);
+    }
   });
 });

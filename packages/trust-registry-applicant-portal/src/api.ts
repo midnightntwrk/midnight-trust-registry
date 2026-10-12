@@ -10,15 +10,32 @@ import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 type FetchLike = typeof fetch;
 
 const isCurrentlyActive = (
-  record: { status?: string; activeFrom?: string | undefined; effectiveUntil?: string | undefined } | undefined,
+  record: { status?: string; effectiveUntil?: string | undefined } | undefined,
+  startsAt: unknown,
   nowMs: number,
 ): boolean => {
-  if (record?.status !== "active" || typeof record.activeFrom !== "string") return false;
+  if (record?.status !== "active" || typeof startsAt !== "string") return false;
   if (record.effectiveUntil !== undefined && typeof record.effectiveUntil !== "string") return false;
-  const activeFrom = Date.parse(record.activeFrom);
+  const activeFrom = Date.parse(startsAt);
   const effectiveUntil = record.effectiveUntil === undefined ? Infinity : Date.parse(record.effectiveUntil);
   return Number.isFinite(activeFrom) && !Number.isNaN(effectiveUntil)
     && activeFrom <= nowMs && nowMs <= effectiveUntil;
+};
+
+const isRenderableAuditorList = (value: unknown): value is TrustRegistryApiAuthorizationListResponse => {
+  if (value === null || typeof value !== "object" || !("entries" in value) || !Array.isArray(value.entries)) {
+    return false;
+  }
+  return value.entries.every((entry: unknown) => {
+    if (entry === null || typeof entry !== "object" || !("authorization" in entry)) return false;
+    const authorization = entry.authorization;
+    if (authorization === null || typeof authorization !== "object") return false;
+    const fields = ["authorizationId", "role", "status", "resourceType", "resourceId", "trustLevel", "subjectDid", "activeFrom"];
+    return "label" in entry && typeof entry.label === "string"
+      && fields.every((field) => field in authorization && typeof authorization[field as keyof typeof authorization] === "string")
+      && (!("effectiveUntil" in authorization) || authorization.effectiveUntil === undefined
+        || typeof authorization.effectiveUntil === "string");
+  });
 };
 
 export class TrustRegistryApplicantPortalApiError extends Error {
@@ -81,19 +98,19 @@ export class TrustRegistryApplicantPortalClient {
       ]);
 
     const nowMs = Date.now();
-    const auditorEntries = auditorResult.failed || !Array.isArray(auditorResult.value.entries)
+    const auditorEntries = auditorResult.failed || !isRenderableAuditorList(auditorResult.value)
       ? null : auditorResult.value.entries;
     return {
       summary,
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
-          && isCurrentlyActive(entry.authorization, nowMs)) ?? [],
+          && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
       activeIssuers: activeIssuers.entries.filter((entry) =>
-        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, nowMs)),
+        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
       activeVerifiers: activeVerifiers.entries.filter((entry) =>
-        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, nowMs)),
+        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
       activeRecognitions: activeRecognitions.entries.filter((entry) =>
-        isCurrentlyActive(entry.recognition, nowMs)),
+        isCurrentlyActive(entry.recognition, entry.recognition?.effectiveFrom, nowMs)),
       ...(auditorEntries === null ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
     };
   }
