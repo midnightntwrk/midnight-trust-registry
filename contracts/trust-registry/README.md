@@ -60,3 +60,24 @@ Governed maintainer action kinds (the signed `tr:` literals) use
 exactly as Compact `Bytes<32>` literals. The contract's `midnight:tr:init`
 genesis marker and `midnight:tr:none` initial sentinel are not governed
 maintainer action kinds and are not inputs to this signer encoder.
+
+## Signature Validation Boundary
+
+`decodeCanonicalJubjubSignatureHex` is a TypeScript preflight for untrusted
+signature bytes. It requires a lowercase `0x` encoding of exactly 96 bytes,
+response below the JubJub group order, field-bounded coordinates, and an
+announcement accepted by Compact runtime point arithmetic that is not the
+identity point `(0, 1)`. Structured signature verifiers also reject identity
+public keys and return `false` rather than exposing an off-curve runtime
+trap. These checks do not authorize a signer: callers must select and verify
+the policy-authorized DID key ID and its provenance. Prime-order subgroup
+membership of arbitrary accepted points is not established by this preflight.
+
+The Compact action circuits receive typed fields, not hex strings. They reject
+identity signer keys and announcements, then
+compare each signer key ID and public key against an active maintainer record,
+verify the Schnorr digest in-circuit, and enforce the policy-bound quorum.
+Textual encoding checks and application-evidence DID key selection are
+off-chain ingress responsibilities, not claims made by the Compact circuit.
+The two-key DID resolver fixture covers key selection and a rotated snapshot;
+governed evidence-verifier key rotation in Compact remains tracked by #67.
