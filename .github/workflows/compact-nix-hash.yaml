@@ -1,0 +1,78 @@
+name: Compact Nix Hash
+
+on:
+  pull_request:
+    paths:
+      - .compact-version
+      - flake.nix
+      - flake.lock
+      - nix/packages/compact-toolchain.nix
+      - nix/packages/compact-midnight.nix
+      - nix/packages/default.nix
+      - nix/devshells/default.nix
+      - scripts/nix-compact-hash-canary.mjs
+      - scripts/nix-compact-hash-canary.test.mjs
+      - .github/workflows/compact-nix-hash.yaml
+  push:
+    branches: [main, develop, milestone-0.1.0]
+    paths:
+      - .compact-version
+      - flake.nix
+      - flake.lock
+      - nix/packages/compact-toolchain.nix
+      - nix/packages/compact-midnight.nix
+      - nix/packages/default.nix
+      - nix/devshells/default.nix
+      - scripts/nix-compact-hash-canary.mjs
+      - scripts/nix-compact-hash-canary.test.mjs
+      - .github/workflows/compact-nix-hash.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compact-nix-hash-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-hash:
+    name: Linux Compact Nix hash
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+      - name: Test stale-hash canary mutation
+        run: node --test scripts/nix-compact-hash-canary.test.mjs
+      - name: Build and verify pinned Linux compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(nix build --no-link --print-out-paths .#compact-toolchain)"
+          expected="$(cat .compact-version)"
+          actual="$("$toolchain/bin/compactc" --version)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Nix Compact compiler is $actual, but .compact-version requires $expected. Update the Linux fetch hash in nix/packages/compact-toolchain.nix for this release."
+            exit 1
+          fi
+      - name: Build additional Compact package and verify its version
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler="$(nix build --no-link --print-out-paths .#compact-midnight)"
+          expected="$(nix eval --raw .#packages.x86_64-linux.compact-midnight.version)"
+          actual="$("$compiler/bin/compact" --version)"
+          if [[ "$actual" != "compact $expected" ]]; then
+            echo "::error::Nix Compact package is $actual, but its derivation requires compact $expected. Verify the fetch hash in nix/packages/compact-midnight.nix."
+            exit 1
+          fi
+      - name: Prove stale Linux hashes fail closed
+        run: node scripts/nix-compact-hash-canary.mjs
