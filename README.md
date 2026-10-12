@@ -86,9 +86,12 @@ Package artifact validation for downstream consumers:
 
 ```bash
 pnpm run artifacts:pack
-pnpm run packages:check-contents
+pnpm run packages:check-contents:light
 pnpm run packed-artifacts:smoke
 ```
+
+After a full `pnpm run build`, use `pnpm run packages:check-contents` instead;
+the release gate requires proving keys and ZK IR in the contract package.
 
 Artifact tarballs are written to `artifacts/npm/`. The current local artifact
 set is:

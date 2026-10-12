@@ -80,7 +80,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "all": "pnpm run compact && pnpm run build && pnpm run test:ci",
     "compact:light": "node ../../scripts/compile-compact.mjs --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
-    "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
+    "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/managed/trust-registry && cp -Rf ./src/managed/trust-registry/contract ./dist/managed/trust-registry/ && cp ./src/trust-registry.compact ./dist",
     "test:light": "pnpm run test"
   },
   "dependencies": {
