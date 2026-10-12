@@ -1,4 +1,13 @@
-import { applyWorkspaceOperation, createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import {
+  applyWorkspaceOperation,
+  createOperatorWorkspace,
+  loadWorkspaceFromFile,
+  writeWorkspaceToFile,
+} from "@midnight-ntwrk/trust-registry-cli";
 import { describe, expect, it } from "vitest";
 
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
@@ -29,5 +38,25 @@ describe("operator workspace revision commitment", () => {
     const withUndefined = { ...workspace, operations: [...workspace.operations, { operation: "publish-epoch" as const, label: undefined }] };
     const afterJsonRoundTrip = JSON.parse(JSON.stringify(withUndefined)) as typeof withUndefined;
     expect(computeOperatorWorkspaceCommitment(withUndefined)).toBe(computeOperatorWorkspaceCommitment(afterJsonRoundTrip));
+  });
+
+  it("matches the workspace writer after schema normalization", async () => {
+    const workspace = createOperatorWorkspace({ label: "intent-revision" });
+    const unnormalized = {
+      ...workspace,
+      registryLabel: " intent-revision ",
+      ignoredField: "not persisted",
+    } as typeof workspace;
+    const directory = await mkdtemp(join(tmpdir(), "trust-registry-revision-"));
+    try {
+      const path = join(directory, "workspace.json");
+      const before = computeOperatorWorkspaceCommitment(unnormalized);
+      await writeWorkspaceToFile(path, unnormalized);
+      const reloaded = await loadWorkspaceFromFile(path);
+      expect(reloaded.registryLabel).toBe("intent-revision");
+      expect(computeOperatorWorkspaceCommitment(reloaded)).toBe(before);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

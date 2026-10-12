@@ -1,9 +1,12 @@
-import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import {
+  TrustRegistryOperatorWorkspaceSchema,
+  type TrustRegistryOperatorWorkspace,
+} from "@midnight-ntwrk/trust-registry-cli";
 import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 
 export function computeOperatorWorkspaceCommitment(workspace: TrustRegistryOperatorWorkspace): string {
   // Match persisted JSON semantics while normalizing key order and whitespace.
-  const serialized = JSON.parse(JSON.stringify(workspace)) as TrustRegistryOperatorWorkspace;
+  const serialized = TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(JSON.stringify(workspace)));
   return sha256Hex(JSON.stringify([
     "tr:workspace:revision:v1",
     canonicalizeJson(serialized),
