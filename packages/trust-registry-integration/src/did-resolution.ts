@@ -49,6 +49,10 @@ export type MidnightDidLedgerFixtureOptions = {
   serviceType?: string;
   verificationMethodId?: string;
   schnorrJubjubPublicKey?: { x: bigint; y: bigint };
+  schnorrJubjubAssertionMethods?: ReadonlyArray<{
+    id: string;
+    publicKey: { x: bigint; y: bigint };
+  }>;
   version?: bigint;
   created?: bigint;
   updated?: bigint;
@@ -68,6 +72,8 @@ export const createMidnightDidLedgerFixture = (
   const contractAddress = parsedDid.id;
   const verificationMethodId = options.verificationMethodId ?? "auth-1";
   const nativeKey = options.schnorrJubjubPublicKey;
+  const nativeMethods = options.schnorrJubjubAssertionMethods
+    ?? (nativeKey === undefined ? [] : [{ id: verificationMethodId, publicKey: nativeKey }]);
   const serviceEndpoint =
     options.serviceEndpoint ?? `https://resolver.example/${contractAddress}`;
   const version = options.version ?? 1n;
@@ -83,7 +89,7 @@ export const createMidnightDidLedgerFixture = (
     deactivated: false,
     operationCount: 1n,
     alsoKnownAs: makeIterable<string>([]),
-    verificationMethods: makeIterablePairs<string, unknown>(nativeKey === undefined ? [
+    verificationMethods: makeIterablePairs<string, unknown>(nativeMethods.length === 0 ? [
       [
         verificationMethodId,
         {
@@ -98,12 +104,14 @@ export const createMidnightDidLedgerFixture = (
       ],
     ] : []),
     schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>(
-      nativeKey === undefined
-        ? []
-        : [[verificationMethodId, { id: verificationMethodId, publicKey: nativeKey }]],
+      nativeMethods.map(({ id, publicKey }) => [id, { id, publicKey }]),
     ),
-    authenticationRelation: makeIterable<string>([verificationMethodId]),
-    assertionMethodRelation: makeIterable<string>([verificationMethodId]),
+    authenticationRelation: makeIterable<string>(
+      nativeMethods.length === 0 ? [verificationMethodId] : nativeMethods.map(({ id }) => id),
+    ),
+    assertionMethodRelation: makeIterable<string>(
+      nativeMethods.length === 0 ? [verificationMethodId] : nativeMethods.map(({ id }) => id),
+    ),
     keyAgreementRelation: makeIterable<string>([]),
     capabilityInvocationRelation: makeIterable<string>([]),
     capabilityDelegationRelation: makeIterable<string>([]),

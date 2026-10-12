@@ -12,8 +12,10 @@ import {
 
 import {
   type AuditorAuthorizationRecord,
+  type EvidenceVerifierKeyRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
+  type IssuerProposalEvidenceRecord,
   type MaintainerAuthorizationBundle,
   type MaintainerAuthorizationSigner,
   type MaintainerMembershipRecord,
@@ -414,6 +416,120 @@ export class TrustRegistrySimulator {
     );
   }
 
+  registerEvidenceVerifierKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    didCommitment: Uint8Array,
+    keyIdCommitment: Uint8Array,
+    publicKey: JubjubPoint,
+    suite: Uint8Array,
+    policyCommitment: Uint8Array,
+    policyVersion: bigint,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.registerEvidenceVerifierKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        authorizationId,
+        didCommitment,
+        keyIdCommitment,
+        publicKey,
+        suite,
+        policyCommitment,
+        policyVersion,
+      ),
+    );
+  }
+
+  suspendEvidenceVerifierKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendEvidenceVerifierKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        authorizationId,
+        reasonHash,
+      ),
+    );
+  }
+
+  revokeEvidenceVerifierKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    authorizationId: Uint8Array,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeEvidenceVerifierKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        authorizationId,
+        reasonHash,
+      ),
+    );
+  }
+
+  rotateEvidenceVerifierKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    oldAuthorizationId: Uint8Array,
+    newAuthorizationId: Uint8Array,
+    newKeyIdCommitment: Uint8Array,
+    newPublicKey: JubjubPoint,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.rotateEvidenceVerifierKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        oldAuthorizationId,
+        newAuthorizationId,
+        newKeyIdCommitment,
+        newPublicKey,
+        reasonHash,
+      ),
+    );
+  }
+
+  getEvidenceVerifierKey(authorizationId: Uint8Array): EvidenceVerifierKeyRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getEvidenceVerifierKey(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
+  getIssuerProposalEvidence(authorizationId: Uint8Array): IssuerProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getIssuerProposalEvidence(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
   proposeIssuerAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
@@ -426,6 +542,9 @@ export class TrustRegistrySimulator {
     statusPolicyBindingCommitment: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -445,6 +564,9 @@ export class TrustRegistrySimulator {
         statusPolicyBindingCommitment,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }

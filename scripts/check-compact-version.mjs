@@ -1,9 +1,11 @@
 import { appendFileSync, existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 const requiredWorkflows = [
   ".github/workflows/ci.yaml",
   ".github/workflows/milestone-light.yaml",
@@ -11,48 +13,108 @@ const requiredWorkflows = [
   ".github/workflows/publish.yml",
 ];
 const outputReference = "${{ steps.compact-version.outputs.version }}";
+const pinCommand = "node scripts/check-compact-version.mjs --github-output";
+const installedCommand = "node scripts/check-compact-version.mjs --check-installed";
 
-export function checkCompactVersion(directory = root) {
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const setupStep = (step) => typeof step?.uses === "string"
+  && /\/setup-compact-action@/iu.test(step.uses);
+const trustedSetupStep = (step) => step.uses.toLowerCase().startsWith("midnightntwrk/setup-compact-action@");
+const unconditionalStep = (step) => step.if === undefined;
+
+const readWorkflow = (directory, path, yaml, required = true) => {
+  let workflow;
+  try {
+    workflow = yaml.load(readFileSync(resolve(directory, path), "utf8"));
+  } catch (error) {
+    throw new Error(`${path}: invalid workflow YAML: ${error.message}`, { cause: error });
+  }
+  if (!isRecord(workflow) || !isRecord(workflow.jobs)) {
+    if (required) throw new Error(`${path} must contain workflow jobs`);
+    return null;
+  }
+  return workflow;
+};
+
+const workflowJobs = (workflow) => Object.values(workflow.jobs).filter(isRecord);
+const jobSteps = (job) => Array.isArray(job.steps) ? job.steps.filter(isRecord) : [];
+const hasLegacyCompilerReference = (value, seen = new WeakSet()) => {
+  if (typeof value === "string") return value.includes("env.COMPACT_COMPILER_VERSION");
+  if (!isRecord(value) && !Array.isArray(value)) return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  return Object.entries(value).some(([key, child]) =>
+    key === "COMPACT_COMPILER_VERSION" || hasLegacyCompilerReference(child, seen));
+};
+
+const checkWorkflowSetup = (workflow, path) => {
+  let setupCount = 0;
+  for (const job of workflowJobs(workflow)) {
+    const steps = jobSteps(job);
+    for (const [index, step] of steps.entries()) {
+      if (step.with?.["compact-version"] !== undefined
+        && step.with["compact-version"] !== outputReference) {
+        throw new Error(`${path} must read the checked-in Compact version for setup`);
+      }
+      if (!setupStep(step)) continue;
+      setupCount += 1;
+      const pinIndex = steps.findIndex((candidate) => unconditionalStep(candidate) && candidate.id === "compact-version"
+        && typeof candidate.run === "string" && candidate.run.trim() === pinCommand);
+      const installedIndex = steps.findIndex((candidate, offset) => offset > index && unconditionalStep(candidate)
+        && typeof candidate.run === "string" && candidate.run.trim() === installedCommand);
+      const installIndex = steps.findIndex((candidate, offset) => offset > installedIndex && unconditionalStep(candidate)
+        && typeof candidate.run === "string" && candidate.run.trim().startsWith("pnpm install "));
+      const semanticIndex = steps.findIndex((candidate, offset) => offset > installIndex && unconditionalStep(candidate)
+        && typeof candidate.run === "string" && candidate.run.trim() === "pnpm run check:compact-version");
+      if (!trustedSetupStep(step) || !unconditionalStep(step)
+        || pinIndex < 0 || pinIndex >= index || installedIndex < 0 || installIndex < 0 || semanticIndex < 0
+        || step.with?.["compact-version"] !== outputReference
+        || step.env?.GITHUB_TOKEN !== "${{ github.token }}") {
+        throw new Error(`${path} must read the checked-in Compact version for setup`);
+      }
+    }
+  }
+  if (setupCount === 0 || hasLegacyCompilerReference(workflow)) {
+    throw new Error(`${path} must read the checked-in Compact version for setup`);
+  }
+};
+
+export function readCompactPin(directory = root) {
   const pin = readFileSync(resolve(directory, ".compact-version"), "utf8");
   if (!/^\d+\.\d+\.\d+\n$/.test(pin)) {
     throw new Error(".compact-version must contain one stable semver and a newline");
   }
-  const version = pin.trimEnd();
+  return pin.trimEnd();
+}
+
+export function checkCompactVersion(directory = root) {
+  const version = readCompactPin(directory);
+  const yaml = require("js-yaml");
 
   const workflowDirectory = resolve(directory, ".github/workflows");
   const workflows = new Set(requiredWorkflows);
   for (const file of readdirSync(workflowDirectory)) {
     if (!/\.ya?ml$/u.test(file)) continue;
     const path = `.github/workflows/${file}`;
-    if (readFileSync(resolve(directory, path), "utf8").includes("setup-compact-action@")) {
+    const workflow = readWorkflow(directory, path, yaml, false);
+    if (workflow && workflowJobs(workflow).some((job) => jobSteps(job).some(setupStep))) {
       workflows.add(path);
     }
   }
 
   for (const path of workflows) {
-    const workflow = readFileSync(resolve(directory, path), "utf8");
-    const setupVersions = [...workflow.matchAll(/^\s*compact-version:\s*(.+)$/gm)].map((match) => match[1]);
-    if (
-      !workflow.includes("id: compact-version") ||
-      !workflow.includes("setup-compact-action@") ||
-      !workflow.includes("run: node scripts/check-compact-version.mjs --github-output") ||
-      !workflow.includes("run: node scripts/check-compact-version.mjs --check-installed") ||
-      setupVersions.length === 0 ||
-      setupVersions.some((value) => value !== outputReference) ||
-      /^\s*COMPACT_COMPILER_VERSION\s*:/m.test(workflow) ||
-      workflow.includes("env.COMPACT_COMPILER_VERSION") ||
-      workflow.includes(`compact-version: ${version}`)
-    ) {
-      throw new Error(`${path} must read the checked-in Compact version for setup`);
-    }
+    checkWorkflowSetup(readWorkflow(directory, path, yaml), path);
   }
 
-  const quality = readFileSync(resolve(directory, ".github/workflows/quality.yaml"), "utf8");
-  const cacheKeys = [...quality.matchAll(/^\s*key:\s*(.+)$/gm)]
-    .map((match) => match[1])
-    .filter((key) => key.startsWith("tr-turbo-v1-"));
-  const restoreKeys = [...quality.matchAll(/^\s+tr-turbo-v1-[^\n]+$/gm)]
-    .map((match) => match[0].trim());
+  const quality = readWorkflow(directory, ".github/workflows/quality.yaml", yaml);
+  const cacheSteps = workflowJobs(quality).flatMap(jobSteps)
+    .filter((step) => typeof step.uses === "string" && /^actions\/cache\/(?:restore|save)@/u.test(step.uses));
+  const cacheKeys = cacheSteps.map((step) => step.with?.key)
+    .filter((key) => typeof key === "string" && key.startsWith("tr-turbo-v1-"));
+  const restoreKeys = cacheSteps.filter((step) => step.uses.startsWith("actions/cache/restore@"))
+    .flatMap((step) => typeof step.with?.["restore-keys"] === "string"
+    ? step.with["restore-keys"].split("\n").map((key) => key.trim()).filter((key) => key.startsWith("tr-turbo-v1-"))
+    : []);
   if (
     cacheKeys.length < 2 ||
     restoreKeys.length < 1 ||
@@ -83,7 +145,7 @@ export function checkCompactVersion(directory = root) {
 
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    const version = checkCompactVersion();
+    const version = process.argv.length === 2 ? checkCompactVersion() : readCompactPin();
     if (process.argv[2] === "--github-output") {
       if (!process.env.GITHUB_OUTPUT) {
         throw new Error("GITHUB_OUTPUT is required for --github-output");
