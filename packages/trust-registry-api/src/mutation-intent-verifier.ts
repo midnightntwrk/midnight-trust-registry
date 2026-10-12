@@ -2,8 +2,9 @@ import {
   resolveMidnightDIDMethodBinding,
   type ResolveMidnightDIDMethodBindingOptions,
 } from "@midnight-ntwrk/credential-did-midnight";
+import { ecAdd, ecMul } from "@midnight-ntwrk/compact-runtime";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { JUBJUB_ORDER, verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { decodeCanonicalJubjubSignatureHex } from "@midnight-ntwrk/trust-registry-contract";
 import {
   MutationIntentSchema,
@@ -12,6 +13,17 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
+
+const isPrimeOrderJubjubPublicKey = (point: { x: bigint; y: bigint }): boolean => {
+  if (point.x === 0n && point.y === 1n) return false;
+  try {
+    // The Compact scalar type excludes the order itself; (order - 1)P + P checks order * P.
+    const orderMultiple = ecAdd(ecMul(point, JUBJUB_ORDER - 1n), point);
+    return orderMultiple.x === 0n && orderMultiple.y === 1n;
+  } catch {
+    return false;
+  }
+};
 
 const isDeterministicDidResolutionError = (error: unknown): boolean => {
   if (!(error instanceof Error) || !(
@@ -62,6 +74,7 @@ export async function verifyMutationIntentDidSignature(
       verificationMethodId: `#${intent.data.actorKeyId.split("#")[1]}`,
       relationship: intent.data.actorRole === "applicant" ? "authentication" : "capabilityInvocation",
     });
+    if (!isPrimeOrderJubjubPublicKey(method.publicKey)) return false;
     const digest = mutationIntentDigestBytes(intent.data);
     return verifyJubjubPayload(
       method.publicKey,

@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { MidnightNetwork } from "@midnight-ntwrk/midnight-did";
 import {
+  deriveJubjubPublicKey,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
@@ -72,6 +73,25 @@ describe("Midnight DID mutation-intent signatures", () => {
     expect(await verifyMutationIntentDidSignature(intent, { ...signature, value: `0x${"ff".repeat(96)}` }, resolver)).toBe(false);
     expect(await verifyMutationIntentDidSignature({ ...intent, issuedAt: "not-a-time" }, signature, resolver)).toBe(false);
     expect(await verifyMutationIntentDidSignature(intent, signature, { resolveResult: async () => null })).toBe(false);
+  });
+
+  it("rejects a forged identity-key signature that requires no secret key", async () => {
+    const nonce = 7n;
+    const forgedSignature = {
+      keyId,
+      algorithm: "jubjub-schnorr" as const,
+      value: `0x${Buffer.from(encodeJubjubSignature({
+        announcement: deriveJubjubPublicKey(nonce),
+        response: nonce,
+      })).toString("hex")}`,
+    };
+    const identityKeyResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: { x: 0n, y: 1n },
+      }),
+    ]);
+    expect(await verifyMutationIntentDidSignature(intent, forgedSignature, identityKeyResolver)).toBe(false);
   });
 
   it("distinguishes a retryable DID resolver outage from an invalid signature", async () => {
