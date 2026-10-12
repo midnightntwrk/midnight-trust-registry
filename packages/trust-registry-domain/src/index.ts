@@ -2,6 +2,7 @@ export * from "./application-evidence.js";
 export * from "./application-challenge-binding.js";
 export * from "./evidence-bundle.js";
 export * from "./ids.js";
+export * from "./instant.js";
 export * from "./lifecycle.js";
 export * from "./policy-snapshot.js";
 export * from "./scope.js";

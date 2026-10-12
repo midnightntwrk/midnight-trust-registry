@@ -1,6 +1,7 @@
 import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  compareRfc3339Instants,
   type AuthorizationRecord,
   type RecognitionRecord,
   type RegistryRecord,
@@ -355,9 +356,8 @@ export class TrustRegistryTrqpAdapter {
       };
     }
     if (requireEvidence && parsedBundle !== undefined) {
-      const instant = Date.parse(evaluatedAt);
-      if (instant < Date.parse(parsedBundle.epoch.validFrom)
-        || instant > Date.parse(parsedBundle.epoch.validUntil)) {
+      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
+        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
         return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
       }
     }
@@ -417,9 +417,8 @@ export class TrustRegistryTrqpAdapter {
       };
     }
     if (requireEvidence && parsedBundle !== undefined) {
-      const instant = Date.parse(evaluatedAt);
-      if (instant < Date.parse(parsedBundle.epoch.validFrom)
-        || instant > Date.parse(parsedBundle.epoch.validUntil)) {
+      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
+        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
         return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
       }
     }

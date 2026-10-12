@@ -11,6 +11,7 @@ import {
   computeGovernancePolicySnapshotCommitment,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
+  compareRfc3339Instants,
   deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type EpochCommitment,
@@ -61,7 +62,13 @@ const hasConsistentSnapshotProof = (
 ): boolean => {
   const epoch = epochs.find((candidate) => candidate.epochId === bundle.epoch.epochId);
   if (epoch === undefined
-    || JSON.stringify(epoch) !== JSON.stringify(bundle.epoch)
+    || epoch.registryId !== bundle.epoch.registryId
+    || epoch.stateRoot !== bundle.epoch.stateRoot
+    || epoch.eventRoot !== bundle.epoch.eventRoot
+    || epoch.policyRoot !== bundle.epoch.policyRoot
+    || compareRfc3339Instants(epoch.validFrom, bundle.epoch.validFrom) !== 0
+    || compareRfc3339Instants(epoch.validUntil, bundle.epoch.validUntil) !== 0
+    || JSON.stringify(epoch.maintainerSignatures) !== JSON.stringify(bundle.epoch.maintainerSignatures)
     || bundle.epoch.registryId !== registryId
     || bundle.policy.registryId !== registryId
     || bundle.inclusionProof.leafHash !== leafHash

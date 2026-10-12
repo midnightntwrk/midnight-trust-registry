@@ -26,10 +26,11 @@ import type {
   TrqpRecognitionRequest,
   TrustRegistryTrqpSource,
 } from "@midnight-ntwrk/trust-registry-trqp-adapter";
-import type {
-  EpochCommitment,
-  RegistryRecord,
-  TrustRegistryEvidenceBundle,
+import {
+  compareRfc3339Instants,
+  type EpochCommitment,
+  type RegistryRecord,
+  type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import type {
@@ -455,8 +456,8 @@ const bundleMatchesEpoch = (
   && bundle.epoch.stateRoot === epoch.stateRoot
   && bundle.epoch.eventRoot === epoch.eventRoot
   && bundle.epoch.policyRoot === epoch.policyRoot
-  && Date.parse(bundle.epoch.validFrom) === Date.parse(epoch.validFrom)
-  && Date.parse(bundle.epoch.validUntil) === Date.parse(epoch.validUntil);
+  && compareRfc3339Instants(bundle.epoch.validFrom, epoch.validFrom) === 0
+  && compareRfc3339Instants(bundle.epoch.validUntil, epoch.validUntil) === 0;
 
 const bundleAvailableAt = (
   bundle: TrustRegistryEvidenceBundle,
@@ -464,10 +465,9 @@ const bundleAvailableAt = (
   at: string,
 ): boolean => {
   const epoch = snapshot.epochs.find((candidate) => candidate.epochId === bundle.epoch.epochId) ?? null;
-  const time = Date.parse(at);
   return bundleMatchesEpoch(bundle, epoch)
-    && Date.parse(bundle.epoch.validFrom) <= time
-    && time <= Date.parse(bundle.epoch.validUntil);
+    && compareRfc3339Instants(bundle.epoch.validFrom, at) <= 0
+    && compareRfc3339Instants(at, bundle.epoch.validUntil) <= 0;
 };
 
 export const createTrqpSourceFromStateSource = (

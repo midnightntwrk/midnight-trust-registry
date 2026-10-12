@@ -3,6 +3,7 @@ import type {
   EpochCommitment,
   RecognitionRecord,
 } from "@midnight-ntwrk/trust-registry-domain";
+import { compareRfc3339Instants } from "@midnight-ntwrk/trust-registry-domain";
 
 export type AuthorizationTemporalEvaluation = {
   evaluatedAt: string;
@@ -16,20 +17,11 @@ export type RecognitionTemporalEvaluation = {
   trustedAtTime: boolean;
 };
 
-const timestampValue = (timestamp: string): number => {
-  const value = Date.parse(timestamp);
-  if (Number.isNaN(value)) {
-    throw new Error(`invalid timestamp: ${timestamp}`);
-  }
-
-  return value;
-};
-
 const happenedBy = (
   timestamp: string | undefined,
-  evaluatedAtMs: number,
+  evaluatedAt: string,
 ): boolean =>
-  timestamp !== undefined && timestampValue(timestamp) <= evaluatedAtMs;
+  timestamp !== undefined && compareRfc3339Instants(timestamp, evaluatedAt) <= 0;
 
 const selectLatestEntry = <T>(
   entries: readonly T[],
@@ -37,16 +29,14 @@ const selectLatestEntry = <T>(
 ): T | null =>
   [...entries].sort(
     (left, right) =>
-      timestampValue(projectedTimestamp(right)) - timestampValue(projectedTimestamp(left)),
+      compareRfc3339Instants(projectedTimestamp(right), projectedTimestamp(left)),
   )[0] ?? null;
 
 export const evaluateAuthorizationRecordAtTime = (
   record: AuthorizationRecord,
   evaluatedAt: string,
 ): AuthorizationTemporalEvaluation => {
-  const evaluatedAtMs = timestampValue(evaluatedAt);
-
-  if (!happenedBy(record.proposedAt, evaluatedAtMs)) {
+  if (!happenedBy(record.proposedAt, evaluatedAt)) {
     return {
       evaluatedAt,
       statusAtTime: null,
@@ -58,29 +48,29 @@ export const evaluateAuthorizationRecordAtTime = (
   // Authorization lifecycle timestamps are monotonic in the domain model.
   // This ordered cascade mirrors that invariant to recover the visible status.
 
-  if (happenedBy(record.authorizedAt, evaluatedAtMs)) {
+  if (happenedBy(record.authorizedAt, evaluatedAt)) {
     statusAtTime = "authorized";
   }
-  if (happenedBy(record.activeFrom, evaluatedAtMs)) {
+  if (happenedBy(record.activeFrom, evaluatedAt)) {
     statusAtTime = "active";
   }
-  if (happenedBy(record.suspendedAt, evaluatedAtMs)) {
+  if (happenedBy(record.suspendedAt, evaluatedAt)) {
     statusAtTime = "suspended";
   }
-  if (happenedBy(record.revokedAt, evaluatedAtMs)) {
+  if (happenedBy(record.revokedAt, evaluatedAt)) {
     statusAtTime = "revoked";
   }
-  if (happenedBy(record.supersededAt, evaluatedAtMs)) {
+  if (happenedBy(record.supersededAt, evaluatedAt)) {
     statusAtTime = "superseded";
   }
-  if (happenedBy(record.archivedAt, evaluatedAtMs)) {
+  if (happenedBy(record.archivedAt, evaluatedAt)) {
     statusAtTime = "archived";
   }
 
   const trustedAtTime = statusAtTime === "active"
     && (
       record.effectiveUntil === undefined
-      || evaluatedAtMs <= timestampValue(record.effectiveUntil)
+      || compareRfc3339Instants(evaluatedAt, record.effectiveUntil) <= 0
     );
 
   return {
@@ -94,9 +84,7 @@ export const evaluateRecognitionRecordAtTime = (
   record: RecognitionRecord,
   evaluatedAt: string,
 ): RecognitionTemporalEvaluation => {
-  const evaluatedAtMs = timestampValue(evaluatedAt);
-
-  if (!happenedBy(record.proposedAt, evaluatedAtMs)) {
+  if (!happenedBy(record.proposedAt, evaluatedAt)) {
     return {
       evaluatedAt,
       statusAtTime: null,
@@ -108,29 +96,29 @@ export const evaluateRecognitionRecordAtTime = (
   // Recognition lifecycle timestamps are monotonic in the domain model.
   // This ordered cascade mirrors that invariant to recover the visible status.
 
-  if (happenedBy(record.authorizedAt, evaluatedAtMs)) {
+  if (happenedBy(record.authorizedAt, evaluatedAt)) {
     statusAtTime = "authorized";
   }
-  if (happenedBy(record.effectiveFrom, evaluatedAtMs)) {
+  if (happenedBy(record.effectiveFrom, evaluatedAt)) {
     statusAtTime = "active";
   }
-  if (happenedBy(record.suspendedAt, evaluatedAtMs)) {
+  if (happenedBy(record.suspendedAt, evaluatedAt)) {
     statusAtTime = "suspended";
   }
-  if (happenedBy(record.revokedAt, evaluatedAtMs)) {
+  if (happenedBy(record.revokedAt, evaluatedAt)) {
     statusAtTime = "revoked";
   }
-  if (happenedBy(record.supersededAt, evaluatedAtMs)) {
+  if (happenedBy(record.supersededAt, evaluatedAt)) {
     statusAtTime = "superseded";
   }
-  if (happenedBy(record.archivedAt, evaluatedAtMs)) {
+  if (happenedBy(record.archivedAt, evaluatedAt)) {
     statusAtTime = "archived";
   }
 
   const trustedAtTime = statusAtTime === "active"
     && (
       record.effectiveUntil === undefined
-      || evaluatedAtMs <= timestampValue(record.effectiveUntil)
+      || compareRfc3339Instants(evaluatedAt, record.effectiveUntil) <= 0
     );
 
   return {
@@ -144,12 +132,10 @@ export const selectEpochCommitmentAtTime = (
   epochs: readonly EpochCommitment[],
   evaluatedAt: string,
 ): EpochCommitment | null => {
-  const evaluatedAtMs = timestampValue(evaluatedAt);
   return selectLatestEntry(
     epochs.filter((epoch) => {
-      const validFrom = timestampValue(epoch.validFrom);
-      const validUntil = timestampValue(epoch.validUntil);
-      return validFrom <= evaluatedAtMs && evaluatedAtMs <= validUntil;
+      return compareRfc3339Instants(epoch.validFrom, evaluatedAt) <= 0
+        && compareRfc3339Instants(evaluatedAt, epoch.validUntil) <= 0;
     }),
     (epoch) => epoch.validFrom,
   );

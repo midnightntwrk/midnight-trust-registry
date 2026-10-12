@@ -596,6 +596,18 @@ describe("trust registry api", () => {
       await server.close();
     }
 
+    const persistedPath = join(tempDir, "equivalent-epoch-spelling.json");
+    await writeSnapshotToFile(persistedPath, epochSpelling);
+    const persistedServer = await startServer(createSnapshotFileSource(persistedPath), () => at);
+    try {
+      const evidence = await fetch(`${persistedServer.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(evidence.status).toBe(200);
+    } finally {
+      await persistedServer.close();
+    }
+
     const unaccepted = {
       ...snapshot,
       epochs: snapshot.epochs.map((epoch) => epoch.epochId === entry.evidence.epoch.epochId
@@ -658,6 +670,37 @@ describe("trust registry api", () => {
     if (decision === null) throw new Error("expected a current decision");
     expect(decision.statusAtTime).toBe("active");
     expect(decision.trustedAtTime).toBe(false);
+    const justAfterExpiry = effectiveUntil.replace(/Z$/, "001Z");
+    const submillisecondDecision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    }, justAfterExpiry);
+    expect(submillisecondDecision?.trustedAtTime).toBe(false);
+  });
+
+  it("rejects epoch evidence one microsecond after validUntil", async () => {
+    const snapshot = createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const justAfter = new Date(Date.parse(entry.evidence.epoch.validUntil)).toISOString().replace(/Z$/, "001Z");
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const evidence = await fetch(`${server.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: justAfter },
+        }),
+      });
+      expect(evidence.status).toBe(424);
+    } finally {
+      await server.close();
+    }
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {
