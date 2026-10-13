@@ -744,7 +744,8 @@ describe("simulator-backed VC decision evidence composition", () => {
       verifier.allowedPredicateSetCommitment,
       verifier.disclosureLevelCommitment,
     );
-    const previousVerifierSnapshot = await verifierReaders.readCurrentFinalizedRegistryDecision(
+    const typedVerifierReaders: TrustedDecisionEvidenceReaders = verifierReaders;
+    const previousVerifierSnapshot = await typedVerifierReaders.readCurrentFinalizedRegistryDecision(
       verifierSelection, verifierEvidence.epoch.epochId,
     );
     if (previousVerifierSnapshot === null) throw new Error("Expected the verifier decision snapshot");
