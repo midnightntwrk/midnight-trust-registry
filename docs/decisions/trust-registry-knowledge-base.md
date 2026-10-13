@@ -315,3 +315,24 @@ fixtures in the light and full integration lanes. The generic relation does
 not compare holder bindings; that is intentionally left to the family layer.
 This establishes a composition
 prerequisite for #76, not VC/VP evidence verification or a live trust anchor.
+
+## Applicant and decision-evidence checkpoint (2026-10-14)
+
+PR #182 merged to `milestone-0.1.0` at `473c031` after exact-head light,
+Quality, scan, GPG/DCO, and independent review. It combines an independently
+checked TR decision-evidence reader with challenge-bound published DID/VC proof
+fixtures, redacted signed application evidence, and an authenticated loopback
+auditor applicant journey. The four-role governed demo takes VP evidence through
+quorum proposals and epoch-backed decisions, but its family and status decisions
+remain fixture-supplied. This does not complete #76, #79, #152, or the VC
+consumer descriptor/proof work in #73.
+
+The local follow-on stack now accepts externally signed pending issuer,
+verifier, auditor, and maintainer applications with exact role scope and
+governed resource. The same-origin portal handles all four roles through
+challenge and redacted VP receipt. Its in-memory registration port is a
+single-process reference, not a durable public service or active grant.
+Three GPG/DCO-signed commits are rebased onto the merged milestone; light,
+full integration (fresh 59-circuit build), demo smoke, and audit passed locally.
+The next functional boundary is to persist pending/evidence state and bind it
+to a governed proposal without promoting an applicant signature into approval.
