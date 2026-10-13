@@ -93,9 +93,13 @@ Current coverage:
   governed schema/request mapping. A separate Compact consumer fixture pins
   authority in constructor-initialized ledger state, installs monotonic
   descriptors, checks a genuinely signed issuer credential, rejects a forged
-  credential signature, and checks a fixture-signed verifier request. The
-  verifier descriptor is not yet derived from a TR verifier decision. There
-  is no production finalized reader, authority signer service, or deployed
+  credential signature, and checks a signed verifier request. Both issuer and
+  verifier descriptors now derive from simulator grants, epoch witnesses, and
+  resolved DID methods through the trusted-reader boundary. The authority
+  path refuses to sign an old verifier epoch after a current authenticated
+  read observes suspension. Readers and signer remain local fixtures; there
+  is no production finalized reader, governed VC scope mapping, authority
+  signer service, or deployed
   consumer with durable state and network finality.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body

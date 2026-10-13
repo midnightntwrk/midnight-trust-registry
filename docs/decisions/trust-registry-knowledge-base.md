@@ -459,7 +459,8 @@ the VC monotonic sequence, DID-version, and terminal-revocation circuit.
 The simulator-derived issuer proof installs successfully, a wrong ledger
 anchor fails, a genuinely signed credential is accepted, and the same
 metadata with a forged credential signature fails. A separately constructed
-verifier descriptor exercises the signed-request circuit and rejects a wrong
+verifier descriptor derived from a simulator TR grant, publication witness,
+and resolved DID state exercises the signed-request circuit and rejects a wrong
 request scope. This is a local compiled/simulator fixture, not a production
-deployed consumer; TR-derived verifier decisions, governed scope mapping,
+deployed consumer; governed scope mapping,
 finality, key lifecycle, and durable state remain open.

@@ -258,8 +258,9 @@ not the older transcript-digest draft.
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
       The local consumer exercises both circuits, including positive signatures
-      and wrong-scope/forged-signature rejections; its verifier descriptor is
-      still fixture-created rather than TR-decision-derived.
+      and wrong-scope/forged-signature rejections. Both local descriptors now
+      derive from simulator TR decisions; production finality and governed
+      scope mappings remain open.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 
