@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+
+import { verifyGovernedIssuerCredential } from "./demo-vc-issuer-consumer.mjs";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -8,6 +11,7 @@ import {
   signPolicyBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
+import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
@@ -18,6 +22,7 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  createMidnightDid,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
@@ -77,6 +82,25 @@ const recognition = createRecognitionScenarioFixture("governed-demo-recognition"
 harness.authorizeMaintainer(second);
 harness.authorizeMaintainer(third);
 harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const vcAuthoritySeed = new Uint8Array(32).fill(77);
+const vcAuthorityDid = createMidnightDid("governed-demo-vc-authority");
+const vcAuthorityAnchor = {
+  domain: {
+    networkId: issuer.subjectDid.split(":")[2],
+    consumerContractAddress: `0x${sampleContractAddress()}`,
+    registryId: harness.registryId,
+    registryContractAddress: `0x${harness.simulator.contractAddress}`,
+    authorityDid: vcAuthorityDid,
+    authorityMethodId: `${vcAuthorityDid}#authority-1`,
+  },
+  publicKey: deriveJubjubPublicKeyFromSeed(vcAuthoritySeed),
+};
+const vcAuthorityKeyIdCommitment = bytes32Commitment("vc-authority:governed-demo");
+harness.registerVcAuthorityKey({
+  domain: vcAuthorityAnchor.domain,
+  keyIdCommitment: vcAuthorityKeyIdCommitment,
+  publicKey: vcAuthorityAnchor.publicKey,
+});
 harness.advanceEvidenceTimeBy(60_000);
 
 // Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
@@ -408,6 +432,7 @@ try {
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
   const client = new TrustRegistrySimulatorClient(harness.simulator);
+  let issuerVpFixture;
   for (const spec of applicantSpecs) {
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const endpoint = `${base}/v1/application-evidence/${applicationId}`;
@@ -465,6 +490,7 @@ try {
       evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
       scope: spec.scope,
     });
+    if (spec.role === "issuer") issuerVpFixture = proof;
     vpPortsByApplication.set(applicationId, await createApplicationVpIntakePorts({
       resolver: proof.input.resolver,
       family: proof.input.family,
@@ -645,6 +671,16 @@ try {
     expectedSubjectDid: issuer.subjectDid,
     expectedResourceId: issuer.resourceId,
   });
+  assert.ok(issuerVpFixture);
+  const vcConsumer = await verifyGovernedIssuerCredential({
+    harness,
+    issuer,
+    apiBundle: issuerBundle,
+    applicantVp: issuerVpFixture,
+    authorityAnchor: vcAuthorityAnchor,
+    authoritySeed: vcAuthoritySeed,
+    authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+  });
   const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -803,6 +839,7 @@ try {
     recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
+    vcConsumer,
     issuerEvidenceEpoch: {
       epochId: issuerBundle.epoch.epochId,
       stateRoot: issuerBundle.epoch.stateRoot,

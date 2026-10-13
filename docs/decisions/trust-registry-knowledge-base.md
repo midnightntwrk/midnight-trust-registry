@@ -577,5 +577,10 @@ supports distinct native JubJub authentication and assertion method lists:
 credential issuance. Cross-relationship resolution fails, and duplicate
 method IDs with conflicting keys are rejected. This prevents a demo from
 using an unrelated issuer DID or implicitly authorizing the holder key to
-issue credentials. The complete VP-to-governed-descriptor consumer path is
-still open.
+issue credentials. The local governed demo now carries the accepted issuer VP
+through HTTP proposal and 2-of-3 approval to an active epoch, obtains a
+schema-scoped signer descriptor with a governed VC authority signature, and
+installs it in the compiled Compact VC consumer. That consumer accepts a VC
+signed by the same DID's assertion key and rejects wrong schema and forged
+signature. The authority and DID observations are simulator fixtures; this is
+not a network-finality adapter or an arbitrary uploaded-credential verifier.

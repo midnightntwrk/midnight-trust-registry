@@ -130,6 +130,16 @@ verifier, auditor, and recognition each check current and historical API
 evaluations across active, suspended, and revoked states. Historical trust at
 the active instant remains verifiable after both lifecycle changes; recognition
 remains external authority recognition, not local membership.
+For the issuer, the same Midnight DID uses separate authentication and assertion
+keys: the authentication key signs the application VP, and the assertion key
+signs a subsequent VC. The demo registers a governed VC authority key, converts
+the active issuer epoch and DID assertion-method observation into decision
+evidence, installs a quorum-gated signer descriptor in the compiled Compact VC
+consumer, and verifies a credential signed by that issuer. It rejects a
+wrong-schema credential and a forged issuer signature. This proves the
+schema-level issuer trust path; credential definition and status remain separate
+checks. The descriptor readers use simulator ledger and DID fixtures, not a
+production authenticated Midnight finality source.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
 and governance event hashes, not the VP transcript or holder secrets.
