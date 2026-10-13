@@ -126,6 +126,15 @@ const bindings = new Map(applicantSpecs.map((spec) => {
   });
   return [binding.applicationId, binding];
 }));
+const registeredApplications = new Map(applicantSpecs.map((spec) => {
+  const applicationId = createScopedIdentifier("application", spec.role, spec.id);
+  return [applicationId, {
+    authorizationId: spec.id,
+    binding: bindings.get(applicationId),
+    status: "pending",
+    createdAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  }];
+}));
 const pendingApplications = new Set(bindings.keys());
 const applicantTokens = new Map([...bindings.keys()].map((id) => [id, randomBytes(32).toString("hex")]));
 const vpPortsByApplication = new Map();
@@ -274,14 +283,11 @@ const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
   proposalAdmission: {
-    resolveAcceptedApplication: async (applicationId) => {
-      const binding = bindings.get(applicationId);
+    resolvePendingApplication: async (applicationId) => registeredApplications.get(applicationId) ?? null,
+    resolveAcceptedEvidence: async (applicationId) => {
       const evidence = persistedEvidence.get(applicationId);
       const receipt = evidenceReceipts.get(applicationId);
-      const spec = applicantSpecs.find((item) =>
-        createScopedIdentifier("application", item.role, item.id) === applicationId);
-      return binding === undefined || evidence === undefined || receipt === undefined || spec === undefined
-        ? null : { authorizationId: spec.id, binding, evidence, receipt };
+      return evidence === undefined || receipt === undefined ? null : { evidence, receipt };
     },
   },
   applicationVp: {
@@ -482,6 +488,11 @@ try {
     evidenceReceipts.delete(applicationId);
     await expectHttp(await proposePrepare(endpoint, evidence), 403);
     evidenceReceipts.set(applicationId, receipt);
+    const pending = registeredApplications.get(applicationId);
+    assert.ok(pending);
+    registeredApplications.set(applicationId, { ...pending, authorizationId: "auth:substituted:target" });
+    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    registeredApplications.set(applicationId, pending);
   }
   const issuerApplicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
   const issuerReceipt = evidenceReceipts.get(issuerApplicationId);
@@ -776,7 +787,8 @@ try {
     expectedRejections: [
       "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
-      "proposal-cross-role-evidence:403", "proposal-wrong-target:403", "proposal-missing-receipt:403",
+      "proposal-cross-role-evidence:403", "proposal-wrong-target:403",
+      "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",

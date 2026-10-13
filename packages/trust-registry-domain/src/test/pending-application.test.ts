@@ -22,7 +22,11 @@ const scope = {
   disclosureLevel: "restricted",
 };
 const governedResource = { type: "requestProfile" as const, id: requestGovernedResourceId(scope) };
-const payload = { applicationId: "application:auditor:alice:v1", scope, governedResource };
+const payload = {
+  applicationId: "application:auditor:alice:v1",
+  authorizationId: "auth:auditor:alice:v1",
+  scope, governedResource,
+};
 const request = {
   ...payload,
   intent: {
@@ -61,6 +65,7 @@ describe("pending application signing boundary", () => {
   it("rejects cross-role, altered identity, scope, payload, and signing key", () => {
     const invalid = [
       { ...request, applicationId: "application:auditor:bob:v1" },
+      { ...request, authorizationId: "auth:auditor:bob:v1" },
       { ...request, scope: { ...scope, purpose: "marketing" } },
       { ...request, scope: { ...scope, allowedAttributes: ["company-id"] } },
       { ...request, scope: { ...scope, role: "verifier" } },
@@ -98,7 +103,11 @@ describe("pending application signing boundary", () => {
       { scope: maintainerScope, governedResource: { type: "registry" as const, id: maintainerScope.registryId } },
     ];
     for (const [index, item] of cases.entries()) {
-      const candidatePayload = { applicationId: `application:${item.scope.role}:alice:v1`, ...item };
+      const candidatePayload = {
+        applicationId: `application:${item.scope.role}:alice:v1`,
+        authorizationId: `auth:${item.scope.role}:alice:v1`,
+        ...item,
+      };
       const candidate = {
         ...candidatePayload,
         intent: {

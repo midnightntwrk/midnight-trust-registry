@@ -3,23 +3,22 @@ import {
   ApplicationEvidenceSubmissionSchema,
   canonicalizeJson,
   computeApplicationEvidenceCommitment,
-  type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
   type ApplicationEvidenceRole,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { ApplicationVpReceiptSchema, type ApplicationVpReceipt } from "./application-vp-http.js";
+import type { PendingApplicationRecord } from "./pending-application-registration.js";
 
-export type AcceptedApplicationForProposal = {
-  authorizationId: string;
-  binding: ApplicationChallengeBinding;
+export type AcceptedApplicationEvidence = {
   evidence: ApplicationEvidenceSubmission;
   receipt: ApplicationVpReceipt;
 };
 
-/** Resolve only committed, accepted VP intake records; never trust the proposal body as the source. */
+/** Join accepted VP evidence to the original DID-signed pending record in trusted storage. */
 export interface ProposalAdmissionPort {
-  resolveAcceptedApplication(applicationId: string): Promise<AcceptedApplicationForProposal | null>;
+  resolvePendingApplication(applicationId: string): Promise<PendingApplicationRecord | null>;
+  resolveAcceptedEvidence(applicationId: string): Promise<AcceptedApplicationEvidence | null>;
 }
 
 export class ProposalAdmissionRejectedError extends Error {
@@ -37,13 +36,18 @@ export async function assertProposalAdmission(
 ): Promise<void> {
   try {
     const submitted = ApplicationEvidenceSubmissionSchema.parse(submittedEvidence);
-    const accepted = await port.resolveAcceptedApplication(submitted.envelope.applicationId);
-    if (accepted === null) throw new ProposalAdmissionRejectedError();
-    const binding = ApplicationChallengeBindingSchema.parse(accepted.binding);
+    const applicationId = submitted.envelope.applicationId;
+    const [pending, accepted] = await Promise.all([
+      port.resolvePendingApplication(applicationId),
+      port.resolveAcceptedEvidence(applicationId),
+    ]);
+    if (pending === null || accepted === null) throw new ProposalAdmissionRejectedError();
+    const binding = ApplicationChallengeBindingSchema.parse(pending.binding);
     const evidence = ApplicationEvidenceSubmissionSchema.parse(accepted.evidence);
     const envelope = evidence.envelope;
     const receipt = ApplicationVpReceiptSchema.parse(accepted.receipt);
-    if (accepted.authorizationId !== authorizationId || binding.role !== role || envelope.role !== role
+    if (pending.status !== "pending" || pending.authorizationId !== authorizationId
+      || binding.role !== role || envelope.role !== role
       || binding.applicationId !== envelope.applicationId
       || binding.registryId !== envelope.registryId
       || binding.subjectDid !== envelope.subjectDid

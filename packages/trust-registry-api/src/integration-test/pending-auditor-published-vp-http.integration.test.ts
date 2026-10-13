@@ -115,7 +115,9 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
       target: "auditor",
       targetId: applicationId,
       scopeCommitment: computeAuthorizationScopeCommitment(scope),
-      payloadCommitment: computePendingApplicationPayloadCommitment({ applicationId, scope, governedResource }),
+      payloadCommitment: computePendingApplicationPayloadCommitment({
+        applicationId, authorizationId: "auth:auditor:published-vp:v1", scope, governedResource,
+      }),
       nonce: `0x${"22".repeat(32)}`,
       expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
       expectedEpochId: workspace.snapshot.currentEpoch.epochId,
@@ -124,6 +126,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     };
     const signed = {
       applicationId,
+      authorizationId: "auth:auditor:published-vp:v1",
       scope,
       governedResource,
       intent,

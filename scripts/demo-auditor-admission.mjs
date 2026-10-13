@@ -62,7 +62,9 @@ function signedApplication(workspace) {
     target: "auditor",
     targetId: applicationId,
     scopeCommitment: computeAuthorizationScopeCommitment(scope),
-    payloadCommitment: computePendingApplicationPayloadCommitment({ applicationId, scope, governedResource }),
+    payloadCommitment: computePendingApplicationPayloadCommitment({
+      applicationId, authorizationId: "auth:auditor:local-demo:v1", scope, governedResource,
+    }),
     nonce: `0x${"22".repeat(32)}`,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
     expectedEpochId: workspace.snapshot.currentEpoch.epochId,
@@ -71,6 +73,7 @@ function signedApplication(workspace) {
   };
   return {
     applicationId,
+    authorizationId: "auth:auditor:local-demo:v1",
     scope,
     governedResource,
     intent,
@@ -219,8 +222,12 @@ async function smoke() {
       request.end(JSON.stringify(host.application));
     });
     assert.equal(spoofedRegistrationStatus, 403);
+    assert.equal((await post(registrationPath, {
+      ...host.application, authorizationId: "auth:auditor:substituted:v1",
+    })).status, 400);
     const registered = await post(registrationPath, host.application);
     assert.equal(registered.status, 201);
+    assert.equal((await registered.json()).authorizationId, host.application.authorizationId);
     const path = `/v1/application-evidence/${applicationId}`;
     assert.equal((await post(`${path}/challenges`, {}, false)).status, 403);
     assert.equal((await post(`${path}/challenges`, {}, true, "https://untrusted.example")).status, 403);
@@ -249,7 +256,7 @@ async function smoke() {
       subjectDid,
       evidenceCommitment: result.evidence.commitment,
       receiptId: result.receipt.receiptId,
-      expectedRejections: ["unauthorized:403", "wrong-scope:403", "replay:409"],
+      expectedRejections: ["unauthorized:403", "wrong-target:400", "wrong-scope:403", "replay:409"],
     }, null, 2) + "\n");
   } finally {
     await new Promise((resolveClose, reject) => host.server.close((error) => error ? reject(error) : resolveClose()));

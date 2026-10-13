@@ -13,6 +13,7 @@ import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
 export type PendingApplicationRecord = {
+  authorizationId: string;
   binding: ApplicationChallengeBinding;
   status: "pending";
   createdAt: string;
@@ -30,7 +31,7 @@ export interface PendingApplicationRegistrationPort {
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
-  constructor(readonly reason: MutationIntentActorFailure | "duplicate-application" | "duplicate-scope" | "nonce-used") {
+  constructor(readonly reason: MutationIntentActorFailure | "duplicate-application" | "duplicate-authorization" | "duplicate-scope" | "nonce-used") {
     super(`Pending application registration rejected: ${reason}`);
     this.name = "PendingApplicationRegistrationRejectedError";
   }
@@ -55,6 +56,7 @@ export async function transitionPendingApplicationRegistration(
     request.signature,
     pendingApplicationMutationPayload({
       applicationId: request.applicationId,
+      authorizationId: request.authorizationId,
       scope: request.scope,
       governedResource: request.governedResource,
     }),
@@ -81,6 +83,12 @@ export async function transitionPendingApplicationRegistration(
   }
   if (state.applications.some((record) => record.status === "pending"
     && record.binding.registryId === binding.registryId
+    && record.binding.role === binding.role
+    && record.authorizationId === request.authorizationId)) {
+    throw new PendingApplicationRegistrationRejectedError("duplicate-authorization");
+  }
+  if (state.applications.some((record) => record.status === "pending"
+    && record.binding.registryId === binding.registryId
     && record.binding.subjectDid === binding.subjectDid
     && record.binding.scopeCommitment === binding.scopeCommitment
     && record.binding.governedResource.type === binding.governedResource.type
@@ -89,7 +97,9 @@ export async function transitionPendingApplicationRegistration(
   }
   return {
     workspace: state.workspace,
-    applications: [...state.applications, { binding, status: "pending", createdAt: now.toISOString() }],
+    applications: [...state.applications, {
+      authorizationId: request.authorizationId, binding, status: "pending", createdAt: now.toISOString(),
+    }],
     consumedNonces: [...state.consumedNonces, nonceKey],
   };
 }

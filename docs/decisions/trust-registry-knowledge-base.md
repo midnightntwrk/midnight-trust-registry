@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-05
+Updated: 2026-10-14
 
 ## Purpose
 
@@ -11,6 +11,25 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 2026 Local Functional Stack
+
+- PR #171 and the later admission groundwork are merged to
+  `milestone-0.1.0`; local signed work continues on
+  `codex/trust-registry-role-admission` without waiting for another merge.
+- Signed pending `apply` requests cover issuer, verifier, auditor, and
+  maintainer roles. The applicant now signs the requested authorization ID as
+  well as the application ID, canonical scope, and governed resource. The
+  pending record retains that target; duplicate pending targets are rejected.
+- A server combining VP intake and governed proposal routes requires an
+  accepted-application admission port. Prepare and submit compare the role,
+  target, binding, exact redacted evidence, and receipt before Compact-backed
+  proposal work. The four-role simulator demo exercises rejected cross-role,
+  wrong-target, and missing-receipt attempts.
+- This remains a local reference boundary. The signed registration demo and
+  2-of-3 Compact governance demo still use separate state paths; durable
+  pending/evidence persistence, live verifier authorization, and one joined
+  applicant-to-epoch public journey remain milestone work.
 
 ## Current Milestone
 

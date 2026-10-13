@@ -59,10 +59,14 @@ async function listen(server: Server): Promise<string> {
 function signedRequest(
   state: PendingApplicationRegistrationState,
   nonceByte = "22",
-  candidate: { applicationId: string; scope: AuthorizationScope; governedResource: GovernedResource } = {
+  candidate: { applicationId: string; authorizationId?: string; scope: AuthorizationScope; governedResource: GovernedResource } = {
     applicationId, scope, governedResource,
   },
 ) {
+  const payload = {
+    ...candidate,
+    authorizationId: candidate.authorizationId ?? `auth:${candidate.scope.role}:company:v1`,
+  };
   const intent: MutationIntent = {
     version: "tr-mutation-intent-v1",
     registryId: state.workspace.snapshot.registry.registryId,
@@ -73,7 +77,7 @@ function signedRequest(
     target: candidate.scope.role,
     targetId: candidate.applicationId,
     scopeCommitment: computeAuthorizationScopeCommitment(candidate.scope),
-    payloadCommitment: computePendingApplicationPayloadCommitment(candidate),
+    payloadCommitment: computePendingApplicationPayloadCommitment(payload),
     nonce: `0x${nonceByte.repeat(32)}`,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(state.workspace),
     expectedEpochId: state.workspace.snapshot.currentEpoch.epochId,
@@ -81,7 +85,7 @@ function signedRequest(
     expiresAt: "2026-10-13T00:05:00.000Z",
   };
   return {
-    ...candidate,
+    ...payload,
     intent,
     signature: {
       keyId: intent.actorKeyId,
@@ -183,13 +187,17 @@ describe("pending application registration over private HTTP", () => {
     expect(await malformed.text()).not.toContain("not-for-errors");
     expect(registration.readPending(applicationId)).toBeNull();
     const signed = signedRequest(state);
+    expect((await post(path, { ...signed, authorizationId: "auth:auditor:substituted:v1" })).status).toBe(400);
+    expect(registration.readPending(applicationId)).toBeNull();
     const invalid = await post(path, { ...signed, signature: { ...signed.signature, value: `0x${"00".repeat(96)}` } });
     expect(invalid.status).toBe(401);
     expect(registration.readPending(applicationId)).toBeNull();
     const submitted = await post(path, signed);
     expect(submitted.status).toBe(201);
     expect(submitted.headers.get("access-control-allow-origin")).toBeNull();
-    expect((await submitted.json() as { binding: { scope: unknown } }).binding.scope).toEqual(scope);
+    const pending = await submitted.json() as { authorizationId: string; binding: { scope: unknown } };
+    expect(pending.binding.scope).toEqual(scope);
+    expect(pending.authorizationId).toBe(signed.authorizationId);
     expect(registration.readPending(applicationId)?.binding.applicationId).toBe(applicationId);
     expect((await post(path, signed)).status).toBe(409);
 

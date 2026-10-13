@@ -123,11 +123,13 @@ export const createApplicantPortalApp = (
       }
       const candidate = signedRequest as {
         applicationId?: unknown;
+        authorizationId?: unknown;
         scope?: { role?: unknown };
         governedResource?: { type?: unknown; id?: unknown };
         intent?: { target?: unknown };
       };
-      if (typeof candidate.applicationId !== "string" || typeof candidate.scope?.role !== "string"
+      if (typeof candidate.applicationId !== "string" || typeof candidate.authorizationId !== "string"
+        || candidate.authorizationId.length === 0 || typeof candidate.scope?.role !== "string"
         || !["issuer", "verifier", "auditor", "maintainer"].includes(candidate.scope.role)
         || candidate.intent?.target !== candidate.scope.role
         || typeof candidate.governedResource?.type !== "string"
@@ -136,7 +138,8 @@ export const createApplicantPortalApp = (
       }
       const record = await client().registerPendingApplication(signedRequest);
       if (requestId !== evidenceRequestId) return;
-      if (record?.status !== "pending" || !isRenderablePendingBinding(record.binding, candidate.applicationId)
+      if (record?.status !== "pending" || record.authorizationId !== candidate.authorizationId
+        || !isRenderablePendingBinding(record.binding, candidate.applicationId)
         || record.binding.role !== candidate.scope.role
         || record.binding.governedResource.type !== candidate.governedResource.type
         || record.binding.governedResource.id !== candidate.governedResource.id) {

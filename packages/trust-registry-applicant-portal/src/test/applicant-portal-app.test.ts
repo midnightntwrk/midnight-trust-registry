@@ -92,6 +92,7 @@ describe("trust registry applicant portal app", () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
     const applicationId = "application:auditor:one";
+    const authorizationId = "auth:auditor:one";
     const nonce = `0x${"1".repeat(64)}`;
     const challengeHash = `0x${"2".repeat(64)}`;
     const binding = {
@@ -104,7 +105,7 @@ describe("trust registry applicant portal app", () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       calls.push({ path, init });
-      if (path === "/v1/pending-applications") return Response.json({ binding, status: "pending" });
+      if (path === "/v1/pending-applications") return Response.json({ binding, authorizationId, status: "pending" });
       if (path.endsWith("/binding")) return Response.json(binding);
       if (path.endsWith("/challenges")) return Response.json({ applicationId, nonce, challengeHash, expiresAt: "2026-10-13T00:05:00Z" });
       if (path.endsWith("/submissions")) return Response.json({
@@ -122,7 +123,7 @@ describe("trust registry applicant portal app", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("Pending membership evidence"));
     const registrationForm = root.querySelector<HTMLFormElement>("[data-application-registration-form]")!;
     registrationForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = JSON.stringify({
-      applicationId, scope: binding.scope, governedResource: binding.governedResource,
+      applicationId, authorizationId, scope: binding.scope, governedResource: binding.governedResource,
       intent: { action: "apply", target: "auditor" }, signature: { value: "signed-request-marker" },
     });
     registrationForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -166,6 +167,7 @@ describe("trust registry applicant portal app", () => {
       const root = document.createElement("div");
       document.body.replaceChildren(root);
       const applicationId = `application:${role}:one`;
+      const authorizationId = `auth:${role}:one`;
       const governedResource = role === "issuer" ? { type: "schema", id: "tr:schema:one" }
         : role === "maintainer" ? { type: "registry", id: "tr:registry:one" }
           : { type: "requestProfile", id: "tr:request-profile:one" };
@@ -175,11 +177,14 @@ describe("trust registry applicant portal app", () => {
         scope: { role }, governedResource,
       };
       let returnedBinding = binding;
+      let returnedAuthorizationId = authorizationId;
       const calls: string[] = [];
       const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
         const path = new URL(String(input)).pathname;
         calls.push(path);
-        if (path === "/v1/pending-applications") return Response.json({ binding: returnedBinding, status: "pending" });
+        if (path === "/v1/pending-applications") return Response.json({
+          binding: returnedBinding, authorizationId: returnedAuthorizationId, status: "pending",
+        });
         if (path.endsWith("/challenges")) return Response.json({
           applicationId, nonce: `0x${"1".repeat(64)}`, challengeHash: `0x${"2".repeat(64)}`,
           expiresAt: "2026-10-13T00:05:00.000Z",
@@ -204,16 +209,24 @@ describe("trust registry applicant portal app", () => {
         returnedBinding = { ...binding, governedResource: { ...governedResource, id: "tr:wrong-resource" } };
         const substitutedForm = root.querySelector<HTMLFormElement>("[data-application-registration-form]")!;
         substitutedForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = JSON.stringify({
-          applicationId, scope: binding.scope, governedResource, intent: { target: role },
+          applicationId, authorizationId, scope: binding.scope, governedResource, intent: { target: role },
         });
         substitutedForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         await vi.waitFor(() => expect(root.textContent).toContain("canonical pending membership application"));
         expect(root.querySelector("[data-application-challenge]")).toBeNull();
         returnedBinding = binding;
+        returnedAuthorizationId = `auth:${role}:substituted`;
+        substitutedForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = JSON.stringify({
+          applicationId, authorizationId, scope: binding.scope, governedResource, intent: { target: role },
+        });
+        substitutedForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await vi.waitFor(() => expect(root.textContent).toContain("canonical pending membership application"));
+        expect(root.querySelector("[data-application-challenge]")).toBeNull();
+        returnedAuthorizationId = authorizationId;
       }
       const registrationForm = root.querySelector<HTMLFormElement>("[data-application-registration-form]")!;
       registrationForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = JSON.stringify({
-        applicationId, scope: binding.scope, governedResource: binding.governedResource,
+        applicationId, authorizationId, scope: binding.scope, governedResource: binding.governedResource,
         intent: { target: role }, signature: { value: "private-signature" },
       });
       registrationForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

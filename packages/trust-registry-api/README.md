@@ -208,10 +208,11 @@ multi-process deployment. No fixture verifier is installed by default.
 
 If the same server configures both `applicationVp` and any governed membership
 proposal port, it must also configure `proposalAdmission`; startup fails
-without it. The port resolves a committed accepted application by the
-evidence application ID. Both proposal `prepare` and `submit` reject unless
-the trusted record matches the role, authorization target, original binding,
-exact redacted signed evidence, and validated receipt. This prevents a
+without it. The port resolves the original signed pending record separately
+from committed VP evidence by the same application ID. Both proposal
+`prepare` and `submit` reject unless the signed record's requested target,
+role, original binding, exact redacted signed evidence, and validated receipt
+match. This prevents a
 combined host from submitting a proposal that bypassed its VP intake. A
 proposal-only host may instead rely on its own trusted external evidence
 pipeline, but its Compact-backed proposal port must still verify all governed
@@ -231,7 +232,8 @@ persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
 
 The optional `POST /v1/pending-applications` accepts an externally signed
 Midnight DID `apply` intent for an issuer, verifier, auditor, or maintainer,
-with the exact canonical role scope, governed resource, and application ID
+with the exact canonical role scope, governed resource, application ID, and
+requested authorization ID
 bound into its payload commitment. The host-owned registration port verifies
 the applicant signature and current workspace context and returns a pending,
 policy-scoped binding. This is not a governed Compact proposal or active

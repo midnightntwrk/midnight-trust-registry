@@ -196,7 +196,7 @@ The same byte-value comparison applies to `scopeCommitment`.
 An issuer, verifier, auditor, or maintainer applicant MAY register a pending
 application by signing a distinct `apply` mutation intent with its Midnight
 DID key. The intent MUST commit to the canonical role scope, governed resource,
-and application ID; a successful registration
+application ID, and requested authorization ID; a successful registration
 creates only an off-ledger pending record. The server derives the binding from
 the current trusted workspace policy and verifier configuration, not from
 applicant-provided policy or binding fields. `GET
@@ -210,8 +210,9 @@ a VP receipt constitutes a governed Compact proposal or active membership.
 
 When one HTTP host exposes both VP intake and governed proposal routes, it MUST
 configure an accepted-application admission port. Proposal preparation and
-submission MUST resolve the accepted record by the evidence application ID and
-match the requested role and authorization target, the server-owned binding,
+submission MUST resolve the signed pending record and accepted VP evidence
+separately by the evidence application ID and
+match the signed requested authorization target and role, the server-owned binding,
 the exact redacted signed evidence, and its validated receipt. Missing,
 substituted, or unreceipted evidence MUST fail before governance signing work.
 This off-ledger join does not replace the proposal circuit's current-policy,

@@ -14,8 +14,9 @@ import { InMemoryApplicationChallengeStore } from "../application-challenges.js"
 import {
   assertProposalAdmission,
   ProposalAdmissionRejectedError,
-  type AcceptedApplicationForProposal,
+  type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
+import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
 const scope = {
   version: "tr-scope-v1",
@@ -60,9 +61,13 @@ const evidence: ApplicationEvidenceSubmission = {
   commitment: computeApplicationEvidenceCommitment(envelope),
   signature: { keyId: `${binding.evidenceVerifierDid}#key-1`, algorithm: "jubjub-schnorr", value: "signed" },
 };
-const accepted: AcceptedApplicationForProposal = {
+const pending: PendingApplicationRecord = {
   authorizationId: "authorization:issuer:one",
   binding,
+  status: "pending",
+  createdAt: "2026-10-13T00:00:00.000Z",
+};
+const accepted: AcceptedApplicationEvidence = {
   evidence,
   receipt: {
     receiptId: `0x${"4".repeat(64)}`,
@@ -92,32 +97,47 @@ describe("proposal admission", () => {
   });
 
   it("requires the exact accepted VP receipt, role, target, binding and redacted evidence", async () => {
-    let current: AcceptedApplicationForProposal | null = accepted;
-    const port = { resolveAcceptedApplication: async () => current };
-    await expect(assertProposalAdmission(port, "issuer", accepted.authorizationId, evidence)).resolves.toBeUndefined();
+    let currentPending: PendingApplicationRecord | null = pending;
+    let currentAccepted: AcceptedApplicationEvidence | null = accepted;
+    const port = {
+      resolvePendingApplication: async () => currentPending,
+      resolveAcceptedEvidence: async () => currentAccepted,
+    };
+    const authorizationId = pending.authorizationId;
+    await expect(assertProposalAdmission(port, "issuer", authorizationId, evidence)).resolves.toBeUndefined();
 
     const rejected = async (role: "issuer" | "verifier", target: string, submitted = evidence) =>
       expect(assertProposalAdmission(port, role, target, submitted)).rejects.toBeInstanceOf(ProposalAdmissionRejectedError);
-    current = null;
-    await rejected("issuer", accepted.authorizationId);
-    current = accepted;
-    await rejected("verifier", accepted.authorizationId);
+    currentPending = null;
+    await rejected("issuer", authorizationId);
+    currentPending = pending;
+    currentAccepted = null;
+    await rejected("issuer", authorizationId);
+    currentAccepted = accepted;
+    await rejected("verifier", authorizationId);
     await rejected("issuer", "authorization:issuer:other");
-    await rejected("issuer", accepted.authorizationId, {
+    await rejected("issuer", authorizationId, {
       ...evidence, signature: { ...evidence.signature, value: "substituted" },
     });
-    await rejected("issuer", accepted.authorizationId, {
+    await rejected("issuer", authorizationId, {
       ...evidence, envelope: { ...evidence.envelope, challengeHash: `0x${"5".repeat(64)}` },
     });
 
     for (const changed of [
-      { ...accepted, binding: { ...binding, policyVersion: "v2" } },
-      { ...accepted, binding: { ...binding, governedResource: { ...binding.governedResource, id: "wrong" } } },
+      { ...pending, authorizationId: "authorization:issuer:substituted" },
+      { ...pending, binding: { ...binding, policyVersion: "v2" } },
+      { ...pending, binding: { ...binding, governedResource: { ...binding.governedResource, id: "wrong" } } },
+    ]) {
+      currentPending = changed;
+      await rejected("issuer", authorizationId);
+    }
+    currentPending = pending;
+    for (const changed of [
       { ...accepted, receipt: { ...accepted.receipt, evidenceCommitment: `0x${"5".repeat(64)}` } },
       { ...accepted, evidence: { ...evidence, commitment: `0x${"5".repeat(64)}` } },
     ]) {
-      current = changed;
-      await rejected("issuer", accepted.authorizationId);
+      currentAccepted = changed;
+      await rejected("issuer", authorizationId);
     }
   });
 });

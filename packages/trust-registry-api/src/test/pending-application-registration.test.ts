@@ -58,6 +58,7 @@ const requestFor = (
   state: PendingApplicationRegistrationState,
   options: {
     applicationId?: string;
+    authorizationId?: string;
     nonceByte?: string;
     candidateScope?: AuthorizationScope;
     governedResource?: GovernedResource;
@@ -65,6 +66,7 @@ const requestFor = (
 ) => {
   const applicationId = options.applicationId ?? "application:auditor:company:v1";
   const candidateScope = options.candidateScope ?? scope;
+  const authorizationId = options.authorizationId ?? `auth:${candidateScope.role}:company:v1`;
   const candidateResource: GovernedResource = options.governedResource ?? {
     type: "requestProfile", id: requestGovernedResourceId(scope),
   };
@@ -80,6 +82,7 @@ const requestFor = (
     scopeCommitment: computeAuthorizationScopeCommitment(candidateScope),
     payloadCommitment: computePendingApplicationPayloadCommitment({
       applicationId,
+      authorizationId,
       scope: candidateScope,
       governedResource: candidateResource,
     }),
@@ -90,7 +93,7 @@ const requestFor = (
     expiresAt: "2026-10-13T00:05:00.000Z",
   };
   return {
-    applicationId, scope: candidateScope,
+    applicationId, authorizationId, scope: candidateScope,
     governedResource: candidateResource,
     intent, signature: sign(intent),
   };
@@ -127,6 +130,7 @@ describe("pending application registration transition", () => {
     expect(next.consumedNonces).toHaveLength(1);
     expect(next.applications[0]).toEqual({
       status: "pending",
+      authorizationId: request.authorizationId,
       createdAt: now.toISOString(),
       binding: {
         registryId: initial.workspace.snapshot.registry.registryId,
@@ -143,14 +147,15 @@ describe("pending application registration transition", () => {
     });
   });
 
-  it("rejects replay, duplicate ID, duplicate exact scope, and an invalid DID signature", async () => {
+  it("rejects replay, duplicate ID or authorization target, duplicate exact scope, and invalid signatures", async () => {
     const initial = initialState();
     const first = requestFor(initial);
     const accepted = await transitionPendingApplicationRegistration(initial, first, evidenceVerifierDid, now, resolver);
     const cases = [
       [first, "nonce-used"],
       [requestFor(accepted, { nonceByte: "23" }), "duplicate-application"],
-      [requestFor(accepted, { applicationId: "application:auditor:company:v2", nonceByte: "24" }), "duplicate-scope"],
+      [requestFor(accepted, { applicationId: "application:auditor:company:v2", nonceByte: "24" }), "duplicate-authorization"],
+      [requestFor(accepted, { applicationId: "application:auditor:company:v3", authorizationId: "auth:auditor:company:v2", nonceByte: "26" }), "duplicate-scope"],
       [{ ...requestFor(initial, { nonceByte: "25" }), signature: sign(requestFor(initial, { nonceByte: "25" }).intent, wrongSeed) }, "invalid-signature"],
     ] as const;
     for (const [candidate, reason] of cases) {

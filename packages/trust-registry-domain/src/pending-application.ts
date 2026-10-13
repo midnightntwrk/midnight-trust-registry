@@ -7,13 +7,14 @@ import { ScopedIdentifierSchema } from "./ids.js";
 import { MutationIntentSchema, MutationIntentSignatureSchema } from "./mutation-intent.js";
 import { AuthorizationScopeSchema, canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment } from "./scope.js";
 
-const ApplicationIdSchema = ScopedIdentifierSchema.refine(
+const CanonicalScopedIdentifierSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
-  "Application ID must be canonical lowercase",
+  "Identifier must be canonical lowercase",
 );
 
 export const PendingApplicationPayloadSchema = z.strictObject({
-  applicationId: ApplicationIdSchema,
+  applicationId: CanonicalScopedIdentifierSchema,
+  authorizationId: CanonicalScopedIdentifierSchema,
   scope: AuthorizationScopeSchema,
   governedResource: GovernedResourceSchema,
 }).superRefine((payload, ctx) => {
@@ -26,12 +27,14 @@ export type PendingApplicationPayload = z.infer<typeof PendingApplicationPayload
 
 export function pendingApplicationMutationPayload(input: PendingApplicationPayload): {
   applicationId: string;
+  authorizationId: string;
   canonicalScope: string;
   governedResource: { type: string; id: string };
 } {
   const payload = PendingApplicationPayloadSchema.parse(input);
   return {
     applicationId: payload.applicationId,
+    authorizationId: payload.authorizationId,
     canonicalScope: canonicalizeAuthorizationScope(payload.scope),
     governedResource: payload.governedResource,
   };
@@ -47,6 +50,7 @@ export const SignedPendingApplicationSchema = PendingApplicationPayloadSchema.sa
 }).superRefine((request, ctx) => {
   if (!PendingApplicationPayloadSchema.safeParse({
     applicationId: request.applicationId,
+    authorizationId: request.authorizationId,
     scope: request.scope,
     governedResource: request.governedResource,
   }).success) return;
@@ -59,6 +63,7 @@ export const SignedPendingApplicationSchema = PendingApplicationPayloadSchema.sa
   }
   if (request.intent.payloadCommitment !== computePendingApplicationPayloadCommitment({
     applicationId: request.applicationId,
+    authorizationId: request.authorizationId,
     scope: request.scope,
     governedResource: request.governedResource,
   })) {
