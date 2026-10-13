@@ -1,4 +1,9 @@
-import type { TrustRegistryApiApplicationAction } from "@midnight-ntwrk/trust-registry-api";
+import type {
+  GovernedMembershipAction,
+  GovernedMembershipSignatureRequest,
+  PreparedGovernedMembershipAction,
+  TrustRegistryApiApplicationAction,
+} from "@midnight-ntwrk/trust-registry-api";
 
 import {
   TrustRegistryAdminConsoleApiError,
@@ -28,6 +33,10 @@ type AppState = {
   epochLabel: string;
   error: string | undefined;
   flash: string | undefined;
+  governedBusy: boolean;
+  governedKey: string | undefined;
+  governedPrepared: PreparedGovernedMembershipAction | undefined;
+  governedSignersJson: string;
   loading: boolean;
   publishing: boolean;
   selectedKey: string | undefined;
@@ -59,6 +68,22 @@ const countCards = (
   + board.summary.auditorCounts[status]
   + board.summary.recognitionCounts[status];
 
+const governedActionFor = (card: ReviewCard): GovernedMembershipAction | undefined =>
+  card.status === "proposed" ? "approve" : card.status === "authorized" ? "activate" : undefined;
+
+const parseSignerInput = (value: string): GovernedMembershipSignatureRequest["signers"] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Signer input must be a JSON array of externally produced signatures.");
+  }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 16) {
+    throw new Error("Provide between one and sixteen external signer entries.");
+  }
+  return parsed as GovernedMembershipSignatureRequest["signers"];
+};
+
 export const createAdminConsoleApp = (
   root: HTMLElement,
   options: {
@@ -82,6 +107,10 @@ export const createAdminConsoleApp = (
     epochLabel: "",
     error: undefined,
     flash: undefined,
+    governedBusy: false,
+    governedKey: undefined,
+    governedPrepared: undefined,
+    governedSignersJson: "",
     loading: false,
     publishing: false,
     selectedKey: undefined,
@@ -110,6 +139,9 @@ export const createAdminConsoleApp = (
       setState({
         board,
         cards,
+        governedKey: undefined,
+        governedPrepared: undefined,
+        governedSignersJson: "",
         loading: false,
         selectedKey: nextSelectedKey,
       });
@@ -119,6 +151,8 @@ export const createAdminConsoleApp = (
         cards: [],
         error: formatApiError(error),
         flash: undefined,
+        governedKey: undefined,
+        governedPrepared: undefined,
         loading: false,
         selectedKey: undefined,
       });
@@ -128,7 +162,7 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (state.loading || state.publishing) return;
+    if (state.loading || state.publishing || state.governedBusy) return;
     const card = selectedCard();
     if (card === undefined) {
       return;
@@ -153,7 +187,7 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (state.loading || state.publishing) return;
+    if (state.loading || state.publishing || state.governedBusy) return;
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
       const result = await executeEpochPublication(label, confirm, (confirmedLabel) =>
@@ -174,6 +208,58 @@ export const createAdminConsoleApp = (
     setState({ publishing: false, epochLabel: "" });
   };
 
+  const prepareGoverned = async () => {
+    if (state.loading || state.publishing || state.governedBusy) return;
+    const card = selectedCard();
+    if (card === undefined) return;
+    const action = governedActionFor(card);
+    if (action === undefined) return;
+    setState({ governedBusy: true, governedKey: undefined, governedPrepared: undefined,
+      governedSignersJson: "", error: undefined, flash: undefined });
+    try {
+      const prepared = await getClient().prepareGovernedAction(card.target, card.id, action);
+      setState({ governedBusy: false, governedKey: `${card.key}:${action}`, governedPrepared: prepared });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitGoverned = async () => {
+    if (state.loading || state.publishing || state.governedBusy) return;
+    const card = selectedCard();
+    if (card === undefined) return;
+    const action = governedActionFor(card);
+    if (action === undefined || state.governedKey !== `${card.key}:${action}`
+      || state.governedPrepared === undefined) return;
+    const prepared = state.governedPrepared;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      signers = parseSignerInput(state.governedSignersJson);
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    if (!(await confirm(`Submit ${signers.length} external signatures to ${action} ${card.target} ${card.id}?`))) return;
+    if (state.selectedKey !== card.key || state.governedKey !== `${card.key}:${action}`) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = await getClient().submitGovernedAction(card.target, card.id, action, {
+        prepared,
+        signers,
+      });
+      await refreshBoard(`Compact ${action} accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      setState({ governedBusy: false });
+    } catch (error) {
+      setState({
+        governedBusy: false,
+        error: formatApiError(error),
+        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+          ? { governedKey: undefined, governedPrepared: undefined, governedSignersJson: "" }
+          : {}),
+      });
+    }
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -192,6 +278,7 @@ export const createAdminConsoleApp = (
     });
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
+      if (state.governedBusy) return;
       void refreshBoard();
     });
 
@@ -207,9 +294,23 @@ export const createAdminConsoleApp = (
       element.addEventListener("click", () => {
         setState({
           selectedKey: element.dataset.selectKey,
+          governedKey: undefined,
+          governedPrepared: undefined,
+          governedSignersJson: "",
           flash: undefined,
         });
       });
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-governed-prepare]")?.addEventListener("click", () => {
+      void prepareGoverned();
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")?.addEventListener("input", (event) => {
+      state.governedSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitGoverned();
     });
 
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => {
@@ -282,6 +383,11 @@ export const createAdminConsoleApp = (
       `;
     }
 
+    const governedAction = governedActionFor(card);
+    const prepared = governedAction !== undefined
+      && state.governedKey === `${card.key}:${governedAction}`
+      ? state.governedPrepared : undefined;
+
     return `
       <aside class="detail-panel">
         <div>
@@ -302,9 +408,28 @@ export const createAdminConsoleApp = (
             <dd>${escapeHtml(card.updatedAt)}</dd>
           </div>
         </dl>
+        ${governedAction === undefined ? "" : `
+          <section class="governed-panel">
+            <p class="eyebrow">Compact quorum</p>
+            <h3>External ${escapeHtml(governedAction)} signatures</h3>
+            <p>Prepare the current ledger-bound action, have existing maintainers sign its policy-bound digest outside this browser, then submit their public keys and signatures. This console never handles private keys.</p>
+            <button class="button secondary" type="button" data-governed-prepare${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(governedAction)}</button>
+            ${prepared === undefined ? "" : `
+              <p>Sign this exact context. A changed sequence or policy requires a fresh preparation.</p>
+              <pre class="governed-context mono">${escapeHtml(JSON.stringify(prepared, null, 2))}</pre>
+              <form data-governed-submit>
+                <label>External signer entries as JSON array
+                  <textarea class="input mono governed-signers" data-governed-signers spellcheck="false" placeholder='[{"keyId":"0x...","publicKey":{"x":"...","y":"..."},"signature":"0x..."}]'>${escapeHtml(state.governedSignersJson)}</textarea>
+                </label>
+                <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${escapeHtml(governedAction)}</button>
+              </form>
+            `}
+          </section>
+        `}
+        <p class="eyebrow">Local fixture controls</p>
         <div class="actions">
           ${getReviewActions(card.status).map((action) => `
-            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing ? " disabled" : ""}>
+            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
               ${escapeHtml(action)}
             </button>
           `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
@@ -322,7 +447,7 @@ export const createAdminConsoleApp = (
             <div>
               <p class="eyebrow">Governed Review Surface</p>
               <h1>Trust Registry Admin Console</h1>
-              <p>Review issuer, verifier, auditor, and recognition proposals from the local governed API. This slice stays local-first: it reads the same workspace-backed trust-registry state that the operator CLI and HTTP mutation surface already govern.</p>
+              <p>Review issuer, verifier, auditor, and recognition proposals. Prepare Compact quorum actions for external signing; local fixture controls remain separate for the workspace demo.</p>
             </div>
           </div>
           <div class="toolbar">
@@ -332,8 +457,8 @@ export const createAdminConsoleApp = (
                 <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}" />
               </label>
               <div class="actions">
-                <button class="button" type="submit"${state.loading ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh${state.loading ? " disabled" : ""}>Refresh</button>
+                <button class="button" type="submit"${state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
+                <button class="button secondary" type="button" data-refresh${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
             <form class="epoch-panel" data-epoch-form>
@@ -341,7 +466,7 @@ export const createAdminConsoleApp = (
                 Publish epoch label
                 <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
               </label>
-              <button class="button" type="submit"${state.loading || state.publishing ? " disabled" : ""}>Publish epoch</button>
+              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
             </form>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}

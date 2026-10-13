@@ -104,4 +104,92 @@ describe("admin console browser handlers", () => {
     expect(postedBodies).toEqual([JSON.stringify({ label: "audit-round" })]);
     await vi.waitFor(() => expect(root.querySelector<HTMLInputElement>("[data-epoch-label]")?.value).toBe(""));
   });
+
+  it("prepares and submits external quorum signatures without using fixture mutation routes", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const confirm = vi.fn(() => false);
+    const prepared = {
+      registryId: `0x${"01".repeat(32)}`,
+      authorizationId: `0x${"02".repeat(32)}`,
+      policyCommitment: `0x${"03".repeat(32)}`,
+      actionKind: `0x${"04".repeat(32)}`,
+      actionPayloadHash: `0x${"05".repeat(32)}`,
+      actionSequence: "7",
+      previousLifecycleEventHash: `0x${"06".repeat(32)}`,
+      evidenceHash: `0x${"07".repeat(32)}`,
+    };
+    const signers = [{
+      keyId: `0x${"08".repeat(32)}`,
+      publicKey: { x: "1", y: "2" },
+      signature: "0x0102",
+    }];
+    const posted: { path: string; body: string | undefined }[] = [];
+    let status: "proposed" | "authorized" = "proposed";
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path.startsWith("/v1/governed/")) {
+        if (init?.method === "POST") {
+          posted.push({ path, body: init.body?.toString() });
+          status = "authorized";
+          return Response.json({ eventHash: `0x${"09".repeat(32)}` }, { status: 202 });
+        }
+        return Response.json(prepared);
+      }
+      if (path === "/v1/registry/summary") {
+        return Response.json({
+          issuerCounts: counts(), verifierCounts: counts(),
+          auditorCounts: { ...counts(), [status]: 1 }, recognitionCounts: counts(),
+          currentEpochId: "epoch:1", registryLabel: "local", registryId: "registry:local",
+          registryDid: "did:midnight:testnet:registry", policyId: "policy:local", epochCount: 1,
+        });
+      }
+      return Response.json({
+        entries: path === "/v1/authorizations/auditor"
+          ? [{ ...auditor, authorization: { ...auditor.authorization, status } }]
+          : [],
+      });
+    });
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      storage: window.localStorage,
+      fetchImpl: fetchImpl as typeof fetch,
+      confirm,
+    });
+
+    await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).not.toBeNull());
+    root.querySelector<HTMLButtonElement>("[data-governed-prepare]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
+    expect(root.textContent).toContain(prepared.policyCommitment);
+    const signerInput = root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")!;
+    signerInput.value = "not json";
+    signerInput.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("Signer input must be a JSON array"));
+    expect(posted).toEqual([]);
+
+    const correctedInput = root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")!;
+    correctedInput.value = JSON.stringify(signers);
+    correctedInput.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("external signatures to approve auditor"),
+    ));
+    expect(posted).toEqual([]);
+
+    confirm.mockReturnValue(true);
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.path).toBe("/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/approve");
+    expect(JSON.parse(posted[0]!.body!)).toEqual({ prepared, signers });
+    await vi.waitFor(() => expect(root.textContent).toContain("Compact approve accepted"));
+    expect(root.querySelector("[data-governed-prepare]")?.textContent).toContain("activate");
+    expect(posted.every((request) => !request.path.startsWith("/v1/applications/"))).toBe(true);
+  });
 });

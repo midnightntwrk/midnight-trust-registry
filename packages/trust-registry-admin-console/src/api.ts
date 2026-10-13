@@ -1,4 +1,9 @@
 import type {
+  GovernedMembershipAction,
+  GovernedMembershipActionReceipt,
+  GovernedMembershipRole,
+  GovernedMembershipSignatureRequest,
+  PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiApplicationTarget,
@@ -84,6 +89,32 @@ export class TrustRegistryAdminConsoleClient {
       `/v1/applications/${encodeURIComponent(target)}/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
       {
         method: "POST",
+      },
+    );
+  }
+
+  async prepareGovernedAction(
+    role: GovernedMembershipRole,
+    id: string,
+    action: GovernedMembershipAction,
+  ): Promise<PreparedGovernedMembershipAction> {
+    return this.request<PreparedGovernedMembershipAction>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+    );
+  }
+
+  async submitGovernedAction(
+    role: GovernedMembershipRole,
+    id: string,
+    action: GovernedMembershipAction,
+    request: GovernedMembershipSignatureRequest,
+  ): Promise<GovernedMembershipActionReceipt> {
+    return this.request<GovernedMembershipActionReceipt>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
       },
     );
   }
