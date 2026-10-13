@@ -107,4 +107,3 @@ export const sameGovernedIssuerProposal = (
 export const decodeIssuerEvidenceVerifierSignature = (
   signature: string,
 ): TrustRegistryJubjubSignature => decodeCanonicalJubjubSignatureHex(signature);
-
