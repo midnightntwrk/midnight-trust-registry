@@ -41,6 +41,7 @@ import {
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
+import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
@@ -60,6 +61,18 @@ const sign = (maintainer, prepared) => {
     signature: asHex(encodeJubjubSignature(signature)),
   };
 };
+const signCompact = (maintainer, prepared) => ({
+  keyId: maintainer.keyId,
+  publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
+  signature: signPolicyBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    prepared.registryId,
+    prepared.policyCommitment,
+    prepared.actionKind,
+    prepared.actionPayloadHash,
+    prepared.actionSequence,
+  ),
+});
 
 const expectHttp = async (response, status) => {
   const payload = await response.json();
@@ -425,9 +438,15 @@ try {
     const getReceipt = (requestHeaders = headers) => fetch(`${endpoint}/receipt`, { headers: requestHeaders });
     await expectHttp(await getReceipt({}), 403);
     await expectHttp(await getReceipt(), 404);
-    await expectHttp(await post("challenges", {}, {
+    await adversarialMatrix.expectHttp(await post("challenges", {}, {
       "content-type": "application/json",
-    }), 403);
+    }), {
+      id: `${spec.role}-unauthorized-vp-challenge`,
+      invariant: "Only the authenticated applicant may request an evidence challenge",
+      boundary: "api",
+      status: 403,
+      problemType: "application-vp-forbidden",
+    });
     const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
     const otherId = createScopedIdentifier("application", other.role, other.id);
     await expectHttp(await post("challenges", {}, {
@@ -436,10 +455,13 @@ try {
     }), 403);
     const challenge = await expectHttp(await post("challenges", {}), 201);
     if (spec.role === "issuer") {
-      for (const invalid of [
-        { scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" } },
-        { presentationCredentialBodyRoot: sha256Hex("unbound-credential-body") },
-        { statusDecision: { active: false } },
+      for (const [caseId, invariant, invalid] of [
+        ["issuer-wrong-signed-vp-scope", "VP credential scope must match the pending issuer application",
+          { scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" } }],
+        ["issuer-unbound-vp-credential", "VP must bind the submitted credential body",
+          { presentationCredentialBodyRoot: sha256Hex("unbound-credential-body") }],
+        ["issuer-revoked-vp-credential", "Revoked evidence credentials cannot satisfy eligibility",
+          { statusDecision: { active: false } }],
       ]) {
         const wrongProof = await createApplicationVpScenarioFixture(challenge.nonce, {
           subjectDid: spec.subjectDid,
@@ -453,11 +475,17 @@ try {
           family: wrongProof.input.family,
           signer: wrongProof.signer,
         }));
-        await expectHttp(await post("submissions", {
+        await adversarialMatrix.expectHttp(await post("submissions", {
           nonce: challenge.nonce,
           challengeHash: challenge.challengeHash,
           presentation: wrongProof.input.submission,
-        }), 403);
+        }), {
+          id: caseId,
+          invariant,
+          boundary: "api",
+          status: 403,
+          problemType: "application-vp-rejected",
+        });
         assert.equal(persistedEvidence.has(applicationId), false);
       }
     }
@@ -484,7 +512,13 @@ try {
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawPresentationBody), false);
-    await expectHttp(await post("submissions", submission), 404);
+    await adversarialMatrix.expectHttp(await post("submissions", submission), {
+      id: `${spec.role}-vp-challenge-replay`,
+      invariant: "A consumed application challenge cannot accept a second VP",
+      boundary: "api",
+      status: 404,
+      problemType: "application-vp-not-found",
+    });
     await expectHttp(await post("challenges", {}), 404);
     evidenceByRole.set(spec.role, submitted.evidence);
     expectedEvidenceByRole.set(spec.role, {
@@ -581,6 +615,28 @@ try {
   assert.equal(issuerProposal.state, "observed");
   await expectHttp(await submitProposal(proposalBody), 409);
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
+  const compactApproval = harness.prepareIssuerDecisionAction(issuer, "approve");
+  const compactSigner = signCompact(second, compactApproval);
+  const governanceActionsBeforeRejections = harness.simulator.getLedger().governanceActionCount;
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner],
+  ), {
+    id: "compact-issuer-insufficient-quorum",
+    invariant: "Compact rejects issuer approval without the active maintainer quorum",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|assert|signature|maintainer/iu,
+    category: "quorum-rejected",
+  });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner, compactSigner],
+  ), {
+    id: "compact-issuer-duplicate-signer",
+    invariant: "Compact rejects duplicate maintainer signatures as one quorum vote",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|assert|signature|maintainer|duplicate/iu,
+    category: "duplicate-signer-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, governanceActionsBeforeRejections);
   const otherProposals = [];
   for (const [role, target] of proposalTargets) {
     const evidence = target.evidence();
@@ -695,6 +751,45 @@ try {
   const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(activeEvaluation.trustedAtTime, true);
   assert.equal(activeEvaluation.statusAtTime, "active");
+  const trqpRequest = {
+    entity_id: issuer.subjectDid,
+    authority_id: harness.registryRecord.registryDid,
+    action: "issue",
+    resource: issuer.resourceId,
+  };
+  const trqpAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async (authorityId) => authorityId === harness.registryRecord.registryDid
+      ? harness.registryRecord : null,
+    getAuthorizationDecision: async (request) => request.resource === issuer.resourceId
+      ? { statusAtTime: "active", trustedAtTime: true } : null,
+    getRecognitionDecision: async () => null,
+  }, { clock: () => activeAt });
+  adversarialMatrix.expectAdapterProblem(await trqpAdapter.queryAuthorization({
+    ...trqpRequest,
+    resource: "credential-family:unknown",
+  }), {
+    id: "trqp-unknown-issuer-scope",
+    invariant: "TRQP cannot project an authorization for an unregistered credential family",
+    status: 404,
+    problemType: "not-found",
+  });
+  adversarialMatrix.expectAdapterProblem(await trqpAdapter.getAuthorizationEvidence(trqpRequest), {
+    id: "trqp-missing-epoch-evidence",
+    invariant: "TRQP cannot claim evidence when the source has no epoch-bound bundle",
+    status: 424,
+    problemType: "epoch-evidence-unavailable",
+  });
+  const inconsistentTrqpAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async () => harness.registryRecord,
+    getAuthorizationDecision: async () => ({ statusAtTime: "suspended", trustedAtTime: true }),
+    getRecognitionDecision: async () => null,
+  }, { clock: () => activeAt });
+  adversarialMatrix.expectAdapterProblem(await inconsistentTrqpAdapter.queryAuthorization(trqpRequest), {
+    id: "trqp-contradictory-source",
+    invariant: "TRQP must reject a source claiming suspended authorization is trusted",
+    status: 500,
+    problemType: "invalid-source-data",
+  });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: "registry:wrong",
   }), {

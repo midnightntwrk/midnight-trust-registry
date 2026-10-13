@@ -144,12 +144,17 @@ endpoint.
 The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
 Each recorded case names the violated invariant, boundary, expected category,
 and observed category. API cases assert the exact problem-type slug as well as
-HTTP status; client cases assert a stable rejection pattern. The report is
+HTTP status; TRQP adapter cases assert the exact problem type and status; and
+Compact/client cases assert a rejection pattern while checking that failed
+Compact approval leaves the governance action count unchanged. The report is
 emitted only after those assertions pass and contains no credential or VP
-bodies. It currently covers selected admission, quorum, self-vote, and issuer
-client cases. Issue #60 remains open until the matrix also covers the Compact
-and adapter boundaries and the remaining adversarial combinations. The
-`expectedRejections` list is a demo summary, not observed matrix evidence.
+bodies. It covers four-role challenge replay and unauthorized challenge access,
+issuer VP scope/body/status failures, governed proposal and action quorum,
+self-vote, duplicate Compact signer, client evidence checks, and TRQP unknown
+scope, unavailable epoch evidence, and contradictory source data. Issue #60
+remains open for the remaining adversarial combinations and a machine-readable
+coverage map against the full specification. The `expectedRejections` list is
+a demo summary, not observed matrix evidence.
 
 ## Artifact Boundaries
 

@@ -22,6 +22,15 @@ test("records checked problem types and scrubbed client rejection categories", a
     messagePattern: /registry mismatch/iu,
     category: "registry-mismatch",
   });
+  matrix.expectAdapterProblem({
+    ok: false,
+    problem: { type: "https://example.test/trqp/not-found", status: 404, detail: "private" },
+  }, {
+    id: "wrong-trqp-scope",
+    invariant: "TRQP cannot project an unknown authorization scope",
+    status: 404,
+    problemType: "not-found",
+  });
   assert.deepEqual(matrix.report(), {
     format: "tr-adversarial-matrix-v1",
     cases: [
@@ -38,6 +47,13 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "client",
         expected: "registry-mismatch",
         observed: "registry-mismatch",
+      },
+      {
+        id: "wrong-trqp-scope",
+        invariant: "TRQP cannot project an unknown authorization scope",
+        boundary: "adapter",
+        expected: "trqp:404/not-found",
+        observed: "trqp:404/not-found",
       },
     ],
   });

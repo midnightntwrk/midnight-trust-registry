@@ -25,6 +25,22 @@ export class AdversarialMatrix {
     return payload;
   }
 
+  expectAdapterProblem(result, { id, invariant, status, problemType }) {
+    assert.equal(result.ok, false, "TRQP adapter must reject this case");
+    const problem = result.problem;
+    assert.equal(problem.status, status);
+    assert.equal(typeof problem.type, "string");
+    const observedType = problem.type.slice(problem.type.lastIndexOf("/") + 1);
+    assert.equal(observedType, problemType);
+    this.#record({
+      id,
+      invariant,
+      boundary: "adapter",
+      expected: `trqp:${status}/${problemType}`,
+      observed: `trqp:${problem.status}/${observedType}`,
+    });
+  }
+
   expectThrown(operation, { id, invariant, boundary, messagePattern, category }) {
     assert.ok(boundary === "compact" || boundary === "client" || boundary === "adapter");
     assert.ok(messagePattern instanceof RegExp);
