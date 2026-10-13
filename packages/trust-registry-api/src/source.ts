@@ -46,7 +46,8 @@ import type {
   TrustRegistryApiResolveRecognitionRequest,
   TrustRegistryApiRecognitionListQuery,
 } from "./schemas.js";
-import { transitionSignedMutationState } from "./signed-mutation-state.js";
+import { mutationPayloadForWorkspaceOperation, preflightMutationIntent } from "./mutation-intent-preflight.js";
+import { MutationIntentActorRejectedError, transitionSignedMutationState } from "./signed-mutation-state.js";
 import type { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
 export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory";
@@ -273,14 +274,21 @@ export const applySignedMutationOperation = (
     signature: unknown;
     operation: TrustRegistryOperatorWorkspaceOperation;
   },
-  now: Date,
+  clock: () => Date,
   resolver: Parameters<typeof verifyMutationIntentDidSignature>[2],
 ): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
   const workspace = await source.loadWorkspace();
   const next = await transitionSignedMutationState(
     { workspace, consumedNonces: workspace.consumedMutationNonces },
-    input.intent, input.signature, input.operation, now, resolver,
+    input.intent, input.signature, input.operation, clock(), resolver,
   );
+  const commitCheck = preflightMutationIntent(
+    input.intent,
+    mutationPayloadForWorkspaceOperation(input.operation),
+    workspace,
+    clock(),
+  );
+  if (!commitCheck.ok) throw new MutationIntentActorRejectedError(commitCheck.reason);
   const nextWorkspace = {
     ...next.workspace,
     consumedMutationNonces: [...next.consumedNonces],

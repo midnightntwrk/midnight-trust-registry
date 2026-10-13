@@ -206,6 +206,50 @@ describe("DID-signed HTTP mutation journey", () => {
     expect(afterPublish.snapshot.currentEpoch.epochId).not.toBe(initial.snapshot.currentEpoch.epochId);
   }, 60_000);
 
+  it("rejects an intent that expires during DID resolution without consuming its nonce", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tr-signed-expiry-"));
+    const workspacePath = join(tempDir, "workspace.json");
+    const workspace = createOperatorWorkspace({ label: "signed-expiry" });
+    await writeWorkspaceToFile(workspacePath, workspace);
+    const baseResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(fixture.subjectDid, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(applicantSeed),
+      }),
+    ]);
+    let clockTime = "2026-10-10T00:04:59.999Z";
+    let advanceOnResolve = true;
+    const resolver = {
+      resolveResult: async (did: Parameters<typeof baseResolver.resolveResult>[0]) => {
+        const result = await baseResolver.resolveResult(did);
+        if (advanceOnResolve) {
+          clockTime = "2026-10-10T00:05:00.000Z";
+          advanceOnResolve = false;
+        }
+        return result;
+      },
+    };
+    server = createTrustRegistryApiServer({
+      source: createWorkspaceFileSource(workspacePath),
+      clock: () => clockTime,
+      mutationDidResolver: resolver,
+    });
+    const url = await listen(server);
+    const operation = { operation: "submit", target: "issuer", label: "signed-http" } as const;
+    const intent = buildIntent(workspace, operation, fixture.subjectDid, "applicant", "7a");
+    const body = { intent, signature: signatureFor(intent, applicantSeed), operation };
+    const post = () => fetch(`${url}/v1/mutations`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await post()).status).toBe(403);
+    const unchanged = await loadWorkspaceFromFile(workspacePath);
+    expect(unchanged.operations).toHaveLength(0);
+    expect(unchanged.consumedMutationNonces).toHaveLength(0);
+    clockTime = "2026-10-10T00:04:59.999Z";
+    expect((await post()).status).toBe(201);
+    expect((await loadWorkspaceFromFile(workspacePath)).consumedMutationNonces).toHaveLength(1);
+  }, 20_000);
+
   it("accepts exact verifier, auditor, and recognition scopes without promoting recognition to membership", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-roles-"));
     const workspacePath = join(tempDir, "workspace.json");

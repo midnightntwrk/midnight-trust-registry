@@ -705,7 +705,7 @@ export const createTrustRegistryApiServer = (
         let result: TrustRegistryApiMutationResult;
         try {
           result = await applySignedMutationOperation(
-            source, body, new Date(options.clock?.() ?? Date.now()), options.mutationDidResolver,
+            source, body, () => new Date(options.clock?.() ?? Date.now()), options.mutationDidResolver,
           );
         } catch (error) {
           return mapMutationError(error, problemBaseUri);
