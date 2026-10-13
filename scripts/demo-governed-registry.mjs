@@ -40,6 +40,7 @@ import {
   GovernedMembershipActionRejectedError,
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
+import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
@@ -65,6 +66,7 @@ const expectHttp = async (response, status) => {
   assert.equal(response.status, status, JSON.stringify(payload));
   return payload;
 };
+const adversarialMatrix = new AdversarialMatrix();
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
@@ -505,13 +507,31 @@ try {
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const evidence = evidenceByRole.get(spec.role);
     const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
-    await expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), 403);
-    await expectHttp(await proposePrepare(
+    await adversarialMatrix.expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), {
+      id: `${spec.role}-cross-role-evidence`,
+      invariant: "A proposal must use an accepted VP receipt for its own role and target",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
+    await adversarialMatrix.expectHttp(await proposePrepare(
       `${base}/v1/governed/${spec.role}/${createScopedIdentifier("wrong", spec.id)}/proposal`, evidence,
-    ), 403);
+    ), {
+      id: `${spec.role}-wrong-proposal-target`,
+      invariant: "A proposal target must match the accepted VP receipt",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
     const receipt = evidenceReceipts.get(applicationId);
     evidenceReceipts.delete(applicationId);
-    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    await adversarialMatrix.expectHttp(await proposePrepare(endpoint, evidence), {
+      id: `${spec.role}-missing-vp-receipt`,
+      invariant: "A proposal cannot bypass accepted VP evidence",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
     evidenceReceipts.set(applicationId, receipt);
     const pending = registeredApplications.get(applicationId);
     assert.ok(pending);
@@ -543,7 +563,16 @@ try {
   evidenceReceipts.delete(issuerApplicationId);
   await expectHttp(await submitProposal(proposalBody), 403);
   evidenceReceipts.set(issuerApplicationId, issuerReceipt);
-  await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
+  await adversarialMatrix.expectHttp(
+    await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }),
+    {
+      id: "issuer-proposal-insufficient-quorum",
+      invariant: "Issuer proposal requires the active maintainer quorum",
+      boundary: "api",
+      status: 403,
+      problemType: "governed-proposal-rejected",
+    },
+  );
   assert.equal((await submitProposal(proposalBody)).status, 202);
   const issuerProposal = await expectHttp(await fetch(`${proposalEndpoint}/resolve`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -598,9 +627,21 @@ try {
         body: JSON.stringify({ prepared: preparedAction, signers }),
       });
       const signers = [sign(second, prepared), sign(third, prepared)];
-      await expectHttp(await submit(prepared, signers.slice(0, 1)), 403);
+      await adversarialMatrix.expectHttp(await submit(prepared, signers.slice(0, 1)), {
+        id: `${role}-${action}-insufficient-quorum`,
+        invariant: "Governed membership transition requires the active maintainer quorum",
+        boundary: "api",
+        status: 403,
+        problemType: "governed-action-rejected",
+      });
       if (role === "maintainer") {
-        await expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), 403);
+        await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), {
+          id: `maintainer-${action}-candidate-self-vote`,
+          invariant: "A candidate maintainer cannot approve its own membership",
+          boundary: "api",
+          status: 403,
+          problemType: "governed-action-rejected",
+        });
       }
       const accepted = await expectHttp(await submit(prepared, signers), 202);
       await expectHttp(await submit(prepared, signers), 409);
@@ -654,14 +695,26 @@ try {
   const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(activeEvaluation.trustedAtTime, true);
   assert.equal(activeEvaluation.statusAtTime, "active");
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: "registry:wrong",
-  }), /registry mismatch/i);
+  }), {
+    id: "issuer-wrong-registry",
+    invariant: "Issuer evidence must bind the selected registry",
+    boundary: "client",
+    messagePattern: /registry mismatch/iu,
+    category: "registry-mismatch",
+  });
   const afterEpochExpiry = new Date(Date.parse(issuerBundle.epoch.validUntil) + 1).toISOString();
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: afterEpochExpiry,
-  }), /epoch|expired|valid/i);
+  }), {
+    id: "issuer-expired-epoch",
+    invariant: "An expired epoch cannot establish current issuer trust",
+    boundary: "client",
+    messagePattern: /epoch|expired|valid/iu,
+    category: "expired-epoch",
+  });
 
   const candidateCoSignedProposal = harness.proposeIssuer(
     createIssuerScenarioFixture("governed-demo-candidate-proposal"), [candidate],
@@ -672,9 +725,15 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(suspendedBundle.authorization.status, "suspended");
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
-  }), /not active/i);
+  }), {
+    id: "issuer-suspended",
+    invariant: "Suspended issuer authorization cannot establish current trust",
+    boundary: "client",
+    messagePattern: /not active/iu,
+    category: "inactive-authorization",
+  });
   const suspendedEvaluation = await expectHttp(await evaluateIssuerAt(
     suspendedBundle.authorization.suspendedAt,
   ), 200);
@@ -688,9 +747,15 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(revokedBundle.authorization.status, "revoked");
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
-  }), /not active/i);
+  }), {
+    id: "issuer-revoked",
+    invariant: "Revoked issuer authorization cannot establish current trust",
+    boundary: "client",
+    messagePattern: /not active/iu,
+    category: "inactive-authorization",
+  });
   const revokedEvaluation = await expectHttp(await evaluateIssuerAt(
     revokedBundle.authorization.revokedAt,
   ), 200);
@@ -820,6 +885,7 @@ try {
     },
     otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
+    adversarialMatrix: adversarialMatrix.report(),
     expectedRejections: [
       "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
