@@ -196,9 +196,10 @@ const writeJson = (
   response: ServerResponse,
   status: number,
   payload: unknown,
+  publicCors = true,
 ): void => {
   response.statusCode = status;
-  setCorsHeaders(response);
+  if (publicCors) setCorsHeaders(response);
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 };
@@ -213,9 +214,10 @@ const setCorsHeaders = (
 
 const writeNoContent = (
   response: ServerResponse,
+  publicCors = true,
 ): void => {
   response.statusCode = 204;
-  setCorsHeaders(response);
+  if (publicCors) setCorsHeaders(response);
   response.end();
 };
 
@@ -548,13 +550,17 @@ export const createTrustRegistryApiServer = (
     : createApplicationVpHttpService(options.applicationVp, () => Date.parse(options.clock?.() ?? new Date().toISOString()));
 
   return createServer(async (request, response) => {
+    let privateVpRoute = false;
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const segments = routeSegments(url.pathname);
+      privateVpRoute = segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "application-evidence"
+        && (segments[3] === "challenges" || segments[3] === "submissions");
 
       if (method === "OPTIONS") {
-        writeNoContent(response);
+        writeNoContent(response, !privateVpRoute);
         return;
       }
 
@@ -619,7 +625,7 @@ export const createTrustRegistryApiServer = (
           const result = segments[3] === "challenges"
             ? await applicationVp.issue(segments[2]!, body)
             : await applicationVp.submit(segments[2]!, body);
-          writeJson(response, segments[3] === "challenges" ? 201 : 202, result);
+          writeJson(response, segments[3] === "challenges" ? 201 : 202, result, false);
           return;
         } catch (error) {
           if (error instanceof HttpProblem) throw error;
@@ -1254,7 +1260,7 @@ export const createTrustRegistryApiServer = (
       );
     } catch (error) {
       const problem = asProblem(error, problemBaseUri);
-      writeJson(response, problem.status, problem);
+      writeJson(response, problem.status, problem, !privateVpRoute);
     }
   });
 };

@@ -116,7 +116,9 @@ describe("application VP HTTP intake", () => {
 
   it("requires an injected trusted port and rejects caller-supplied binding on both routes", async () => {
     await start(false);
-    expect((await post("challenges", {})).status).toBe(503);
+    const unavailable = await post("challenges", {});
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.headers.get("access-control-allow-origin")).toBeNull();
     expect((await post("submissions", { nonce: "x" })).status).toBe(503);
     await close(server!);
     server = undefined;
@@ -145,6 +147,7 @@ describe("application VP HTTP intake", () => {
         method: "POST", headers: { "content-type": "application/json" }, body: '{"presentation":',
       });
       expect(response.status).toBe(403);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
       const text = await response.text();
       expect(text).toContain("application VP forbidden");
       expect(text).not.toMatch(/private-vp|applicant token|raw claims|presentation/iu);
@@ -163,6 +166,7 @@ describe("application VP HTTP intake", () => {
     const challengeResponse = await post("challenges", {});
     expect(challengeResponse.status).toBe(201);
     expect(challengeResponse.headers.get("cache-control")).toBe("no-store");
+    expect(challengeResponse.headers.get("access-control-allow-origin")).toBeNull();
     const issued = await challengeResponse.json() as { nonce: string; challengeHash: string };
     const presentation = {
       nonce: issued.nonce, subjectDid: binding.subjectDid,
@@ -171,6 +175,7 @@ describe("application VP HTTP intake", () => {
     const submitted = await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation });
     expect(submitted.status).toBe(202);
     expect(submitted.headers.get("cache-control")).toBe("no-store");
+    expect(submitted.headers.get("access-control-allow-origin")).toBeNull();
     const responseText = await submitted.text();
     expect(responseText).not.toContain("private-vp");
     expect(responseText).not.toContain(issued.nonce);
@@ -181,6 +186,18 @@ describe("application VP HTTP intake", () => {
     expect(port.persistRedactedEvidence).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(port.persistRedactedEvidence).mock.calls)).not.toContain("private-vp");
     expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(409);
+  });
+
+  it("does not advertise cross-origin access to private VP routes", async () => {
+    await start();
+    const preflight = await fetch(`${base}${path}/challenges`, {
+      method: "OPTIONS",
+      headers: { origin: "https://untrusted.example", "access-control-request-method": "POST" },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+    const publicRoute = await fetch(`${base}/health`);
+    expect(publicRoute.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   it("rejects a changed trusted binding and expired challenge before VP work", async () => {

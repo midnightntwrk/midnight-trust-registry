@@ -161,8 +161,9 @@ Those demo routes:
   epoch publication
 - bypass actor authorization and are unsuitable for real membership decisions
 - serialize in-process requests and reject cross-process lock contention
-- return permissive local CORS headers plus `OPTIONS` preflight responses so the
-  admin console can call the same loopback API from a separate port
+- return permissive local CORS headers plus `OPTIONS` preflight responses for
+  local operator routes so the admin console can use a separate port; private
+  application VP routes do not return wildcard CORS headers
 
 The application-evidence HTTP routes require an injected `applicationVp` port;
 without one, both return 503. Its required `authorizeRequest(applicationId,
@@ -171,7 +172,11 @@ current application, throwing on denial. It runs on both routes before the
 request body is read or any challenge or VP work begins. Denials return a
 generic 403 without exposing callback errors. Reverse-proxy authentication
 alone is not an API authorization seam; the port must still bind the
-authenticated principal to the application. Challenge issuance accepts only `{}`. Submission
+authenticated principal to the application and enforce CSRF protection where
+cookie credentials are used. Host the applicant frontend and these routes on
+the same origin or provide a narrowly configured authenticated reverse proxy;
+the reference server does not grant cross-origin browser access to raw VPs.
+Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or
 evaluated timestamp. The trusted port must resolve the current pending
@@ -243,8 +248,9 @@ The governed-action HTTP integration test covers externally signed 2-of-3
 approval and activation, stale and malformed requests, cross-role identifier
 substitution, and independently verified issuer, verifier, and auditor
 evidence on one simulator. It is a reference journey; the VP intake above is
-not yet exposed as an authenticated HTTP endpoint or connected to this route
-in a deployable server.
+only mounted when a trusted host injects the full authenticated port. The
+packaged CLI does not mount it, and this journey does not use an arbitrary VP
+submitted to that endpoint.
 
 Example applicant submission:
 
