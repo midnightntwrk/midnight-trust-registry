@@ -191,18 +191,12 @@ const targets = new Map([
   }],
   ["maintainer", {
     id: candidate.maintainerId,
-    prepare: (action) => {
-      const prepared = harness.prepareMaintainerDecisionAction(candidate, action);
-      return { ...prepared, authorizationId: prepared.maintainerId };
-    },
+    prepare: (action) => harness.prepareMaintainerDecisionAction(candidate, action),
     execute: (action, signers) => harness.executeMaintainerDecisionWithSignatures(candidate, action, signers),
   }],
   ["recognition", {
     id: recognition.recognitionId,
-    prepare: (action) => {
-      const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
-      return { ...prepared, authorizationId: prepared.recognitionId };
-    },
+    prepare: (action) => harness.prepareRecognitionDecisionAction(recognition, action),
     execute: (action, signers) => harness.executeRecognitionDecisionWithSignatures(recognition, action, signers),
   }],
 ]);

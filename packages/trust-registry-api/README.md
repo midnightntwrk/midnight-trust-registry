@@ -21,8 +21,8 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
-- `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
-- `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
+- `GET /v1/governed/:role/:targetId/actions/:action` (Compact signer context; optional port)
+- `POST /v1/governed/:role/:targetId/actions/:action` (external signatures; optional port)
 - `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
@@ -269,7 +269,7 @@ receipt lookup. It uses a cross-process lock, validated versioned state,
 instances can reopen the same state and replayed registration or evidence is
 rejected. Its workspace callback must return the current simulator-derived
 policy and epoch, and the store rechecks that view before committing a signed
-application. It does not store raw VPs. The joined issuer demo combines it with
+application. It does not store raw VPs. The joined issuer/verifier/auditor/maintainer demos combine it with
 `FileApplicationChallengeStore` and a 2-of-3 Compact simulator. These two files
 and the Compact ledger are not one atomic transaction; stale locks require
 operator recovery, and the adapter is not configured in the packaged CLI.

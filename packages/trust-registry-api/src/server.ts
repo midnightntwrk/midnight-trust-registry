@@ -1093,11 +1093,11 @@ export const createTrustRegistryApiServer = (
       ) {
         const port = requireGovernedMembershipActions(options, problemBaseUri);
         const role = GovernedMembershipRoleSchema.parse(segments[2]);
-        const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        const targetId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         const action = GovernedMembershipActionSchema.parse(segments[5]);
         let prepared;
         try {
-          prepared = serializeGovernedMembershipAction(await port.prepare(role, authorizationId, action));
+          prepared = serializeGovernedMembershipAction(await port.prepare(role, targetId, action), role);
         } catch (error) {
           return mapGovernedMembershipError(error, problemBaseUri);
         }
@@ -1122,7 +1122,7 @@ export const createTrustRegistryApiServer = (
         let receipt;
         try {
           receipt = GovernedMembershipActionReceiptSchema.parse(
-            await port.execute(role, authorizationId, action, signers),
+            await port.execute(role, targetId, action, signers),
           );
         } catch (error) {
           return mapGovernedMembershipError(error, problemBaseUri);

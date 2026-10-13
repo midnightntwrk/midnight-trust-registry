@@ -397,3 +397,25 @@ the same simulator integration and demo suites.
 The four-role governed demo also discards all four accepted VP response bodies,
 uses applicant-authorized receipt lookups for issuer, verifier, auditor, and
 maintainer, and still rejects a repeated one-use submission.
+
+The signed, private-file-backed membership journey now runs separately for
+issuer, verifier, auditor, and maintainer through one shared harness. Each role
+uses an externally DID-signed pending application, published-package VP proof
+fixture, recovered redacted receipt, exact admission check, 2-of-3 Compact
+proposal and lifecycle decisions, and epoch publication. Issuer, verifier,
+and auditor output independently verified public bundles; maintainer output
+checks the Compact membership record and a one-member active-count increase.
+The maintainer candidate cannot co-sign its own proposal or pre-activation
+decision. The fixture family/status decisions remain test-supplied, and the
+two private files and Compact ledger are not transactionally joined.
+
+The governed-action HTTP prepared context now exposes `targetId`, not the
+issuer-specific `authorizationId`. The serializer selects the native
+`authorizationId`, `maintainerId`, or `recognitionId` field based on role and
+rejects a missing or malformed target. This removes the old demo/test adapter
+that copied maintainer or recognition IDs into `authorizationId`; the
+repository is unreleased, so there is no compatibility alias. Focused API
+serialization/HTTP tests passed 11/11. The four-role `./run.sh integration
+--light` passed in about 25 seconds and `./run.sh --light` passed 20/20 tasks,
+including 145 API light tests, in about 51 seconds. The full proving lane
+remains a prepublication gate.

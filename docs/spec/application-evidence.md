@@ -227,10 +227,12 @@ evidence commitment, and return no raw VP. It MUST NOT reverify the VP, consume
 another nonce, or create a second accepted record. An absent receipt means only
 that no acceptance was found in that host's accepted store; it is not proof that
 an in-flight submission failed and MUST NOT cause automatic resubmission.
-The local signed-issuer reference derives registration preflight and public
+The local signed issuer/verifier/auditor/maintainer reference derives registration preflight and
 snapshots from one Compact simulator, then carries one accepted VP through
-2-of-3 maintainer proposal, decisions, epoch publication, and public evidence
-lookup. Private file adapters persist pending records, spent nonces,
+2-of-3 maintainer proposal, decisions, and epoch publication. Issuer, verifier,
+and auditor grants reach independently verified public evidence lookup;
+maintainer enrollment is checked against the Compact membership record.
+Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional
 governed proposal resolution port can recover a lost HTTP submit receipt by

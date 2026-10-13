@@ -172,16 +172,23 @@ checks unauthorized access, wrong scope, and replay. The host uses a fixture
 identity, in-memory state, and a fixed virtual clock; it is not a public
 admission service or a production VC status verifier.
 
-`pnpm run demo:signed-issuer` runs a joined local issuer journey. It derives
+`pnpm run demo:signed-issuer`, `pnpm run demo:signed-verifier`,
+`pnpm run demo:signed-auditor`, and `pnpm run demo:signed-maintainer` run the same joined local membership journey
+for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
-maintainer proposal/approval/activation, epoch publication, and an API bundle
-independently verified by the client. Single-maintainer actions cannot advance
+maintainer proposal/approval/activation, and epoch publication. Issuer,
+verifier, and auditor grants reach an API bundle independently verified by the
+client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
 the ledger. Pending records, consumed nonces, challenges, and accepted redacted
 receipts use private files that a second store instance can reopen. The local
 file adapter does not make challenge consumption, evidence acceptance, and
 Compact governance one atomic transaction; the demo does not establish
 production family/status verification or network finality.
+The auditor grant proves an exact request-profile mandate; it does not grant
+automatic access to a verifier's private records.
+The maintainer journey verifies activation in the Compact membership record;
+it does not claim a public issuer-style authorization bundle.
 
 Refresh published DID and VC dependencies with validation:
 
