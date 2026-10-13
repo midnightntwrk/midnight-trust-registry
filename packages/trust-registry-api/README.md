@@ -230,6 +230,10 @@ currently authorized. The packaged CLI does not install this port and returns
 port's applicant authorization callback and returns the current server-owned
 binding with `Cache-Control: no-store`. Neither route advertises cross-origin
 browser access, including error and preflight responses.
+The optional `nonApiGetHandler` composes static assets on the same origin
+without intercepting `/v1` API routes. The loopback-only
+`scripts/demo-auditor-admission.mjs` host uses it for a fixture applicant
+journey; it is not installed by the packaged API CLI.
 
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.

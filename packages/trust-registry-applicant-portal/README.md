@@ -34,6 +34,16 @@ single-process and non-durable. A production host must provide atomic pending
 persistence, a live policy view, and an authorized evidence verifier before
 exposing this flow.
 
+To demonstrate the private panel without a production host, run
+`pnpm run demo:auditor` from the repository root and open its loopback URL.
+Paste the signed fixture application printed in the terminal. After the panel
+issues a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>`
+in another terminal and paste the generated fixture VP. This reference host
+uses a single local fixture applicant, an in-memory session and evidence store,
+and a fixed virtual clock. It never activates membership and must not be
+exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
+HTTP flow without a browser.
+
 Run locally from the repo root:
 
 ```bash

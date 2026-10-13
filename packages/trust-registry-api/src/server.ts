@@ -147,6 +147,7 @@ export type TrustRegistryApiServerOptions = {
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
   pendingAuditorRegistration?: PendingAuditorRegistrationPort;
+  nonApiGetHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 };
 
 const SignedMutationRequestSchema = z.strictObject({
@@ -1528,6 +1529,11 @@ export const createTrustRegistryApiServer = (
           return;
         }
         writeJson(response, 200, result.value);
+        return;
+      }
+
+      if (method === "GET" && segments[0] !== "v1" && options.nonApiGetHandler !== undefined) {
+        await options.nonApiGetHandler(request, response);
         return;
       }
 

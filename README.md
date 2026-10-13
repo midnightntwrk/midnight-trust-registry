@@ -153,6 +153,17 @@ Smoke-test the documented demo flow from a clean local checkout:
 pnpm run demo:smoke
 ```
 
+For the separate, fixture-only auditor applicant journey, run
+`pnpm run demo:auditor` and open `http://127.0.0.1:4400`. This serves the
+portal and its private API on one loopback origin. Paste the DID-signed
+application printed by the command, issue a challenge, then generate the
+matching VP in another terminal with
+`node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its JSON into
+the portal. `pnpm run demo:auditor:smoke` automates that same HTTP path and
+checks unauthorized access, wrong scope, and replay. The host uses a fixture
+identity, in-memory state, and a fixed virtual clock; it is not a public
+admission service or a production VC status verifier.
+
 Refresh published DID and VC dependencies with validation:
 
 ```bash

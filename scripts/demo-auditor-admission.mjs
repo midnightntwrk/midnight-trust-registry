@@ -1,0 +1,259 @@
+import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  encodeJubjubSignature,
+  payloadToJubjubDigest,
+  signJubjubDigest,
+} from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+
+import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
+import {
+  computeAuthorizationScopeCommitment,
+  computePendingAuditorApplicationPayloadCommitment,
+  mutationIntentDigestBytes,
+  sha256Hex,
+} from "../packages/trust-registry-domain/dist/index.js";
+import {
+  createApplicationVpIntakePorts,
+  createApplicationVpScenarioFixture,
+  createMidnightDid,
+  VP_FIXTURE_TIME_MS,
+} from "../packages/trust-registry-integration/dist/index.js";
+import {
+  InMemoryApplicationChallengeStore,
+  InMemoryPendingAuditorRegistrationPort,
+  computeOperatorWorkspaceCommitment,
+  createInMemorySource,
+  createTrustRegistryApiServer,
+} from "../packages/trust-registry-api/dist/index.js";
+import { createStaticAssetHandler } from "./serve-static.mjs";
+
+const command = process.argv[2] ?? "serve";
+const NOW = new Date(VP_FIXTURE_TIME_MS).toISOString();
+const subjectDid = createMidnightDid("vp-holder");
+const evidenceVerifierDid = createMidnightDid("vp-evidence-verifier");
+const applicationId = "application:auditor:local-demo:v1";
+const scope = {
+  version: "tr-scope-v1",
+  role: "auditor",
+  requestProfileId: "audit-profile:local-demo:v1",
+  purpose: "compliance-review",
+  credentialScopeCommitment: `0x${"11".repeat(32)}`,
+  allowedAttributes: ["company-id"],
+  allowedPredicates: ["is-licensed"],
+  disclosureLevel: "restricted",
+};
+
+function signedApplication(workspace) {
+  const intent = {
+    version: "tr-mutation-intent-v1",
+    registryId: workspace.snapshot.registry.registryId,
+    actorDid: subjectDid,
+    actorKeyId: `${subjectDid}#auth-1`,
+    actorRole: "applicant",
+    action: "apply",
+    target: "auditor",
+    targetId: applicationId,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope),
+    payloadCommitment: computePendingAuditorApplicationPayloadCommitment({ applicationId, scope }),
+    nonce: `0x${"22".repeat(32)}`,
+    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+    expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+    issuedAt: new Date(VP_FIXTURE_TIME_MS - 60_000).toISOString(),
+    expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
+  };
+  return {
+    applicationId,
+    scope,
+    intent,
+    signature: {
+      keyId: intent.actorKeyId,
+      algorithm: "jubjub-schnorr",
+      value: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+        23n, payloadToJubjubDigest(mutationIntentDigestBytes(intent)),
+      ))).toString("hex")}`,
+    },
+  };
+}
+
+async function startHost(port) {
+  const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
+  const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
+  const registration = new InMemoryPendingAuditorRegistrationPort({
+    workspace, applications: [], consumedNonces: [],
+  }, evidenceVerifierDid, fixture.input.resolver);
+  const ports = await createApplicationVpIntakePorts({
+    resolver: fixture.input.resolver,
+    family: fixture.family,
+    signer: fixture.signer,
+  });
+  const session = randomBytes(32);
+  const cookieName = "tr-auditor-demo";
+  const cookie = `${cookieName}=${session.toString("hex")}`;
+  const receipts = new Map();
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve(fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url))),
+    name: "auditor-admission-demo",
+  });
+  let server;
+  const expectedHost = () => {
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("Demo server is not listening");
+    return `127.0.0.1:${address.port.toString()}`;
+  };
+  const isLocalRequest = (request) => request.socket.remoteAddress === "127.0.0.1"
+    && request.headers.host === expectedHost();
+  const authorizeRequest = async (id, request) => {
+    const pending = registration.readPending(id);
+    const supplied = request.headers.cookie?.split(";").map((value) => value.trim())
+      .find((value) => value.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
+    const token = typeof supplied === "string" && /^[0-9a-f]{64}$/u.test(supplied)
+      ? Buffer.from(supplied, "hex") : Buffer.alloc(32);
+    if (!isLocalRequest(request) || pending === null || pending.binding.subjectDid !== subjectDid
+      || !timingSafeEqual(token, session)
+      || (request.method === "POST" && request.headers.origin !== `http://${expectedHost()}`)) {
+      throw new Error("Demo applicant session denied");
+    }
+  };
+  server = createTrustRegistryApiServer({
+    source: createInMemorySource(workspace.snapshot),
+    clock: () => NOW,
+    pendingAuditorRegistration: registration,
+    applicationVp: {
+      challengeStore: new InMemoryApplicationChallengeStore(),
+      authorizeRequest,
+      resolvePendingApplication: async (id) => {
+        const pending = registration.readPending(id);
+        return pending === null || pending.binding.subjectDid !== subjectDid ? null : {
+          binding: pending.binding,
+          authorizedVerifiers: [{
+            did: fixture.signer.did,
+            keyIds: [fixture.signer.keyId],
+            algorithms: ["jubjub-schnorr"],
+          }],
+        };
+      },
+      ...ports,
+      persistRedactedEvidence: async (id, evidence) => {
+        if (receipts.has(id)) throw new Error("Demo application already has evidence");
+        const receipt = {
+          receiptId: sha256Hex(JSON.stringify([id, evidence.commitment])),
+          evidenceCommitment: evidence.commitment,
+          acceptedAt: NOW,
+        };
+        receipts.set(id, { evidence, receipt });
+        return receipt;
+      },
+    },
+    nonApiGetHandler: async (request, response) => {
+      if (!isLocalRequest(request)) {
+        response.statusCode = 403;
+        response.end("forbidden\n");
+        return;
+      }
+      if (request.url === "/" || request.url?.startsWith("/?")) {
+        response.setHeader("set-cookie", `${cookie}; HttpOnly; SameSite=Strict; Path=/`);
+        response.setHeader("cache-control", "no-store");
+      }
+      await staticHandler(request, response);
+    },
+  });
+  await new Promise((resolveListen) => server.listen(port, "127.0.0.1", resolveListen));
+  return { server, base: `http://${expectedHost()}`, cookie, application: signedApplication(workspace), receipts };
+}
+
+async function smoke() {
+  const host = await startHost(0);
+  try {
+    const page = await fetch(host.base);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Trust Registry/u);
+    assert.equal(page.headers.get("set-cookie")?.split(";")[0], host.cookie);
+    const appAsset = await fetch(`${host.base}/index.js`);
+    assert.equal(appAsset.status, 200);
+    assert.match(appAsset.headers.get("content-type") ?? "", /javascript/u);
+    assert.equal((await fetch(`${host.base}/v1/not-a-page`)).status, 404);
+    const spoofedHostStatus = await new Promise((resolveStatus, rejectStatus) => {
+      const request = httpRequest(host.base, { headers: { host: "untrusted.example" } }, (response) => {
+        response.resume();
+        response.on("end", () => resolveStatus(response.statusCode));
+      });
+      request.on("error", rejectStatus);
+      request.end();
+    });
+    assert.equal(spoofedHostStatus, 403);
+    const post = (path, body, authorized = true, origin = host.base) => fetch(`${host.base}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin,
+        ...(authorized ? { cookie: host.cookie } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const registered = await post("/v1/pending-applications/auditor", host.application);
+    assert.equal(registered.status, 201);
+    const path = `/v1/application-evidence/${applicationId}`;
+    assert.equal((await post(`${path}/challenges`, {}, false)).status, 403);
+    assert.equal((await post(`${path}/challenges`, {}, true, "https://untrusted.example")).status, 403);
+    const challengeResponse = await post(`${path}/challenges`, {});
+    assert.equal(challengeResponse.status, 201);
+    const challenge = await challengeResponse.json();
+    const wrong = await createApplicationVpScenarioFixture(challenge.nonce, {
+      scope: { ...scope, purpose: "wrong-purpose" }, subjectDid, evidenceVerifierDid,
+    });
+    const valid = await createApplicationVpScenarioFixture(challenge.nonce, { scope, subjectDid, evidenceVerifierDid });
+    const submission = (presentation) => ({
+      nonce: challenge.nonce, challengeHash: challenge.challengeHash, presentation,
+    });
+    assert.equal((await post(`${path}/submissions`, submission(wrong.input.submission))).status, 403);
+    const accepted = await post(`${path}/submissions`, submission(valid.input.submission));
+    assert.equal(accepted.status, 202);
+    const result = await accepted.json();
+    assert.equal(result.evidence.commitment, result.receipt.evidenceCommitment);
+    assert.equal(host.receipts.size, 1);
+    assert.equal(JSON.stringify(result).includes("private-presentation-payload"), false);
+    assert.equal(JSON.stringify(host.receipts.get(applicationId)).includes("private-presentation-payload"), false);
+    assert.equal((await post(`${path}/submissions`, submission(valid.input.submission))).status, 409);
+    process.stdout.write(JSON.stringify({
+      demo: "auditor-admission",
+      applicationId,
+      subjectDid,
+      evidenceCommitment: result.evidence.commitment,
+      receiptId: result.receipt.receiptId,
+      expectedRejections: ["unauthorized:403", "wrong-scope:403", "replay:409"],
+    }, null, 2) + "\n");
+  } finally {
+    await new Promise((resolveClose, reject) => host.server.close((error) => error ? reject(error) : resolveClose()));
+  }
+}
+
+if (command === "application") {
+  process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
+} else if (command === "vp") {
+  const nonce = process.argv[3];
+  if (nonce === undefined || !/^0x[0-9a-f]{64}$/u.test(nonce)) {
+    throw new Error("Pass the canonical challenge nonce after vp");
+  }
+  const fixture = await createApplicationVpScenarioFixture(nonce, { scope, subjectDid, evidenceVerifierDid });
+  process.stdout.write(`${JSON.stringify(fixture.input.submission)}\n`);
+} else if (command === "smoke") {
+  await smoke();
+} else if (command === "serve") {
+  const rawPort = process.argv[3] ?? "4400";
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
+  const host = await startHost(port);
+  process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
+  process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
+  process.stdout.write(`${JSON.stringify(host.application)}\n`);
+  process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
+  process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
+} else {
+  throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|vp <nonce>|smoke]");
+}
