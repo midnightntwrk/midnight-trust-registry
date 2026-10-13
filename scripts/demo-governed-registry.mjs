@@ -311,9 +311,71 @@ try {
       resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
     }),
   }), 404);
+  const issuerBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    expectedSubjectDid: issuer.subjectDid,
+    expectedResourceId: issuer.resourceId,
+  });
+  const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ role: "issuer", subjectDid: issuer.subjectDid, resourceId: issuer.resourceId, at }),
+  });
+  const activeAt = issuerBundle.authorization.activeFrom;
+  const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(activeEvaluation.trustedAtTime, true);
+  assert.equal(activeEvaluation.statusAtTime, "active");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: "registry:wrong",
+  }), /registry mismatch/i);
+  const afterEpochExpiry = new Date(Date.parse(issuerBundle.epoch.validUntil) + 1).toISOString();
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: afterEpochExpiry,
+  }), /epoch|expired|valid/i);
+
   const candidateCoSignedProposal = harness.proposeIssuer(
     createIssuerScenarioFixture("governed-demo-candidate-proposal"), [candidate],
   );
+  harness.suspendIssuer(issuer);
+  snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+  const suspendedBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  assert.equal(suspendedBundle.authorization.status, "suspended");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
+    expectedRegistryId: harness.registryId,
+  }), /not active/i);
+  const suspendedEvaluation = await expectHttp(await evaluateIssuerAt(
+    suspendedBundle.authorization.suspendedAt,
+  ), 200);
+  assert.equal(suspendedEvaluation.trustedAtTime, false);
+  assert.equal(suspendedEvaluation.statusAtTime, "suspended");
+  const historicalAfterSuspension = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(historicalAfterSuspension.trustedAtTime, true);
+  harness.revokeIssuer(issuer);
+  snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+  const revokedBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  assert.equal(revokedBundle.authorization.status, "revoked");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
+    expectedRegistryId: harness.registryId,
+  }), /not active/i);
+  const revokedEvaluation = await expectHttp(await evaluateIssuerAt(
+    revokedBundle.authorization.revokedAt,
+  ), 200);
+  assert.equal(revokedEvaluation.trustedAtTime, false);
+  assert.equal(revokedEvaluation.statusAtTime, "revoked");
+  const historicalAfterRevocation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(historicalAfterRevocation.trustedAtTime, true);
+  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: activeAt,
+  });
 
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
@@ -327,8 +389,23 @@ try {
     otherProposals: "verifier, auditor, recognition, maintainer remain fixture-signed",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
+    issuerEvidenceEpoch: {
+      epochId: issuerBundle.epoch.epochId,
+      stateRoot: issuerBundle.epoch.stateRoot,
+      validFrom: issuerBundle.epoch.validFrom,
+      validUntil: issuerBundle.epoch.validUntil,
+    },
+    issuerTemporalChecks: {
+      activeAt,
+      activeAtProposal: activeEvaluation.trustedAtTime,
+      activeAfterSuspension: historicalAfterSuspension.trustedAtTime,
+      activeAfterRevocation: historicalAfterRevocation.trustedAtTime,
+      suspendedAtSuspension: suspendedEvaluation.trustedAtTime,
+      revokedAtRevocation: revokedEvaluation.trustedAtTime,
+      currentStatus: revokedBundle.authorization.status,
+    },
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
-    expectedRejections: ["proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403", "candidate-self-vote:403", "replayed-context:409", "cross-role:404", "wrong-scope:404"],
+    expectedRejections: ["proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403", "candidate-self-vote:403", "replayed-context:409", "cross-role:404", "wrong-scope:404", "wrong-registry:client", "expired-epoch:client", "suspended:client", "revoked:client"],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

@@ -110,11 +110,19 @@ JubJub signatures from existing maintainers. The script rejects one-signer,
 candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.
 It independently verifies active issuer, verifier, auditor, and recognition
 evidence returned by the API; recognition never becomes local membership. The
-new maintainer then co-signs another issuer proposal. The scrubbed JSON
-transcript contains the issuer evidence commitment and governance event hashes,
-not the VP transcript or holder secrets. Eligibility and status decisions use
-trusted fixture adapters; finality is simulated, not a transaction submitted
-to Midnight.
+new maintainer then co-signs another issuer proposal. The issuer journey also
+checks current and historical API evaluations, the published epoch root,
+wrong-registry and expired-epoch rejection, and suspended and revoked states.
+Historical trust at the active instant remains verifiable after both lifecycle
+changes. `./run.sh integration` runs this scenario after the package integration
+tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
+and governance event hashes, not the VP transcript or holder secrets.
+Eligibility and status decisions use trusted fixture adapters; the negative
+suspension and revocation fixtures are contract-backed but are not submitted
+through the external-signature HTTP action port. Finality is simulated, not a
+transaction submitted to Midnight. The fixture credential-family verifier is
+bound to its known test presentation and is **not** a verifier for arbitrary
+uploaded VPs; this demo must not be exposed as a public applicant endpoint.
 
 ## Artifact Boundaries
 
