@@ -542,3 +542,19 @@ compared request and pinned addresses, and a negative regression test confirms
 it. A fresh 65-circuit proving build plus full integration passed before the
 TypeScript-only DID check; focused, light, and fast integration gates passed
 after it. Production finality and custody implementations remain open.
+
+The next local #73 slice replaced the hand-built VC authority-key record in
+the composed consumer test with a key registered by a 2-of-3 policy-bound
+action in the Compact simulator. The signer reads that actual record, and a
+governed suspension stops subsequent signing. Registration now uses
+`prepareVcAuthorityKeyRegistration`: it checks canonical Midnight DID,
+absolute method, network, consumer address, and exact registry ID/address
+preimages before constructing the quorum-signed Compact payload. The helper
+copies caller-owned key and commitment values so a prepared action cannot
+drift through later input mutation. Focused tests took about 3.5 seconds,
+integration-light about 25 seconds, and the broad light gate about 45 seconds,
+primarily in existing API/CLI tests. A first local GPG commit returned a bad
+verification result despite a successful signing command; it was replaced
+before publication, and both retained commits verify as good with DCO.
+Simulator ledger reads and action preparation do not establish production
+network finality, durable consumer deployment, or governed key custody.
