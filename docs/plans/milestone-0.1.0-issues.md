@@ -85,6 +85,9 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
   revoked, expired, and wrong-registry issuer outcomes. Its credential decision
   MUST use the VC composed `VC<>::assertAuthorizedIssuerProof` path, not the
   metadata-only descriptor helper.
+  The local VP fixture now keeps the applicant's authentication and assertion
+  keys as separate relationships on one Midnight DID; the full VP-to-descriptor
+  consumer path remains to be joined in one scenario.
 - #59 MUST exercise authenticated applicant and maintainer intents through the
   public API/UI, assert fail-closed stale/replayed writes, and compare the
   public query with client evidence verification.

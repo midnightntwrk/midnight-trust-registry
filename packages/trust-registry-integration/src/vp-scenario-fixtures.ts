@@ -126,14 +126,19 @@ export async function createApplicationVpScenarioFixture(
   const evidenceVerifierMethodId = options.evidenceVerifierMethodId ?? "assertion-1";
   const issuerSecret = 19n;
   const holderSecret = 23n;
+  const subjectAssertionSecret = 29n;
   const resolver = createMidnightDidResolver([
     createMidnightDidLedgerFixture(issuerDid, {
       verificationMethodId: "assertion-1",
       schnorrJubjubPublicKey: deriveJubjubPublicKey(issuerSecret),
     }),
     createMidnightDidLedgerFixture(subjectDid, {
-      verificationMethodId: "auth-1",
-      schnorrJubjubPublicKey: deriveJubjubPublicKey(holderSecret),
+      schnorrJubjubAuthenticationMethods: [
+        { id: "auth-1", publicKey: deriveJubjubPublicKey(holderSecret) },
+      ],
+      schnorrJubjubAssertionMethods: [
+        { id: "assertion-1", publicKey: deriveJubjubPublicKey(subjectAssertionSecret) },
+      ],
     }),
     createMidnightDidLedgerFixture(evidenceVerifierDid, {
       verificationMethodId: evidenceVerifierMethodId,
@@ -151,6 +156,12 @@ export async function createApplicationVpScenarioFixture(
     did: parseMidnightDIDString(subjectDid),
     verificationMethodId: "#auth-1",
     relationship: "authentication",
+  });
+  const subjectAssertionMethod = await resolveMidnightDIDMethodBinding({
+    resolver,
+    did: parseMidnightDIDString(subjectDid),
+    verificationMethodId: "#assertion-1",
+    relationship: "assertionMethod",
   });
   const scope = AuthorizationScopeSchema.parse(
     options.scope ?? createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp")),
@@ -326,6 +337,7 @@ export async function createApplicationVpScenarioFixture(
     material,
     family,
     signer,
+    subjectAssertion: { method: subjectAssertionMethod, secretScalar: subjectAssertionSecret },
   };
 }
 

@@ -569,3 +569,13 @@ version. The simulator fixture supplies synchronous ledger state and negative
 tests for missing, substituted, and stale observations. A production adapter
 must still authenticate the exact contract and network finality; the typed
 observation alone is not proof.
+
+The #58 issuer-journey follow-on uses one applicant Midnight DID for both the
+application VP and subsequent issuer assertion. The fixture DID state now
+supports distinct native JubJub authentication and assertion method lists:
+`#auth-1` signs the holder presentation and `#assertion-1` is available for
+credential issuance. Cross-relationship resolution fails, and duplicate
+method IDs with conflicting keys are rejected. This prevents a demo from
+using an unrelated issuer DID or implicitly authorizing the holder key to
+issue credentials. The complete VP-to-governed-descriptor consumer path is
+still open.
