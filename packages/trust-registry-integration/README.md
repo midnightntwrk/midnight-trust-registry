@@ -25,6 +25,13 @@ Current coverage:
   policy substitution, and stale signatures without advancing governance.
   It checks the resulting active verifier evidence bundle independently. This
   is not yet a public verifier application or HTTP action route.
+- Auditor proposal and decision actions have the same explicit 2-of-3 signing
+  boundary, but retain an auditor-only mandate scope and request-profile ID.
+  The focused test rejects substituted mandates, duplicate/unknown signers,
+  policy substitution, and stale lifecycle signatures, then independently
+  verifies the active auditor bundle. It does not authorize blanket access to
+  holder presentations or make an auditor grant interchangeable with a
+  verifier grant.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers

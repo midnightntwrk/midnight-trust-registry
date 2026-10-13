@@ -168,6 +168,8 @@ export type PreparedVerifierProposalAction = Pick<PreparedIssuerDecisionAction,
   "registryId" | "authorizationId" | "policyCommitment" | "actionKind" |
   "actionPayloadHash" | "actionSequence" | "evidenceHash">;
 
+export type PreparedAuditorProposalAction = PreparedVerifierProposalAction;
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -1658,6 +1660,33 @@ export class LocalTrustRegistryIntegrationHarness {
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
   ): Uint8Array {
+    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeAuditorProposalWithSignatures(fixture, evidence, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ], expectedEvidence);
+  }
+
+  prepareAuditorProposalAction(
+    fixture: AuditorScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): PreparedAuditorProposalAction {
     if (
       expectedEvidence.scope.role !== "auditor" ||
       expectedEvidence.governedResource.type !== "requestProfile" ||
@@ -1674,90 +1703,126 @@ export class LocalTrustRegistryIntegrationHarness {
       role: "auditor",
       ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_AUDITOR_ACTION_KIND,
-      computeCreateAuditorAuthorizationPayloadHash(
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(PROPOSE_AUDITOR_ACTION_KIND),
+      actionPayloadHash: computeCreateAuditorAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         fixture.subjectDidCommitment,
         fixture.requestResourceIdCommitment,
         fixture.allowedAttributeSetCommitment,
         fixture.allowedPredicateSetCommitment,
         fixture.disclosureLevelCommitment,
-        this.governancePolicyCommitment,
+        ledger.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
         proposedEvidenceHash,
       ),
-      proposeActionSequence,
-    );
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+    };
+  }
+
+  executeAuditorProposalWithSignatures(
+    fixture: AuditorScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Auditor proposal requires a maintainer signature");
+    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
     return this.simulator.proposeAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
-      this.governancePolicyCommitment,
+      prepared.policyCommitment,
       bytes32Commitment(fixture.trustLevel),
-      proposedEvidenceHash,
+      prepared.evidenceHash,
+      signers.slice(1),
     );
+  }
+
+  prepareAuditorDecisionAction(
+    fixture: AuditorScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedIssuerDecisionAction {
+    if (action !== "approve" && action !== "activate") {
+      throw new Error("Unsupported auditor decision action");
+    }
+    const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_AUDITOR_ACTION_KIND : ACTIVATE_AUDITOR_ACTION_KIND),
+      actionPayloadHash: computeUpdateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(current.evidenceHash),
+    };
+  }
+
+  executeAuditorDecisionWithSignatures(
+    fixture: AuditorScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Auditor decision requires a maintainer signature");
+    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeAuditorAuthorization(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    return this.simulator.activateAuditorAuthorization(
+      primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
+    );
+  }
+
+  private fixtureAuditorDecision(fixture: AuditorScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+    return this.executeAuditorDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getAuditorAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_AUDITOR_ACTION_KIND,
-      computeUpdateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-    return this.simulator.authorizeAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.authorizationIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureAuditorDecision(fixture, "approve");
   }
 
   activateAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getAuditorAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_AUDITOR_ACTION_KIND,
-      computeUpdateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-    return this.simulator.activateAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.authorizationIdCommitment,
-      evidenceHash,
-    );
+    return this.fixtureAuditorDecision(fixture, "activate");
   }
 
   authorizeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
