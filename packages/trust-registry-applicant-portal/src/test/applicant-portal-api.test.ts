@@ -74,6 +74,20 @@ describe("public auditor inspection", () => {
 });
 
 describe("private application VP exchange", () => {
+  it("submits a signed pending auditor application without cross-origin credentials", async () => {
+    const binding = { applicationId: "application:auditor:one", role: "auditor" };
+    const request = { applicationId: binding.applicationId, scope: { role: "auditor" }, intent: { action: "apply" }, signature: { value: "signed" } };
+    const fetchImpl = vi.fn(async () => Response.json({ binding, status: "pending" })) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.registerPendingAuditorApplication(request)).toEqual({ binding, status: "pending" });
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications/auditor", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  });
+
   it("sends only the challenge nonce, hash, and VP, then returns redacted evidence", async () => {
     const nonce = `0x${"1".repeat(64)}`;
     const challengeHash = `0x${"2".repeat(64)}`;

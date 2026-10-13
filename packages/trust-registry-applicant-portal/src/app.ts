@@ -86,6 +86,38 @@ export const createApplicantPortalApp = (
     }
   };
 
+  const registerAuditorApplication = async (rawRequest: string) => {
+    const requestId = ++evidenceRequestId;
+    setState({ evidenceBusy: true, pendingAuditor: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    try {
+      requirePrivateHost();
+      let signedRequest: unknown;
+      try {
+        signedRequest = JSON.parse(rawRequest);
+      } catch {
+        throw new Error("Signed application must be valid JSON.");
+      }
+      if (signedRequest === null || typeof signedRequest !== "object" || Array.isArray(signedRequest)) {
+        throw new Error("Signed application must be a JSON object.");
+      }
+      const record = await client().registerPendingAuditorApplication(signedRequest);
+      if (requestId !== evidenceRequestId) return;
+      const binding = record.binding;
+      if (record.status !== "pending" || binding.role !== "auditor"
+        || binding.scope.role !== "auditor" || binding.governedResource.type !== "requestProfile") {
+        throw new Error("Host did not return a canonical pending auditor application.");
+      }
+      setState({
+        pendingAuditor: { binding },
+        evidenceFlash: `Pending auditor application ${binding.applicationId} registered. Present eligibility evidence next.`,
+      });
+    } catch (error) {
+      if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
+    } finally {
+      if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
   const loadAuditorBinding = async (applicationId: string) => {
     const requestId = ++evidenceRequestId;
     setState({ evidenceBusy: true, pendingAuditor: undefined, evidenceError: undefined, evidenceFlash: undefined });
@@ -248,6 +280,16 @@ export const createApplicantPortalApp = (
       if (applicationId !== undefined && applicationId.length > 0) void loadAuditorBinding(applicationId);
     });
 
+    root.querySelector<HTMLFormElement>("[data-auditor-registration-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const input = form.querySelector<HTMLTextAreaElement>("[name='signedApplication']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void registerAuditorApplication(raw);
+    });
+
     root.querySelector<HTMLButtonElement>("[data-auditor-challenge]")?.addEventListener("click", () => {
       void issueAuditorChallenge();
     });
@@ -344,10 +386,16 @@ export const createApplicantPortalApp = (
           </form>
           <section class="form-panel">
             <h2>Pending auditor evidence</h2>
-            <p>Use an application ID already created by a trusted admission host. Its canonical DID, scope, policy, and resource are loaded from the server, not entered here. This does not create or approve membership.</p>
+            <p>Paste an externally DID-signed auditor application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
             ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}
             ${state.evidenceFlash === undefined ? "" : `<div class="alert success">${escapeHtml(state.evidenceFlash)}</div>`}
             ${privateHost ? "" : `<p class="alert error">Private evidence is disabled: serve the portal and authenticated API from the same HTTPS or localhost origin.</p>`}
+            <form data-auditor-registration-form>
+              <label class="label">DID-signed auditor application JSON
+                <textarea class="input mono" name="signedApplication" rows="6" required></textarea>
+              </label>
+              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register pending auditor application</button>
+            </form>
             <form data-auditor-binding-form>
               <label class="label">Pending application ID
                 <input class="input mono" name="applicationId" type="text" maxlength="256" required />

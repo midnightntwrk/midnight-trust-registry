@@ -25,6 +25,8 @@ Current route set:
 - `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
 - `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
+- `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
+- `POST /v1/pending-applications/auditor` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -214,6 +216,20 @@ locks for operator recovery. Atomic rename does not guarantee crash-durable
 writes, and this adapter does not provide distributed transactions, VP
 verification, applicant authentication, rate limits, or atomic pending-state
 persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
+
+The optional `POST /v1/pending-applications/auditor` accepts an externally
+signed Midnight DID `apply` intent, canonical auditor scope, and application
+ID. The host-owned registration port verifies the applicant signature and
+current workspace context and returns a pending, policy-scoped binding. This
+is not a governed Compact proposal or active membership. The exported
+`InMemoryPendingAuditorRegistrationPort` serializes registrations within one
+process for local tests only; it does not provide durable atomic persistence,
+live policy updates, or proof that the configured evidence-verifier DID is
+currently authorized. The packaged CLI does not install this port and returns
+503. `GET /v1/application-evidence/:applicationId/binding` requires the VP
+port's applicant authorization callback and returns the current server-owned
+binding with `Cache-Control: no-store`. Neither route advertises cross-origin
+browser access, including error and preflight responses.
 
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.

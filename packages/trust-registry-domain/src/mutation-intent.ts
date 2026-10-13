@@ -31,7 +31,7 @@ export const MutationIntentSchema = z.strictObject({
   actorDid: z.string().regex(MidnightDidPattern, "Actor DID must be a canonical four-part Midnight DID"),
   actorKeyId: z.string().regex(MidnightKeyPattern, "Actor key must use a canonical Midnight DID fragment"),
   actorRole: z.enum(["applicant", "maintainer"]),
-  action: z.enum(["submit", "approve", "activate", "suspend", "revoke", "archive", "publish-epoch"]),
+  action: z.enum(["apply", "submit", "approve", "activate", "suspend", "revoke", "archive", "publish-epoch"]),
   target: z.enum(["issuer", "verifier", "auditor", "recognition", "maintainer", "epoch"]),
   targetId: CanonicalIdSchema,
   scopeCommitment: CanonicalHashSchema,
@@ -51,7 +51,10 @@ export const MutationIntentSchema = z.strictObject({
   if (intent.action === "submit" && ["issuer", "verifier", "auditor"].includes(intent.target) && intent.actorRole !== "applicant") {
     ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Membership applications require an applicant" });
   }
-  if (intent.action !== "submit" && intent.actorRole !== "maintainer") {
+  if (intent.action === "apply" && (intent.target !== "auditor" || intent.actorRole !== "applicant")) {
+    ctx.addIssue({ code: "custom", path: ["target"], message: "Pending auditor registration requires an applicant and auditor target" });
+  }
+  if (intent.action !== "submit" && intent.action !== "apply" && intent.actorRole !== "maintainer") {
     ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Governed actions require a maintainer" });
   }
   if ((intent.action === "publish-epoch") !== (intent.target === "epoch")) {

@@ -63,6 +63,12 @@ describe("trust registry applicant portal app", () => {
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
     expect(root.querySelector("option[value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-auditor-binding-form] button")?.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>("[data-auditor-registration-form] button")?.disabled).toBe(true);
+    const registrationForm = root.querySelector<HTMLFormElement>("[data-auditor-registration-form]")!;
+    registrationForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = '{"applicationId":"application:auditor:one"}';
+    registrationForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(root.textContent).toContain("authenticated same-origin"));
+    expect(requested.some((path) => path === "/v1/pending-applications/auditor")).toBe(false);
     const privateForm = root.querySelector<HTMLFormElement>("[data-auditor-binding-form]")!;
     privateForm.querySelector<HTMLInputElement>("[name='applicationId']")!.value = "application:auditor:one";
     privateForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -98,6 +104,7 @@ describe("trust registry applicant portal app", () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       calls.push({ path, init });
+      if (path === "/v1/pending-applications/auditor") return Response.json({ binding, status: "pending" });
       if (path.endsWith("/binding")) return Response.json(binding);
       if (path.endsWith("/challenges")) return Response.json({ applicationId, nonce, challengeHash, expiresAt: "2026-10-13T00:05:00Z" });
       if (path.endsWith("/submissions")) return Response.json({
@@ -113,6 +120,14 @@ describe("trust registry applicant portal app", () => {
       storage, fetchImpl: fetchImpl as typeof fetch,
     });
     await vi.waitFor(() => expect(root.textContent).toContain("Pending auditor evidence"));
+    const registrationForm = root.querySelector<HTMLFormElement>("[data-auditor-registration-form]")!;
+    registrationForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = JSON.stringify({
+      applicationId, scope: binding.scope, intent: { action: "apply" }, signature: { value: "signed-request-marker" },
+    });
+    registrationForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(root.textContent).toContain("registered. Present eligibility evidence next"));
+    expect(root.innerHTML).not.toContain("signed-request-marker");
+    expect(calls.find((call) => call.path === "/v1/pending-applications/auditor")?.init?.method).toBe("POST");
     const bindingForm = root.querySelector<HTMLFormElement>("[data-auditor-binding-form]")!;
     bindingForm.querySelector<HTMLInputElement>("[name='applicationId']")!.value = applicationId;
     bindingForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

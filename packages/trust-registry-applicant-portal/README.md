@@ -10,6 +10,8 @@ Current scope:
   application, issue a one-use VP challenge, and submit the presentation to
   receive redacted signed evidence and a receipt. The VP is never placed in
   browser storage or rendered back into the page.
+- register a pending auditor application with an externally signed Midnight DID
+  `apply` intent. The browser accepts a signed request, never a private key.
 - do not offer label-only auditor submission. The demo API's unsigned mutation
   route is not a governed admission boundary and must not be publicly exposed.
 - keep the first portal slice static and local-first instead of adding a second
@@ -17,16 +19,20 @@ Current scope:
 
 The pending-auditor panel is enabled only when the portal and API are hosted at
 the same HTTPS origin (or the same localhost origin for development). The host
-must inject an `ApplicationVpHttpPort` with applicant authentication, a trusted
+must inject a `PendingAuditorRegistrationPort` and an `ApplicationVpHttpPort`
+with applicant authentication, a trusted
 pending-application resolver, VP verifier, authorized evidence signer, atomic
 challenge store, and redacted evidence persistence. The packaged API CLI does
 not mount this port; the default two-port demo below only supports public
 inspection and unsafe local fixture submissions. Private-route errors discard
 the server response body so a failing verifier cannot echo claims into the UI.
 Challenge and VP data are held only in the current page session; a rejected VP
-requires a new challenge. The panel does not create an application or approve
-membership. A trusted admission host must create and bind the complete auditor
-scope and Midnight DID before the applicant enters its application ID here.
+requires a new challenge. The `apply` step registers only an off-ledger
+pending record and its server-owned binding; it does not create a governed
+proposal or approve membership. The reference in-memory registration port is
+single-process and non-durable. A production host must provide atomic pending
+persistence, a live policy view, and an authorized evidence verifier before
+exposing this flow.
 
 Run locally from the repo root:
 

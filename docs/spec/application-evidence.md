@@ -193,6 +193,20 @@ submission field. The evidence validator compares challenge hashes by byte value
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
 
+An auditor applicant MAY register a pending application by signing a distinct
+`apply` mutation intent with its Midnight DID key. The intent MUST commit to
+the canonical auditor scope and application ID; a successful registration
+creates only an off-ledger pending record. The server derives the binding from
+the current trusted workspace policy and verifier configuration, not from
+applicant-provided policy or binding fields. `GET
+/v1/application-evidence/:applicationId/binding` MUST authorize the applicant
+against that pending record before returning the binding. Registration MUST
+reject stale workspace context, reused nonces, duplicate IDs, and duplicate
+active subject/scope applications. A production host MUST persist those checks
+atomically, refresh policy and verifier authority from trusted sources, and
+recheck them when VP evidence is persisted. Neither a pending registration nor
+a VP receipt constitutes a governed Compact proposal or active membership.
+
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live
 challenge lookup, including the trusted stored time window, before expensive
