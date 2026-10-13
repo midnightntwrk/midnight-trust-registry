@@ -145,13 +145,15 @@ The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
 Each recorded case names the violated invariant, boundary, expected category,
 and observed result. API cases assert the exact problem-type slug as well as
 HTTP status; TRQP adapter cases assert the exact problem type and status.
-Compact/client cases assert a rejection pattern and report the actual thrown
+Compact/integration/client cases assert a rejection pattern and report the actual thrown
 error type, not a product error category. Failed Compact approval must also
 leave the governance action count unchanged. The report is
 emitted only after those assertions pass and contains no credential or VP
 bodies. It covers four-role challenge replay and unauthorized challenge access,
 issuer VP scope/body/status failures, governed proposal and action quorum,
-self-vote, duplicate Compact signer, client evidence checks, and TRQP unknown
+self-vote, duplicate/removed Compact signer, unauthorized evidence verifier,
+last-active-maintainer protection, altered proposal commitment, client evidence
+checks, and TRQP unknown
 scope, unavailable epoch evidence, and contradictory source data. Issue #60
 remains open for the missing combinations documented in the
 [coverage map](../plans/adversarial-matrix-coverage.md). After building the

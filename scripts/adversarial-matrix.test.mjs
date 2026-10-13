@@ -31,6 +31,13 @@ test("records checked problem types and scrubbed client rejection categories", a
     status: 404,
     problemType: "not-found",
   });
+  matrix.expectThrown(() => { throw new Error("Evidence commitment mismatch"); }, {
+    id: "invalid-evidence-preflight",
+    invariant: "Preflight must reject altered evidence before a simulator call",
+    boundary: "integration",
+    messagePattern: /commitment mismatch/iu,
+    category: "evidence-commitment-rejected",
+  });
   assert.deepEqual(matrix.report(), {
     format: "tr-adversarial-matrix-v1",
     cases: [
@@ -54,6 +61,13 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "adapter",
         expected: "trqp:404/not-found",
         observed: "trqp:404/not-found",
+      },
+      {
+        id: "invalid-evidence-preflight",
+        invariant: "Preflight must reject altered evidence before a simulator call",
+        boundary: "integration",
+        expected: "evidence-commitment-rejected",
+        observed: "matched:Error",
       },
     ],
   });

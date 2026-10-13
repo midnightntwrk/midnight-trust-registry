@@ -7,7 +7,7 @@ export class AdversarialMatrix {
   #record(entry) {
     assert.match(entry.id, /^[a-z][a-z0-9-]+$/u);
     assert.ok(entry.invariant.length > 0);
-    assert.ok(["compact", "client", "api", "adapter"].includes(entry.boundary));
+    assert.ok(["compact", "integration", "client", "api", "adapter"].includes(entry.boundary));
     assert.equal(this.#ids.has(entry.id), false, `Duplicate adversarial case: ${entry.id}`);
     this.#ids.add(entry.id);
     this.#cases.push(entry);
@@ -42,7 +42,7 @@ export class AdversarialMatrix {
   }
 
   expectThrown(operation, { id, invariant, boundary, messagePattern, category }) {
-    assert.ok(boundary === "compact" || boundary === "client" || boundary === "adapter");
+    assert.ok(["compact", "integration", "client", "adapter"].includes(boundary));
     assert.ok(messagePattern instanceof RegExp);
     assert.match(category, /^[a-z][a-z0-9-]+$/u);
     let failure;

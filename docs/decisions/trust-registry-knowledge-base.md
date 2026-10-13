@@ -16,8 +16,8 @@ shorter-lived and more action-oriented than the normative specification.
 
 - The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
   VC authority slice and is not yet published. Its governed demo now emits a
-  checked `tr-adversarial-matrix-v1` with 50 cases across API, Compact simulator,
-  client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
+  checked `tr-adversarial-matrix-v1` with 56 cases across API, Compact simulator,
+  integration preflight, client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
   names the remaining #60 gaps; do not close #60 on the current report.
 - The fastest local loop for script-only adversarial work is the matrix unit
   test plus `node scripts/demo-governed-registry.mjs` (about six seconds for the

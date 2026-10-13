@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
+  signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
@@ -81,6 +82,46 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix();
+
+const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
+const bootstrapMembership = {
+  maintainerIdCommitment: lastActiveHarness.maintainerIdCommitment,
+  maintainerId: lastActiveHarness.maintainerId,
+  subjectDidCommitment: lastActiveHarness.maintainerDidCommitment,
+  keyId: lastActiveHarness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+  seed: new Uint8Array(32),
+  subjectDid: lastActiveHarness.maintainerDid,
+  trustLevel: "bootstrap-maintainer",
+};
+const lastActiveActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => lastActiveHarness.suspendMaintainer(bootstrapMembership), {
+  id: "compact-last-active-maintainer",
+  invariant: "The final active maintainer cannot be suspended",
+  boundary: "compact",
+  messagePattern: /threshold policy/iu,
+  category: "last-active-maintainer-protected",
+});
+assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
+assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
+
+const removedSignerHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
+const removedSigner = createMaintainerScenarioFixture("governed-demo-removed-signer");
+const removedSignerIssuer = createIssuerScenarioFixture("governed-demo-removed-signer-issuer");
+removedSignerHarness.authorizeMaintainer(removedSigner);
+removedSignerHarness.suspendMaintainer(removedSigner);
+removedSignerHarness.proposeIssuer(removedSignerIssuer);
+const removedSignerApproval = removedSignerHarness.prepareIssuerDecisionAction(removedSignerIssuer, "approve");
+const removedSignerActionCount = removedSignerHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionWithSignatures(
+  removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval)],
+), {
+  id: "compact-removed-maintainer-signer",
+  invariant: "A suspended maintainer key cannot approve a new issuer",
+  boundary: "compact",
+  messagePattern: /active|authorized|maintainer|signature|assert/iu,
+  category: "removed-signer-rejected",
+});
+assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
@@ -537,6 +578,26 @@ try {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ evidence }),
   });
+  const alteredIssuerEvidence = {
+    ...issuerEvidence,
+    commitment: changeLastHexNibble(issuerEvidence.commitment),
+  };
+  await adversarialMatrix.expectHttp(await proposePrepare(proposalEndpoint, alteredIssuerEvidence), {
+    id: "issuer-altered-evidence-commitment-api",
+    invariant: "A governed proposal cannot use a commitment different from the accepted VP envelope",
+    boundary: "api",
+    status: 403,
+    problemType: "unadmitted-proposal",
+  });
+  adversarialMatrix.expectThrown(() => harness.prepareIssuerProposalAction(
+    issuer, alteredIssuerEvidence, expectedIssuerEvidence,
+  ), {
+    id: "issuer-altered-evidence-commitment-integration-preflight",
+    invariant: "Simulator preflight rejects evidence whose commitment is not its envelope hash before Compact execution",
+    boundary: "integration",
+    messagePattern: /commitment|evidence/iu,
+    category: "evidence-commitment-rejected",
+  });
   for (const spec of applicantSpecs) {
     const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
@@ -590,6 +651,12 @@ try {
     signers: [sign(second, proposalPrepared), sign(third, proposalPrepared)],
     evidenceVerifierSignature: asHex(encodeJubjubSignature(verifierSignature)),
   };
+  const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
+    second.seed,
+    fromHex(proposalPrepared.registryId),
+    fromHex(proposalPrepared.evidenceVerifierKeyIdCommitment),
+    fromHex(proposalPrepared.actionPayloadHash),
+  );
   const submitProposal = (body) => fetch(`${proposalEndpoint}/submit`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -598,6 +665,34 @@ try {
   evidenceReceipts.delete(issuerApplicationId);
   await expectHttp(await submitProposal(proposalBody), 403);
   evidenceReceipts.set(issuerApplicationId, issuerReceipt);
+  await adversarialMatrix.expectHttp(await submitProposal({
+    ...proposalBody,
+    evidenceVerifierSignature: asHex(encodeJubjubSignature(wrongVerifierSignature)),
+  }), {
+    id: "issuer-unauthorized-evidence-verifier-api",
+    invariant: "An unregistered evidence-verifier key cannot attest issuer eligibility",
+    boundary: "api",
+    status: 403,
+    problemType: "governed-proposal-rejected",
+  });
+  const compactIssuerProposal = harness.prepareIssuerProposalAction(
+    issuer, issuerEvidence, expectedIssuerEvidence,
+  );
+  const actionCountBeforeWrongVerifier = harness.simulator.getLedger().governanceActionCount;
+  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+    issuer,
+    issuerEvidence,
+    [signCompact(second, compactIssuerProposal), signCompact(third, compactIssuerProposal)],
+    wrongVerifierSignature,
+    expectedIssuerEvidence,
+  ), {
+    id: "issuer-unauthorized-evidence-verifier-compact",
+    invariant: "Compact rejects a proposal signed by an unregistered evidence-verifier key",
+    boundary: "compact",
+    messagePattern: /signature|verifier|assert|authorized/iu,
+    category: "unauthorized-verifier-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
   await adversarialMatrix.expectHttp(
     await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }),
     {
