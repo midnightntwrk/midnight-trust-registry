@@ -7,11 +7,13 @@ import {
   encodeJubjubSignature,
   signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
+import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
+  createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
@@ -234,7 +236,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect((await fetch(`${base}/v1/governed/verifier/${auditor.authorizationId}/actions/approve`)).status)
         .toBe(404);
       expect((await fetch(`${base}/v1/governed/maintainer/${verifier.authorizationId}/actions/approve`)).status)
-        .toBe(400);
+        .toBe(404);
 
       for (const [role, fixture] of [["verifier", verifier], ["auditor", auditor]] as const) {
         for (const action of ["approve", "activate"] as const) {
@@ -274,6 +276,99 @@ describe("Compact-backed membership governance over HTTP", () => {
           expect(() => client.verifyAuditorAuthorizationBundle(bundle, {})).not.toThrow();
         }
       }
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("requires existing-maintainer quorum for maintainer decisions over HTTP", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("governed-maintainer-http");
+    const second = createMaintainerScenarioFixture("governed-maintainer-second");
+    const third = createMaintainerScenarioFixture("governed-maintainer-third");
+    const candidate = createMaintainerScenarioFixture("governed-maintainer-candidate");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = harness.createApplicationEvidence({
+      applicationId: candidate.maintainerId,
+      subjectDid: candidate.subjectDid,
+      role: "maintainer",
+      scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
+    });
+    harness.proposeMaintainerWithApplicationEvidence(candidate, evidence);
+
+    const port: GovernedMembershipActionPort = {
+      async prepare(role, authorizationId, action) {
+        if (role !== "maintainer" || authorizationId !== candidate.maintainerId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        const prepared = harness.prepareMaintainerDecisionAction(candidate, action);
+        if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
+        return {
+          ...prepared,
+          authorizationId: prepared.maintainerId,
+          previousLifecycleEventHash: prepared.previousLifecycleEventHash,
+        };
+      },
+      async execute(role, authorizationId, action, signers) {
+        if (role !== "maintainer" || authorizationId !== candidate.maintainerId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        let eventHash: Uint8Array;
+        try {
+          eventHash = harness.executeMaintainerDecisionWithSignatures(candidate, action, signers);
+        } catch {
+          throw new GovernedMembershipActionRejectedError("invalid-signers");
+        }
+        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: {
+        mode: "memory",
+        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "governed-maintainer-http" }),
+      },
+      governedMembershipActions: port,
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const endpoint = (action: "approve" | "activate") =>
+        `${base}/v1/governed/maintainer/${candidate.maintainerId}/actions/${action}`;
+      const post = (action: "approve" | "activate", prepared: PreparedGovernedMembershipAction,
+        signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint(action), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prepared, signers }),
+      });
+
+      expect((await fetch(`${base}/v1/governed/issuer/${candidate.maintainerId}/actions/approve`)).status)
+        .toBe(404);
+      expect((await fetch(`${base}/v1/governed/maintainer/unknown/actions/approve`)).status)
+        .toBe(404);
+      for (const action of ["approve", "activate"] as const) {
+        const preparedResponse = await fetch(endpoint(action));
+        expect(preparedResponse.status).toBe(200);
+        expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
+        const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
+        expect(prepared.authorizationId).toBe(`0x${Buffer.from(candidate.maintainerIdCommitment).toString("hex")}`);
+        const before = harness.simulator.getLedger().governanceActionCount;
+        expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
+        expect((await post(action, prepared, [
+          signPrepared(second, prepared), signPrepared(candidate, prepared),
+        ])).status).toBe(403);
+        expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+        expect((await post(action, prepared, [
+          signPrepared(second, prepared), signPrepared(third, prepared),
+        ])).status).toBe(202);
+        expect((await post(action, prepared, [
+          signPrepared(second, prepared), signPrepared(third, prepared),
+        ])).status).toBe(409);
+      }
+      expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
+        .toBe(AuthorizationStatus.active);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

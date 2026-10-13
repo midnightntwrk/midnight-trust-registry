@@ -8,7 +8,7 @@ import { z } from "zod";
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
 
-export const GovernedMembershipRoleSchema = z.enum(["issuer", "verifier", "auditor"]);
+export const GovernedMembershipRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer"]);
 export const GovernedMembershipActionSchema = z.enum(["approve", "activate"]);
 
 export const PreparedGovernedMembershipActionSchema = z.strictObject({
