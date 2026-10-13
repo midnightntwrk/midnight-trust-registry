@@ -58,6 +58,7 @@ export type GovernedIssuerSigner = {
 
 export type GovernedIssuerActionPort = {
   prepare(authorizationId: string, action: GovernedIssuerAction): Promise<GovernedIssuerActionContext>;
+  /** Recheck current policy, sequence, membership, quorum, and lifecycle in Compact before acceptance. */
   execute(
     authorizationId: string,
     action: GovernedIssuerAction,

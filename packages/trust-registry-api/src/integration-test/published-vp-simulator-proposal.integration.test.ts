@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
@@ -32,8 +33,8 @@ import {
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
+import { GovernedIssuerActionRejectedError, type PreparedGovernedIssuerAction } from "../governed-issuer-actions.js";
 import { createTrustRegistryApiServer } from "../server.js";
-import { createInMemorySource } from "../source.js";
 
 const signAction = (
   maintainer: MaintainerScenarioFixture,
@@ -51,6 +52,27 @@ const signAction = (
     action.actionSequence,
   ),
 });
+
+const signHttpAction = (
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedIssuerAction,
+) => {
+  const fromHex = (value: string) => Buffer.from(value.slice(2), "hex");
+  const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
+  const signature = signPolicyBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    fromHex(prepared.registryId),
+    fromHex(prepared.policyCommitment),
+    fromHex(prepared.actionKind),
+    fromHex(prepared.actionPayloadHash),
+    BigInt(prepared.actionSequence),
+  );
+  return {
+    keyId: `0x${Buffer.from(maintainer.keyId).toString("hex")}`,
+    publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
+    signature: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
+  };
+};
 
 describe("published VP proof to governed issuer decision", () => {
   it("carries one redacted VC/VP intake through a 2-of-3 issuer decision and authenticated lookup", async () => {
@@ -174,33 +196,65 @@ describe("published VP proof to governed issuer decision", () => {
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/u);
     expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
 
-    const approval = harness.prepareIssuerDecisionAction(issuer, "approve");
-    harness.executeIssuerDecisionWithSignatures(issuer, "approve", [
-      signAction(second, approval), signAction(third, approval),
-    ]);
-    const activation = harness.prepareIssuerDecisionAction(issuer, "activate");
-    harness.executeIssuerDecisionWithSignatures(issuer, "activate", [
-      signAction(second, activation), signAction(third, activation),
-    ]);
-    const decision = harness.evaluateCurrentIssuerDecision(issuer, {
-      expectedRegistryId: harness.registryId,
-    });
-    expect(decision.authorization?.status).toBe("active");
-    expect(decision.authorization?.subjectDid).toBe(issuer.subjectDid);
-    expect(decision.epoch.stateRoot).toMatch(/^0x[0-9a-f]{64}$/u);
-    expect(() => new TrustRegistrySimulatorClient(harness.simulator)
-      .verifyIssuerAuthorizationBundle(decision, {})).not.toThrow();
-
-    const snapshot = publishSimulatorSnapshot(harness, {
+    const fixtures = {
       label: "vp-governed",
       issuers: [{ label: "vp", fixture: issuer }],
+    };
+    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => snapshot },
+      governedIssuerActions: {
+        async prepare(authorizationId, action) {
+          if (authorizationId !== issuer.authorizationId) {
+            throw new GovernedIssuerActionRejectedError("unknown-authorization");
+          }
+          return harness.prepareIssuerDecisionAction(issuer, action);
+        },
+        async execute(authorizationId, action, signers) {
+          if (authorizationId !== issuer.authorizationId) {
+            throw new GovernedIssuerActionRejectedError("unknown-authorization");
+          }
+          let accepted: Uint8Array;
+          try {
+            accepted = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
+          } catch {
+            throw new GovernedIssuerActionRejectedError("invalid-signers");
+          }
+          snapshot = publishSimulatorSnapshot(harness, fixtures);
+          return { eventHash: `0x${Buffer.from(accepted).toString("hex")}` };
+        },
+      },
     });
-    const server = createTrustRegistryApiServer({ source: createInMemorySource(snapshot) });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const base = `http://127.0.0.1:${address.port}`;
+      for (const action of ["approve", "activate"] as const) {
+        const endpoint = `${base}/v1/governed/issuers/${issuer.authorizationId}/actions/${action}`;
+        const preparedResponse = await fetch(endpoint);
+        expect(preparedResponse.status).toBe(200);
+        const prepared = await preparedResponse.json() as PreparedGovernedIssuerAction;
+        const accepted = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prepared,
+            signers: [signHttpAction(second, prepared), signHttpAction(third, prepared)],
+          }),
+        });
+        expect(accepted.status).toBe(202);
+        expect((await accepted.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      }
+      const decision = harness.evaluateCurrentIssuerDecision(issuer, {
+        expectedRegistryId: harness.registryId,
+      });
+      expect(decision.authorization?.status).toBe("active");
+      expect(decision.authorization?.subjectDid).toBe(issuer.subjectDid);
+      expect(decision.epoch.stateRoot).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(() => new TrustRegistrySimulatorClient(harness.simulator)
+        .verifyIssuerAuthorizationBundle(decision, {})).not.toThrow();
+
       const evidenceResponse = await fetch(
         `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
       );
