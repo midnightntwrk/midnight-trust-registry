@@ -54,6 +54,11 @@ import {
   serializeGovernedIssuerProposal,
   type GovernedIssuerProposalPort,
 } from "./governed-issuer-proposals.js";
+import {
+  ApplicationVpHttpError,
+  createApplicationVpHttpService,
+  type ApplicationVpHttpPort,
+} from "./application-vp-http.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -106,6 +111,7 @@ export type TrustRegistryApiServerOptions = {
   allowUnsafeDemoMutations?: boolean;
   governedMembershipActions?: GovernedMembershipActionPort;
   governedIssuerProposals?: GovernedIssuerProposalPort;
+  applicationVp?: ApplicationVpHttpPort;
 };
 
 const SignedMutationRequestSchema = z.strictObject({
@@ -538,6 +544,8 @@ export const createTrustRegistryApiServer = (
       problemBaseUri: `${problemBaseUri}/trqp`,
     },
   );
+  const applicationVp = options.applicationVp === undefined ? undefined
+    : createApplicationVpHttpService(options.applicationVp, () => Date.parse(options.clock?.() ?? new Date().toISOString()));
 
   return createServer(async (request, response) => {
     try {
@@ -586,6 +594,35 @@ export const createTrustRegistryApiServer = (
           expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
         }));
         return;
+      }
+
+      if (method === "POST" && segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "application-evidence"
+        && (segments[3] === "challenges" || segments[3] === "submissions")) {
+        response.setHeader("cache-control", "no-store");
+        if (applicationVp === undefined) {
+          throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
+        }
+        try {
+          const raw = await readRequestBody(request, problemBaseUri);
+          let body: unknown;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            throw new ApplicationVpHttpError("invalid-request");
+          }
+          const result = segments[3] === "challenges"
+            ? await applicationVp.issue(segments[2]!, body)
+            : await applicationVp.submit(segments[2]!, body);
+          writeJson(response, segments[3] === "challenges" ? 201 : 202, result);
+          return;
+        } catch (error) {
+          if (error instanceof HttpProblem) throw error;
+          const reason = error instanceof ApplicationVpHttpError ? error.reason : "rejected";
+          const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404
+            : reason === "stale-policy" || reason === "invalid-challenge" ? 409 : 403;
+          throw jsonProblem(problemBaseUri, `application-vp-${reason}`, status, `application VP ${reason}`);
+        }
       }
 
       if (

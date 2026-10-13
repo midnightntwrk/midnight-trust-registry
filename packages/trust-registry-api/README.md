@@ -23,6 +23,8 @@ Current route set:
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
 - `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
 - `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
+- `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
+- `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -162,8 +164,28 @@ Those demo routes:
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 
+The application-evidence HTTP routes require an injected `applicationVp` port;
+without one, both return 503. Challenge issuance accepts only `{}`. Submission
+accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
+The server never accepts a caller-supplied binding, policy, verifier list, or
+evaluated timestamp. The trusted port must resolve the current pending
+application and authorized verifier policy at issuance and submission, derive
+the subject DID, nonce, and scope from a genuine verified VP, sign canonical
+redacted evidence, and atomically persist only that evidence. The server
+re-resolves the binding and verifier policy just before persistence. Policy
+rotations must update the binding's policy version so challenges issued under
+old policy cannot be reused; the port must also recheck pending status and
+policy atomically at persistence. A 202 response contains only signed evidence
+and a validated redacted receipt, not the VP or its claims. Errors from VP
+verification and storage are intentionally generic and do not echo exception
+messages or raw request data. Challenges are one-use and expire after five
+minutes according to the injected server clock; signing or persistence failure
+after consumption does not make a challenge reusable. The optional port owns
+the challenge store, which must provide durable atomic consumption in a
+multi-process deployment. No fixture verifier is installed by default.
+
 The exported application-challenge service and
-`consumeChallengeAndSubmitApplication` reference intake are not HTTP routes.
+`consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.
 Their binding requires the versioned role-specific scope object, a separately
 checked governed resource, and a matching canonical scope commitment; an
 arbitrary 32-byte scope digest is not accepted. The caller must supply a
@@ -182,9 +204,10 @@ decides whether a challenge is spent. The process-local store uses the same
 injected clock for timer reclamation and consume, copies records on insertion,
 and reports whether issuing a new challenge superseded a live one for that
 application. Capacity, invalid-clock, expiry-range, and collision failures
-have stable `code` and `name` fields. A production route still needs an
-authenticated per-applicant quota, durable atomic storage, request limits,
-and VP verification timeouts before public exposure.
+have stable `code` and `name` fields. Before public exposure, the embedding
+gateway must authenticate applicants, enforce per-applicant challenge quotas
+and VP verification timeouts, and provide a durable challenge store and atomic
+pending-application persistence.
 The existing `POST /v1/applications` route is a local operator workspace route,
 not a public VC/VP-verified membership endpoint.
 
