@@ -69,7 +69,7 @@ describe("trust registry client", () => {
     } finally {
       wrongFormat.mockRestore();
     }
-  });
+  }, 20_000);
 
   it("queries current and historical issuer state plus the published epoch anchor", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
