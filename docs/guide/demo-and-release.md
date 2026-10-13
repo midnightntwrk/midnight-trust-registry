@@ -92,7 +92,7 @@ finality is simulated, the workspace has one fixture maintainer rather than a
 a VC/VP or independently verify a Compact proof. The reported epoch root is
 operator-workspace evidence, not a network-finality claim.
 
-### Compact-Governed Issuer Journey
+### Compact-Governed Registry Journey
 
 Run the separate quorum-backed reference demo:
 
@@ -100,13 +100,17 @@ Run the separate quorum-backed reference demo:
 pnpm run demo:governed
 ```
 
-It proposes an issuer in one Compact simulator, then calls the governed HTTP
-prepare and submit endpoints with two independently produced JubJub signatures
-from a three-maintainer registry. It demonstrates one-signer and replay
-rejections, activates the issuer, and verifies the API evidence bundle against
-the same simulator. The JSON transcript includes governance event hashes and
-the state root. This uses fixture application evidence and simulated finality;
-it does not verify a production VC/VP or submit transactions to Midnight.
+It proposes issuer, verifier, auditor, maintainer, and external-recognition
+records in one Compact simulator. Each approval and activation then uses the
+governed HTTP prepare and submit endpoints with two independently produced
+JubJub signatures from existing maintainers. The script rejects one-signer,
+candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.
+It independently verifies active issuer, verifier, auditor, and recognition
+evidence returned by the API; recognition never becomes local membership. The
+new maintainer then co-signs another issuer proposal. The JSON transcript
+contains the ten decision event hashes. Proposals use fixture signatures and
+application evidence; finality is simulated, not a production VC/VP decision
+or a transaction submitted to Midnight.
 
 ## Artifact Boundaries
 

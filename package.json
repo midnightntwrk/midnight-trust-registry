@@ -46,7 +46,7 @@
     "ci:build": "pnpm run ci:build:light",
     "demo:smoke": "node scripts/demo-smoke.mjs",
     "demo:signed": "pnpm run build:light && node scripts/demo-signed-journey.mjs",
-    "demo:governed": "pnpm run build:light && node scripts/demo-governed-issuer.mjs",
+    "demo:governed": "pnpm run build:light && node scripts/demo-governed-registry.mjs",
     "demo:prepare": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-workspace --workspace ./artifacts/trust-registry/workspace.json",
     "demo:prepare:snapshot": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-demo --output ./artifacts/trust-registry/demo-snapshot.json",
     "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/workspace.json --unsafe-demo-mutations --port 4400",
