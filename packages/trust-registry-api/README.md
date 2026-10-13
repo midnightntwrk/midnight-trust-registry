@@ -195,6 +195,17 @@ after consumption does not make a challenge reusable. The optional port owns
 the challenge store, which must provide durable atomic consumption in a
 multi-process deployment. No fixture verifier is installed by default.
 
+`FileApplicationChallengeStore` is a local reference adapter for the port. It
+stores only challenge, binding, and application hashes with issuance/expiry
+instants in a versioned private (`0600`) file. A shared cross-process lock
+serializes replacement and one-use consumption; a second instance can read and
+consume the same challenge, but cannot consume it twice. It fails closed on
+malformed or insecurely permissioned files, bounds capacity, and leaves stale
+locks for operator recovery. Atomic rename does not guarantee crash-durable
+writes, and this adapter does not provide distributed transactions, VP
+verification, applicant authentication, rate limits, or atomic pending-state
+persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
+
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.
 Their binding requires the versioned role-specific scope object, a separately

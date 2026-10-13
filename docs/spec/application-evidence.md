@@ -222,12 +222,14 @@ verification, abuse controls, durable atomic challenge storage, and atomic
 pending-application persistence. The reference fixture family ignores arbitrary
 submitted presentations and MUST NOT be mounted as a public verifier.
 
-The reference API package exposes an in-memory store for local tests only. It
-caps live entries and schedules expiry cleanup even without another request;
-these bounds do not replace distributed durability or abuse controls. A
-public issuance deployment requires a durable atomic store, applicant authentication,
-abuse controls, and a retention/cleanup policy; those are not delivered by
-this reference store. Challenge expiry uses the evidence verifier's off-ledger
+The reference API package exposes an in-memory store for local tests and a
+bounded file-backed store for a single local deployment. The in-memory store
+caps live entries and schedules expiry cleanup; the file-backed store uses
+private atomic file replacement and a cross-process lock for one-use consume,
+and prunes expired records during writes. Neither supplies distributed storage,
+crash-durable commits, applicant authentication, abuse controls, or a complete
+retention/cleanup policy. A public deployment MUST provide and test those
+properties as appropriate to its failure model. Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
 errors, not invalid applicant challenges. It is not a claim that the Midnight
 contract has a datetime primitive.
