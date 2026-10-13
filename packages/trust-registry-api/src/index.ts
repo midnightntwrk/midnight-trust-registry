@@ -5,6 +5,7 @@ export * from "./mutation-intent-preflight.js";
 export * from "./mutation-intent-actor-binding.js";
 export * from "./signed-mutation-state.js";
 export * from "./application-intake.js";
+export * from "./governed-membership-actions.js";
 export * from "./cli.js";
 export * from "./schemas.js";
 export * from "./server.js";

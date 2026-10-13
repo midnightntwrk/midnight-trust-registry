@@ -1,6 +1,6 @@
 # Demo And Release Guide
 
-Updated: 2026-07-24
+Updated: 2026-10-13
 
 This guide is the public operator walkthrough for the local demo path, package
 artifact boundaries, and the manual release automation currently checked into
@@ -69,6 +69,48 @@ The main and milestone CI workflows run the same smoke command after
 `./run.sh --light`, so missing build outputs or broken local startup fail from a
 clean checkout without repeating the full proving build. On failure, the smoke
 command includes captured API and UI process output.
+
+### Signed Mutation Journey
+
+Run the local signed-mutation demonstration:
+
+```bash
+pnpm run demo:signed
+```
+
+It builds the light packages, starts an API server with a temporary operator
+workspace and fixture Midnight DID resolver, and signs applicant and maintainer
+mutation intents with separate JubJub keys. The sequence submits an issuer,
+approves and activates it, publishes an epoch, and reads the active authorization
+and associated epoch evidence. It also checks that unsigned writes, an invalid
+signature, a replayed intent, and a wrong-scope lookup are rejected. The command
+prints a compact JSON transcript and deletes its temporary workspace on exit.
+
+This is a **local fixture demonstration**, not a live-network or proving demo:
+finality is simulated, the workspace has one fixture maintainer rather than a
+2-of-3 Compact-backed approval bundle, and the script does not issue or verify
+a VC/VP or independently verify a Compact proof. The reported epoch root is
+operator-workspace evidence, not a network-finality claim.
+
+### Compact-Governed Registry Journey
+
+Run the separate quorum-backed reference demo:
+
+```bash
+pnpm run demo:governed
+```
+
+It proposes issuer, verifier, auditor, maintainer, and external-recognition
+records in one Compact simulator. Each approval and activation then uses the
+governed HTTP prepare and submit endpoints with two independently produced
+JubJub signatures from existing maintainers. The script rejects one-signer,
+candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.
+It independently verifies active issuer, verifier, auditor, and recognition
+evidence returned by the API; recognition never becomes local membership. The
+new maintainer then co-signs another issuer proposal. The JSON transcript
+contains the ten decision event hashes. Proposals use fixture signatures and
+application evidence; finality is simulated, not a production VC/VP decision
+or a transaction submitted to Midnight.
 
 ## Artifact Boundaries
 

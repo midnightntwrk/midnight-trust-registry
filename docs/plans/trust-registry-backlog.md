@@ -1,7 +1,7 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-10-05
+Updated: 2026-10-13
 
 The [0.1.0 reference profile](../spec/milestone-0.1.0.md) is the product
 contract. The [0.1.0 issue plan](milestone-0.1.0-issues.md) contains the
@@ -27,14 +27,34 @@ Merged on `develop` before this milestone plan:
   [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md),
   and an initial on-chain application evidence hash binding.
 
-These are components of a reference implementation, not proof that a real
-VC/VP-backed application or authenticated HTTP governance journey works yet.
-The simulator generates a test-key JubJub evidence signature but does not
-resolve or authorize that key through a DID. The Compact contract checks
-evidence hashes but not the evidence verifier's DID-bound signature, and the
-local mutation API does not authenticate callers.
+These are components of a reference implementation, not proof that one real
+VC/VP-backed application and authenticated HTTP governance journey works end
+to end. Published DID/VC-backed intake and signed local HTTP mutations now
+have focused tests, but they drive separate state paths: the intake reaches the
+Compact simulator, while the HTTP gateway replays an operator workspace. The
+local workspace's fixture maintainer is not a Compact-backed 2-of-3 approval
+bundle. The next functional slice must join these paths so an authenticated
+applicant proposal, governed decision, published epoch, and public lookup all
+refer to the same state transition. The Compact contract checks evidence hashes
+but does not itself resolve the evidence verifier's DID assertion key.
 
 ## 0.1.0 Critical Path
+
+Execution is functional-first. Work locally through complete actor journeys
+with positive and rule-specific negative tests before polishing packaging or
+CI. An unmerged PR is not a stop signal. Accumulate several coherent signed
+commits in one worktree and publish a reviewable PR when the feature bundle is
+substantial (roughly 5k-10k changed lines), not by padding a small change.
+Run local light and integration gates before publication. Keep the public
+specification, executable tests, and demo narrative synchronized.
+
+Current order: finish authenticated DID/VC/VP intake and Compact-governed
+decisions (#76, #67, #77), compose the issuer and other-actor use cases (#58,
+#78), prove API/UI/query equivalence and adversarial cases (#59, #60, #39),
+then complete VC consumer anchors (#79, #73) and the demo/release candidate.
+Repository hardening, scorecards, extra CI policy, and nonessential packaging
+belong at the end of the backlog. Preserve only checks required to establish
+correctness and avoid security regressions in functional work.
 
 | Slice | Existing issue or planned issue | Exit evidence |
 | --- | --- | --- |

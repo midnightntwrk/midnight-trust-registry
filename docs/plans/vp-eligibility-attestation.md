@@ -5,12 +5,12 @@ challenge-to-proposal bridge. The published-package proof/DID port and
 issuer-fixture adversarial tests and a typed #127 intake callback adapter exist.
 The API integration suite now exercises that adapter through the one-use
 challenge service with published VC proof fixtures, DID-bound signing, and
-redacted proposal evidence, including a successful issuer proposal in the
-Compact simulator. Issuer, verifier, auditor, and maintainer fixtures now
-exercise the same one-use API intake boundary. Only the issuer fixture reaches
-a governed Compact proposal; the other roles use a callback spy. Policy/status
-assertions in these fixtures are test-only. Production family/status adapters,
-durable challenge storage, and a public route remain open.
+redacted proposal evidence. Issuer, verifier, auditor, and maintainer fixtures
+reach governed Compact proposals. Verifier, auditor, and maintainer fixtures
+also run 2-of-3 approval and activation; the issuer fixture continues through
+HTTP quorum decisions and authenticated lookup. Policy/status assertions in
+these fixtures are test-only. Production family/status adapters, durable
+challenge storage, and a public route remain open.
 The fixture family's `prepare` callback ignores the submitted VP and supplies
 prebuilt proof material; these tests cover proof/intake wiring and rejection of
 stubbed policy decisions, not authenticity of submitted claims or live status.
@@ -71,10 +71,10 @@ not a production verifier.
   packages; require injected family body-root and status/claims adapters.
 - Add positive issuer, verifier, auditor, and maintainer fixtures and
   adversarial challenge, subject, issuer, scope, status, expiry, and claim
-  cases. All four roles now exercise #127's one-use intake callback and
-  wrong-scope pre-consumption rejection. The issuer proof fixture additionally
-  reaches a Compact simulator proposal; governed proposals for other roles
-  and production eligibility adapters remain open.
+  cases. All four roles exercise #127's one-use intake boundary and a Compact
+  simulator proposal. Verifier, auditor, and maintainer then complete 2-of-3
+  lifecycle decisions. The issuer proof fixture also reaches HTTP governance
+  and authenticated lookup. Production eligibility adapters remain open.
 - Only then add an authenticated API route with bounded payloads, a durable
   atomic challenge store, rate limits, redacted errors, and retention policy.
 

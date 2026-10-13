@@ -85,7 +85,8 @@ const startServer = async (
   source: Parameters<typeof createTrustRegistryApiServer>[0]["source"],
   clock?: () => string,
 ): Promise<ServerHarness> => {
-  const server = createTrustRegistryApiServer({ source, ...(clock === undefined ? {} : { clock }) });
+  const server = createTrustRegistryApiServer({ source, allowUnsafeDemoMutations: true,
+    ...(clock === undefined ? {} : { clock }) });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());

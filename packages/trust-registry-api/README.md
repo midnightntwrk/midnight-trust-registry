@@ -21,6 +21,8 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
+- `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
+- `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -78,21 +80,69 @@ npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 44
 The read-only mutation context returns the current registry ID, predecessor
 epoch ID, and full workspace revision commitment. It is never cached. A signer
 must still expect a stale-context rejection if the workspace changes before
-the eventual atomic mutation; this endpoint does not authenticate or authorize
-the existing demo write routes.
+the mutation is admitted.
 
-Workspace-backed mutation routes:
+`POST /v1/mutations` accepts `{ "intent": ..., "signature": ..., "operation": ... }`.
+The intent signs the exact workspace operation, registry, actor DID/key, role,
+scope commitment, nonce, workspace revision, epoch, and five-minute validity
+window. The server requires an injected Midnight DID resolver, checks the
+appropriate DID relationship (`authentication` for applicants,
+`capabilityInvocation` for maintainers), and persists the consumed nonce in
+the same workspace revision as the operation. The local workspace source uses
+an exclusive lock file and atomic replacement for API writes. A crashed writer
+leaves the lock in place and requires operator inspection before removal; it
+does not silently break a lock. Invalid signatures return 401; unauthorized
+or substituted actors/scopes return 403; replay, stale state, and lock
+contention return 409. Failed requests do not append an operation or consume
+a nonce.
+Operator workspaces created before `consumedMutationNonces` existed must be
+regenerated; this unreleased format has no compatibility default.
+
+The packaged CLI does not yet configure a production DID resolver, so it
+serves reads but returns 503 for signed writes. The integration harness
+injects a ledger-backed DID resolver fixture and exercises the signed route.
+This API is a local reference gateway, not a claim that its fixture replay
+passes external maintainer signatures into a live Compact contract.
+
+The separate governed-action route accepts `issuer`, `verifier`, `auditor`,
+`maintainer`, and `recognition` targets with `approve` and `activate` actions
+only when the server is constructed with `governedMembershipActions`. Without the port it
+returns 503 and never falls back to workspace replay. `GET` returns the
+current registry, authorization, policy, action, sequence, predecessor event,
+and evidence commitments for off-server signing. `POST` accepts
+`{ "prepared": <exact GET response>, "signers": [{ "keyId": "0x...",
+"publicKey": { "x": "...", "y": "..." }, "signature": "0x..." }] }`.
+Each signature must be canonical JubJub Schnorr over the policy-bound action
+digest. The injected port must submit the supplied signatures to Compact,
+which rechecks current state, active maintainer membership, and quorum;
+the API does not sign for maintainers. For `maintainer`, the path's
+`authorizationId` is the candidate's maintainer membership ID, and the
+candidate cannot count toward the existing-maintainer approval quorum.
+For `recognition`, the path's `authorizationId` is the recognition ID; an
+active recognition is not a local issuer, verifier, auditor, or maintainer
+authorization. The recognition port must preserve the recognized authority,
+external registry, and exact scope bound by the prepared Compact digest.
+A stale context returns 409, invalid
+signer bundle 403, malformed signature 400, and accepted transition 202 with
+the Compact event hash. A 202 is not network finality; a network-backed port
+and asynchronous query projection remain future work. The packaged CLI does
+not configure this optional port. The reference integration test injects the
+local simulator and projects that *same* simulator into the read API after
+each transition.
+
+Legacy workspace-backed application and epoch routes are disabled by default.
+For the deliberately unsigned local UI smoke demo only, start with
+`--unsafe-demo-mutations`; the CLI accepts that mode only on literal loopback
+listeners (`127.0.0.1` or `::1`) and never on a public listener.
+Those demo routes:
 
 - require `--workspace`, not `--snapshot`
 - reuse the CLI workspace replay model instead of maintaining separate server
   state
 - currently support issuer, verifier, auditor, and recognition workflows plus registry
   epoch publication
-- are intentionally local-operator only in this slice:
-  - no authentication or authorization middleware is added here
-  - run the server on loopback or behind an explicit local proxy
-- serialize writes per workspace file inside the process, but do not provide
-  cross-process locking for multi-writer deployments
+- bypass actor authorization and are unsuitable for real membership decisions
+- serialize in-process requests and reject cross-process lock contention
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 
@@ -128,6 +178,28 @@ their simulator cost to the light gate:
 ```bash
 pnpm --filter @midnight-ntwrk/trust-registry-api integration
 ```
+
+The focused published-VC fixture test now continues one consumed challenge
+through externally signed 2-of-3 Compact proposal, then HTTP approval and
+activation with externally supplied signatures. It projects that **same
+simulator** into the API snapshot model, resolves the active grant over HTTP,
+rejects a wrong-scope lookup, and independently checks the HTTP evidence
+bundle against the simulator. The test uses a trusted test credential-family
+adapter and local DID fixtures, not a production status verifier or
+authenticated HTTP VP intake. Run just this journey with:
+
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-integration build
+pnpm --filter @midnight-ntwrk/trust-registry-cli build
+pnpm --filter @midnight-ntwrk/trust-registry-api exec vitest run src/integration-test/published-vp-simulator-proposal.integration.test.ts --testTimeout 120000
+```
+
+The governed-action HTTP integration test covers externally signed 2-of-3
+approval and activation, stale and malformed requests, cross-role identifier
+substitution, and independently verified issuer, verifier, and auditor
+evidence on one simulator. It is a reference journey; the VP intake above is
+not yet exposed as an authenticated HTTP endpoint or connected to this route
+in a deployable server.
 
 Example applicant submission:
 

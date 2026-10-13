@@ -10,6 +10,7 @@ import {
   resolveVerifierEntryAtTimestamp,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
+  withExclusiveWorkspaceWrite,
   type SnapshotTemporalAuthorizationInspection,
   type SnapshotTemporalRecognitionInspection,
   type TrustRegistryOperatorWorkspace,
@@ -19,6 +20,7 @@ import {
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistrySummary,
 } from "@midnight-ntwrk/trust-registry-cli";
+export { WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
 import type {
   TrqpAuthorizationDecision,
   TrqpAuthorizationRequest,
@@ -44,6 +46,9 @@ import type {
   TrustRegistryApiResolveRecognitionRequest,
   TrustRegistryApiRecognitionListQuery,
 } from "./schemas.js";
+import { mutationPayloadForWorkspaceOperation, preflightMutationIntent } from "./mutation-intent-preflight.js";
+import { MutationIntentActorRejectedError, transitionSignedMutationState } from "./signed-mutation-state.js";
+import type { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
 export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory";
 
@@ -56,6 +61,7 @@ export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
   readonly mode: "workspace";
   loadWorkspace(): Promise<TrustRegistryOperatorWorkspace>;
   writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void>;
+  withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T>;
 };
 
 export type TrustRegistryApiMutationRecord =
@@ -178,7 +184,6 @@ export const createSnapshotFileSource = (
     return loadSnapshotFromFile(snapshotPath);
   },
 });
-
 export const createWorkspaceFileSource = (
   workspacePath: string,
 ): TrustRegistryApiMutableStateSource => ({
@@ -191,6 +196,9 @@ export const createWorkspaceFileSource = (
   },
   async writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void> {
     await writeWorkspaceToFile(workspacePath, workspace);
+  },
+  async withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T> {
+    return withExclusiveWorkspaceWrite(workspacePath, operation);
   },
 });
 
@@ -233,12 +241,20 @@ const toMutationRecord = (
   };
 };
 
-export const applyMutationOperation = async (
+const enqueueMutation = <T>(
+  source: TrustRegistryApiMutableStateSource,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const previous = mutationChains.get(source) ?? Promise.resolve();
+  const next = previous.then(() => source.withExclusiveWrite(operation));
+  mutationChains.set(source, next.then(() => undefined, () => undefined));
+  return next;
+};
+
+export const applyMutationOperation = (
   source: TrustRegistryApiMutableStateSource,
   operation: TrustRegistryOperatorWorkspaceOperation,
-): Promise<TrustRegistryApiMutationResult> => {
-  const previous = mutationChains.get(source) ?? Promise.resolve();
-  const next = previous.then(async () => {
+): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
     const workspace = await source.loadWorkspace();
     const nextWorkspace = applyWorkspaceOperation(workspace, operation);
     await source.writeWorkspace(nextWorkspace);
@@ -249,18 +265,41 @@ export const applyMutationOperation = async (
       record: toMutationRecord(record),
       workspace: nextWorkspace,
     };
-  });
+});
 
-  mutationChains.set(
-    source,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
+export const applySignedMutationOperation = (
+  source: TrustRegistryApiMutableStateSource,
+  input: {
+    intent: unknown;
+    signature: unknown;
+    operation: TrustRegistryOperatorWorkspaceOperation;
+  },
+  clock: () => Date,
+  resolver: Parameters<typeof verifyMutationIntentDidSignature>[2],
+): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
+  const workspace = await source.loadWorkspace();
+  const next = await transitionSignedMutationState(
+    { workspace, consumedNonces: workspace.consumedMutationNonces },
+    input.intent, input.signature, input.operation, clock(), resolver,
   );
-
-  return next;
-};
+  const commitCheck = preflightMutationIntent(
+    input.intent,
+    mutationPayloadForWorkspaceOperation(input.operation),
+    workspace,
+    clock(),
+  );
+  if (!commitCheck.ok) throw new MutationIntentActorRejectedError(commitCheck.reason);
+  const nextWorkspace = {
+    ...next.workspace,
+    consumedMutationNonces: [...next.consumedNonces],
+  };
+  await source.writeWorkspace(nextWorkspace);
+  return {
+    operation: input.operation,
+    record: toMutationRecord(resolveWorkspaceOperationRecord(nextWorkspace, input.operation)),
+    workspace: nextWorkspace,
+  };
+});
 
 export const loadRegistryRecord = async (
   source: TrustRegistryApiStateSource,

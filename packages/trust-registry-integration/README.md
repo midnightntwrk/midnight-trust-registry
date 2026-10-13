@@ -5,6 +5,47 @@ Integration scenarios for `midnight-trust-registry`.
 Current coverage:
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
+- `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and
+  `prepareIssuerDecisionAction`/`executeIssuerDecisionWithSignatures` expose
+  policy-bound Compact digest inputs and accept explicit maintainer signatures.
+  Proposal also requires a separate evidence-verifier signature. The focused
+  integration test uses two distinct non-bootstrap maintainers under a 2-of-3
+  policy and rejects insufficient, duplicate, stale, wrong-policy, and
+  wrong-evidence-verifier bundles. The API's optional governed-action port can
+  submit external approval/activation signatures to this simulator path;
+  proposal and production network submission still need a deployable adapter.
+  Fixture-driven issuer helpers still sign internally.
+  Run `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run
+  src/test/external-issuer-signers.integration.test.ts` to reproduce it.
+- `prepareVerifierProposalAction`/`executeVerifierProposalWithSignatures` and
+  `prepareVerifierDecisionAction`/`executeVerifierDecisionWithSignatures` expose
+  the exact request-profile proposal and lifecycle digests to external
+  maintainers. The simulator test requires two distinct active signatures at
+  every transition and rejects wrong scope, unknown or duplicate signer,
+  policy substitution, and stale signatures without advancing governance.
+  It checks the resulting active verifier evidence bundle independently. This
+  is not yet a public verifier application or HTTP action route.
+- Auditor proposal and decision actions have the same explicit 2-of-3 signing
+  boundary, but retain an auditor-only mandate scope and request-profile ID.
+  The focused test rejects substituted mandates, duplicate/unknown signers,
+  policy substitution, and stale lifecycle signatures, then independently
+  verifies the active auditor bundle. It does not authorize blanket access to
+  holder presentations or make an auditor grant interchangeable with a
+  verifier grant.
+- External-authority recognition exposes caller-signed proposal and decision
+  digests with the recognized authority DID, external registry, and exact
+  resource scope bound into the Compact action. The 2-of-3 simulator test
+  rejects insufficient, duplicate, substituted-authority, wrong-policy, and
+  stale bundles, then verifies the active recognition evidence. Recognition
+  is not a local issuer, verifier, auditor, or maintainer membership grant;
+  the demo evidence hash is a fixture, not third-party accreditation proof.
+- Maintainer onboarding exposes prepared proposal, approval, and activation
+  digests and accepts signatures from existing maintainers at each transition.
+  The 2-of-3 simulator test rejects insufficient, duplicate, candidate
+  self-voting, wrong-policy, and stale signatures without advancing governance,
+  then confirms the activated candidate can co-sign a later issuer action.
+  Fixture helpers still sign internally; production signing and network
+  submission are not provided by this simulator harness.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers

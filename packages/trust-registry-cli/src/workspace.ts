@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
 
 import {
   LocalTrustRegistryIntegrationHarness,
@@ -54,6 +55,14 @@ type TrackedFixtures = {
   verifiers: Map<string, TrackedVerifierFixture>;
 };
 
+export type SimulatorSnapshotFixtures = {
+  label: string;
+  issuers?: readonly TrackedIssuerFixture[];
+  verifiers?: readonly TrackedVerifierFixture[];
+  auditors?: readonly TrackedAuditorFixture[];
+  recognitions?: readonly TrackedRecognitionFixture[];
+};
+
 const assertNever = (value: never): never => {
   throw new Error(`unexpected mutable target: ${String(value)}`);
 };
@@ -70,11 +79,17 @@ const writeWorkspaceJson = async (
   workspace: TrustRegistryOperatorWorkspace,
 ): Promise<void> => {
   await mkdir(dirname(workspacePath), { recursive: true });
-  await writeFile(
-    workspacePath,
-    serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
-    "utf8",
-  );
+  const temporaryPath = `${workspacePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      temporaryPath,
+      serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
+      { encoding: "utf8", flag: "wx" },
+    );
+    await rename(temporaryPath, workspacePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
 };
 
 const loadWorkspaceJson = async (
@@ -82,6 +97,36 @@ const loadWorkspaceJson = async (
 ): Promise<TrustRegistryOperatorWorkspace> => {
   const raw = await readFile(workspacePath, "utf8");
   return TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(raw));
+};
+
+export class WorkspaceMutationLockedError extends Error {
+  constructor() {
+    super("Operator workspace is locked by another writer; stale locks require operator recovery");
+    this.name = "WorkspaceMutationLockedError";
+  }
+}
+
+export const withExclusiveWorkspaceWrite = async <T>(
+  workspacePath: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const lockPath = `${resolve(workspacePath)}.lock`;
+  await mkdir(dirname(lockPath), { recursive: true });
+  let lock;
+  try {
+    lock = await open(lockPath, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new WorkspaceMutationLockedError();
+    }
+    throw error;
+  }
+  try {
+    return await operation();
+  } finally {
+    await lock.close();
+    await unlink(lockPath);
+  }
 };
 
 const currentOrHistoricalIssuerEvidence = (
@@ -180,6 +225,10 @@ const buildSnapshotFromTrackedFixtures = (
   operationCount: number,
   harness: LocalTrustRegistryIntegrationHarness,
   trackedFixtures: TrackedFixtures,
+  notes: readonly string[] = [
+    "Operator workspace snapshot derived from governed CLI operations.",
+    `Replayed operations: ${operationCount.toString()}.`,
+  ],
 ): TrustRegistryOperatorSnapshot => {
   const registryEpoch = harness.publishRegistryEpoch("workspace-current");
   const issuerEntries = Array.from(trackedFixtures.issuers.values())
@@ -232,11 +281,40 @@ const buildSnapshotFromTrackedFixtures = (
     auditorEntries,
     recognitionEntries,
     evidenceArchive: [],
-    notes: [
-      "Operator workspace snapshot derived from governed CLI operations.",
-      `Replayed operations: ${operationCount.toString()}.`,
-    ],
+    notes: [...notes],
   };
+};
+
+/** Publishes a simulator epoch and projects the same governed state into the API snapshot model. */
+export const publishSimulatorSnapshot = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  fixtures: SimulatorSnapshotFixtures,
+  previous?: TrustRegistryOperatorSnapshot,
+): TrustRegistryOperatorSnapshot => {
+  const tracked = createTrackedFixtures();
+  for (const entry of fixtures.issuers ?? []) {
+    if (tracked.issuers.has(entry.fixture.authorizationId)) throw new Error("Duplicate issuer fixture");
+    tracked.issuers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.verifiers ?? []) {
+    if (tracked.verifiers.has(entry.fixture.authorizationId)) throw new Error("Duplicate verifier fixture");
+    tracked.verifiers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.auditors ?? []) {
+    if (tracked.auditors.has(entry.fixture.authorizationId)) throw new Error("Duplicate auditor fixture");
+    tracked.auditors.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.recognitions ?? []) {
+    if (tracked.recognitions.has(entry.fixture.recognitionId)) throw new Error("Duplicate recognition fixture");
+    tracked.recognitions.set(entry.fixture.recognitionId, entry);
+  }
+  const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
+    "Snapshot projected from the supplied Compact simulator state.",
+  ]);
+  if (previous !== undefined && previous.registry.registryId !== next.registry.registryId) {
+    throw new Error("Cannot retain evidence from another registry");
+  }
+  return previous === undefined ? next : retainHistoricalEvidence(previous, next);
 };
 
 const snapshotBundles = (
@@ -516,6 +594,7 @@ export const createOperatorWorkspace = (
     updatedAt: snapshot.generatedAt,
     registryLabel: label,
     operations: [],
+    consumedMutationNonces: [],
     snapshot,
   });
 };
@@ -547,6 +626,7 @@ export const applyWorkspaceOperation = (
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,
+    consumedMutationNonces: workspace.consumedMutationNonces,
     snapshot,
   });
 };

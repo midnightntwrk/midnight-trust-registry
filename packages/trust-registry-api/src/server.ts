@@ -2,6 +2,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
+import { TrustRegistryOperatorWorkspaceOperationSchema } from "@midnight-ntwrk/trust-registry-cli";
+import { MutationIntentSchema, MutationIntentSignatureSchema } from "@midnight-ntwrk/trust-registry-domain";
+
 import {
   TrustRegistryTrqpAdapter,
   TrqpAuthorizationRequestSchema,
@@ -10,6 +13,7 @@ import {
 
 import {
   applyMutationOperation,
+  applySignedMutationOperation,
   evaluateAuthorizationEntryAtTimestamp,
   evaluateRecognitionEntryAtTimestamp,
   createTrqpSourceFromStateSource,
@@ -27,7 +31,22 @@ import {
   resolveRecognitionEntry,
   type TrustRegistryApiMutationResult,
   type TrustRegistryApiStateSource,
+  WorkspaceMutationLockedError,
 } from "./source.js";
+import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
+import {
+  decodeGovernedMembershipSigners,
+  GovernedMembershipActionReceiptSchema,
+  GovernedMembershipActionRejectedError,
+  GovernedMembershipActionSchema,
+  GovernedMembershipRoleSchema,
+  GovernedMembershipSignatureRequestSchema,
+  sameGovernedMembershipAction,
+  serializeGovernedMembershipAction,
+  type GovernedMembershipActionPort,
+} from "./governed-membership-actions.js";
+import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
+import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
@@ -74,7 +93,16 @@ export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
   clock?: () => string;
   problemBaseUri?: string;
+  mutationDidResolver?: Parameters<typeof verifyMutationIntentDidSignature>[2];
+  allowUnsafeDemoMutations?: boolean;
+  governedMembershipActions?: GovernedMembershipActionPort;
 };
+
+const SignedMutationRequestSchema = z.strictObject({
+  intent: MutationIntentSchema,
+  signature: MutationIntentSignatureSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
 
 const jsonProblem = (
   problemBaseUri: string,
@@ -385,6 +413,23 @@ const mapMutationError = (
   if (error instanceof HttpProblem) {
     throw error;
   }
+  if (error instanceof MutationIntentDidResolutionUnavailableError) {
+    throw jsonProblem(problemBaseUri, "did-resolution-unavailable", 503, "did resolution unavailable");
+  }
+  if (error instanceof MutationIntentActorRejectedError) {
+    const status = error.reason === "invalid-signature" ? 401
+      : ["stale-epoch", "stale-workspace"].includes(error.reason) ? 409 : 403;
+    throw jsonProblem(problemBaseUri, "signed-intent-rejected", status, "signed intent rejected", error.reason);
+  }
+  if (error instanceof MutationNonceAlreadyUsedError) {
+    throw jsonProblem(problemBaseUri, "mutation-replay", 409, "mutation replay", error.message);
+  }
+  if (error instanceof WorkspaceMutationLockedError) {
+    throw jsonProblem(problemBaseUri, "workspace-locked", 409, "workspace locked", error.message);
+  }
+  if (error instanceof MutationIntentOperationMismatchError) {
+    throw jsonProblem(problemBaseUri, "signed-operation-mismatch", 403, "signed operation mismatch", error.message);
+  }
   if (error instanceof Error) {
     if (["issuer", "verifier", "auditor"].some((role) =>
       error.message.startsWith(`unknown ${role} authorization:`))) {
@@ -417,6 +462,36 @@ const mapMutationError = (
     }
   }
 
+  throw error;
+};
+
+const requireUnsafeDemoMutations = (
+  options: TrustRegistryApiServerOptions,
+  problemBaseUri: string,
+): void => {
+  if (!options.allowUnsafeDemoMutations) {
+    throw jsonProblem(problemBaseUri, "signed-mutation-required", 403,
+      "signed mutation required", "Use POST /v1/mutations with a DID-signed intent.");
+  }
+};
+
+const requireGovernedMembershipActions = (
+  options: TrustRegistryApiServerOptions,
+  problemBaseUri: string,
+): GovernedMembershipActionPort => {
+  if (options.governedMembershipActions === undefined) {
+    throw jsonProblem(problemBaseUri, "governed-membership-unavailable", 503,
+      "governed membership unavailable", "A Compact-backed membership action port is not configured.");
+  }
+  return options.governedMembershipActions;
+};
+
+const mapGovernedMembershipError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedMembershipActionRejectedError) {
+    const unknown = error.reason === "unknown-authorization";
+    throw jsonProblem(problemBaseUri, unknown ? "authorization-not-found" : "governed-action-rejected",
+      unknown ? 404 : 403, unknown ? "authorization not found" : "governed action rejected");
+  }
   throw error;
 };
 
@@ -490,6 +565,53 @@ export const createTrustRegistryApiServer = (
           expectedEpochId: workspace.snapshot.currentEpoch.epochId,
           expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
         }));
+        return;
+      }
+
+      if (
+        (method === "GET" || method === "POST")
+        && segments.length === 6
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[4] === "actions"
+      ) {
+        const port = requireGovernedMembershipActions(options, problemBaseUri);
+        const role = GovernedMembershipRoleSchema.parse(segments[2]);
+        const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        const action = GovernedMembershipActionSchema.parse(segments[5]);
+        let prepared;
+        try {
+          prepared = serializeGovernedMembershipAction(await port.prepare(role, authorizationId, action));
+        } catch (error) {
+          return mapGovernedMembershipError(error, problemBaseUri);
+        }
+        response.setHeader("cache-control", "no-store");
+        if (method === "GET") {
+          writeJson(response, 200, prepared);
+          return;
+        }
+        const body = await parseJsonBody(request,
+          (value) => GovernedMembershipSignatureRequestSchema.parse(value), problemBaseUri);
+        if (!sameGovernedMembershipAction(prepared, body.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-action", 409,
+            "stale governed action", "The signed action context no longer matches current ledger state.");
+        }
+        let signers;
+        try {
+          signers = decodeGovernedMembershipSigners(body);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        let receipt;
+        try {
+          receipt = GovernedMembershipActionReceiptSchema.parse(
+            await port.execute(role, authorizationId, action, signers),
+          );
+        } catch (error) {
+          return mapGovernedMembershipError(error, problemBaseUri);
+        }
+        writeJson(response, 202, receipt);
         return;
       }
 
@@ -572,8 +694,34 @@ export const createTrustRegistryApiServer = (
         method === "POST"
         && segments.length === 2
         && segments[0] === "v1"
+        && segments[1] === "mutations"
+      ) {
+        const source = requireMutableSource(options.source, problemBaseUri);
+        if (options.mutationDidResolver === undefined) {
+          throw jsonProblem(problemBaseUri, "did-resolver-required", 503,
+            "did resolver required", "Signed mutations need a configured Midnight DID resolver.");
+        }
+        const body = await parseJsonBody(request, (value) => SignedMutationRequestSchema.parse(value), problemBaseUri);
+        let result: TrustRegistryApiMutationResult;
+        try {
+          result = await applySignedMutationOperation(
+            source, body, () => new Date(options.clock?.() ?? Date.now()), options.mutationDidResolver,
+          );
+        } catch (error) {
+          return mapMutationError(error, problemBaseUri);
+        }
+        writeJson(response, body.operation.operation === "submit" ? 201 : 200,
+          TrustRegistryApiApplicationMutationResponseSchema.parse(buildMutationResponse(result)));
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 2
+        && segments[0] === "v1"
         && segments[1] === "applications"
       ) {
+        requireUnsafeDemoMutations(options, problemBaseUri);
         const source = requireMutableSource(options.source, problemBaseUri);
         const body = await parseJsonBody(
           request,
@@ -601,6 +749,7 @@ export const createTrustRegistryApiServer = (
         && segments[0] === "v1"
         && segments[1] === "applications"
       ) {
+        requireUnsafeDemoMutations(options, problemBaseUri);
         const source = requireMutableSource(options.source, problemBaseUri);
         const target = parseApplicationTarget(segments[2]!, problemBaseUri);
         const id = parseApplicationIdentifier(segments[3]!, problemBaseUri);
@@ -627,6 +776,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "epochs"
         && segments[2] === "publish"
       ) {
+        requireUnsafeDemoMutations(options, problemBaseUri);
         const source = requireMutableSource(options.source, problemBaseUri);
         const body = await parseJsonBody(
           request,

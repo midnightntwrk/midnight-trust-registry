@@ -45,9 +45,11 @@
     "ci:build:light": "pnpm run ci:lint && pnpm run check:compact-installed && pnpm run check:installed-identity-runtime && pnpm run build:light && pnpm run packages:check-contents:light && pnpm run artifacts:pack && pnpm run packed-artifacts:smoke && pnpm run typecheck:light && pnpm run test:light",
     "ci:build": "pnpm run ci:build:light",
     "demo:smoke": "node scripts/demo-smoke.mjs",
+    "demo:signed": "pnpm run build:light && node scripts/demo-signed-journey.mjs",
+    "demo:governed": "pnpm run build:light && node scripts/demo-governed-registry.mjs",
     "demo:prepare": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-workspace --workspace ./artifacts/trust-registry/workspace.json",
     "demo:prepare:snapshot": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-demo --output ./artifacts/trust-registry/demo-snapshot.json",
-    "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/workspace.json --port 4400",
+    "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/workspace.json --unsafe-demo-mutations --port 4400",
     "demo:serve:admin-console": "pnpm --filter @midnight-ntwrk/trust-registry-admin-console run serve -- --port 4173",
     "demo:serve:applicant-portal": "pnpm --filter @midnight-ntwrk/trust-registry-applicant-portal run serve -- --port 4175",
     "refresh:identity-dependencies": "node scripts/refresh-identity-dependencies.mjs"

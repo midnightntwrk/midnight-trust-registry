@@ -7,8 +7,12 @@ import {
   type TrustRegistryOperatorWorkspaceOperation,
 } from "@midnight-ntwrk/trust-registry-cli";
 import {
+  computeAuthorizationScopeCommitment,
   computeMutationPayloadCommitment,
+  computeRecognitionMutationScopeCommitment,
+  issuerGovernedResourceIdFromScopeCommitment,
   MutationIntentSchema,
+  requestGovernedResourceIdFromScopeCommitment,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -37,6 +41,14 @@ export class MutationIntentOperationMismatchError extends Error {
     this.name = "MutationIntentOperationMismatchError";
   }
 }
+
+const issuerResourceKinds = {
+  "credential-family": "credentialFamily",
+  schema: "schema",
+  "schema-version": "schemaVersion",
+  "credential-definition": "credentialDefinition",
+  "status-method-requirement": "statusMethodRequirement",
+} as const;
 
 export function mutationPayloadForWorkspaceOperation(
   operation: TrustRegistryOperatorWorkspaceOperation,
@@ -115,11 +127,40 @@ export function applyIntentBoundWorkspaceOperation(
   } catch {
     throw new MutationIntentOperationMismatchError();
   }
-  if (operation.operation === "publish-epoch") return nextWorkspace;
+  if (operation.operation === "publish-epoch") {
+    const expectedScope = computeAuthorizationScopeCommitment({
+      version: "tr-scope-v1",
+      role: "maintainer",
+      registryId: workspace.snapshot.registry.registryId,
+    });
+    if (intent.scopeCommitment !== expectedScope) throw new MutationIntentOperationMismatchError();
+    return nextWorkspace;
+  }
   const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
-  const recordId = "authorization" in record
-    ? record.authorization.authorizationId
-    : "recognition" in record ? record.recognition.recognitionId : null;
-  if (intent.targetId !== recordId) throw new MutationIntentOperationMismatchError();
+  if ("authorization" in record) {
+    const authorization = record.authorization;
+    const issuerResourceKind = authorization.resourceType in issuerResourceKinds
+      ? issuerResourceKinds[authorization.resourceType as keyof typeof issuerResourceKinds]
+      : null;
+    if (authorization.role === "issuer" && issuerResourceKind === null) {
+      throw new MutationIntentOperationMismatchError();
+    }
+    const expectedResourceId = authorization.role === "issuer"
+      ? issuerGovernedResourceIdFromScopeCommitment(intent.scopeCommitment, issuerResourceKind!)
+      : requestGovernedResourceIdFromScopeCommitment(intent.scopeCommitment);
+    if (intent.targetId !== authorization.authorizationId
+      || authorization.resourceId !== expectedResourceId
+      || (operation.operation === "submit" && authorization.subjectDid !== intent.actorDid)) {
+      throw new MutationIntentOperationMismatchError();
+    }
+  } else if ("recognition" in record) {
+    const recognition = record.recognition;
+    if (intent.targetId !== recognition.recognitionId
+      || intent.scopeCommitment !== computeRecognitionMutationScopeCommitment(recognition.scope)) {
+      throw new MutationIntentOperationMismatchError();
+    }
+  } else {
+    throw new MutationIntentOperationMismatchError();
+  }
   return nextWorkspace;
 }

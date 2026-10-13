@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { computeMutationIntentDigest, mutationIntentDigestBytes, MutationIntentSchema } from "../mutation-intent.js";
+import { computeMutationIntentDigest, computeRecognitionMutationScopeCommitment, mutationIntentDigestBytes, MutationIntentSchema } from "../mutation-intent.js";
 
 const intent = {
   version: "tr-mutation-intent-v1" as const,
@@ -22,6 +22,12 @@ const intent = {
 };
 
 describe("mutation intent v1", () => {
+  it("binds recognition scope independently of context key order", () => {
+    const scope = { resourceType: "recognized-scope" as const, resourceId: "credential-family:degree:v1", context: { b: "two", a: "one" } };
+    const commitment = computeRecognitionMutationScopeCommitment(scope);
+    expect(commitment).toBe(computeRecognitionMutationScopeCommitment({ ...scope, context: { a: "one", b: "two" } }));
+    expect(commitment).not.toBe(computeRecognitionMutationScopeCommitment({ ...scope, resourceId: "credential-family:other:v1" }));
+  });
   it("hashes a fixed, domain-separated preimage independently of object key order", () => {
     const expected = createHash("sha256").update(JSON.stringify([
       "tr:mutation:intent:v1", intent.registryId, intent.actorDid, intent.actorKeyId,

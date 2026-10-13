@@ -22,11 +22,17 @@ const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slic
 /** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
 export async function createApplicationVpScenarioFixture(
   nonce = VP_FIXTURE_NONCE,
-  options: { subjectDid?: string; evidenceVerifierDid?: string; scopeCommitment?: string } = {},
+  options: {
+    subjectDid?: string;
+    evidenceVerifierDid?: string;
+    evidenceVerifierMethodId?: string;
+    scopeCommitment?: string;
+  } = {},
 ) {
   const issuerDid = createMidnightDid("vp-issuer");
   const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
   const evidenceVerifierDid = options.evidenceVerifierDid ?? createMidnightDid("vp-evidence-verifier");
+  const evidenceVerifierMethodId = options.evidenceVerifierMethodId ?? "assertion-1";
   const issuerSecret = 19n;
   const holderSecret = 23n;
   const resolver = createMidnightDidResolver([
@@ -39,7 +45,7 @@ export async function createApplicationVpScenarioFixture(
       schnorrJubjubPublicKey: deriveJubjubPublicKey(holderSecret),
     }),
     createMidnightDidLedgerFixture(evidenceVerifierDid, {
-      verificationMethodId: "assertion-1",
+      verificationMethodId: evidenceVerifierMethodId,
       schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41)),
     }),
   ]);
@@ -105,7 +111,7 @@ export async function createApplicationVpScenarioFixture(
   const verifierSeed = new Uint8Array(32).fill(41);
   const signer = {
     did: evidenceVerifierDid,
-    keyId: `${evidenceVerifierDid}#assertion-1`,
+    keyId: `${evidenceVerifierDid}#${evidenceVerifierMethodId}`,
     publicKey: deriveJubjubPublicKeyFromSeed(verifierSeed),
     signCommitment: (keyId: Uint8Array, commitment: Uint8Array) =>
       signApplicationEvidenceCommitmentFromSeed(verifierSeed, keyId, commitment),
