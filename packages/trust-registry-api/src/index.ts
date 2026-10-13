@@ -1,4 +1,5 @@
 export * from "./application-challenges.js";
+export * from "./file-application-challenges.js";
 export * from "./workspace-commitment.js";
 export * from "./mutation-intent-verifier.js";
 export * from "./mutation-intent-preflight.js";
