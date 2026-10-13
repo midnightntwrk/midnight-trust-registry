@@ -3,12 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   computeUpdateIssuerAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
+  signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
+import {
+  createMaintainerFixture,
+  type MaintainerCoAuthorizer,
+} from "@midnight-ntwrk/trust-registry-contract/testing";
 
 import {
   createIssuerScenarioFixture,
+  createIssuerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
   type MaintainerScenarioFixture,
 } from "../fixtures.js";
@@ -19,7 +24,8 @@ import {
 
 const signPreparedAction = (
   maintainer: MaintainerScenarioFixture,
-  prepared: PreparedIssuerDecisionAction,
+  prepared: Pick<PreparedIssuerDecisionAction,
+    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -33,8 +39,8 @@ const signPreparedAction = (
   ),
 });
 
-describe("externally signed Compact issuer decisions", () => {
-  it("requires two distinct active maintainer signatures for approval and activation", () => {
+describe("externally signed Compact issuer governance", () => {
+  it("requires two distinct active maintainers for proposal, approval, and activation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-signers");
     const second = createMaintainerScenarioFixture("external-second");
     const third = createMaintainerScenarioFixture("external-third");
@@ -43,7 +49,38 @@ describe("externally signed Compact issuer decisions", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeIssuer(issuer, [second]);
+    const evidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scope: createIssuerAuthorizationScopeFixture(issuer),
+      governedResource: { type: "credentialFamily", id: issuer.resourceId },
+    });
+    const proposal = harness.prepareIssuerProposalAction(issuer, evidence);
+    const verifierSeed = createMaintainerFixture("evidence-verifier", 41).seed;
+    const verifierSignature = signIssuerProposalEvidenceFromSeed(
+      verifierSeed,
+      proposal.registryId,
+      proposal.evidenceVerifierKeyIdCommitment,
+      proposal.actionPayloadHash,
+    );
+    const proposalSigners = [signPreparedAction(second, proposal), signPreparedAction(third, proposal)];
+    const beforeProposal = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.executeIssuerProposalWithSignatures(
+      issuer, evidence, [proposalSigners[0]!], verifierSignature,
+    )).toThrow();
+    expect(() => harness.executeIssuerProposalWithSignatures(
+      issuer, evidence, proposalSigners,
+      signIssuerProposalEvidenceFromSeed(
+        new Uint8Array(32).fill(99), proposal.registryId,
+        proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
+      ),
+    )).toThrow();
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
+    harness.executeIssuerProposalWithSignatures(issuer, evidence, proposalSigners, verifierSignature);
+    expect(() => harness.executeIssuerProposalWithSignatures(
+      issuer, evidence, proposalSigners, verifierSignature,
+    )).toThrow();
 
     const approval = harness.prepareIssuerDecisionAction(issuer, "approve");
     expect(approval.actionPayloadHash).toEqual(computeUpdateIssuerAuthorizationPayloadHash(

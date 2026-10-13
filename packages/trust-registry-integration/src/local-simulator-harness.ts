@@ -22,6 +22,7 @@ import {
   signApplicationEvidenceCommitmentFromSeed,
   signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
+  type TrustRegistryJubjubSignature,
   verifyApplicationEvidenceCommitmentSignature,
   verifyPolicyBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
@@ -149,6 +150,20 @@ export type PreparedIssuerDecisionAction = {
   evidenceHash: Uint8Array;
 };
 
+export type PreparedIssuerProposalAction = {
+  registryId: Uint8Array;
+  authorizationId: Uint8Array;
+  policyCommitment: Uint8Array;
+  policyVersion: bigint;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  statusPolicyBindingCommitment: Uint8Array;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -160,6 +175,14 @@ const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResourc
   if (type === undefined) throw new Error("Issuer resource type is invalid");
   return { type, id: fixture.resourceId };
 };
+
+const defaultIssuerEvidenceExpectation = (
+  fixture: IssuerScenarioFixture,
+): SimulatorApplicationEvidenceExpectation => ({
+  scope: createIssuerAuthorizationScopeFixture(fixture),
+  challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+  governedResource: issuerGovernedResource(fixture),
+});
 
 const bytes32Hex = (value: Uint8Array): string =>
   `0x${Buffer.from(value).toString("hex")}`;
@@ -993,12 +1016,44 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
-      scope: createIssuerAuthorizationScopeFixture(fixture),
-      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
-      governedResource: issuerGovernedResource(fixture),
-    },
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
   ): Uint8Array {
+    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeIssuerProposalWithSignatures(
+      fixture,
+      evidence,
+      [
+        {
+          keyId: this.bootstrapMaintainer.keyId,
+          publicKey: this.bootstrapPublicKey,
+          signature: this.bootstrapActionSignature(
+            prepared.actionKind,
+            prepared.actionPayloadHash,
+            prepared.actionSequence,
+          ),
+        },
+        ...this.maintainerCoAuthorizers(
+          additionalMaintainers,
+          prepared.actionKind,
+          prepared.actionPayloadHash,
+          prepared.actionSequence,
+        ),
+      ],
+      signIssuerProposalEvidenceFromSeed(
+        this.evidenceVerifierKey.seed,
+        prepared.registryId,
+        prepared.evidenceVerifierKeyIdCommitment,
+        prepared.actionPayloadHash,
+      ),
+      expectedEvidence,
+    );
+  }
+
+  prepareIssuerProposalAction(
+    fixture: IssuerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
+  ): PreparedIssuerProposalAction {
     if (
       expectedEvidence.scope.role !== "issuer" ||
       expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
@@ -1019,13 +1074,13 @@ export class LocalTrustRegistryIntegrationHarness {
     const statusPolicyBindingCommitment = hashHexToBytes32(
       computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
     );
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
+    const ledger = this.simulator.getLedger();
     const baseIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
@@ -1034,40 +1089,50 @@ export class LocalTrustRegistryIntegrationHarness {
       baseIssuerPayloadHash,
       this.currentEvidenceVerifierAuthorizationId,
       this.currentEvidenceVerifierKeyIdCommitment,
-      this.governancePolicyCommitment,
-      this.simulator.getLedger().governancePolicyVersion,
+      ledger.governancePolicyCommitment,
+      ledger.governancePolicyVersion,
     );
-    const verifierSignature = signIssuerProposalEvidenceFromSeed(
-      this.evidenceVerifierKey.seed,
-      this.registryIdCommitment,
-      this.currentEvidenceVerifierKeyIdCommitment,
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      policyVersion: ledger.governancePolicyVersion,
+      actionKind: Uint8Array.from(PROPOSE_ISSUER_ACTION_KIND),
       actionPayloadHash,
-    );
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      statusPolicyBindingCommitment,
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  executeIssuerProposalWithSignatures(
+    fixture: IssuerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    verifierSignature: TrustRegistryJubjubSignature,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Issuer proposal requires a maintainer signature");
+    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
     const eventHash = this.simulator.proposeIssuerAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        PROPOSE_ISSUER_ACTION_KIND,
-        actionPayloadHash,
-        proposeActionSequence,
-      ),
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
-      this.governancePolicyCommitment,
-      statusPolicyBindingCommitment,
+      prepared.policyCommitment,
+      prepared.statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
-      proposedEvidenceHash,
-      this.currentEvidenceVerifierAuthorizationId,
-      this.currentEvidenceVerifierKeyIdCommitment,
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
       verifierSignature,
-      this.maintainerCoAuthorizers(
-        additionalMaintainers,
-        PROPOSE_ISSUER_ACTION_KIND,
-        actionPayloadHash,
-        proposeActionSequence,
-      ),
+      signers.slice(1),
     );
     this.issuerApplicationEvidence.set(fixture.authorizationId, {
       evidence,
