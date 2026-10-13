@@ -17,6 +17,13 @@ Current scope:
 - render deterministic human-readable audit reports from a saved snapshot or a
   saved operator workspace
 
+The package also exports `publishSimulatorSnapshot(harness, fixtures)` for
+local integration scenarios. It publishes a simulator registry epoch and
+projects specified governed issuer, verifier, auditor, and recognition
+fixtures into the same snapshot schema consumed by the API. It is not a
+production ledger indexer or a substitute for externally accepted finality;
+call it explicitly after governance transitions rather than on each read.
+
 Build the workspace first from the repo root:
 
 ```bash

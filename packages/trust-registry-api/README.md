@@ -151,13 +151,16 @@ pnpm --filter @midnight-ntwrk/trust-registry-api integration
 ```
 
 The focused published-VC fixture test now continues one consumed challenge
-through externally signed 2-of-3 Compact proposal, approval, activation, and
-an independently checked issuer evidence bundle on the **same simulator**.
-It uses a trusted test credential-family adapter and local DID fixtures, not
-a production status verifier or HTTP intake. Run just this journey with:
+through externally signed 2-of-3 Compact proposal, approval, and activation.
+It projects that **same simulator** into the API snapshot model, resolves the
+active grant over HTTP, rejects a wrong-scope lookup, and independently checks
+the HTTP evidence bundle against the simulator. The test uses a trusted test
+credential-family adapter and local DID fixtures, not a production status
+verifier or HTTP intake/write path. Run just this journey with:
 
 ```bash
 pnpm --filter @midnight-ntwrk/trust-registry-integration build
+pnpm --filter @midnight-ntwrk/trust-registry-cli build
 pnpm --filter @midnight-ntwrk/trust-registry-api exec vitest run src/integration-test/published-vp-simulator-proposal.integration.test.ts --testTimeout 120000
 ```
 

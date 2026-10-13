@@ -9,6 +9,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 import { createMaintainerFixture, type MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 
 import {
   ApplicationChallengeBindingSchema,
@@ -31,6 +32,8 @@ import {
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
+import { createTrustRegistryApiServer } from "../server.js";
+import { createInMemorySource } from "../source.js";
 
 const signAction = (
   maintainer: MaintainerScenarioFixture,
@@ -187,5 +190,51 @@ describe("published VP proof to governed issuer decision", () => {
     expect(decision.epoch.stateRoot).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(() => new TrustRegistrySimulatorClient(harness.simulator)
       .verifyIssuerAuthorizationBundle(decision, {})).not.toThrow();
+
+    const snapshot = publishSimulatorSnapshot(harness, {
+      label: "vp-governed",
+      issuers: [{ label: "vp", fixture: issuer }],
+    });
+    const server = createTrustRegistryApiServer({ source: createInMemorySource(snapshot) });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const evidenceResponse = await fetch(
+        `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+      );
+      expect(evidenceResponse.status).toBe(200);
+      const publicBundle = await evidenceResponse.json();
+      expect(publicBundle.epoch.stateRoot).toBe(decision.epoch.stateRoot);
+      expect(publicBundle.authorization.authorizationId).toBe(issuer.authorizationId);
+      expect(() => new TrustRegistrySimulatorClient(harness.simulator)
+        .verifyIssuerAuthorizationBundle(publicBundle, {})).not.toThrow();
+
+      const resolutionResponse = await fetch(`${base}/v1/authorizations/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer", subjectDid: issuer.subjectDid, resourceId: issuer.resourceId,
+        }),
+      });
+      expect(resolutionResponse.status).toBe(200);
+      const resolution = await resolutionResponse.json();
+      expect(resolution.authorization.authorizationId).toBe(issuer.authorizationId);
+      expect(resolution.authorization.status).toBe("active");
+
+      const wrongScopeResponse = await fetch(`${base}/v1/authorizations/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer",
+          subjectDid: issuer.subjectDid,
+          resourceId: createIssuerScenarioFixture("other-vp-scope").resourceId,
+        }),
+      });
+      expect(wrongScopeResponse.status).toBe(404);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });

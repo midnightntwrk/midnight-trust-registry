@@ -55,6 +55,14 @@ type TrackedFixtures = {
   verifiers: Map<string, TrackedVerifierFixture>;
 };
 
+export type SimulatorSnapshotFixtures = {
+  label: string;
+  issuers?: readonly TrackedIssuerFixture[];
+  verifiers?: readonly TrackedVerifierFixture[];
+  auditors?: readonly TrackedAuditorFixture[];
+  recognitions?: readonly TrackedRecognitionFixture[];
+};
+
 const assertNever = (value: never): never => {
   throw new Error(`unexpected mutable target: ${String(value)}`);
 };
@@ -187,6 +195,10 @@ const buildSnapshotFromTrackedFixtures = (
   operationCount: number,
   harness: LocalTrustRegistryIntegrationHarness,
   trackedFixtures: TrackedFixtures,
+  notes: readonly string[] = [
+    "Operator workspace snapshot derived from governed CLI operations.",
+    `Replayed operations: ${operationCount.toString()}.`,
+  ],
 ): TrustRegistryOperatorSnapshot => {
   const registryEpoch = harness.publishRegistryEpoch("workspace-current");
   const issuerEntries = Array.from(trackedFixtures.issuers.values())
@@ -239,11 +251,35 @@ const buildSnapshotFromTrackedFixtures = (
     auditorEntries,
     recognitionEntries,
     evidenceArchive: [],
-    notes: [
-      "Operator workspace snapshot derived from governed CLI operations.",
-      `Replayed operations: ${operationCount.toString()}.`,
-    ],
+    notes: [...notes],
   };
+};
+
+/** Publishes a simulator epoch and projects the same governed state into the API snapshot model. */
+export const publishSimulatorSnapshot = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  fixtures: SimulatorSnapshotFixtures,
+): TrustRegistryOperatorSnapshot => {
+  const tracked = createTrackedFixtures();
+  for (const entry of fixtures.issuers ?? []) {
+    if (tracked.issuers.has(entry.fixture.authorizationId)) throw new Error("Duplicate issuer fixture");
+    tracked.issuers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.verifiers ?? []) {
+    if (tracked.verifiers.has(entry.fixture.authorizationId)) throw new Error("Duplicate verifier fixture");
+    tracked.verifiers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.auditors ?? []) {
+    if (tracked.auditors.has(entry.fixture.authorizationId)) throw new Error("Duplicate auditor fixture");
+    tracked.auditors.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.recognitions ?? []) {
+    if (tracked.recognitions.has(entry.fixture.recognitionId)) throw new Error("Duplicate recognition fixture");
+    tracked.recognitions.set(entry.fixture.recognitionId, entry);
+  }
+  return buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
+    "Snapshot projected from the supplied Compact simulator state.",
+  ]);
 };
 
 const snapshotBundles = (
