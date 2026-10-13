@@ -103,8 +103,12 @@ pnpm run demo:governed
 It verifies a published fixture VC/VP against Midnight DID keys, consumes a
 one-use application challenge, and submits the redacted issuer evidence through
 the governed HTTP proposal route with an evidence-verifier signature and 2-of-3
-maintainer quorum. Verifier, auditor, maintainer, and external-recognition
-proposals remain fixture-signed. Each approval and activation then uses the
+maintainer quorum. Verifier, auditor, and maintainer proposals also use their
+governed HTTP prepare/submit routes with registered evidence-verifier signatures
+and external 2-of-3 maintainer votes; their eligibility evidence is generated
+by local fixtures rather than the issuer's published VC/VP challenge flow.
+External-recognition proposal remains fixture-signed because third-party
+accreditation proof is not implemented. Each approval and activation then uses the
 governed HTTP prepare and submit endpoints with two independently produced
 JubJub signatures from existing maintainers. The script rejects one-signer,
 candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.

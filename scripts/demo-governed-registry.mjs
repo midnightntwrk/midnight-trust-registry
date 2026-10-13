@@ -16,12 +16,14 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
   createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
   createRecognitionScenarioFixture,
+  createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_TIME_MS,
@@ -31,8 +33,11 @@ import {
   InMemoryApplicationChallengeStore,
   consumeChallengeAndSubmitApplication,
   createTrustRegistryApiServer,
+  GovernedAuditorProposalRejectedError,
   GovernedIssuerProposalRejectedError,
+  GovernedMaintainerProposalRejectedError,
   GovernedMembershipActionRejectedError,
+  GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -73,17 +78,26 @@ harness.authorizeMaintainer(third);
 harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 harness.advanceEvidenceTimeBy(60_000);
 
-// The issuer proposal crosses the published VC/VP and HTTP boundaries below.
-harness.proposeVerifier(verifier);
-harness.proposeAuditor(auditor);
+// Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
 harness.proposeRecognition(recognition);
+const verifierEvidence = harness.createApplicationEvidence({
+  applicationId: verifier.authorizationId,
+  subjectDid: verifier.subjectDid,
+  role: "verifier",
+  scope: createVerifierAuthorizationScopeFixture(verifier),
+});
+const auditorEvidence = harness.createApplicationEvidence({
+  applicationId: auditor.authorizationId,
+  subjectDid: auditor.subjectDid,
+  role: "auditor",
+  scope: createAuditorAuthorizationScopeFixture(auditor),
+});
 const candidateEvidence = harness.createApplicationEvidence({
   applicationId: candidate.maintainerId,
   subjectDid: candidate.subjectDid,
   role: "maintainer",
   scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
 });
-harness.proposeMaintainerWithApplicationEvidence(candidate, candidateEvidence);
 
 const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
 const issuerResource = { type: "credentialFamily", id: issuer.resourceId };
@@ -142,7 +156,20 @@ const fixtures = {
   auditors: [{ label: "auditor", fixture: auditor }],
   recognitions: [{ label: "recognition", fixture: recognition }],
 };
-let snapshot = publishSimulatorSnapshot(harness, { ...fixtures, issuers: [] });
+const projectedRoles = new Set();
+let snapshot = publishSimulatorSnapshot(harness, {
+  label: fixtures.label,
+  recognitions: fixtures.recognitions,
+});
+const publishCurrentSnapshot = () => {
+  snapshot = publishSimulatorSnapshot(harness, {
+    label: fixtures.label,
+    issuers: projectedRoles.has("issuer") ? fixtures.issuers : [],
+    verifiers: projectedRoles.has("verifier") ? fixtures.verifiers : [],
+    auditors: projectedRoles.has("auditor") ? fixtures.auditors : [],
+    recognitions: fixtures.recognitions,
+  }, snapshot);
+};
 const targets = new Map([
   ["issuer", {
     id: issuer.authorizationId,
@@ -183,6 +210,60 @@ const findTarget = (role, id) => {
   }
   return target;
 };
+const proposalTargets = new Map([
+  ["verifier", {
+    id: verifier.authorizationId,
+    evidence: verifierEvidence,
+    prepare: (evidence) => harness.prepareVerifierProposalAction(verifier, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeVerifierProposalWithSignatures(verifier, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
+    rejected: GovernedVerifierProposalRejectedError,
+    missing: "unknown-authorization",
+  }],
+  ["auditor", {
+    id: auditor.authorizationId,
+    evidence: auditorEvidence,
+    prepare: (evidence) => harness.prepareAuditorProposalAction(auditor, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeAuditorProposalWithSignatures(auditor, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
+    rejected: GovernedAuditorProposalRejectedError,
+    missing: "unknown-authorization",
+  }],
+  ["maintainer", {
+    id: candidate.maintainerId,
+    evidence: candidateEvidence,
+    prepare: (evidence) => harness.prepareMaintainerProposalAction(candidate, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeMaintainerProposalWithSignatures(candidate, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
+    rejected: GovernedMaintainerProposalRejectedError,
+    missing: "unknown-maintainer",
+  }],
+]);
+const proposalPort = (role, target) => ({
+  async prepare(id, evidence) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    try {
+      return target.prepare(evidence);
+    } catch {
+      throw new target.rejected("invalid-evidence");
+    }
+  },
+  async execute(id, evidence, signers, verifierSignature) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    let eventHash;
+    try {
+      eventHash = target.execute(evidence, signers, verifierSignature);
+    } catch {
+      throw new target.rejected("invalid-signers");
+    }
+    projectedRoles.add(role);
+    publishCurrentSnapshot();
+    return { eventHash: asHex(eventHash) };
+  },
+});
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
   governedIssuerProposals: {
@@ -208,10 +289,14 @@ const server = createTrustRegistryApiServer({
       } catch {
         throw new GovernedIssuerProposalRejectedError("invalid-signers");
       }
-      snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+      projectedRoles.add("issuer");
+      publishCurrentSnapshot();
       return { eventHash: asHex(eventHash) };
     },
   },
+  governedVerifierProposals: proposalPort("verifier", proposalTargets.get("verifier")),
+  governedAuditorProposals: proposalPort("auditor", proposalTargets.get("auditor")),
+  governedMaintainerProposals: proposalPort("maintainer", proposalTargets.get("maintainer")),
   governedMembershipActions: {
     async prepare(role, authorizationId, action) {
       return findTarget(role, authorizationId).prepare(action);
@@ -260,6 +345,28 @@ try {
   const issuerProposal = await expectHttp(await submitProposal(proposalBody), 202);
   await expectHttp(await submitProposal(proposalBody), 409);
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
+  const otherProposals = [];
+  for (const [role, target] of proposalTargets) {
+    const endpoint = `${base}/v1/governed/${role}/${target.id}/proposal`;
+    const prepared = await expectHttp(await fetch(`${endpoint}/prepare`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ evidence: target.evidence }),
+    }), 200);
+    const signature = target.signEvidence(target.prepare(target.evidence));
+    const body = {
+      evidence: target.evidence,
+      prepared,
+      signers: [sign(second, prepared), sign(third, prepared)],
+      evidenceVerifierSignature: asHex(encodeJubjubSignature(signature)),
+    };
+    const submit = (payload) => fetch(`${endpoint}/submit`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+    });
+    await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
+    const accepted = await expectHttp(await submit(body), 202);
+    await expectHttp(await submit(body), 409);
+    otherProposals.push({ role, eventHash: accepted.eventHash, evidenceCommitment: target.evidence.commitment });
+  }
   const decisions = [];
   for (const [role, target] of targets) {
     const events = {};
@@ -472,7 +579,8 @@ try {
       evidenceCommitment: issuerEvidence.commitment,
       source: "published VC/VP fixture and one-use challenge via HTTP proposal",
     },
-    otherProposals: "verifier, auditor, recognition, maintainer remain fixture-signed",
+    otherProposals,
+    recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     issuerEvidenceEpoch: {

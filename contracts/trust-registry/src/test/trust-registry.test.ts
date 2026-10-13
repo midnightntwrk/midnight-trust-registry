@@ -1154,6 +1154,55 @@ describe("trust registry contract", () => {
       .toThrow(/already exists/i);
   });
 
+  it("rejects maintainer approval after its proposal evidence policy is superseded", () => {
+    const registry = createInitializedRegistryFixture(64);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const candidate = createMaintainerMembershipFixture("stale-governance", 65);
+    const proof = maintainerProposalProof(registry, candidate);
+    simulator.proposeMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
+      ),
+      candidate.maintainerId, candidate.maintainerDidCommitment,
+      candidate.keyId, candidate.publicKey, candidate.policyId,
+      candidate.trustLevel, candidate.evidenceHash,
+      proof.verifierAuthorizationId, proof.verifierKeyIdCommitment,
+      proof.evidenceSignature,
+    );
+    const proposalEvent = simulator.getMaintainerProposalEvidence(candidate.maintainerId).proposalGovernanceEventHash;
+    const oldPolicy = simulator.getLedger().governancePolicyCommitment;
+    const newPolicy = labelToBytes32("policy:maintainer:evidence:second");
+    const policyHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      oldPolicy, newPolicy, 2n, 1n, 1n, 1n,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, oldPolicy,
+        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      newPolicy, 2n, 1n, 1n, 1n,
+    );
+    const record = simulator.getMaintainerMembership(candidate.maintainerId);
+    const approvalHash = computeUpdateMaintainerMembershipPayloadHash(
+      candidate.maintainerId, record.lifecycleEventHash, candidate.evidenceHash,
+    );
+    expect(() => simulator.authorizeMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, newPolicy, AUTHORIZE_MAINTAINER_ACTION_KIND,
+        approvalHash, simulator.getLedger().governanceActionCount,
+      ),
+      candidate.maintainerId, candidate.evidenceHash,
+    )).toThrow(/proposal evidence policy is not current/i);
+    expect(simulator.getMaintainerMembership(candidate.maintainerId).status).toBe(AuthorizationStatus.proposed);
+    expect(simulator.getMaintainerProposalEvidence(candidate.maintainerId).proposalGovernanceEventHash)
+      .toEqual(proposalEvent);
+  });
+
   it("rejects duplicate live maintainer identity enrollment and protects the last active maintainer from deactivation", () => {
     const registry = createInitializedRegistryFixture(13);
     const {
