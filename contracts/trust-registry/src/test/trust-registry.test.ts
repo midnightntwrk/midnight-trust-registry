@@ -3823,6 +3823,55 @@ describe("trust registry contract", () => {
       .toThrow(/already exists/i);
   });
 
+  it("rejects auditor approval after its proposal evidence policy is superseded", () => {
+    const registry = createInitializedRegistryFixture(61);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const auditor = createAuditorAuthorizationFixture("stale-mandate");
+    const proof = auditorProposalProof(registry, auditor);
+    const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
+    );
+    simulator.proposeAuditorAuthorization(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, proposalSignature,
+      auditor.authorizationId, auditor.subjectDidCommitment, auditor.requestResourceId,
+      auditor.allowedAttributeSetCommitment, auditor.allowedPredicateSetCommitment,
+      auditor.disclosureLevelCommitment, auditor.policyId, auditor.trustLevel,
+      auditor.evidenceHash, proof.verifierAuthorizationId, proof.verifierKeyIdCommitment,
+      proof.evidenceSignature,
+    );
+    const proposalEvent = simulator.getAuditorProposalEvidence(auditor.authorizationId).proposalGovernanceEventHash;
+    const oldPolicy = simulator.getLedger().governancePolicyCommitment;
+    const newPolicy = labelToBytes32("policy:auditor:evidence:second");
+    const policyHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      oldPolicy, newPolicy, 2n, 1n, 1n, 1n,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, oldPolicy,
+        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyHash,
+        simulator.getLedger().governanceActionCount,
+      ),
+      newPolicy, 2n, 1n, 1n, 1n,
+    );
+    const record = simulator.getAuditorAuthorization(auditor.authorizationId);
+    const approvalHash = computeUpdateAuditorAuthorizationPayloadHash(
+      auditor.authorizationId, record.lifecycleEventHash, auditor.evidenceHash,
+    );
+    expect(() => simulator.authorizeAuditorAuthorization(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, newPolicy, AUTHORIZE_AUDITOR_ACTION_KIND,
+        approvalHash, simulator.getLedger().governanceActionCount,
+      ),
+      auditor.authorizationId, auditor.evidenceHash,
+    )).toThrow(/proposal evidence policy is not current/i);
+    expect(simulator.getAuditorAuthorization(auditor.authorizationId).status).toBe(AuthorizationStatus.proposed);
+    expect(simulator.getAuditorProposalEvidence(auditor.authorizationId).proposalGovernanceEventHash)
+      .toEqual(proposalEvent);
+  });
+
   it("creates and governs auditor authorizations across proposal, activation, and archival paths", () => {
     const registry = createInitializedRegistryFixture(57);
     const {
