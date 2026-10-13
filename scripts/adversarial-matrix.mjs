@@ -62,6 +62,14 @@ export class AdversarialMatrix {
     });
   }
 
+  expectVerified(operation, { id, invariant, boundary }) {
+    assert.ok(["integration", "client", "adapter"].includes(boundary));
+    const value = operation();
+    assert.ok(value, "Expected a verified result");
+    this.#record({ id, invariant, boundary, expected: "accepted", observed: "accepted" });
+    return value;
+  }
+
   report() {
     return {
       format: "tr-adversarial-matrix-v1",

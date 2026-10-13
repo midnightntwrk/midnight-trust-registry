@@ -38,6 +38,11 @@ test("records checked problem types and scrubbed client rejection categories", a
     messagePattern: /commitment mismatch/iu,
     category: "evidence-commitment-rejected",
   });
+  matrix.expectVerified(() => ({ trustedAtTime: true }), {
+    id: "historical-issuer-trust",
+    invariant: "Historical issuer trust survives later policy changes",
+    boundary: "client",
+  });
   assert.deepEqual(matrix.report(), {
     format: "tr-adversarial-matrix-v1",
     cases: [
@@ -68,6 +73,13 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "integration",
         expected: "evidence-commitment-rejected",
         observed: "matched:Error",
+      },
+      {
+        id: "historical-issuer-trust",
+        invariant: "Historical issuer trust survives later policy changes",
+        boundary: "client",
+        expected: "accepted",
+        observed: "accepted",
       },
     ],
   });
@@ -107,5 +119,15 @@ test("does not record an unmatched or absent thrown rejection", () => {
   };
   assert.throws(() => matrix.expectThrown(() => { throw new Error("wrong policy"); }, expected));
   assert.throws(() => matrix.expectThrown(() => {}, expected));
+  assert.deepEqual(matrix.report().cases, []);
+});
+
+test("does not record a rejected historical verification", () => {
+  const matrix = new AdversarialMatrix();
+  assert.throws(() => matrix.expectVerified(() => { throw new Error("invalid proof"); }, {
+    id: "historical-issuer-trust",
+    invariant: "Historical issuer trust survives later policy changes",
+    boundary: "client",
+  }), /invalid proof/u);
   assert.deepEqual(matrix.report().cases, []);
 });

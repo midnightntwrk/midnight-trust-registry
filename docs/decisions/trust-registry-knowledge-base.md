@@ -16,7 +16,7 @@ shorter-lived and more action-oriented than the normative specification.
 
 - The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
   VC authority slice and is not yet published. Its governed demo now emits a
-  checked `tr-adversarial-matrix-v1` with 56 cases across API, Compact simulator,
+  checked `tr-adversarial-matrix-v1` with 70 cases across API, Compact simulator,
   integration preflight, client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
   names the remaining #60 gaps; do not close #60 on the current report.
 - The fastest local loop for script-only adversarial work is the matrix unit
@@ -24,6 +24,11 @@ shorter-lived and more action-oriented than the normative specification.
   demo). Run `./run.sh --light` and `./run.sh integration --light` before a
   signed checkpoint; do not repeat the full proving-key build without a
   contract or generated-artifact change.
+- The threshold-revision matrix has separate outcomes: old-policy applicant
+  evidence fails simulator preflight, old policy-bound signatures fail direct
+  Compact execution, historical evidence verifies at its original instant,
+  and replay at the new policy's effective instant fails. These are local
+  simulator-time claims, not wall-clock or network-finality claims.
 
 - PR #171 and the later admission groundwork are merged to
   `milestone-0.1.0`; local signed work continues on

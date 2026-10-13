@@ -123,6 +123,87 @@ adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionW
 });
 assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
 
+const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-policy-replay");
+const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
+const policyThird = createMaintainerScenarioFixture("governed-demo-policy-third");
+const historicalIssuer = createIssuerScenarioFixture("governed-demo-historical-issuer");
+const pendingPolicyIssuer = createIssuerScenarioFixture("governed-demo-pending-policy-issuer");
+const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-policy-issuer");
+const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
+policyHarness.authorizeIssuer(historicalIssuer);
+const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+policyHarness.authorizeMaintainer(policySecond);
+policyHarness.authorizeMaintainer(policyThird);
+policyHarness.proposeIssuer(pendingPolicyIssuer);
+const oldPolicyAction = policyHarness.prepareIssuerDecisionAction(pendingPolicyIssuer, "approve");
+const oldPolicySignature = signCompact(policySecond, oldPolicyAction);
+const oldPolicyCoSignature = signCompact(policyThird, oldPolicyAction);
+policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const policyActionCountBeforeReplay = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
+  pendingPolicyIssuer, "approve",
+), {
+  id: "integration-old-policy-application-preflight",
+  invariant: "An application attested under the former policy cannot be approved after a revision",
+  boundary: "integration",
+  messagePattern: /policyVersion does not match/iu,
+  category: "old-policy-application-rejected",
+});
+adversarialMatrix.expectThrown(() => policyHarness.simulator.authorizeIssuerAuthorization(
+  oldPolicySignature.keyId,
+  oldPolicySignature.publicKey,
+  oldPolicySignature.signature,
+  pendingPolicyIssuer.authorizationIdCommitment,
+  oldPolicyAction.evidenceHash,
+  [oldPolicyCoSignature],
+), {
+  id: "compact-old-policy-signature-replay",
+  invariant: "A signed action from the former policy cannot satisfy the revised maintainer quorum",
+  boundary: "compact",
+  messagePattern: /signature|policy|assert|maintainer/iu,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
+policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
+policyHarness.approveIssuer(currentPolicyIssuer, [policySecond]);
+policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
+const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
+const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
+assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
+assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
+  historicalPolicyBundle, {},
+), {
+  id: "issuer-history-survives-threshold-change",
+  invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
+  currentPolicyBundle, {},
+), {
+  id: "issuer-current-policy-after-threshold-change",
+  invariant: "New issuer authorization verifies under the revised policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
+  historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
+), {
+  id: "issuer-old-policy-current-time-replay",
+  invariant: "Historical issuer evidence cannot establish trust after its policy is superseded",
+  boundary: "client",
+  messagePattern: /policy snapshot is superseded/iu,
+  category: "superseded-policy-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
+  { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
+), {
+  id: "issuer-uncommitted-policy-version",
+  invariant: "Changing the evidence policy version cannot create an uncommitted authorization",
+  boundary: "client",
+  messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
+});
+
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
 const third = createMaintainerScenarioFixture("governed-demo-third");
@@ -987,6 +1068,14 @@ try {
   assert.equal(suspendedEvaluation.statusAtTime, "suspended");
   const historicalAfterSuspension = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterSuspension.trustedAtTime, true);
+  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: activeAt,
+  }), {
+    id: "issuer-historical-after-suspension",
+    invariant: "A later suspension does not erase the issuer's earlier active authorization",
+    boundary: "client",
+  });
   harness.revokeIssuer(issuer);
   snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
   const revokedBundle = await expectHttp(await fetch(
@@ -1009,9 +1098,13 @@ try {
   assert.equal(revokedEvaluation.statusAtTime, "revoked");
   const historicalAfterRevocation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterRevocation.trustedAtTime, true);
-  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
+  }), {
+    id: "issuer-historical-after-revocation",
+    invariant: "A later revocation does not erase the issuer's earlier active authorization",
+    boundary: "client",
   });
 
   const temporalTargets = [
@@ -1077,6 +1170,14 @@ try {
     assert.equal(suspended.trustedAtTime, false, `${target.role} must be denied while suspended`);
     const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterSuspension.trustedAtTime, true);
+    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: roleActiveAt,
+    }), {
+      id: `${target.role}-historical-after-suspension`,
+      invariant: `A later suspension does not erase ${target.role} trust at its active instant`,
+      boundary: "client",
+    });
 
     target.revoke();
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
@@ -1089,7 +1190,14 @@ try {
     assert.equal(revoked.trustedAtTime, false, `${target.role} must be denied after revocation`);
     const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterRevocation.trustedAtTime, true);
-    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: roleActiveAt,
+    }), {
+      id: `${target.role}-historical-after-revocation`,
+      invariant: `A later revocation does not erase ${target.role} trust at its active instant`,
+      boundary: "client",
+    });
     temporalChecks.push({
       role: target.role,
       activeAt: roleActiveAt,
