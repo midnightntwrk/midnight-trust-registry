@@ -233,7 +233,9 @@ browser access, including error and preflight responses.
 The optional `nonApiGetHandler` composes static assets on the same origin
 without intercepting `/v1` API routes. The loopback-only
 `scripts/demo-auditor-admission.mjs` host uses it for a fixture applicant
-journey; it is not installed by the packaged API CLI.
+journey; it is not installed by the packaged API CLI. The host also supplies
+`authorizePendingAuditorRegistration` so its deterministic signed fixture cannot
+be submitted without the same loopback session and Origin checks as the VP routes.
 
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.

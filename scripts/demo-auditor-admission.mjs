@@ -108,15 +108,17 @@ async function startHost(port) {
   };
   const isLocalRequest = (request) => request.socket.remoteAddress === "127.0.0.1"
     && request.headers.host === expectedHost();
-  const authorizeRequest = async (id, request) => {
-    const pending = registration.readPending(id);
+  const hasDemoSession = (request) => {
     const supplied = request.headers.cookie?.split(";").map((value) => value.trim())
       .find((value) => value.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
     const token = typeof supplied === "string" && /^[0-9a-f]{64}$/u.test(supplied)
       ? Buffer.from(supplied, "hex") : Buffer.alloc(32);
-    if (!isLocalRequest(request) || pending === null || pending.binding.subjectDid !== subjectDid
-      || !timingSafeEqual(token, session)
-      || (request.method === "POST" && request.headers.origin !== `http://${expectedHost()}`)) {
+    return isLocalRequest(request) && timingSafeEqual(token, session)
+      && (request.method !== "POST" || request.headers.origin === `http://${expectedHost()}`);
+  };
+  const authorizeRequest = async (id, request) => {
+    const pending = registration.readPending(id);
+    if (!hasDemoSession(request) || pending === null || pending.binding.subjectDid !== subjectDid) {
       throw new Error("Demo applicant session denied");
     }
   };
@@ -124,6 +126,9 @@ async function startHost(port) {
     source: createInMemorySource(workspace.snapshot),
     clock: () => NOW,
     pendingAuditorRegistration: registration,
+    authorizePendingAuditorRegistration: async (request) => {
+      if (!hasDemoSession(request)) throw new Error("Demo applicant session denied");
+    },
     applicationVp: {
       challengeStore: new InMemoryApplicationChallengeStore(),
       authorizeRequest,
@@ -196,7 +201,22 @@ async function smoke() {
       },
       body: JSON.stringify(body),
     });
-    const registered = await post("/v1/pending-applications/auditor", host.application);
+    const registrationPath = "/v1/pending-applications/auditor";
+    assert.equal((await post(registrationPath, host.application, false)).status, 403);
+    assert.equal((await post(registrationPath, host.application, true, "https://untrusted.example")).status, 403);
+    const spoofedRegistrationStatus = await new Promise((resolveStatus, rejectStatus) => {
+      const request = httpRequest(`${host.base}${registrationPath}`, {
+        method: "POST",
+        headers: { host: "untrusted.example", cookie: host.cookie, origin: host.base, "content-type": "application/json" },
+      }, (response) => {
+        response.resume();
+        response.on("end", () => resolveStatus(response.statusCode));
+      });
+      request.on("error", rejectStatus);
+      request.end(JSON.stringify(host.application));
+    });
+    assert.equal(spoofedRegistrationStatus, 403);
+    const registered = await post(registrationPath, host.application);
     assert.equal(registered.status, 201);
     const path = `/v1/application-evidence/${applicationId}`;
     assert.equal((await post(`${path}/challenges`, {}, false)).status, 403);

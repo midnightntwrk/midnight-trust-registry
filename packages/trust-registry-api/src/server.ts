@@ -147,6 +147,7 @@ export type TrustRegistryApiServerOptions = {
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
   pendingAuditorRegistration?: PendingAuditorRegistrationPort;
+  authorizePendingAuditorRegistration?: (request: IncomingMessage) => Promise<void>;
   nonApiGetHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 };
 
@@ -676,6 +677,13 @@ export const createTrustRegistryApiServer = (
         const port = options.pendingAuditorRegistration;
         if (port === undefined) {
           throw jsonProblem(problemBaseUri, "pending-application-unavailable", 503, "pending application unavailable");
+        }
+        if (options.authorizePendingAuditorRegistration !== undefined) {
+          try {
+            await options.authorizePendingAuditorRegistration(request);
+          } catch {
+            throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
+          }
         }
         const requestBody = await parseJsonBody(request, (value) => SignedPendingAuditorApplicationSchema.parse(value), problemBaseUri);
         try {
