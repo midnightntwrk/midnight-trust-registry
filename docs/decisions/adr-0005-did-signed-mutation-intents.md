@@ -68,6 +68,10 @@ Nonces
 are one-use per registry and actor and remain consumed only after a successful
 atomic mutation. API clock checks are off-ledger; Midnight contract circuits
 must not infer wall-clock time from these timestamps.
+`preflightMutationIntent` checks the wall clock, registry, epoch, full workspace
+revision, and exact validated request body. It is not an authorization decision
+and must run again inside the eventual atomic mutation boundary, alongside
+nonce uniqueness and active policy/role checks.
 
 ## Consequences
 
