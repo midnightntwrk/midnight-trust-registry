@@ -80,6 +80,7 @@ describe("application VP HTTP intake", () => {
     currentVerifiers = [verifier];
     port = {
       challengeStore: new InMemoryApplicationChallengeStore(),
+      authorizeRequest: vi.fn(async () => {}),
       resolvePendingApplication: vi.fn(async (id) => id === binding.applicationId
         ? { binding: currentBinding, authorizedVerifiers: currentVerifiers } : null),
       verifyPresentation: vi.fn(async (presentation: unknown) => {
@@ -129,6 +130,34 @@ describe("application VP HTTP intake", () => {
     expect(port.verifyPresentation).not.toHaveBeenCalled();
   });
 
+  it("authorizes before reading either body and redacts denial without issuing or verifying", async () => {
+    const insert = vi.spyOn(port.challengeStore, "insert");
+    const readLive = vi.spyOn(port.challengeStore, "readLive");
+    port.authorizeRequest = vi.fn(async (applicationId, request) => {
+      expect(applicationId).toBe(binding.applicationId);
+      expect(request.readableFlowing).toBeNull();
+      expect(request.listenerCount("data")).toBe(0);
+      throw new Error("private-vp applicant token and raw claims");
+    });
+    await start();
+    for (const suffix of ["challenges", "submissions"]) {
+      const response = await fetch(`${base}${path}/${suffix}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: '{"presentation":',
+      });
+      expect(response.status).toBe(403);
+      const text = await response.text();
+      expect(text).toContain("application VP forbidden");
+      expect(text).not.toMatch(/private-vp|applicant token|raw claims|presentation/iu);
+    }
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(2);
+    expect(port.resolvePendingApplication).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(readLive).not.toHaveBeenCalled();
+    expect(port.verifyPresentation).not.toHaveBeenCalled();
+    expect(port.signEvidence).not.toHaveBeenCalled();
+    expect(port.persistRedactedEvidence).not.toHaveBeenCalled();
+  });
+
   it("verifies a submitted VP, persists only signed redacted evidence, and refuses replay", async () => {
     await start();
     const challengeResponse = await post("challenges", {});
@@ -148,6 +177,7 @@ describe("application VP HTTP intake", () => {
     const result = JSON.parse(responseText) as { evidence: { commitment: string; envelope: { applicationId: string } }; receipt: { evidenceCommitment: string } };
     expect(result.evidence.envelope.applicationId).toBe(binding.applicationId);
     expect(result.receipt.evidenceCommitment).toBe(result.evidence.commitment);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(2);
     expect(port.persistRedactedEvidence).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(port.persistRedactedEvidence).mock.calls)).not.toContain("private-vp");
     expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(409);

@@ -165,7 +165,13 @@ Those demo routes:
   admin console can call the same loopback API from a separate port
 
 The application-evidence HTTP routes require an injected `applicationVp` port;
-without one, both return 503. Challenge issuance accepts only `{}`. Submission
+without one, both return 503. Its required `authorizeRequest(applicationId,
+request)` callback must authenticate the caller and authorize access to the
+current application, throwing on denial. It runs on both routes before the
+request body is read or any challenge or VP work begins. Denials return a
+generic 403 without exposing callback errors. Reverse-proxy authentication
+alone is not an API authorization seam; the port must still bind the
+authenticated principal to the application. Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or
 evaluated timestamp. The trusted port must resolve the current pending
@@ -205,7 +211,7 @@ injected clock for timer reclamation and consume, copies records on insertion,
 and reports whether issuing a new challenge superseded a live one for that
 application. Capacity, invalid-clock, expiry-range, and collision failures
 have stable `code` and `name` fields. Before public exposure, the embedding
-gateway must authenticate applicants, enforce per-applicant challenge quotas
+gateway must implement the port's applicant authorization callback, enforce per-applicant challenge quotas
 and VP verification timeouts, and provide a durable challenge store and atomic
 pending-application persistence.
 The existing `POST /v1/applications` route is a local operator workspace route,

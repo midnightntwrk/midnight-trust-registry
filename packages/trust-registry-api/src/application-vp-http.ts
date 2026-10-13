@@ -1,3 +1,5 @@
+import type { IncomingMessage } from "node:http";
+
 import {
   ApplicationChallengeBindingSchema,
   ApplicationEvidenceSubmissionSchema,
@@ -37,6 +39,8 @@ export type ApplicationVpReceipt = z.infer<typeof ReceiptSchema>;
 /** The embedding application owns authenticated applicant access, policy and atomic redacted persistence. */
 export interface ApplicationVpHttpPort {
   challengeStore: ApplicationChallengeStore;
+  /** Authenticate the caller and authorize access to this application; throw on denial. The request body is unread. */
+  authorizeRequest(applicationId: string, request: IncomingMessage): Promise<void>;
   resolvePendingApplication(applicationId: string): Promise<{
     binding: ApplicationChallengeBinding;
     authorizedVerifiers: readonly AuthorizedEvidenceVerifier[];

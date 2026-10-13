@@ -600,8 +600,13 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "application-evidence"
         && (segments[3] === "challenges" || segments[3] === "submissions")) {
         response.setHeader("cache-control", "no-store");
-        if (applicationVp === undefined) {
+        if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
+        }
+        try {
+          await options.applicationVp.authorizeRequest(segments[2]!, request);
+        } catch {
+          throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
         }
         try {
           const raw = await readRequestBody(request, problemBaseUri);
