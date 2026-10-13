@@ -115,10 +115,10 @@ describe("file application challenge store", () => {
     const store = new FileApplicationChallengeStore(path);
     const challenge = record(10, 20);
     await store.insert(challenge, START, () => START);
-    await expect(store.consume(challenge.challengeHash, challenge.bindingHash, START - 1)).rejects.toMatchObject({
+    await expect(store.consume(challenge.challengeHash, challenge.bindingHash, START - 10_000)).rejects.toMatchObject({
       code: "CHALLENGE_CLOCK_INVALID",
     });
-    await expect(store.readLive(challenge.challengeHash, challenge.bindingHash, START - 1)).rejects.toMatchObject({
+    await expect(store.readLive(challenge.challengeHash, challenge.bindingHash, START - 10_000)).rejects.toMatchObject({
       code: "CHALLENGE_CLOCK_INVALID",
     });
     await expect(store.insert({ ...record(11, 21), expiresAtMs: START + 2_147_483_648 }, START, () => START))

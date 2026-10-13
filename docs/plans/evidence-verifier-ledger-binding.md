@@ -1,15 +1,15 @@
 # Evidence-verifier ledger binding for issue #67
 
-Status: issuer and verifier reference paths implemented locally. Maintainer
-and auditor proposals remain out of scope until their existing circuits are
-migrated without unsigned bypasses.
+Status: issuer, verifier, and auditor reference paths implemented locally.
+Maintainer proposals remain out of scope until the existing circuit is
+migrated without an unsigned bypass.
 
 ## Current boundary
 
 `applicationEvidenceSignatureDigest` binds a key reference and canonical
-envelope commitment for off-ledger intake. Issuer and verifier proposals each
+envelope commitment for off-ledger intake. Issuer, verifier, and auditor proposals each
 look up a governed evidence-verifier key and verify a role-separated,
-proposal-bound signature. Auditor and maintainer proposal circuits still
+proposal-bound signature. The maintainer proposal circuit still
 accept an opaque evidence hash after a maintainer quorum action. Off-ledger DID resolution and VP checks do
 not by themselves turn that hash into an on-ledger attestation. A second,
 optional proposal circuit would leave an unsigned bypass, so each implemented
@@ -57,11 +57,11 @@ atomically retires the old active record and installs a fresh ID/key while
 preserving historical evidence. No self-registration or overwrite of old key
 material is allowed. Each action has a domain-separated payload and event hash.
 
-## Verifier membership slice
+## Requester membership slices
 
-The verifier membership proposal signs the complete request-profile
-authorization payload with `verifierEvidenceBoundProposalPayloadHash` and a
-verifier-specific Schnorr digest. The contract requires the registered active
+Verifier and auditor membership proposals sign their complete request-profile
+authorization payloads with role-separated bound hashes and Schnorr digests.
+The contract requires the registered active
 evidence-verifier key, verifies its signature and the maintainer quorum, and
 stores a role-specific immutable proposal evidence record. Approval and
 activation recheck that record against the current policy and active key.
