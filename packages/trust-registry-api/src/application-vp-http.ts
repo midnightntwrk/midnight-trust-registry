@@ -14,7 +14,11 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
-import { ApplicationChallengeService, type ApplicationChallengeStore } from "./application-challenges.js";
+import {
+  ApplicationChallengeService,
+  type ApplicationChallengeStore,
+  type IssuedApplicationChallenge,
+} from "./application-challenges.js";
 import {
   consumeChallengeAndSubmitApplication,
   type ApplicationPresentationContext,
@@ -35,6 +39,11 @@ const ReceiptSchema = z.strictObject({
 });
 
 export type ApplicationVpReceipt = z.infer<typeof ReceiptSchema>;
+export type ApplicationVpHttpIssueResult = IssuedApplicationChallenge & { applicationId: string };
+export type ApplicationVpHttpSubmissionResult = {
+  evidence: ApplicationEvidenceSubmission;
+  receipt: ApplicationVpReceipt;
+};
 
 /** The embedding application owns authenticated applicant access, policy and atomic redacted persistence. */
 export interface ApplicationVpHttpPort {
