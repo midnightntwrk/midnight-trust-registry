@@ -89,6 +89,22 @@ describe("published VC proof and DID application verifier port", () => {
     expect(assertStatusActive).toHaveBeenCalledOnce();
   });
 
+  it("rejects a validly signed presentation that names a different credential body root", async () => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, {
+      presentationCredentialBodyRoot: sha256Hex("another-credential-body"),
+    });
+    const family = {
+      ...scenario.family,
+      assertCredentialBodyBinding: vi.fn(scenario.family.assertCredentialBodyBinding),
+      assertIssuerEligible: vi.fn(scenario.family.assertIssuerEligible),
+    };
+    await expect(verifyApplicationVp({ ...scenario.input, family })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertCredentialBodyBinding).toHaveBeenCalledOnce();
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
   it("fails closed on malformed submitted proof JSON", async () => {
     const { input, family } = await fixture();
     const missingProof = structuredClone(input.submission);

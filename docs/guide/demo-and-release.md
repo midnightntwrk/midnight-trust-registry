@@ -107,6 +107,9 @@ only its redacted signed evidence through the governed HTTP proposal route.
 Each proposal requires a registered evidence-verifier signature
 and external 2-of-3 maintainer votes. The signed fixture credential body carries
 the role-specific scope; a mismatched signed scope or altered body is rejected.
+The signed fixture presentation body must name that credential body root and
+holder DID. The HTTP journey rejects a validly signed presentation for another
+credential and a revoked fixture-status decision without persisting evidence.
 The local host uses independent random per-applicant bearer secrets, rejects
 missing or another applicant's secret before reading a body, and closes the
 pending application when evidence is persisted. A validly signed wrong-scope

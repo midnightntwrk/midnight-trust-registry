@@ -391,23 +391,30 @@ try {
     }), 403);
     const challenge = await expectHttp(await post("challenges", {}), 201);
     if (spec.role === "issuer") {
-      const wrongProof = await createApplicationVpScenarioFixture(challenge.nonce, {
-        subjectDid: spec.subjectDid,
-        evidenceVerifierDid: harness.evidenceVerifier.did,
-        evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
-        scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" },
-      });
-      vpPortsByApplication.set(applicationId, await createApplicationVpIntakePorts({
-        resolver: wrongProof.input.resolver,
-        family: wrongProof.input.family,
-        signer: wrongProof.signer,
-      }));
-      await expectHttp(await post("submissions", {
-        nonce: challenge.nonce,
-        challengeHash: challenge.challengeHash,
-        presentation: wrongProof.input.submission,
-      }), 403);
-      assert.equal(persistedEvidence.has(applicationId), false);
+      for (const invalid of [
+        { scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" } },
+        { presentationCredentialBodyRoot: sha256Hex("unbound-credential-body") },
+        { statusDecision: { active: false } },
+      ]) {
+        const wrongProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+          subjectDid: spec.subjectDid,
+          evidenceVerifierDid: harness.evidenceVerifier.did,
+          evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
+          scope: spec.scope,
+          ...invalid,
+        });
+        vpPortsByApplication.set(applicationId, await createApplicationVpIntakePorts({
+          resolver: wrongProof.input.resolver,
+          family: wrongProof.input.family,
+          signer: wrongProof.signer,
+        }));
+        await expectHttp(await post("submissions", {
+          nonce: challenge.nonce,
+          challengeHash: challenge.challengeHash,
+          presentation: wrongProof.input.submission,
+        }), 403);
+        assert.equal(persistedEvidence.has(applicationId), false);
+      }
     }
     const proof = await createApplicationVpScenarioFixture(challenge.nonce, {
       subjectDid: spec.subjectDid,
@@ -730,7 +737,8 @@ try {
     otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
     expectedRejections: [
-      "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-challenge-replay:404",
+      "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
+      "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",

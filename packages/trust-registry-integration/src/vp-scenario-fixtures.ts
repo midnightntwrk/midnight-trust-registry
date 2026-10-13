@@ -40,6 +40,13 @@ type FixtureCredentialBody = {
   credentialExpiresAtMs: number;
 };
 
+type FixturePresentationBody = {
+  version: "tr-vp-presentation-fixture-v1";
+  subjectDid: string;
+  credentialBodyRoot: string;
+  privatePayload: string;
+};
+
 const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
   const value: unknown = JSON.parse(raw);
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -76,6 +83,23 @@ const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
   };
 };
 
+const parseFixturePresentationBody = (raw: string): FixturePresentationBody => {
+  const value: unknown = JSON.parse(raw);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Application VP fixture presentation body is invalid");
+  }
+  const body = value as Record<string, unknown>;
+  if (
+    Object.keys(body).length !== 4
+    || !["version", "subjectDid", "credentialBodyRoot", "privatePayload"].every((key) => Object.hasOwn(body, key))
+    || body.version !== "tr-vp-presentation-fixture-v1"
+    || typeof body.subjectDid !== "string"
+    || typeof body.credentialBodyRoot !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.credentialBodyRoot)
+    || typeof body.privatePayload !== "string" || body.privatePayload.length === 0
+  ) throw new TypeError("Application VP fixture presentation body is invalid");
+  return body as FixturePresentationBody;
+};
+
 type FixtureStatusDecision = {
   registryId: string;
   authorityMethod: string;
@@ -93,6 +117,7 @@ export async function createApplicationVpScenarioFixture(
     evidenceVerifierMethodId?: string;
     scope?: AuthorizationScope;
     statusDecision?: Partial<FixtureStatusDecision>;
+    presentationCredentialBodyRoot?: string;
   } = {},
 ) {
   const issuerDid = createMidnightDid("vp-issuer");
@@ -144,8 +169,14 @@ export async function createApplicationVpScenarioFixture(
     credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
   };
   const rawCredentialBody = JSON.stringify(credentialBody);
-  const rawPresentationBody = "private-presentation-payload";
   const credentialBodyRoot = bytes32(rawCredentialBody);
+  const presentationBody: FixturePresentationBody = {
+    version: "tr-vp-presentation-fixture-v1",
+    subjectDid,
+    credentialBodyRoot: options.presentationCredentialBodyRoot ?? hex(credentialBodyRoot),
+    privatePayload: "private-presentation-payload",
+  };
+  const rawPresentationBody = JSON.stringify(presentationBody);
   const presentationBodyRoot = bytes32(rawPresentationBody);
   const challengeHash = Buffer.from(sha256Hex(Buffer.from(nonce.slice(2), "hex")).slice(2), "hex");
   const holderBinding = createMidnightDIDHolderBinding(holderMethod).explicitBinding;
@@ -189,6 +220,8 @@ export async function createApplicationVpScenarioFixture(
   };
   const submittedBodies = new Map<string, FixtureCredentialBody>();
   submittedBodies.set(hex(material.credentialBodyRoot), credentialBody);
+  const submittedPresentations = new Map<string, FixturePresentationBody>();
+  submittedPresentations.set(hex(material.presentationBodyRoot), presentationBody);
   const statusDecision: FixtureStatusDecision = {
     registryId: credentialBody.statusRegistryId,
     authorityMethod: credentialBody.statusAuthorityMethod,
@@ -212,6 +245,7 @@ export async function createApplicationVpScenarioFixture(
         || submitted.rawPresentationBody.length === 0 || submitted.rawPresentationBody.length > 16_384
       ) throw new TypeError("Application VP fixture submission is invalid");
       const body = parseFixtureCredentialBody(submitted.rawCredentialBody);
+      const presentation = parseFixturePresentationBody(submitted.rawPresentationBody);
       const prepared = {
         ...material,
         issuerDid: body.issuerDid,
@@ -225,12 +259,17 @@ export async function createApplicationVpScenarioFixture(
         presentationProof: decodeApplicationVpProof(submitted.presentationProof),
       };
       submittedBodies.set(hex(prepared.credentialBodyRoot), body);
+      submittedPresentations.set(hex(prepared.presentationBodyRoot), presentation);
       return prepared;
     },
     assertCredentialBodyBinding: async (prepared) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
+      const presentation = submittedPresentations.get(hex(prepared.presentationBodyRoot));
       if (
-        !body || body.issuerDid !== prepared.issuerDid || body.issuerMethodId !== prepared.issuerMethodId
+        !body || !presentation
+        || presentation.subjectDid !== prepared.subjectDid
+        || presentation.credentialBodyRoot !== hex(prepared.credentialBodyRoot)
+        || body.issuerDid !== prepared.issuerDid || body.issuerMethodId !== prepared.issuerMethodId
         || body.subjectDid !== prepared.subjectDid || body.holderMethodId !== prepared.holderMethodId
         || body.credentialExpiresAtMs !== prepared.credentialExpiresAtMs
         || body.statusRegistryId !== hex(prepared.statusBinding.registryRef.registryId)

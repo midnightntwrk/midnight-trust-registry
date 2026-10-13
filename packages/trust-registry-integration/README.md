@@ -75,6 +75,9 @@ Current coverage:
   The scenario fixture serializes both proofs into canonical JSON and derives
   body roots from the submitted credential and presentation body strings;
   changing either submitted body or a proof signature fails verification.
+  The signed fixture presentation body names the credential body root and
+  subject DID; a validly signed presentation naming a different credential is
+  rejected before eligibility checks.
   The fixture's role scope, expiry, holder, status registry, handle, and
   authority method are read from
   the signed credential body, and its claims callback uses that observed scope

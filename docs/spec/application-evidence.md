@@ -229,7 +229,11 @@ verification, abuse controls, durable atomic challenge storage, and atomic
 pending-application persistence. The reference fixture family parses submitted
 proof JSON, derives credential and presentation body roots from the submitted
 bytes, checks their published VC/VP signatures against Midnight DID keys, and
-derives role scope from the signed fixture credential body. It still uses
+derives role scope from the signed fixture credential body. The signed fixture
+presentation body names that credential body root and holder DID; a separately
+valid presentation for a different credential is rejected before eligibility.
+Its test-family status decision must match the signed registry, handle, and
+authority method and remain active and fresh. It still uses
 test-only issuer eligibility and status answers, accepts only its fixture
 credential-body format, and MUST NOT be mounted as a public verifier or treated
 as production accreditation/non-revocation evidence.
