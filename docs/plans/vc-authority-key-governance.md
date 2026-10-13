@@ -43,6 +43,10 @@ wrong-consumer, wrong-network, wrong-method, stale-policy, and stale-sequence
 requests. A consumer pins an accepted authority key/domain at deployment and
 checks the actual contract address through `kernel.self().bytes`; updates are
 explicit, not inferred from a network lookup.
+The reference signer wrapper enforces these field comparisons through an
+injected reader. A production reader still has to authenticate registry
+finality, current-key membership, and numeric governance-policy version; a
+fixture returning a typed record is not finality proof.
 
 ## Delivery order
 

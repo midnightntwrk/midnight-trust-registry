@@ -3,12 +3,27 @@ import { Buffer } from "node:buffer";
 import { pureCircuits } from "@midnight-ntwrk/credential-compact";
 import type { MidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
+import {
+  VcAuthorityKeyStatus,
+  type VcAuthorityKeyRecord,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
 import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
-import { pinnedVcAuthority, type PinnedVcAuthority, type VcAuthoritySigner } from "./vc-signer-authorization.js";
+import {
+  pinnedVcAuthority,
+  vcAuthorityDomainFields,
+  type PinnedVcAuthority,
+  type VcAuthorityDomain,
+  type VcAuthoritySigner,
+} from "./vc-signer-authorization.js";
 
 const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(Buffer.from(right));
+
+/** The implementation must authenticate the exact registry contract, finality, and current ledger state. */
+export type TrustedVcAuthorityKeyReader = {
+  readCurrentFinalizedVcAuthorityKey(domain: VcAuthorityDomain): Promise<VcAuthorityKeyRecord | null>;
+};
 
 /** A signer-side gate: re-read finalized quorum and DID state before invoking key custody. */
 export const createQuorumGatedVcAuthoritySigner = (input: {
@@ -17,6 +32,8 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
   readers: TrustedDecisionEvidenceReaders;
   method: MidnightDIDMethodBinding;
   pinnedAnchor: PinnedVcAuthority;
+  authorityKeyIdCommitment: Uint8Array;
+  authorityKeyReader: TrustedVcAuthorityKeyReader;
   sign: VcAuthoritySigner;
 }): VcAuthoritySigner => async (request) => {
   const { candidate, descriptor } = await createVcSignerCandidateFromTrustedDecision(
@@ -28,6 +45,27 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
     throw new Error("Authority signer registry domain does not match finalized decision");
   }
   const authority = pinnedVcAuthority(input.pinnedAnchor);
+  const fields = vcAuthorityDomainFields(input.pinnedAnchor.domain);
+  const governedKey = await input.authorityKeyReader.readCurrentFinalizedVcAuthorityKey(
+    input.pinnedAnchor.domain,
+  );
+  if (input.authorityKeyIdCommitment.length !== 32
+    || governedKey === null
+    || governedKey.status !== VcAuthorityKeyStatus.active
+    || !sameBytes(governedKey.keyIdCommitment, input.authorityKeyIdCommitment)
+    || !sameBytes(governedKey.authorityDidCommitment, fields.authorityDidCommitment)
+    || !sameBytes(governedKey.authorityMethodIdCommitment, fields.authorityMethodIdCommitment)
+    || !sameBytes(governedKey.networkIdCommitment, fields.networkIdCommitment)
+    || !sameBytes(governedKey.consumerContractAddress, fields.consumerContractAddress)
+    || !sameBytes(governedKey.domainCommitment, authority.domainCommitment)
+    || !sameBytes(governedKey.policyCommitment, descriptor.policyCommitment)
+    || governedKey.policyVersion < 1n
+    || governedKey.publicKey.x !== authority.publicKey.x
+    || governedKey.publicKey.y !== authority.publicKey.y
+    || governedKey.registeredAtSequence > descriptor.decisionSequence
+    || governedKey.lastStatusSequence > descriptor.decisionSequence) {
+    throw new Error("Current finalized VC authority key does not authorize this signature");
+  }
   if (!sameBytes(request.authority.domainCommitment, authority.domainCommitment)
     || !sameBytes(request.authority.verificationMethodRef.controllerAddress.bytes,
       authority.verificationMethodRef.controllerAddress.bytes)

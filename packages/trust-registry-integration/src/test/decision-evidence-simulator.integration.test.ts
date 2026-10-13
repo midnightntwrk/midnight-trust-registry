@@ -24,7 +24,11 @@ import {
   normalizeScalar,
   seedBytesToJubjubSecretScalar,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import {
+  AuthorizationStatus,
+  VcAuthorityKeyStatus,
+  type VcAuthorityKeyRecord,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
@@ -336,6 +340,31 @@ describe("simulator-backed VC decision evidence composition", () => {
       }),
     );
     const secret = seedBytesToJubjubSecretScalar(authoritySeed);
+    const authorityFields = vcAuthorityDomainFields(authorityAnchor.domain);
+    const authorityKeyIdCommitment = bytes32Commitment("vc-authority:decision-key");
+    const governedAuthorityKey: VcAuthorityKeyRecord = {
+      keyIdCommitment: authorityKeyIdCommitment,
+      authorityDidCommitment: authorityFields.authorityDidCommitment,
+      authorityMethodIdCommitment: authorityFields.authorityMethodIdCommitment,
+      publicKey: authorityAnchor.publicKey,
+      networkIdCommitment: authorityFields.networkIdCommitment,
+      consumerContractAddress: authorityFields.consumerContractAddress,
+      domainCommitment: vcAuthorityDomainCommitment(authorityAnchor.domain),
+      policyCommitment: converted.descriptor.policyCommitment,
+      policyVersion: 1n,
+      status: VcAuthorityKeyStatus.active,
+      registeredAtSequence: 1n,
+      retiredAtSequence: 0n,
+      lastStatusSequence: 1n,
+      predecessorKeyIdCommitment: new Uint8Array(32),
+      lifecycleEventHash: bytes32Commitment("vc-authority:event"),
+    };
+    const authorityKeyReader = {
+      readCurrentFinalizedVcAuthorityKey: async (domain: typeof authorityAnchor.domain) => {
+        expect(domain).toEqual(authorityAnchor.domain);
+        return governedAuthorityKey;
+      },
+    };
     let authoritySignCount = 0;
     const gatedSigner = createQuorumGatedVcAuthoritySigner({
       evidence,
@@ -343,6 +372,8 @@ describe("simulator-backed VC decision evidence composition", () => {
       readers,
       method: binding,
       pinnedAnchor: authorityAnchor,
+      authorityKeyIdCommitment,
+      authorityKeyReader,
       sign: async ({ decisionRoot, decisionSequence, authority }) => {
         authoritySignCount += 1;
         return signFixtureContextProof(
@@ -359,6 +390,41 @@ describe("simulator-backed VC decision evidence composition", () => {
       anchor: authorityAnchor,
       signer: gatedSigner,
     });
+    expect(authoritySignCount).toBe(1);
+    const validSignerRequest = {
+      decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
+        signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
+      ),
+      decisionSequence: signed.descriptor.decisionSequence,
+      authority: pinnedVcAuthority(authorityAnchor),
+    };
+    for (const currentKey of [
+      null,
+      { ...governedAuthorityKey, status: VcAuthorityKeyStatus.suspended },
+      { ...governedAuthorityKey, keyIdCommitment: bytes32Commitment("other-key") },
+      { ...governedAuthorityKey, authorityDidCommitment: bytes32Commitment("other-authority") },
+      { ...governedAuthorityKey, authorityMethodIdCommitment: bytes32Commitment("other-method") },
+      { ...governedAuthorityKey, networkIdCommitment: bytes32Commitment("other-network") },
+      { ...governedAuthorityKey, consumerContractAddress: bytes32Commitment("other-consumer") },
+      { ...governedAuthorityKey, domainCommitment: bytes32Commitment("other-domain") },
+      { ...governedAuthorityKey, policyCommitment: bytes32Commitment("other-policy") },
+      { ...governedAuthorityKey, policyVersion: 0n },
+      { ...governedAuthorityKey, publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(78)) },
+      { ...governedAuthorityKey, registeredAtSequence: signed.descriptor.decisionSequence + 1n },
+      { ...governedAuthorityKey, lastStatusSequence: signed.descriptor.decisionSequence + 1n },
+    ]) {
+      const rejectedSigner = createQuorumGatedVcAuthoritySigner({
+        evidence,
+        selection: context.selection,
+        readers,
+        method: binding,
+        pinnedAnchor: authorityAnchor,
+        authorityKeyIdCommitment,
+        authorityKeyReader: { readCurrentFinalizedVcAuthorityKey: async () => currentKey },
+        sign: async () => { throw new Error("Invalid authority reached key custody"); },
+      });
+      await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
+    }
     expect(authoritySignCount).toBe(1);
     await expect(gatedSigner({
       decisionRoot: bytes32Commitment("substituted-decision-root"),
@@ -391,6 +457,8 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
       method: binding,
       pinnedAnchor: authorityAnchor,
+      authorityKeyIdCommitment,
+      authorityKeyReader,
       sign: async () => { throw new Error("Stale decision reached key custody"); },
     });
     await expect(issueVcSignerAuthorizationFromTrustedDecision({
