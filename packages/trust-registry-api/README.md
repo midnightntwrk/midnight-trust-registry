@@ -142,6 +142,9 @@ maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
 Verifier, auditor, and maintainer proposal HTTP routes remain out of scope
 until their evidence-verifier signatures are bound in the contract.
+The integration journey verifies a published fixture VC/VP, consumes one
+challenge, submits the resulting redacted evidence through this HTTP proposal
+route, and then approves and activates the issuer with external 2-of-3 votes.
 
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
