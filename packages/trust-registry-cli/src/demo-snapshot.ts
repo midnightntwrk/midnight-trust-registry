@@ -170,6 +170,7 @@ export const createDemoSnapshot = (
     verifierEntries,
     auditorEntries,
     recognitionEntries,
+    evidenceArchive: [],
     notes: [
       "Simulator-first operator snapshot for local trust-registry inspection.",
       "Active entries are current decisions; archived entries preserve historical evidence.",

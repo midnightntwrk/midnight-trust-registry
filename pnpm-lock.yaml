@@ -101,6 +101,9 @@ importers:
         specifier: ^4.1.0
         version: 4.4.3
     devDependencies:
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:0.1.0
+        version: link:../../packages/trust-registry-client
       '@midnight-ntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-integration
@@ -147,6 +150,9 @@ importers:
       '@midnight-ntwrk/trust-registry-contract':
         specifier: workspace:0.1.0
         version: link:../../contracts/trust-registry
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:0.1.0
+        version: link:../trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
@@ -166,6 +172,10 @@ importers:
       '@midnight-ntwrk/trust-registry-api':
         specifier: workspace:0.1.0
         version: link:../trust-registry-api
+    devDependencies:
+      happy-dom:
+        specifier: 20.14.5
+        version: 20.14.5
 
   packages/trust-registry-cli:
     dependencies:

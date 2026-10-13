@@ -10,6 +10,7 @@ import {
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   TrustRegistryEvidenceBundleSchema,
+  compareRfc3339Instants,
   computeAuthorizationStatementLeafHash,
   computeGovernancePolicySnapshotCommitment,
   assertIssuerStatusPolicyBindingMatchesAuthorization,
@@ -123,21 +124,18 @@ const assertEpochAnchor = (
   if (bundle.epoch.policyRoot !== `0x${Buffer.from(epochRecord.policyRoot).toString("hex")}`) {
     throw new Error("Epoch policy root mismatch");
   }
-  if (bundle.epoch.validFrom !== sequenceToTimestamp(epochRecord.validFromSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validFrom, sequenceToTimestamp(epochRecord.validFromSequence)) !== 0) {
     throw new Error("Epoch validFrom mismatch");
   }
-  if (bundle.epoch.validUntil !== sequenceToTimestamp(epochRecord.validUntilSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validUntil, sequenceToTimestamp(epochRecord.validUntilSequence)) !== 0) {
     throw new Error("Epoch validUntil mismatch");
   }
 
-  const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
-  if (!Number.isFinite(evaluationTime)) {
-    throw new Error("Evaluation time is invalid");
-  }
-  if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validFrom) < 0) {
     throw new Error("Epoch is not yet valid for this evidence bundle");
   }
-  if (evaluationTime > Date.parse(bundle.epoch.validUntil)) {
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validUntil) > 0) {
     throw new Error("Epoch is stale for this evidence bundle");
   }
 
@@ -206,21 +204,15 @@ const assertPolicyAnchor = (
   if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
     throw new Error("Policy root does not match the bundle policy");
   }
-  const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
-  if (
-    options.policySupersededAt !== undefined
-    && !Number.isFinite(Date.parse(options.policySupersededAt))
-  ) {
-    throw new Error("Policy supersession time is invalid");
-  }
-  if (evaluationTime < Date.parse(snapshot.effectiveFrom)) {
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, snapshot.effectiveFrom) < 0) {
     throw new Error("Policy snapshot is not yet effective");
   }
   if (
     (snapshot.effectiveUntil !== null
-      && evaluationTime >= Date.parse(snapshot.effectiveUntil))
+      && compareRfc3339Instants(evaluationTime, snapshot.effectiveUntil) >= 0)
     || (options.policySupersededAt !== undefined
-      && evaluationTime >= Date.parse(options.policySupersededAt))
+      && compareRfc3339Instants(evaluationTime, options.policySupersededAt) >= 0)
   ) {
     throw new Error("Policy snapshot is superseded at the evaluation time");
   }
