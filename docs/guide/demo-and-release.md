@@ -130,6 +130,13 @@ verifier, auditor, and recognition each check current and historical API
 evaluations across active, suspended, and revoked states. Historical trust at
 the active instant remains verifiable after both lifecycle changes; recognition
 remains external authority recognition, not local membership.
+After those actor journeys, the simulator demo raises the ordinary decision
+threshold from 2-of-3 to 3-of-4, rejects a two-signer proposal, and accepts a
+three-signer proposal. It then suspends the new maintainer using the emergency
+threshold, rejects that maintainer's later vote, and accepts a proposal from
+the three still-active maintainers. The independent integration suite also
+rejects removal of the last active maintainer. These are local Compact
+simulator assertions, not proof of network finality.
 For the issuer, the same Midnight DID uses separate authentication and assertion
 keys: the authentication key signs the application VP, and the assertion key
 signs a subsequent VC. The demo registers a governed VC authority key, converts

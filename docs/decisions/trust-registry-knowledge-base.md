@@ -628,3 +628,11 @@ maintainer membership for that DID. The governed HTTP demo repeats the issuer
 and maintainer negatives. Recognition remains a scoped external-registry
 statement, not transitive local membership; these are simulator checks, not
 proof of another registry's independent accreditation process.
+
+The #78 maintainer signed-journey fixture now tests a live threshold revision
+from 2 to 3 after onboarding. Two votes fail without consuming a governance
+sequence; three active votes succeed. After emergency suspension of the new
+maintainer, its key cannot satisfy the revised quorum, while the three
+remaining active maintainers can. The governed demo exports the policy-version
+transition and event hashes; the existing last-active-maintainer test remains
+separate. This does not introduce production key custody or relayer finality.

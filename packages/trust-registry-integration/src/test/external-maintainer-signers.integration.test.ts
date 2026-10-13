@@ -115,5 +115,25 @@ describe("externally signed Compact maintainer onboarding", () => {
 
     const issuer = createIssuerScenarioFixture("candidate-coauthorizer-issuer");
     expect(() => harness.proposeIssuer(issuer, [candidate])).not.toThrow();
+
+    const priorPolicyVersion = harness.simulator.getLedger().governancePolicyVersion;
+    harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+    expect(harness.simulator.getLedger().governancePolicyVersion).toBe(priorPolicyVersion + 1n);
+    const afterRevision = createIssuerScenarioFixture("three-of-four-issuer");
+    const beforeRejectedProposal = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.proposeIssuer(afterRevision, [second])).toThrow(/action threshold/i);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeRejectedProposal);
+    expect(() => harness.proposeIssuer(afterRevision, [second, third])).not.toThrow();
+
+    harness.suspendMaintainer(candidate);
+    expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
+      .toBe(AuthorizationStatus.suspended);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(3n);
+    const afterSuspension = createIssuerScenarioFixture("suspended-maintainer-issuer");
+    const beforeSuspendedVote = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.proposeIssuer(afterSuspension, [candidate, second]))
+      .toThrow(/Maintainer must be active/i);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeSuspendedVote);
+    expect(() => harness.proposeIssuer(afterSuspension, [second, third])).not.toThrow();
   });
 });

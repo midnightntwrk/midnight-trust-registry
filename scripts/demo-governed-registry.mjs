@@ -901,10 +901,23 @@ try {
     });
   }
 
+  const policyVersionBeforeRevision = harness.simulator.getLedger().governancePolicyVersion;
+  const thresholdRevision = harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+  assert.equal(harness.simulator.getLedger().governancePolicyVersion, policyVersionBeforeRevision + 1n);
+  const threeSignerIssuer = createIssuerScenarioFixture("governed-demo-three-signer-issuer");
+  assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
+  harness.proposeIssuer(threeSignerIssuer, [second, third]);
+  const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
+  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  const postSuspensionIssuer = createIssuerScenarioFixture("governed-demo-post-suspension-issuer");
+  assert.throws(() => harness.proposeIssuer(postSuspensionIssuer, [candidate, second]),
+    /Maintainer must be active/u);
+  const remainingQuorumEventHash = harness.proposeIssuer(postSuspensionIssuer, [second, third]);
+
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures for all decisions",
+    governance: "2-of-3 external JubJub signatures for actor decisions; revised to 3-of-4",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
@@ -937,6 +950,14 @@ try {
     },
     otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
+    maintainerLifecycle: {
+      policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
+      policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
+      thresholdRevisionEventHash: asHex(thresholdRevision),
+      suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
+      remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
+      remainingQuorumEventHash: asHex(remainingQuorumEventHash),
+    },
     expectedRejections: [
       "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
@@ -945,6 +966,8 @@ try {
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "recognition-is-not-local-issuer-or-maintainer:client",
+      "revised-threshold-rejects-two-signers:simulator",
+      "suspended-maintainer-cannot-vote:simulator",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",
     ],
