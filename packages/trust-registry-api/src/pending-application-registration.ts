@@ -4,20 +4,22 @@ import {
   SignedPendingApplicationSchema,
   computeAuthorizationScopeCommitment,
   pendingApplicationMutationPayload,
-  type ApplicationChallengeBinding,
   type SignedPendingApplication,
 } from "@midnight-ntwrk/trust-registry-domain";
+import { z } from "zod";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
-export type PendingApplicationRecord = {
-  authorizationId: string;
-  binding: ApplicationChallengeBinding;
-  status: "pending";
-  createdAt: string;
-};
+export const PendingApplicationRecordSchema = z.strictObject({
+  authorizationId: z.string().trim().min(1).max(256),
+  binding: ApplicationChallengeBindingSchema,
+  status: z.literal("pending"),
+  createdAt: z.string().datetime({ offset: true }),
+});
+
+export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSchema>;
 
 export type PendingApplicationRegistrationState = {
   workspace: TrustRegistryOperatorWorkspace;

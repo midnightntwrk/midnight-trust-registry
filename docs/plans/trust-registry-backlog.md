@@ -37,9 +37,10 @@ bundle. Combined VP/proposal HTTP hosts now require a receipt-backed admission
 port. A deterministic local issuer journey now projects registration preflight
 and public lookup from one Compact simulator and connects signed registration,
 VP receipt, 2-of-3 governed transitions, and epoch-backed lookup. Applicant
-records and accepted evidence remain in-memory and are not atomically durable
-with governance state. The next functional slice must provide authoritative
-persistence and crash/retry semantics for that handoff. The Compact contract
+records and accepted evidence now have a private file-backed local adapter,
+but challenge consumption, receipt acceptance, and governance are not one
+atomic transaction. The next functional slice must provide crash/retry
+reconciliation and a deployable authoritative host for that handoff. The Compact contract
 checks evidence hashes but does not itself resolve the evidence verifier's DID
 assertion key.
 

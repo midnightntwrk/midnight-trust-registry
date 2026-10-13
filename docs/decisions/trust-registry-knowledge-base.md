@@ -362,6 +362,8 @@ Compact proposal, 2-of-3 maintainer approval and activation, epoch publication,
 and client-verified public evidence lookup. It rejects proposal preparation and
 submission when the accepted receipt is unavailable, and rejects one-signature
 governance actions without advancing the ledger. Registration preflight and
-public API snapshots project one simulator state. Pending applications and
-accepted evidence are still in-memory, not atomically durable with the ledger;
-this is not live VC status verification or network finality.
+public API snapshots project one simulator state. A private file-backed
+adapter now persists pending applications, spent nonces, and accepted redacted
+evidence across store restarts. It does not atomically join challenge
+consumption, evidence acceptance, and Compact governance; this is not live VC
+status verification or network finality.

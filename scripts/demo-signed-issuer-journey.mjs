@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   encodeJubjubSignature,
@@ -20,7 +23,6 @@ import {
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
-  sha256Hex,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
   createApplicationVpIntakePorts,
@@ -37,8 +39,8 @@ import {
   createTrustRegistryApiServer,
   GovernedIssuerProposalRejectedError,
   GovernedMembershipActionRejectedError,
-  InMemoryApplicationChallengeStore,
-  transitionPendingApplicationRegistration,
+  FileApplicationAdmissionStore,
+  FileApplicationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
 
 const label = "signed-issuer-journey";
@@ -78,27 +80,13 @@ const signingPorts = await createApplicationVpIntakePorts({
   family: resolverFixture.input.family,
   signer: resolverFixture.signer,
 });
-let pendingState = { applications: [], consumedNonces: [] };
-let pendingTail = Promise.resolve();
-const registration = {
-  register(request, at) {
-    const attempt = pendingTail.then(async () => {
-      const next = await transitionPendingApplicationRegistration(
-        { workspace: workspaceForSnapshot(), ...pendingState }, request,
-        harness.evidenceVerifier.did, at, resolverFixture.input.resolver,
-      );
-      pendingState = { applications: next.applications, consumedNonces: next.consumedNonces };
-      return structuredClone(next.applications.at(-1));
-    });
-    pendingTail = attempt.then(() => {}, () => {});
-    return attempt;
-  },
-  readPending(id) {
-    const record = pendingState.applications.find((item) => item.binding.applicationId === id);
-    return record === undefined ? null : structuredClone(record);
-  },
-};
-const acceptedEvidence = new Map();
+const stateDirectory = await mkdtemp(join(tmpdir(), "tr-signed-issuer-"));
+const admissionPath = join(stateDirectory, "admission.json");
+const registration = new FileApplicationAdmissionStore(
+  admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
+  async () => workspaceForSnapshot(),
+);
+let withholdAcceptedReceipt = false;
 const token = randomBytes(32).toString("hex");
 const authorized = (request) => {
   const supplied = request.headers.authorization?.replace(/^Bearer /u, "");
@@ -106,8 +94,9 @@ const authorized = (request) => {
     && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
 };
 const admission = {
-  resolvePendingApplication: async (id) => registration.readPending(id),
-  resolveAcceptedEvidence: async (id) => acceptedEvidence.get(id) ?? null,
+  resolvePendingApplication: (id) => registration.resolvePendingApplication(id),
+  resolveAcceptedEvidence: (id) => withholdAcceptedReceipt
+    ? Promise.resolve(null) : registration.resolveAcceptedEvidence(id),
 };
 const signAction = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
@@ -186,15 +175,15 @@ const server = createTrustRegistryApiServer({
     if (!authorized(request)) throw new Error("Applicant bearer token required");
   },
   applicationVp: {
-    challengeStore: new InMemoryApplicationChallengeStore(),
+    challengeStore: new FileApplicationChallengeStore(join(stateDirectory, "challenges.json")),
     authorizeRequest: async (id, request) => {
-      if (!authorized(request) || registration.readPending(id)?.binding.subjectDid !== issuer.subjectDid) {
+      if (!authorized(request) || (await registration.readPending(id))?.binding.subjectDid !== issuer.subjectDid) {
         throw new Error("Applicant bearer token denied");
       }
     },
     resolvePendingApplication: async (id) => {
-      const pending = registration.readPending(id);
-      return pending === null || acceptedEvidence.has(id) ? null : {
+      const pending = await registration.readPending(id);
+      return pending === null || await registration.resolveAcceptedEvidence(id) !== null ? null : {
         binding: pending.binding,
         authorizedVerifiers: [harness.evidenceVerifier],
       };
@@ -210,18 +199,7 @@ const server = createTrustRegistryApiServer({
     },
     signEvidence: signingPorts.signEvidence,
     verifyEvidenceSignature: signingPorts.verifyEvidenceSignature,
-    persistRedactedEvidence: async (id, evidence) => {
-      if (id !== applicationId || acceptedEvidence.has(id) || registration.readPending(id) === null) {
-        throw new Error("Application already accepted or unavailable");
-      }
-      const receipt = {
-        receiptId: sha256Hex(JSON.stringify([id, evidence.commitment])),
-        evidenceCommitment: evidence.commitment,
-        acceptedAt: now.toISOString(),
-      };
-      acceptedEvidence.set(id, { evidence, receipt });
-      return receipt;
-    },
+    persistRedactedEvidence: (id, evidence) => registration.acceptEvidence(id, evidence, now),
   },
 });
 
@@ -305,6 +283,12 @@ try {
   const submitted = await expectHttp(await post(`${evidencePath}/submissions`, submission), 202);
   assert.equal(submitted.receipt.evidenceCommitment, submitted.evidence.commitment);
   assert.equal(JSON.stringify(submitted).includes(currentProof.input.submission.rawCredentialBody), false);
+  const reopened = new FileApplicationAdmissionStore(
+    admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
+    async () => workspaceForSnapshot(),
+  );
+  assert.deepEqual(await reopened.resolveAcceptedEvidence(applicationId), submitted);
+  assert.equal((await readFile(admissionPath, "utf8")).includes(currentProof.input.submission.rawCredentialBody), false);
   assert.equal((await post(`${evidencePath}/submissions`, submission)).status, 404);
   assert.equal((await post(`${evidencePath}/challenges`, {})).status, 404);
 
@@ -314,10 +298,9 @@ try {
     `/v1/governed/issuer/auth:issuer:substituted:v1/proposal/prepare`,
     { evidence: submitted.evidence },
   )).status, 403);
-  const acceptedRecord = acceptedEvidence.get(applicationId);
-  acceptedEvidence.delete(applicationId);
+  withholdAcceptedReceipt = true;
   assert.equal((await post(`${proposalPath}/prepare`, { evidence: submitted.evidence })).status, 403);
-  acceptedEvidence.set(applicationId, acceptedRecord);
+  withholdAcceptedReceipt = false;
   const preparedProposal = await expectHttp(await post(
     `${proposalPath}/prepare`, { evidence: submitted.evidence },
   ), 200);
@@ -330,9 +313,9 @@ try {
     signers: quorumSignatures(preparedProposal),
     evidenceVerifierSignature: asHex(encodeGovernanceSignature(verifierSignature)),
   };
-  acceptedEvidence.delete(applicationId);
+  withholdAcceptedReceipt = true;
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 403);
-  acceptedEvidence.set(applicationId, acceptedRecord);
+  withholdAcceptedReceipt = false;
   const beforeProposal = harness.simulator.getLedger().governanceActionCount;
   assert.equal((await post(`${proposalPath}/submit`, {
     ...proposalBody, signers: [signAction(maintainers[0], preparedProposal)],
@@ -373,7 +356,7 @@ try {
   assert.equal(evaluated.trustedAtTime, true);
   process.stdout.write(`${JSON.stringify({
     demo: "signed-issuer-journey",
-    mode: "deterministic local Compact simulator and in-memory applicant state",
+    mode: "deterministic local Compact simulator and private file-backed admission state",
     governance: "2-of-3 active maintainers",
     applicationId,
     authorizationId: issuer.authorizationId,
@@ -388,4 +371,5 @@ try {
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await rm(stateDirectory, { recursive: true, force: true });
 }

@@ -169,8 +169,11 @@ registration preflight and API snapshots from one Compact simulator, then
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
 maintainer proposal/approval/activation, epoch publication, and an API bundle
 independently verified by the client. Single-maintainer actions cannot advance
-the ledger. Applicant records remain in memory; this does not establish
-durable admission, production family/status verification, or network finality.
+the ledger. Pending records, consumed nonces, challenges, and accepted redacted
+receipts use private files that a second store instance can reopen. The local
+file adapter does not make challenge consumption, evidence acceptance, and
+Compact governance one atomic transaction; the demo does not establish
+production family/status verification or network finality.
 
 Refresh published DID and VC dependencies with validation:
 

@@ -222,8 +222,11 @@ only after successful VP intake; the in-memory demo is not durable.
 The local signed-issuer reference derives registration preflight and public
 snapshots from one Compact simulator, then carries one accepted VP through
 2-of-3 maintainer proposal, decisions, epoch publication, and public evidence
-lookup. Its pending and accepted-evidence records remain in memory; that
-deterministic fixture does not provide atomic durability or network finality.
+lookup. Private file adapters persist pending records, spent nonces,
+challenge hashes, and accepted redacted evidence across store restarts, but
+the two files and Compact ledger have no shared transaction or recovery
+protocol. That deterministic fixture does not provide end-to-end atomicity or
+network finality.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live

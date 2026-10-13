@@ -252,6 +252,18 @@ journey; it is not installed by the packaged API CLI. The host also supplies
 `authorizePendingApplicationRegistration` so its deterministic signed fixture cannot
 be submitted without the same loopback session and Origin checks as the VP routes.
 
+`FileApplicationAdmissionStore` is a private local adapter for signed pending
+registration, consumed application nonces, accepted redacted evidence, and
+receipt lookup. It uses a cross-process lock, validated versioned state,
+`0600` file permissions, atomic replacement, and file/directory sync; separate
+instances can reopen the same state and replayed registration or evidence is
+rejected. Its workspace callback must return the current simulator-derived
+policy and epoch, and the store rechecks that view before committing a signed
+application. It does not store raw VPs. The joined issuer demo combines it with
+`FileApplicationChallengeStore` and a 2-of-3 Compact simulator. These two files
+and the Compact ledger are not one atomic transaction; stale locks require
+operator recovery, and the adapter is not configured in the packaged CLI.
+
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.
 Their binding requires the versioned role-specific scope object, a separately
