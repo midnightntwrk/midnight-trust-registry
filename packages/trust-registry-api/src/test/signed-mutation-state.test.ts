@@ -7,23 +7,24 @@ import {
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
+  computeAuthorizationScopeCommitment,
   computeMutationPayloadCommitment,
   mutationIntentDigestBytes,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
-  createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
+  createIssuerScenarioFixture,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
-import { MutationIntentOperationMismatchError } from "../mutation-intent-preflight.js";
-import { MutationNonceAlreadyUsedError, transitionSignedMutationState } from "../signed-mutation-state.js";
+import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, transitionSignedMutationState } from "../signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const workspace = createOperatorWorkspace({ label: "signed-transition" });
-const actorDid = createMidnightDid("signed-transition:applicant");
+const fixture = createIssuerScenarioFixture("example");
+const actorDid = fixture.subjectDid;
 const seed = new Uint8Array(32).fill(47);
 const operation = { operation: "submit" as const, target: "issuer" as const, label: "example" };
 const now = new Date("2026-10-10T00:01:00.000Z");
@@ -36,7 +37,7 @@ const intent: MutationIntent = {
   action: "submit",
   target: "issuer",
   targetId: "auth:issuer:example:v1",
-  scopeCommitment: `0x${"11".repeat(32)}`,
+  scopeCommitment: computeAuthorizationScopeCommitment(fixture.authorizationScope),
   payloadCommitment: computeMutationPayloadCommitment({ target: "issuer", label: "example" }),
   nonce: `0x${"33".repeat(32)}`,
   expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
@@ -77,10 +78,10 @@ describe("pure signed mutation state transition", () => {
     const initial = { workspace, consumedNonces: [] } as const;
     await expect(transitionSignedMutationState(
       initial, intent, { ...signatureFor(intent), value: `0x${"00".repeat(96)}` }, operation, now, resolver,
-    )).rejects.toBeInstanceOf(MutationIntentOperationMismatchError);
+    )).rejects.toBeInstanceOf(MutationIntentActorRejectedError);
     await expect(transitionSignedMutationState(
       initial, intent, signatureFor(intent), { ...operation, label: "other" }, now, resolver,
-    )).rejects.toBeInstanceOf(MutationIntentOperationMismatchError);
+    )).rejects.toBeInstanceOf(MutationIntentActorRejectedError);
     expect(initial.consumedNonces).toHaveLength(0);
     expect(initial.workspace.operations).toHaveLength(0);
   });

@@ -303,6 +303,7 @@ const apiArgs = [
   "serve",
   "--workspace",
   workspacePath,
+  "--unsafe-demo-mutations",
   "--port",
   String(port),
 ];

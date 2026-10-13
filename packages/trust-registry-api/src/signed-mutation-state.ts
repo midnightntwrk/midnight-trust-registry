@@ -6,10 +6,10 @@ import {
 import { MutationIntentSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
+import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import {
   applyIntentBoundWorkspaceOperation,
   mutationPayloadForWorkspaceOperation,
-  MutationIntentOperationMismatchError,
 } from "./mutation-intent-preflight.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
@@ -23,6 +23,13 @@ export class MutationNonceAlreadyUsedError extends Error {
   constructor() {
     super("Mutation nonce has already been consumed for this actor and registry");
     this.name = "MutationNonceAlreadyUsedError";
+  }
+}
+
+export class MutationIntentActorRejectedError extends Error {
+  constructor(readonly reason: MutationIntentActorFailure) {
+    super(`Signed mutation intent rejected: ${reason}`);
+    this.name = "MutationIntentActorRejectedError";
   }
 }
 
@@ -44,7 +51,7 @@ export async function transitionSignedMutationState(
     intent, signatureInput, mutationPayloadForWorkspaceOperation(operation),
     state.workspace, now, resolver,
   );
-  if (!preflight.ok) throw new MutationIntentOperationMismatchError();
+  if (!preflight.ok) throw new MutationIntentActorRejectedError(preflight.reason);
 
   const workspace = applyIntentBoundWorkspaceOperation(preflight.intent, state.workspace, operation, now);
   return { workspace, consumedNonces: [...state.consumedNonces, nonceKey] };

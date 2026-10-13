@@ -1,5 +1,6 @@
 import { applyWorkspaceOperation, createOperatorWorkspace, resolveWorkspaceOperationRecord } from "@midnight-ntwrk/trust-registry-cli";
-import { computeMutationPayloadCommitment, type MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
+import { computeAuthorizationScopeCommitment, computeMutationPayloadCommitment, type MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
+import { createIssuerScenarioFixture } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { applyIntentBoundWorkspaceOperation, preflightMutationIntent } from "../mutation-intent-preflight.js";
@@ -8,7 +9,8 @@ import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 const workspace = createOperatorWorkspace({ label: "intent-preflight" });
 const payload = { target: "issuer", label: "example" };
 const now = new Date("2026-10-10T00:01:00.000Z");
-const did = `did:midnight:testnet:${"aa".repeat(32)}`;
+const fixture = createIssuerScenarioFixture("example");
+const did = fixture.subjectDid;
 const intent: MutationIntent = {
   version: "tr-mutation-intent-v1",
   registryId: workspace.snapshot.registry.registryId,
@@ -18,7 +20,7 @@ const intent: MutationIntent = {
   action: "submit",
   target: "issuer",
   targetId: "auth:issuer:example:v1",
-  scopeCommitment: `0x${"11".repeat(32)}`,
+  scopeCommitment: computeAuthorizationScopeCommitment(fixture.authorizationScope),
   payloadCommitment: computeMutationPayloadCommitment(payload),
   nonce: `0x${"33".repeat(32)}`,
   expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
@@ -74,6 +76,11 @@ describe("mutation intent preflight", () => {
     }
     expect(() => applyIntentBoundWorkspaceOperation({ ...bound, targetId: "auth:issuer:other:v1" }, workspace, operation, now))
       .toThrow(/does not match the executable workspace operation/);
+    expect(() => applyIntentBoundWorkspaceOperation({ ...bound, scopeCommitment: `0x${"11".repeat(32)}` }, workspace, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
+    const wrongDid = `did:midnight:testnet:${"aa".repeat(32)}`;
+    expect(() => applyIntentBoundWorkspaceOperation({ ...bound, actorDid: wrongDid, actorKeyId: `${wrongDid}#assertion-1` }, workspace, operation, now))
+      .toThrow(/does not match the executable workspace operation/);
   });
 
   it("binds epoch publication to the predecessor, not the new epoch id", () => {
@@ -83,6 +90,9 @@ describe("mutation intent preflight", () => {
       action: "publish-epoch",
       target: "epoch",
       targetId: workspace.snapshot.currentEpoch.epochId,
+      scopeCommitment: computeAuthorizationScopeCommitment({
+        version: "tr-scope-v1", role: "maintainer", registryId: workspace.snapshot.registry.registryId,
+      }),
       payloadCommitment: computeMutationPayloadCommitment({ label: "next" }),
     };
     const operation = { operation: "publish-epoch" as const, label: "next" };
@@ -92,6 +102,8 @@ describe("mutation intent preflight", () => {
     expect(() => applyIntentBoundWorkspaceOperation({ ...publish, expectedEpochId: "epoch:stale", targetId: "epoch:stale" }, workspace, operation, now))
       .toThrow(/does not match the executable workspace operation/);
     expect(() => applyIntentBoundWorkspaceOperation(publish, workspace, { ...operation, label: "other" }, now))
+      .toThrow(/does not match the executable workspace operation/);
+    expect(() => applyIntentBoundWorkspaceOperation({ ...publish, scopeCommitment: intent.scopeCommitment }, workspace, operation, now))
       .toThrow(/does not match the executable workspace operation/);
   });
 

@@ -1,3 +1,6 @@
+import { mkdir, open, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import {
   applyWorkspaceOperation,
   buildSnapshotSummary,
@@ -44,6 +47,8 @@ import type {
   TrustRegistryApiResolveRecognitionRequest,
   TrustRegistryApiRecognitionListQuery,
 } from "./schemas.js";
+import { transitionSignedMutationState } from "./signed-mutation-state.js";
+import type { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
 export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory";
 
@@ -56,7 +61,15 @@ export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
   readonly mode: "workspace";
   loadWorkspace(): Promise<TrustRegistryOperatorWorkspace>;
   writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void>;
+  withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T>;
 };
+
+export class WorkspaceMutationLockedError extends Error {
+  constructor() {
+    super("Operator workspace is locked by another writer; stale locks require operator recovery");
+    this.name = "WorkspaceMutationLockedError";
+  }
+}
 
 export type TrustRegistryApiMutationRecord =
   | {
@@ -178,7 +191,6 @@ export const createSnapshotFileSource = (
     return loadSnapshotFromFile(snapshotPath);
   },
 });
-
 export const createWorkspaceFileSource = (
   workspacePath: string,
 ): TrustRegistryApiMutableStateSource => ({
@@ -191,6 +203,23 @@ export const createWorkspaceFileSource = (
   },
   async writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void> {
     await writeWorkspaceToFile(workspacePath, workspace);
+  },
+  async withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const lockPath = `${workspacePath}.lock`;
+    await mkdir(dirname(lockPath), { recursive: true });
+    let lock;
+    try {
+      lock = await open(lockPath, "wx", 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new WorkspaceMutationLockedError();
+      throw error;
+    }
+    try {
+      return await operation();
+    } finally {
+      await lock.close();
+      await unlink(lockPath);
+    }
   },
 });
 
@@ -233,12 +262,20 @@ const toMutationRecord = (
   };
 };
 
-export const applyMutationOperation = async (
+const enqueueMutation = <T>(
+  source: TrustRegistryApiMutableStateSource,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const previous = mutationChains.get(source) ?? Promise.resolve();
+  const next = previous.then(() => source.withExclusiveWrite(operation));
+  mutationChains.set(source, next.then(() => undefined, () => undefined));
+  return next;
+};
+
+export const applyMutationOperation = (
   source: TrustRegistryApiMutableStateSource,
   operation: TrustRegistryOperatorWorkspaceOperation,
-): Promise<TrustRegistryApiMutationResult> => {
-  const previous = mutationChains.get(source) ?? Promise.resolve();
-  const next = previous.then(async () => {
+): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
     const workspace = await source.loadWorkspace();
     const nextWorkspace = applyWorkspaceOperation(workspace, operation);
     await source.writeWorkspace(nextWorkspace);
@@ -249,18 +286,34 @@ export const applyMutationOperation = async (
       record: toMutationRecord(record),
       workspace: nextWorkspace,
     };
-  });
+});
 
-  mutationChains.set(
-    source,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
+export const applySignedMutationOperation = (
+  source: TrustRegistryApiMutableStateSource,
+  input: {
+    intent: unknown;
+    signature: unknown;
+    operation: TrustRegistryOperatorWorkspaceOperation;
+  },
+  now: Date,
+  resolver: Parameters<typeof verifyMutationIntentDidSignature>[2],
+): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
+  const workspace = await source.loadWorkspace();
+  const next = await transitionSignedMutationState(
+    { workspace, consumedNonces: workspace.consumedMutationNonces },
+    input.intent, input.signature, input.operation, now, resolver,
   );
-
-  return next;
-};
+  const nextWorkspace = {
+    ...next.workspace,
+    consumedMutationNonces: [...next.consumedNonces],
+  };
+  await source.writeWorkspace(nextWorkspace);
+  return {
+    operation: input.operation,
+    record: toMutationRecord(resolveWorkspaceOperationRecord(nextWorkspace, input.operation)),
+    workspace: nextWorkspace,
+  };
+});
 
 export const loadRegistryRecord = async (
   source: TrustRegistryApiStateSource,

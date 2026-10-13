@@ -78,21 +78,42 @@ npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 44
 The read-only mutation context returns the current registry ID, predecessor
 epoch ID, and full workspace revision commitment. It is never cached. A signer
 must still expect a stale-context rejection if the workspace changes before
-the eventual atomic mutation; this endpoint does not authenticate or authorize
-the existing demo write routes.
+the mutation is admitted.
 
-Workspace-backed mutation routes:
+`POST /v1/mutations` accepts `{ "intent": ..., "signature": ..., "operation": ... }`.
+The intent signs the exact workspace operation, registry, actor DID/key, role,
+scope commitment, nonce, workspace revision, epoch, and five-minute validity
+window. The server requires an injected Midnight DID resolver, checks the
+appropriate DID relationship (`authentication` for applicants,
+`capabilityInvocation` for maintainers), and persists the consumed nonce in
+the same workspace revision as the operation. The local workspace source uses
+an exclusive lock file and atomic replacement for API writes. A crashed writer
+leaves the lock in place and requires operator inspection before removal; it
+does not silently break a lock. Invalid signatures return 401; unauthorized
+or substituted actors/scopes return 403; replay, stale state, and lock
+contention return 409. Failed requests do not append an operation or consume
+a nonce.
+Operator workspaces created before `consumedMutationNonces` existed must be
+regenerated; this unreleased format has no compatibility default.
+
+The packaged CLI does not yet configure a production DID resolver, so it
+serves reads but returns 503 for signed writes. The integration harness
+injects a ledger-backed DID resolver fixture and exercises the signed route.
+This API is a local reference gateway, not a claim that its fixture replay
+passes external maintainer signatures into a live Compact contract.
+
+Legacy workspace-backed application and epoch routes are disabled by default.
+For the deliberately unsigned local UI smoke demo only, start with
+`--unsafe-demo-mutations`; never expose that mode on a public listener.
+Those demo routes:
 
 - require `--workspace`, not `--snapshot`
 - reuse the CLI workspace replay model instead of maintaining separate server
   state
 - currently support issuer, verifier, auditor, and recognition workflows plus registry
   epoch publication
-- are intentionally local-operator only in this slice:
-  - no authentication or authorization middleware is added here
-  - run the server on loopback or behind an explicit local proxy
-- serialize writes per workspace file inside the process, but do not provide
-  cross-process locking for multi-writer deployments
+- bypass actor authorization and are unsuitable for real membership decisions
+- serialize in-process requests and reject cross-process lock contention
 - return permissive local CORS headers plus `OPTIONS` preflight responses so the
   admin console can call the same loopback API from a separate port
 

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
 import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { canonicalizeJson } from "./canonical-json.js";
+import { RecognitionScopeSchema } from "./types.js";
 
 const CanonicalIdSchema = ScopedIdentifierSchema.refine(
   (value) => value === value.toLowerCase(),
@@ -73,6 +75,12 @@ export const MutationIntentSignatureSchema = z.strictObject({
 });
 
 export type MutationIntentSignature = z.infer<typeof MutationIntentSignatureSchema>;
+
+export function computeRecognitionMutationScopeCommitment(scope: z.input<typeof RecognitionScopeSchema>): string {
+  return sha256Hex(JSON.stringify([
+    "tr:recognition:scope:v1", canonicalizeJson(RecognitionScopeSchema.parse(scope)),
+  ]));
+}
 
 export function computeMutationIntentDigest(input: MutationIntent): string {
   const intent = MutationIntentSchema.parse(input);

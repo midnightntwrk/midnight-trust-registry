@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
 import {
@@ -70,11 +71,17 @@ const writeWorkspaceJson = async (
   workspace: TrustRegistryOperatorWorkspace,
 ): Promise<void> => {
   await mkdir(dirname(workspacePath), { recursive: true });
-  await writeFile(
-    workspacePath,
-    serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
-    "utf8",
-  );
+  const temporaryPath = `${workspacePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      temporaryPath,
+      serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
+      { encoding: "utf8", flag: "wx" },
+    );
+    await rename(temporaryPath, workspacePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
 };
 
 const loadWorkspaceJson = async (
@@ -516,6 +523,7 @@ export const createOperatorWorkspace = (
     updatedAt: snapshot.generatedAt,
     registryLabel: label,
     operations: [],
+    consumedMutationNonces: [],
     snapshot,
   });
 };
@@ -547,6 +555,7 @@ export const applyWorkspaceOperation = (
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,
+    consumedMutationNonces: workspace.consumedMutationNonces,
     snapshot,
   });
 };
