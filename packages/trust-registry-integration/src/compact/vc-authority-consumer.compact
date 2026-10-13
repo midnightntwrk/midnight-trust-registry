@@ -1,0 +1,55 @@
+pragma language_version >= 0.20;
+
+import CompactStandardLibrary;
+include "composable";
+
+import VC<NoPublicClaims, NoClaimCommitments, ExplicitHolderBinding, NoStatusBinding> prefix ConsumerVC_;
+
+export ledger pinnedAuthority: SignerAuthorizationAuthority;
+export ledger installedSignerIds: Set<Bytes<32>>;
+export ledger installedSigners: Map<Bytes<32>, AuthorizedSignerDescriptor>;
+
+constructor(authority: SignerAuthorizationAuthority) {
+  assertValidSignerAuthorizationAuthority(authority);
+  pinnedAuthority = disclose(authority);
+}
+
+export pure circuit credentialBodyRoot(credential: ConsumerVC_Credential): Bytes<32> {
+  return ConsumerVC_credentialBodyRoot(credential);
+}
+
+export circuit installSignerAuthorization(
+  descriptor: AuthorizedSignerDescriptor,
+  authorityProof: Proof
+): [] {
+  assertValidSignerAuthorizationProof(descriptor, authorityProof, pinnedAuthority);
+  const publicDescriptor = disclose(descriptor);
+  if (installedSignerIds.member(publicDescriptor.authorizationId)) {
+    const previous = installedSigners.lookup(publicDescriptor.authorizationId);
+    assertValidSignerAuthorizationUpdate(previous, publicDescriptor);
+  }
+  installedSignerIds.insert(publicDescriptor.authorizationId);
+  installedSigners.insert(publicDescriptor.authorizationId, publicDescriptor);
+}
+
+export circuit assertIssuerCredentialAuthorized(
+  credential: ConsumerVC_Credential,
+  credentialProof: Proof,
+  authorizationId: Bytes<32>
+): [] {
+  const publicAuthorizationId = disclose(authorizationId);
+  assert(installedSignerIds.member(publicAuthorizationId), "Issuer authorization is not installed");
+  const descriptor = installedSigners.lookup(publicAuthorizationId);
+  ConsumerVC_assertAuthorizedIssuerProof(credential, credentialProof, descriptor);
+}
+
+export circuit assertVerifierRequestAuthorized(
+  requestScopeCommitment: Bytes<32>,
+  requestProof: Proof,
+  authorizationId: Bytes<32>
+): [] {
+  const publicAuthorizationId = disclose(authorizationId);
+  assert(installedSignerIds.member(publicAuthorizationId), "Verifier authorization is not installed");
+  const descriptor = installedSigners.lookup(publicAuthorizationId);
+  assertAuthorizedVerifierProof(requestScopeCommitment, requestProof, descriptor);
+}

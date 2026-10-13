@@ -1,9 +1,24 @@
 import { Buffer } from "node:buffer";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
-import { AuthorizationState, pureCircuits, VerificationRelationship } from "@midnight-ntwrk/credential-compact";
-import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
+import {
+  AuthorizationState,
+  pureCircuits,
+  SignerRole,
+  VerificationRelationship,
+  type Proof,
+} from "@midnight-ntwrk/credential-compact";
+import {
+  createMidnightDIDSignerDescriptor,
+  resolveMidnightDIDMethodBinding,
+  signMidnightDIDCredentialProof,
+} from "@midnight-ntwrk/credential-did-midnight";
+import { createCircuitContext, createConstructorContext, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
 import {
   deriveJubjubPublicKey,
@@ -36,11 +51,37 @@ import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness
 import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
 import {
   issueVcSignerAuthorizationFromTrustedDecision,
+  pinnedVcAuthority,
   vcAuthorityDomainCommitment,
   verifyVcSignerAuthorizationForConsumer,
 } from "../vc-signer-authorization.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
+
+const signFixtureContextProof = (
+  secret: bigint,
+  methodRef: Proof["signerVerificationMethodRef"],
+  bodyRoot: Uint8Array,
+  createdAt: bigint,
+  challengeCircuit: (root: Uint8Array, proof: Proof) => bigint,
+): Proof => {
+  let nonce = 0n;
+  while (nonce === 0n) nonce = seedBytesToJubjubSecretScalar(randomBytes(32));
+  const unsigned: Proof = {
+    signerVerificationMethodRef: methodRef,
+    createdAt,
+    challengeHash: randomBytes(32),
+    publicKey: deriveJubjubPublicKey(secret),
+    signature: { r: deriveJubjubPublicKey(nonce), s: 0n },
+  };
+  return {
+    ...unsigned,
+    signature: {
+      r: unsigned.signature.r,
+      s: normalizeScalar(nonce + challengeCircuit(bodyRoot, unsigned) * secret),
+    },
+  };
+};
 
 describe("simulator-backed VC decision evidence composition", () => {
   it("matches an active issuer, complete publication quorum, and resolved Midnight DID method", async () => {
@@ -236,14 +277,15 @@ describe("simulator-backed VC decision evidence composition", () => {
       verificationMethodId: "#assertion-1",
       relationship: "assertionMethod",
     });
+    const vcSchema = {
+      packageId: bytes32Commitment("vc-decision-package"),
+      schemaId: bytes32Commitment("vc-decision-schema"),
+      majorVersion: 1n,
+      minorVersion: 0n,
+    };
     const scopeMapping = {
       registryScopeCommitment: candidate.scopeCommitment,
-      vcScopeCommitment: pureCircuits.issuerScopeCommitment({
-        packageId: bytes32Commitment("vc-decision-package"),
-        schemaId: bytes32Commitment("vc-decision-schema"),
-        majorVersion: 1n,
-        minorVersion: 0n,
-      }),
+      vcScopeCommitment: pureCircuits.issuerScopeCommitment(vcSchema),
     };
     const converted = await createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers, binding, scopeMapping,
@@ -310,18 +352,10 @@ describe("simulator-backed VC decision evidence composition", () => {
       method: binding,
       scopeMapping,
       anchor: authorityAnchor,
-      signer: async ({ decisionRoot, decisionSequence, authority }) => {
-        const nonce = seedBytesToJubjubSecretScalar(randomBytes(32));
-        const unsigned = {
-          signerVerificationMethodRef: authority.verificationMethodRef,
-          createdAt: decisionSequence,
-          challengeHash: randomBytes(32),
-          publicKey: authority.publicKey,
-          signature: { r: deriveJubjubPublicKey(nonce), s: 0n },
-        };
-        const challenge = pureCircuits.signerAuthorizationProofChallenge(decisionRoot, unsigned);
-        return { ...unsigned, signature: { r: unsigned.signature.r, s: normalizeScalar(nonce + challenge * secret) } };
-      },
+      signer: async ({ decisionRoot, decisionSequence, authority }) => signFixtureContextProof(
+        secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
+        pureCircuits.signerAuthorizationProofChallenge,
+      ),
     });
     expect(() => verifyVcSignerAuthorizationForConsumer(
       signed.descriptor, signed.proof, authorityAnchor, null,
@@ -358,6 +392,186 @@ describe("simulator-backed VC decision evidence composition", () => {
       signed.descriptor, signed.proof, authorityAnchor,
       { ...signed.descriptor, decisionSequence: signed.descriptor.decisionSequence - 1n, didStateVersion: 4n },
     )).toThrow(/must not decrease/u);
+
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+    const cacheRoot = resolve(packageRoot, "node_modules/.cache");
+    await mkdir(cacheRoot, { recursive: true });
+    const output = await mkdtemp(join(cacheRoot, "vc-authority-consumer-"));
+    try {
+      const vcCompactRoot = dirname(fileURLToPath(import.meta.resolve(
+        "@midnight-ntwrk/credential-compact/credentials/composable.compact",
+      )));
+      const compile = spawnSync(process.execPath, [
+        resolve(packageRoot, "../../scripts/compile-compact.mjs"),
+        "--skip-zk",
+        "--compact-path", vcCompactRoot,
+        resolve(packageRoot, "src/compact/vc-authority-consumer.compact"),
+        output,
+      ], { encoding: "utf8" });
+      if (compile.error) throw compile.error;
+      expect(compile.status, compile.stderr).toBe(0);
+      const compiled = await import(pathToFileURL(join(output, "contract/index.js")).href);
+      const consumer = new compiled.Contract({});
+      const initial = consumer.initialState(
+        createConstructorContext({}, "0".repeat(64)),
+        pinnedVcAuthority(authorityAnchor),
+      );
+      const contractAddress = sampleContractAddress();
+      let circuitContext = createCircuitContext(
+        contractAddress,
+        initial.currentZswapLocalState,
+        initial.currentContractState,
+        initial.currentPrivateState,
+      );
+      const installed = consumer.circuits.installSignerAuthorization(circuitContext, signed.descriptor, signed.proof);
+      circuitContext = createCircuitContext(
+        contractAddress,
+        installed.context.currentZswapLocalState,
+        installed.context.currentQueryContext.state,
+        installed.context.currentPrivateState,
+      );
+      expect(compiled.ledger(circuitContext.currentQueryContext.state)
+        .installedSigners.lookup(signed.descriptor.authorizationId).decisionSequence)
+        .toBe(signed.descriptor.decisionSequence);
+      expect(() => consumer.circuits.installSignerAuthorization(
+        circuitContext, signed.descriptor, signed.proof,
+      )).toThrow(/sequence must increase/u);
+      const wrongAnchorContract = new compiled.Contract({});
+      const wrongInitial = wrongAnchorContract.initialState(
+        createConstructorContext({}, "0".repeat(64)),
+        pinnedVcAuthority({
+          ...authorityAnchor,
+          domain: { ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract") },
+        }),
+      );
+      const wrongAnchorContext = createCircuitContext(
+        sampleContractAddress(),
+        wrongInitial.currentZswapLocalState,
+        wrongInitial.currentContractState,
+        wrongInitial.currentPrivateState,
+      );
+      expect(() => wrongAnchorContract.circuits.installSignerAuthorization(
+        wrongAnchorContext, signed.descriptor, signed.proof,
+      )).toThrow();
+      expect(() => consumer.circuits.installSignerAuthorization(
+        circuitContext, signed.descriptor,
+        { ...signed.proof, createdAt: signed.proof.createdAt + 1n },
+      )).toThrow();
+      const credential = {
+        version: 1n,
+        schema: vcSchema,
+        issuerVerificationMethodRef: binding.verificationMethodRef,
+        holderBinding: { holderVerificationMethodRef: {
+          controllerAddress: { bytes: bytes32Commitment("vc-holder-address") },
+          methodId: bytes32Commitment("vc-holder-method"),
+        } },
+        statusBinding: {},
+        issuedAt: 1n,
+        hasExpiration: false,
+        expiresAt: 0n,
+        claims: {},
+        claimCommitments: {},
+        claimRoot: bytes32Commitment("vc-decision-claim"),
+      };
+      const credentialProof = signMidnightDIDCredentialProof({
+        methodBinding: binding,
+        secretScalar: seedBytesToJubjubSecretScalar(new Uint8Array(32).fill(49)),
+        bodyRoot: compiled.pureCircuits.credentialBodyRoot(credential),
+        createdAt: 1n,
+        challengeHash: randomBytes(32),
+      });
+      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+        circuitContext, credential, credentialProof, signed.descriptor.authorizationId,
+      )).not.toThrow();
+      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+        circuitContext, credential,
+        { ...credentialProof, signature: { ...credentialProof.signature, s: credentialProof.signature.s + 1n } },
+        signed.descriptor.authorizationId,
+      )).toThrow();
+      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+        circuitContext, { ...credential, schema: { ...vcSchema, schemaId: bytes32Commitment("wrong-schema") } },
+        credentialProof, signed.descriptor.authorizationId,
+      )).toThrow();
+
+      const authority = pinnedVcAuthority(authorityAnchor);
+      const signDescriptor = (descriptor: typeof signed.descriptor): Proof => signFixtureContextProof(
+        secret,
+        authority.verificationMethodRef,
+        pureCircuits.signerAuthorizationDecisionRoot(descriptor, authority.domainCommitment),
+        descriptor.decisionSequence,
+        pureCircuits.signerAuthorizationProofChallenge,
+      );
+      const rollback = {
+        ...signed.descriptor,
+        decisionSequence: signed.descriptor.decisionSequence + 1n,
+        didStateVersion: signed.descriptor.didStateVersion - 1n,
+      };
+      expect(() => consumer.circuits.installSignerAuthorization(
+        circuitContext, rollback, signDescriptor(rollback),
+      )).toThrow(/must not decrease/u);
+      const revoked = {
+        ...signed.descriptor,
+        decisionSequence: signed.descriptor.decisionSequence + 1n,
+        state: AuthorizationState.revoked,
+      };
+      const revokedInstall = consumer.circuits.installSignerAuthorization(
+        circuitContext, revoked, signDescriptor(revoked),
+      );
+      circuitContext = createCircuitContext(
+        contractAddress,
+        revokedInstall.context.currentZswapLocalState,
+        revokedInstall.context.currentQueryContext.state,
+        revokedInstall.context.currentPrivateState,
+      );
+      const replay = {
+        ...signed.descriptor,
+        decisionSequence: revoked.decisionSequence + 1n,
+      };
+      expect(() => consumer.circuits.installSignerAuthorization(
+        circuitContext, replay, signDescriptor(replay),
+      )).toThrow(/must remain revoked/u);
+
+      const verifierBinding = await resolveMidnightDIDMethodBinding({
+        resolver,
+        did: parseMidnightDIDString(issuer.subjectDid),
+        verificationMethodId: "#assertion-1",
+        relationship: "authentication",
+      });
+      const requestScopeCommitment = bytes32Commitment("vc-verifier-request-scope");
+      const verifierDescriptor = createMidnightDIDSignerDescriptor(verifierBinding, {
+        authorizationId: bytes32Commitment("vc-verifier-authorization"),
+        decisionSequence: signed.descriptor.decisionSequence + 1n,
+        state: AuthorizationState.active,
+        role: SignerRole.verifier,
+        scopeCommitment: requestScopeCommitment,
+        policyCommitment: signed.descriptor.policyCommitment,
+      });
+      const verifierAuthorityProof = signDescriptor(verifierDescriptor);
+      const verifierInstall = consumer.circuits.installSignerAuthorization(
+        circuitContext, verifierDescriptor, verifierAuthorityProof,
+      );
+      circuitContext = createCircuitContext(
+        contractAddress,
+        verifierInstall.context.currentZswapLocalState,
+        verifierInstall.context.currentQueryContext.state,
+        verifierInstall.context.currentPrivateState,
+      );
+      const requestProof = signFixtureContextProof(
+        seedBytesToJubjubSecretScalar(new Uint8Array(32).fill(49)),
+        verifierBinding.verificationMethodRef,
+        requestScopeCommitment,
+        2n,
+        pureCircuits.verifierRequestProofChallenge,
+      );
+      expect(() => consumer.circuits.assertVerifierRequestAuthorized(
+        circuitContext, requestScopeCommitment, requestProof, verifierDescriptor.authorizationId,
+      )).not.toThrow();
+      expect(() => consumer.circuits.assertVerifierRequestAuthorized(
+        circuitContext, bytes32Commitment("other-request-scope"), requestProof, verifierDescriptor.authorizationId,
+      )).toThrow();
+    } finally {
+      await rm(output, { recursive: true, force: true });
+    }
 
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
       ...context,
