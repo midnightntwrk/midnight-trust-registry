@@ -32,6 +32,13 @@ Current coverage:
   verifies the active auditor bundle. It does not authorize blanket access to
   holder presentations or make an auditor grant interchangeable with a
   verifier grant.
+- External-authority recognition exposes caller-signed proposal and decision
+  digests with the recognized authority DID, external registry, and exact
+  resource scope bound into the Compact action. The 2-of-3 simulator test
+  rejects insufficient, duplicate, substituted-authority, wrong-policy, and
+  stale bundles, then verifies the active recognition evidence. Recognition
+  is not a local issuer, verifier, auditor, or maintainer membership grant;
+  the demo evidence hash is a fixture, not third-party accreditation proof.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers

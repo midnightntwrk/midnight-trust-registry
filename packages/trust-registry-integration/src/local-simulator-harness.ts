@@ -170,6 +170,17 @@ export type PreparedVerifierProposalAction = Pick<PreparedIssuerDecisionAction,
 
 export type PreparedAuditorProposalAction = PreparedVerifierProposalAction;
 
+export type PreparedRecognitionAction = {
+  registryId: Uint8Array;
+  recognitionId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash?: Uint8Array;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -1544,93 +1555,137 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+    const prepared = this.prepareRecognitionProposalAction(fixture);
+    return this.executeRecognitionProposalWithSignatures(fixture, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
+  }
+
+  prepareRecognitionProposalAction(fixture: RecognitionScenarioFixture): PreparedRecognitionAction {
     const proposedEvidenceHash = bytes32Commitment(
       `${fixture.recognitionId}:propose`,
     );
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_RECOGNITION_ACTION_KIND,
-      computeCreateRecognitionPayloadHash(
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(PROPOSE_RECOGNITION_ACTION_KIND),
+      actionPayloadHash: computeCreateRecognitionPayloadHash(
         fixture.recognitionIdCommitment,
         fixture.recognizedAuthorityDidCommitment,
         fixture.recognizedRegistryIdCommitment,
         fixture.scopeResourceTypeCommitment,
         fixture.scopeResourceIdCommitment,
-        this.governancePolicyCommitment,
+        ledger.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
         proposedEvidenceHash,
       ),
-      proposeActionSequence,
-    );
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+    };
+  }
+
+  executeRecognitionProposalWithSignatures(
+    fixture: RecognitionScenarioFixture,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Recognition proposal requires a maintainer signature");
+    const prepared = this.prepareRecognitionProposalAction(fixture);
 
     return this.simulator.proposeRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
       fixture.recognitionIdCommitment,
       fixture.recognizedAuthorityDidCommitment,
       fixture.recognizedRegistryIdCommitment,
       fixture.scopeResourceTypeCommitment,
       fixture.scopeResourceIdCommitment,
-      this.governancePolicyCommitment,
+      prepared.policyCommitment,
       bytes32Commitment(fixture.trustLevel),
-      proposedEvidenceHash,
+      prepared.evidenceHash,
+      signers.slice(1),
     );
+  }
+
+  prepareRecognitionDecisionAction(
+    fixture: RecognitionScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedRecognitionAction {
+    if (action !== "approve" && action !== "activate") {
+      throw new Error("Unsupported recognition decision action");
+    }
+    const current = this.simulator.getRecognition(fixture.recognitionIdCommitment);
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_RECOGNITION_ACTION_KIND : ACTIVATE_RECOGNITION_ACTION_KIND),
+      actionPayloadHash: computeUpdateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(current.evidenceHash),
+    };
+  }
+
+  executeRecognitionDecisionWithSignatures(
+    fixture: RecognitionScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Recognition decision requires a maintainer signature");
+    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeRecognition(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    return this.simulator.activateRecognition(
+      primary.keyId, primary.publicKey, primary.signature,
+      fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1),
+    );
+  }
+
+  private fixtureRecognitionDecision(fixture: RecognitionScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+    return this.executeRecognitionDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getRecognition(
-      fixture.recognitionIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_RECOGNITION_ACTION_KIND,
-      computeUpdateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        this.simulator.getRecognition(fixture.recognitionIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-    return this.simulator.authorizeRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.recognitionIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureRecognitionDecision(fixture, "approve");
   }
 
   activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getRecognition(
-      fixture.recognitionIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_RECOGNITION_ACTION_KIND,
-      computeUpdateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        this.simulator.getRecognition(fixture.recognitionIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-
-    return this.simulator.activateRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.recognitionIdCommitment,
-      evidenceHash,
-    );
+    return this.fixtureRecognitionDecision(fixture, "activate");
   }
 
   authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
