@@ -203,6 +203,13 @@ issuing this narrower VC descriptor, never silently widened by it.
 
 The TR-owned `domainCommitment` preimage MUST include Midnight network,
 consuming contract, registry ID, and authority identity. The authority proof
+domain is Compact `persistentHash<Vector<7, Bytes<32>>>` over the padded
+`tr:vc-authority-domain:v1` tag, SHA-256 commitments of network ID, registry
+ID, authority DID, and absolute authority method ID, plus the raw 32-byte
+consumer and registry contract addresses in that order. The consumer MUST
+recompute the commitment from its pinned preimage and compare the pinned
+consumer address with `kernel.self().bytes` before accepting a signer proof.
+The authority proof
 binds `persistentHash<Vector<2, Bytes<32>>>([domainCommitment,
 descriptorRoot])` using the VC `midnight:vc:signer-auth:v1` context;
 `Proof.createdAt` equals the decision sequence, not wall-clock time.

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { pureCircuits } from "@midnight-ntwrk/credential-compact";
-import { computeAuthorizationScopeCommitment } from "@midnight-ntwrk/trust-registry-domain";
+import { computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createIssuerScenarioFixture, createVerifierAuthorizationScopeFixture, createVerifierScenarioFixture } from "../fixtures.js";
+import {
+  createIssuerScenarioFixture,
+  createMidnightDid,
+  createVerifierAuthorizationScopeFixture,
+  createVerifierScenarioFixture,
+} from "../fixtures.js";
+import { vcAuthorityDomainCommitment } from "../vc-signer-authorization.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 
 describe("registry-to-VC scope mapping", () => {
@@ -35,5 +41,20 @@ describe("registry-to-VC scope mapping", () => {
     );
     expect(vcScopeCommitmentFromRegistryScope({ ...scope, allowedPredicates: ["other-predicate"] }))
       .not.toEqual(vcScopeCommitmentFromRegistryScope(scope));
+  });
+
+  it("matches the Compact-verifiable authority domain vector", () => {
+    const authorityDid = createMidnightDid("authority-vector");
+    const domain = {
+      networkId: "undeployed",
+      consumerContractAddress: sha256Hex("consumer-vector"),
+      registryId: "registry:vector:v1",
+      registryContractAddress: sha256Hex("registry-contract-vector"),
+      authorityDid,
+      authorityMethodId: `${authorityDid}#authority-1`,
+    };
+    expect(Buffer.from(vcAuthorityDomainCommitment(domain)).toString("hex")).toBe(
+      "3ac8e6af4b87beecd5767fb60c787aadeb49b6e778e52ba2c160eb71b1f285c1",
+    );
   });
 });

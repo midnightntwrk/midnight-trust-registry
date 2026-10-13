@@ -86,14 +86,14 @@ Current coverage:
   authority signer, then validates it with VC's native
   `assertValidSignerAuthorizationProof`. The signer port must independently
   authorize the request; this layer never handles the authority secret.
-  The authority domain is SHA-256 over the ASCII prefix
-  `tr:vc-authority-domain:v1` plus one zero byte, followed by six fields in
-  this order: `networkId`, `consumerContractAddress`, `registryId`,
-  `registryContractAddress`, `authorityDid`, `authorityMethodId`. Each field
-  is a four-byte big-endian UTF-8 byte length followed by its UTF-8 bytes. Contract
-  addresses are lowercase `0x`-prefixed 32-byte hex, and the authority method
+  The authority domain is Compact `persistentHash<Vector<7, Bytes<32>>>` of
+  `pad(32, "tr:vc-authority-domain:v1")`, SHA-256 of network ID, raw consumer
+  contract address, SHA-256 of registry ID, raw registry contract address,
+  SHA-256 of authority DID, and SHA-256 of absolute authority method ID.
+  Contract addresses are lowercase `0x`-prefixed 32-byte hex, and the method
   is an absolute Midnight DID fragment. The consumer recomputes this domain
-  and pins the authority key locally; it must provide an authenticated prior
+  from constructor-pinned fields and checks the pinned consumer address
+  against `kernel.self().bytes` on installation. It must provide an authenticated prior
   descriptor or explicit `null` on first install. The local test rejects
   wrong domain, key, method, scope, sequence, DID rollback, and revoked-to-active
   replay. The TR-to-VC scope mapping is an explicit trusted input, not yet a

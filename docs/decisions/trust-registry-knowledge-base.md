@@ -440,8 +440,9 @@ The local #73 proof slice now uses the published VC Compact
 `assertValidSignerAuthorizationProof` rather than a copied transcript. An
 injected authority signer port receives the checked decision root and logical
 sequence; the local fixture uses published DID JubJub primitives to sign.
-The domain hash has a fixed vector and versioned, six-field, length-prefixed
-UTF-8 preimage, avoiding JSON serialization ambiguity across consumers.
+The initial domain hash used a versioned, six-field, length-prefixed UTF-8
+preimage; the independent review below found this was not Compact-verifiable
+against the executing consumer address, so it was replaced before release.
 Consumer verification takes an independently pinned domain/key and requires
 either an authenticated previous descriptor or explicit first-install `null`;
 negative tests cover domain, key, scope, proof time, stale sequence, DID
@@ -477,10 +478,11 @@ enrollment and signed-request payload construction remain follow-on work.
 The same review found that maintainer bootstrap/proposal checked nonidentity
 but not prime-order JubJub keys; the corrective contract check rejects a
 nonidentity order-two key before membership or quorum activation. A separate
-consumer-address replay question remains under review because the local
-Compact consumer pins a supplied authority domain but cannot be claimed to
-authenticate the executing deployment address without a verified runtime
-address source.
+consumer-address replay question was resolved by a Compact-verifiable
+seven-field authority domain commitment. The consumer recomputes it from
+constructor-pinned fields, then checks its consumer address against
+`kernel.self().bytes` at signer installation. A second deployment with the
+same anchor now rejects a valid proof, and the local vector is fixed in tests.
 
 Iteration timing: focused VC scope and decision tests took about three
 seconds; fast integration including four demos took about 25 seconds; a broad

@@ -54,6 +54,7 @@ import {
   issueVcSignerAuthorizationFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainCommitment,
+  vcAuthorityDomainFields,
   verifyVcSignerAuthorizationForConsumer,
 } from "../vc-signer-authorization.js";
 
@@ -314,11 +315,12 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/registry decision is unavailable/u);
 
     const authoritySeed = new Uint8Array(32).fill(77);
+    const consumerContractAddress = sampleContractAddress();
     const authorityDid = createMidnightDid("vc-decision-authority");
     const authorityAnchor = {
       domain: {
         networkId,
-        consumerContractAddress: sha256Hex("vc-decision-consumer"),
+        consumerContractAddress: `0x${consumerContractAddress}`,
         registryId: harness.registryId,
         registryContractAddress: contractAddress,
         authorityDid,
@@ -326,8 +328,11 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
       publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed),
     };
-    expect(Buffer.from(vcAuthorityDomainCommitment(authorityAnchor.domain)).toString("hex")).toBe(
-      "ebf36629ff6f02534e4e6a2f5279f1ec38fdcc228c7a8183d42ab59bfdcd85ad",
+    expect(vcAuthorityDomainCommitment(authorityAnchor.domain)).toHaveLength(32);
+    expect(vcAuthorityDomainCommitment(authorityAnchor.domain)).not.toEqual(
+      vcAuthorityDomainCommitment({
+        ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract"),
+      }),
     );
     const secret = seedBytesToJubjubSecretScalar(authoritySeed);
     const signed = await issueVcSignerAuthorizationFromTrustedDecision({
@@ -575,8 +580,9 @@ describe("simulator-backed VC decision evidence composition", () => {
       const initial = consumer.initialState(
         createConstructorContext({}, "0".repeat(64)),
         pinnedVcAuthority(authorityAnchor),
+        vcAuthorityDomainFields(authorityAnchor.domain),
       );
-      const contractAddress = sampleContractAddress();
+      const contractAddress = consumerContractAddress;
       let circuitContext = createCircuitContext(
         contractAddress,
         initial.currentZswapLocalState,
@@ -603,6 +609,9 @@ describe("simulator-backed VC decision evidence composition", () => {
           ...authorityAnchor,
           domain: { ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract") },
         }),
+        vcAuthorityDomainFields({
+          ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract"),
+        }),
       );
       const wrongAnchorContext = createCircuitContext(
         sampleContractAddress(),
@@ -613,6 +622,28 @@ describe("simulator-backed VC decision evidence composition", () => {
       expect(() => wrongAnchorContract.circuits.installSignerAuthorization(
         wrongAnchorContext, signed.descriptor, signed.proof,
       )).toThrow();
+      const replayConsumer = new compiled.Contract({});
+      const replayInitial = replayConsumer.initialState(
+        createConstructorContext({}, "0".repeat(64)),
+        pinnedVcAuthority(authorityAnchor),
+        vcAuthorityDomainFields(authorityAnchor.domain),
+      );
+      const replayContext = createCircuitContext(
+        sampleContractAddress(),
+        replayInitial.currentZswapLocalState,
+        replayInitial.currentContractState,
+        replayInitial.currentPrivateState,
+      );
+      expect(() => replayConsumer.circuits.installSignerAuthorization(
+        replayContext, signed.descriptor, signed.proof,
+      )).toThrow(/consumer address does not match this contract/u);
+      expect(() => new compiled.Contract({}).initialState(
+        createConstructorContext({}, "0".repeat(64)),
+        pinnedVcAuthority(authorityAnchor),
+        vcAuthorityDomainFields({
+          ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract"),
+        }),
+      )).toThrow(/domain preimage mismatch/u);
       expect(() => consumer.circuits.installSignerAuthorization(
         circuitContext, signed.descriptor,
         { ...signed.proof, createdAt: signed.proof.createdAt + 1n },

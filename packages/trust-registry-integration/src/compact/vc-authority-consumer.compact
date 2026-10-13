@@ -6,12 +6,35 @@ include "composable";
 import VC<NoPublicClaims, NoClaimCommitments, ExplicitHolderBinding, NoStatusBinding> prefix ConsumerVC_;
 
 export ledger pinnedAuthority: SignerAuthorizationAuthority;
+export struct VcAuthorityDomainFields {
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  registryIdCommitment: Bytes<32>,
+  registryContractAddress: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+}
+export ledger pinnedDomain: VcAuthorityDomainFields;
 export ledger installedSignerIds: Set<Bytes<32>>;
 export ledger installedSigners: Map<Bytes<32>, AuthorizedSignerDescriptor>;
 
-constructor(authority: SignerAuthorizationAuthority) {
+export pure circuit authorityDomainCommitment(domain: VcAuthorityDomainFields): Bytes<32> {
+  return persistentHash<Vector<7, Bytes<32>>>([
+    pad(32, "tr:vc-authority-domain:v1"),
+    domain.networkIdCommitment,
+    domain.consumerContractAddress,
+    domain.registryIdCommitment,
+    domain.registryContractAddress,
+    domain.authorityDidCommitment,
+    domain.authorityMethodIdCommitment
+  ]);
+}
+
+constructor(authority: SignerAuthorizationAuthority, domain: VcAuthorityDomainFields) {
   assertValidSignerAuthorizationAuthority(authority);
+  assert(authority.domainCommitment == authorityDomainCommitment(domain), "Authority domain preimage mismatch");
   pinnedAuthority = disclose(authority);
+  pinnedDomain = disclose(domain);
 }
 
 export pure circuit credentialBodyRoot(credential: ConsumerVC_Credential): Bytes<32> {
@@ -22,6 +45,10 @@ export circuit installSignerAuthorization(
   descriptor: AuthorizedSignerDescriptor,
   authorityProof: Proof
 ): [] {
+  assert(
+    pinnedDomain.consumerContractAddress == kernel.self().bytes,
+    "Authority domain consumer address does not match this contract"
+  );
   assertValidSignerAuthorizationProof(descriptor, authorityProof, pinnedAuthority);
   const publicDescriptor = disclose(descriptor);
   if (installedSignerIds.member(publicDescriptor.authorizationId)) {

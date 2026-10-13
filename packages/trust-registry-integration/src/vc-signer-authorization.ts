@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
 
 import {
   pureCircuits,
@@ -9,8 +8,9 @@ import {
 } from "@midnight-ntwrk/credential-compact";
 import { midnightDIDMethodId, type MidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
+import { pureCircuits as registryPureCircuits } from "@midnight-ntwrk/trust-registry-contract";
 import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
-import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+import { sha256Hex, type DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
 import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 
@@ -34,17 +34,9 @@ export type VcAuthoritySigner = (request: {
   authority: SignerAuthorizationAuthority;
 }) => Promise<Proof>;
 
-/** Versioned, length-prefixed UTF-8 tuple; consumers pin every preimage field. */
-export const vcAuthorityDomainCommitment = (domain: VcAuthorityDomain): Uint8Array => {
-  const values = [
-    domain.networkId,
-    domain.consumerContractAddress,
-    domain.registryId,
-    domain.registryContractAddress,
-    domain.authorityDid,
-    domain.authorityMethodId,
-  ];
-  if (values.some((value) => typeof value !== "string" || value.length === 0)) {
+/** Compact-verifiable domain preimage; string fields are independently SHA-256 committed. */
+export const vcAuthorityDomainFields = (domain: VcAuthorityDomain) => {
+  if (Object.values(domain).some((value) => typeof value !== "string" || value.length === 0)) {
     throw new Error("VC authority domain fields must be nonempty strings");
   }
   if (!/^0x[0-9a-f]{64}$/u.test(domain.consumerContractAddress)
@@ -59,14 +51,28 @@ export const vcAuthorityDomainCommitment = (domain: VcAuthorityDomain): Uint8Arr
   if (!/^#[^#]+$/u.test(fragment) || domain.authorityMethodId !== `${domain.authorityDid}${fragment}`) {
     throw new Error("VC authority method must be an absolute DID fragment");
   }
-  const hash = createHash("sha256").update("tr:vc-authority-domain:v1\0", "utf8");
-  for (const value of values) {
-    const encoded = Buffer.from(value, "utf8");
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(encoded.length);
-    hash.update(length).update(encoded);
-  }
-  return hash.digest();
+  const committed = (value: string): Uint8Array => Uint8Array.from(Buffer.from(sha256Hex(value).slice(2), "hex"));
+  const address = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.slice(2), "hex"));
+  return {
+    networkIdCommitment: committed(domain.networkId),
+    consumerContractAddress: address(domain.consumerContractAddress),
+    registryIdCommitment: committed(domain.registryId),
+    registryContractAddress: address(domain.registryContractAddress),
+    authorityDidCommitment: committed(domain.authorityDid),
+    authorityMethodIdCommitment: committed(domain.authorityMethodId),
+  };
+};
+
+export const vcAuthorityDomainCommitment = (domain: VcAuthorityDomain): Uint8Array => {
+  const fields = vcAuthorityDomainFields(domain);
+  return registryPureCircuits.createVcAuthorityDomainCommitment(
+    fields.networkIdCommitment,
+    fields.consumerContractAddress,
+    fields.registryIdCommitment,
+    fields.registryContractAddress,
+    fields.authorityDidCommitment,
+    fields.authorityMethodIdCommitment,
+  );
 };
 
 export const pinnedVcAuthority = (anchor: PinnedVcAuthority): SignerAuthorizationAuthority => {
