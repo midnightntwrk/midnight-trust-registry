@@ -1,0 +1,585 @@
+import { describe, expect, it } from "vitest";
+import { encodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
+
+import {
+  AuthorizationRecordSchema,
+  DecisionEvidenceJsonSchema,
+  DecisionEvidenceSchema,
+  GovernancePolicySnapshotSchema,
+  assertDecisionEvidenceInclusion,
+  assertDecisionEvidenceMatchesAcceptedEpoch,
+  assertDecisionEvidencePolicyCommitment,
+  assertDecisionEvidenceSelection,
+  computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
+  computeMerkleRootFromProof,
+  issuerGovernedResourceId,
+  requestGovernedResourceId,
+} from "../index.js";
+
+const A = `0x${"a".repeat(64)}`;
+const B = `0x${"b".repeat(64)}`;
+const C = `0x${"c".repeat(64)}`;
+const D = `0x${"d".repeat(64)}`;
+const E = `0x${"e".repeat(64)}`;
+const DID = `did:midnight:devnet:${"1".repeat(64)}`;
+const REGISTRY_DID = `did:midnight:devnet:${"2".repeat(64)}`;
+const MAINTAINER = `did:midnight:devnet:${"3".repeat(64)}`;
+const NOW = "2026-05-20T02:00:00Z";
+const ISSUER_SCOPE = {
+  version: "tr-scope-v1",
+  role: "issuer",
+  credentialFamilyId: "credential-family:birth",
+  schemaId: "schema:birth",
+  schemaVersion: "1.0.0",
+  credentialDefinitionId: "credential-definition:birth",
+  statusMethod: "midnight-status-registry-v1",
+} as const;
+const VERIFIER_SCOPE = {
+  version: "tr-scope-v1" as const,
+  role: "verifier" as const,
+  requestProfileId: "request-profile:birth",
+  purpose: "age-verification",
+  credentialScopeCommitment: C,
+  allowedAttributes: ["age"],
+  allowedPredicates: ["over-18"],
+  disclosureLevel: "minimal",
+};
+const STATUS_BINDING = {
+  version: "tr-issuer-status-policy-v1" as const,
+  trustRegistryId: "registry:midnight:university",
+  issuerAuthorizationId: "auth:issuer:birth:v1",
+  statusRegistryId: D,
+  statusAuthorityVerificationMethod: `${DID}#key-1`,
+  statusPolicyId: "policy:status:v1",
+  statusPolicyVersion: "v1",
+  statusPolicyContentCommitment: C,
+};
+
+const issuerEvidence = () => ({
+  format: "tr-decision-evidence-v1",
+  role: "issuer",
+  registry: {
+    registryId: "registry:midnight:university",
+    registryDid: REGISTRY_DID,
+    networkId: "devnet",
+    contractAddress: A,
+  },
+  anchorReferences: {
+    registryEpoch: { networkId: "devnet", contractAddress: A, transactionHash: B, blockHash: C },
+    didState: { networkId: "devnet", blockHash: D },
+  },
+  epoch: {
+    epochId: "epoch:0001",
+    registryId: "registry:midnight:university",
+    stateRoot: A,
+    eventRoot: B,
+    policyRoot: C,
+    publicationPolicyCommitment: E,
+    publicationSequence: "10",
+    validFromSequence: "10",
+    validUntilSequence: "20",
+    validFrom: NOW,
+    validUntil: "2026-05-20T03:00:00Z",
+    quorum: {
+      requiredSignatures: 2,
+      signatures: [
+        { keyId: `${MAINTAINER}#key-1`, algorithm: "jubjub-schnorr", signature: `0x${"a".repeat(192)}` },
+        { keyId: `${MAINTAINER}#key-2`, algorithm: "jubjub-schnorr", signature: `0x${"b".repeat(192)}` },
+      ],
+    },
+  },
+  grant: {
+    authorizationId: "auth:issuer:birth:v1",
+    registryId: "registry:midnight:university",
+    subjectDid: DID,
+    role: "issuer",
+    resourceType: "credential-family",
+    resourceId: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily"),
+    policyId: "policy:university:v1",
+    trustLevel: "approved",
+    statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(STATUS_BINDING),
+    status: "active",
+    lifecycleEventRoot: B,
+    proposedAt: "2026-05-20T00:00:00Z",
+    authorizedAt: "2026-05-20T01:00:00Z",
+    activeFrom: "2026-05-20T01:00:00Z",
+    evidenceHash: D,
+  },
+  scope: ISSUER_SCOPE,
+  didMethod: {
+    did: DID,
+    methodId: `${DID}#key-1`,
+    methodType: "JsonWebKey",
+    controller: DID,
+    publicKeyJwk: { kty: "EC", crv: "Jubjub", x: `${"A".repeat(42)}Q`, y: `${"B".repeat(42)}g` },
+    stateVersion: "3",
+    relationship: "assertionMethod",
+    stateEvidence: { evidenceType: "ledger-observation", blockHash: D, transactionHash: E },
+  },
+  statusPolicyBinding: STATUS_BINDING,
+  policy: {
+    format: "tr-policy-snapshot-v1",
+    registryId: "registry:midnight:university",
+    policyId: "policy:university:v1",
+    policyVersion: "v1",
+    effectiveFrom: "2026-05-20T00:00:00Z",
+    effectiveUntil: null,
+    contentCommitment: C,
+    thresholds: [
+      { family: "maintainer", threshold: 2 },
+      { family: "member", threshold: 2 },
+      { family: "emergency", threshold: 2 },
+      { family: "archival", threshold: 2 },
+    ],
+  },
+  inclusionProof: { proofType: "merkle-inclusion", root: A, leafHash: D, path: [B], leafIndex: "0" },
+  governanceEvents: {
+    grantTransition: A,
+    quorumApproval: B,
+    epochPublication: C,
+    policySnapshot: D,
+  },
+  decisionSequence: "11",
+});
+
+const consistentIssuerEvidence = (grantChanges: Record<string, unknown> = {}) => {
+  const evidence = issuerEvidence();
+  evidence.grant = { ...evidence.grant, ...grantChanges };
+  const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(evidence.grant));
+  const root = computeMerkleRootFromProof(leafHash, [B], 0n);
+  evidence.epoch.stateRoot = root;
+  evidence.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+    GovernancePolicySnapshotSchema.parse(evidence.policy),
+  );
+  evidence.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path: [B], leafIndex: "0" };
+  if (grantChanges.status === "superseded") {
+    Object.assign(evidence.governanceEvents, { supersession: E });
+  }
+  return evidence;
+};
+
+const expectedIssuerSelection = {
+  registryId: "registry:midnight:university",
+  networkId: "devnet",
+  contractAddress: A,
+  subjectDid: DID,
+  role: "issuer" as const,
+  resourceType: "credential-family" as const,
+  resourceId: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily"),
+  scope: ISSUER_SCOPE,
+  evaluationTime: "2026-05-20T02:30:00Z",
+};
+
+const acceptedEpoch = (evidence: ReturnType<typeof consistentIssuerEvidence>) => ({
+  registryId: evidence.registry.registryId,
+  registryDid: evidence.registry.registryDid,
+  networkId: evidence.registry.networkId,
+  contractAddress: evidence.registry.contractAddress,
+  transactionHash: evidence.anchorReferences.registryEpoch.transactionHash,
+  blockHash: evidence.anchorReferences.registryEpoch.blockHash,
+  epochId: evidence.epoch.epochId,
+  stateRoot: evidence.epoch.stateRoot,
+  eventRoot: evidence.epoch.eventRoot,
+  policyRoot: evidence.epoch.policyRoot,
+  publicationPolicyCommitment: evidence.epoch.publicationPolicyCommitment,
+  publicationSequence: evidence.epoch.publicationSequence,
+  validFromSequence: evidence.epoch.validFromSequence,
+  validUntilSequence: evidence.epoch.validUntilSequence,
+  publicationEventHash: evidence.governanceEvents.epochPublication,
+  validFrom: evidence.epoch.validFrom,
+  validUntil: evidence.epoch.validUntil,
+  requiredSignatures: evidence.epoch.quorum.requiredSignatures,
+});
+
+describe("decision evidence envelope", () => {
+  it("bounds the decision sequence by the epoch publication and inclusive end sequence", () => {
+    const evidence = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence: "10" }).success).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence: "20" }).success).toBe(true);
+    for (const decisionSequence of ["9", "21", "18446744073709551615"]) {
+      expect(DecisionEvidenceSchema.safeParse({ ...evidence, decisionSequence }).success).toBe(false);
+    }
+  });
+
+  it("bounds claimed grant and DID-state proof depths before verification", () => {
+    const issuer = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse({
+      ...issuer,
+      inclusionProof: { ...issuer.inclusionProof, path: Array(257).fill(B) },
+    }).success).toBe(false);
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      scope: VERIFIER_SCOPE,
+      statusPolicyBinding: undefined,
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: {
+        ...issuer.didMethod,
+        relationship: "authentication",
+        stateEvidence: {
+          evidenceType: "state-proof",
+          stateRoot: A,
+          leafHash: B,
+          path: Array(257).fill(C),
+          leafIndex: "0",
+          blockHash: D,
+        },
+      },
+    };
+    expect(DecisionEvidenceSchema.safeParse(verifier).success).toBe(false);
+  });
+
+  it("matches every epoch claim to a separately accepted publication context", () => {
+    const evidence = consistentIssuerEvidence();
+    const accepted = acceptedEpoch(evidence);
+    expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, accepted)).not.toThrow();
+    for (const changed of [
+      { registryId: "registry:other" },
+      { registryDid: DID },
+      { networkId: "mainnet" },
+      { contractAddress: B },
+      { transactionHash: A },
+      { blockHash: D },
+      { epochId: "epoch:other" },
+      { stateRoot: B },
+      { eventRoot: A },
+      { policyRoot: A },
+      { publicationPolicyCommitment: A },
+      { publicationSequence: "11" },
+      { validFromSequence: "9" },
+      { validUntilSequence: "21" },
+      { publicationEventHash: A },
+      { validFrom: "2026-05-20T01:00:00Z" },
+      { validUntil: "2026-05-20T04:00:00Z" },
+      { requiredSignatures: 1 },
+    ]) {
+      expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, { ...accepted, ...changed })).toThrow();
+    }
+    expect(() => assertDecisionEvidenceMatchesAcceptedEpoch(evidence, { ...accepted, accepted: true })).toThrow();
+  });
+
+  it("accepts structural issuer and verifier claims without authenticating them", () => {
+    expect(DecisionEvidenceSchema.safeParse(issuerEvidence()).success).toBe(true);
+    const missingScope = issuerEvidence();
+    Reflect.deleteProperty(missingScope, "scope");
+    expect(DecisionEvidenceSchema.safeParse(missingScope).success).toBe(false);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...issuerEvidence(),
+      scope: { ...ISSUER_SCOPE, schemaVersion: "2.0.0" },
+    }).success).toBe(false);
+    const issuer = issuerEvidence();
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      scope: VERIFIER_SCOPE,
+      statusPolicyBinding: undefined,
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: {
+        ...issuer.didMethod,
+        relationship: "authentication",
+        stateEvidence: {
+          evidenceType: "state-proof",
+          stateRoot: A,
+          leafHash: B,
+          path: [C],
+          leafIndex: "0",
+          blockHash: D,
+        },
+      },
+    };
+    expect(DecisionEvidenceSchema.safeParse(verifier).success).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...verifier,
+      didMethod: { ...verifier.didMethod, relationship: "capabilityInvocation" },
+    }).success).toBe(true);
+  });
+
+  it("accepts canonical native coordinates outside the former four-suffix subset", () => {
+    const evidence = issuerEvidence();
+    const coordinate = encodeJubjubJwkCoordinate(1n);
+    expect(coordinate.endsWith("E")).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...evidence,
+      didMethod: {
+        ...evidence.didMethod,
+        publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, x: coordinate },
+      },
+    }).success).toBe(true);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...evidence,
+      didMethod: {
+        ...evidence.didMethod,
+        publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, x: `${coordinate.slice(0, -1)}F` },
+      },
+    }).success).toBe(false);
+  });
+
+  it("binds issuer status authority preimage to the governed grant and excludes it from verifier claims", () => {
+    const issuer = issuerEvidence();
+    expect(DecisionEvidenceSchema.safeParse(issuer).success).toBe(true);
+    for (const candidate of [
+      { ...issuer, statusPolicyBinding: undefined },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, statusRegistryId: E } },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, trustRegistryId: "registry:other" } },
+      { ...issuer, statusPolicyBinding: { ...issuer.statusPolicyBinding, issuerAuthorizationId: "auth:other" } },
+      { ...issuer, grant: { ...issuer.grant, statusPolicyBindingCommitment: E } },
+    ]) {
+      expect(DecisionEvidenceSchema.safeParse(candidate).success).toBe(false);
+    }
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      scope: VERIFIER_SCOPE,
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: { ...issuer.didMethod, relationship: "authentication" },
+    };
+    expect(DecisionEvidenceSchema.safeParse(verifier).success).toBe(false);
+  });
+
+  it("rejects wrong roles, absent DID version, malformed method/key/scope/root, and undersized quorum", () => {
+    const evidence = issuerEvidence();
+    const invalid = [
+      { ...evidence, role: "auditor" },
+      { ...evidence, grant: { ...evidence.grant, role: "verifier" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, relationship: "authentication" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, stateVersion: undefined } },
+      { ...evidence, didMethod: { ...evidence.didMethod, stateVersion: "0" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, stateVersion: "01" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, stateVersion: "18446744073709551616" } },
+      { ...evidence, epoch: { ...evidence.epoch, publicationSequence: Number.MAX_SAFE_INTEGER + 1 } },
+      { ...evidence, epoch: { ...evidence.epoch, publicationPolicyCommitment: undefined } },
+      { ...evidence, epoch: { ...evidence.epoch, validFromSequence: "11" } },
+      { ...evidence, epoch: { ...evidence.epoch, validUntilSequence: "10" } },
+      { ...evidence, epoch: { ...evidence.epoch, validUntilSequence: "18446744073709551616" } },
+      { ...evidence, decisionSequence: "18446744073709551616" },
+      { ...evidence, decisionSequence: "9" },
+      { ...evidence, epoch: { ...evidence.epoch, validUntil: NOW } },
+      { ...evidence, epoch: { ...evidence.epoch, validUntil: "2026-05-20T01:00:00Z" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, methodId: "#key-1" } },
+      { ...evidence, didMethod: { ...evidence.didMethod, publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, x: "bad!" } } },
+      { ...evidence, grant: { ...evidence.grant, resourceId: "birth" } },
+      { ...evidence, epoch: { ...evidence.epoch, stateRoot: "not-a-root" } },
+      { ...evidence, epoch: { ...evidence.epoch, quorum: { ...evidence.epoch.quorum, signatures: evidence.epoch.quorum.signatures.slice(0, 1) } } },
+      { ...evidence, epoch: { ...evidence.epoch, quorum: { ...evidence.epoch.quorum, signatures: [{ ...evidence.epoch.quorum.signatures[0], algorithm: "ed25519" }, evidence.epoch.quorum.signatures[1]] } } },
+      { ...evidence, epoch: { ...evidence.epoch, quorum: { ...evidence.epoch.quorum, signatures: [{ ...evidence.epoch.quorum.signatures[0], signature: "not-hex" }, evidence.epoch.quorum.signatures[1]] } } },
+      { ...evidence, epoch: { ...evidence.epoch, quorum: { ...evidence.epoch.quorum, signatures: [evidence.epoch.quorum.signatures[0], evidence.epoch.quorum.signatures[0]] } } },
+      { ...evidence, governanceEvents: { ...evidence.governanceEvents, grantTransition: "event:unanchored" } },
+      { ...evidence, inclusionProof: { ...evidence.inclusionProof, root: C } },
+      { ...evidence, anchorReferences: { ...evidence.anchorReferences, didState: { networkId: "devnet", blockHash: C } } },
+      { ...evidence, registry: { ...evidence.registry, networkId: "mainnet" } },
+    ];
+    for (const candidate of invalid) {
+      expect(DecisionEvidenceSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it("rejects extra properties at every object boundary", () => {
+    const evidence = issuerEvidence();
+    const invalid = [
+      { ...evidence, trusted: true },
+      { ...evidence, registry: { ...evidence.registry, trusted: true } },
+      { ...evidence, anchorReferences: { ...evidence.anchorReferences, registryEpoch: { ...evidence.anchorReferences.registryEpoch, accepted: true } } },
+      { ...evidence, epoch: { ...evidence.epoch, quorum: { ...evidence.epoch.quorum, accepted: true } } },
+      { ...evidence, grant: { ...evidence.grant, trusted: true } },
+      { ...evidence, didMethod: { ...evidence.didMethod, publicKeyJwk: { ...evidence.didMethod.publicKeyJwk, d: "secret" } } },
+      { ...evidence, policy: { ...evidence.policy, trusted: true } },
+      { ...evidence, inclusionProof: { ...evidence.inclusionProof, verified: true } },
+    ];
+    for (const candidate of invalid) {
+      expect(DecisionEvidenceSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it("exports a versioned draft-2020-12 JSON Schema with strict variants", () => {
+    expect(DecisionEvidenceJsonSchema.$id).toMatch(/decision-evidence-v1\.json$/u);
+    expect(DecisionEvidenceJsonSchema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+    expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"additionalProperties":false');
+    expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"const":"tr-decision-evidence-v1"');
+    expect(JSON.stringify(DecisionEvidenceJsonSchema)).toContain('"const":"verifier"');
+  });
+
+  it("checks exact grant inclusion using a uint64 leaf index without authenticating the root", () => {
+    const evidence = issuerEvidence();
+    const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(evidence.grant));
+    const index = 1n << 53n;
+    const path = Array(54).fill(B) as string[];
+    const root = computeMerkleRootFromProof(leafHash, path, index);
+    evidence.epoch.stateRoot = root;
+    evidence.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path, leafIndex: index.toString() };
+    expect(() => assertDecisionEvidenceInclusion(evidence)).not.toThrow();
+    const genericPath = [C, ...path.slice(1)];
+    const genericRoot = computeMerkleRootFromProof(leafHash, genericPath, index);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      epoch: { ...evidence.epoch, stateRoot: genericRoot },
+      inclusionProof: { ...evidence.inclusionProof, root: genericRoot, path: genericPath },
+    })).not.toThrow();
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      grant: { ...evidence.grant, evidenceHash: E },
+    })).toThrow(/grant leaf hash mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      inclusionProof: { ...evidence.inclusionProof, leafIndex: "0" },
+    })).toThrow(/Merkle root mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      inclusionProof: { ...evidence.inclusionProof, path: [C, ...path.slice(1)] },
+    })).toThrow(/Merkle root mismatch/u);
+    expect(() => assertDecisionEvidenceInclusion({
+      ...evidence,
+      epoch: { ...evidence.epoch, stateRoot: D },
+      inclusionProof: { ...evidence.inclusionProof, root: D },
+    })).toThrow(/Merkle root mismatch/u);
+  });
+
+  it("checks the policy snapshot against the claimed epoch root", () => {
+    const evidence = issuerEvidence();
+    evidence.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(evidence.policy),
+    );
+    expect(() => assertDecisionEvidencePolicyCommitment(evidence)).not.toThrow();
+    expect(() => assertDecisionEvidencePolicyCommitment({
+      ...evidence,
+      policy: { ...evidence.policy, contentCommitment: A },
+    })).toThrow(/policy root mismatch/u);
+    expect(() => assertDecisionEvidencePolicyCommitment({
+      ...evidence,
+      epoch: { ...evidence.epoch, policyRoot: D },
+    })).toThrow(/policy root mismatch/u);
+  });
+
+  it("requires caller-selected registry, subject, role, scope, and active windows", () => {
+    const evidence = consistentIssuerEvidence();
+    expect(() => assertDecisionEvidenceSelection(evidence, expectedIssuerSelection)).not.toThrow();
+    for (const changed of [
+      { networkId: "mainnet" },
+      { contractAddress: B },
+      { subjectDid: MAINTAINER },
+      { role: "verifier" as const },
+      { resourceId: `tr:issuer-resource:v1:${"a".repeat(64)}` },
+      { scope: { ...ISSUER_SCOPE, schemaVersion: "2.0.0" } },
+      { evaluationTime: "2026-05-20T01:59:59Z" },
+      { evaluationTime: "2026-05-20T03:00:01Z" },
+    ]) {
+      expect(() => assertDecisionEvidenceSelection(evidence, { ...expectedIssuerSelection, ...changed })).toThrow();
+    }
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ status: "suspended", suspendedAt: "2026-05-20T02:15:00Z" }),
+      expectedIssuerSelection,
+    )).toThrow(/not active/u);
+    for (const [status, field] of [
+      ["revoked", "revokedAt"],
+      ["superseded", "supersededAt"],
+      ["archived", "archivedAt"],
+    ] as const) {
+      expect(() => assertDecisionEvidenceSelection(
+        consistentIssuerEvidence({ status, [field]: "2026-05-20T02:15:00Z" }),
+        expectedIssuerSelection,
+      )).toThrow(/not active/u);
+    }
+    for (const status of ["proposed", "authorized"] as const) {
+      expect(() => assertDecisionEvidenceSelection(
+        consistentIssuerEvidence({ status }),
+        expectedIssuerSelection,
+      )).toThrow(/not active/u);
+    }
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ effectiveUntil: "2026-05-20T02:15:00Z" }),
+      expectedIssuerSelection,
+    )).toThrow(/active window/u);
+    const base = consistentIssuerEvidence();
+    const expiredPolicy = {
+      ...base,
+      policy: { ...base.policy, effectiveUntil: "2026-05-20T02:15:00Z" },
+    };
+    expiredPolicy.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(expiredPolicy.policy),
+    );
+    expect(() => assertDecisionEvidenceSelection(expiredPolicy, expectedIssuerSelection)).toThrow(/active window/u);
+  });
+
+  it("does not round a selected instant back into a closed sub-millisecond window", () => {
+    const selected = { ...expectedIssuerSelection, evaluationTime: "2026-05-20T02:30:00.000001Z" };
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ effectiveUntil: "2026-05-20T02:30:00.000Z" }),
+      selected,
+    )).toThrow(/active window/u);
+
+    const epochEnded = consistentIssuerEvidence();
+    epochEnded.epoch.validUntil = "2026-05-20T02:30:00.000Z";
+    expect(() => assertDecisionEvidenceSelection(epochEnded, selected)).toThrow(/active window/u);
+
+    const policyBase = consistentIssuerEvidence();
+    const policyEnded = {
+      ...policyBase,
+      policy: { ...policyBase.policy, effectiveUntil: "2026-05-20T02:30:00.000Z" },
+    };
+    policyEnded.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(policyEnded.policy),
+    );
+    expect(() => assertDecisionEvidenceSelection(policyEnded, selected)).toThrow(/active window/u);
+  });
+
+  it("checks an exact verifier request profile separately from issuer scope", () => {
+    const issuer = issuerEvidence();
+    const requestResourceId = requestGovernedResourceId(VERIFIER_SCOPE);
+    const verifier = {
+      ...issuer,
+      role: "verifier",
+      scope: VERIFIER_SCOPE,
+      statusPolicyBinding: undefined,
+      grant: {
+        ...issuer.grant,
+        role: "verifier",
+        resourceType: "request-profile",
+        resourceId: requestResourceId,
+        statusPolicyBindingCommitment: undefined,
+      },
+      didMethod: { ...issuer.didMethod, relationship: "authentication" },
+    };
+    const leafHash = computeAuthorizationStatementLeafHash(AuthorizationRecordSchema.parse(verifier.grant));
+    const root = computeMerkleRootFromProof(leafHash, [B], 0n);
+    verifier.epoch.stateRoot = root;
+    verifier.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(verifier.policy),
+    );
+    verifier.inclusionProof = { proofType: "merkle-inclusion", root, leafHash, path: [B], leafIndex: "0" };
+    const expected = {
+      ...expectedIssuerSelection,
+      role: "verifier" as const,
+      resourceType: "request-profile" as const,
+      resourceId: requestResourceId,
+      scope: VERIFIER_SCOPE,
+    };
+    expect(() => assertDecisionEvidenceSelection(verifier, expected)).not.toThrow();
+    expect(() => assertDecisionEvidenceSelection(verifier, {
+      ...expected,
+      resourceId: `tr:request-resource:v1:${"a".repeat(64)}`,
+    })).toThrow(/scope mismatch/u);
+    expect(() => assertDecisionEvidenceSelection(verifier, {
+      ...expected,
+      scope: { ...VERIFIER_SCOPE, purpose: "different-purpose" },
+    })).toThrow(/scope preimage mismatch/u);
+  });
+});

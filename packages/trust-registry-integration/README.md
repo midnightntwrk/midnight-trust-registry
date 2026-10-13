@@ -46,7 +46,22 @@ Current coverage:
   then confirms the activated candidate can co-sign a later issuer action.
   Fixture helpers still sign internally; production signing and network
   submission are not provided by this simulator harness.
-- anchored epoch evidence validation
+- anchored epoch evidence validation. The simulator now retains the complete
+  ordered signature witness for epochs it publishes and checks that its event
+  hash matches the Compact record before returning it. A two-maintainer test
+  verifies both signatures against the contract's maintainer public keys and
+  the on-ledger publication event, and rejects missing, reordered, or changed
+  signatures. The contract stores the first signature and signer-set event
+  hash, not every co-signature. This session-local witness does not authenticate
+  a network transaction, historical maintainer state, or finality; production
+  consumers must obtain those independently.
+- A decision-evidence composition test combines the actual simulator issuer
+  grant, policy and Merkle root, retained two-signer publication witness, and
+  a DID Document resolved by the published Midnight DID package. It rejects a
+  removed issuer assertion relationship and a later suspended grant. The
+  transaction and block references are explicit simulator placeholders, not
+  independently accepted network anchors, so the test does not issue a VC
+  signer descriptor or establish production finality.
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
 - VC-backed issuer-descriptor construction using the published

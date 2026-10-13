@@ -426,6 +426,16 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{
+          ...originalSignature,
+          keyId: originalSignature.keyId.replace(/#key-1$/u, "#key-2"),
+        }],
+      },
+    }, {})).toThrow(/DID method does not match its accepted key commitment/u);
     const extraSignatures = [originalSignature, {
       ...originalSignature,
       keyId: "did:midnight:untrusted#key-2",

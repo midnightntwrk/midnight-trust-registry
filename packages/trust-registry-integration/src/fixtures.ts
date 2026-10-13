@@ -378,7 +378,7 @@ export const createMaintainerScenarioFixture = (
     maintainerIdCommitment: bytes32Commitment(maintainerId),
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
-    keyId: keyMaterial.keyId,
+    keyId: bytes32Commitment(`${subjectDid}#key-1`),
     seed: keyMaterial.seed,
     trustLevel: "governance-approved",
   };
