@@ -181,6 +181,17 @@ export type PreparedRecognitionAction = {
   previousLifecycleEventHash?: Uint8Array;
 };
 
+export type PreparedMaintainerAction = {
+  registryId: Uint8Array;
+  maintainerId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash?: Uint8Array;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -879,6 +890,31 @@ export class LocalTrustRegistryIntegrationHarness {
       governedResource: { type: "registry", id: this.registryId },
     },
   ): Uint8Array {
+    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeMaintainerProposalWithSignatures(fixture, evidence, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ], expectedEvidence);
+  }
+
+  prepareMaintainerProposalAction(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): PreparedMaintainerAction {
     if (
       expectedEvidence.scope.role !== "maintainer" ||
       expectedEvidence.scope.registryId !== this.registryId ||
@@ -895,91 +931,124 @@ export class LocalTrustRegistryIntegrationHarness {
       role: "maintainer",
       ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(PROPOSE_MAINTAINER_ACTION_KIND),
+      actionPayloadHash: computeCreateMaintainerMembershipPayloadHash(
         fixture.maintainerIdCommitment,
         fixture.subjectDidCommitment,
         fixture.keyId,
         candidatePublicKey,
-        this.governancePolicyCommitment,
+        ledger.governancePolicyCommitment,
         bytes32Commitment(fixture.trustLevel),
         proposedEvidenceHash,
       ),
-      proposeActionSequence,
-    );
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+    };
+  }
+
+  executeMaintainerProposalWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Maintainer proposal requires a maintainer signature");
+    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
 
     return this.simulator.proposeMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
       fixture.maintainerIdCommitment,
       fixture.subjectDidCommitment,
       fixture.keyId,
       candidatePublicKey,
-      this.governancePolicyCommitment,
+      prepared.policyCommitment,
       bytes32Commitment(fixture.trustLevel),
-      proposedEvidenceHash,
+      prepared.evidenceHash,
+      signers.slice(1),
     );
   }
 
-  approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getMaintainerMembership(
-      fixture.maintainerIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_MAINTAINER_ACTION_KIND,
-      computeUpdateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment,
-        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
+  prepareMaintainerDecisionAction(
+    fixture: MaintainerScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedMaintainerAction {
+    if (action !== "approve" && action !== "activate") {
+      throw new Error("Unsupported maintainer decision action");
+    }
+    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_MAINTAINER_ACTION_KIND : ACTIVATE_MAINTAINER_ACTION_KIND),
+      actionPayloadHash: computeUpdateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment, current.lifecycleEventHash, current.evidenceHash,
       ),
-      authorizeActionSequence,
-    );
-
-    return this.simulator.authorizeMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.maintainerIdCommitment,
-      authorizedEvidenceHash,
-    );
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(current.evidenceHash),
+    };
   }
 
-  activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getMaintainerMembership(
-      fixture.maintainerIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_MAINTAINER_ACTION_KIND,
-      computeUpdateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment,
-        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-
+  executeMaintainerDecisionWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Maintainer decision requires a maintainer signature");
+    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeMaintainerMembership(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
     const result = this.simulator.activateMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.maintainerIdCommitment,
-      evidenceHash,
+      primary.keyId, primary.publicKey, primary.signature,
+      fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1),
     );
     this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
     return result;
+  }
+
+  private fixtureMaintainerDecision(fixture: MaintainerScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+    return this.executeMaintainerDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
+  }
+
+  approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    return this.fixtureMaintainerDecision(fixture, "approve");
+  }
+
+  activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+    return this.fixtureMaintainerDecision(fixture, "activate");
   }
 
   suspendMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {

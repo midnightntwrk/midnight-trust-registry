@@ -39,6 +39,13 @@ Current coverage:
   stale bundles, then verifies the active recognition evidence. Recognition
   is not a local issuer, verifier, auditor, or maintainer membership grant;
   the demo evidence hash is a fixture, not third-party accreditation proof.
+- Maintainer onboarding exposes prepared proposal, approval, and activation
+  digests and accepts signatures from existing maintainers at each transition.
+  The 2-of-3 simulator test rejects insufficient, duplicate, candidate
+  self-voting, wrong-policy, and stale signatures without advancing governance,
+  then confirms the activated candidate can co-sign a later issuer action.
+  Fixture helpers still sign internally; production signing and network
+  submission are not provided by this simulator harness.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
