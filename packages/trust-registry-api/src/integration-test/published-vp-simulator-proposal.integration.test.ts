@@ -33,7 +33,7 @@ import {
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
-import { GovernedIssuerActionRejectedError, type PreparedGovernedIssuerAction } from "../governed-issuer-actions.js";
+import { GovernedMembershipActionRejectedError, type PreparedGovernedMembershipAction } from "../governed-membership-actions.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
 const signAction = (
@@ -55,7 +55,7 @@ const signAction = (
 
 const signHttpAction = (
   maintainer: MaintainerScenarioFixture,
-  prepared: PreparedGovernedIssuerAction,
+  prepared: PreparedGovernedMembershipAction,
 ) => {
   const fromHex = (value: string) => Buffer.from(value.slice(2), "hex");
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
@@ -203,22 +203,22 @@ describe("published VP proof to governed issuer decision", () => {
     let snapshot = publishSimulatorSnapshot(harness, fixtures);
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => snapshot },
-      governedIssuerActions: {
-        async prepare(authorizationId, action) {
-          if (authorizationId !== issuer.authorizationId) {
-            throw new GovernedIssuerActionRejectedError("unknown-authorization");
+      governedMembershipActions: {
+        async prepare(role, authorizationId, action) {
+          if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
+            throw new GovernedMembershipActionRejectedError("unknown-authorization");
           }
           return harness.prepareIssuerDecisionAction(issuer, action);
         },
-        async execute(authorizationId, action, signers) {
-          if (authorizationId !== issuer.authorizationId) {
-            throw new GovernedIssuerActionRejectedError("unknown-authorization");
+        async execute(role, authorizationId, action, signers) {
+          if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
+            throw new GovernedMembershipActionRejectedError("unknown-authorization");
           }
           let accepted: Uint8Array;
           try {
             accepted = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
           } catch {
-            throw new GovernedIssuerActionRejectedError("invalid-signers");
+            throw new GovernedMembershipActionRejectedError("invalid-signers");
           }
           snapshot = publishSimulatorSnapshot(harness, fixtures);
           return { eventHash: `0x${Buffer.from(accepted).toString("hex")}` };
@@ -231,10 +231,10 @@ describe("published VP proof to governed issuer decision", () => {
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const base = `http://127.0.0.1:${address.port}`;
       for (const action of ["approve", "activate"] as const) {
-        const endpoint = `${base}/v1/governed/issuers/${issuer.authorizationId}/actions/${action}`;
+        const endpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/actions/${action}`;
         const preparedResponse = await fetch(endpoint);
         expect(preparedResponse.status).toBe(200);
-        const prepared = await preparedResponse.json() as PreparedGovernedIssuerAction;
+        const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
         const accepted = await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },

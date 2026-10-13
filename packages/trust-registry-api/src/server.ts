@@ -35,15 +35,16 @@ import {
 } from "./source.js";
 import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 import {
-  decodeGovernedIssuerSigners,
-  GovernedIssuerActionReceiptSchema,
-  GovernedIssuerActionRejectedError,
-  GovernedIssuerActionSchema,
-  GovernedIssuerSignatureRequestSchema,
-  sameGovernedIssuerAction,
-  serializeGovernedIssuerAction,
-  type GovernedIssuerActionPort,
-} from "./governed-issuer-actions.js";
+  decodeGovernedMembershipSigners,
+  GovernedMembershipActionReceiptSchema,
+  GovernedMembershipActionRejectedError,
+  GovernedMembershipActionSchema,
+  GovernedMembershipRoleSchema,
+  GovernedMembershipSignatureRequestSchema,
+  sameGovernedMembershipAction,
+  serializeGovernedMembershipAction,
+  type GovernedMembershipActionPort,
+} from "./governed-membership-actions.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -94,7 +95,7 @@ export type TrustRegistryApiServerOptions = {
   problemBaseUri?: string;
   mutationDidResolver?: Parameters<typeof verifyMutationIntentDidSignature>[2];
   allowUnsafeDemoMutations?: boolean;
-  governedIssuerActions?: GovernedIssuerActionPort;
+  governedMembershipActions?: GovernedMembershipActionPort;
 };
 
 const SignedMutationRequestSchema = z.strictObject({
@@ -474,19 +475,19 @@ const requireUnsafeDemoMutations = (
   }
 };
 
-const requireGovernedIssuerActions = (
+const requireGovernedMembershipActions = (
   options: TrustRegistryApiServerOptions,
   problemBaseUri: string,
-): GovernedIssuerActionPort => {
-  if (options.governedIssuerActions === undefined) {
-    throw jsonProblem(problemBaseUri, "governed-issuer-unavailable", 503,
-      "governed issuer unavailable", "A Compact-backed issuer action port is not configured.");
+): GovernedMembershipActionPort => {
+  if (options.governedMembershipActions === undefined) {
+    throw jsonProblem(problemBaseUri, "governed-membership-unavailable", 503,
+      "governed membership unavailable", "A Compact-backed membership action port is not configured.");
   }
-  return options.governedIssuerActions;
+  return options.governedMembershipActions;
 };
 
-const mapGovernedIssuerError = (error: unknown, problemBaseUri: string): never => {
-  if (error instanceof GovernedIssuerActionRejectedError) {
+const mapGovernedMembershipError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedMembershipActionRejectedError) {
     const unknown = error.reason === "unknown-authorization";
     throw jsonProblem(problemBaseUri, unknown ? "authorization-not-found" : "governed-action-rejected",
       unknown ? 404 : 403, unknown ? "authorization not found" : "governed action rejected");
@@ -572,17 +573,17 @@ export const createTrustRegistryApiServer = (
         && segments.length === 6
         && segments[0] === "v1"
         && segments[1] === "governed"
-        && segments[2] === "issuers"
         && segments[4] === "actions"
       ) {
-        const port = requireGovernedIssuerActions(options, problemBaseUri);
+        const port = requireGovernedMembershipActions(options, problemBaseUri);
+        const role = GovernedMembershipRoleSchema.parse(segments[2]);
         const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
-        const action = GovernedIssuerActionSchema.parse(segments[5]);
+        const action = GovernedMembershipActionSchema.parse(segments[5]);
         let prepared;
         try {
-          prepared = serializeGovernedIssuerAction(await port.prepare(authorizationId, action));
+          prepared = serializeGovernedMembershipAction(await port.prepare(role, authorizationId, action));
         } catch (error) {
-          return mapGovernedIssuerError(error, problemBaseUri);
+          return mapGovernedMembershipError(error, problemBaseUri);
         }
         response.setHeader("cache-control", "no-store");
         if (method === "GET") {
@@ -590,25 +591,25 @@ export const createTrustRegistryApiServer = (
           return;
         }
         const body = await parseJsonBody(request,
-          (value) => GovernedIssuerSignatureRequestSchema.parse(value), problemBaseUri);
-        if (!sameGovernedIssuerAction(prepared, body.prepared)) {
+          (value) => GovernedMembershipSignatureRequestSchema.parse(value), problemBaseUri);
+        if (!sameGovernedMembershipAction(prepared, body.prepared)) {
           throw jsonProblem(problemBaseUri, "stale-governed-action", 409,
             "stale governed action", "The signed action context no longer matches current ledger state.");
         }
         let signers;
         try {
-          signers = decodeGovernedIssuerSigners(body);
+          signers = decodeGovernedMembershipSigners(body);
         } catch {
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
         let receipt;
         try {
-          receipt = GovernedIssuerActionReceiptSchema.parse(
-            await port.execute(authorizationId, action, signers),
+          receipt = GovernedMembershipActionReceiptSchema.parse(
+            await port.execute(role, authorizationId, action, signers),
           );
         } catch (error) {
-          return mapGovernedIssuerError(error, problemBaseUri);
+          return mapGovernedMembershipError(error, problemBaseUri);
         }
         writeJson(response, 202, receipt);
         return;

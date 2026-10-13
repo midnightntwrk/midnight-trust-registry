@@ -21,8 +21,8 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
-- `GET /v1/governed/issuers/:authorizationId/actions/:action` (Compact signer context; optional port)
-- `POST /v1/governed/issuers/:authorizationId/actions/:action` (external signatures; optional port)
+- `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
+- `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -104,8 +104,9 @@ injects a ledger-backed DID resolver fixture and exercises the signed route.
 This API is a local reference gateway, not a claim that its fixture replay
 passes external maintainer signatures into a live Compact contract.
 
-The separate governed-issuer route accepts `approve` and `activate` only when
-the server is constructed with `governedIssuerActions`. Without the port it
+The separate governed-membership route accepts `issuer`, `verifier`, and
+`auditor` roles with `approve` and `activate` actions only when the server is
+constructed with `governedMembershipActions`. Without the port it
 returns 503 and never falls back to workspace replay. `GET` returns the
 current registry, authorization, policy, action, sequence, predecessor event,
 and evidence commitments for off-server signing. `POST` accepts
@@ -186,10 +187,11 @@ pnpm --filter @midnight-ntwrk/trust-registry-api exec vitest run src/integration
 ```
 
 The governed-action HTTP integration test covers externally signed 2-of-3
-approval and activation, stale and malformed requests, and independently
-verified active-issuer lookup on one simulator. It is a separate reference
-journey; the VP intake above is not yet exposed as an authenticated HTTP
-endpoint or connected to this route in a deployable server.
+approval and activation, stale and malformed requests, cross-role identifier
+substitution, and independently verified issuer, verifier, and auditor
+evidence on one simulator. It is a reference journey; the VP intake above is
+not yet exposed as an authenticated HTTP endpoint or connected to this route
+in a deployable server.
 
 Example applicant submission:
 

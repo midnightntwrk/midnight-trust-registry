@@ -15,7 +15,7 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   createTrustRegistryApiServer,
-  GovernedIssuerActionRejectedError,
+  GovernedMembershipActionRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -56,22 +56,22 @@ const fixtures = { label: "governed-issuer-demo", issuers: [{ label: "issuer", f
 let snapshot = publishSimulatorSnapshot(harness, fixtures);
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
-  governedIssuerActions: {
-    async prepare(authorizationId, action) {
-      if (authorizationId !== issuer.authorizationId) {
-        throw new GovernedIssuerActionRejectedError("unknown-authorization");
+  governedMembershipActions: {
+    async prepare(role, authorizationId, action) {
+      if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
+        throw new GovernedMembershipActionRejectedError("unknown-authorization");
       }
       return harness.prepareIssuerDecisionAction(issuer, action);
     },
-    async execute(authorizationId, action, signers) {
-      if (authorizationId !== issuer.authorizationId) {
-        throw new GovernedIssuerActionRejectedError("unknown-authorization");
+    async execute(role, authorizationId, action, signers) {
+      if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
+        throw new GovernedMembershipActionRejectedError("unknown-authorization");
       }
       let eventHash;
       try {
         eventHash = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
       } catch {
-        throw new GovernedIssuerActionRejectedError("invalid-signers");
+        throw new GovernedMembershipActionRejectedError("invalid-signers");
       }
       snapshot = publishSimulatorSnapshot(harness, fixtures);
       return { eventHash: asHex(eventHash) };
@@ -85,7 +85,7 @@ try {
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
   const actionUrl = (action) =>
-    `${base}/v1/governed/issuers/${issuer.authorizationId}/actions/${action}`;
+    `${base}/v1/governed/issuer/${issuer.authorizationId}/actions/${action}`;
   const submit = (action, prepared, signers) => fetch(actionUrl(action), {
     method: "POST",
     headers: { "content-type": "application/json" },

@@ -8,9 +8,10 @@ import { z } from "zod";
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
 
-export const GovernedIssuerActionSchema = z.enum(["approve", "activate"]);
+export const GovernedMembershipRoleSchema = z.enum(["issuer", "verifier", "auditor"]);
+export const GovernedMembershipActionSchema = z.enum(["approve", "activate"]);
 
-export const PreparedGovernedIssuerActionSchema = z.strictObject({
+export const PreparedGovernedMembershipActionSchema = z.strictObject({
   registryId: Bytes32Schema,
   authorizationId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
@@ -21,8 +22,8 @@ export const PreparedGovernedIssuerActionSchema = z.strictObject({
   evidenceHash: Bytes32Schema,
 });
 
-export const GovernedIssuerSignatureRequestSchema = z.strictObject({
-  prepared: PreparedGovernedIssuerActionSchema,
+export const GovernedMembershipSignatureRequestSchema = z.strictObject({
+  prepared: PreparedGovernedMembershipActionSchema,
   signers: z.array(z.strictObject({
     keyId: Bytes32Schema,
     publicKey: z.strictObject({ x: ScalarSchema, y: ScalarSchema }),
@@ -30,16 +31,17 @@ export const GovernedIssuerSignatureRequestSchema = z.strictObject({
   })).min(1).max(16),
 });
 
-export const GovernedIssuerActionReceiptSchema = z.strictObject({
+export const GovernedMembershipActionReceiptSchema = z.strictObject({
   eventHash: Bytes32Schema,
 });
 
-export type GovernedIssuerAction = z.infer<typeof GovernedIssuerActionSchema>;
-export type PreparedGovernedIssuerAction = z.infer<typeof PreparedGovernedIssuerActionSchema>;
-export type GovernedIssuerSignatureRequest = z.infer<typeof GovernedIssuerSignatureRequestSchema>;
-export type GovernedIssuerActionReceipt = z.infer<typeof GovernedIssuerActionReceiptSchema>;
+export type GovernedMembershipRole = z.infer<typeof GovernedMembershipRoleSchema>;
+export type GovernedMembershipAction = z.infer<typeof GovernedMembershipActionSchema>;
+export type PreparedGovernedMembershipAction = z.infer<typeof PreparedGovernedMembershipActionSchema>;
+export type GovernedMembershipSignatureRequest = z.infer<typeof GovernedMembershipSignatureRequestSchema>;
+export type GovernedMembershipActionReceipt = z.infer<typeof GovernedMembershipActionReceiptSchema>;
 
-export type GovernedIssuerActionContext = {
+export type GovernedMembershipActionContext = {
   registryId: Uint8Array;
   authorizationId: Uint8Array;
   policyCommitment: Uint8Array;
@@ -50,26 +52,27 @@ export type GovernedIssuerActionContext = {
   evidenceHash: Uint8Array;
 };
 
-export type GovernedIssuerSigner = {
+export type GovernedMembershipSigner = {
   keyId: Uint8Array;
   publicKey: JubjubPoint;
   signature: TrustRegistryJubjubSignature;
 };
 
-export type GovernedIssuerActionPort = {
-  prepare(authorizationId: string, action: GovernedIssuerAction): Promise<GovernedIssuerActionContext>;
+export type GovernedMembershipActionPort = {
+  prepare(role: GovernedMembershipRole, authorizationId: string, action: GovernedMembershipAction): Promise<GovernedMembershipActionContext>;
   /** Recheck current policy, sequence, membership, quorum, and lifecycle in Compact before acceptance. */
   execute(
+    role: GovernedMembershipRole,
     authorizationId: string,
-    action: GovernedIssuerAction,
-    signers: readonly GovernedIssuerSigner[],
-  ): Promise<GovernedIssuerActionReceipt>;
+    action: GovernedMembershipAction,
+    signers: readonly GovernedMembershipSigner[],
+  ): Promise<GovernedMembershipActionReceipt>;
 };
 
-export class GovernedIssuerActionRejectedError extends Error {
+export class GovernedMembershipActionRejectedError extends Error {
   constructor(readonly reason: "invalid-signers" | "unknown-authorization") {
-    super(`Governed issuer action rejected: ${reason}`);
-    this.name = "GovernedIssuerActionRejectedError";
+    super(`Governed membership action rejected: ${reason}`);
+    this.name = "GovernedMembershipActionRejectedError";
   }
 }
 
@@ -78,9 +81,9 @@ const bytes32Hex = (value: Uint8Array): string => {
   return `0x${Buffer.from(value).toString("hex")}`;
 };
 
-export const serializeGovernedIssuerAction = (
-  context: GovernedIssuerActionContext,
-): PreparedGovernedIssuerAction => PreparedGovernedIssuerActionSchema.parse({
+export const serializeGovernedMembershipAction = (
+  context: GovernedMembershipActionContext,
+): PreparedGovernedMembershipAction => PreparedGovernedMembershipActionSchema.parse({
   registryId: bytes32Hex(context.registryId),
   authorizationId: bytes32Hex(context.authorizationId),
   policyCommitment: bytes32Hex(context.policyCommitment),
@@ -91,9 +94,9 @@ export const serializeGovernedIssuerAction = (
   evidenceHash: bytes32Hex(context.evidenceHash),
 });
 
-export const sameGovernedIssuerAction = (
-  current: PreparedGovernedIssuerAction,
-  submitted: PreparedGovernedIssuerAction,
+export const sameGovernedMembershipAction = (
+  current: PreparedGovernedMembershipAction,
+  submitted: PreparedGovernedMembershipAction,
 ): boolean => (
   current.registryId === submitted.registryId
   && current.authorizationId === submitted.authorizationId
@@ -105,9 +108,9 @@ export const sameGovernedIssuerAction = (
   && current.evidenceHash === submitted.evidenceHash
 );
 
-export const decodeGovernedIssuerSigners = (
-  request: GovernedIssuerSignatureRequest,
-): GovernedIssuerSigner[] => request.signers.map((signer) => ({
+export const decodeGovernedMembershipSigners = (
+  request: GovernedMembershipSignatureRequest,
+): GovernedMembershipSigner[] => request.signers.map((signer) => ({
   keyId: Buffer.from(signer.keyId.slice(2), "hex"),
   publicKey: { x: BigInt(signer.publicKey.x), y: BigInt(signer.publicKey.y) },
   signature: decodeCanonicalJubjubSignatureHex(signer.signature),
