@@ -419,3 +419,18 @@ serialization/HTTP tests passed 11/11. The four-role `./run.sh integration
 --light` passed in about 25 seconds and `./run.sh --light` passed 20/20 tasks,
 including 145 API light tests, in about 51 seconds. The full proving lane
 remains a prepublication gate.
+
+The local #73 candidate bridge now calls the trusted current-registry and DID
+readers before constructing a VC `AuthorizedSignerDescriptor`. It carries the
+observed decision sequence, active state, policy root, authorization ID, and
+exact native DID method/key/relationship/state version into the published VC
+adapter. It requires an explicitly approved TR-to-VC scope mapping and rejects
+TR scope substitution; it does not yet prove that the selected VC `SchemaRef`
+or signed request is the correct mapping, issue an authority proof, or provide
+a pinned Ledger 8 consumer. The old bundle-only VC test remains a candidate
+example, not an authority test. Focused typecheck/test took about 1–2 seconds,
+fast integration about 25 seconds, and `./run.sh --light` about 50 seconds.
+Self-review caught an issuer-only relationship check that would have allowed
+verifier authentication/capabilityInvocation substitution; the bridge now
+requires the exact independently observed relationship. Reserve the full
+59-circuit proving build for a prepublication checkpoint.
