@@ -18,6 +18,7 @@ import {
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
 } from "../application-vp-verifier.js";
+import { decodeApplicationVpProof, encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
 import { createApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
@@ -44,6 +45,56 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("round-trips submitted proof JSON without losing cryptographic fields", async () => {
+    const { input, material } = await fixture();
+    const submitted = structuredClone(input.submission);
+    expect(decodeApplicationVpProof(submitted.credentialProof)).toEqual(material.credentialProof);
+    expect(decodeApplicationVpProof(submitted.presentationProof)).toEqual(material.presentationProof);
+    expect(encodeApplicationVpProof(decodeApplicationVpProof(submitted.credentialProof))).toEqual(submitted.credentialProof);
+  });
+
+  it("rejects substituted submitted bodies and proof signatures before eligibility checks", async () => {
+    const { input, family } = await fixture();
+    const changedCredential = structuredClone(input.submission);
+    changedCredential.rawCredentialBody = "substituted-credential-body";
+    await expect(verifyApplicationVp({ ...input, submission: changedCredential })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const changedPresentation = structuredClone(input.submission);
+    changedPresentation.rawPresentationBody = "substituted-presentation-body";
+    await expect(verifyApplicationVp({ ...input, submission: changedPresentation })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const changedProof = structuredClone(input.submission);
+    const credentialProof = changedProof.credentialProof as Record<string, unknown>;
+    const signature = credentialProof.signature as Record<string, unknown>;
+    signature.s = (BigInt(signature.s as string) + 1n).toString();
+    await expect(verifyApplicationVp({ ...input, submission: changedProof })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on malformed submitted proof JSON", async () => {
+    const { input, family } = await fixture();
+    const missingProof = structuredClone(input.submission);
+    delete (missingProof as Partial<typeof missingProof>).presentationProof;
+    await expect(verifyApplicationVp({ ...input, submission: missingProof })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const extraField = structuredClone(input.submission);
+    Object.assign(extraField.credentialProof, { unexpected: true });
+    await expect(verifyApplicationVp({ ...input, submission: extraField })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const nonCanonical = structuredClone(input.submission);
+    Object.assign(nonCanonical.presentationProof, { createdAt: "01" });
+    await expect(verifyApplicationVp({ ...input, submission: nonCanonical })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
   it("provides redacted VP and DID-bound signing ports for one-use intake", async () => {
     const { input } = await fixture();
     const verifierDid = createMidnightDid("vp-evidence-verifier");

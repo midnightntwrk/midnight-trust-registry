@@ -72,6 +72,11 @@ Current coverage:
   issuance and presentation signatures, nonce, holder binding, proof time,
   and status-reference structure, then calls explicit trusted adapters for
   credential-body binding, issuer authorization, live status, and role claims.
+  The scenario fixture serializes both proofs into canonical JSON and derives
+  body roots from the submitted credential and presentation body strings;
+  changing either submitted body or a proof signature fails verification.
+  Its four family assertions are still test-only answers, not a production
+  determination of issuer eligibility, credential status, or role claims.
   The body-binding adapter is responsible for establishing that the holder,
   status, expiry, and role claims came from the signed credential body root;
   the published generic proof circuits alone do not establish that relation.

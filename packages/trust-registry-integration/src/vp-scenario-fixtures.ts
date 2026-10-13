@@ -11,6 +11,7 @@ import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, signApplicationEv
 import { computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 
 import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
+import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
 import { createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture, createMidnightDid } from "./fixtures.js";
 
@@ -61,8 +62,10 @@ export async function createApplicationVpScenarioFixture(
     verificationMethodId: "#auth-1",
     relationship: "authentication",
   });
-  const credentialBodyRoot = bytes32("credential-body");
-  const presentationBodyRoot = bytes32("presentation-body");
+  const rawCredentialBody = "private-credential-body";
+  const rawPresentationBody = "private-presentation-payload";
+  const credentialBodyRoot = bytes32(rawCredentialBody);
+  const presentationBodyRoot = bytes32(rawPresentationBody);
   const challengeHash = Buffer.from(sha256Hex(Buffer.from(nonce.slice(2), "hex")).slice(2), "hex");
   const holderBinding = createMidnightDIDHolderBinding(holderMethod).explicitBinding;
   const material: ApplicationVpMaterial = {
@@ -98,8 +101,34 @@ export async function createApplicationVpScenarioFixture(
     credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
   };
   const scope = createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp"));
-  const family: ApplicationVpFamilyAdapter<{ raw: string }> = {
-    prepare: async () => material,
+  const submission = {
+    rawCredentialBody,
+    rawPresentationBody,
+    credentialProof: encodeApplicationVpProof(material.credentialProof),
+    presentationProof: encodeApplicationVpProof(material.presentationProof),
+  };
+  const family: ApplicationVpFamilyAdapter<typeof submission> = {
+    prepare: async (submitted) => {
+      if (
+        submitted === null || typeof submitted !== "object" || Array.isArray(submitted)
+        || Object.keys(submitted).length !== 4
+        || !Object.hasOwn(submitted, "rawCredentialBody")
+        || !Object.hasOwn(submitted, "rawPresentationBody")
+        || !Object.hasOwn(submitted, "credentialProof")
+        || !Object.hasOwn(submitted, "presentationProof")
+        || typeof submitted.rawCredentialBody !== "string"
+        || typeof submitted.rawPresentationBody !== "string"
+        || submitted.rawCredentialBody.length === 0 || submitted.rawCredentialBody.length > 16_384
+        || submitted.rawPresentationBody.length === 0 || submitted.rawPresentationBody.length > 16_384
+      ) throw new TypeError("Application VP fixture submission is invalid");
+      return {
+        ...material,
+        credentialBodyRoot: bytes32(submitted.rawCredentialBody),
+        presentationBodyRoot: bytes32(submitted.rawPresentationBody),
+        credentialProof: decodeApplicationVpProof(submitted.credentialProof),
+        presentationProof: decodeApplicationVpProof(submitted.presentationProof),
+      };
+    },
     assertCredentialBodyBinding: async () => true as const,
     assertIssuerEligible: async () => true as const,
     assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000 }),
@@ -118,7 +147,7 @@ export async function createApplicationVpScenarioFixture(
   };
   return {
     input: {
-      submission: { raw: "private-presentation-payload" },
+      submission,
       nonce,
       expectedSubjectDid: subjectDid,
       scope,
