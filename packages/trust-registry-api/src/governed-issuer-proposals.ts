@@ -14,6 +14,7 @@ import {
   type GovernedMembershipActionReceipt,
   type GovernedMembershipSigner,
 } from "./governed-membership-actions.js";
+import type { GovernedProposalObservation } from "./governed-proposal-observation.js";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
@@ -43,11 +44,6 @@ export const GovernedIssuerProposalSubmitRequestSchema = z.strictObject({
   evidenceVerifierSignature: z.string().regex(/^0x[0-9a-f]+$/u),
 });
 
-export const GovernedIssuerProposalObservationSchema = z.strictObject({
-  eventHash: Bytes32Schema,
-  evidenceCommitment: Bytes32Schema,
-});
-
 export type PreparedGovernedIssuerProposal = z.infer<typeof PreparedGovernedIssuerProposalSchema>;
 export type GovernedIssuerProposalContext = {
   registryId: Uint8Array;
@@ -62,7 +58,6 @@ export type GovernedIssuerProposalContext = {
   evidenceVerifierAuthorizationId: Uint8Array;
   evidenceVerifierKeyIdCommitment: Uint8Array;
 };
-export type GovernedIssuerProposalObservation = z.infer<typeof GovernedIssuerProposalObservationSchema>;
 
 export type GovernedIssuerProposalPort = {
   /** Verify the signed application evidence against the active policy and current Compact context. */
@@ -75,7 +70,7 @@ export type GovernedIssuerProposalPort = {
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
   ): Promise<GovernedMembershipActionReceipt>;
   /** Return only finalized, ledger-observed proposal evidence; null is not proof that submission failed. */
-  resolve?(authorizationId: string): Promise<GovernedIssuerProposalObservation | null>;
+  resolve?(authorizationId: string): Promise<GovernedProposalObservation | null>;
 };
 
 export class GovernedIssuerProposalRejectedError extends Error {

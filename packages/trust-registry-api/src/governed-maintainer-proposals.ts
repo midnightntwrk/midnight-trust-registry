@@ -14,6 +14,7 @@ import {
   type GovernedMembershipActionReceipt,
   type GovernedMembershipSigner,
 } from "./governed-membership-actions.js";
+import type { GovernedProposalObservation } from "./governed-proposal-observation.js";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
@@ -64,6 +65,8 @@ export type GovernedMaintainerProposalPort = {
     signers: readonly GovernedMembershipSigner[],
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
   ): Promise<GovernedMembershipActionReceipt>;
+  /** Return only finalized, ledger-observed proposal evidence; null is not proof that submission failed. */
+  resolve?(maintainerId: string): Promise<GovernedProposalObservation | null>;
 };
 
 export class GovernedMaintainerProposalRejectedError extends Error {

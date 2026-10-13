@@ -224,6 +224,7 @@ const proposalTargets = new Map([
       harness.executeVerifierProposalWithSignatures(
         verifier, evidence, signers, signature, expectedEvidenceByRole.get("verifier"),
       ),
+    resolve: () => harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment),
     signEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
     rejected: GovernedVerifierProposalRejectedError,
     missing: "unknown-authorization",
@@ -238,6 +239,7 @@ const proposalTargets = new Map([
       harness.executeAuditorProposalWithSignatures(
         auditor, evidence, signers, signature, expectedEvidenceByRole.get("auditor"),
       ),
+    resolve: () => harness.simulator.getAuditorProposalEvidence(auditor.authorizationIdCommitment),
     signEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
     rejected: GovernedAuditorProposalRejectedError,
     missing: "unknown-authorization",
@@ -252,6 +254,7 @@ const proposalTargets = new Map([
       harness.executeMaintainerProposalWithSignatures(
         candidate, evidence, signers, signature, expectedEvidenceByRole.get("maintainer"),
       ),
+    resolve: () => harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment),
     signEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
     rejected: GovernedMaintainerProposalRejectedError,
     missing: "unknown-maintainer",
@@ -277,6 +280,14 @@ const proposalPort = (role, target) => ({
     projectedRoles.add(role);
     publishCurrentSnapshot();
     return { eventHash: asHex(eventHash) };
+  },
+  async resolve(id) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    const record = target.resolve();
+    return {
+      eventHash: asHex(record.proposalGovernanceEventHash),
+      evidenceCommitment: asHex(record.evidenceCommitment),
+    };
   },
 });
 const server = createTrustRegistryApiServer({
@@ -359,6 +370,16 @@ const server = createTrustRegistryApiServer({
       projectedRoles.add("issuer");
       publishCurrentSnapshot();
       return { eventHash: asHex(eventHash) };
+    },
+    async resolve(authorizationId) {
+      if (authorizationId !== issuer.authorizationId) {
+        throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+      }
+      const record = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
+      return {
+        eventHash: asHex(record.proposalGovernanceEventHash),
+        evidenceCommitment: asHex(record.evidenceCommitment),
+      };
     },
   },
   governedVerifierProposals: proposalPort("verifier", proposalTargets.get("verifier")),
@@ -519,7 +540,12 @@ try {
   await expectHttp(await submitProposal(proposalBody), 403);
   evidenceReceipts.set(issuerApplicationId, issuerReceipt);
   await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
-  const issuerProposal = await expectHttp(await submitProposal(proposalBody), 202);
+  assert.equal((await submitProposal(proposalBody)).status, 202);
+  const issuerProposal = await expectHttp(await fetch(`${proposalEndpoint}/resolve`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evidence: issuerEvidence }),
+  }), 200);
+  assert.equal(issuerProposal.state, "observed");
   await expectHttp(await submitProposal(proposalBody), 409);
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
   const otherProposals = [];
@@ -542,7 +568,12 @@ try {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
     });
     await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
-    const accepted = await expectHttp(await submit(body), 202);
+    assert.equal((await submit(body)).status, 202);
+    const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ evidence }),
+    }), 200);
+    assert.equal(accepted.state, "observed");
     await expectHttp(await submit(body), 409);
     otherProposals.push({
       role,

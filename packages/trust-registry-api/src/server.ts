@@ -47,7 +47,6 @@ import {
 } from "./governed-membership-actions.js";
 import {
   decodeIssuerEvidenceVerifierSignature,
-  GovernedIssuerProposalObservationSchema,
   GovernedIssuerProposalPrepareRequestSchema,
   GovernedIssuerProposalRejectedError,
   GovernedIssuerProposalSubmitRequestSchema,
@@ -55,6 +54,11 @@ import {
   serializeGovernedIssuerProposal,
   type GovernedIssuerProposalPort,
 } from "./governed-issuer-proposals.js";
+import {
+  GovernedProposalObservationSchema,
+  GovernedProposalResolveRequestSchema,
+  type GovernedProposalObservation,
+} from "./governed-proposal-observation.js";
 import {
   decodeVerifierEvidenceVerifierSignature,
   GovernedVerifierProposalPrepareRequestSchema,
@@ -642,6 +646,39 @@ export const createTrustRegistryApiServer = (
     }
   };
 
+  const resolveProposal = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    role: "issuer" | "verifier" | "auditor" | "maintainer",
+    authorizationId: string,
+    resolver: ((id: string) => Promise<GovernedProposalObservation | null>) | undefined,
+    mapError: (error: unknown, problemBaseUri: string) => never,
+  ): Promise<void> => {
+    const body = await parseJsonBody(request,
+      (value) => GovernedProposalResolveRequestSchema.parse(value), problemBaseUri);
+    await requireProposalAdmission(role, authorizationId, body.evidence);
+    if (resolver === undefined) {
+      throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+        "governed proposal resolution unavailable");
+    }
+    let observed;
+    try {
+      observed = await resolver(authorizationId);
+    } catch (error) {
+      return mapError(error, problemBaseUri);
+    }
+    if (observed === null) {
+      writeJson(response, 200, { state: "not-observed" });
+      return;
+    }
+    const record = GovernedProposalObservationSchema.parse(observed);
+    if (record.evidenceCommitment !== body.evidence.commitment) {
+      throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
+        "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
+    }
+    writeJson(response, 200, { state: "observed", eventHash: record.eventHash });
+  };
+
   return createServer(async (request, response) => {
     let privateApplicantRoute = false;
     try {
@@ -788,29 +825,8 @@ export const createTrustRegistryApiServer = (
         const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
         if (segments[5] === "resolve") {
-          const body = await parseJsonBody(request,
-            (value) => GovernedIssuerProposalPrepareRequestSchema.parse(value), problemBaseUri);
-          await requireProposalAdmission("issuer", authorizationId, body.evidence);
-          if (port.resolve === undefined) {
-            throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
-              "governed proposal resolution unavailable");
-          }
-          let observed;
-          try {
-            observed = await port.resolve(authorizationId);
-          } catch (error) {
-            return mapGovernedIssuerProposalError(error, problemBaseUri);
-          }
-          if (observed === null) {
-            writeJson(response, 200, { state: "not-observed" });
-            return;
-          }
-          const record = GovernedIssuerProposalObservationSchema.parse(observed);
-          if (record.evidenceCommitment !== body.evidence.commitment) {
-            throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
-              "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
-          }
-          writeJson(response, 200, { state: "observed", eventHash: record.eventHash });
+          await resolveProposal(request, response, "issuer", authorizationId,
+            port.resolve?.bind(port), mapGovernedIssuerProposalError);
           return;
         }
         if (segments[5] === "prepare") {
@@ -866,7 +882,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "governed"
         && segments[2] === "verifier"
         && segments[4] === "proposal"
-        && (segments[5] === "prepare" || segments[5] === "submit")
+        && (segments[5] === "prepare" || segments[5] === "submit" || segments[5] === "resolve")
       ) {
         const port = options.governedVerifierProposals;
         if (port === undefined) {
@@ -875,6 +891,11 @@ export const createTrustRegistryApiServer = (
         }
         const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
+        if (segments[5] === "resolve") {
+          await resolveProposal(request, response, "verifier", authorizationId,
+            port.resolve?.bind(port), mapGovernedVerifierProposalError);
+          return;
+        }
         if (segments[5] === "prepare") {
           const body = await parseJsonBody(request,
             (value) => GovernedVerifierProposalPrepareRequestSchema.parse(value), problemBaseUri);
@@ -928,7 +949,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "governed"
         && segments[2] === "auditor"
         && segments[4] === "proposal"
-        && (segments[5] === "prepare" || segments[5] === "submit")
+        && (segments[5] === "prepare" || segments[5] === "submit" || segments[5] === "resolve")
       ) {
         const port = options.governedAuditorProposals;
         if (port === undefined) {
@@ -937,6 +958,11 @@ export const createTrustRegistryApiServer = (
         }
         const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
+        if (segments[5] === "resolve") {
+          await resolveProposal(request, response, "auditor", authorizationId,
+            port.resolve?.bind(port), mapGovernedAuditorProposalError);
+          return;
+        }
         if (segments[5] === "prepare") {
           const body = await parseJsonBody(request,
             (value) => GovernedAuditorProposalPrepareRequestSchema.parse(value), problemBaseUri);
@@ -990,7 +1016,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "governed"
         && segments[2] === "maintainer"
         && segments[4] === "proposal"
-        && (segments[5] === "prepare" || segments[5] === "submit")
+        && (segments[5] === "prepare" || segments[5] === "submit" || segments[5] === "resolve")
       ) {
         const port = options.governedMaintainerProposals;
         if (port === undefined) {
@@ -999,6 +1025,11 @@ export const createTrustRegistryApiServer = (
         }
         const maintainerId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
+        if (segments[5] === "resolve") {
+          await resolveProposal(request, response, "maintainer", maintainerId,
+            port.resolve?.bind(port), mapGovernedMaintainerProposalError);
+          return;
+        }
         if (segments[5] === "prepare") {
           const body = await parseJsonBody(request,
             (value) => GovernedMaintainerProposalPrepareRequestSchema.parse(value), problemBaseUri);

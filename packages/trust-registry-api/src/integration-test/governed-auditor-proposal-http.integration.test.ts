@@ -67,6 +67,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
     }
+    let proposed = false;
     const port: GovernedAuditorProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== auditor.authorizationId) {
@@ -86,10 +87,22 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           const eventHash = harness.executeAuditorProposalWithSignatures(
             auditor, submitted, signers, verifierSignature,
           );
+          proposed = true;
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
         } catch {
           throw new GovernedAuditorProposalRejectedError("invalid-signers");
         }
+      },
+      async resolve(authorizationId) {
+        if (authorizationId !== auditor.authorizationId) {
+          throw new GovernedAuditorProposalRejectedError("unknown-authorization");
+        }
+        if (!proposed) return null;
+        const record = harness.simulator.getAuditorProposalEvidence(auditor.authorizationIdCommitment);
+        return {
+          eventHash: `0x${Buffer.from(record.proposalGovernanceEventHash).toString("hex")}`,
+          evidenceCommitment: `0x${Buffer.from(record.evidenceCommitment).toString("hex")}`,
+        };
       },
     };
     const server = createTrustRegistryApiServer({ source, governedAuditorProposals: port });
@@ -98,9 +111,10 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const endpoint = `http://127.0.0.1:${address.port}/v1/governed/auditor/${auditor.authorizationId}/proposal`;
-      const post = (action: "prepare" | "submit", body: unknown) => fetch(`${endpoint}/${action}`, {
+      const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
+      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
       expect((await post("prepare", { evidence: { ...evidence, rawCredential: "secret" } })).status).toBe(400);
       const preparedResponse = await post("prepare", { evidence });
       expect(preparedResponse.status).toBe(200);
@@ -122,9 +136,16 @@ describe("Compact-backed auditor proposals over HTTP", () => {
         encoded)).status).toBe(409);
       const accepted = await submit(prepared, encoded);
       expect(accepted.status).toBe(202);
-      expect((await accepted.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      const receipt = await accepted.json() as { eventHash: string };
+      expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(harness.simulator.getLedger().auditorAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
+      expect(await (await post("resolve", { evidence })).json()).toEqual({
+        state: "observed", eventHash: receipt.eventHash,
+      });
+      expect((await post("resolve", {
+        evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
+      })).status).toBe(409);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

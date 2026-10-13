@@ -39,8 +39,11 @@ and public lookup from one Compact simulator and connects signed registration,
 VP receipt, 2-of-3 governed transitions, and epoch-backed lookup. Applicant
 records and accepted evidence now have a private file-backed local adapter,
 but challenge consumption, receipt acceptance, and governance are not one
-atomic transaction. The next functional slice must provide crash/retry
-reconciliation and a deployable authoritative host for that handoff. The Compact contract
+atomic transaction. A read-only resolution route recovers a lost submit
+receipt for all four membership roles by matching admitted evidence to a
+Compact proposal event, but `not-observed` cannot justify a retry. The next
+functional slice must provide a deployable authoritative host and a finality-
+aware handoff for uncertain submissions. The Compact contract
 checks evidence hashes but does not itself resolve the evidence verifier's DID
 assertion key.
 
@@ -51,7 +54,8 @@ with positive and rule-specific negative tests before polishing packaging or
 CI. An unmerged PR is not a stop signal. Accumulate several coherent signed
 commits in one worktree and publish a reviewable PR when the feature bundle is
 substantial (roughly 5k-10k changed lines), not by padding a small change.
-Run local light and integration gates before publication. Keep the public
+Use `./run.sh integration --light` for local simulator iteration and the full
+integration gate before publication. Keep the public
 specification, executable tests, and demo narrative synchronized.
 
 Current order: finish authenticated DID/VC/VP intake and Compact-governed
