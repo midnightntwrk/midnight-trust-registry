@@ -23,9 +23,12 @@ All changes use the existing policy-bound maintainer action digest and quorum;
 the candidate authority DID cannot vote on its own enrollment.
 
 Registration requires a currently active governance policy, unused historical
-key ID, nonzero DID/method/network/consumer fields, prime-order key, and no
-other active authority key for that consumer. Suspension prevents new proofs
-immediately but leaves historical evidence. Rotation creates a new key record
+key ID, prime-order key, and no other active authority key for that consumer.
+The contract accepts 32-byte DID/method/network/consumer commitments but
+cannot prove their canonical string preimages; the production registration
+boundary must validate those preimages and reject empty or malformed values.
+Suspension and revocation use the emergency maintainer threshold. Suspension
+prevents new proofs immediately but leaves historical evidence. Rotation creates a new key record
 and links the predecessor. It atomically retires the old current key and
 activates the new key at one governance sequence; registry overlap is zero.
 Revocation is terminal. A
@@ -37,15 +40,17 @@ consumers.
 
 The signer service reads current finalized key state independently of the
 requesting process, verifies its configured DID method/key and domain against
-the governed record, then rechecks the finalized grant/epoch quorum and DID
-state before releasing a signature. It rejects suspended, revoked, retired,
+the governed record, then rechecks the finalized grant/epoch quorum, subject
+DID state, and authority DID assertion method before releasing a signature.
+It rejects suspended, revoked, retired,
 wrong-consumer, wrong-network, wrong-method, stale-policy, and stale-sequence
 requests. A consumer pins an accepted authority key/domain at deployment and
 checks the actual contract address through `kernel.self().bytes`; updates are
 explicit, not inferred from a network lookup.
-The reference signer wrapper enforces these field comparisons through an
-injected reader. A production reader still has to authenticate registry
-finality, current-key membership, and numeric governance-policy version; a
+The reference signer wrapper enforces these field comparisons through
+injected readers and the published DID 0.7.0 JubJub JWK codec. A production
+reader still has to authenticate registry and DID finality, current-key
+membership, and numeric governance-policy version; a
 fixture returning a typed record is not finality proof.
 
 ## Delivery order

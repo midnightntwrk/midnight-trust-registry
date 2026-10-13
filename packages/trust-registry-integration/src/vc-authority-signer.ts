@@ -2,7 +2,9 @@ import { Buffer } from "node:buffer";
 
 import { pureCircuits } from "@midnight-ntwrk/credential-compact";
 import type { MidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
-import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
+import { parseMidnightDIDDocument } from "@midnight-ntwrk/midnight-did";
+import { encodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
+import type { DidStateObservation, TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
 import {
   VcAuthorityKeyStatus,
   type VcAuthorityKeyRecord,
@@ -19,6 +21,41 @@ import {
 } from "./vc-signer-authorization.js";
 
 const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(Buffer.from(right));
+
+const assertCurrentAuthorityMethod = (
+  observation: DidStateObservation | null,
+  anchor: PinnedVcAuthority,
+): void => {
+  if (observation === null
+    || observation.networkId !== anchor.domain.networkId
+    || observation.deactivated
+    || observation.blockHash.length === 0
+    || observation.stateVersion.length === 0) {
+    throw new Error("Current finalized VC authority DID state is unavailable");
+  }
+  let document: ReturnType<typeof parseMidnightDIDDocument>;
+  try {
+    document = parseMidnightDIDDocument(observation.didDocument);
+  } catch (cause) {
+    throw new Error("Current finalized VC authority DID method is invalid", { cause });
+  }
+  const did = anchor.domain.authorityDid;
+  const methodId = anchor.domain.authorityMethodId;
+  const absolute = (reference: string): string => reference.startsWith("#") ? `${did}${reference}` : reference;
+  const methods = document.verificationMethod?.filter((method) => absolute(method.id) === methodId) ?? [];
+  const method = methods[0];
+  if (document.id !== did
+    || methods.length !== 1
+    || method?.type !== "JsonWebKey"
+    || method.controller !== did
+    || method.publicKeyJwk.kty !== "EC"
+    || method.publicKeyJwk.crv !== "Jubjub"
+    || method.publicKeyJwk.x !== encodeJubjubJwkCoordinate(anchor.publicKey.x)
+    || method.publicKeyJwk.y !== encodeJubjubJwkCoordinate(anchor.publicKey.y)
+    || !document.assertionMethod?.some((reference) => absolute(reference) === methodId)) {
+    throw new Error("Current finalized VC authority DID method does not authorize this key");
+  }
+};
 
 /** The implementation must authenticate the exact registry contract, finality, and current ledger state. */
 export type TrustedVcAuthorityKeyReader = {
@@ -66,6 +103,14 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
     || governedKey.lastStatusSequence > descriptor.decisionSequence) {
     throw new Error("Current finalized VC authority key does not authorize this signature");
   }
+  assertCurrentAuthorityMethod(
+    await input.readers.readCurrentFinalizedDidState(
+      input.pinnedAnchor.domain.authorityDid,
+      input.pinnedAnchor.domain.networkId,
+      descriptor.decisionSequence.toString(),
+    ),
+    input.pinnedAnchor,
+  );
   if (!sameBytes(request.authority.domainCommitment, authority.domainCommitment)
     || !sameBytes(request.authority.verificationMethodRef.controllerAddress.bytes,
       authority.verificationMethodRef.controllerAddress.bytes)

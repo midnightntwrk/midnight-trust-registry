@@ -333,6 +333,39 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
       publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed),
     };
+    const authorityResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(authorityDid, {
+        schnorrJubjubPublicKey: authorityAnchor.publicKey,
+        verificationMethodId: "authority-1",
+        version: 2n,
+      }),
+    ]);
+    const authorityResolution = await authorityResolver.resolveResult(authorityDid);
+    if (authorityResolution === null) throw new Error("Expected a resolved authority DID");
+    const substitutedAuthorityResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(authorityDid, {
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(78)),
+        verificationMethodId: "authority-1",
+        version: 3n,
+      }),
+    ]);
+    const substitutedAuthorityResolution = await substitutedAuthorityResolver.resolveResult(authorityDid);
+    if (substitutedAuthorityResolution === null) throw new Error("Expected a substituted authority DID");
+    const authorityDidState = {
+      networkId,
+      blockHash: sha256Hex("simulator:vc-authority:did-block"),
+      stateVersion: "2",
+      deactivated: false,
+      didDocument: authorityResolution.didDocument,
+    };
+    const authorityReaders: TrustedDecisionEvidenceReaders = {
+      ...readers,
+      readCurrentFinalizedDidState: async (did, network, decisionSequence) => {
+        if (did !== authorityDid) return readers.readCurrentFinalizedDidState(did, network, decisionSequence);
+        expect([network, decisionSequence]).toEqual([networkId, converted.descriptor.decisionSequence.toString()]);
+        return authorityDidState;
+      },
+    };
     expect(vcAuthorityDomainCommitment(authorityAnchor.domain)).toHaveLength(32);
     expect(vcAuthorityDomainCommitment(authorityAnchor.domain)).not.toEqual(
       vcAuthorityDomainCommitment({
@@ -369,7 +402,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     const gatedSigner = createQuorumGatedVcAuthoritySigner({
       evidence,
       selection: context.selection,
-      readers,
+      readers: authorityReaders,
       method: binding,
       pinnedAnchor: authorityAnchor,
       authorityKeyIdCommitment,
@@ -416,7 +449,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       const rejectedSigner = createQuorumGatedVcAuthoritySigner({
         evidence,
         selection: context.selection,
-        readers,
+        readers: authorityReaders,
         method: binding,
         pinnedAnchor: authorityAnchor,
         authorityKeyIdCommitment,
@@ -424,6 +457,37 @@ describe("simulator-backed VC decision evidence composition", () => {
         sign: async () => { throw new Error("Invalid authority reached key custody"); },
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
+    }
+    expect(authoritySignCount).toBe(1);
+    for (const currentAuthorityDidState of [
+      null,
+      { ...authorityDidState, deactivated: true },
+      { ...authorityDidState, stateVersion: "3", didDocument: substitutedAuthorityResolution.didDocument },
+      { ...authorityDidState, didDocument: {
+        ...authorityDidState.didDocument,
+        verificationMethod: [],
+      } },
+      { ...authorityDidState, didDocument: {
+        ...authorityDidState.didDocument,
+        assertionMethod: [],
+      } },
+    ]) {
+      const rejectedSigner = createQuorumGatedVcAuthoritySigner({
+        evidence,
+        selection: context.selection,
+        readers: {
+          ...authorityReaders,
+          readCurrentFinalizedDidState: async (did, network, sequence) => did === authorityDid
+            ? currentAuthorityDidState
+            : readers.readCurrentFinalizedDidState(did, network, sequence),
+        },
+        method: binding,
+        pinnedAnchor: authorityAnchor,
+        authorityKeyIdCommitment,
+        authorityKeyReader,
+        sign: async () => { throw new Error("Invalid authority DID reached key custody"); },
+      });
+      await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/authority DID/u);
     }
     expect(authoritySignCount).toBe(1);
     await expect(gatedSigner({
@@ -456,7 +520,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       evidence,
       selection: context.selection,
       readers: {
-        ...readers,
+        ...authorityReaders,
         readCurrentFinalizedRegistryDecision: async () => ({
           acceptedEpoch: context.acceptedEpoch,
           publication: context.publication,

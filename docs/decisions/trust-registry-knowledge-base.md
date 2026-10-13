@@ -527,3 +527,18 @@ freezing the contract batch. PR #183's earlier Milestone Light timeout was a
 TRQP test crossing Vitest's default five seconds under parallel CI load; a
 targeted 20-second bound passed locally and on the rerun without weakening
 assertions.
+
+The #184 final-head review exposed a missing authority-DID freshness check:
+the signer compared a governed method commitment with its pinned configuration
+but did not re-read the authority's current DID document. The local signer now
+uses the authenticated DID reader a second time, requires a live native
+JubJub assertion method with the expected controller and public key, and
+refuses key custody on removal, deactivation, relationship loss, or key
+substitution. Published DID 0.7.0 JWK encoding differs from the newer source
+checkout, so the comparison uses the installed package's public coordinate
+codec rather than a copied conversion. The review's separate claim that the
+controller comparison used two pinned values was false; the code already
+compared request and pinned addresses, and a negative regression test confirms
+it. A fresh 65-circuit proving build plus full integration passed before the
+TypeScript-only DID check; focused, light, and fast integration gates passed
+after it. Production finality and custody implementations remain open.
