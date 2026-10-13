@@ -219,6 +219,11 @@ This off-ledger join does not replace the proposal circuit's current-policy,
 verifier-key, evidence-signature, quorum, and sequence rechecks. The host must
 persist the accepted record atomically with the receipt and make it available
 only after successful VP intake; the in-memory demo is not durable.
+The local signed-issuer reference checks that its registration workspace and
+Compact simulator have identical initial registry, policy, and epoch records,
+then carries one accepted VP through Compact proposal, decisions, epoch
+publication, and public evidence lookup. That deterministic fixture does not
+provide a live-synchronized or durable production state store.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live

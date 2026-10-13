@@ -355,3 +355,13 @@ Three GPG/DCO-signed commits are rebased onto the merged milestone; light,
 full integration (fresh 59-circuit build), demo smoke, and audit passed locally.
 The next functional boundary is to persist pending/evidence state and bind it
 to a governed proposal without promoting an applicant signature into approval.
+
+The local signed-issuer journey now exercises that binding through the HTTP
+proposal route: signed pending registration, one-use VP receipt, receipt-gated
+Compact proposal, maintainer approval and activation, epoch publication, and
+client-verified public evidence lookup. It rejects proposal preparation and
+submission when the accepted receipt is unavailable. The registration workspace
+and simulator have matching initial policy/epoch state, but remain separate
+in-memory stores; this is not durable admission, live VC status verification,
+or network finality. The next functional step is one authoritative state path
+with atomic pending/evidence persistence and multi-maintainer governance.
