@@ -315,6 +315,10 @@ export class LocalTrustRegistryIntegrationHarness {
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
+  private readonly epochPublicationWitnesses = new Map<string, {
+    eventHash: string;
+    signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
+  }>();
   private readonly issuerApplicationEvidence = new Map<string, {
     evidence: ApplicationEvidenceSubmission;
     challengeHash: string;
@@ -365,6 +369,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.maintainerIdCommitment = bytes32Commitment(this.maintainerId);
     this.maintainerDid = createMidnightDid(`maintainer:${label}:bootstrap`);
     this.maintainerDidCommitment = bytes32Commitment(this.maintainerDid);
+    this.bootstrapMaintainer.keyId = bytes32Commitment(`${this.maintainerDid}#key-1`);
     this.evidenceVerifier = {
       did: createMidnightDid(`evidence-verifier:${label}`),
       keyIds: [createMidnightDid(`evidence-verifier:${label}`) + "#assertion-1"],
@@ -2306,6 +2311,9 @@ export class LocalTrustRegistryIntegrationHarness {
     if (maintainerSignature.algorithm !== "jubjub-schnorr") {
       throw new Error("Epoch maintainer signature algorithm is unsupported");
     }
+    if (!sameBytes(bytes32Commitment(maintainerSignature.keyId), epochRecord.maintainerKeyId)) {
+      throw new Error("Epoch maintainer DID method does not match its ledger key commitment");
+    }
     let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
     try {
       signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
@@ -2862,22 +2870,29 @@ export class LocalTrustRegistryIntegrationHarness {
       }
 
       const actionSequence = this.simulator.getLedger().governanceActionCount;
+      const payloadHash = computeCreateEpochCommitmentPayloadHash(
+        epochIdCommitment,
+        hashHexToBytes32(stateRoot),
+        hashHexToBytes32(eventRoot),
+        hashHexToBytes32(policyRoot),
+        epochValidFromSequence,
+        epochValidUntilSequence,
+      );
       const signature = this.signMaintainerActionFromSeed(
         this.bootstrapMaintainer.seed,
         this.registryIdCommitment,
         CREATE_EPOCH_ACTION_KIND,
-        computeCreateEpochCommitmentPayloadHash(
-          epochIdCommitment,
-          hashHexToBytes32(stateRoot),
-          hashHexToBytes32(eventRoot),
-          hashHexToBytes32(policyRoot),
-          epochValidFromSequence,
-          epochValidUntilSequence,
-        ),
+        payloadHash,
         actionSequence,
       );
       const coMaintainers = this.activeDefaultQuorumCoMaintainers();
-      this.simulator.publishEpochCommitment(
+      const coAuthorizers = this.maintainerCoAuthorizers(
+        coMaintainers,
+        CREATE_EPOCH_ACTION_KIND,
+        payloadHash,
+        actionSequence,
+      );
+      const eventHash = this.simulator.publishEpochCommitment(
         this.bootstrapMaintainer.keyId,
         this.bootstrapPublicKey,
         signature,
@@ -2887,21 +2902,24 @@ export class LocalTrustRegistryIntegrationHarness {
         hashHexToBytes32(policyRoot),
         epochValidFromSequence,
         epochValidUntilSequence,
-        this.maintainerCoAuthorizers(
-          coMaintainers,
-          CREATE_EPOCH_ACTION_KIND,
-          computeCreateEpochCommitmentPayloadHash(
-            epochIdCommitment,
-            hashHexToBytes32(stateRoot),
-            hashHexToBytes32(eventRoot),
-            hashHexToBytes32(policyRoot),
-            epochValidFromSequence,
-            epochValidUntilSequence,
-          ),
-          actionSequence,
-        ),
+        coAuthorizers,
       );
       record = this.simulator.getEpochCommitment(epochIdCommitment);
+      this.epochPublicationWitnesses.set(epochId, {
+        eventHash: bytes32Hex(eventHash),
+        signatures: [
+          {
+            keyId: `${this.maintainerDid}#key-1`,
+            algorithm: "jubjub-schnorr",
+            signature: bytes32Hex(encodeJubjubSignature(signature)),
+          },
+          ...coMaintainers.map((maintainer, index) => ({
+            keyId: `${maintainer.subjectDid}#key-1`,
+            algorithm: "jubjub-schnorr" as const,
+            signature: bytes32Hex(encodeJubjubSignature(coAuthorizers[index]!.signature)),
+          })),
+        ],
+      });
     }
 
     return this.buildEpochCommitment(epochId, record);
@@ -2922,6 +2940,24 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       statementStatus: this.registryRecord.status,
     });
+  }
+
+  getEpochPublicationWitness(epochId: string): {
+    eventHash: string;
+    signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
+  } {
+    const witness = this.epochPublicationWitnesses.get(epochId);
+    if (witness === undefined) {
+      throw new Error("Epoch publication witness is not available in this simulator session");
+    }
+    const record = this.simulator.getEpochCommitment(bytes32Commitment(epochId));
+    if (bytes32Hex(record.publicationEventHash) !== witness.eventHash) {
+      throw new Error("Epoch publication witness does not match the ledger event");
+    }
+    return {
+      eventHash: witness.eventHash,
+      signatures: witness.signatures.map((signer) => ({ ...signer })),
+    };
   }
 
   private buildEpochCommitment(
