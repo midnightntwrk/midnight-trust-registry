@@ -9,12 +9,10 @@ import { describe, expect, it } from "vitest";
 import {
   AuthorizationState,
   pureCircuits,
-  SignerRole,
   VerificationRelationship,
   type Proof,
 } from "@midnight-ntwrk/credential-compact";
 import {
-  createMidnightDIDSignerDescriptor,
   resolveMidnightDIDMethodBinding,
   signMidnightDIDCredentialProof,
 } from "@midnight-ntwrk/credential-did-midnight";
@@ -46,6 +44,8 @@ import {
   createMidnightDid,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
+  createVerifierAuthorizationScopeFixture,
+  createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
@@ -393,6 +393,185 @@ describe("simulator-backed VC decision evidence composition", () => {
       { ...signed.descriptor, decisionSequence: signed.descriptor.decisionSequence - 1n, didStateVersion: 4n },
     )).toThrow(/must not decrease/u);
 
+    const verifier = createVerifierScenarioFixture("vc-decision-verifier");
+    harness.authorizeVerifier(verifier);
+    const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
+    if (verifierBundle.authorization === undefined) throw new Error("Expected an active verifier grant");
+    const verifierEpochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(verifierBundle.epoch.epochId));
+    const verifierWitness = harness.getEpochPublicationWitness(verifierBundle.epoch.epochId);
+    const verifierLedger = harness.simulator.getLedger();
+    const verifierEpochTransaction = sha256Hex("simulator:vc-verifier:epoch-transaction");
+    const verifierEpochBlock = sha256Hex("simulator:vc-verifier:epoch-block");
+    const verifierDidTransaction = sha256Hex("simulator:vc-verifier:did-transaction");
+    const verifierDidBlock = sha256Hex("simulator:vc-verifier:did-block");
+    const acceptedVerifierEpoch = AcceptedDecisionEpochSchema.parse({
+      registryId: harness.registryId,
+      registryDid: harness.registryDid,
+      networkId,
+      contractAddress,
+      transactionHash: verifierEpochTransaction,
+      blockHash: verifierEpochBlock,
+      epochId: verifierBundle.epoch.epochId,
+      stateRoot: hex(verifierEpochRecord.stateRoot),
+      eventRoot: hex(verifierEpochRecord.eventRoot),
+      policyRoot: hex(verifierEpochRecord.policyRoot),
+      publicationPolicyCommitment: hex(verifierEpochRecord.publicationPolicyCommitment),
+      publicationSequence: verifierEpochRecord.publishedAtSequence.toString(),
+      validFromSequence: verifierEpochRecord.validFromSequence.toString(),
+      validUntilSequence: verifierEpochRecord.validUntilSequence.toString(),
+      publicationEventHash: hex(verifierEpochRecord.publicationEventHash),
+      validFrom: verifierBundle.epoch.validFrom,
+      validUntil: verifierBundle.epoch.validUntil,
+      requiredSignatures: Number(verifierLedger.maintainerThreshold),
+    });
+    const verifierSeed = new Uint8Array(32).fill(57);
+    const verifierResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(verifier.subjectDid, {
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(verifierSeed),
+        verificationMethodId: "request-1",
+        version: 4n,
+      }),
+    ]);
+    const resolvedVerifier = await verifierResolver.resolveResult(verifier.subjectDid);
+    if (resolvedVerifier === null) throw new Error("Expected a resolved verifier DID");
+    const verifierVersion = resolvedVerifier.didDocumentMetadata.versionId;
+    if (typeof verifierVersion !== "string") throw new Error("Expected versioned verifier DID state");
+    const verifierMethodId = `${verifier.subjectDid}#request-1`;
+    const verifierMethod = resolvedVerifier.didDocument.verificationMethod?.find(
+      (entry) => entry.id === verifierMethodId,
+    );
+    if (verifierMethod === undefined) throw new Error("Expected a native verifier method");
+    const verifierGrant = verifierBundle.authorization;
+    const verifierScope = createVerifierAuthorizationScopeFixture(verifier);
+    const verifierEvidence = DecisionEvidenceSchema.parse({
+      format: "tr-decision-evidence-v1",
+      role: "verifier",
+      registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
+      anchorReferences: {
+        registryEpoch: {
+          networkId, contractAddress, transactionHash: verifierEpochTransaction, blockHash: verifierEpochBlock,
+        },
+        didState: { networkId, blockHash: verifierDidBlock },
+      },
+      epoch: {
+        epochId: verifierBundle.epoch.epochId,
+        registryId: verifierBundle.epoch.registryId,
+        stateRoot: verifierBundle.epoch.stateRoot,
+        eventRoot: verifierBundle.epoch.eventRoot,
+        policyRoot: verifierBundle.epoch.policyRoot,
+        publicationPolicyCommitment: acceptedVerifierEpoch.publicationPolicyCommitment,
+        publicationSequence: acceptedVerifierEpoch.publicationSequence,
+        validFromSequence: acceptedVerifierEpoch.validFromSequence,
+        validUntilSequence: acceptedVerifierEpoch.validUntilSequence,
+        validFrom: verifierBundle.epoch.validFrom,
+        validUntil: verifierBundle.epoch.validUntil,
+        quorum: { requiredSignatures: acceptedVerifierEpoch.requiredSignatures, signatures: verifierWitness.signatures },
+      },
+      grant: verifierGrant,
+      scope: verifierScope,
+      didMethod: {
+        did: verifier.subjectDid,
+        methodId: verifierMethodId,
+        methodType: "JsonWebKey",
+        controller: verifier.subjectDid,
+        publicKeyJwk: verifierMethod.publicKeyJwk,
+        relationship: "authentication",
+        stateVersion: verifierVersion,
+        stateEvidence: {
+          evidenceType: "ledger-observation", blockHash: verifierDidBlock, transactionHash: verifierDidTransaction,
+        },
+      },
+      policy: deriveGovernancePolicySnapshot(verifierBundle.policy),
+      inclusionProof: { ...verifierBundle.inclusionProof, leafIndex: String(verifierBundle.inclusionProof.leafIndex) },
+      governanceEvents: {
+        grantTransition: verifierGrant.lifecycleEventRoot,
+        quorumApproval: sha256Hex("simulator:vc-verifier:approval-lookup"),
+        epochPublication: verifierWitness.eventHash,
+        policySnapshot: verifierBundle.epoch.policyRoot,
+      },
+      decisionSequence: verifierEpochRecord.publishedAtSequence.toString(),
+    });
+    const currentVerifierGrant = harness.simulator.getCurrentVerifierAuthorization(
+      verifier.subjectDidCommitment,
+      verifier.requestResourceIdCommitment,
+      verifier.allowedAttributeSetCommitment,
+      verifier.allowedPredicateSetCommitment,
+      verifier.disclosureLevelCommitment,
+    );
+    const verifierSelection = {
+      registryId: harness.registryId,
+      networkId,
+      contractAddress,
+      subjectDid: verifier.subjectDid,
+      role: "verifier" as const,
+      resourceType: verifierGrant.resourceType,
+      resourceId: verifier.scopeResourceId,
+      scope: verifierScope,
+    };
+    const verifierReaders = {
+      readCurrentFinalizedRegistryDecision: async () => ({
+        acceptedEpoch: acceptedVerifierEpoch,
+        publication: {
+          registryIdCommitment: harness.registryIdCommitment,
+          epochIdCommitment: bytes32Commitment(verifierBundle.epoch.epochId),
+          firstSignerKeyIdCommitment: verifierEpochRecord.maintainerKeyId,
+          activeMaintainersAtPublication: verifierWitness.signatures.map((signer) => {
+            const keyIdCommitment = bytes32Commitment(signer.keyId);
+            const maintainer = verifierLedger.maintainerRecords.lookup(keyIdCommitment);
+            return { keyId: signer.keyId, keyIdCommitment, publicKey: maintainer.publicKey };
+          }),
+        },
+        decisionPoint: {
+          sequence: verifierEpochRecord.publishedAtSequence.toString(),
+          evaluationTime: verifierBundle.epoch.validFrom,
+          currentPolicy: {
+            root: hex(verifierLedger.governancePolicyCommitment),
+            observedAtSequence: verifierEpochRecord.publishedAtSequence.toString(),
+          },
+          currentGrant: {
+            authorizationId: verifierGrant.authorizationId,
+            lifecycleEventRoot: hex(currentVerifierGrant.lifecycleEventHash),
+            status: "active",
+            observedAtSequence: verifierEpochRecord.publishedAtSequence.toString(),
+          },
+        },
+      }),
+      readCurrentFinalizedDidState: async () => ({
+        networkId,
+        blockHash: verifierDidBlock,
+        transactionHash: verifierDidTransaction,
+        stateVersion: verifierVersion,
+        deactivated: false,
+        didDocument: resolvedVerifier.didDocument,
+      }),
+    } satisfies TrustedDecisionEvidenceReaders;
+    const verifierCandidate = await verifyDecisionEvidenceWithTrustedReaders(
+      verifierEvidence, verifierSelection, verifierReaders,
+    );
+    const verifierBinding = await resolveMidnightDIDMethodBinding({
+      resolver: verifierResolver,
+      did: parseMidnightDIDString(verifier.subjectDid),
+      verificationMethodId: "#request-1",
+      relationship: "authentication",
+    });
+    const requestScopeCommitment = bytes32Commitment("vc-verifier-request-scope");
+    const verifierSigned = await issueVcSignerAuthorizationFromTrustedDecision({
+      evidence: verifierEvidence,
+      selection: verifierSelection,
+      readers: verifierReaders,
+      method: verifierBinding,
+      scopeMapping: {
+        registryScopeCommitment: verifierCandidate.scopeCommitment,
+        vcScopeCommitment: requestScopeCommitment,
+      },
+      anchor: authorityAnchor,
+      signer: async ({ decisionRoot, decisionSequence, authority }) => signFixtureContextProof(
+        secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
+        pureCircuits.signerAuthorizationProofChallenge,
+      ),
+    });
+    expect(verifierSigned.descriptor.didStateVersion).toBe(4n);
+
     const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
     const cacheRoot = resolve(packageRoot, "node_modules/.cache");
     await mkdir(cacheRoot, { recursive: true });
@@ -531,24 +710,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         circuitContext, replay, signDescriptor(replay),
       )).toThrow(/must remain revoked/u);
 
-      const verifierBinding = await resolveMidnightDIDMethodBinding({
-        resolver,
-        did: parseMidnightDIDString(issuer.subjectDid),
-        verificationMethodId: "#assertion-1",
-        relationship: "authentication",
-      });
-      const requestScopeCommitment = bytes32Commitment("vc-verifier-request-scope");
-      const verifierDescriptor = createMidnightDIDSignerDescriptor(verifierBinding, {
-        authorizationId: bytes32Commitment("vc-verifier-authorization"),
-        decisionSequence: signed.descriptor.decisionSequence + 1n,
-        state: AuthorizationState.active,
-        role: SignerRole.verifier,
-        scopeCommitment: requestScopeCommitment,
-        policyCommitment: signed.descriptor.policyCommitment,
-      });
-      const verifierAuthorityProof = signDescriptor(verifierDescriptor);
       const verifierInstall = consumer.circuits.installSignerAuthorization(
-        circuitContext, verifierDescriptor, verifierAuthorityProof,
+        circuitContext, verifierSigned.descriptor, verifierSigned.proof,
       );
       circuitContext = createCircuitContext(
         contractAddress,
@@ -557,21 +720,59 @@ describe("simulator-backed VC decision evidence composition", () => {
         verifierInstall.context.currentPrivateState,
       );
       const requestProof = signFixtureContextProof(
-        seedBytesToJubjubSecretScalar(new Uint8Array(32).fill(49)),
+        seedBytesToJubjubSecretScalar(verifierSeed),
         verifierBinding.verificationMethodRef,
         requestScopeCommitment,
         2n,
         pureCircuits.verifierRequestProofChallenge,
       );
       expect(() => consumer.circuits.assertVerifierRequestAuthorized(
-        circuitContext, requestScopeCommitment, requestProof, verifierDescriptor.authorizationId,
+        circuitContext, requestScopeCommitment, requestProof, verifierSigned.descriptor.authorizationId,
       )).not.toThrow();
       expect(() => consumer.circuits.assertVerifierRequestAuthorized(
-        circuitContext, bytes32Commitment("other-request-scope"), requestProof, verifierDescriptor.authorizationId,
+        circuitContext, bytes32Commitment("other-request-scope"), requestProof, verifierSigned.descriptor.authorizationId,
       )).toThrow();
     } finally {
       await rm(output, { recursive: true, force: true });
     }
+
+    harness.suspendVerifier(verifier);
+    const suspendedVerifier = harness.simulator.getCurrentVerifierAuthorization(
+      verifier.subjectDidCommitment,
+      verifier.requestResourceIdCommitment,
+      verifier.allowedAttributeSetCommitment,
+      verifier.allowedPredicateSetCommitment,
+      verifier.disclosureLevelCommitment,
+    );
+    const previousVerifierSnapshot = await verifierReaders.readCurrentFinalizedRegistryDecision(
+      verifierSelection, verifierEvidence.epoch.epochId,
+    );
+    if (previousVerifierSnapshot === null) throw new Error("Expected the verifier decision snapshot");
+    await expect(issueVcSignerAuthorizationFromTrustedDecision({
+      evidence: verifierEvidence,
+      selection: verifierSelection,
+      readers: {
+        ...verifierReaders,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          ...previousVerifierSnapshot,
+          decisionPoint: {
+            ...previousVerifierSnapshot.decisionPoint,
+            currentGrant: {
+              ...previousVerifierSnapshot.decisionPoint.currentGrant,
+              lifecycleEventRoot: hex(suspendedVerifier.lifecycleEventHash),
+              status: "suspended",
+            },
+          },
+        }),
+      },
+      method: verifierBinding,
+      scopeMapping: {
+        registryScopeCommitment: verifierCandidate.scopeCommitment,
+        vcScopeCommitment: requestScopeCommitment,
+      },
+      anchor: authorityAnchor,
+      signer: async () => { throw new Error("Suspended grant must not reach the authority signer"); },
+    })).rejects.toThrow(/current grant mismatch/u);
 
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
       ...context,
