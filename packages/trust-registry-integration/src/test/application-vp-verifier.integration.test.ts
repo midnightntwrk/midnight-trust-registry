@@ -30,6 +30,7 @@ const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slic
 
 async function fixture() {
   const scenario = await createApplicationVpScenarioFixture();
+  if (scenario.input.scope.role !== "issuer") throw new Error("Expected issuer VP scenario");
   const family = {
     prepare: vi.fn(scenario.family.prepare),
     assertCredentialBodyBinding: vi.fn(scenario.family.assertCredentialBodyBinding),
@@ -38,7 +39,7 @@ async function fixture() {
     assertRoleClaims: vi.fn(scenario.family.assertRoleClaims),
   };
   return {
-    input: { ...scenario.input, family },
+    input: { ...scenario.input, scope: scenario.input.scope, family },
     material: scenario.material,
     family,
   };
@@ -73,6 +74,19 @@ describe("published VC proof and DID application verifier port", () => {
       category: "invalid_presentation",
     });
     expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
+  it("rejects a validly signed credential whose role scope differs from the application", async () => {
+    const { input } = await fixture();
+    const otherScope = { ...input.scope, credentialFamilyId: "credential-family:other" };
+    const signedOtherScope = await createApplicationVpScenarioFixture(input.nonce, { scope: otherScope });
+    const assertStatusActive = vi.fn(signedOtherScope.family.assertStatusActive);
+    await expect(verifyApplicationVp({
+      ...signedOtherScope.input,
+      scope: input.scope,
+      family: { ...signedOtherScope.family, assertStatusActive },
+    })).rejects.toMatchObject({ category: "ineligible" });
+    expect(assertStatusActive).toHaveBeenCalledOnce();
   });
 
   it("fails closed on malformed submitted proof JSON", async () => {
@@ -347,6 +361,7 @@ describe("published VC proof and DID application verifier port", () => {
   it("caps attestation lifetime even when the credential and status are longer lived", async () => {
     const { input, material, family } = await fixture();
     family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: NOW + 48 * 60 * 60_000 }));
+    family.assertCredentialBodyBinding = vi.fn(async () => true as const);
     family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 48 * 60 * 60_000 }));
     await expect(verifyApplicationVp(input)).resolves.toMatchObject({
       expiresAt: new Date(NOW + 24 * 60 * 60_000).toISOString(),

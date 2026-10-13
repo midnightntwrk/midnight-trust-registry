@@ -8,7 +8,12 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, signApplicationEvidenceCommitmentFromSeed } from "@midnight-ntwrk/trust-registry-contract";
-import { computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  AuthorizationScopeSchema,
+  computeAuthorizationScopeCommitment,
+  sha256Hex,
+  type AuthorizationScope,
+} from "@midnight-ntwrk/trust-registry-domain";
 
 import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
@@ -19,6 +24,54 @@ export const VP_FIXTURE_TIME_MS = Date.parse("2026-05-20T00:01:00.000Z");
 export const VP_FIXTURE_NONCE = `0x${"11".repeat(32)}`;
 
 const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slice(2), "hex");
+const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
+
+type FixtureCredentialBody = {
+  version: "tr-vp-fixture-v1";
+  issuerDid: string;
+  issuerMethodId: string;
+  subjectDid: string;
+  holderMethodId: string;
+  scope: AuthorizationScope;
+  claimsCommitment: string;
+  statusRegistryId: string;
+  statusHandleCommitment: string;
+  credentialExpiresAtMs: number;
+};
+
+const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
+  const value: unknown = JSON.parse(raw);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Application VP fixture credential body is invalid");
+  }
+  const body = value as Record<string, unknown>;
+  const keys = [
+    "version", "issuerDid", "issuerMethodId", "subjectDid", "holderMethodId", "scope",
+    "claimsCommitment", "statusRegistryId", "statusHandleCommitment", "credentialExpiresAtMs",
+  ];
+  if (
+    Object.keys(body).length !== keys.length || keys.some((key) => !Object.hasOwn(body, key))
+    || body.version !== "tr-vp-fixture-v1"
+    || typeof body.issuerDid !== "string" || typeof body.issuerMethodId !== "string"
+    || typeof body.subjectDid !== "string" || typeof body.holderMethodId !== "string"
+    || typeof body.claimsCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.claimsCommitment)
+    || typeof body.statusRegistryId !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.statusRegistryId)
+    || typeof body.statusHandleCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.statusHandleCommitment)
+    || typeof body.credentialExpiresAtMs !== "number" || !Number.isSafeInteger(body.credentialExpiresAtMs)
+  ) throw new TypeError("Application VP fixture credential body is invalid");
+  return {
+    version: "tr-vp-fixture-v1",
+    issuerDid: body.issuerDid,
+    issuerMethodId: body.issuerMethodId,
+    subjectDid: body.subjectDid,
+    holderMethodId: body.holderMethodId,
+    scope: AuthorizationScopeSchema.parse(body.scope),
+    claimsCommitment: body.claimsCommitment,
+    statusRegistryId: body.statusRegistryId,
+    statusHandleCommitment: body.statusHandleCommitment,
+    credentialExpiresAtMs: body.credentialExpiresAtMs,
+  };
+};
 
 /** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
 export async function createApplicationVpScenarioFixture(
@@ -27,7 +80,7 @@ export async function createApplicationVpScenarioFixture(
     subjectDid?: string;
     evidenceVerifierDid?: string;
     evidenceVerifierMethodId?: string;
-    scopeCommitment?: string;
+    scope?: AuthorizationScope;
   } = {},
 ) {
   const issuerDid = createMidnightDid("vp-issuer");
@@ -62,7 +115,22 @@ export async function createApplicationVpScenarioFixture(
     verificationMethodId: "#auth-1",
     relationship: "authentication",
   });
-  const rawCredentialBody = "private-credential-body";
+  const scope = AuthorizationScopeSchema.parse(
+    options.scope ?? createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp")),
+  );
+  const credentialBody: FixtureCredentialBody = {
+    version: "tr-vp-fixture-v1",
+    issuerDid,
+    issuerMethodId: "#assertion-1",
+    subjectDid,
+    holderMethodId: "#auth-1",
+    scope,
+    claimsCommitment: sha256Hex(`accepted-${scope.role}-claims`),
+    statusRegistryId: hex(bytes32("status-registry")),
+    statusHandleCommitment: hex(bytes32("credential-status-handle")),
+    credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
+  };
+  const rawCredentialBody = JSON.stringify(credentialBody);
   const rawPresentationBody = "private-presentation-payload";
   const credentialBodyRoot = bytes32(rawCredentialBody);
   const presentationBodyRoot = bytes32(rawPresentationBody);
@@ -100,13 +168,14 @@ export async function createApplicationVpScenarioFixture(
     },
     credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
   };
-  const scope = createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp"));
   const submission = {
     rawCredentialBody,
     rawPresentationBody,
     credentialProof: encodeApplicationVpProof(material.credentialProof),
     presentationProof: encodeApplicationVpProof(material.presentationProof),
   };
+  const submittedBodies = new Map<string, FixtureCredentialBody>();
+  submittedBodies.set(hex(material.credentialBodyRoot), credentialBody);
   const family: ApplicationVpFamilyAdapter<typeof submission> = {
     prepare: async (submitted) => {
       if (
@@ -121,21 +190,46 @@ export async function createApplicationVpScenarioFixture(
         || submitted.rawCredentialBody.length === 0 || submitted.rawCredentialBody.length > 16_384
         || submitted.rawPresentationBody.length === 0 || submitted.rawPresentationBody.length > 16_384
       ) throw new TypeError("Application VP fixture submission is invalid");
-      return {
+      const body = parseFixtureCredentialBody(submitted.rawCredentialBody);
+      const prepared = {
         ...material,
+        issuerDid: body.issuerDid,
+        issuerMethodId: body.issuerMethodId,
+        subjectDid: body.subjectDid,
+        holderMethodId: body.holderMethodId,
+        credentialExpiresAtMs: body.credentialExpiresAtMs,
         credentialBodyRoot: bytes32(submitted.rawCredentialBody),
         presentationBodyRoot: bytes32(submitted.rawPresentationBody),
         credentialProof: decodeApplicationVpProof(submitted.credentialProof),
         presentationProof: decodeApplicationVpProof(submitted.presentationProof),
       };
+      submittedBodies.set(hex(prepared.credentialBodyRoot), body);
+      return prepared;
     },
-    assertCredentialBodyBinding: async () => true as const,
-    assertIssuerEligible: async () => true as const,
+    assertCredentialBodyBinding: async (prepared) => {
+      const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
+      if (
+        !body || body.issuerDid !== prepared.issuerDid || body.issuerMethodId !== prepared.issuerMethodId
+        || body.subjectDid !== prepared.subjectDid || body.holderMethodId !== prepared.holderMethodId
+        || body.credentialExpiresAtMs !== prepared.credentialExpiresAtMs
+        || body.statusRegistryId !== hex(prepared.statusBinding.registryRef.registryId)
+        || body.statusHandleCommitment !== hex(prepared.statusBinding.statusHandleCommitment)
+      ) throw new TypeError("Application VP fixture credential binding is invalid");
+      return true as const;
+    },
+    assertIssuerEligible: async (prepared) => {
+      if (prepared.issuerDid !== issuerDid) throw new TypeError("Application VP fixture issuer is ineligible");
+      return true as const;
+    },
     assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000 }),
-    assertRoleClaims: async () => ({
-      claimsCommitment: sha256Hex("accepted-issuer-claims"),
-      scopeCommitment: options.scopeCommitment ?? computeAuthorizationScopeCommitment(scope),
-    }),
+    assertRoleClaims: async (prepared) => {
+      const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
+      if (!body) throw new TypeError("Application VP fixture claims are missing");
+      return {
+        claimsCommitment: body.claimsCommitment,
+        scopeCommitment: computeAuthorizationScopeCommitment(body.scope),
+      };
+    },
   };
   const verifierSeed = new Uint8Array(32).fill(41);
   const signer = {
