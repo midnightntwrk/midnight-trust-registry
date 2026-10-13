@@ -12,6 +12,7 @@ import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
+  computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
   sha256Hex,
@@ -123,6 +124,57 @@ adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionW
 });
 assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
 
+const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
+const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
+const expiringIssuer = createIssuerScenarioFixture("governed-demo-expired-evidence");
+const policyIdEvidence = evidenceHarness.createApplicationEvidence({
+  applicationId: policyIdIssuer.authorizationId,
+  subjectDid: policyIdIssuer.subjectDid,
+  role: "issuer",
+  scope: createIssuerAuthorizationScopeFixture(policyIdIssuer),
+  governedResource: { type: "credentialFamily", id: policyIdIssuer.resourceId },
+});
+const wrongPolicyEnvelope = { ...policyIdEvidence.envelope, policyId: "policy:wrong:v1" };
+const wrongPolicyCommitment = computeApplicationEvidenceCommitment(wrongPolicyEnvelope);
+const wrongPolicyEvidence = {
+  envelope: wrongPolicyEnvelope,
+  commitment: wrongPolicyCommitment,
+  signature: evidenceHarness.signApplicationEvidenceCommitment(wrongPolicyCommitment),
+};
+assert.equal(evidenceHarness.verifyApplicationEvidenceSignature(
+  wrongPolicyEvidence.commitment,
+  wrongPolicyEvidence.signature,
+  evidenceHarness.evidenceVerifier,
+), true);
+const evidenceActionsBeforeRejections = evidenceHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
+  policyIdIssuer, wrongPolicyEvidence,
+), {
+  id: "issuer-signed-wrong-policy-id",
+  invariant: "Even validly signed applicant evidence cannot substitute another governance policy ID",
+  boundary: "integration",
+  messagePattern: /policyId does not match/iu,
+  category: "policy-id-mismatch",
+});
+const expiringEvidence = evidenceHarness.createApplicationEvidence({
+  applicationId: expiringIssuer.authorizationId,
+  subjectDid: expiringIssuer.subjectDid,
+  role: "issuer",
+  scope: createIssuerAuthorizationScopeFixture(expiringIssuer),
+  governedResource: { type: "credentialFamily", id: expiringIssuer.resourceId },
+});
+evidenceHarness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
+adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
+  expiringIssuer, expiringEvidence,
+), {
+  id: "issuer-expired-signed-application-evidence",
+  invariant: "A validly signed evidence receipt expires before a later governed transition",
+  boundary: "integration",
+  messagePattern: /evidence is expired/iu,
+  category: "expired-application-evidence",
+});
+assert.equal(evidenceHarness.simulator.getLedger().governanceActionCount, evidenceActionsBeforeRejections);
+
 const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-policy-replay");
 const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
 const policyThird = createMaintainerScenarioFixture("governed-demo-policy-third");
@@ -202,6 +254,19 @@ adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundl
   boundary: "client",
   messagePattern: /not committed to the ledger/iu,
   category: "uncommitted-policy-version-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
+  ...historicalPolicyBundle,
+  inclusionProof: {
+    ...historicalPolicyBundle.inclusionProof,
+    path: [changeLastHexNibble(historicalPolicyBundle.inclusionProof.path[0])],
+  },
+}, {}), {
+  id: "issuer-historical-proof-tampered-after-policy-revision",
+  invariant: "A threshold revision cannot make a tampered old-policy Merkle proof valid",
+  boundary: "client",
+  messagePattern: /event sibling/iu,
+  category: "historical-merkle-path-rejected",
 });
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
@@ -914,14 +979,50 @@ try {
   await expectHttp(await fetch(
     `${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`,
   ), 404);
-  await expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       role: "issuer", subjectDid: issuer.subjectDid,
       resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
     }),
-  }), 404);
+  }), {
+    id: "issuer-wrong-resource-api",
+    invariant: "The public lookup cannot substitute another issuer credential-family scope",
+    boundary: "api",
+    status: 404,
+    problemType: "authorization-not-found",
+  });
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "verifier", subjectDid: verifier.subjectDid,
+      resourceId: createVerifierScenarioFixture("wrong-scope").scopeResourceId,
+    }),
+  }), {
+    id: "verifier-wrong-resource-api",
+    invariant: "The public lookup cannot substitute another verifier request-profile scope",
+    boundary: "api",
+    status: 404,
+    problemType: "authorization-not-found",
+  });
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/recognitions/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+      recognizedRegistryId: "registry:external:wrong:v1",
+      scopeResourceType: recognition.scopeResourceType,
+      scopeResourceId: recognition.scopeResourceId,
+    }),
+  }), {
+    id: "recognition-wrong-external-registry-api",
+    invariant: "The public lookup cannot substitute a different recognized external registry",
+    boundary: "api",
+    status: 404,
+    problemType: "recognition-not-found",
+  });
   const issuerBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
@@ -1021,6 +1122,38 @@ try {
     invariant: "TRQP must reject a source claiming suspended authorization is trusted",
     status: 500,
     problemType: "invalid-source-data",
+  });
+  const trqpRecognitionRequest = {
+    entity_id: recognition.recognizedAuthorityDid,
+    authority_id: harness.registryDid,
+    action: recognition.scopeResourceType,
+    resource: recognition.scopeResourceId,
+    context: {
+      time: recognitionBundle.recognition.effectiveFrom,
+      recognized_registry_id: recognition.recognizedRegistryId,
+    },
+  };
+  const recognitionAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async (authorityId) => authorityId === harness.registryDid
+      ? harness.registryRecord : null,
+    getAuthorizationDecision: async () => null,
+    getRecognitionDecision: async (request) => request.entity_id === recognition.recognizedAuthorityDid
+      && request.action === recognition.scopeResourceType
+      && request.resource === recognition.scopeResourceId
+      && request.context?.recognized_registry_id === recognition.recognizedRegistryId
+      ? { bundle: recognitionBundle, statusAtTime: "active", trustedAtTime: true }
+      : null,
+  }, { clock: () => recognitionBundle.recognition.effectiveFrom });
+  const recognized = await recognitionAdapter.queryRecognition(trqpRecognitionRequest);
+  assert.equal(recognized.ok, true);
+  adversarialMatrix.expectAdapterProblem(await recognitionAdapter.queryRecognition({
+    ...trqpRecognitionRequest,
+    context: { ...trqpRecognitionRequest.context, recognized_registry_id: "registry:external:wrong:v1" },
+  }), {
+    id: "trqp-wrong-recognized-registry",
+    invariant: "A recognition for one external registry cannot authorize a different registry",
+    status: 404,
+    problemType: "not-found",
   });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: "registry:wrong",

@@ -16,7 +16,7 @@ shorter-lived and more action-oriented than the normative specification.
 
 - The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
   VC authority slice and is not yet published. Its governed demo now emits a
-  checked `tr-adversarial-matrix-v1` with 70 cases across API, Compact simulator,
+  checked `tr-adversarial-matrix-v1` with 77 cases across API, Compact simulator,
   integration preflight, client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
   names the remaining #60 gaps; do not close #60 on the current report.
 - The fastest local loop for script-only adversarial work is the matrix unit
@@ -29,6 +29,10 @@ shorter-lived and more action-oriented than the normative specification.
   Compact execution, historical evidence verifies at its original instant,
   and replay at the new policy's effective instant fails. These are local
   simulator-time claims, not wall-clock or network-finality claims.
+- Validly signed applicant evidence with a substituted policy ID or an elapsed
+  24-hour validity window is rejected before governance mutation. The matrix
+  also distinguishes exact issuer/verifier API resource lookup and TRQP
+  external-recognition tuple matching from client bundle verification.
 
 - PR #171 and the later admission groundwork are merged to
   `milestone-0.1.0`; local signed work continues on

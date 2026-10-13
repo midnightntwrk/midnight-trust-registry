@@ -14,12 +14,12 @@ the case; it does not imply production-network proving or finality.
 | Key substitution | `compact-issuer-unknown-signer`, `compact-removed-maintainer-signer` | Add a changed-key DID method. |
 | Last active maintainer | `compact-last-active-maintainer` | Add another critical lifecycle operation. |
 | Altered evidence commitment | `issuer-altered-evidence-commitment-api`, `issuer-altered-evidence-commitment-integration-preflight` | Add a circuit-level mutated evidence-hash witness; the preflight is not Compact execution. |
-| Altered policy ID/version | `issuer-uncommitted-policy-version`, `integration-old-policy-application-preflight`, `compact-old-policy-signature-replay` | Add policy-ID substitution and API-boundary revision cases. |
-| Expired evidence and unauthorized evidence verifier | `issuer-expired-epoch`, `issuer-unauthorized-evidence-verifier-api`, `issuer-unauthorized-evidence-verifier-compact` | Add expiry of applicant evidence; epoch expiry is a different invariant. |
-| Issuer/verifier scope mismatch | `issuer-wrong-credential-family`, `verifier-wrong-request-profile`; issuer signed VP scope case | Add cross-surface scope vectors. |
-| Stale epoch and tampered Merkle path | `issuer-expired-epoch`, `issuer-tampered-merkle-path` | Add a historical proof mutation after policy change. |
-| External recognition as authorization | `recognition-not-issuer-authorization` | Add direct recognition scope mismatch at adapter boundary. |
-| Historical state after suspension/revocation | Role-specific `historical-after-suspension` and `historical-after-revocation` client cases verify issuer, verifier, auditor, and recognition evidence | Add negative mutations against the archived historical proof. |
+| Altered policy ID/version | `issuer-signed-wrong-policy-id`, `issuer-uncommitted-policy-version`, `integration-old-policy-application-preflight`, `compact-old-policy-signature-replay` | Add API-boundary revision cases. |
+| Expired evidence and unauthorized evidence verifier | `issuer-expired-signed-application-evidence`, `issuer-unauthorized-evidence-verifier-api`, `issuer-unauthorized-evidence-verifier-compact` | Add API-boundary expiry; epoch expiry is separately checked by `issuer-expired-epoch`. |
+| Issuer/verifier scope mismatch | `issuer-wrong-credential-family`, `verifier-wrong-request-profile`, `issuer-wrong-resource-api`, `verifier-wrong-resource-api`; issuer signed VP scope case | Add a governed-action payload scope mutation. |
+| Stale epoch and tampered Merkle path | `issuer-expired-epoch`, `issuer-tampered-merkle-path`, `issuer-historical-proof-tampered-after-policy-revision` | Add an epoch-signature mutation to the same journey. |
+| External recognition as authorization | `recognition-not-issuer-authorization`, `recognition-wrong-external-registry-api`, `trqp-wrong-recognized-registry` | Add a Compact recognition-action scope mutation. |
+| Historical state after suspension/revocation | Role-specific `historical-after-suspension` and `historical-after-revocation` client cases verify issuer, verifier, auditor, and recognition evidence | Add public historical-query equivalence at the same instants. |
 | Historical state after threshold change | `issuer-history-survives-threshold-change`, `issuer-current-policy-after-threshold-change`, `issuer-old-policy-current-time-replay` | Add the same transition through a public API historical query. |
 
 The report has API, Compact simulator, integration preflight, client, and TRQP
