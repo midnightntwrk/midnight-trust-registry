@@ -1,10 +1,16 @@
 import { Buffer } from "node:buffer";
+import { randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
-import { pureCircuits, VerificationRelationship } from "@midnight-ntwrk/credential-compact";
+import { AuthorizationState, pureCircuits, VerificationRelationship } from "@midnight-ntwrk/credential-compact";
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
-import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import {
+  deriveJubjubPublicKey,
+  deriveJubjubPublicKeyFromSeed,
+  normalizeScalar,
+  seedBytesToJubjubSecretScalar,
+} from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
@@ -22,11 +28,17 @@ import {
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import {
   bytes32Commitment,
+  createMidnightDid,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
+import {
+  issueVcSignerAuthorizationFromTrustedDecision,
+  vcAuthorityDomainCommitment,
+  verifyVcSignerAuthorizationForConsumer,
+} from "../vc-signer-authorization.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
@@ -273,6 +285,79 @@ describe("simulator-backed VC decision evidence composition", () => {
         readCurrentFinalizedRegistryDecision: async () => null,
       }, binding, scopeMapping,
     )).rejects.toThrow(/registry decision is unavailable/u);
+
+    const authoritySeed = new Uint8Array(32).fill(77);
+    const authorityDid = createMidnightDid("vc-decision-authority");
+    const authorityAnchor = {
+      domain: {
+        networkId,
+        consumerContractAddress: sha256Hex("vc-decision-consumer"),
+        registryId: harness.registryId,
+        registryContractAddress: contractAddress,
+        authorityDid,
+        authorityMethodId: `${authorityDid}#authority-1`,
+      },
+      publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed),
+    };
+    expect(Buffer.from(vcAuthorityDomainCommitment(authorityAnchor.domain)).toString("hex")).toBe(
+      "ebf36629ff6f02534e4e6a2f5279f1ec38fdcc228c7a8183d42ab59bfdcd85ad",
+    );
+    const secret = seedBytesToJubjubSecretScalar(authoritySeed);
+    const signed = await issueVcSignerAuthorizationFromTrustedDecision({
+      evidence,
+      selection: context.selection,
+      readers,
+      method: binding,
+      scopeMapping,
+      anchor: authorityAnchor,
+      signer: async ({ decisionRoot, decisionSequence, authority }) => {
+        const nonce = seedBytesToJubjubSecretScalar(randomBytes(32));
+        const unsigned = {
+          signerVerificationMethodRef: authority.verificationMethodRef,
+          createdAt: decisionSequence,
+          challengeHash: randomBytes(32),
+          publicKey: authority.publicKey,
+          signature: { r: deriveJubjubPublicKey(nonce), s: 0n },
+        };
+        const challenge = pureCircuits.signerAuthorizationProofChallenge(decisionRoot, unsigned);
+        return { ...unsigned, signature: { r: unsigned.signature.r, s: normalizeScalar(nonce + challenge * secret) } };
+      },
+    });
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof, authorityAnchor, null,
+    )).not.toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof,
+      { ...authorityAnchor, domain: { ...authorityAnchor.domain, consumerContractAddress: sha256Hex("other-consumer") } },
+      null,
+    )).toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof,
+      { ...authorityAnchor, publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(78)) },
+      null,
+    )).toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      { ...signed.descriptor, scopeCommitment: bytes32Commitment("other-vc-scope") },
+      signed.proof, authorityAnchor, null,
+    )).toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, { ...signed.proof, createdAt: signed.proof.createdAt + 1n }, authorityAnchor, null,
+    )).toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof, authorityAnchor, signed.descriptor,
+    )).toThrow(/sequence must increase/u);
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof, authorityAnchor,
+      { ...signed.descriptor, decisionSequence: signed.descriptor.decisionSequence - 1n },
+    )).not.toThrow();
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof, authorityAnchor,
+      { ...signed.descriptor, decisionSequence: signed.descriptor.decisionSequence - 1n, state: AuthorizationState.revoked },
+    )).toThrow(/must remain revoked/u);
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signed.descriptor, signed.proof, authorityAnchor,
+      { ...signed.descriptor, decisionSequence: signed.descriptor.decisionSequence - 1n, didStateVersion: 4n },
+    )).toThrow(/must not decrease/u);
 
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
       ...context,

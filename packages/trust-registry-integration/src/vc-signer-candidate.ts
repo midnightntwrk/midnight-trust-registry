@@ -16,7 +16,7 @@ import {
   type DecisionEvidenceSelection,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-type ScopeMapping = {
+export type ScopeMapping = {
   /** Canonical TR scope commitment independently approved for this VC scope. */
   registryScopeCommitment: string;
   /** VC SchemaRef or signed-request commitment selected by the consumer. */
