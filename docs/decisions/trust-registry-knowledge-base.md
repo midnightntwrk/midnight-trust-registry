@@ -590,6 +590,9 @@ with the applicant DID's `#auth-1` relationship. Its governed demo installs a
 verifier descriptor in a separate compiled consumer and proves an exact signed
 request profile. Wrong-profile and forged request signatures fail. The request
 decision does not replace independent holder VP or issuer trust evaluation.
+The field-specific #78 checks sign altered request commitments under the
+verifier's valid key and prove that excess attributes, predicates, changed
+purpose, and increased disclosure still fail against the approved descriptor.
 
 The issuer lifecycle follow-on adds an explicit inactive decision-evidence
 reader for `suspended` and `revoked`. The default reader remains active-only.

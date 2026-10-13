@@ -503,6 +503,26 @@ export async function verifyGovernedVerifierRequest(input) {
     consumer.circuits.assertVerifierRequestAuthorized(
       circuitContext, requestScopeCommitment, requestProof, signed.descriptor.authorizationId,
     );
+    const changedProfiles = {
+      attributes: { ...scope, allowedAttributes: [...scope.allowedAttributes, "allowed-attribute-set:extra"] },
+      predicates: { ...scope, allowedPredicates: [...scope.allowedPredicates, "allowed-predicate-set:extra"] },
+      purpose: { ...scope, purpose: "unapproved-purpose" },
+      disclosure: { ...scope, disclosureLevel: "disclosure-level:full" },
+    };
+    for (const changedScope of Object.values(changedProfiles)) {
+      const changedCommitment = vcScopeCommitmentFromRegistryScope(changedScope);
+      assert.notEqual(hex(changedCommitment), hex(requestScopeCommitment));
+      const changedProof = methodProof(
+        applicantVp.subjectAuthentication.secretScalar,
+        applicantVp.subjectAuthentication.method.verificationMethodRef,
+        changedCommitment,
+        2n,
+        pureCircuits.verifierRequestProofChallenge,
+      );
+      assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+        circuitContext, changedCommitment, changedProof, signed.descriptor.authorizationId,
+      ), /scope does not match request/u);
+    }
     assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
       circuitContext, bytes32Commitment("wrong-verifier-request-profile"), requestProof,
       signed.descriptor.authorizationId,
@@ -523,6 +543,7 @@ export async function verifyGovernedVerifierRequest(input) {
         requestScopeCommitment: hex(requestScopeCommitment),
         accepted: true,
         wrongProfileRejected: true,
+        rejectedProfileChanges: Object.keys(changedProfiles),
         forgedSignatureRejected: true,
         scope: "approved verifier request profile; holder VP trust is a separate decision",
       },

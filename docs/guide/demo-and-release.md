@@ -143,7 +143,9 @@ production authenticated Midnight finality source.
 The verifier follows the same governed descriptor path using its Midnight DID
 authentication key and exact approved request-profile commitment. A compiled
 consumer accepts the signed request and rejects a different profile or forged
-request signature. The issuer and verifier examples use separate local
+request signature. It also rejects independently signed requests that expand
+attributes or predicates, change purpose, or increase disclosure relative to
+the approved profile. The issuer and verifier examples use separate local
 consumer instances; they do not authorize a holder presentation on their own.
 The issuer consumer also installs newer authority-signed suspended and revoked
 descriptors from independently checked registry epoch, grant, and DID evidence.
