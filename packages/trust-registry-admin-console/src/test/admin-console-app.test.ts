@@ -210,7 +210,18 @@ describe("admin console browser handlers", () => {
       evidenceVerifierAuthorizationId: `0x${"08".repeat(32)}`,
       evidenceVerifierKeyIdCommitment: `0x${"09".repeat(32)}`,
     };
-    const evidence = { credentialCommitment: `0x${"aa".repeat(32)}` };
+    const evidence = {
+      envelope: {
+        version: "tr-application-evidence-v1", registryId: "registry:local", applicationId: "application:issuer:alice",
+        subjectDid: "did:midnight:testnet:alice", role: "issuer", policyId: "policy:local", policyVersion: "1",
+        scopeCommitment: `0x${"aa".repeat(32)}`, governedResource: { type: "schema", id: "schema:alice" },
+        evidenceVerifierDid: "did:midnight:testnet:verifier", verifiedAt: "2026-10-13T00:00:00Z",
+        expiresAt: "2026-10-13T01:00:00Z", challengeHash: `0x${"bb".repeat(32)}`,
+        presentationHash: `0x${"cc".repeat(32)}`, claimsCommitment: `0x${"dd".repeat(32)}`,
+      },
+      commitment: `0x${"ee".repeat(32)}`,
+      signature: { keyId: "did:midnight:testnet:verifier#assertion-1", algorithm: "jubjub-schnorr", value: "0x0102" },
+    };
     const signers = [{ keyId: `0x${"0a".repeat(32)}`, publicKey: { x: "1", y: "2" }, signature: "0x0102" }];
     const verifierSignature = "0x0304";
     const posted: { path: string; body: unknown }[] = [];
@@ -254,6 +265,17 @@ describe("admin console browser handlers", () => {
     );
 
     setInput("[data-proposal-id]", "issuer:alice");
+    setInput("[data-proposal-evidence]", JSON.stringify({ ...evidence, verifiablePresentation: { secret: "private" } }));
+    prepare();
+    await vi.waitFor(() => expect(root.textContent).toContain("without raw VC/VP fields"));
+    expect(posted).toEqual([]);
+    setInput("[data-proposal-evidence]", JSON.stringify({
+      ...evidence,
+      envelope: { ...evidence.envelope, claimsCommitment: { secret: "private" } },
+    }));
+    prepare();
+    await vi.waitFor(() => expect(root.textContent).toContain("without raw VC/VP fields"));
+    expect(posted).toEqual([]);
     setInput("[data-proposal-evidence]", JSON.stringify(evidence));
     prepare();
     await vi.waitFor(() => expect(root.textContent).toContain("governed proposal unavailable"));
@@ -263,11 +285,22 @@ describe("admin console browser handlers", () => {
     prepare();
     await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
     expect(root.textContent).toContain(prepared.policyCommitment);
-    setInput("[data-proposal-evidence]", JSON.stringify({ ...evidence, evidenceVersion: 2 }));
+    const changedEvidence = {
+      ...evidence,
+      envelope: { ...evidence.envelope, presentationHash: `0x${"ff".repeat(32)}` },
+    };
+    setInput("[data-proposal-evidence]", JSON.stringify(changedEvidence));
     expect(root.querySelector("[data-proposal-submit]")).toBeNull();
     prepare();
     await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
 
+    setInput("[data-proposal-signers]", JSON.stringify([{ ...signers[0], privateKey: "must-not-leave-browser" }]));
+    setInput("[data-proposal-verifier-signature]", verifierSignature);
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("External signer must contain only"));
+    expect(posted.every((request) => !request.path.endsWith("/proposal/submit"))).toBe(true);
     setInput("[data-proposal-signers]", JSON.stringify(signers));
     setInput("[data-proposal-verifier-signature]", verifierSignature);
     root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
@@ -275,7 +308,7 @@ describe("admin console browser handlers", () => {
     );
     await vi.waitFor(() => expect(posted.at(-1)?.path).toBe("/v1/governed/issuer/issuer%3Aalice/proposal/submit"));
     expect(posted.at(-1)?.body).toEqual({
-      evidence: { ...evidence, evidenceVersion: 2 }, prepared, signers, evidenceVerifierSignature: verifierSignature,
+      evidence: changedEvidence, prepared, signers, evidenceVerifierSignature: verifierSignature,
     });
     await vi.waitFor(() => expect(root.textContent).toContain("Compact issuer proposal accepted"));
     expect(window.localStorage.getItem("trust-registry.admin.api-base")).toBeNull();

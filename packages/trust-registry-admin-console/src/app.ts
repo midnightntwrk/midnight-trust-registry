@@ -77,6 +77,44 @@ const countCards = (
 const governedActionFor = (card: ReviewCard): GovernedMembershipAction | undefined =>
   card.status === "proposed" ? "approve" : card.status === "authorized" ? "activate" : undefined;
 
+const assertExactFields = (value: unknown, fields: readonly string[], label: string): void => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== fields.length
+    || fields.some((field) => !Object.hasOwn(value, field))) {
+    throw new Error(`${label} must contain only the redacted ${fields.join(", ")} fields.`);
+  }
+};
+
+const assertRedactedEvidence = (value: unknown): void => {
+  assertExactFields(value, ["envelope", "commitment", "signature"], "Application evidence");
+  const submission = value as Record<string, unknown>;
+  if (typeof submission.commitment !== "string") {
+    throw new Error("Application evidence commitment must be a string.");
+  }
+  assertExactFields(submission.envelope, [
+    "version", "registryId", "applicationId", "subjectDid", "role", "policyId", "policyVersion",
+    "scopeCommitment", "governedResource", "evidenceVerifierDid", "verifiedAt", "expiresAt",
+    "challengeHash", "presentationHash", "claimsCommitment",
+  ], "Application evidence envelope");
+  const envelope = submission.envelope as Record<string, unknown>;
+  for (const [key, field] of Object.entries(envelope)) {
+    if (key !== "governedResource" && typeof field !== "string") {
+      throw new Error(`Application evidence ${key} must be a string.`);
+    }
+  }
+  assertExactFields(envelope.governedResource,
+    ["type", "id"], "Governed resource");
+  const resource = envelope.governedResource as Record<string, unknown>;
+  if (typeof resource.type !== "string" || typeof resource.id !== "string") {
+    throw new Error("Governed resource values must be strings.");
+  }
+  assertExactFields(submission.signature, ["keyId", "algorithm", "value"], "Evidence signature");
+  const signature = submission.signature as Record<string, unknown>;
+  if (Object.values(signature).some((field) => typeof field !== "string")) {
+    throw new Error("Evidence signature values must be strings.");
+  }
+};
+
 const parseSignerInput = (value: string): GovernedMembershipSignatureRequest["signers"] => {
   let parsed: unknown;
   try {
@@ -86,6 +124,14 @@ const parseSignerInput = (value: string): GovernedMembershipSignatureRequest["si
   }
   if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 16) {
     throw new Error("Provide between one and sixteen external signer entries.");
+  }
+  for (const signer of parsed) {
+    assertExactFields(signer, ["keyId", "publicKey", "signature"], "External signer");
+    assertExactFields(signer.publicKey, ["x", "y"], "External signer public key");
+    if (typeof signer.keyId !== "string" || typeof signer.signature !== "string"
+      || typeof signer.publicKey.x !== "string" || typeof signer.publicKey.y !== "string") {
+      throw new Error("External signer identifiers, public coordinates, and signature must be strings.");
+    }
   }
   return parsed as GovernedMembershipSignatureRequest["signers"];
 };
@@ -284,8 +330,9 @@ export const createAdminConsoleApp = (
     let evidence: unknown;
     try {
       evidence = JSON.parse(evidenceJson);
+      assertRedactedEvidence(evidence);
     } catch {
-      setState({ error: "Application evidence must be valid redacted JSON." });
+      setState({ error: "Application evidence must be a redacted envelope, commitment, and signature JSON object without raw VC/VP fields." });
       return;
     }
     setState({ governedBusy: true, proposalPrepared: undefined, proposalSignersJson: "",
@@ -309,6 +356,7 @@ export const createAdminConsoleApp = (
     let signers: GovernedMembershipSignatureRequest["signers"];
     try {
       evidence = JSON.parse(evidenceJson);
+      assertRedactedEvidence(evidence);
       signers = parseSignerInput(state.proposalSignersJson);
       if (!/^0x[0-9a-f]+$/u.test(verifierSignature)) {
         throw new Error("Provide the registered evidence-verifier JubJub signature as hex.");
@@ -592,7 +640,7 @@ export const createAdminConsoleApp = (
               <input class="input mono" data-proposal-id value="${escapeHtml(state.proposalAuthorizationId)}" placeholder="exact authorization ID" autocomplete="off" />
             </label>
             <label>Redacted application evidence JSON
-              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"credentialCommitment":"..."}'>${escapeHtml(state.proposalEvidenceJson)}</textarea>
+              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"envelope":{...},"commitment":"0x...","signature":{...}}'>${escapeHtml(state.proposalEvidenceJson)}</textarea>
             </label>
             <button class="button secondary" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare issuer proposal</button>
           </form>
