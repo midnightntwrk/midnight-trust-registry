@@ -173,7 +173,12 @@ contains only mandate identifiers and commitments; it does not request or
 return verifier-held information.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
-and governance event hashes, not the VP transcript or holder secrets.
+governance event hashes, and one actor row with policy version, epoch ID,
+activation signer key IDs, and expected/observed result. Issuer, verifier,
+auditor, and recognition rows use their record-specific active evidence epoch;
+the maintainer row uses the epoch of its active membership snapshot. These
+can differ from the newest registry epoch. The report omits signatures, VP
+transcripts, claims, and holder secrets.
 Eligibility and status decisions use trusted fixture adapters; the negative
 suspension and revocation fixtures are contract-backed but are not submitted
 through the external-signature HTTP action port. Finality is simulated, not a

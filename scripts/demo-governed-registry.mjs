@@ -15,6 +15,7 @@ import {
   encodeJubjubSignature,
   signPolicyBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
+import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
@@ -620,6 +621,8 @@ try {
     });
   }
   const decisions = [];
+  const decisionSignerSets = new Map();
+  let maintainerObservationEpochId;
   for (const [role, target] of targets) {
     const events = {};
     for (const action of ["approve", "activate"]) {
@@ -636,6 +639,14 @@ try {
         await expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), 403);
       }
       const accepted = await expectHttp(await submit(prepared, signers), 202);
+      if (action === "activate") {
+        decisionSignerSets.set(role, signers.map((signer) => signer.keyId));
+        if (role === "maintainer") {
+          const epoch = snapshot.epochs.at(-1);
+          assert.ok(epoch);
+          maintainerObservationEpochId = epoch.epochId;
+        }
+      }
       await expectHttp(await submit(prepared, signers), 409);
       events[action] = accepted.eventHash;
     }
@@ -643,6 +654,7 @@ try {
   }
 
   let auditorMandate;
+  const actorReportByRole = new Map();
   for (const [role, target] of targets) {
     if (role === "maintainer") continue;
     const evidencePath = role === "recognition"
@@ -671,7 +683,37 @@ try {
         ), /resource mismatch/u);
       }
     }
+    assert.equal(bundle.policy.version, harness.policyRecord.version);
+    actorReportByRole.set(role, {
+      role,
+      policyVersion: bundle.policy.version,
+      epochId: bundle.epoch.epochId,
+      epochSource: "active-evidence",
+      activationSignerKeyIds: decisionSignerSets.get(role),
+      expectedResult: "active",
+      observedResult: role === "recognition" ? bundle.recognition.status : bundle.authorization.status,
+    });
   }
+  const maintainerRecord = harness.simulator.getCurrentMaintainerMembership(candidate.subjectDidCommitment);
+  assert.equal(maintainerRecord.status, AuthorizationStatus.active);
+  assert.ok(maintainerObservationEpochId);
+  assert.ok(snapshot.epochs.some((epoch) => epoch.epochId === maintainerObservationEpochId));
+  actorReportByRole.set("maintainer", {
+    role: "maintainer",
+    policyVersion: harness.policyRecord.version,
+    epochId: maintainerObservationEpochId,
+    epochSource: "membership-snapshot",
+    activationSignerKeyIds: decisionSignerSets.get("maintainer"),
+    expectedResult: "active",
+    observedResult: AuthorizationStatus[maintainerRecord.status],
+  });
+  const actorReport = [...targets.keys()].map((role) => {
+    const result = actorReportByRole.get(role);
+    assert.ok(result);
+    assert.equal(result.activationSignerKeyIds.length, 2);
+    assert.equal(result.observedResult, result.expectedResult);
+    return result;
+  });
   await expectHttp(await fetch(
     `${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`,
   ), 404);
@@ -927,6 +969,7 @@ try {
     otherProposals,
     recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
+    actorReport,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     auditorMandate,
     vcConsumer: vcConsumer.report,

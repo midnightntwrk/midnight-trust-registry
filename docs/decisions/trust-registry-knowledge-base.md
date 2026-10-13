@@ -636,3 +636,12 @@ maintainer, its key cannot satisfy the revised quorum, while the three
 remaining active maintainers can. The governed demo exports the policy-version
 transition and event hashes; the existing last-active-maintainer test remains
 separate. This does not introduce production key custody or relayer finality.
+
+The #78 governed demo now emits an actor evidence table for issuer, verifier,
+auditor, recognition, and maintainer. Each row includes policy version, an
+epoch ID with its source, two activation signer key IDs, and the asserted
+active outcome. The four public authorization/recognition rows use the epoch
+from each verified record-specific bundle. The maintainer row uses an active
+membership observation and its then-current snapshot epoch; it must not be
+misrepresented as a public authorization bundle. No VP body, claim, private
+key, or signature bytes are exported in this table.
