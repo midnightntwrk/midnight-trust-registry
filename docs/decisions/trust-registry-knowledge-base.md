@@ -600,3 +600,11 @@ suspended, and revoked descriptors in order and confirms that the issuer proof
 fails after the inactive updates. This proves local propagation only; a live
 consumer needs an authenticated relayer/finality adapter and can be stale
 until it receives the newer decision.
+
+The #78 verifier lifecycle path now uses the same explicit inactive evidence
+reader and authority signer, but checks `assertVerifierRequestAuthorized` after
+each update rather than the issuer VC proof. The governed demo rejects the
+previous request at suspended/revoked state, stale descriptor replay, and
+fixture-signed reactivation after revocation. The same trust limitation holds:
+these reads and relayer deliveries are simulator fixtures, not production
+network-finality observations.

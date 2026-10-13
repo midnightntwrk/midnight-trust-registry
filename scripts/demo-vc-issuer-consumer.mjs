@@ -399,13 +399,13 @@ export async function verifyGovernedIssuerCredential(input) {
 }
 
 /** Relayer fixture: replay accepted descriptors, then install a newer inactive decision. */
-export async function verifyGovernedIssuerStatusUpdate(input) {
-  const { issuer, applicantVp, authorityAnchor, state, previousJourney } = input;
+async function verifyGovernedStatusUpdate(input, role, subject, scope) {
+  const { authorityAnchor, state, previousJourney } = input;
   assert.ok(state === "suspended" || state === "revoked");
   assert.ok(previousJourney.signedHistory.length > 0);
   const previous = previousJourney.signedHistory.at(-1).descriptor;
   const signed = await prepareGovernedSignerAuthorization({
-    ...input, subject: issuer, role: "issuer", scope: issuer.authorizationScope,
+    ...input, subject, role, scope,
     inactiveState: state, previous,
   });
   return withCompiledConsumer(authorityAnchor, ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
@@ -421,10 +421,17 @@ export async function verifyGovernedIssuerStatusUpdate(input) {
         installed.context.currentPrivateState,
       );
     }
-    assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
-      circuitContext, previousJourney.credential, previousJourney.credentialProof,
-      signed.descriptor.authorizationId,
-    ), /must be active/u);
+    if (role === "issuer") {
+      assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+        circuitContext, previousJourney.credential, previousJourney.credentialProof,
+        signed.descriptor.authorizationId,
+      ), /must be active/u);
+    } else {
+      assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+        circuitContext, previousJourney.requestScopeCommitment, previousJourney.requestProof,
+        signed.descriptor.authorizationId,
+      ), /must be active/u);
+    }
     assert.throws(() => consumer.circuits.installSignerAuthorization(
       circuitContext, previousJourney.signedHistory[0].descriptor,
       previousJourney.signedHistory[0].proof,
@@ -453,13 +460,21 @@ export async function verifyGovernedIssuerStatusUpdate(input) {
         status: state,
         decisionSequence: signed.descriptor.decisionSequence.toString(),
         authorizationId: hex(signed.descriptor.authorizationId),
-        priorCredentialProofRejected: true,
+        [role === "issuer" ? "priorCredentialProofRejected" : "priorRequestProofRejected"]: true,
         staleDescriptorReplayRejected: true,
         ...(state === "revoked" ? { resurrectionRejected: true } : {}),
       },
     };
   });
 }
+
+export const verifyGovernedIssuerStatusUpdate = (input) => verifyGovernedStatusUpdate(
+  input, "issuer", input.issuer, input.issuer.authorizationScope,
+);
+
+export const verifyGovernedVerifierStatusUpdate = (input) => verifyGovernedStatusUpdate(
+  input, "verifier", input.verifier, input.scope,
+);
 
 /** End-to-end verifier request proof, not a holder-presentation authorization. */
 export async function verifyGovernedVerifierRequest(input) {
@@ -498,14 +513,19 @@ export async function verifyGovernedVerifierRequest(input) {
       signed.descriptor.authorizationId,
     ));
     return {
-      authorizationId: hex(signed.descriptor.authorizationId),
-      decisionSequence: signed.descriptor.decisionSequence.toString(),
-      policyCommitment: hex(signed.descriptor.policyCommitment),
-      requestScopeCommitment: hex(requestScopeCommitment),
-      accepted: true,
-      wrongProfileRejected: true,
-      forgedSignatureRejected: true,
-      scope: "approved verifier request profile; holder VP trust is a separate decision",
+      signedHistory: [signed],
+      requestScopeCommitment,
+      requestProof,
+      report: {
+        authorizationId: hex(signed.descriptor.authorizationId),
+        decisionSequence: signed.descriptor.decisionSequence.toString(),
+        policyCommitment: hex(signed.descriptor.policyCommitment),
+        requestScopeCommitment: hex(requestScopeCommitment),
+        accepted: true,
+        wrongProfileRejected: true,
+        forgedSignatureRejected: true,
+        scope: "approved verifier request profile; holder VP trust is a separate decision",
+      },
     };
   });
 }

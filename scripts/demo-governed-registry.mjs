@@ -7,6 +7,7 @@ import {
   verifyGovernedIssuerCredential,
   verifyGovernedIssuerStatusUpdate,
   verifyGovernedVerifierRequest,
+  verifyGovernedVerifierStatusUpdate,
 } from "./demo-vc-issuer-consumer.mjs";
 
 import {
@@ -806,6 +807,8 @@ try {
     },
   ];
   const temporalChecks = [];
+  const verifierLifecycle = [];
+  let verifierJourney = verifierConsumer;
   for (const target of temporalTargets) {
     const recognitionTarget = target.role === "recognition";
     const statusRecord = (bundle) => recognitionTarget ? bundle.recognition : bundle.authorization;
@@ -825,6 +828,15 @@ try {
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
     const suspendedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(suspendedBundle).status, "suspended");
+    if (target.role === "verifier") {
+      verifierJourney = await verifyGovernedVerifierStatusUpdate({
+        harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
+        applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
+        authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+        apiBundle: suspendedBundle, state: "suspended", previousJourney: verifierJourney,
+      });
+      verifierLifecycle.push(verifierJourney.report);
+    }
     assert.throws(() => target.verify(suspendedBundle, {
       expectedRegistryId: harness.registryId,
     }), /not active/i);
@@ -837,6 +849,15 @@ try {
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
     const revokedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(revokedBundle).status, "revoked");
+    if (target.role === "verifier") {
+      verifierJourney = await verifyGovernedVerifierStatusUpdate({
+        harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
+        applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
+        authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+        apiBundle: revokedBundle, state: "revoked", previousJourney: verifierJourney,
+      });
+      verifierLifecycle.push(verifierJourney.report);
+    }
     assert.throws(() => target.verify(revokedBundle, {
       expectedRegistryId: harness.registryId,
     }), /not active/i);
@@ -871,7 +892,8 @@ try {
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     vcConsumer: vcConsumer.report,
     vcConsumerLifecycle: [suspendedConsumer.report, revokedConsumer.report],
-    verifierConsumer,
+    verifierConsumer: verifierConsumer.report,
+    verifierConsumerLifecycle: verifierLifecycle,
     issuerEvidenceEpoch: {
       epochId: issuerBundle.epoch.epochId,
       stateRoot: issuerBundle.epoch.stateRoot,
