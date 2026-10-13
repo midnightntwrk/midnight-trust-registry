@@ -225,6 +225,9 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
+      The local candidate adapter now uses trusted current-state readers and
+      checks the exact DID binding and sequence; production reader/finality
+      implementations and authority proof issuance remain required.
 - [x] Align the published Midnight DID dependency to 0.7.0 and verify the
       adapter's canonical fragment and DID-state mapping without importing
       sibling repository source.

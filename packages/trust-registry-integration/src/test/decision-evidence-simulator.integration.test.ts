@@ -1,12 +1,16 @@
 import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
+import { pureCircuits, VerificationRelationship } from "@midnight-ntwrk/credential-compact";
+import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
+import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
 import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
+  type TrustedDecisionEvidenceReaders,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
   AcceptedDecisionEpochSchema,
@@ -22,6 +26,7 @@ import {
   createMaintainerScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
+import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
@@ -184,7 +189,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
     };
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context)).not.toThrow();
-    const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+    const readers: TrustedDecisionEvidenceReaders = {
       readCurrentFinalizedRegistryDecision: async (selection, epochIdHint) => {
         expect(selection).toEqual(context.selection);
         expect(epochIdHint).toBe(bundle.epoch.epochId);
@@ -202,7 +207,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         ]);
         return context.didState;
       },
-    });
+    };
+    const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, readers);
     expect(candidate).toMatchObject({
       role: "issuer",
       authorizationId: issuer.authorizationId,
@@ -211,6 +217,62 @@ describe("simulator-backed VC decision evidence composition", () => {
       didStateVersion: stateVersion,
       publicationEventHash: witness.eventHash,
     });
+
+    const binding = await resolveMidnightDIDMethodBinding({
+      resolver,
+      did: parseMidnightDIDString(issuer.subjectDid),
+      verificationMethodId: "#assertion-1",
+      relationship: "assertionMethod",
+    });
+    const scopeMapping = {
+      registryScopeCommitment: candidate.scopeCommitment,
+      vcScopeCommitment: pureCircuits.issuerScopeCommitment({
+        packageId: bytes32Commitment("vc-decision-package"),
+        schemaId: bytes32Commitment("vc-decision-schema"),
+        majorVersion: 1n,
+        minorVersion: 0n,
+      }),
+    };
+    const converted = await createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers, binding, scopeMapping,
+    );
+    expect(converted.descriptor.decisionSequence).toBe(BigInt(epochRecord.publishedAtSequence));
+    expect(converted.descriptor.didStateVersion).toBe(3n);
+    expect(converted.descriptor.scopeCommitment).toEqual(scopeMapping.vcScopeCommitment);
+    expect(converted.descriptor.policyCommitment).toEqual(Uint8Array.from(Buffer.from(candidate.policyRoot.slice(2), "hex")));
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers, binding,
+      { ...scopeMapping, registryScopeCommitment: sha256Hex("unrelated-tr-scope") },
+    )).rejects.toThrow(/scope mapping/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers,
+      { ...binding, didStateVersion: 2n }, scopeMapping,
+    )).rejects.toThrow(/DID state version/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers,
+      { ...binding, publicKey: { ...binding.publicKey, x: binding.publicKey.x + 1n } }, scopeMapping,
+    )).rejects.toThrow(/method key/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers,
+      { ...binding, verificationMethodRef: {
+        ...binding.verificationMethodRef,
+        methodId: bytes32Commitment("other-method"),
+      } }, scopeMapping,
+    )).rejects.toThrow(/method binding/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers,
+      { ...binding, verificationRelationship: VerificationRelationship.authentication }, scopeMapping,
+    )).rejects.toThrow(/relationship/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, readers, binding,
+      { ...scopeMapping, vcScopeCommitment: new Uint8Array(32) },
+    )).rejects.toThrow(/VC scope commitment/u);
+    await expect(createVcSignerCandidateFromTrustedDecision(
+      evidence, context.selection, {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => null,
+      }, binding, scopeMapping,
+    )).rejects.toThrow(/registry decision is unavailable/u);
 
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
       ...context,
