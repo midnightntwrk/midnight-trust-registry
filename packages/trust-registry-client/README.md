@@ -22,8 +22,10 @@ its deterministic challenge values must not be treated as applicant evidence.
 
 The exported free `verify*Bundle` functions verify a bundle against a
 caller-supplied epoch record, maintainer key, and registry commitment. They do
-not fetch a ledger, establish that the epoch was accepted, authenticate the
-key's historical maintainer status, or check the ledger contract format. A
+bind the bundle's first-signer DID method ID to the accepted epoch key-ID
+commitment. They do not fetch a ledger, establish that the epoch was accepted,
+authenticate the key's historical maintainer status, or check the ledger
+contract format. A
 relying party must establish those facts from a format-one registry ledger or
 another independently trusted anchor before using the result as an
 authorization decision. The `/simulator` testing subpath exports
