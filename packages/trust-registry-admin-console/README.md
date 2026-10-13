@@ -9,10 +9,11 @@ Current scope:
 - prepare policy-bound Compact approval and activation contexts for issuer,
   verifier, auditor, and recognition cards; paste externally produced public
   signer entries and submit them through the optional governed-action API port
-- prepare an issuer application proposal from a redacted signed evidence
+- prepare issuer, verifier, auditor, or maintainer proposals from a redacted signed evidence
   envelope, then submit external maintainer signatures and a separate
   registered evidence-verifier JubJub signature through the optional governed
-  issuer-proposal API port
+  role-specific proposal API ports; recover a lost submit receipt by querying
+  the matching Compact proposal event without replaying the action
 - require explicit confirmation before submitting signed actions; the contract
   remains responsible for current-policy, signer-membership, and quorum checks
 - retain separate local fixture mutation and epoch controls for the deliberately
@@ -46,17 +47,17 @@ Notes:
 - the API package now serves permissive CORS headers for this local-only UI
 - the packaged CLI does **not** configure `governedMembershipActions`, so the
   Compact action panel receives 503 in this basic workspace setup. It also
-  does not configure `governedIssuerProposals`, so issuer proposal preparation
-  receives 503 until an embedding server injects the Compact-backed port. The
+  does not configure governed proposal ports, so proposal preparation and
+  resolution receive 503 until an embedding server injects Compact-backed ports. The
   server must submit supplied signatures, never fall back to fixture replay.
   The browser accepts only redacted evidence and externally produced signatures;
   it does not handle private keys or persist evidence/signatures in browser
-  storage. Prepared proposal context is discarded when the issuer ID, evidence,
+  storage. Prepared proposal context is discarded when the role, target ID, evidence,
   API connection, or board changes. The contract rechecks current policy,
   sequence, evidence, verifier identity, and quorum at submission
-- the governed proposal panel currently supports issuers only. Do not use it
-  to infer on-chain evidence-verifier coverage for verifier, auditor, or
-  maintainer proposals
+- a `not-observed` proposal is not proof that submission failed. The console
+  does not retry automatically; a host must determine finality before any
+  further action. Simulator observation is not network finality
 - `--unsafe-demo-mutations` enables the old fixture controls only on loopback;
   remove that flag when the signed mutation and Compact ports are wired for a
   real deployment

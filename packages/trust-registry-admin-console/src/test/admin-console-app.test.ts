@@ -226,6 +226,7 @@ describe("admin console browser handlers", () => {
     const verifierSignature = "0x0304";
     const posted: { path: string; body: unknown }[] = [];
     let available = false;
+    let observed = false;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (path.endsWith("/proposal/prepare")) {
@@ -237,6 +238,12 @@ describe("admin console browser handlers", () => {
       if (path.endsWith("/proposal/submit")) {
         posted.push({ path, body: JSON.parse(String(init?.body)) });
         return Response.json({ eventHash: `0x${"0b".repeat(32)}` }, { status: 202 });
+      }
+      if (path.endsWith("/proposal/resolve")) {
+        posted.push({ path, body: JSON.parse(String(init?.body)) });
+        return Response.json(observed
+          ? { state: "observed", eventHash: `0x${"0b".repeat(32)}` }
+          : { state: "not-observed" });
       }
       if (path === "/v1/registry/summary") {
         return Response.json({
@@ -314,5 +321,44 @@ describe("admin console browser handlers", () => {
     expect(window.localStorage.getItem("trust-registry.admin.api-base")).toBeNull();
     expect(window.localStorage.length).toBe(0);
     expect(root.querySelector("[data-proposal-submit]")).toBeNull();
+
+    const selectRole = (role: string) => {
+      const selector = root.querySelector<HTMLSelectElement>("[data-proposal-role]")!;
+      selector.value = role;
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    expect(Array.from(root.querySelector<HTMLSelectElement>("[data-proposal-role]")!.options)
+      .map((option) => option.value)).toEqual(["issuer", "verifier", "auditor", "maintainer"]);
+    selectRole("verifier");
+    setInput("[data-proposal-id]", "verifier:bob");
+    setInput("[data-proposal-evidence]", JSON.stringify(evidence));
+    prepare();
+    await vi.waitFor(() => expect(root.textContent).toContain("evidence role must match"));
+    expect(posted.filter((request) => request.path.endsWith("/proposal/prepare"))).toHaveLength(3);
+
+    const verifierEvidence = { ...evidence, envelope: { ...evidence.envelope, role: "verifier" } };
+    setInput("[data-proposal-evidence]", JSON.stringify(verifierEvidence));
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain("do not resubmit automatically"));
+    expect(posted.at(-1)?.path).toBe("/v1/governed/verifier/verifier%3Abob/proposal/resolve");
+    expect(posted.at(-1)?.body).toEqual({ evidence: verifierEvidence });
+    observed = true;
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain("Compact verifier proposal observed"));
+
+    prepare();
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
+    selectRole("auditor");
+    expect(root.querySelector("[data-proposal-submit]")).toBeNull();
+    selectRole("verifier");
+    prepare();
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
+    setInput("[data-proposal-signers]", JSON.stringify(signers));
+    setInput("[data-proposal-verifier-signature]", verifierSignature);
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(posted.at(-1)?.path).toBe("/v1/governed/verifier/verifier%3Abob/proposal/submit"));
+    await vi.waitFor(() => expect(root.textContent).toContain("Compact verifier proposal accepted"));
   });
 });

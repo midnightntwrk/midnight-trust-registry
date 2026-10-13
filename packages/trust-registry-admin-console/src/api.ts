@@ -4,6 +4,8 @@ import type {
   GovernedMembershipRole,
   GovernedMembershipSignatureRequest,
   PreparedGovernedIssuerProposal,
+  PreparedGovernedVerifierProposal,
+  PreparedGovernedMaintainerProposal,
   PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationMutationResponse,
@@ -17,6 +19,10 @@ import type {
 import type { ReviewBoard } from "./model.js";
 
 type FetchLike = typeof fetch;
+export type GovernedProposalRole = Exclude<GovernedMembershipRole, "recognition">;
+export type PreparedGovernedProposal = PreparedGovernedIssuerProposal | PreparedGovernedVerifierProposal
+  | PreparedGovernedMaintainerProposal;
+export type GovernedProposalResolution = { state: "not-observed" } | { state: "observed"; eventHash: string };
 
 export class TrustRegistryAdminConsoleApiError extends Error {
   constructor(
@@ -120,12 +126,13 @@ export class TrustRegistryAdminConsoleClient {
     );
   }
 
-  async prepareIssuerProposal(
+  async prepareProposal(
+    role: GovernedProposalRole,
     id: string,
     evidence: unknown,
-  ): Promise<PreparedGovernedIssuerProposal> {
-    return this.request<PreparedGovernedIssuerProposal>(
-      `/v1/governed/issuer/${encodeURIComponent(id)}/proposal/prepare`,
+  ): Promise<PreparedGovernedProposal> {
+    return this.request<PreparedGovernedProposal>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/prepare`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -134,21 +141,37 @@ export class TrustRegistryAdminConsoleClient {
     );
   }
 
-  async submitIssuerProposal(
+  async submitProposal(
+    role: GovernedProposalRole,
     id: string,
     request: {
       evidence: unknown;
-      prepared: PreparedGovernedIssuerProposal;
+      prepared: PreparedGovernedProposal;
       signers: GovernedMembershipSignatureRequest["signers"];
       evidenceVerifierSignature: string;
     },
   ): Promise<GovernedMembershipActionReceipt> {
     return this.request<GovernedMembershipActionReceipt>(
-      `/v1/governed/issuer/${encodeURIComponent(id)}/proposal/submit`,
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/submit`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),
+      },
+    );
+  }
+
+  async resolveProposal(
+    role: GovernedProposalRole,
+    id: string,
+    evidence: unknown,
+  ): Promise<GovernedProposalResolution> {
+    return this.request<GovernedProposalResolution>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/resolve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ evidence }),
       },
     );
   }
