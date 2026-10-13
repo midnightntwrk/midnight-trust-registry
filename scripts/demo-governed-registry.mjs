@@ -642,6 +642,7 @@ try {
     decisions.push({ role, id: target.id, events });
   }
 
+  let auditorMandate;
   for (const [role, target] of targets) {
     if (role === "maintainer") continue;
     const evidencePath = role === "recognition"
@@ -656,7 +657,15 @@ try {
       assert.equal(bundle.authorization.status, "active");
       if (role === "issuer") client.verifyIssuerAuthorizationBundle(bundle, {});
       if (role === "verifier") client.verifyVerifierAuthorizationBundle(bundle, {});
-      if (role === "auditor") client.verifyAuditorAuthorizationBundle(bundle, {});
+      if (role === "auditor") {
+        client.verifyAuditorAuthorizationBundle(bundle, {});
+        const scope = createAuditorAuthorizationScopeFixture(auditor);
+        const options = { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid };
+        auditorMandate = client.verifyAuditorRequestMandate(bundle, scope, options);
+        assert.throws(() => client.verifyAuditorRequestMandate(
+          bundle, { ...scope, purpose: "unapproved-audit-purpose" }, options,
+        ), /resource mismatch/u);
+      }
     }
   }
   await expectHttp(await fetch(
@@ -828,6 +837,12 @@ try {
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
     const suspendedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(suspendedBundle).status, "suspended");
+    if (target.role === "auditor") {
+      assert.throws(() => client.verifyAuditorRequestMandate(
+        suspendedBundle, createAuditorAuthorizationScopeFixture(auditor),
+        { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid },
+      ), /not active/u);
+    }
     if (target.role === "verifier") {
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
@@ -849,6 +864,12 @@ try {
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
     const revokedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(revokedBundle).status, "revoked");
+    if (target.role === "auditor") {
+      assert.throws(() => client.verifyAuditorRequestMandate(
+        revokedBundle, createAuditorAuthorizationScopeFixture(auditor),
+        { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid },
+      ), /not active/u);
+    }
     if (target.role === "verifier") {
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
@@ -890,6 +911,7 @@ try {
     recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
+    auditorMandate,
     vcConsumer: vcConsumer.report,
     vcConsumerLifecycle: [suspendedConsumer.report, revokedConsumer.report],
     verifierConsumer: verifierConsumer.report,

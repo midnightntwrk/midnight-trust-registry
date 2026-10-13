@@ -611,3 +611,11 @@ previous request at suspended/revoked state, stale descriptor replay, and
 fixture-signed reactivation after revocation. The same trust limitation holds:
 these reads and relayer deliveries are simulator fixtures, not production
 network-finality observations.
+
+The UC-14 relying-party check now derives the auditor composite resource ID
+from the full canonical audit request scope and verifies the public bundle
+against a caller-authenticated epoch context. Its result contains mandate
+identifiers and commitments only. The simulator client and HTTP-governed demo
+reject changed audit purpose, cross-role evidence, and suspended/revoked
+mandates. Disclosure policy, holder consent, and data exchange remain outside
+the trust registry; an active grant is not blanket access.

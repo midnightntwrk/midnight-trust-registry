@@ -24,6 +24,8 @@ import {
   verifyVerifierAuthorizationBundle,
   type BundleVerificationOptions,
 } from "./evidence.js";
+import { verifyAuditorRequestMandate, type AuditorMandate, type AuditorMandateOptions } from "./auditor-mandate.js";
+import type { AuthorizationScope } from "@midnight-ntwrk/trust-registry-domain";
 import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp, sameBytes32 } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<
@@ -184,6 +186,17 @@ export class TrustRegistrySimulatorClient {
     options: SimulatorBundleVerificationOptions,
   ): TrustRegistryEvidenceBundle {
     return verifyAuditorAuthorizationBundle(bundle, {
+      ...options,
+      ...this.buildEpochContext(bundle),
+    });
+  }
+
+  verifyAuditorRequestMandate(
+    bundle: TrustRegistryEvidenceBundle,
+    requestedScope: Extract<AuthorizationScope, { role: "auditor" }>,
+    options: Omit<AuditorMandateOptions, "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt">,
+  ): AuditorMandate {
+    return verifyAuditorRequestMandate(bundle, requestedScope, {
       ...options,
       ...this.buildEpochContext(bundle),
     });

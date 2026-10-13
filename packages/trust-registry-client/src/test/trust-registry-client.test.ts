@@ -8,6 +8,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
+  createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   createIssuerScenarioFixture,
@@ -26,6 +27,54 @@ const changeLastHexNibble = (hash: string): string =>
   `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
 describe("trust registry client", () => {
+  it("verifies an exact auditor mandate without granting data access", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("audit-mandate-check");
+    const auditor = createAuditorScenarioFixture("audit-mandate-check");
+    const verifier = createVerifierScenarioFixture("audit-mandate-check");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    harness.authorizeAuditor(auditor);
+    harness.authorizeVerifier(verifier);
+    const scope = createAuditorAuthorizationScopeFixture(auditor);
+    const options = { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid };
+    const bundle = harness.evaluateCurrentAuditorDecision(auditor);
+    const mandate = client.verifyAuditorRequestMandate(bundle, scope, options);
+    expect(mandate).toEqual({
+      authorizationId: auditor.authorizationId,
+      auditorDid: auditor.subjectDid,
+      requestResourceId: auditor.scopeResourceId,
+      scopeCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      epochId: bundle.epoch.epochId,
+    });
+    for (const changed of [
+      { ...scope, purpose: "unapproved-audit-purpose" },
+      { ...scope, allowedAttributes: [...scope.allowedAttributes, "audit-attribute-set:extra"] },
+      { ...scope, allowedPredicates: [...scope.allowedPredicates, "audit-predicate-set:extra"] },
+      { ...scope, disclosureLevel: "audit-disclosure-level:unrestricted" },
+    ]) {
+      expect(() => client.verifyAuditorRequestMandate(bundle, changed, options))
+        .toThrow(/resource mismatch/u);
+    }
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedRegistryId: "registry:wrong",
+    })).toThrow(/registry mismatch/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedSubjectDid: verifier.subjectDid,
+    })).toThrow(/Subject DID mismatch/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedRegistryId: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedSubjectDid: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
+    expect(() => client.verifyAuditorRequestMandate(
+      harness.evaluateCurrentVerifierDecision(verifier), scope, options,
+    )).toThrow();
+    harness.suspendAuditor(auditor);
+    expect(() => client.verifyAuditorRequestMandate(
+      harness.buildAuditorHistoricalEvidence(auditor), scope, options,
+    )).toThrow(/not active/u);
+  });
+
   it("keeps simulator helpers out of the production root", () => {
     expect(ClientRoot).not.toHaveProperty("TrustRegistrySimulatorClient");
     expect(TrustRegistrySimulatorClient).toBeDefined();

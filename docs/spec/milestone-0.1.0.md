@@ -67,6 +67,12 @@ for an exact audit profile, purpose, and disclosure limit. The verifier decides
 what it may disclose under the mandate, holder consent, and applicable policy;
 actual audit data exchange is off-registry. A verifier MUST NOT treat an audit
 grant as blanket access to presentations or personal information.
+The relying-party mandate check MUST bind the exact auditor DID and registry to
+the complete canonical audit request scope, verify active auditor evidence
+against an independently authenticated epoch, and return only mandate
+identifiers and commitments. A verifier grant, altered purpose or disclosure
+limit, and inactive auditor grant MUST fail. The result is permission to
+consider an audit request, never permission to release data.
 
 ## 4. Use Cases
 

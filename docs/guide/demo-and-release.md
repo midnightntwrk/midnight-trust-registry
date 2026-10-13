@@ -159,6 +159,11 @@ previously authorized request proof fails after suspension and revocation.
 Both roles reject stale descriptor replay and a fixture-signed attempt to
 reactivate a terminally revoked descriptor. These are local consumer checks,
 not a promise that a deployed consumer has received the latest registry event.
+The auditor path verifies an exact mandate from the public HTTP evidence bundle
+against the simulator-backed epoch context. A changed audit purpose fails, and
+the mandate is denied after suspension or revocation. The scrubbed report
+contains only mandate identifiers and commitments; it does not request or
+return verifier-held information.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
 and governance event hashes, not the VP transcript or holder secrets.
