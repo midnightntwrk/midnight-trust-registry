@@ -102,12 +102,14 @@ pnpm run demo:governed
 
 For issuer, verifier, auditor, and maintainer membership, it verifies published
 fixture VC/VP signatures against Midnight DID keys, consumes a separate one-use
-application challenge, and submits redacted evidence through the governed HTTP
-proposal route. Each proposal requires a registered evidence-verifier signature
+application challenge through the authenticated VP HTTP intake, and submits
+only its redacted signed evidence through the governed HTTP proposal route.
+Each proposal requires a registered evidence-verifier signature
 and external 2-of-3 maintainer votes. The signed fixture credential body carries
 the role-specific scope; a mismatched signed scope or altered body is rejected.
-Reusing a consumed challenge is rejected, and neither credential nor
-presentation body appears in the evidence response or scrubbed report.
+Unauthenticated intake, a validly signed wrong-scope credential, and reuse of a
+consumed challenge are rejected. Neither credential nor presentation body
+appears in the evidence response, persisted demo evidence, or scrubbed report.
 External-recognition proposal remains fixture-signed because third-party
 accreditation proof is not implemented. Each approval and activation then uses the
 governed HTTP prepare and submit endpoints with two independently produced
