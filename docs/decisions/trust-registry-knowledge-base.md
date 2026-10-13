@@ -558,3 +558,14 @@ verification result despite a successful signing command; it was replaced
 before publication, and both retained commits verify as good with DCO.
 Simulator ledger reads and action preparation do not establish production
 network finality, durable consumer deployment, or governed key custody.
+
+The signer reader now returns one `FinalizedVcAuthorityState` observation
+instead of a standalone key record. The gate compares the observed registry ID
+commitment and current policy commitment with the pinned registry and verified
+decision, and requires the current key's numeric policy version to equal the
+same observation's current numeric policy version. This closes the positive
+but stale-version path without treating a semantic policy label as a contract
+version. The simulator fixture supplies synchronous ledger state and negative
+tests for missing, substituted, and stale observations. A production adapter
+must still authenticate the exact contract and network finality; the typed
+observation alone is not proof.

@@ -383,10 +383,22 @@ describe("simulator-backed VC decision evidence composition", () => {
     expect(governedAuthorityKey.keyIdCommitment).toEqual(Uint8Array.from(authorityKeyIdCommitment));
     expect(governedAuthorityKey.status).toBe(VcAuthorityKeyStatus.active);
     expect(governedAuthorityKey.policyCommitment).toEqual(converted.descriptor.policyCommitment);
+    const currentAuthorityState = {
+      registryIdCommitment: harness.simulator.getLedger().registryId,
+      currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
+      currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
+      currentKey: governedAuthorityKey,
+    };
     const authorityKeyReader = {
-      readCurrentFinalizedVcAuthorityKey: async (domain: typeof authorityAnchor.domain) => {
+      readCurrentFinalizedVcAuthorityState: async (domain: typeof authorityAnchor.domain) => {
         expect(domain).toEqual(authorityAnchor.domain);
-        return harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress);
+        const ledger = harness.simulator.getLedger();
+        return {
+          registryIdCommitment: ledger.registryId,
+          currentPolicyCommitment: ledger.governancePolicyCommitment,
+          currentPolicyVersion: ledger.governancePolicyVersion,
+          currentKey: harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress),
+        };
       },
     };
     let authoritySignCount = 0;
@@ -422,6 +434,25 @@ describe("simulator-backed VC decision evidence composition", () => {
       decisionSequence: signed.descriptor.decisionSequence,
       authority: pinnedVcAuthority(authorityAnchor),
     };
+    for (const currentState of [
+      null,
+      { ...currentAuthorityState, registryIdCommitment: bytes32Commitment("other-registry") },
+      { ...currentAuthorityState, currentPolicyCommitment: bytes32Commitment("other-current-policy") },
+      { ...currentAuthorityState, currentPolicyVersion: currentAuthorityState.currentPolicyVersion + 1n },
+      { ...currentAuthorityState, currentPolicyVersion: 0n },
+    ]) {
+      const rejectedSigner = createQuorumGatedVcAuthoritySigner({
+        evidence,
+        selection: context.selection,
+        readers: authorityReaders,
+        method: binding,
+        pinnedAnchor: authorityAnchor,
+        authorityKeyIdCommitment,
+        authorityKeyReader: { readCurrentFinalizedVcAuthorityState: async () => currentState },
+        sign: async () => { throw new Error("Stale authority policy reached key custody"); },
+      });
+      await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
+    }
     for (const currentKey of [
       null,
       { ...governedAuthorityKey, status: VcAuthorityKeyStatus.suspended },
@@ -433,6 +464,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       { ...governedAuthorityKey, domainCommitment: bytes32Commitment("other-domain") },
       { ...governedAuthorityKey, policyCommitment: bytes32Commitment("other-policy") },
       { ...governedAuthorityKey, policyVersion: 0n },
+      { ...governedAuthorityKey, policyVersion: governedAuthorityKey.policyVersion + 1n },
       { ...governedAuthorityKey, publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(78)) },
       { ...governedAuthorityKey, registeredAtSequence: signed.descriptor.decisionSequence + 1n },
       { ...governedAuthorityKey, lastStatusSequence: signed.descriptor.decisionSequence + 1n },
@@ -444,7 +476,9 @@ describe("simulator-backed VC decision evidence composition", () => {
         method: binding,
         pinnedAnchor: authorityAnchor,
         authorityKeyIdCommitment,
-        authorityKeyReader: { readCurrentFinalizedVcAuthorityKey: async () => currentKey },
+        authorityKeyReader: {
+          readCurrentFinalizedVcAuthorityState: async () => ({ ...currentAuthorityState, currentKey }),
+        },
         sign: async () => { throw new Error("Invalid authority reached key custody"); },
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
@@ -1010,7 +1044,12 @@ describe("simulator-backed VC decision evidence composition", () => {
       pinnedAnchor: authorityAnchor,
       authorityKeyIdCommitment,
       authorityKeyReader: {
-        readCurrentFinalizedVcAuthorityKey: async () => harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment),
+        readCurrentFinalizedVcAuthorityState: async () => ({
+          registryIdCommitment: harness.simulator.getLedger().registryId,
+          currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
+          currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
+          currentKey: harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment),
+        }),
       },
       sign: async () => { throw new Error("Suspended authority reached key custody"); },
     });

@@ -113,10 +113,13 @@ Current coverage:
   method state, then requires an independent finalized current VC authority-key
   read before invoking key custody. The key ID, authority DID/method, network,
   consumer, domain, public key, policy commitment, and effective sequence must
-  match the configured anchor and descriptor. A suspended or substituted key,
+  match the configured anchor and descriptor. The read returns one finalized
+  snapshot containing registry ID, current policy commitment and numeric
+  version, and current key; a key enrolled under an older policy version is
+  refused. A suspended or substituted key,
   stale grant, or substituted root never reaches the signing callback. The
-  reader must authenticate the exact registry contract, finality, and numeric
-  current governance-policy version; the descriptor's semantic policy label
+  reader must authenticate the exact registry contract and finality; the
+  descriptor's semantic policy label
   is not that numeric version. Fixture readers do not establish network
   finality or production key custody.
 - `prepareVcAuthorityKeyRegistration` validates the canonical Midnight DID,

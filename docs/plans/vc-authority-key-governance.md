@@ -49,8 +49,10 @@ checks the actual contract address through `kernel.self().bytes`; updates are
 explicit, not inferred from a network lookup.
 The reference signer wrapper enforces these field comparisons through
 injected readers and the published DID 0.7.0 JubJub JWK codec. A production
-reader still has to authenticate registry and DID finality, current-key
-membership, and numeric governance-policy version; a
+reader still has to authenticate registry and DID finality and current-key
+membership. Its VC authority read must be one ledger snapshot containing the
+committed registry ID, current governance-policy commitment and numeric
+version, and current key; the signer rejects stale-version keys. A
 fixture returning a typed record is not finality proof.
 
 ## Delivery order
