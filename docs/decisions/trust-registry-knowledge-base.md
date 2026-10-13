@@ -434,3 +434,19 @@ Self-review caught an issuer-only relationship check that would have allowed
 verifier authentication/capabilityInvocation substitution; the bridge now
 requires the exact independently observed relationship. Reserve the full
 59-circuit proving build for a prepublication checkpoint.
+
+The local #73 proof slice now uses the published VC Compact
+`signerAuthorizationDecisionRoot`, `signerAuthorizationProofChallenge`, and
+`assertValidSignerAuthorizationProof` rather than a copied transcript. An
+injected authority signer port receives the checked decision root and logical
+sequence; the local fixture uses published DID JubJub primitives to sign.
+The domain hash has a fixed vector and versioned, six-field, length-prefixed
+UTF-8 preimage, avoiding JSON serialization ambiguity across consumers.
+Consumer verification takes an independently pinned domain/key and requires
+either an authenticated previous descriptor or explicit first-install `null`;
+negative tests cover domain, key, scope, proof time, stale sequence, DID
+rollback, and revoked-to-active replay. This does not establish a governed
+authority-key lifecycle, production finality, durable consumer state, or a
+Ledger 8 consumer circuit. Retrospective: the focused proof test took about
+two seconds and the fast integration lane about 25 seconds; the full proving
+build is reserved for prepublication validation of the accumulated stack.

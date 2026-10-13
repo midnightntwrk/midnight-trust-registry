@@ -60,8 +60,9 @@ Current coverage:
   a DID Document resolved by the published Midnight DID package. It rejects a
   removed issuer assertion relationship and a later suspended grant. The
   transaction and block references are explicit simulator placeholders, not
-  independently accepted network anchors, so the test does not issue a VC
-  signer descriptor or establish production finality.
+  independently accepted network anchors. The same test now creates a VC
+  descriptor from trusted-reader results and signs a domain-bound authority
+  proof with a fixture key; neither step establishes production finality.
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
 - VC-backed issuer-descriptor construction using the published
@@ -72,6 +73,25 @@ Current coverage:
   metadata outside the signed authorization leaf and must not be treated as
   authenticated status-policy evidence. Policy-to-VC scope mapping, anchored
   status policy, and live revocation checks remain separate work.
+- `issueVcSignerAuthorizationFromTrustedDecision` re-reads current finalized
+  registry and DID state through caller-supplied trusted readers, maps their
+  verified decision to the VC descriptor, requests a proof from an injected
+  authority signer, then validates it with VC's native
+  `assertValidSignerAuthorizationProof`. The signer port must independently
+  authorize the request; this layer never handles the authority secret.
+  The authority domain is SHA-256 over the ASCII prefix
+  `tr:vc-authority-domain:v1` plus one zero byte, followed by six fields in
+  this order: `networkId`, `consumerContractAddress`, `registryId`,
+  `registryContractAddress`, `authorityDid`, `authorityMethodId`. Each field
+  is a four-byte big-endian UTF-8 byte length followed by its UTF-8 bytes. Contract
+  addresses are lowercase `0x`-prefixed 32-byte hex, and the authority method
+  is an absolute Midnight DID fragment. The consumer recomputes this domain
+  and pins the authority key locally; it must provide an authenticated prior
+  descriptor or explicit `null` on first install. The local test rejects
+  wrong domain, key, method, scope, sequence, DID rollback, and revoked-to-active
+  replay. The TR-to-VC scope mapping is an explicit trusted input, not yet a
+  governed schema/request mapping. There is no production finalized reader,
+  authority signer service, durable consumer state, or Ledger 8 circuit fixture.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

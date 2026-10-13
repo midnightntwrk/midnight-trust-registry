@@ -244,6 +244,9 @@ not the older transcript-digest draft.
       service's refusal to sign a decision without a committed quorum.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
+      A simulator fixture now exercises this exact VC proof circuit through
+      an injected signer port; governed production key custody and issuance
+      remain open.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
