@@ -144,6 +144,15 @@ must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
+An embedding host may also provide a ledger-backed `resolve` method for
+`POST /v1/governed/issuer/:id/proposal/resolve` with the same accepted
+`{ "evidence": ... }`. The API returns `observed` with the proposal event
+hash only when the ledger record's evidence commitment matches the admitted
+application. `not-observed` is not proof that a submitted transaction failed;
+clients must not automatically submit it again. The route returns 503 when
+the host has no resolution port. This read-only recovery path does not make
+the private admission file and ledger transactional or establish network
+finality.
 Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
 injected `governedVerifierProposals`, `governedAuditorProposals`, and

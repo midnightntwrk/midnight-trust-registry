@@ -147,6 +147,14 @@ const server = createTrustRegistryApiServer({
         throw new GovernedIssuerProposalRejectedError("invalid-signers");
       }
     },
+    async resolve(id) {
+      if (id !== issuer.authorizationId) throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+      const record = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
+      return {
+        eventHash: asHex(record.proposalGovernanceEventHash),
+        evidenceCommitment: asHex(record.evidenceCommitment),
+      };
+    },
   },
   governedMembershipActions: {
     async prepare(role, id, action) {
@@ -326,7 +334,18 @@ try {
     signers: [signAction(maintainers[0], preparedProposal), signAction(maintainers[0], preparedProposal)],
   })).status, 403);
   assert.equal(harness.simulator.getLedger().governanceActionCount, beforeProposal);
-  const proposal = await expectHttp(await post(`${proposalPath}/submit`, proposalBody), 202);
+  // Discard the response body to exercise recovery after a client loses its submit receipt.
+  assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 202);
+  withholdAcceptedReceipt = true;
+  assert.equal((await post(`${proposalPath}/resolve`, { evidence: submitted.evidence })).status, 403);
+  withholdAcceptedReceipt = false;
+  const proposal = await expectHttp(await post(`${proposalPath}/resolve`, {
+    evidence: submitted.evidence,
+  }), 200);
+  assert.equal(proposal.state, "observed");
+  assert.equal(proposal.eventHash, asHex(harness.simulator.getIssuerProposalEvidence(
+    issuer.authorizationIdCommitment,
+  ).proposalGovernanceEventHash));
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 409);
 
   for (const action of ["approve", "activate"]) {
@@ -367,7 +386,7 @@ try {
     expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",
-      "duplicate-maintainer:403", "proposal-replay:409"],
+      "duplicate-maintainer:403", "proposal-replay:409", "lost-response-recovered:200"],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

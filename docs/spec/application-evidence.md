@@ -224,9 +224,14 @@ snapshots from one Compact simulator, then carries one accepted VP through
 2-of-3 maintainer proposal, decisions, epoch publication, and public evidence
 lookup. Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
-the two files and Compact ledger have no shared transaction or recovery
-protocol. That deterministic fixture does not provide end-to-end atomicity or
-network finality.
+the two files and Compact ledger have no shared transaction. An optional
+issuer proposal resolution port can recover a lost HTTP submit receipt by
+reading the Compact proposal event and matching its evidence commitment to
+the admitted application. A `not-observed` response is ambiguous, not a
+failed-transaction proof, and MUST NOT trigger automatic resubmission.
+The local simulator observes committed actions immediately; this is not a
+production finality or cross-store recovery protocol. Verifier, auditor, and
+maintainer proposal resolution remains future work.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live

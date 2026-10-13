@@ -47,6 +47,7 @@ import {
 } from "./governed-membership-actions.js";
 import {
   decodeIssuerEvidenceVerifierSignature,
+  GovernedIssuerProposalObservationSchema,
   GovernedIssuerProposalPrepareRequestSchema,
   GovernedIssuerProposalRejectedError,
   GovernedIssuerProposalSubmitRequestSchema,
@@ -777,7 +778,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "governed"
         && segments[2] === "issuer"
         && segments[4] === "proposal"
-        && (segments[5] === "prepare" || segments[5] === "submit")
+        && (segments[5] === "prepare" || segments[5] === "submit" || segments[5] === "resolve")
       ) {
         const port = options.governedIssuerProposals;
         if (port === undefined) {
@@ -786,6 +787,32 @@ export const createTrustRegistryApiServer = (
         }
         const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
+        if (segments[5] === "resolve") {
+          const body = await parseJsonBody(request,
+            (value) => GovernedIssuerProposalPrepareRequestSchema.parse(value), problemBaseUri);
+          await requireProposalAdmission("issuer", authorizationId, body.evidence);
+          if (port.resolve === undefined) {
+            throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+              "governed proposal resolution unavailable");
+          }
+          let observed;
+          try {
+            observed = await port.resolve(authorizationId);
+          } catch (error) {
+            return mapGovernedIssuerProposalError(error, problemBaseUri);
+          }
+          if (observed === null) {
+            writeJson(response, 200, { state: "not-observed" });
+            return;
+          }
+          const record = GovernedIssuerProposalObservationSchema.parse(observed);
+          if (record.evidenceCommitment !== body.evidence.commitment) {
+            throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
+              "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
+          }
+          writeJson(response, 200, { state: "observed", eventHash: record.eventHash });
+          return;
+        }
         if (segments[5] === "prepare") {
           const body = await parseJsonBody(request,
             (value) => GovernedIssuerProposalPrepareRequestSchema.parse(value), problemBaseUri);

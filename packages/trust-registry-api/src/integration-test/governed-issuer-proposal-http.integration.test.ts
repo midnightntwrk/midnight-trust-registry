@@ -78,6 +78,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       scope: createIssuerAuthorizationScopeFixture(issuer),
       governedResource: { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId },
     });
+    let observed: { eventHash: string; evidenceCommitment: string } | null = null;
     const port: GovernedIssuerProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== issuer.authorizationId) {
@@ -99,7 +100,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         } catch {
           throw new GovernedIssuerProposalRejectedError("invalid-signers");
         }
-        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+        observed = {
+          eventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
+          evidenceCommitment: submitted.commitment,
+        };
+        return { eventHash: observed.eventHash };
+      },
+      async resolve(authorizationId) {
+        if (authorizationId !== issuer.authorizationId) {
+          throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+        }
+        return observed;
       },
     };
     const server = createTrustRegistryApiServer({
@@ -112,9 +123,14 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const endpoint = `http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
-      const post = (action: "prepare" | "submit", body: unknown) => fetch(`${endpoint}/${action}`, {
+      const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
+      const notObserved = await post("resolve", { evidence });
+      expect(notObserved.status).toBe(200);
+      expect(notObserved.headers.get("cache-control")).toBe("no-store");
+      expect(await notObserved.json()).toEqual({ state: "not-observed" });
+      expect((await post("resolve", { evidence: { ...evidence, rawPresentation: "private" } })).status).toBe(400);
       expect((await post("prepare", {
         evidence: { ...evidence, rawPresentation: "private-presentation-payload" },
       })).status).toBe(400);
@@ -156,9 +172,18 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         [first, other])).status).toBe(409);
       const accepted = await submit(prepared, [first, other]);
       expect(accepted.status).toBe(202);
-      expect((await accepted.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      const receipt = await accepted.json() as { eventHash: string };
+      expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
       expect((await submit(prepared, [first, other])).status).toBe(409);
+      const recovered = await post("resolve", { evidence });
+      expect(recovered.status).toBe(200);
+      expect(await recovered.json()).toEqual({ state: "observed", eventHash: receipt.eventHash });
+      expect((await post("resolve", {
+        evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
+      })).status).toBe(409);
+      delete port.resolve;
+      expect((await post("resolve", { evidence })).status).toBe(503);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

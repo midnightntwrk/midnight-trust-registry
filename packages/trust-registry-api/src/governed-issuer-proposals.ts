@@ -43,6 +43,11 @@ export const GovernedIssuerProposalSubmitRequestSchema = z.strictObject({
   evidenceVerifierSignature: z.string().regex(/^0x[0-9a-f]+$/u),
 });
 
+export const GovernedIssuerProposalObservationSchema = z.strictObject({
+  eventHash: Bytes32Schema,
+  evidenceCommitment: Bytes32Schema,
+});
+
 export type PreparedGovernedIssuerProposal = z.infer<typeof PreparedGovernedIssuerProposalSchema>;
 export type GovernedIssuerProposalContext = {
   registryId: Uint8Array;
@@ -57,6 +62,7 @@ export type GovernedIssuerProposalContext = {
   evidenceVerifierAuthorizationId: Uint8Array;
   evidenceVerifierKeyIdCommitment: Uint8Array;
 };
+export type GovernedIssuerProposalObservation = z.infer<typeof GovernedIssuerProposalObservationSchema>;
 
 export type GovernedIssuerProposalPort = {
   /** Verify the signed application evidence against the active policy and current Compact context. */
@@ -68,6 +74,8 @@ export type GovernedIssuerProposalPort = {
     signers: readonly GovernedMembershipSigner[],
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
   ): Promise<GovernedMembershipActionReceipt>;
+  /** Return only finalized, ledger-observed proposal evidence; null is not proof that submission failed. */
+  resolve?(authorizationId: string): Promise<GovernedIssuerProposalObservation | null>;
 };
 
 export class GovernedIssuerProposalRejectedError extends Error {
