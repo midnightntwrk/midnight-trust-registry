@@ -123,6 +123,29 @@ export struct EvidenceVerifierKeyRecord {
   lifecycleEventHash: Bytes<32>,
 }
 
+export enum VcAuthorityKeyStatus {
+  active,
+  suspended,
+  revoked,
+  retired
+}
+
+export struct VcAuthorityKeyRecord {
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  domainCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>,
+  status: VcAuthorityKeyStatus,
+  registeredAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  lifecycleEventHash: Bytes<32>,
+}
+
 export struct AuditorAuthorizationRecord {
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
@@ -311,6 +334,9 @@ export ledger evidenceVerifierKeyAuthorizationIds: Set<Bytes<32>>;
 export ledger evidenceVerifierKeyRecords: Map<Bytes<32>, EvidenceVerifierKeyRecord>;
 export ledger currentEvidenceVerifierKeyIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 export ledger evidenceVerifierKeyIdsByKeyIdCommitment: Map<Bytes<32>, Bytes<32>>;
+export ledger vcAuthorityKeyIds: Set<Bytes<32>>;
+export ledger vcAuthorityKeyRecords: Map<Bytes<32>, VcAuthorityKeyRecord>;
+export ledger currentVcAuthorityKeyIdsByConsumer: Map<Bytes<32>, Bytes<32>>;
 export ledger auditorAuthorizationCount: Counter;
 export ledger activeAuditorAuthorizationCount: Uint<64>;
 export ledger auditorAuthorizationIds: Set<Bytes<32>>;
@@ -1351,6 +1377,55 @@ export pure circuit createVcAuthorityDomainCommitment(
     registryContractAddress,
     authorityDidCommitment,
     authorityMethodIdCommitment
+  ]);
+}
+
+export pure circuit createVcAuthorityKeyPayloadHash(
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  domainCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  assert(keyIdCommitment != pad(32, ""), "VC authority key id must be set");
+  assert(authorityDidCommitment != pad(32, ""), "VC authority DID must be set");
+  assert(authorityMethodIdCommitment != pad(32, ""), "VC authority method id must be set");
+  assert(networkIdCommitment != pad(32, ""), "VC authority network must be set");
+  assert(consumerContractAddress != pad(32, ""), "VC authority consumer must be set");
+  assert(domainCommitment != pad(32, ""), "VC authority domain must be set");
+  assert(policyCommitment != pad(32, ""), "VC authority policy must be set");
+  assert(policyVersion > 0, "VC authority policy version must be positive");
+  return persistentHash<Vector<10, Bytes<32>>>([
+    pad(32, "tr:vc-authority:key:create:v1"),
+    keyIdCommitment,
+    authorityDidCommitment,
+    authorityMethodIdCommitment,
+    maintainerPublicKeyCommitment(publicKey),
+    networkIdCommitment,
+    consumerContractAddress,
+    domainCommitment,
+    policyCommitment,
+    ((policyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit updateVcAuthorityKeyPayloadHash(
+  keyIdCommitment: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(keyIdCommitment != pad(32, ""), "VC authority key id must be set");
+  assert(previousLifecycleEventHash != pad(32, ""), "Previous VC authority event must be set");
+  assert(reasonHash != pad(32, ""), "VC authority reason must be set");
+  return persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "tr:vc-authority:key:update:v1"),
+    keyIdCommitment,
+    previousLifecycleEventHash,
+    reasonHash
   ]);
 }
 
@@ -3477,6 +3552,196 @@ export circuit assertIssuerAuthorized(
     currentRecord.status == AuthorizationStatus.active,
     "Issuer authorization is not active"
   );
+}
+
+export circuit registerVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  const disclosedDid = disclose(authorityDidCommitment);
+  const disclosedMethod = disclose(authorityMethodIdCommitment);
+  const disclosedKey = disclose(publicKey);
+  const disclosedNetwork = disclose(networkIdCommitment);
+  const disclosedConsumer = disclose(consumerContractAddress);
+  const disclosedPolicy = disclose(policyCommitment);
+  const disclosedPolicyVersion = disclose(policyVersion);
+  assertPrimeOrderMaintainerKey(disclosedKey);
+  assert(
+    disclosedPolicy == governancePolicyCommitment
+      && disclosedPolicyVersion == governancePolicyVersion,
+    "VC authority key policy must be current"
+  );
+  assert(!vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key id already exists");
+  if (currentVcAuthorityKeyIdsByConsumer.member(disclosedConsumer)) {
+    const previous = vcAuthorityKeyRecords.lookup(
+      currentVcAuthorityKeyIdsByConsumer.lookup(disclosedConsumer)
+    );
+    assert(
+      previous.status == VcAuthorityKeyStatus.revoked
+        || previous.status == VcAuthorityKeyStatus.retired,
+      "VC authority consumer already has a live key"
+    );
+  }
+  const domainCommitment = disclose(createVcAuthorityDomainCommitment(
+    disclosedNetwork,
+    disclosedConsumer,
+    registryId,
+    kernel.self().bytes,
+    disclosedDid,
+    disclosedMethod
+  ));
+  const actionPayloadHash = disclose(createVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    disclosedDid,
+    disclosedMethod,
+    disclosedKey,
+    disclosedNetwork,
+    disclosedConsumer,
+    domainCommitment,
+    disclosedPolicy,
+    disclosedPolicyVersion
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:register"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, disclosedDid);
+  vcAuthorityKeyIds.insert(disclosedKeyId);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: disclosedKeyId,
+    authorityDidCommitment: disclosedDid,
+    authorityMethodIdCommitment: disclosedMethod,
+    publicKey: disclosedKey,
+    networkIdCommitment: disclosedNetwork,
+    consumerContractAddress: disclosedConsumer,
+    domainCommitment: domainCommitment,
+    policyCommitment: disclosedPolicy,
+    policyVersion: disclosedPolicyVersion,
+    status: VcAuthorityKeyStatus.active,
+    registeredAtSequence: authorizedAction.actionSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  currentVcAuthorityKeyIdsByConsumer.insert(disclosedConsumer, disclosedKeyId);
+  return authorizedAction.eventHash;
+}
+
+export circuit getVcAuthorityKey(keyIdCommitment: Bytes<32>): VcAuthorityKeyRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  return vcAuthorityKeyRecords.lookup(disclosedKeyId);
+}
+
+export circuit suspendVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  const current = vcAuthorityKeyRecords.lookup(disclosedKeyId);
+  assert(current.status == VcAuthorityKeyStatus.active, "VC authority key must be active to suspend");
+  const payloadHash = disclose(updateVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    current.lifecycleEventHash,
+    disclose(reasonHash)
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:suspend"),
+    payloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, current.authorityDidCommitment);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: current.keyIdCommitment,
+    authorityDidCommitment: current.authorityDidCommitment,
+    authorityMethodIdCommitment: current.authorityMethodIdCommitment,
+    publicKey: current.publicKey,
+    networkIdCommitment: current.networkIdCommitment,
+    consumerContractAddress: current.consumerContractAddress,
+    domainCommitment: current.domainCommitment,
+    policyCommitment: current.policyCommitment,
+    policyVersion: current.policyVersion,
+    status: VcAuthorityKeyStatus.suspended,
+    registeredAtSequence: current.registeredAtSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  const current = vcAuthorityKeyRecords.lookup(disclosedKeyId);
+  assert(
+    current.status == VcAuthorityKeyStatus.active
+      || current.status == VcAuthorityKeyStatus.suspended,
+    "VC authority key must be active or suspended to revoke"
+  );
+  const payloadHash = disclose(updateVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    current.lifecycleEventHash,
+    disclose(reasonHash)
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:revoke"),
+    payloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, current.authorityDidCommitment);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: current.keyIdCommitment,
+    authorityDidCommitment: current.authorityDidCommitment,
+    authorityMethodIdCommitment: current.authorityMethodIdCommitment,
+    publicKey: current.publicKey,
+    networkIdCommitment: current.networkIdCommitment,
+    consumerContractAddress: current.consumerContractAddress,
+    domainCommitment: current.domainCommitment,
+    policyCommitment: current.policyCommitment,
+    policyVersion: current.policyVersion,
+    status: VcAuthorityKeyStatus.revoked,
+    registeredAtSequence: current.registeredAtSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  return authorizedAction.eventHash;
+}
+
+export circuit getCurrentVcAuthorityKey(consumerContractAddress: Bytes<32>): VcAuthorityKeyRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedConsumer = disclose(consumerContractAddress);
+  assert(
+    currentVcAuthorityKeyIdsByConsumer.member(disclosedConsumer),
+    "VC authority consumer has no current key"
+  );
+  const record = vcAuthorityKeyRecords.lookup(
+    currentVcAuthorityKeyIdsByConsumer.lookup(disclosedConsumer)
+  );
+  assert(record.status == VcAuthorityKeyStatus.active, "VC authority key is not active");
+  assert(
+    record.policyCommitment == governancePolicyCommitment
+      && record.policyVersion == governancePolicyVersion,
+    "VC authority key policy is not current"
+  );
+  return record;
 }
 
 export circuit registerEvidenceVerifierKey(

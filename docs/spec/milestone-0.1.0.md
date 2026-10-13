@@ -224,6 +224,20 @@ rules. The signing service MUST only sign a decision already committed under
 the required maintainer quorum; its single key is a portable attestation of
 that decision, not a replacement for quorum evidence.
 
+The registry MUST record the VC authority key as a distinct role from an
+evidence-verifier key. Its registration action commits the key ID, canonical
+authority DID and absolute method commitments, prime-order JubJub public key,
+network commitment, raw consumer address, recomputed domain commitment, and
+current governance policy/version. The ledger `registryId` used by this
+domain is the SHA-256 commitment of the canonical registry ID string. A
+policy-bound maintainer quorum MUST approve registration, suspension,
+revocation, and rotation; the candidate authority DID cannot authorize its
+own key enrollment. Suspension stops current-key reads immediately without
+erasing the record. Revocation is terminal for that key ID; a successor
+requires a new governed registration and a consumer-pinned anchor update.
+Logical action sequences, not wall-clock time, order key events. Registration
+of a new key MUST NOT imply that an already deployed consumer accepts it.
+
 The consumer MUST use the VC core's composed
 `VC<>::assertAuthorizedIssuerProof` when claiming an issuer-authorized
 credential decision. The lower-level `assertAuthorizedIssuerDescriptor`
