@@ -21,6 +21,8 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
+- `GET /v1/governed/issuers/:authorizationId/actions/:action` (Compact signer context; optional port)
+- `POST /v1/governed/issuers/:authorizationId/actions/:action` (external signatures; optional port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -102,6 +104,24 @@ injects a ledger-backed DID resolver fixture and exercises the signed route.
 This API is a local reference gateway, not a claim that its fixture replay
 passes external maintainer signatures into a live Compact contract.
 
+The separate governed-issuer route accepts `approve` and `activate` only when
+the server is constructed with `governedIssuerActions`. Without the port it
+returns 503 and never falls back to workspace replay. `GET` returns the
+current registry, authorization, policy, action, sequence, predecessor event,
+and evidence commitments for off-server signing. `POST` accepts
+`{ "prepared": <exact GET response>, "signers": [{ "keyId": "0x...",
+"publicKey": { "x": "...", "y": "..." }, "signature": "0x..." }] }`.
+Each signature must be canonical JubJub Schnorr over the policy-bound action
+digest. The injected port must submit the supplied signatures to Compact,
+which rechecks current state, active maintainer membership, and quorum;
+the API does not sign for maintainers. A stale context returns 409, invalid
+signer bundle 403, malformed signature 400, and accepted transition 202 with
+the Compact event hash. A 202 is not network finality; a network-backed port
+and asynchronous query projection remain future work. The packaged CLI does
+not configure this optional port. The reference integration test injects the
+local simulator and projects that *same* simulator into the read API after
+each transition.
+
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
 `--unsafe-demo-mutations`; never expose that mode on a public listener.
@@ -163,6 +183,12 @@ pnpm --filter @midnight-ntwrk/trust-registry-integration build
 pnpm --filter @midnight-ntwrk/trust-registry-cli build
 pnpm --filter @midnight-ntwrk/trust-registry-api exec vitest run src/integration-test/published-vp-simulator-proposal.integration.test.ts --testTimeout 120000
 ```
+
+The governed-action HTTP integration test covers externally signed 2-of-3
+approval and activation, stale and malformed requests, and independently
+verified active-issuer lookup on one simulator. It is a separate reference
+journey; the VP intake above is not yet exposed as an authenticated HTTP
+endpoint or connected to this route in a deployable server.
 
 Example applicant submission:
 
