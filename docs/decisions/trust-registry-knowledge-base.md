@@ -424,9 +424,9 @@ The local #73 candidate bridge now calls the trusted current-registry and DID
 readers before constructing a VC `AuthorizedSignerDescriptor`. It carries the
 observed decision sequence, active state, policy root, authorization ID, and
 exact native DID method/key/relationship/state version into the published VC
-adapter. It requires an explicitly approved TR-to-VC scope mapping and rejects
-TR scope substitution; it does not yet prove that the selected VC `SchemaRef`
-or signed request is the correct mapping, issue an authority proof, or provide
+adapter. At this checkpoint it required a caller-supplied TR-to-VC scope
+mapping and rejected TR scope substitution; that unsafe mapping input is
+superseded by the corrective slice below. It did not yet issue an authority proof or provide
 a pinned Ledger 8 consumer. The old bundle-only VC test remains a candidate
 example, not an authority test. Focused typecheck/test took about 1–2 seconds,
 fast integration about 25 seconds, and `./run.sh --light` about 50 seconds.
@@ -464,3 +464,29 @@ and resolved DID state exercises the signed-request circuit and rejects a wrong
 request scope. This is a local compiled/simulator fixture, not a production
 deployed consumer; governed scope mapping,
 finality, key lifecycle, and durable state remain open.
+
+The independent PR #183 review found that a caller-selected nonzero VC scope
+could be signed for an unrelated verified registry grant. The local corrective
+slice removes that input: issuer VC `SchemaRef` is derived from the exact
+registry family/schema identifiers and representable `major.minor.0` version;
+verifier signed-request scope is the canonical full registry request-scope
+commitment. The bridge rejects nonrepresentable issuer versions instead of
+dropping a patch version or overflowing a VC `Uint<16>`. Tests cover changed
+family, schema, version, and verifier predicate. Governed external VC schema
+enrollment and signed-request payload construction remain follow-on work.
+The same review found that maintainer bootstrap/proposal checked nonidentity
+but not prime-order JubJub keys; the corrective contract check rejects a
+nonidentity order-two key before membership or quorum activation. A separate
+consumer-address replay question remains under review because the local
+Compact consumer pins a supplied authority domain but cannot be claimed to
+authenticate the executing deployment address without a verified runtime
+address source.
+
+Iteration timing: focused VC scope and decision tests took about three
+seconds; fast integration including four demos took about 25 seconds; a broad
+light run took about 50 seconds without contention. The exact-head full lane
+started a second 59-circuit `zkir compile-many` after a broad light lane,
+indicating the current Turbo/output sequence invalidates the proving cache.
+Do not overlap broad light and full proving runs on one laptop, and do not
+repeat full proving for a TypeScript-only edit. Reserve it for the final
+contract-bearing batch after focused and light gates.

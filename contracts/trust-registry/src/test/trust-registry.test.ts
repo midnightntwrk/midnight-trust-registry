@@ -850,6 +850,21 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/signer point must not be identity/i);
 
+    const lowOrderKey = {
+      x: 0n,
+      y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+    };
+    expect(() => simulator.initializeRegistry(
+      labelToBytes32("registry:kanon"),
+      labelToBytes32("did:midnight:registry"),
+      labelToBytes32("policy:kanon:v1"),
+      bootstrapMaintainer.maintainerId,
+      bootstrapMaintainer.didCommitment,
+      bootstrapMaintainer.keyId,
+      lowOrderKey,
+      1n,
+    )).toThrow();
+
     expect(() => pureCircuits.createMaintainerMembershipPayloadHash(
       bootstrapMaintainer.maintainerId,
       bootstrapMaintainer.didCommitment,
@@ -1152,6 +1167,29 @@ describe("trust registry contract", () => {
     expect(evidence.proposalGovernanceEventHash).toEqual(eventHash);
     expect(() => propose(proof.verifierKeyIdCommitment, proof.evidenceSignature))
       .toThrow(/already exists/i);
+  });
+
+  it("rejects a nonidentity low-order maintainer key before it can join quorum", () => {
+    const registry = createInitializedRegistryFixture(164);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const candidate = createMaintainerMembershipFixture("low-order-candidate", 165);
+    candidate.publicKey = {
+      x: 0n,
+      y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+    };
+    const proof = maintainerProposalProof(registry, candidate);
+    const signature = signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
+    );
+    expect(() => simulator.proposeMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+      candidate.maintainerId, candidate.maintainerDidCommitment,
+      candidate.keyId, candidate.publicKey, candidate.policyId,
+      candidate.trustLevel, candidate.evidenceHash,
+      proof.verifierAuthorizationId, proof.verifierKeyIdCommitment, proof.evidenceSignature,
+    )).toThrow();
+    expect(() => simulator.getMaintainerMembership(candidate.maintainerId)).toThrow();
   });
 
   it("rejects maintainer approval after its proposal evidence policy is superseded", () => {
