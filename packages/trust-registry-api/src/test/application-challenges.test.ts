@@ -337,7 +337,15 @@ describe("application challenge lifecycle", () => {
     const issued = await service.issue(binding);
     const envelope = {
       version: "tr-application-evidence-v1" as const,
-      ...binding,
+      registryId: binding.registryId,
+      applicationId: binding.applicationId,
+      subjectDid: binding.subjectDid,
+      role: binding.role,
+      policyId: binding.policyId,
+      policyVersion: binding.policyVersion,
+      scopeCommitment: binding.scopeCommitment,
+      governedResource: binding.governedResource,
+      evidenceVerifierDid: binding.evidenceVerifierDid,
       verifiedAt: "2026-10-06T00:00:00Z",
       expiresAt: "2026-10-07T00:00:00Z",
       challengeHash: issued.challengeHash,
@@ -385,7 +393,15 @@ describe("application challenge lifecycle", () => {
 
     const envelope = {
       version: "tr-application-evidence-v1" as const,
-      ...webBinding,
+      registryId: webBinding.registryId,
+      applicationId: webBinding.applicationId,
+      subjectDid: webBinding.subjectDid,
+      role: webBinding.role,
+      policyId: webBinding.policyId,
+      policyVersion: webBinding.policyVersion,
+      scopeCommitment: webBinding.scopeCommitment,
+      governedResource: webBinding.governedResource,
+      evidenceVerifierDid: webBinding.evidenceVerifierDid,
       challengeHash: envelopeHash,
       verifiedAt: "2026-10-06T00:00:00Z",
       expiresAt: "2026-10-07T00:00:00Z",
