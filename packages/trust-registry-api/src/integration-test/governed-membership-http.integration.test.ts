@@ -15,6 +15,7 @@ import {
   createIssuerScenarioFixture,
   createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
+  createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   type MaintainerScenarioFixture,
@@ -369,6 +370,97 @@ describe("Compact-backed membership governance over HTTP", () => {
       }
       expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
         .toBe(AuthorizationStatus.active);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("governs external recognition without granting local membership", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("governed-recognition-http");
+    const second = createMaintainerScenarioFixture("governed-recognition-second");
+    const third = createMaintainerScenarioFixture("governed-recognition-third");
+    const recognition = createRecognitionScenarioFixture("governed-recognition-authority");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    harness.proposeRecognition(recognition);
+
+    const fixtures = { label: "governed-recognition-http", recognitions: [{ label: "authority", fixture: recognition }] };
+    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    const port: GovernedMembershipActionPort = {
+      async prepare(role, authorizationId, action) {
+        if (role !== "recognition" || authorizationId !== recognition.recognitionId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
+        if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
+        return {
+          ...prepared,
+          authorizationId: prepared.recognitionId,
+          previousLifecycleEventHash: prepared.previousLifecycleEventHash,
+        };
+      },
+      async execute(role, authorizationId, action, signers) {
+        if (role !== "recognition" || authorizationId !== recognition.recognitionId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        let eventHash: Uint8Array;
+        try {
+          eventHash = harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
+        } catch {
+          throw new GovernedMembershipActionRejectedError("invalid-signers");
+        }
+        snapshot = publishSimulatorSnapshot(harness, fixtures);
+        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => snapshot },
+      governedMembershipActions: port,
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const endpoint = (action: "approve" | "activate") =>
+        `${base}/v1/governed/recognition/${recognition.recognitionId}/actions/${action}`;
+      const post = (action: "approve" | "activate", prepared: PreparedGovernedMembershipAction,
+        signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint(action), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prepared, signers }),
+      });
+
+      expect((await fetch(`${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`)).status)
+        .toBe(404);
+      for (const action of ["approve", "activate"] as const) {
+        const response = await fetch(endpoint(action));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        const prepared = await response.json() as PreparedGovernedMembershipAction;
+        expect(prepared.authorizationId).toBe(`0x${Buffer.from(recognition.recognitionIdCommitment).toString("hex")}`);
+        const before = harness.simulator.getLedger().governanceActionCount;
+        expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
+        expect((await post(action, { ...prepared, policyCommitment: `0x${"00".repeat(32)}` }, [
+          signPrepared(second, prepared), signPrepared(third, prepared),
+        ])).status).toBe(409);
+        expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+        expect((await post(action, prepared, [
+          signPrepared(second, prepared), signPrepared(third, prepared),
+        ])).status).toBe(202);
+        expect((await post(action, prepared, [
+          signPrepared(second, prepared), signPrepared(third, prepared),
+        ])).status).toBe(409);
+      }
+      const evidenceResponse = await fetch(`${base}/v1/recognitions/${recognition.recognitionId}/evidence`);
+      expect(evidenceResponse.status).toBe(200);
+      const bundle = await evidenceResponse.json();
+      expect(bundle.recognition.status).toBe("active");
+      expect(bundle.recognition.recognizedRegistryId).toBe(recognition.recognizedRegistryId);
+      expect(bundle.authorization).toBeUndefined();
+      expect(() => new TrustRegistrySimulatorClient(harness.simulator)
+        .verifyRecognitionBundle(bundle, {})).not.toThrow();
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
