@@ -167,7 +167,8 @@ describe("published VP proof for non-issuer application roles", () => {
         evidence,
         eventHash: harness.executeMaintainerProposalWithSignatures(
           applicant.fixture, evidence,
-          [signPrepared(second, prepared), signPrepared(third, prepared)], expectedEvidence,
+          [signPrepared(second, prepared), signPrepared(third, prepared)],
+          harness.signMaintainerProposalEvidence(prepared), expectedEvidence,
         ),
       };
     });

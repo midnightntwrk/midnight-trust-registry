@@ -310,6 +310,66 @@ export const verifyAuditorProposalEvidenceSignature = (
   }
 };
 
+export const computeMaintainerEvidenceBoundProposalPayloadHash = (
+  baseMaintainerPayloadHash: Uint8Array,
+  evidenceVerifierAuthorizationId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  activePolicyCommitment: Uint8Array,
+  activePolicyVersion: bigint,
+): Uint8Array =>
+  pureCircuits.maintainerEvidenceBoundProposalPayloadHash(
+    require32Bytes(baseMaintainerPayloadHash, "Maintainer proposal payload hash"),
+    require32Bytes(evidenceVerifierAuthorizationId, "Evidence verifier authorization id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(activePolicyCommitment, "Active policy commitment"),
+    activePolicyVersion,
+  );
+
+export const maintainerProposalEvidenceSignatureDigest = (
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryActionDigest =>
+  pureCircuits.maintainerProposalEvidenceSignatureDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(boundPayloadHash, "Bound maintainer proposal payload hash"),
+  ) as TrustRegistryActionDigest;
+
+export const signMaintainerProposalEvidenceFromSeed = (
+  seed: Uint8Array,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryJubjubSignature =>
+  signJubjubDigestFromSeed(
+    require32Bytes(seed, "Evidence verifier seed"),
+    maintainerProposalEvidenceSignatureDigest(
+      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+    ),
+  );
+
+export const verifyMaintainerProposalEvidenceSignature = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+  signature: TrustRegistryJubjubSignature,
+): boolean => {
+  if (!isCanonicalJubjubSignature(signature)) return false;
+  try {
+    return verifyJubjubDigest(
+      publicKey,
+      maintainerProposalEvidenceSignatureDigest(
+        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      ),
+      signature,
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const computePolicyBoundActionPayloadHash = (
   policyCommitment: Uint8Array,
   actionPayloadHash: Uint8Array,

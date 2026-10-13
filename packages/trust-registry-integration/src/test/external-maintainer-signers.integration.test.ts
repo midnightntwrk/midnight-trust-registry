@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
+  signMaintainerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -51,6 +52,7 @@ describe("externally signed Compact maintainer onboarding", () => {
       scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
     });
     const proposal = harness.prepareMaintainerProposalAction(candidate, evidence);
+    const verifierSignature = harness.signMaintainerProposalEvidence(proposal);
     const beforeProposal = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.prepareMaintainerProposalAction(candidate, evidence, {
       scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
@@ -59,17 +61,26 @@ describe("externally signed Compact maintainer onboarding", () => {
     })).toThrow(/scope does not match/u);
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(second, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(second, proposal), signPrepared(second, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(second, proposal), signPrepared(candidate, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
+    expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+      signPrepared(second, proposal), signPrepared(third, proposal),
+    ], signMaintainerProposalEvidenceFromSeed(
+      candidate.seed, proposal.registryId,
+      proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
+    ))).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
     harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(second, proposal), signPrepared(third, proposal),
-    ]);
+    ], verifierSignature);
+    const proposalEvidence = harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment);
+    expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
+    expect(proposalEvidence.activePolicyVersion).toBe(proposal.policyVersion);
 
     const approval = harness.prepareMaintainerDecisionAction(candidate, "approve");
     expect(() => harness.prepareMaintainerDecisionAction(candidate, "unsupported" as "approve"))

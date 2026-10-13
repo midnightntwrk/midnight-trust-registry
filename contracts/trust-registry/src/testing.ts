@@ -20,6 +20,7 @@ import {
   type MaintainerAuthorizationBundle,
   type MaintainerAuthorizationSigner,
   type MaintainerMembershipRecord,
+  type MaintainerProposalEvidenceRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
   type VerifierProposalEvidenceRecord,
@@ -259,6 +260,9 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -277,6 +281,9 @@ export class TrustRegistrySimulator {
         policyId,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }
@@ -401,6 +408,17 @@ export class TrustRegistrySimulator {
   ): MaintainerMembershipRecord {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.getMaintainerMembership(
+        this.circuitContext,
+        maintainerId,
+      ),
+    );
+  }
+
+  getMaintainerProposalEvidence(
+    maintainerId: Uint8Array,
+  ): MaintainerProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getMaintainerProposalEvidence(
         this.circuitContext,
         maintainerId,
       ),

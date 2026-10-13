@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   computeCreateAuditorAuthorizationPayloadHash,
   computeAuditorEvidenceBoundProposalPayloadHash,
+  computeMaintainerEvidenceBoundProposalPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
@@ -26,6 +27,7 @@ import {
   signPolicyBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
   signAuditorProposalEvidenceFromSeed,
+  signMaintainerProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
   verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
@@ -177,14 +179,17 @@ const registerIssuerEvidenceVerifier = (
 ) => {
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
   const existing = evidenceVerifiers.get(simulator);
-  if (existing) return existing;
-  const verifier = {
-    ...createMaintainerFixture("issuer-evidence-verifier", 97),
-    authorizationId: labelToBytes32("evidence-verifier:issuer"),
-    publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(97)),
-  };
   const policyCommitment = simulator.getLedger().governancePolicyCommitment;
   const policyVersion = simulator.getLedger().governancePolicyVersion;
+  if (existing && simulator.getEvidenceVerifierKey(existing.authorizationId).policyVersion === policyVersion) {
+    return existing;
+  }
+  const verifier = {
+    ...createMaintainerFixture("issuer-evidence-verifier", 97),
+    authorizationId: labelToBytes32(`evidence-verifier:issuer:v${policyVersion}`),
+    keyId: labelToBytes32(`evidence-verifier:key:v${policyVersion}`),
+    publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(97)),
+  };
   const payloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
     verifier.authorizationId, verifier.didCommitment, verifier.keyId, verifier.publicKey,
     labelToBytes32("jubjub-schnorr"), policyCommitment, policyVersion,
@@ -572,6 +577,31 @@ const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
   };
 };
 
+const maintainerProposalProof = (
+  registry: RegistryFixture,
+  candidate: ReturnType<typeof createMaintainerMembershipFixture>,
+) => {
+  const { simulator, registryId } = registry;
+  const verifier = registerIssuerEvidenceVerifier(registry);
+  const baseHash = computeCreateMaintainerMembershipPayloadHash(
+    candidate.maintainerId, candidate.maintainerDidCommitment, candidate.keyId,
+    candidate.publicKey, candidate.policyId, candidate.trustLevel, candidate.evidenceHash,
+  );
+  const payloadHash = computeMaintainerEvidenceBoundProposalPayloadHash(
+    baseHash, verifier.authorizationId, verifier.keyId,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  return {
+    payloadHash,
+    verifierAuthorizationId: verifier.authorizationId,
+    verifierKeyIdCommitment: verifier.keyId,
+    evidenceSignature: signMaintainerProposalEvidenceFromSeed(
+      verifier.seed, registryId, verifier.keyId, payloadHash,
+    ),
+  };
+};
+
 const createMaintainerCoAuthorizer = (
   maintainer: ReturnType<typeof createMaintainerMembershipFixture>,
   simulator: TrustRegistrySimulator,
@@ -864,6 +894,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = registry;
     const candidate = createMaintainerMembershipFixture("governed", 12);
+    const proposalProof = maintainerProposalProof(registry, candidate);
 
     const proposeActionSequence = simulator.getLedger().governanceActionCount;
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -871,15 +902,7 @@ describe("trust registry contract", () => {
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
-        candidate.maintainerId,
-        candidate.maintainerDidCommitment,
-        candidate.keyId,
-        candidate.publicKey,
-        candidate.policyId,
-        candidate.trustLevel,
-        candidate.evidenceHash,
-      ),
+      proposalProof.payloadHash,
       proposeActionSequence,
     );
 
@@ -894,6 +917,9 @@ describe("trust registry contract", () => {
       candidate.policyId,
       candidate.trustLevel,
       candidate.evidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
 
     const proposedMembership = simulator.getMaintainerMembership(
@@ -1092,15 +1118,53 @@ describe("trust registry contract", () => {
     ).toEqual(MaintainerStatus.archived);
   });
 
+  it("rejects an unregistered or cross-role evidence signature on maintainer enrollment", () => {
+    const registry = createInitializedRegistryFixture(62);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const candidate = createMaintainerMembershipFixture("signed-candidate", 63);
+    const proof = maintainerProposalProof(registry, candidate);
+    const sign = () => signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
+    );
+    const propose = (keyId: Uint8Array, evidenceSignature: typeof proof.evidenceSignature) =>
+      simulator.proposeMaintainerMembership(
+        bootstrapMaintainer.keyId, bootstrapPublicKey, sign(),
+        candidate.maintainerId, candidate.maintainerDidCommitment,
+        candidate.keyId, candidate.publicKey, candidate.policyId,
+        candidate.trustLevel, candidate.evidenceHash,
+        proof.verifierAuthorizationId, keyId, evidenceSignature,
+      );
+    expect(() => simulator.getMaintainerProposalEvidence(candidate.maintainerId))
+      .toThrow(/not registered/i);
+    expect(() => propose(labelToBytes32("wrong-evidence-verifier-key"), proof.evidenceSignature))
+      .toThrow(/key id does not match/i);
+    expect(() => propose(proof.verifierKeyIdCommitment,
+      signAuditorProposalEvidenceFromSeed(
+        new Uint8Array(32).fill(97), registryId,
+        proof.verifierKeyIdCommitment, proof.payloadHash,
+      ))).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().maintainerMembershipCount).toBe(1n);
+    const eventHash = propose(proof.verifierKeyIdCommitment, proof.evidenceSignature);
+    const evidence = simulator.getMaintainerProposalEvidence(candidate.maintainerId);
+    expect(evidence.evidenceCommitment).toEqual(candidate.evidenceHash);
+    expect(evidence.evidenceVerifierKeyIdCommitment).toEqual(proof.verifierKeyIdCommitment);
+    expect(evidence.proposalGovernanceEventHash).toEqual(eventHash);
+    expect(() => propose(proof.verifierKeyIdCommitment, proof.evidenceSignature))
+      .toThrow(/already exists/i);
+  });
+
   it("rejects duplicate live maintainer identity enrollment and protects the last active maintainer from deactivation", () => {
+    const registry = createInitializedRegistryFixture(13);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(13);
+    } = registry;
     const selfCandidate = createMaintainerMembershipFixture("self", 14);
     selfCandidate.maintainerDidCommitment = bootstrapMaintainer.didCommitment;
+    const proposalProof = maintainerProposalProof(registry, selfCandidate);
 
     const proposeActionSequence = simulator.getLedger().governanceActionCount;
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -1108,15 +1172,7 @@ describe("trust registry contract", () => {
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
-        selfCandidate.maintainerId,
-        selfCandidate.maintainerDidCommitment,
-        selfCandidate.keyId,
-        selfCandidate.publicKey,
-        selfCandidate.policyId,
-        selfCandidate.trustLevel,
-        selfCandidate.evidenceHash,
-      ),
+      proposalProof.payloadHash,
       proposeActionSequence,
     );
 
@@ -1132,6 +1188,9 @@ describe("trust registry contract", () => {
         selfCandidate.policyId,
         selfCandidate.trustLevel,
         selfCandidate.evidenceHash,
+        proposalProof.verifierAuthorizationId,
+        proposalProof.verifierKeyIdCommitment,
+        proposalProof.evidenceSignature,
       ),
     ).toThrow(/already has a live membership/i);
 
@@ -1265,6 +1324,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = registry;
     const secondMaintainer = createMaintainerMembershipFixture("second", 16);
+    const proposalProof = maintainerProposalProof(registry, secondMaintainer);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
     const proposeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -1272,15 +1332,7 @@ describe("trust registry contract", () => {
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
-        secondMaintainer.maintainerId,
-        secondMaintainer.maintainerDidCommitment,
-        secondMaintainer.keyId,
-        secondMaintainer.publicKey,
-        secondMaintainer.policyId,
-        secondMaintainer.trustLevel,
-        secondMaintainer.evidenceHash,
-      ),
+      proposalProof.payloadHash,
       proposeMaintainerSequence,
     );
     simulator.proposeMaintainerMembership(
@@ -1294,6 +1346,9 @@ describe("trust registry contract", () => {
       secondMaintainer.policyId,
       secondMaintainer.trustLevel,
       secondMaintainer.evidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
 
     const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
@@ -1719,6 +1774,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = registry;
     const secondMaintainer = createMaintainerMembershipFixture("duplicate", 18);
+    const proposalProof = maintainerProposalProof(registry, secondMaintainer);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
     const proposeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
@@ -1726,15 +1782,7 @@ describe("trust registry contract", () => {
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
-        secondMaintainer.maintainerId,
-        secondMaintainer.maintainerDidCommitment,
-        secondMaintainer.keyId,
-        secondMaintainer.publicKey,
-        secondMaintainer.policyId,
-        secondMaintainer.trustLevel,
-        secondMaintainer.evidenceHash,
-      ),
+      proposalProof.payloadHash,
       proposeMaintainerSequence,
     );
     simulator.proposeMaintainerMembership(
@@ -1748,6 +1796,9 @@ describe("trust registry contract", () => {
       secondMaintainer.policyId,
       secondMaintainer.trustLevel,
       secondMaintainer.evidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
 
     const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
