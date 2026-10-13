@@ -394,3 +394,6 @@ integration compiles 59 ZK circuits and spent over six minutes in
 it for contract/proving changes and prepublication validation, not each
 API-only edit. The fast lane compiles Compact with `--skip-zk` but still runs
 the same simulator integration and demo suites.
+The four-role governed demo also discards all four accepted VP response bodies,
+uses applicant-authorized receipt lookups for issuer, verifier, auditor, and
+maintainer, and still rejects a repeated one-use submission.

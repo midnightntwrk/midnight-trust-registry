@@ -341,6 +341,11 @@ const server = createTrustRegistryApiServer({
       evidenceReceipts.set(applicationId, receipt);
       return receipt;
     },
+    resolveAcceptedEvidence: async (applicationId) => {
+      const evidence = persistedEvidence.get(applicationId);
+      const receipt = evidenceReceipts.get(applicationId);
+      return evidence === undefined || receipt === undefined ? null : { evidence, receipt };
+    },
   },
   governedIssuerProposals: {
     async prepare(authorizationId, evidence) {
@@ -421,6 +426,9 @@ try {
       headers: requestHeaders,
       body: JSON.stringify(body),
     });
+    const getReceipt = (requestHeaders = headers) => fetch(`${endpoint}/receipt`, { headers: requestHeaders });
+    await expectHttp(await getReceipt({}), 403);
+    await expectHttp(await getReceipt(), 404);
     await expectHttp(await post("challenges", {}, {
       "content-type": "application/json",
     }), 403);
@@ -473,7 +481,9 @@ try {
       challengeHash: challenge.challengeHash,
       presentation: proof.input.submission,
     };
-    const submitted = await expectHttp(await post("submissions", submission), 202);
+    // Recovery reads the accepted record; it must not repeat VP verification.
+    assert.equal((await post("submissions", submission)).status, 202);
+    const submitted = await expectHttp(await getReceipt(), 200);
     assert.equal(submitted.receipt.evidenceCommitment, submitted.evidence.commitment);
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
@@ -789,6 +799,7 @@ try {
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
     governance: "2-of-3 external JubJub signatures for all decisions",
+    acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
       evidenceCommitment: issuerEvidence.commitment,
