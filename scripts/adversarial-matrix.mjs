@@ -45,8 +45,21 @@ export class AdversarialMatrix {
     assert.ok(boundary === "compact" || boundary === "client" || boundary === "adapter");
     assert.ok(messagePattern instanceof RegExp);
     assert.match(category, /^[a-z][a-z0-9-]+$/u);
-    assert.throws(operation, messagePattern);
-    this.#record({ id, invariant, boundary, expected: category, observed: category });
+    let failure;
+    try {
+      operation();
+    } catch (error) {
+      failure = error;
+    }
+    assert.ok(failure instanceof Error, "Expected an Error rejection");
+    assert.match(failure.message, messagePattern);
+    this.#record({
+      id,
+      invariant,
+      boundary,
+      expected: category,
+      observed: `matched:${failure.name}`,
+    });
   }
 
   report() {

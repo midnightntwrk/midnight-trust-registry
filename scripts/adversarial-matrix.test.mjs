@@ -46,7 +46,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         invariant: "Evidence must bind the selected registry",
         boundary: "client",
         expected: "registry-mismatch",
-        observed: "registry-mismatch",
+        observed: "matched:Error",
       },
       {
         id: "wrong-trqp-scope",
@@ -79,5 +79,19 @@ test("fails closed when an API changes its rejection category", async () => {
     status: 403,
     problemType: "governed-action-rejected",
   }));
+  assert.deepEqual(matrix.report().cases, []);
+});
+
+test("does not record an unmatched or absent thrown rejection", () => {
+  const matrix = new AdversarialMatrix();
+  const expected = {
+    id: "wrong-signer",
+    invariant: "Only the active signer may approve",
+    boundary: "compact",
+    messagePattern: /active signer/iu,
+    category: "inactive-signer",
+  };
+  assert.throws(() => matrix.expectThrown(() => { throw new Error("wrong policy"); }, expected));
+  assert.throws(() => matrix.expectThrown(() => {}, expected));
   assert.deepEqual(matrix.report().cases, []);
 });

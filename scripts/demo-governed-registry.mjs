@@ -45,6 +45,7 @@ import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
+const changeLastHexNibble = (value) => `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
 const sign = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signPolicyBoundMaintainerActionFromSeed(
@@ -636,6 +637,17 @@ try {
     messagePattern: /quorum|threshold|assert|signature|maintainer|duplicate/iu,
     category: "duplicate-signer-rejected",
   });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner, signCompact(
+      createMaintainerScenarioFixture("governed-demo-outsider"), compactApproval,
+    )],
+  ), {
+    id: "compact-issuer-unknown-signer",
+    invariant: "An unregistered JubJub key cannot substitute for an active maintainer",
+    boundary: "compact",
+    messagePattern: /assert|signature|maintainer|authorized|registered/iu,
+    category: "unknown-signer-rejected",
+  });
   assert.equal(harness.simulator.getLedger().governanceActionCount, governanceActionsBeforeRejections);
   const otherProposals = [];
   for (const [role, target] of proposalTargets) {
@@ -741,6 +753,50 @@ try {
     expectedRegistryId: harness.registryId,
     expectedSubjectDid: issuer.subjectDid,
     expectedResourceId: issuer.resourceId,
+  });
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+    ...issuerBundle,
+    inclusionProof: {
+      ...issuerBundle.inclusionProof,
+      path: [changeLastHexNibble(issuerBundle.inclusionProof.path[0])],
+    },
+  }, { expectedRegistryId: harness.registryId }), {
+    id: "issuer-tampered-merkle-path",
+    invariant: "A changed Merkle sibling cannot verify against the anchored epoch",
+    boundary: "client",
+    messagePattern: /event sibling/iu,
+    category: "tampered-merkle-path",
+  });
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedResourceId: "credential-family:unknown",
+  }), {
+    id: "issuer-wrong-credential-family",
+    invariant: "Issuer authorization is bound to the exact credential family",
+    boundary: "client",
+    messagePattern: /issuer authorization resource mismatch/iu,
+    category: "issuer-scope-mismatch",
+  });
+  const verifierBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
+  ), 200);
+  adversarialMatrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
+    expectedResourceId: "request-profile:unknown",
+  }), {
+    id: "verifier-wrong-request-profile",
+    invariant: "Verifier authorization is bound to the exact request profile",
+    boundary: "client",
+    messagePattern: /verifier authorization resource mismatch/iu,
+    category: "verifier-scope-mismatch",
+  });
+  const recognitionBundle = await expectHttp(await fetch(
+    `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
+  ), 200);
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
+    id: "recognition-not-issuer-authorization",
+    invariant: "External registry recognition cannot authorize local VC issuance",
+    boundary: "client",
+    messagePattern: /does not contain issuer authorization/iu,
+    category: "recognition-not-authorization",
   });
   const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
     method: "POST",
@@ -981,16 +1037,6 @@ try {
     otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
     adversarialMatrix: adversarialMatrix.report(),
-    expectedRejections: [
-      "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
-      "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
-      "proposal-cross-role-evidence:403", "proposal-wrong-target:403",
-      "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
-      "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
-      "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
-      "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
-      "suspended:client", "revoked:client",
-    ],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

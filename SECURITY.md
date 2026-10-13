@@ -45,6 +45,10 @@ make every effort to acknowledge your contributions.
 
 ## Vulnerability management
 
+The local trust-boundary test inventory and its known gaps are tracked in the
+[adversarial matrix coverage map](docs/plans/adversarial-matrix-coverage.md).
+That test inventory does not replace private vulnerability reporting.
+
 When the maintainers receive a disclosure report, they will assign it to a
 primary handler.
 
