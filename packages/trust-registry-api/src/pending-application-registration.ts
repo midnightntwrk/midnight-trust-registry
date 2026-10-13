@@ -1,86 +1,91 @@
 import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import {
   ApplicationChallengeBindingSchema,
-  SignedPendingAuditorApplicationSchema,
+  SignedPendingApplicationSchema,
   computeAuthorizationScopeCommitment,
-  pendingAuditorApplicationMutationPayload,
-  requestGovernedResourceId,
+  pendingApplicationMutationPayload,
   type ApplicationChallengeBinding,
-  type SignedPendingAuditorApplication,
+  type SignedPendingApplication,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
-export type PendingAuditorApplicationRecord = {
+export type PendingApplicationRecord = {
   binding: ApplicationChallengeBinding;
   status: "pending";
   createdAt: string;
 };
 
-export type PendingAuditorRegistrationState = {
+export type PendingApplicationRegistrationState = {
   workspace: TrustRegistryOperatorWorkspace;
-  applications: readonly PendingAuditorApplicationRecord[];
+  applications: readonly PendingApplicationRecord[];
   consumedNonces: readonly string[];
 };
 
 /** The host owns atomic persistence and must use the same pending records for VP intake. */
-export interface PendingAuditorRegistrationPort {
-  register(request: SignedPendingAuditorApplication, now: Date): Promise<PendingAuditorApplicationRecord>;
+export interface PendingApplicationRegistrationPort {
+  register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord>;
 }
 
-export class PendingAuditorRegistrationRejectedError extends Error {
+export class PendingApplicationRegistrationRejectedError extends Error {
   constructor(readonly reason: MutationIntentActorFailure | "duplicate-application" | "duplicate-scope" | "nonce-used") {
-    super(`Pending auditor registration rejected: ${reason}`);
-    this.name = "PendingAuditorRegistrationRejectedError";
+    super(`Pending application registration rejected: ${reason}`);
+    this.name = "PendingApplicationRegistrationRejectedError";
   }
 }
 
 /** Pure transition; the host must atomically persist the returned state and recheck its workspace revision. */
-export async function transitionPendingAuditorRegistration(
-  state: PendingAuditorRegistrationState,
+export async function transitionPendingApplicationRegistration(
+  state: PendingApplicationRegistrationState,
   requestInput: unknown,
   trustedEvidenceVerifierDid: string,
   now: Date,
   resolver: Parameters<typeof verifyMutationIntentDidSignature>[2],
-): Promise<PendingAuditorRegistrationState> {
-  const request = SignedPendingAuditorApplicationSchema.parse(requestInput);
+): Promise<PendingApplicationRegistrationState> {
+  const request = SignedPendingApplicationSchema.parse(requestInput);
   const intent = request.intent;
   const nonceKey = JSON.stringify([intent.registryId, intent.actorDid, intent.nonce]);
   if (state.consumedNonces.includes(nonceKey)) {
-    throw new PendingAuditorRegistrationRejectedError("nonce-used");
+    throw new PendingApplicationRegistrationRejectedError("nonce-used");
   }
   const preflight = await preflightMutationIntentActor(
     intent,
     request.signature,
-    pendingAuditorApplicationMutationPayload({ applicationId: request.applicationId, scope: request.scope }),
+    pendingApplicationMutationPayload({
+      applicationId: request.applicationId,
+      scope: request.scope,
+      governedResource: request.governedResource,
+    }),
     state.workspace,
     now,
     resolver,
   );
-  if (!preflight.ok) throw new PendingAuditorRegistrationRejectedError(preflight.reason);
+  if (!preflight.ok) throw new PendingApplicationRegistrationRejectedError(preflight.reason);
 
   const binding = ApplicationChallengeBindingSchema.parse({
     registryId: state.workspace.snapshot.registry.registryId,
     applicationId: request.applicationId,
     subjectDid: intent.actorDid,
     evidenceVerifierDid: trustedEvidenceVerifierDid,
-    role: "auditor",
+    role: request.scope.role,
     policyId: state.workspace.snapshot.policy.policyId,
     policyVersion: state.workspace.snapshot.policy.version,
     scope: request.scope,
     scopeCommitment: computeAuthorizationScopeCommitment(request.scope),
-    governedResource: { type: "requestProfile", id: requestGovernedResourceId(request.scope) },
+    governedResource: request.governedResource,
   });
   if (state.applications.some((record) => record.binding.applicationId === binding.applicationId)) {
-    throw new PendingAuditorRegistrationRejectedError("duplicate-application");
+    throw new PendingApplicationRegistrationRejectedError("duplicate-application");
   }
   if (state.applications.some((record) => record.status === "pending"
     && record.binding.registryId === binding.registryId
     && record.binding.subjectDid === binding.subjectDid
-    && record.binding.scopeCommitment === binding.scopeCommitment)) {
-    throw new PendingAuditorRegistrationRejectedError("duplicate-scope");
+    && record.binding.scopeCommitment === binding.scopeCommitment
+    && record.binding.governedResource.type === binding.governedResource.type
+    && record.binding.governedResource.id === binding.governedResource.id)) {
+    throw new PendingApplicationRegistrationRejectedError("duplicate-scope");
   }
   return {
     workspace: state.workspace,
@@ -90,21 +95,21 @@ export async function transitionPendingAuditorRegistration(
 }
 
 /** Single-process reference only; production hosts need durable atomic persistence and live policy reads. */
-export class InMemoryPendingAuditorRegistrationPort implements PendingAuditorRegistrationPort {
-  private state: PendingAuditorRegistrationState;
+export class InMemoryPendingApplicationRegistrationPort implements PendingApplicationRegistrationPort {
+  private state: PendingApplicationRegistrationState;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(
-    initialState: PendingAuditorRegistrationState,
+    initialState: PendingApplicationRegistrationState,
     private readonly evidenceVerifierDid: string,
     private readonly resolver: Parameters<typeof verifyMutationIntentDidSignature>[2],
   ) {
     this.state = initialState;
   }
 
-  register(request: SignedPendingAuditorApplication, now: Date): Promise<PendingAuditorApplicationRecord> {
+  register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord> {
     const attempt = this.tail.then(async () => {
-      this.state = await transitionPendingAuditorRegistration(
+      this.state = await transitionPendingApplicationRegistration(
         this.state, request, this.evidenceVerifierDid, now, this.resolver,
       );
       return structuredClone(this.state.applications.at(-1)!);
@@ -113,7 +118,7 @@ export class InMemoryPendingAuditorRegistrationPort implements PendingAuditorReg
     return attempt;
   }
 
-  readPending(applicationId: string): PendingAuditorApplicationRecord | null {
+  readPending(applicationId: string): PendingApplicationRecord | null {
     const record = this.state.applications.find((item) => item.binding.applicationId === applicationId);
     return record === undefined ? null : structuredClone(record);
   }

@@ -14,7 +14,7 @@ type AppState = {
   evidenceBusy: boolean;
   evidenceError: string | undefined;
   evidenceFlash: string | undefined;
-  pendingAuditor: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
+  pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
 };
 
 export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
@@ -44,6 +44,27 @@ const formatApiError = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
+const isRenderablePendingBinding = (value: unknown, expectedApplicationId?: string): value is ApplicationChallengeBinding => {
+  if (value === null || typeof value !== "object") return false;
+  const binding = value as Partial<ApplicationChallengeBinding>;
+  const resource = binding.governedResource;
+  const scope = binding.scope;
+  if (typeof binding.applicationId !== "string" || (expectedApplicationId !== undefined
+    && binding.applicationId !== expectedApplicationId) || typeof binding.subjectDid !== "string"
+    || typeof binding.policyId !== "string" || typeof binding.policyVersion !== "string"
+    || typeof binding.scopeCommitment !== "string" || scope === undefined || scope === null
+    || resource === undefined || resource === null
+    || typeof resource.type !== "string" || typeof resource.id !== "string" || scope.role !== binding.role) {
+    return false;
+  }
+  if (binding.role === "issuer") {
+    return ["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"]
+      .includes(resource.type);
+  }
+  if (binding.role === "verifier" || binding.role === "auditor") return resource.type === "requestProfile";
+  return binding.role === "maintainer" && resource.type === "registry";
+};
+
 export const createApplicantPortalApp = (
   root: HTMLElement,
   options: {
@@ -69,7 +90,7 @@ export const createApplicantPortalApp = (
     evidenceBusy: false,
     evidenceError: undefined,
     evidenceFlash: undefined,
-    pendingAuditor: undefined,
+    pendingApplication: undefined,
   };
   let evidenceRequestId = 0;
 
@@ -86,9 +107,9 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const registerAuditorApplication = async (rawRequest: string) => {
+  const registerApplication = async (rawRequest: string) => {
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingAuditor: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    setState({ evidenceBusy: true, pendingApplication: undefined, evidenceError: undefined, evidenceFlash: undefined });
     try {
       requirePrivateHost();
       let signedRequest: unknown;
@@ -100,16 +121,31 @@ export const createApplicantPortalApp = (
       if (signedRequest === null || typeof signedRequest !== "object" || Array.isArray(signedRequest)) {
         throw new Error("Signed application must be a JSON object.");
       }
-      const record = await client().registerPendingAuditorApplication(signedRequest);
-      if (requestId !== evidenceRequestId) return;
-      const binding = record.binding;
-      if (record.status !== "pending" || binding.role !== "auditor"
-        || binding.scope.role !== "auditor" || binding.governedResource.type !== "requestProfile") {
-        throw new Error("Host did not return a canonical pending auditor application.");
+      const candidate = signedRequest as {
+        applicationId?: unknown;
+        scope?: { role?: unknown };
+        governedResource?: { type?: unknown; id?: unknown };
+        intent?: { target?: unknown };
+      };
+      if (typeof candidate.applicationId !== "string" || typeof candidate.scope?.role !== "string"
+        || !["issuer", "verifier", "auditor", "maintainer"].includes(candidate.scope.role)
+        || candidate.intent?.target !== candidate.scope.role
+        || typeof candidate.governedResource?.type !== "string"
+        || typeof candidate.governedResource.id !== "string") {
+        throw new Error("Signed application must request one matching membership role.");
       }
+      const record = await client().registerPendingApplication(signedRequest);
+      if (requestId !== evidenceRequestId) return;
+      if (record?.status !== "pending" || !isRenderablePendingBinding(record.binding, candidate.applicationId)
+        || record.binding.role !== candidate.scope.role
+        || record.binding.governedResource.type !== candidate.governedResource.type
+        || record.binding.governedResource.id !== candidate.governedResource.id) {
+        throw new Error("Host did not return a canonical pending membership application.");
+      }
+      const binding = record.binding;
       setState({
-        pendingAuditor: { binding },
-        evidenceFlash: `Pending auditor application ${binding.applicationId} registered. Present eligibility evidence next.`,
+        pendingApplication: { binding },
+        evidenceFlash: `Pending ${binding.role} application ${binding.applicationId} registered. Present eligibility evidence next.`,
       });
     } catch (error) {
       if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
@@ -118,18 +154,17 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const loadAuditorBinding = async (applicationId: string) => {
+  const loadApplicationBinding = async (applicationId: string) => {
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingAuditor: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    setState({ evidenceBusy: true, pendingApplication: undefined, evidenceError: undefined, evidenceFlash: undefined });
     try {
       requirePrivateHost();
       const binding = await client().loadPendingApplicationBinding(applicationId);
       if (requestId !== evidenceRequestId) return;
-      if (binding.applicationId !== applicationId || binding.role !== "auditor"
-        || binding.scope.role !== "auditor" || binding.governedResource.type !== "requestProfile") {
-        throw new Error("This pending application is not a canonical auditor request.");
+      if (!isRenderablePendingBinding(binding, applicationId)) {
+        throw new Error("This pending application is not a canonical membership request.");
       }
-      setState({ pendingAuditor: { binding } });
+      setState({ pendingApplication: { binding } });
     } catch (error) {
       if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
     } finally {
@@ -137,19 +172,19 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const issueAuditorChallenge = async () => {
-    const pending = state.pendingAuditor;
+  const issueApplicationChallenge = async () => {
+    const pending = state.pendingApplication;
     if (pending === undefined) return;
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingAuditor: { binding: pending.binding }, evidenceError: undefined, evidenceFlash: undefined });
+    setState({ evidenceBusy: true, pendingApplication: { binding: pending.binding }, evidenceError: undefined, evidenceFlash: undefined });
     try {
       requirePrivateHost();
       const challenge = await client().issueApplicationChallenge(pending.binding.applicationId);
       if (requestId !== evidenceRequestId) return;
       if (challenge.applicationId !== pending.binding.applicationId) {
-        throw new Error("Challenge application ID did not match the pending auditor application.");
+        throw new Error("Challenge application ID did not match the pending application.");
       }
-      setState({ pendingAuditor: { binding: pending.binding, challenge } });
+      setState({ pendingApplication: { binding: pending.binding, challenge } });
     } catch (error) {
       if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
     } finally {
@@ -157,8 +192,8 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const submitAuditorPresentation = async (rawPresentation: string) => {
-    const pending = state.pendingAuditor;
+  const submitApplicationPresentation = async (rawPresentation: string) => {
+    const pending = state.pendingApplication;
     if (pending?.challenge === undefined) return;
     const requestId = ++evidenceRequestId;
     setState({ evidenceBusy: true, evidenceError: undefined, evidenceFlash: undefined });
@@ -178,12 +213,12 @@ export const createApplicantPortalApp = (
       );
       if (requestId !== evidenceRequestId) return;
       setState({
-        pendingAuditor: { binding: pending.binding },
-        evidenceFlash: `Auditor evidence accepted: ${result.receipt.receiptId}. The application still requires governance approval.`,
+        pendingApplication: { binding: pending.binding },
+        evidenceFlash: `${pending.binding.role} evidence accepted: ${result.receipt.receiptId}. The application still requires governance approval.`,
       });
     } catch (error) {
       if (requestId === evidenceRequestId) {
-        setState({ pendingAuditor: { binding: pending.binding }, evidenceError: formatApiError(error) });
+        setState({ pendingApplication: { binding: pending.binding }, evidenceError: formatApiError(error) });
       }
     } finally {
       if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
@@ -246,7 +281,7 @@ export const createApplicantPortalApp = (
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
       evidenceRequestId += 1;
-      setState({ apiBase, pendingAuditor: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      setState({ apiBase, pendingApplication: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
       void refreshInspection();
     });
 
@@ -273,35 +308,35 @@ export const createApplicantPortalApp = (
       void submitApplication(target, labelInput.value.trim());
     });
 
-    root.querySelector<HTMLFormElement>("[data-auditor-binding-form]")?.addEventListener("submit", (event) => {
+    root.querySelector<HTMLFormElement>("[data-application-binding-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const applicationId = form.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
-      if (applicationId !== undefined && applicationId.length > 0) void loadAuditorBinding(applicationId);
+      if (applicationId !== undefined && applicationId.length > 0) void loadApplicationBinding(applicationId);
     });
 
-    root.querySelector<HTMLFormElement>("[data-auditor-registration-form]")?.addEventListener("submit", (event) => {
+    root.querySelector<HTMLFormElement>("[data-application-registration-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const input = form.querySelector<HTMLTextAreaElement>("[name='signedApplication']");
       if (input === null) return;
       const raw = input.value;
       input.value = "";
-      void registerAuditorApplication(raw);
+      void registerApplication(raw);
     });
 
-    root.querySelector<HTMLButtonElement>("[data-auditor-challenge]")?.addEventListener("click", () => {
-      void issueAuditorChallenge();
+    root.querySelector<HTMLButtonElement>("[data-application-challenge]")?.addEventListener("click", () => {
+      void issueApplicationChallenge();
     });
 
-    root.querySelector<HTMLFormElement>("[data-auditor-vp-form]")?.addEventListener("submit", (event) => {
+    root.querySelector<HTMLFormElement>("[data-application-vp-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const input = form.querySelector<HTMLTextAreaElement>("[name='presentation']");
       if (input === null) return;
       const raw = input.value;
       input.value = "";
-      void submitAuditorPresentation(raw);
+      void submitApplicationPresentation(raw);
     });
   };
 
@@ -327,7 +362,7 @@ export const createApplicantPortalApp = (
   `;
 
   const render = () => {
-    const previousVpForm = root.querySelector<HTMLFormElement>("[data-auditor-vp-form]");
+    const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
     const cards = state.inspection === undefined ? [] : toInspectionCards(state.inspection);
@@ -336,14 +371,14 @@ export const createApplicantPortalApp = (
     const auditorCards = cards.filter((card) => card.target === "auditor");
     const recognitionCards = cards.filter((card) => card.target === "recognition");
     const privateHost = canUsePrivateEvidenceHost(state.apiBase, initialUrl);
-    const pending = state.pendingAuditor;
+    const pending = state.pendingApplication;
 
     root.innerHTML = `
       <main class="shell">
         <section class="hero">
           <p class="eyebrow">Public Trust Entry</p>
           <h1>Trust Registry Applicant Portal</h1>
-          <p>Inspect active trust records and submit local demo applications. Pending auditor applicants can present challenge-bound evidence through an authenticated same-origin host.</p>
+          <p>Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host.</p>
           <div class="toolbar">
             <form class="panel" data-api-base-form>
               <label class="label">
@@ -385,38 +420,39 @@ export const createApplicantPortalApp = (
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
           <section class="form-panel">
-            <h2>Pending auditor evidence</h2>
-            <p>Paste an externally DID-signed auditor application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
+            <h2>Pending membership evidence</h2>
+            <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
             ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}
             ${state.evidenceFlash === undefined ? "" : `<div class="alert success">${escapeHtml(state.evidenceFlash)}</div>`}
             ${privateHost ? "" : `<p class="alert error">Private evidence is disabled: serve the portal and authenticated API from the same HTTPS or localhost origin.</p>`}
-            <form data-auditor-registration-form>
-              <label class="label">DID-signed auditor application JSON
+            <form data-application-registration-form>
+              <label class="label">DID-signed application JSON
                 <textarea class="input mono" name="signedApplication" rows="6" required></textarea>
               </label>
-              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register pending auditor application</button>
+              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register pending application</button>
             </form>
-            <form data-auditor-binding-form>
+            <form data-application-binding-form>
               <label class="label">Pending application ID
                 <input class="input mono" name="applicationId" type="text" maxlength="256" required />
               </label>
-              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Load auditor request</button>
+              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Load application request</button>
             </form>
             ${pending === undefined ? "" : `
               <div class="panel">
                 <p>Applicant DID: <span class="mono">${escapeHtml(pending.binding.subjectDid)}</span></p>
+                <p>Requested role: ${escapeHtml(pending.binding.role)}</p>
                 <p>Policy: ${escapeHtml(pending.binding.policyId)} · ${escapeHtml(pending.binding.policyVersion)}</p>
                 <p>Governed resource: ${escapeHtml(pending.binding.governedResource.type)}:${escapeHtml(pending.binding.governedResource.id)}</p>
                 <p>Scope commitment: <span class="mono">${escapeHtml(pending.binding.scopeCommitment)}</span></p>
                 <pre class="mono">${escapeHtml(JSON.stringify(pending.binding.scope, null, 2))}</pre>
-                <button class="button secondary" type="button" data-auditor-challenge${state.evidenceBusy ? " disabled" : ""}>Issue one-use VP challenge</button>
+                <button class="button secondary" type="button" data-application-challenge${state.evidenceBusy ? " disabled" : ""}>Issue one-use VP challenge</button>
               </div>
               ${pending.challenge === undefined ? "" : `
                 <div class="panel">
                   <p>Challenge expires: ${escapeHtml(pending.challenge.expiresAt)}</p>
                   <p>Nonce: <span class="mono">${escapeHtml(pending.challenge.nonce)}</span></p>
                   <p>Challenge hash: <span class="mono">${escapeHtml(pending.challenge.challengeHash)}</span></p>
-                  <form data-auditor-vp-form data-challenge-hash="${escapeHtml(pending.challenge.challengeHash)}">
+                  <form data-application-vp-form data-challenge-hash="${escapeHtml(pending.challenge.challengeHash)}">
                     <label class="label">Presentation JSON
                       <textarea class="input mono" name="presentation" rows="6" required></textarea>
                     </label>
@@ -435,8 +471,8 @@ export const createApplicantPortalApp = (
         </section>
       </main>
     `;
-    if (previousVp !== undefined && previousChallengeHash === state.pendingAuditor?.challenge?.challengeHash) {
-      const currentVp = root.querySelector<HTMLTextAreaElement>("[data-auditor-vp-form] [name='presentation']");
+    if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
+      const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
     }
     bindEvents();

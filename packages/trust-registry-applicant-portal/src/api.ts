@@ -7,7 +7,7 @@ import type {
   ApplicationVpHttpIssueResult,
   ApplicationVpHttpSubmissionResult,
   ApplicationChallengeBinding,
-  PendingAuditorApplicationRecord,
+  PendingApplicationRecord,
 } from "@midnight-ntwrk/trust-registry-api";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
@@ -157,14 +157,14 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */
-  async registerPendingAuditorApplication(request: unknown): Promise<PendingAuditorApplicationRecord> {
-    const response = await this.fetchImpl(`${this.baseUrl}/v1/pending-applications/auditor`, {
+  async registerPendingApplication(request: unknown): Promise<PendingApplicationRecord> {
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/pending-applications`, {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request),
     });
-    return parsePrivateResponse<PendingAuditorApplicationRecord>(response);
+    return parsePrivateResponse<PendingApplicationRecord>(response);
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */

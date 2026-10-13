@@ -26,7 +26,7 @@ Current route set:
 - `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
-- `POST /v1/pending-applications/auditor` (signed pending registration; optional trusted port)
+- `POST /v1/pending-applications` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -217,12 +217,13 @@ writes, and this adapter does not provide distributed transactions, VP
 verification, applicant authentication, rate limits, or atomic pending-state
 persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
 
-The optional `POST /v1/pending-applications/auditor` accepts an externally
-signed Midnight DID `apply` intent, canonical auditor scope, and application
-ID. The host-owned registration port verifies the applicant signature and
-current workspace context and returns a pending, policy-scoped binding. This
-is not a governed Compact proposal or active membership. The exported
-`InMemoryPendingAuditorRegistrationPort` serializes registrations within one
+The optional `POST /v1/pending-applications` accepts an externally signed
+Midnight DID `apply` intent for an issuer, verifier, auditor, or maintainer,
+with the exact canonical role scope, governed resource, and application ID
+bound into its payload commitment. The host-owned registration port verifies
+the applicant signature and current workspace context and returns a pending,
+policy-scoped binding. This is not a governed Compact proposal or active
+membership. The exported `InMemoryPendingApplicationRegistrationPort` serializes registrations within one
 process for local tests only; it does not provide durable atomic persistence,
 live policy updates, or proof that the configured evidence-verifier DID is
 currently authorized. The packaged CLI does not install this port and returns
@@ -234,7 +235,7 @@ The optional `nonApiGetHandler` composes static assets on the same origin
 without intercepting `/v1` API routes. The loopback-only
 `scripts/demo-auditor-admission.mjs` host uses it for a fixture applicant
 journey; it is not installed by the packaged API CLI. The host also supplies
-`authorizePendingAuditorRegistration` so its deterministic signed fixture cannot
+`authorizePendingApplicationRegistration` so its deterministic signed fixture cannot
 be submitted without the same loopback session and Origin checks as the VP routes.
 
 The exported application-challenge service and

@@ -6,20 +6,21 @@ Current scope:
 
 - submit issuer, verifier, or recognition applications through the existing API
 - inspect current active issuer, verifier, auditor, and recognition records
-- show an authenticated, server-owned canonical scope for a pending auditor
+- show an authenticated, server-owned canonical scope for a pending membership
   application, issue a one-use VP challenge, and submit the presentation to
   receive redacted signed evidence and a receipt. The VP is never placed in
   browser storage or rendered back into the page.
-- register a pending auditor application with an externally signed Midnight DID
-  `apply` intent. The browser accepts a signed request, never a private key.
+- register a pending issuer, verifier, auditor, or maintainer application with
+  an externally signed Midnight DID `apply` intent. The browser accepts a
+  signed request, never a private key.
 - do not offer label-only auditor submission. The demo API's unsigned mutation
   route is not a governed admission boundary and must not be publicly exposed.
 - keep the first portal slice static and local-first instead of adding a second
   backend or browser persistence layer
 
-The pending-auditor panel is enabled only when the portal and API are hosted at
+The private pending-application panel is enabled only when the portal and API are hosted at
 the same HTTPS origin (or the same localhost origin for development). The host
-must inject a `PendingAuditorRegistrationPort` and an `ApplicationVpHttpPort`
+must inject a `PendingApplicationRegistrationPort` and an `ApplicationVpHttpPort`
 with applicant authentication, a trusted
 pending-application resolver, VP verifier, authorized evidence signer, atomic
 challenge store, and redacted evidence persistence. The packaged API CLI does

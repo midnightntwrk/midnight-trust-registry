@@ -4,19 +4,22 @@ import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
-  computePendingAuditorApplicationPayloadCommitment,
+  computePendingApplicationPayloadCommitment,
+  issuerGovernedResourceId,
   mutationIntentDigestBytes,
   requestGovernedResourceId,
+  type AuthorizationScope,
+  type GovernedResource,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { createMidnightDid, createMidnightDidLedgerFixture, createMidnightDidResolver } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import {
-  InMemoryPendingAuditorRegistrationPort,
-  transitionPendingAuditorRegistration,
-  type PendingAuditorRegistrationState,
-} from "../pending-auditor-registration.js";
+  InMemoryPendingApplicationRegistrationPort,
+  transitionPendingApplicationRegistration,
+  type PendingApplicationRegistrationState,
+} from "../pending-application-registration.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const applicantSeed = new Uint8Array(32).fill(47);
@@ -34,6 +37,7 @@ const scope = {
   allowedPredicates: ["is-licensed", "status-active"],
   disclosureLevel: "restricted",
 };
+const governedResource = { type: "requestProfile" as const, id: requestGovernedResourceId(scope) };
 
 const resolver = createMidnightDidResolver([
   createMidnightDidLedgerFixture(applicantDid, {
@@ -51,11 +55,19 @@ const sign = (intent: MutationIntent, seed = applicantSeed) => ({
 });
 
 const requestFor = (
-  state: PendingAuditorRegistrationState,
-  options: { applicationId?: string; nonceByte?: string; candidateScope?: typeof scope } = {},
+  state: PendingApplicationRegistrationState,
+  options: {
+    applicationId?: string;
+    nonceByte?: string;
+    candidateScope?: AuthorizationScope;
+    governedResource?: GovernedResource;
+  } = {},
 ) => {
   const applicationId = options.applicationId ?? "application:auditor:company:v1";
   const candidateScope = options.candidateScope ?? scope;
+  const candidateResource: GovernedResource = options.governedResource ?? {
+    type: "requestProfile", id: requestGovernedResourceId(scope),
+  };
   const intent: MutationIntent = {
     version: "tr-mutation-intent-v1",
     registryId: state.workspace.snapshot.registry.registryId,
@@ -63,29 +75,37 @@ const requestFor = (
     actorKeyId: `${applicantDid}#authentication-1`,
     actorRole: "applicant",
     action: "apply",
-    target: "auditor",
+    target: candidateScope.role,
     targetId: applicationId,
     scopeCommitment: computeAuthorizationScopeCommitment(candidateScope),
-    payloadCommitment: computePendingAuditorApplicationPayloadCommitment({ applicationId, scope: candidateScope }),
+    payloadCommitment: computePendingApplicationPayloadCommitment({
+      applicationId,
+      scope: candidateScope,
+      governedResource: candidateResource,
+    }),
     nonce: `0x${(options.nonceByte ?? "22").repeat(32)}`,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(state.workspace),
     expectedEpochId: state.workspace.snapshot.currentEpoch.epochId,
     issuedAt: "2026-10-13T00:00:00.000Z",
     expiresAt: "2026-10-13T00:05:00.000Z",
   };
-  return { applicationId, scope: candidateScope, intent, signature: sign(intent) };
+  return {
+    applicationId, scope: candidateScope,
+    governedResource: candidateResource,
+    intent, signature: sign(intent),
+  };
 };
 
-const initialState = (): PendingAuditorRegistrationState => ({
-  workspace: createOperatorWorkspace({ label: "pending-auditor-registration" }),
+const initialState = (): PendingApplicationRegistrationState => ({
+  workspace: createOperatorWorkspace({ label: "pending-application-registration" }),
   applications: [],
   consumedNonces: [],
 });
 
-describe("pending auditor registration transition", () => {
+describe("pending application registration transition", () => {
   it("serializes concurrent applications for one scope without consuming two nonces", async () => {
     const state = initialState();
-    const port = new InMemoryPendingAuditorRegistrationPort(state, evidenceVerifierDid, resolver);
+    const port = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
     const first = requestFor(state);
     const outcomes = await Promise.allSettled([
       port.register(first, now),
@@ -100,7 +120,7 @@ describe("pending auditor registration transition", () => {
   it("authenticates the applicant DID and binds the complete request scope to current policy", async () => {
     const initial = initialState();
     const request = requestFor(initial);
-    const next = await transitionPendingAuditorRegistration(initial, request, evidenceVerifierDid, now, resolver);
+    const next = await transitionPendingApplicationRegistration(initial, request, evidenceVerifierDid, now, resolver);
     expect(initial.applications).toHaveLength(0);
     expect(initial.consumedNonces).toHaveLength(0);
     expect(next.applications).toHaveLength(1);
@@ -118,7 +138,7 @@ describe("pending auditor registration transition", () => {
         policyVersion: initial.workspace.snapshot.policy.version,
         scope,
         scopeCommitment: computeAuthorizationScopeCommitment(scope),
-        governedResource: { type: "requestProfile", id: requestGovernedResourceId(scope) },
+        governedResource,
       },
     });
   });
@@ -126,7 +146,7 @@ describe("pending auditor registration transition", () => {
   it("rejects replay, duplicate ID, duplicate exact scope, and an invalid DID signature", async () => {
     const initial = initialState();
     const first = requestFor(initial);
-    const accepted = await transitionPendingAuditorRegistration(initial, first, evidenceVerifierDid, now, resolver);
+    const accepted = await transitionPendingApplicationRegistration(initial, first, evidenceVerifierDid, now, resolver);
     const cases = [
       [first, "nonce-used"],
       [requestFor(accepted, { nonceByte: "23" }), "duplicate-application"],
@@ -134,7 +154,7 @@ describe("pending auditor registration transition", () => {
       [{ ...requestFor(initial, { nonceByte: "25" }), signature: sign(requestFor(initial, { nonceByte: "25" }).intent, wrongSeed) }, "invalid-signature"],
     ] as const;
     for (const [candidate, reason] of cases) {
-      await expect(transitionPendingAuditorRegistration(accepted, candidate, evidenceVerifierDid, now, resolver))
+      await expect(transitionPendingApplicationRegistration(accepted, candidate, evidenceVerifierDid, now, resolver))
         .rejects.toMatchObject({ reason });
     }
     expect(accepted.applications).toHaveLength(1);
@@ -144,17 +164,57 @@ describe("pending auditor registration transition", () => {
   it("rejects expired, stale, and substituted application contexts", async () => {
     const state = initialState();
     const request = requestFor(state);
-    await expect(transitionPendingAuditorRegistration(
+    await expect(transitionPendingApplicationRegistration(
       state, request, evidenceVerifierDid, new Date("2026-10-13T00:05:00.000Z"), resolver,
     )).rejects.toMatchObject({ reason: "expired" });
     const stale = { ...request, intent: { ...request.intent, expectedWorkspaceCommitment: `0x${"55".repeat(32)}` } };
-    await expect(transitionPendingAuditorRegistration(state, {
+    await expect(transitionPendingApplicationRegistration(state, {
       ...stale, signature: sign(stale.intent),
     }, evidenceVerifierDid, now, resolver)).rejects.toMatchObject({ reason: "stale-workspace" });
-    await expect(transitionPendingAuditorRegistration(state, {
+    await expect(transitionPendingApplicationRegistration(state, {
       ...request, scope: { ...scope, purpose: "marketing" },
     }, evidenceVerifierDid, now, resolver)).rejects.toThrow();
     expect(state.applications).toHaveLength(0);
     expect(state.consumedNonces).toHaveLength(0);
+  });
+
+  it("registers issuer, verifier, and maintainer scopes with DID signatures and exact resources", async () => {
+    const issuerScope = {
+      version: "tr-scope-v1" as const, role: "issuer" as const,
+      credentialFamilyId: "degree", schemaId: "degree-schema", schemaVersion: "1.0.0",
+      credentialDefinitionId: "degree-definition", statusMethod: "status-registry",
+    };
+    const verifierScope = { ...scope, role: "verifier" as const };
+    for (const [role, create] of [
+      ["issuer", (_registryId: string) => ({
+        scope: issuerScope,
+        resource: { type: "schema" as const, id: issuerGovernedResourceId(issuerScope, "schema") },
+      })],
+      ["verifier", (_registryId: string) => ({
+        scope: verifierScope,
+        resource: { type: "requestProfile" as const, id: requestGovernedResourceId(verifierScope) },
+      })],
+      ["maintainer", (registryId: string) => ({
+        scope: { version: "tr-scope-v1" as const, role: "maintainer" as const, registryId },
+        resource: { type: "registry" as const, id: registryId },
+      })],
+    ] as const) {
+      const state = initialState();
+      const { scope: candidateScope, resource } = create(state.workspace.snapshot.registry.registryId);
+      const request = requestFor(state, {
+        applicationId: `application:${role}:company:v1`, candidateScope, governedResource: resource,
+      });
+      const next = await transitionPendingApplicationRegistration(state, request, evidenceVerifierDid, now, resolver);
+      expect(next.applications[0]?.binding).toMatchObject({
+        role, scope: candidateScope, governedResource: resource, subjectDid: applicantDid,
+      });
+      expect(next.consumedNonces).toHaveLength(1);
+      await expect(transitionPendingApplicationRegistration(next, request, evidenceVerifierDid, now, resolver))
+        .rejects.toMatchObject({ reason: "nonce-used" });
+      await expect(transitionPendingApplicationRegistration(state, {
+        ...request, governedResource: governedResource,
+      }, evidenceVerifierDid, now, resolver)).rejects.toThrow();
+      expect(state.applications).toHaveLength(0);
+    }
   });
 });

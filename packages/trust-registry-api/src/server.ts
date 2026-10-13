@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z, ZodError } from "zod";
 
 import { TrustRegistryOperatorWorkspaceOperationSchema } from "@midnight-ntwrk/trust-registry-cli";
-import { MutationIntentSchema, MutationIntentSignatureSchema, SignedPendingAuditorApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { MutationIntentSchema, MutationIntentSignatureSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -87,9 +87,9 @@ import {
   type ApplicationVpHttpPort,
 } from "./application-vp-http.js";
 import {
-  PendingAuditorRegistrationRejectedError,
-  type PendingAuditorRegistrationPort,
-} from "./pending-auditor-registration.js";
+  PendingApplicationRegistrationRejectedError,
+  type PendingApplicationRegistrationPort,
+} from "./pending-application-registration.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -146,8 +146,8 @@ export type TrustRegistryApiServerOptions = {
   governedAuditorProposals?: GovernedAuditorProposalPort;
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
-  pendingAuditorRegistration?: PendingAuditorRegistrationPort;
-  authorizePendingAuditorRegistration?: (request: IncomingMessage) => Promise<void>;
+  pendingApplicationRegistration?: PendingApplicationRegistrationPort;
+  authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
   nonApiGetHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 };
 
@@ -625,7 +625,7 @@ export const createTrustRegistryApiServer = (
       privateApplicantRoute = segments[0] === "v1" && (
         (segments.length === 4 && segments[1] === "application-evidence"
           && (segments[3] === "binding" || segments[3] === "challenges" || segments[3] === "submissions"))
-        || (segments.length === 3 && segments[1] === "pending-applications" && segments[2] === "auditor")
+        || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
       if (method === "OPTIONS") {
@@ -671,27 +671,27 @@ export const createTrustRegistryApiServer = (
         return;
       }
 
-      if (method === "POST" && segments.length === 3 && segments[0] === "v1"
-        && segments[1] === "pending-applications" && segments[2] === "auditor") {
+      if (method === "POST" && segments.length === 2 && segments[0] === "v1"
+        && segments[1] === "pending-applications") {
         response.setHeader("cache-control", "no-store");
-        const port = options.pendingAuditorRegistration;
+        const port = options.pendingApplicationRegistration;
         if (port === undefined) {
           throw jsonProblem(problemBaseUri, "pending-application-unavailable", 503, "pending application unavailable");
         }
-        if (options.authorizePendingAuditorRegistration !== undefined) {
+        if (options.authorizePendingApplicationRegistration !== undefined) {
           try {
-            await options.authorizePendingAuditorRegistration(request);
+            await options.authorizePendingApplicationRegistration(request);
           } catch {
             throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
           }
         }
-        const requestBody = await parseJsonBody(request, (value) => SignedPendingAuditorApplicationSchema.parse(value), problemBaseUri);
+        const requestBody = await parseJsonBody(request, (value) => SignedPendingApplicationSchema.parse(value), problemBaseUri);
         try {
           const record = await port.register(requestBody, new Date(options.clock?.() ?? new Date().toISOString()));
           writeJson(response, 201, record, false);
           return;
         } catch (error) {
-          if (error instanceof PendingAuditorRegistrationRejectedError) {
+          if (error instanceof PendingApplicationRegistrationRejectedError) {
             const status = error.reason === "invalid-signature" ? 401
               : error.reason.startsWith("duplicate-") || error.reason === "nonce-used"
                 || error.reason === "stale-epoch" || error.reason === "stale-workspace"

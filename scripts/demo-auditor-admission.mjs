@@ -14,8 +14,9 @@ import {
 import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
 import {
   computeAuthorizationScopeCommitment,
-  computePendingAuditorApplicationPayloadCommitment,
+  computePendingApplicationPayloadCommitment,
   mutationIntentDigestBytes,
+  requestGovernedResourceId,
   sha256Hex,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
@@ -26,7 +27,7 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   InMemoryApplicationChallengeStore,
-  InMemoryPendingAuditorRegistrationPort,
+  InMemoryPendingApplicationRegistrationPort,
   computeOperatorWorkspaceCommitment,
   createInMemorySource,
   createTrustRegistryApiServer,
@@ -48,6 +49,7 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
+const governedResource = { type: "requestProfile", id: requestGovernedResourceId(scope) };
 
 function signedApplication(workspace) {
   const intent = {
@@ -60,7 +62,7 @@ function signedApplication(workspace) {
     target: "auditor",
     targetId: applicationId,
     scopeCommitment: computeAuthorizationScopeCommitment(scope),
-    payloadCommitment: computePendingAuditorApplicationPayloadCommitment({ applicationId, scope }),
+    payloadCommitment: computePendingApplicationPayloadCommitment({ applicationId, scope, governedResource }),
     nonce: `0x${"22".repeat(32)}`,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
     expectedEpochId: workspace.snapshot.currentEpoch.epochId,
@@ -70,6 +72,7 @@ function signedApplication(workspace) {
   return {
     applicationId,
     scope,
+    governedResource,
     intent,
     signature: {
       keyId: intent.actorKeyId,
@@ -84,7 +87,7 @@ function signedApplication(workspace) {
 async function startHost(port) {
   const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
   const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
-  const registration = new InMemoryPendingAuditorRegistrationPort({
+  const registration = new InMemoryPendingApplicationRegistrationPort({
     workspace, applications: [], consumedNonces: [],
   }, evidenceVerifierDid, fixture.input.resolver);
   const ports = await createApplicationVpIntakePorts({
@@ -125,8 +128,8 @@ async function startHost(port) {
   server = createTrustRegistryApiServer({
     source: createInMemorySource(workspace.snapshot),
     clock: () => NOW,
-    pendingAuditorRegistration: registration,
-    authorizePendingAuditorRegistration: async (request) => {
+    pendingApplicationRegistration: registration,
+    authorizePendingApplicationRegistration: async (request) => {
       if (!hasDemoSession(request)) throw new Error("Demo applicant session denied");
     },
     applicationVp: {
@@ -201,7 +204,7 @@ async function smoke() {
       },
       body: JSON.stringify(body),
     });
-    const registrationPath = "/v1/pending-applications/auditor";
+    const registrationPath = "/v1/pending-applications";
     assert.equal((await post(registrationPath, host.application, false)).status, 403);
     assert.equal((await post(registrationPath, host.application, true, "https://untrusted.example")).status, 403);
     const spoofedRegistrationStatus = await new Promise((resolveStatus, rejectStatus) => {

@@ -79,8 +79,8 @@ describe("private application VP exchange", () => {
     const request = { applicationId: binding.applicationId, scope: { role: "auditor" }, intent: { action: "apply" }, signature: { value: "signed" } };
     const fetchImpl = vi.fn(async () => Response.json({ binding, status: "pending" })) as typeof fetch;
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
-    expect(await client.registerPendingAuditorApplication(request)).toEqual({ binding, status: "pending" });
-    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications/auditor", {
+    expect(await client.registerPendingApplication(request)).toEqual({ binding, status: "pending" });
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
