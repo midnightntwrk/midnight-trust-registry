@@ -215,8 +215,16 @@ Historical July 2026 validation snapshot (not the current milestone result):
 
 Operational note:
 
-- Compact compile remains the dominant cost center for both light and
-  integration lanes
+- `./run.sh integration --light` runs the simulator integration suites and
+  three demo smoke journeys against the `--skip-zk` contract build. On
+  2026-10-14 it passed 89 integration tests and all demos in 30.43 seconds
+  with a warm local Turbo cache.
+- The full integration lane spent more than 6 minutes 28 seconds in
+  `zkir compile-many` before tests began in the same worktree. That run was
+  stopped after confirming the cost; it was not a full-lane pass. The compiler
+  exposes no `compile-many` parallelism flag. Reserve the full lane for
+  contract/proving changes and publication checkpoints, never substitute the
+  light lane for proving-key or network-finality validation.
 - run `./run.sh --light` and `./run.sh integration` sequentially, not in
   parallel
 

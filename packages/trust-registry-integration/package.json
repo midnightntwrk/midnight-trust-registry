@@ -32,6 +32,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "integration": "node scripts/check-vc-composition.mjs && vitest run --dir src/test",
+    "integration:light": "pnpm run integration",
     "test:light": "node scripts/check-vc-composition.mjs",
     "build:light": "pnpm run build"
   },

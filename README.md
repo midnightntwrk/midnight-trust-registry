@@ -69,7 +69,15 @@ gate also checks that unqualified compiler default, so a host-installed
 `compact` outside the Nix shell must match the pin for `./run.sh --light` to
 pass. Use the Nix shell if the host default differs.
 
-Integration scenarios currently run separately:
+For local simulator iterations, run the same integration suites and demo smoke
+journeys without generating proving keys:
+
+```bash
+./run.sh integration --light
+```
+
+Before publishing contract or demo changes, run the full integration lane.
+It generates proving keys and remains the validation gate for those artifacts:
 
 ```bash
 ./run.sh integration
