@@ -377,6 +377,92 @@ try {
     evaluationTime: activeAt,
   });
 
+  const temporalTargets = [
+    {
+      role: "verifier",
+      path: `/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
+      suspend: () => harness.suspendVerifier(verifier),
+      revoke: () => harness.revokeVerifier(verifier),
+      verify: (bundle, options) => client.verifyVerifierAuthorizationBundle(bundle, options),
+      evaluationBody: (at) => ({
+        role: "verifier", subjectDid: verifier.subjectDid, resourceId: verifier.scopeResourceId, at,
+      }),
+    },
+    {
+      role: "auditor",
+      path: `/v1/authorizations/auditor/${auditor.authorizationId}/evidence`,
+      suspend: () => harness.suspendAuditor(auditor),
+      revoke: () => harness.revokeAuditor(auditor),
+      verify: (bundle, options) => client.verifyAuditorAuthorizationBundle(bundle, options),
+      evaluationBody: (at) => ({
+        role: "auditor", subjectDid: auditor.subjectDid, resourceId: auditor.scopeResourceId, at,
+      }),
+    },
+    {
+      role: "recognition",
+      path: `/v1/recognitions/${recognition.recognitionId}/evidence`,
+      suspend: () => harness.suspendRecognition(recognition),
+      revoke: () => harness.revokeRecognition(recognition),
+      verify: (bundle, options) => client.verifyRecognitionBundle(bundle, options),
+      evaluationBody: (at) => ({
+        recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+        recognizedRegistryId: recognition.recognizedRegistryId,
+        scopeResourceType: recognition.scopeResourceType,
+        scopeResourceId: recognition.scopeResourceId,
+        at,
+      }),
+    },
+  ];
+  const temporalChecks = [];
+  for (const target of temporalTargets) {
+    const recognitionTarget = target.role === "recognition";
+    const statusRecord = (bundle) => recognitionTarget ? bundle.recognition : bundle.authorization;
+    const evaluateAt = (at) => fetch(`${base}/v1/${recognitionTarget ? "recognitions" : "authorizations"}/evaluate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(target.evaluationBody(at)),
+    });
+    const activeBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    const roleActiveAt = recognitionTarget
+      ? activeBundle.recognition.effectiveFrom : activeBundle.authorization.activeFrom;
+    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    const active = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(active.trustedAtTime, true, `${target.role} must be trusted at activation`);
+
+    target.suspend();
+    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+    const suspendedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    assert.equal(statusRecord(suspendedBundle).status, "suspended");
+    assert.throws(() => target.verify(suspendedBundle, {
+      expectedRegistryId: harness.registryId,
+    }), /not active/i);
+    const suspended = await expectHttp(await evaluateAt(statusRecord(suspendedBundle).suspendedAt), 200);
+    assert.equal(suspended.trustedAtTime, false, `${target.role} must be denied while suspended`);
+    const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(historicalAfterSuspension.trustedAtTime, true);
+
+    target.revoke();
+    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+    const revokedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    assert.equal(statusRecord(revokedBundle).status, "revoked");
+    assert.throws(() => target.verify(revokedBundle, {
+      expectedRegistryId: harness.registryId,
+    }), /not active/i);
+    const revoked = await expectHttp(await evaluateAt(statusRecord(revokedBundle).revokedAt), 200);
+    assert.equal(revoked.trustedAtTime, false, `${target.role} must be denied after revocation`);
+    const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(historicalAfterRevocation.trustedAtTime, true);
+    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    temporalChecks.push({
+      role: target.role,
+      activeAt: roleActiveAt,
+      activeAfterSuspension: historicalAfterSuspension.trustedAtTime,
+      activeAfterRevocation: historicalAfterRevocation.trustedAtTime,
+      suspendedAtSuspension: suspended.trustedAtTime,
+      revokedAtRevocation: revoked.trustedAtTime,
+    });
+  }
+
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
@@ -404,6 +490,7 @@ try {
       revokedAtRevocation: revokedEvaluation.trustedAtTime,
       currentStatus: revokedBundle.authorization.status,
     },
+    otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
     expectedRejections: ["proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403", "candidate-self-vote:403", "replayed-context:409", "cross-role:404", "wrong-scope:404", "wrong-registry:client", "expired-epoch:client", "suspended:client", "revoked:client"],
   }, null, 2)}\n`);

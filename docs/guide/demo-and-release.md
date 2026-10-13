@@ -110,11 +110,13 @@ JubJub signatures from existing maintainers. The script rejects one-signer,
 candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.
 It independently verifies active issuer, verifier, auditor, and recognition
 evidence returned by the API; recognition never becomes local membership. The
-new maintainer then co-signs another issuer proposal. The issuer journey also
-checks current and historical API evaluations, the published epoch root,
-wrong-registry and expired-epoch rejection, and suspended and revoked states.
-Historical trust at the active instant remains verifiable after both lifecycle
-changes. `./run.sh integration` runs this scenario after the package integration
+new maintainer then co-signs another issuer proposal. The issuer journey checks
+the published epoch root plus wrong-registry and expired-epoch rejection. Issuer,
+verifier, auditor, and recognition each check current and historical API
+evaluations across active, suspended, and revoked states. Historical trust at
+the active instant remains verifiable after both lifecycle changes; recognition
+remains external authority recognition, not local membership.
+`./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
 and governance event hashes, not the VP transcript or holder secrets.
 Eligibility and status decisions use trusted fixture adapters; the negative
