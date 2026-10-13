@@ -107,6 +107,14 @@ Current coverage:
   grants, epoch witnesses, and resolved DID methods. Readers and signer remain
   local fixtures; production finality, governed external VC schema enrollment,
   authority-key lifecycle, and durable deployed consumer state remain open.
+- `createQuorumGatedVcAuthoritySigner` is a signer-side port wrapper. It uses
+  its own trusted registry/DID readers to recheck current finalized quorum and
+  method state, reconstructs the descriptor and domain-bound decision root,
+  and only then invokes key custody. A grant suspended between requester and
+  signer reads, a substituted root, or a substituted authority never reaches
+  the signing callback. Production callers must supply independently
+  authenticated finalized readers and governed key custody; fixture readers
+  do not establish network finality.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

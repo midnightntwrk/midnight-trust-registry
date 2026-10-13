@@ -49,6 +49,7 @@ import {
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
+import { createQuorumGatedVcAuthoritySigner } from "../vc-authority-signer.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 import {
   issueVcSignerAuthorizationFromTrustedDecision,
@@ -335,17 +336,72 @@ describe("simulator-backed VC decision evidence composition", () => {
       }),
     );
     const secret = seedBytesToJubjubSecretScalar(authoritySeed);
+    let authoritySignCount = 0;
+    const gatedSigner = createQuorumGatedVcAuthoritySigner({
+      evidence,
+      selection: context.selection,
+      readers,
+      method: binding,
+      pinnedAnchor: authorityAnchor,
+      sign: async ({ decisionRoot, decisionSequence, authority }) => {
+        authoritySignCount += 1;
+        return signFixtureContextProof(
+          secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
+          pureCircuits.signerAuthorizationProofChallenge,
+        );
+      },
+    });
     const signed = await issueVcSignerAuthorizationFromTrustedDecision({
       evidence,
       selection: context.selection,
       readers,
       method: binding,
       anchor: authorityAnchor,
-      signer: async ({ decisionRoot, decisionSequence, authority }) => signFixtureContextProof(
-        secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
-        pureCircuits.signerAuthorizationProofChallenge,
-      ),
+      signer: gatedSigner,
     });
+    expect(authoritySignCount).toBe(1);
+    await expect(gatedSigner({
+      decisionRoot: bytes32Commitment("substituted-decision-root"),
+      decisionSequence: signed.descriptor.decisionSequence,
+      authority: pinnedVcAuthority(authorityAnchor),
+    })).rejects.toThrow(/does not match finalized descriptor/u);
+    await expect(gatedSigner({
+      decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
+        signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
+      ),
+      decisionSequence: signed.descriptor.decisionSequence,
+      authority: pinnedVcAuthority({
+        ...authorityAnchor,
+        domain: { ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-signer-consumer") },
+      }),
+    })).rejects.toThrow(/does not match finalized descriptor/u);
+    const staleSigner = createQuorumGatedVcAuthoritySigner({
+      evidence,
+      selection: context.selection,
+      readers: {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          acceptedEpoch: context.acceptedEpoch,
+          publication: context.publication,
+          decisionPoint: {
+            ...context.decisionPoint,
+            currentGrant: { ...context.decisionPoint.currentGrant, status: "suspended" },
+          },
+        }),
+      },
+      method: binding,
+      pinnedAnchor: authorityAnchor,
+      sign: async () => { throw new Error("Stale decision reached key custody"); },
+    });
+    await expect(issueVcSignerAuthorizationFromTrustedDecision({
+      evidence,
+      selection: context.selection,
+      readers,
+      method: binding,
+      anchor: authorityAnchor,
+      signer: staleSigner,
+    })).rejects.toThrow(/current grant mismatch/u);
+    expect(authoritySignCount).toBe(1);
     expect(() => verifyVcSignerAuthorizationForConsumer(
       signed.descriptor, signed.proof, authorityAnchor, null,
     )).not.toThrow();
