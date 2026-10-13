@@ -11,11 +11,20 @@ Current coverage:
   Proposal also requires a separate evidence-verifier signature. The focused
   integration test uses two distinct non-bootstrap maintainers under a 2-of-3
   policy and rejects insufficient, duplicate, stale, wrong-policy, and
-  wrong-evidence-verifier bundles. This is a local simulator path, not yet wired
-  to the signed HTTP gateway; fixture-driven issuer helpers still sign
-  internally.
+  wrong-evidence-verifier bundles. The API's optional governed-action port can
+  submit external approval/activation signatures to this simulator path;
+  proposal and production network submission still need a deployable adapter.
+  Fixture-driven issuer helpers still sign internally.
   Run `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run
   src/test/external-issuer-signers.integration.test.ts` to reproduce it.
+- `prepareVerifierProposalAction`/`executeVerifierProposalWithSignatures` and
+  `prepareVerifierDecisionAction`/`executeVerifierDecisionWithSignatures` expose
+  the exact request-profile proposal and lifecycle digests to external
+  maintainers. The simulator test requires two distinct active signatures at
+  every transition and rejects wrong scope, unknown or duplicate signer,
+  policy substitution, and stale signatures without advancing governance.
+  It checks the resulting active verifier evidence bundle independently. This
+  is not yet a public verifier application or HTTP action route.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
