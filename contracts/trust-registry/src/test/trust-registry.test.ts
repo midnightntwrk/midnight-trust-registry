@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   computeCreateAuditorAuthorizationPayloadHash,
+  computeAuditorEvidenceBoundProposalPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
@@ -24,6 +25,7 @@ import {
   encodeCompactActionKind,
   signPolicyBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  signAuditorProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
   verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
@@ -474,11 +476,38 @@ const createAuditorAuthorizationFixture = (label: string) => ({
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
 
+const auditorProposalProof = (
+  registry: RegistryFixture,
+  auditor: ReturnType<typeof createAuditorAuthorizationFixture>,
+) => {
+  const { simulator, registryId } = registry;
+  const verifier = registerIssuerEvidenceVerifier(registry);
+  const baseHash = computeCreateAuditorAuthorizationPayloadHash(
+    auditor.authorizationId, auditor.subjectDidCommitment, auditor.requestResourceId,
+    auditor.allowedAttributeSetCommitment, auditor.allowedPredicateSetCommitment,
+    auditor.disclosureLevelCommitment, auditor.policyId, auditor.trustLevel, auditor.evidenceHash,
+  );
+  const payloadHash = computeAuditorEvidenceBoundProposalPayloadHash(
+    baseHash, verifier.authorizationId, verifier.keyId,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  return {
+    payloadHash,
+    verifierAuthorizationId: verifier.authorizationId,
+    verifierKeyIdCommitment: verifier.keyId,
+    evidenceSignature: signAuditorProposalEvidenceFromSeed(
+      verifier.seed, registryId, verifier.keyId, payloadHash,
+    ),
+  };
+};
+
 const activateAuditorAuthorizationFixture = (
   registry: ReturnType<typeof createInitializedRegistryFixture>,
   authorization: ReturnType<typeof createAuditorAuthorizationFixture>,
 ): void => {
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const proof = auditorProposalProof(registry, authorization);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
     signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -491,17 +520,7 @@ const activateAuditorAuthorizationFixture = (
   simulator.proposeAuditorAuthorization(
     bootstrapMaintainer.keyId,
     bootstrapPublicKey,
-    sign(PROPOSE_AUDITOR_ACTION_KIND, computeCreateAuditorAuthorizationPayloadHash(
-      authorization.authorizationId,
-      authorization.subjectDidCommitment,
-      authorization.requestResourceId,
-      authorization.allowedAttributeSetCommitment,
-      authorization.allowedPredicateSetCommitment,
-      authorization.disclosureLevelCommitment,
-      authorization.policyId,
-      authorization.trustLevel,
-      authorization.evidenceHash,
-    )),
+    sign(PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash),
     authorization.authorizationId,
     authorization.subjectDidCommitment,
     authorization.requestResourceId,
@@ -511,6 +530,9 @@ const activateAuditorAuthorizationFixture = (
     authorization.policyId,
     authorization.trustLevel,
     authorization.evidenceHash,
+    proof.verifierAuthorizationId,
+    proof.verifierKeyIdCommitment,
+    proof.evidenceSignature,
   );
   simulator.authorizeAuditorAuthorization(
     bootstrapMaintainer.keyId,
@@ -3767,6 +3789,40 @@ describe("trust registry contract", () => {
     }
   });
 
+  it("requires a registered evidence-verifier signature for auditor proposals", () => {
+    const registry = createInitializedRegistryFixture(60);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const auditor = createAuditorAuthorizationFixture("signed-mandate");
+    const proof = auditorProposalProof(registry, auditor);
+    const sign = () => signPolicyBoundMaintainerActionFromSeed(
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
+    );
+    const propose = (keyId: Uint8Array, evidenceSignature: typeof proof.evidenceSignature) =>
+      simulator.proposeAuditorAuthorization(
+        bootstrapMaintainer.keyId, bootstrapPublicKey, sign(),
+        auditor.authorizationId, auditor.subjectDidCommitment, auditor.requestResourceId,
+        auditor.allowedAttributeSetCommitment, auditor.allowedPredicateSetCommitment,
+        auditor.disclosureLevelCommitment, auditor.policyId, auditor.trustLevel,
+        auditor.evidenceHash, proof.verifierAuthorizationId, keyId, evidenceSignature,
+      );
+    expect(() => simulator.getAuditorProposalEvidence(auditor.authorizationId)).toThrow(/not registered/i);
+    expect(() => propose(labelToBytes32("wrong-evidence-verifier-key"), proof.evidenceSignature))
+      .toThrow(/key id does not match/i);
+    expect(() => propose(proof.verifierKeyIdCommitment,
+      signVerifierProposalEvidenceFromSeed(
+        new Uint8Array(32).fill(97), registryId, proof.verifierKeyIdCommitment, proof.payloadHash,
+      ))).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().auditorAuthorizationCount).toBe(0n);
+    const eventHash = propose(proof.verifierKeyIdCommitment, proof.evidenceSignature);
+    const evidence = simulator.getAuditorProposalEvidence(auditor.authorizationId);
+    expect(evidence.evidenceCommitment).toEqual(auditor.evidenceHash);
+    expect(evidence.evidenceVerifierKeyIdCommitment).toEqual(proof.verifierKeyIdCommitment);
+    expect(evidence.proposalGovernanceEventHash).toEqual(eventHash);
+    expect(() => propose(proof.verifierKeyIdCommitment, proof.evidenceSignature))
+      .toThrow(/already exists/i);
+  });
+
   it("creates and governs auditor authorizations across proposal, activation, and archival paths", () => {
     const registry = createInitializedRegistryFixture(57);
     const {
@@ -3776,23 +3832,16 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = registry;
     const auditorAuthorization = createAuditorAuthorizationFixture("iso-27001");
+    const proposalEvidenceHash = labelToBytes32("evidence:iso-27001:propose");
+    const proposalProof = auditorProposalProof(registry,
+      { ...auditorAuthorization, evidenceHash: proposalEvidenceHash });
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_AUDITOR_ACTION_KIND,
-      computeCreateAuditorAuthorizationPayloadHash(
-        auditorAuthorization.authorizationId,
-        auditorAuthorization.subjectDidCommitment,
-        auditorAuthorization.requestResourceId,
-        auditorAuthorization.allowedAttributeSetCommitment,
-        auditorAuthorization.allowedPredicateSetCommitment,
-        auditorAuthorization.disclosureLevelCommitment,
-        auditorAuthorization.policyId,
-        auditorAuthorization.trustLevel,
-        labelToBytes32("evidence:iso-27001:propose"),
-      ),
+      proposalProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeAuditorAuthorization(
@@ -3807,7 +3856,10 @@ describe("trust registry contract", () => {
       auditorAuthorization.disclosureLevelCommitment,
       auditorAuthorization.policyId,
       auditorAuthorization.trustLevel,
-      labelToBytes32("evidence:iso-27001:propose"),
+      proposalEvidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
 
     const proposedRecord = simulator.getAuditorAuthorization(
