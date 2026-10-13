@@ -33,7 +33,9 @@ to end. Published DID/VC-backed intake and signed local HTTP mutations now
 have focused tests, but they drive separate state paths: the intake reaches the
 Compact simulator, while the HTTP gateway replays an operator workspace. The
 local workspace's fixture maintainer is not a Compact-backed 2-of-3 approval
-bundle. The next functional slice must join these paths so an authenticated
+bundle. Combined VP/proposal HTTP hosts now require a receipt-backed admission
+port, but signed pending registration and Compact proposals still use separate
+state paths. The next functional slice must join these paths so an authenticated
 applicant proposal, governed decision, published epoch, and public lookup all
 refer to the same state transition. The Compact contract checks evidence hashes
 but does not itself resolve the evidence verifier's DID assertion key.

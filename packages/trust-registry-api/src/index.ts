@@ -8,6 +8,7 @@ export * from "./signed-mutation-state.js";
 export * from "./application-intake.js";
 export * from "./application-vp-http.js";
 export * from "./pending-application-registration.js";
+export * from "./proposal-admission.js";
 export * from "./governed-membership-actions.js";
 export * from "./governed-issuer-proposals.js";
 export * from "./governed-verifier-proposals.js";

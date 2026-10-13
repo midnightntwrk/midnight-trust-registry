@@ -32,13 +32,13 @@ const SubmissionSchema = z.strictObject({
   challengeHash: HashHexSchema,
   presentation: z.unknown(),
 });
-const ReceiptSchema = z.strictObject({
+export const ApplicationVpReceiptSchema = z.strictObject({
   receiptId: HashHexSchema,
   evidenceCommitment: HashHexSchema,
   acceptedAt: z.string().datetime({ offset: true }),
 });
 
-export type ApplicationVpReceipt = z.infer<typeof ReceiptSchema>;
+export type ApplicationVpReceipt = z.infer<typeof ApplicationVpReceiptSchema>;
 export type ApplicationVpHttpIssueResult = IssuedApplicationChallenge & { applicationId: string };
 export type ApplicationVpHttpSubmissionResult = {
   evidence: ApplicationEvidenceSubmission;
@@ -143,7 +143,7 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
           propose: async ({ evidence }) => {
             const latest = await resolve(port, applicationId);
             if (!samePolicy(current, latest)) throw new ApplicationVpHttpError("stale-policy");
-            const receipt = ReceiptSchema.parse(await port.persistRedactedEvidence(applicationId, evidence));
+            const receipt = ApplicationVpReceiptSchema.parse(await port.persistRedactedEvidence(applicationId, evidence));
             if (receipt.evidenceCommitment !== evidence.commitment) throw new ApplicationVpHttpError("rejected");
             persisted = receipt;
             signedEvidence = evidence;

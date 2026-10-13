@@ -132,6 +132,7 @@ const vpPortsByApplication = new Map();
 const evidenceByRole = new Map();
 const expectedEvidenceByRole = new Map();
 const persistedEvidence = new Map();
+const evidenceReceipts = new Map();
 const signerFixture = await createApplicationVpScenarioFixture(VP_FIXTURE_NONCE, {
   evidenceVerifierDid: harness.evidenceVerifier.did,
   evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
@@ -272,6 +273,17 @@ const proposalPort = (role, target) => ({
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  proposalAdmission: {
+    resolveAcceptedApplication: async (applicationId) => {
+      const binding = bindings.get(applicationId);
+      const evidence = persistedEvidence.get(applicationId);
+      const receipt = evidenceReceipts.get(applicationId);
+      const spec = applicantSpecs.find((item) =>
+        createScopedIdentifier("application", item.role, item.id) === applicationId);
+      return binding === undefined || evidence === undefined || receipt === undefined || spec === undefined
+        ? null : { authorizationId: spec.id, binding, evidence, receipt };
+    },
+  },
   applicationVp: {
     challengeStore: new InMemoryApplicationChallengeStore(),
     authorizeRequest: async (applicationId, request) => {
@@ -304,11 +316,13 @@ const server = createTrustRegistryApiServer({
       }
       pendingApplications.delete(applicationId);
       persistedEvidence.set(applicationId, evidence);
-      return {
+      const receipt = {
         receiptId: sha256Hex(`receipt:${applicationId}:${evidence.commitment}`),
         evidenceCommitment: evidence.commitment,
         acceptedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
       };
+      evidenceReceipts.set(applicationId, receipt);
+      return receipt;
     },
   },
   governedIssuerProposals: {
@@ -451,6 +465,26 @@ try {
   assert.ok(issuerEvidence);
   assert.ok(expectedIssuerEvidence);
   const proposalEndpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
+  const proposePrepare = (endpoint, evidence) => fetch(`${endpoint}/prepare`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evidence }),
+  });
+  for (const spec of applicantSpecs) {
+    const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
+    const applicationId = createScopedIdentifier("application", spec.role, spec.id);
+    const evidence = evidenceByRole.get(spec.role);
+    const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
+    await expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), 403);
+    await expectHttp(await proposePrepare(
+      `${base}/v1/governed/${spec.role}/${createScopedIdentifier("wrong", spec.id)}/proposal`, evidence,
+    ), 403);
+    const receipt = evidenceReceipts.get(applicationId);
+    evidenceReceipts.delete(applicationId);
+    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    evidenceReceipts.set(applicationId, receipt);
+  }
+  const issuerApplicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
+  const issuerReceipt = evidenceReceipts.get(issuerApplicationId);
   const proposalPrepared = await expectHttp(await fetch(`${proposalEndpoint}/prepare`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -470,6 +504,9 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  evidenceReceipts.delete(issuerApplicationId);
+  await expectHttp(await submitProposal(proposalBody), 403);
+  evidenceReceipts.set(issuerApplicationId, issuerReceipt);
   await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
   const issuerProposal = await expectHttp(await submitProposal(proposalBody), 202);
   await expectHttp(await submitProposal(proposalBody), 409);
@@ -739,6 +776,7 @@ try {
     expectedRejections: [
       "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
+      "proposal-cross-role-evidence:403", "proposal-wrong-target:403", "proposal-missing-receipt:403",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",

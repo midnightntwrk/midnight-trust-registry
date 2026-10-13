@@ -206,6 +206,18 @@ after consumption does not make a challenge reusable. The optional port owns
 the challenge store, which must provide durable atomic consumption in a
 multi-process deployment. No fixture verifier is installed by default.
 
+If the same server configures both `applicationVp` and any governed membership
+proposal port, it must also configure `proposalAdmission`; startup fails
+without it. The port resolves a committed accepted application by the
+evidence application ID. Both proposal `prepare` and `submit` reject unless
+the trusted record matches the role, authorization target, original binding,
+exact redacted signed evidence, and validated receipt. This prevents a
+combined host from submitting a proposal that bypassed its VP intake. A
+proposal-only host may instead rely on its own trusted external evidence
+pipeline, but its Compact-backed proposal port must still verify all governed
+evidence and signer requirements. The accepted-record lookup is an off-ledger
+join, not an assertion that the applicant is already a member.
+
 `FileApplicationChallengeStore` is a local reference adapter for the port. It
 stores only challenge, binding, and application hashes with issuance/expiry
 instants in a versioned private (`0600`) file. A shared cross-process lock
