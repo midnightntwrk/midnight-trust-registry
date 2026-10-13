@@ -250,10 +250,16 @@ not the older transcript-digest draft.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
+      The local compiled consumer pins the authority in constructor ledger
+      state and rejects wrong-domain installation; production anchor
+      deployment and the complete circuit-level negative matrix remain open.
 - [ ] In the consumer fixture, use the VC composed
       `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
+      The local consumer exercises both circuits, including positive signatures
+      and wrong-scope/forged-signature rejections; its verifier descriptor is
+      still fixture-created rather than TR-decision-derived.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 

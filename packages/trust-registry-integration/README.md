@@ -90,8 +90,13 @@ Current coverage:
   descriptor or explicit `null` on first install. The local test rejects
   wrong domain, key, method, scope, sequence, DID rollback, and revoked-to-active
   replay. The TR-to-VC scope mapping is an explicit trusted input, not yet a
-  governed schema/request mapping. There is no production finalized reader,
-  authority signer service, durable consumer state, or Ledger 8 circuit fixture.
+  governed schema/request mapping. A separate Compact consumer fixture pins
+  authority in constructor-initialized ledger state, installs monotonic
+  descriptors, checks a genuinely signed issuer credential, rejects a forged
+  credential signature, and checks a fixture-signed verifier request. The
+  verifier descriptor is not yet derived from a TR verifier decision. There
+  is no production finalized reader, authority signer service, or deployed
+  consumer with durable state and network finality.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

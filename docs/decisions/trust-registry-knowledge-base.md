@@ -450,3 +450,16 @@ authority-key lifecycle, production finality, durable consumer state, or a
 Ledger 8 consumer circuit. Retrospective: the focused proof test took about
 two seconds and the fast integration lane about 25 seconds; the full proving
 build is reserved for prepublication validation of the accumulated stack.
+
+The local Ledger 8 VC consumer fixture now compiles from the published VC
+`composable.compact` import. Its constructor writes the authority domain,
+method, and key to ledger, with no mutation circuit. Installation checks the
+VC authority proof and stores a descriptor by authorization ID; updates use
+the VC monotonic sequence, DID-version, and terminal-revocation circuit.
+The simulator-derived issuer proof installs successfully, a wrong ledger
+anchor fails, a genuinely signed credential is accepted, and the same
+metadata with a forged credential signature fails. A separately constructed
+verifier descriptor exercises the signed-request circuit and rejects a wrong
+request scope. This is a local compiled/simulator fixture, not a production
+deployed consumer; TR-derived verifier decisions, governed scope mapping,
+finality, key lifecycle, and durable state remain open.
