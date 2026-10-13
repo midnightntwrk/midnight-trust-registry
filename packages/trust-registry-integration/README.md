@@ -75,11 +75,15 @@ Current coverage:
   The scenario fixture serializes both proofs into canonical JSON and derives
   body roots from the submitted credential and presentation body strings;
   changing either submitted body or a proof signature fails verification.
-  The fixture's role scope, expiry, holder, and status reference are read from
+  The fixture's role scope, expiry, holder, status registry, handle, and
+  authority method are read from
   the signed credential body, and its claims callback uses that observed scope
   for issuer, verifier, auditor, and maintainer applications. Issuer eligibility
   and live status are still fixture-controlled answers, not production trust
-  or revocation determinations.
+  or revocation determinations. The test-family status decision must match the
+  signed registry, handle, and authority method and be active and fresh; tests
+  reject revoked, mismatched, and stale decisions. No authenticated external
+  status witness is verified here.
   The body-binding adapter is responsible for establishing that the holder,
   status, expiry, and role claims came from the signed credential body root;
   the published generic proof circuits alone do not establish that relation.

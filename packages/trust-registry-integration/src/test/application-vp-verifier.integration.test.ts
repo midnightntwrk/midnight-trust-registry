@@ -346,6 +346,23 @@ describe("published VC proof and DID application verifier port", () => {
     expect(family.assertStatusActive).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["revoked", { active: false }],
+    ["wrong registry", { registryId: sha256Hex("another-status-registry") }],
+    ["wrong status authority", { authorityMethod: `${createMidnightDid("other-issuer")}#assertion-1` }],
+    ["wrong status handle", { statusHandleCommitment: sha256Hex("another-status-handle") }],
+  ])("rejects a %s test-family status decision bound to the signed credential", async (_label, statusDecision) => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, { statusDecision });
+    await expect(verifyApplicationVp(scenario.input)).rejects.toMatchObject({ category: "ineligible" });
+  });
+
+  it("rejects a stale test-family status decision without extending evidence lifetime", async () => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, {
+      statusDecision: { validUntilMs: NOW - 1 },
+    });
+    await expect(verifyApplicationVp(scenario.input)).rejects.toMatchObject({ category: "expired" });
+  });
+
   it("requires the trusted family to bind claims, status, holder, and expiry to the signed credential body", async () => {
     const { input, family } = await fixture();
     family.assertCredentialBodyBinding = vi.fn(async () => false as unknown as true);

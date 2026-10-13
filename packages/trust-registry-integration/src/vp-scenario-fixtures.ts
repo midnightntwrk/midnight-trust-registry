@@ -35,6 +35,7 @@ type FixtureCredentialBody = {
   scope: AuthorizationScope;
   claimsCommitment: string;
   statusRegistryId: string;
+  statusAuthorityMethod: string;
   statusHandleCommitment: string;
   credentialExpiresAtMs: number;
 };
@@ -47,7 +48,7 @@ const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
   const body = value as Record<string, unknown>;
   const keys = [
     "version", "issuerDid", "issuerMethodId", "subjectDid", "holderMethodId", "scope",
-    "claimsCommitment", "statusRegistryId", "statusHandleCommitment", "credentialExpiresAtMs",
+    "claimsCommitment", "statusRegistryId", "statusAuthorityMethod", "statusHandleCommitment", "credentialExpiresAtMs",
   ];
   if (
     Object.keys(body).length !== keys.length || keys.some((key) => !Object.hasOwn(body, key))
@@ -56,6 +57,7 @@ const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
     || typeof body.subjectDid !== "string" || typeof body.holderMethodId !== "string"
     || typeof body.claimsCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.claimsCommitment)
     || typeof body.statusRegistryId !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.statusRegistryId)
+    || typeof body.statusAuthorityMethod !== "string"
     || typeof body.statusHandleCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.statusHandleCommitment)
     || typeof body.credentialExpiresAtMs !== "number" || !Number.isSafeInteger(body.credentialExpiresAtMs)
   ) throw new TypeError("Application VP fixture credential body is invalid");
@@ -68,9 +70,18 @@ const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
     scope: AuthorizationScopeSchema.parse(body.scope),
     claimsCommitment: body.claimsCommitment,
     statusRegistryId: body.statusRegistryId,
+    statusAuthorityMethod: body.statusAuthorityMethod,
     statusHandleCommitment: body.statusHandleCommitment,
     credentialExpiresAtMs: body.credentialExpiresAtMs,
   };
+};
+
+type FixtureStatusDecision = {
+  registryId: string;
+  authorityMethod: string;
+  statusHandleCommitment: string;
+  active: boolean;
+  validUntilMs: number;
 };
 
 /** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
@@ -81,6 +92,7 @@ export async function createApplicationVpScenarioFixture(
     evidenceVerifierDid?: string;
     evidenceVerifierMethodId?: string;
     scope?: AuthorizationScope;
+    statusDecision?: Partial<FixtureStatusDecision>;
   } = {},
 ) {
   const issuerDid = createMidnightDid("vp-issuer");
@@ -127,6 +139,7 @@ export async function createApplicationVpScenarioFixture(
     scope,
     claimsCommitment: sha256Hex(`accepted-${scope.role}-claims`),
     statusRegistryId: hex(bytes32("status-registry")),
+    statusAuthorityMethod: `${issuerDid}#assertion-1`,
     statusHandleCommitment: hex(bytes32("credential-status-handle")),
     credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
   };
@@ -176,6 +189,14 @@ export async function createApplicationVpScenarioFixture(
   };
   const submittedBodies = new Map<string, FixtureCredentialBody>();
   submittedBodies.set(hex(material.credentialBodyRoot), credentialBody);
+  const statusDecision: FixtureStatusDecision = {
+    registryId: credentialBody.statusRegistryId,
+    authorityMethod: credentialBody.statusAuthorityMethod,
+    statusHandleCommitment: credentialBody.statusHandleCommitment,
+    active: true,
+    validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000,
+    ...options.statusDecision,
+  };
   const family: ApplicationVpFamilyAdapter<typeof submission> = {
     prepare: async (submitted) => {
       if (
@@ -213,6 +234,11 @@ export async function createApplicationVpScenarioFixture(
         || body.subjectDid !== prepared.subjectDid || body.holderMethodId !== prepared.holderMethodId
         || body.credentialExpiresAtMs !== prepared.credentialExpiresAtMs
         || body.statusRegistryId !== hex(prepared.statusBinding.registryRef.registryId)
+        || body.statusAuthorityMethod !== `${issuerDid}#assertion-1`
+        || !equalMethodRef(
+          prepared.statusBinding.registryRef.authorityVerificationMethodRef,
+          issuerMethod.verificationMethodRef,
+        )
         || body.statusHandleCommitment !== hex(prepared.statusBinding.statusHandleCommitment)
       ) throw new TypeError("Application VP fixture credential binding is invalid");
       return true as const;
@@ -221,7 +247,16 @@ export async function createApplicationVpScenarioFixture(
       if (prepared.issuerDid !== issuerDid) throw new TypeError("Application VP fixture issuer is ineligible");
       return true as const;
     },
-    assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000 }),
+    assertStatusActive: async (prepared) => {
+      const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
+      if (
+        !body || !statusDecision.active
+        || statusDecision.registryId !== body.statusRegistryId
+        || statusDecision.authorityMethod !== body.statusAuthorityMethod
+        || statusDecision.statusHandleCommitment !== body.statusHandleCommitment
+      ) throw new TypeError("Application VP fixture status is not active under the signed binding");
+      return { validUntilMs: statusDecision.validUntilMs };
+    },
     assertRoleClaims: async (prepared) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
       if (!body) throw new TypeError("Application VP fixture claims are missing");
@@ -253,4 +288,12 @@ export async function createApplicationVpScenarioFixture(
     family,
     signer,
   };
+}
+
+function equalMethodRef(
+  left: { controllerAddress: { bytes: Uint8Array }; methodId: Uint8Array },
+  right: { controllerAddress: { bytes: Uint8Array }; methodId: Uint8Array },
+): boolean {
+  return Buffer.from(left.controllerAddress.bytes).equals(Buffer.from(right.controllerAddress.bytes))
+    && Buffer.from(left.methodId).equals(Buffer.from(right.methodId));
 }
