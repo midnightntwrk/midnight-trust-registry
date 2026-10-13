@@ -59,7 +59,8 @@ export circuit installSignerAuthorization(
   installedSigners.insert(publicDescriptor.authorizationId, publicDescriptor);
 }
 
-export circuit assertIssuerCredentialAuthorized(
+// Schema-level signer proof only; family definition and status policy require separate checks.
+export circuit assertIssuerCredentialSchemaSignerProof(
   credential: ConsumerVC_Credential,
   credentialProof: Proof,
   authorizationId: Bytes<32>

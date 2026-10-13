@@ -95,19 +95,18 @@ Current coverage:
   from constructor-pinned fields and checks the pinned consumer address
   against `kernel.self().bytes` on installation. It must provide an authenticated prior
   descriptor or explicit `null` on first install. The local test rejects
-  wrong domain, key, method, scope, sequence, DID rollback, and revoked-to-active
-  replay. The TR-to-VC scope mapping is an explicit trusted input, not yet a
-  governed schema/request mapping. A separate Compact consumer fixture pins
-  authority in constructor-initialized ledger state, installs monotonic
-  descriptors, checks a genuinely signed issuer credential, rejects a forged
-  credential signature, and checks a signed verifier request. Both issuer and
-  verifier descriptors now derive from simulator grants, epoch witnesses, and
-  resolved DID methods through the trusted-reader boundary. The authority
-  path refuses to sign an old verifier epoch after a current authenticated
-  read observes suspension. Readers and signer remain local fixtures; there
-  is no production finalized reader, governed VC scope mapping, authority
-  signer service, or deployed
-  consumer with durable state and network finality.
+  wrong domain, key, method, scope, sequence, DID rollback,
+  revoked-to-active replay, and cross-deployment replay. A separate Compact
+  consumer fixture pins authority in constructor-initialized ledger state,
+  installs monotonic descriptors, checks a genuinely signed issuer credential
+  at the schema-signer boundary, rejects a forged credential signature, and
+  checks a signed verifier request. Its issuer circuit does not authorize a
+  credential definition or status method. A product claiming full issuer
+  trust must separately verify those against the same governed grant and
+  credential. Both issuer and verifier descriptors derive from simulator
+  grants, epoch witnesses, and resolved DID methods. Readers and signer remain
+  local fixtures; production finality, governed external VC schema enrollment,
+  authority-key lifecycle, and durable deployed consumer state remain open.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

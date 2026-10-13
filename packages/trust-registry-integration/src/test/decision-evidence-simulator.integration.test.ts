@@ -671,15 +671,15 @@ describe("simulator-backed VC decision evidence composition", () => {
         createdAt: 1n,
         challengeHash: randomBytes(32),
       });
-      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
         circuitContext, credential, credentialProof, signed.descriptor.authorizationId,
       )).not.toThrow();
-      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
         circuitContext, credential,
         { ...credentialProof, signature: { ...credentialProof.signature, s: credentialProof.signature.s + 1n } },
         signed.descriptor.authorizationId,
       )).toThrow();
-      expect(() => consumer.circuits.assertIssuerCredentialAuthorized(
+      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
         circuitContext, { ...credential, schema: { ...vcSchema, schemaId: bytes32Commitment("wrong-schema") } },
         credentialProof, signed.descriptor.authorizationId,
       )).toThrow();

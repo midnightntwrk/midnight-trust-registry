@@ -483,6 +483,13 @@ seven-field authority domain commitment. The consumer recomputes it from
 constructor-pinned fields, then checks its consumer address against
 `kernel.self().bytes` at signer installation. A second deployment with the
 same anchor now rejects a valid proof, and the local vector is fixed in tests.
+The VC issuer descriptor is intentionally schema-scoped: changing only the
+TR credential definition or status method changes the full registry scope
+commitment but not VC `issuerScopeCommitment(SchemaRef)`. The consumer fixture
+therefore names its circuit a schema-signer proof, not a complete credential
+authorization decision. Any product claiming full trust must separately
+verify definition, status method, and live status against the same grant and
+credential.
 
 Iteration timing: focused VC scope and decision tests took about three
 seconds; fast integration including four demos took about 25 seconds; a broad

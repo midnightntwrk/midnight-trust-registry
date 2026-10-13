@@ -200,6 +200,10 @@ contract address. Issuer scope is VC `persistentHash<SchemaRef>` for the exact
 credential schema; verifier scope is a canonical commitment to the approved
 signed request profile. The richer ADR-0002 registry scope is evaluated before
 issuing this narrower VC descriptor, never silently widened by it.
+The schema-level signer proof alone MUST NOT be represented as authorization
+for a credential definition, status method, or live credential status; a full
+decision requires a separate trusted check bound to the same grant and
+credential.
 
 The TR-owned `domainCommitment` preimage MUST include Midnight network,
 consuming contract, registry ID, and authority identity. The authority proof

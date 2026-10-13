@@ -34,6 +34,17 @@ describe("registry-to-VC scope mapping", () => {
     }
   });
 
+  it("keeps definition and status restrictions outside the narrower VC schema-signer proof", () => {
+    const scope = createIssuerScenarioFixture("vc-limits").authorizationScope;
+    for (const restricted of [
+      { ...scope, credentialDefinitionId: "other-definition" },
+      { ...scope, statusMethod: "other-status-method" },
+    ]) {
+      expect(computeAuthorizationScopeCommitment(restricted)).not.toBe(computeAuthorizationScopeCommitment(scope));
+      expect(vcScopeCommitmentFromRegistryScope(restricted)).toEqual(vcScopeCommitmentFromRegistryScope(scope));
+    }
+  });
+
   it("binds verifier request proof scope to every governed request-profile field", () => {
     const scope = createVerifierAuthorizationScopeFixture(createVerifierScenarioFixture("vc-request"));
     expect(vcScopeCommitmentFromRegistryScope(scope)).toEqual(
