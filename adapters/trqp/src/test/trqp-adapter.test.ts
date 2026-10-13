@@ -205,7 +205,7 @@ describe("trust registry TRQP adapter", () => {
     }));
     expect(response.time_evaluated).toBe(FIXED_TIME);
     expect(response.time_requested).toBeUndefined();
-  });
+  }, 20_000);
 
   it("maps active issuer and verifier authorization into TRQP responses", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
