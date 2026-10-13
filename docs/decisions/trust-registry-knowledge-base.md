@@ -375,3 +375,22 @@ adapter now persists pending applications, spent nonces, and accepted redacted
 evidence across store restarts. It does not atomically join challenge
 consumption, evidence acceptance, and Compact governance; this is not live VC
 status verification or network finality.
+
+The next local slice adds applicant-authorized recovery of already accepted
+redacted VP evidence and its receipt by application ID. The private GET does
+not verify the VP again or consume another challenge; an absent receipt is
+ambiguous and is not an automatic retry signal. The portal shows only escaped
+redacted evidence in page memory. The signed-issuer demo discards the VP
+submission response, recovers the accepted record, and still completes the
+governed proposal journey. This is same-host crash/response recovery, not a
+transaction across the private stores and Compact ledger.
+
+For API/UI iterations, run direct package Vitest targets first (the focused
+application VP HTTP file took about 3 seconds), then `./run.sh integration
+--light` (19 seconds warm for 89 simulator tests and three demos), and finally
+`./run.sh --light` (about 55 seconds for 20 tasks on this slice). Full
+integration compiles 59 ZK circuits and spent over six minutes in
+`zkir compile-many` before tests started in the last measured attempt; reserve
+it for contract/proving changes and prepublication validation, not each
+API-only edit. The fast lane compiles Compact with `--skip-zk` but still runs
+the same simulator integration and demo suites.

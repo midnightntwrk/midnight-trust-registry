@@ -127,6 +127,21 @@ describe("private application VP exchange", () => {
     );
   });
 
+  it("recovers accepted evidence with a read-only same-origin request", async () => {
+    const accepted = {
+      evidence: { envelope: { applicationId: "application:issuer:one" }, commitment: `0x${"3".repeat(64)}` },
+      receipt: { receiptId: `0x${"4".repeat(64)}`, evidenceCommitment: `0x${"3".repeat(64)}` },
+    };
+    const fetchImpl = vi.fn(async () => Response.json(accepted)) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.loadAcceptedApplicationEvidence("application:issuer:one")).toEqual(accepted);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/application-evidence/application%3Aissuer%3Aone/receipt",
+      { method: "GET", credentials: "same-origin" },
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("does not expose a rejected server body's private presentation data", async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       title: "private-presentation-payload", detail: "secret credential claims",

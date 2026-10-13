@@ -54,7 +54,7 @@ export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
 
-const privateApplicationPath = (applicationId: string, action: "binding" | "challenges" | "submissions"): string => {
+const privateApplicationPath = (applicationId: string, action: "binding" | "challenges" | "submissions" | "receipt"): string => {
   if (applicationId.length === 0 || applicationId !== applicationId.trim()) {
     throw new Error("A valid application ID is required.");
   }
@@ -202,6 +202,15 @@ export class TrustRegistryApplicantPortalClient {
         challengeHash: challenge.challengeHash,
         presentation,
       }),
+    });
+    return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
+  }
+
+  /** Recover only accepted redacted evidence after a lost response; this never resubmits the VP. */
+  async loadAcceptedApplicationEvidence(applicationId: string): Promise<ApplicationVpHttpSubmissionResult> {
+    const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "receipt")}`, {
+      method: "GET",
+      credentials: "same-origin",
     });
     return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
   }

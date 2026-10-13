@@ -26,6 +26,7 @@ Current route set:
 - `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
+- `GET /v1/application-evidence/:applicationId/receipt` (applicant-authorized accepted redacted evidence and receipt recovery; optional trusted port)
 - `POST /v1/pending-applications` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`

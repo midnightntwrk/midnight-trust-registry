@@ -1,6 +1,6 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -14,6 +14,7 @@ type AppState = {
   evidenceBusy: boolean;
   evidenceError: string | undefined;
   evidenceFlash: string | undefined;
+  acceptedEvidence: ApplicationVpHttpSubmissionResult | undefined;
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
 };
 
@@ -90,6 +91,7 @@ export const createApplicantPortalApp = (
     evidenceBusy: false,
     evidenceError: undefined,
     evidenceFlash: undefined,
+    acceptedEvidence: undefined,
     pendingApplication: undefined,
   };
   let evidenceRequestId = 0;
@@ -109,7 +111,10 @@ export const createApplicantPortalApp = (
 
   const registerApplication = async (rawRequest: string) => {
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingApplication: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    setState({
+      evidenceBusy: true, pendingApplication: undefined, acceptedEvidence: undefined,
+      evidenceError: undefined, evidenceFlash: undefined,
+    });
     try {
       requirePrivateHost();
       let signedRequest: unknown;
@@ -159,7 +164,10 @@ export const createApplicantPortalApp = (
 
   const loadApplicationBinding = async (applicationId: string) => {
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingApplication: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    setState({
+      evidenceBusy: true, pendingApplication: undefined, acceptedEvidence: undefined,
+      evidenceError: undefined, evidenceFlash: undefined,
+    });
     try {
       requirePrivateHost();
       const binding = await client().loadPendingApplicationBinding(applicationId);
@@ -179,7 +187,10 @@ export const createApplicantPortalApp = (
     const pending = state.pendingApplication;
     if (pending === undefined) return;
     const requestId = ++evidenceRequestId;
-    setState({ evidenceBusy: true, pendingApplication: { binding: pending.binding }, evidenceError: undefined, evidenceFlash: undefined });
+    setState({
+      evidenceBusy: true, pendingApplication: { binding: pending.binding }, acceptedEvidence: undefined,
+      evidenceError: undefined, evidenceFlash: undefined,
+    });
     try {
       requirePrivateHost();
       const challenge = await client().issueApplicationChallenge(pending.binding.applicationId);
@@ -217,12 +228,35 @@ export const createApplicantPortalApp = (
       if (requestId !== evidenceRequestId) return;
       setState({
         pendingApplication: { binding: pending.binding },
+        acceptedEvidence: result,
         evidenceFlash: `${pending.binding.role} evidence accepted: ${result.receipt.receiptId}. The application still requires governance approval.`,
       });
     } catch (error) {
       if (requestId === evidenceRequestId) {
         setState({ pendingApplication: { binding: pending.binding }, evidenceError: formatApiError(error) });
       }
+    } finally {
+      if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
+  const recoverAcceptedEvidence = async (applicationId: string) => {
+    const requestId = ++evidenceRequestId;
+    setState({ evidenceBusy: true, acceptedEvidence: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    try {
+      requirePrivateHost();
+      const result = await client().loadAcceptedApplicationEvidence(applicationId);
+      if (requestId !== evidenceRequestId) return;
+      if (result.evidence.envelope.applicationId !== applicationId
+        || result.receipt.evidenceCommitment !== result.evidence.commitment) {
+        throw new Error("Accepted evidence does not match the requested application.");
+      }
+      setState({
+        acceptedEvidence: result,
+        evidenceFlash: `Accepted evidence recovered: ${result.receipt.receiptId}. Do not resubmit the VP.`,
+      });
+    } catch (error) {
+      if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
     } finally {
       if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
     }
@@ -316,6 +350,11 @@ export const createApplicantPortalApp = (
       const form = event.currentTarget as HTMLFormElement;
       const applicationId = form.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
       if (applicationId !== undefined && applicationId.length > 0) void loadApplicationBinding(applicationId);
+    });
+    root.querySelector<HTMLButtonElement>("[data-application-receipt]")?.addEventListener("click", (event) => {
+      const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
+      const applicationId = form?.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
+      if (applicationId !== undefined && applicationId.length > 0) void recoverAcceptedEvidence(applicationId);
     });
 
     root.querySelector<HTMLFormElement>("[data-application-registration-form]")?.addEventListener("submit", (event) => {
@@ -439,7 +478,15 @@ export const createApplicantPortalApp = (
                 <input class="input mono" name="applicationId" type="text" maxlength="256" required />
               </label>
               <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Load application request</button>
+              <button class="button secondary" type="button" data-application-receipt${!privateHost || state.evidenceBusy ? " disabled" : ""}>Recover accepted evidence</button>
             </form>
+            ${state.acceptedEvidence === undefined ? "" : `
+              <div class="panel" data-accepted-evidence>
+                <p>Accepted receipt: <span class="mono">${escapeHtml(state.acceptedEvidence.receipt.receiptId)}</span></p>
+                <p>Only the redacted signed evidence below is shared with the governance operator. The VC/VP stays private.</p>
+                <pre class="mono">${escapeHtml(JSON.stringify(state.acceptedEvidence.evidence, null, 2))}</pre>
+              </div>
+            `}
             ${pending === undefined ? "" : `
               <div class="panel">
                 <p>Applicant DID: <span class="mono">${escapeHtml(pending.binding.subjectDid)}</span></p>

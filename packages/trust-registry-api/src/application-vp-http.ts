@@ -6,6 +6,7 @@ import {
   AuthorizedEvidenceVerifierSchema,
   HashHexSchema,
   computeApplicationChallengeBindingHash,
+  computeApplicationEvidenceCommitment,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSignature,
   type ApplicationEvidenceSignatureVerifier,
@@ -58,6 +59,8 @@ export interface ApplicationVpHttpPort {
   signEvidence(commitment: string): Promise<ApplicationEvidenceSignature>;
   verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier;
   persistRedactedEvidence(applicationId: string, evidence: ApplicationEvidenceSubmission): Promise<ApplicationVpReceipt>;
+  /** Read trusted redacted acceptance after a lost HTTP response; never repeat VP verification or consume a nonce. */
+  resolveAcceptedEvidence?(applicationId: string): Promise<ApplicationVpHttpSubmissionResult | null>;
 }
 
 export class ApplicationVpHttpError extends Error {
@@ -105,6 +108,23 @@ function samePolicy(
 export function createApplicationVpHttpService(port: ApplicationVpHttpPort, clock: () => number) {
   const challenges = new ApplicationChallengeService(port.challengeStore, clock);
   return {
+    async accepted(applicationIdInput: string): Promise<ApplicationVpHttpSubmissionResult> {
+      const applicationId = parseApplicationId(applicationIdInput);
+      const saved = await port.resolveAcceptedEvidence?.(applicationId);
+      if (saved === undefined || saved === null) throw new ApplicationVpHttpError("not-found");
+      try {
+        const evidence = ApplicationEvidenceSubmissionSchema.parse(saved.evidence);
+        const receipt = ApplicationVpReceiptSchema.parse(saved.receipt);
+        if (evidence.envelope.applicationId !== applicationId
+          || evidence.commitment !== computeApplicationEvidenceCommitment(evidence.envelope)
+          || receipt.evidenceCommitment !== evidence.commitment) {
+          throw new ApplicationVpHttpError("rejected");
+        }
+        return { evidence, receipt };
+      } catch {
+        throw new ApplicationVpHttpError("rejected");
+      }
+    },
     async binding(applicationIdInput: string): Promise<ApplicationChallengeBinding> {
       const applicationId = parseApplicationId(applicationIdInput);
       return (await resolve(port, applicationId)).binding;

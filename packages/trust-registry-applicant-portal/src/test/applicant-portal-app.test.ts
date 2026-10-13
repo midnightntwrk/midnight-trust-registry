@@ -162,6 +162,43 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("[data-application-vp-form]")).toBeNull();
   });
 
+  it("recovers a lost acceptance response without repeating the private VP submission", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const applicationId = "application:issuer:recovered";
+    const evidenceCommitment = `0x${"4".repeat(64)}`;
+    const calls: Array<{ path: string; method: string | undefined }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, method: init?.method });
+      if (path.endsWith("/receipt")) return Response.json({
+        evidence: {
+          commitment: evidenceCommitment,
+          envelope: { applicationId, role: "issuer", subjectDid: "did:midnight:issuer:<script>" },
+        },
+        receipt: { receiptId: `0x${"5".repeat(64)}`, evidenceCommitment },
+      });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1" });
+      return Response.json({ entries: [] });
+    });
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/app?apiBase=https%3A%2F%2Fregistry.example"),
+      storage: window.localStorage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain("Pending membership evidence"));
+    const form = root.querySelector<HTMLFormElement>("[data-application-binding-form]")!;
+    form.querySelector<HTMLInputElement>("[name='applicationId']")!.value = applicationId;
+    root.querySelector<HTMLButtonElement>("[data-application-receipt]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain("Accepted evidence recovered"));
+    expect(root.textContent).toContain("did:midnight:issuer:<script>");
+    expect(root.querySelector("[data-accepted-evidence] script")).toBeNull();
+    expect(calls.filter((call) => call.path.endsWith("/receipt"))).toEqual([{
+      path: "/v1/application-evidence/application%3Aissuer%3Arecovered/receipt", method: "GET",
+    }]);
+    expect(calls.some((call) => call.path.endsWith("/submissions") || call.path.endsWith("/challenges"))).toBe(false);
+  });
+
   it("registers issuer, verifier, and maintainer requests through the private evidence panel", async () => {
     for (const role of ["issuer", "verifier", "maintainer"] as const) {
       const root = document.createElement("div");
@@ -189,7 +226,10 @@ describe("trust registry applicant portal app", () => {
           applicationId, nonce: `0x${"1".repeat(64)}`, challengeHash: `0x${"2".repeat(64)}`,
           expiresAt: "2026-10-13T00:05:00.000Z",
         });
-        if (path.endsWith("/submissions")) return Response.json({ receipt: { receiptId: `0x${"5".repeat(64)}` } });
+        if (path.endsWith("/submissions")) return Response.json({
+          evidence: { commitment: `0x${"4".repeat(64)}`, envelope: { applicationId, role } },
+          receipt: { receiptId: `0x${"5".repeat(64)}`, evidenceCommitment: `0x${"4".repeat(64)}` },
+        });
         if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:one" });
         return Response.json({ entries: [] });
       });

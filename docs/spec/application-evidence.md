@@ -219,6 +219,14 @@ This off-ledger join does not replace the proposal circuit's current-policy,
 verifier-key, evidence-signature, quorum, and sequence rechecks. The host must
 persist the accepted record atomically with the receipt and make it available
 only after successful VP intake; the in-memory demo is not durable.
+An applicant-authorized `GET /v1/application-evidence/:applicationId/receipt`
+MAY recover the accepted redacted signed evidence and receipt after a lost
+submission response. The host MUST authorize the applicant before looking up
+the record, require the receipt's evidence commitment to match the canonical
+evidence commitment, and return no raw VP. It MUST NOT reverify the VP, consume
+another nonce, or create a second accepted record. An absent receipt means only
+that no acceptance was found in that host's accepted store; it is not proof that
+an in-flight submission failed and MUST NOT cause automatic resubmission.
 The local signed-issuer reference derives registration preflight and public
 snapshots from one Compact simulator, then carries one accepted VP through
 2-of-3 maintainer proposal, decisions, epoch publication, and public evidence

@@ -208,6 +208,7 @@ const server = createTrustRegistryApiServer({
     signEvidence: signingPorts.signEvidence,
     verifyEvidenceSignature: signingPorts.verifyEvidenceSignature,
     persistRedactedEvidence: (id, evidence) => registration.acceptEvidence(id, evidence, now),
+    resolveAcceptedEvidence: (id) => registration.resolveAcceptedEvidence(id),
   },
 });
 
@@ -266,6 +267,9 @@ try {
     },
     body: JSON.stringify(body),
   });
+  const getPrivate = (path, withToken = true) => fetch(`${base}${path}`, {
+    headers: withToken ? { authorization: `Bearer ${token}` } : {},
+  });
 
   const application = signedApplication();
   assert.equal((await post("/v1/pending-applications", application, false)).status, 403);
@@ -281,6 +285,8 @@ try {
   const evidencePath = `/v1/application-evidence/${applicationId}`;
   assert.equal((await post(`${evidencePath}/challenges`, {}, false)).status, 403);
   const challenge = await expectHttp(await post(`${evidencePath}/challenges`, {}), 201);
+  assert.equal((await getPrivate(`${evidencePath}/receipt`, false)).status, 403);
+  assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
   acceptedChallengeHash = challenge.challengeHash;
   currentProof = await createApplicationVpScenarioFixture(challenge.nonce, fixtureOptions);
   const submission = {
@@ -288,7 +294,9 @@ try {
     challengeHash: challenge.challengeHash,
     presentation: currentProof.input.submission,
   };
-  const submitted = await expectHttp(await post(`${evidencePath}/submissions`, submission), 202);
+  // The accepted VP response is intentionally lost; recover without reusing the challenge.
+  assert.equal((await post(`${evidencePath}/submissions`, submission)).status, 202);
+  const submitted = await expectHttp(await getPrivate(`${evidencePath}/receipt`), 200);
   assert.equal(submitted.receipt.evidenceCommitment, submitted.evidence.commitment);
   assert.equal(JSON.stringify(submitted).includes(currentProof.input.submission.rawCredentialBody), false);
   const reopened = new FileApplicationAdmissionStore(
@@ -384,7 +392,8 @@ try {
     activeEpochId: bundle.epoch.epochId,
     trustedAtTime: evaluated.trustedAtTime,
     expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
-      "unauthorized-vp:403", "vp-replay:404", "wrong-proposal-target:403",
+      "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",
+      "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",
       "duplicate-maintainer:403", "proposal-replay:409", "lost-response-recovered:200"],
   }, null, 2)}\n`);

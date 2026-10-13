@@ -687,7 +687,8 @@ export const createTrustRegistryApiServer = (
       const segments = routeSegments(url.pathname);
       privateApplicantRoute = segments[0] === "v1" && (
         (segments.length === 4 && segments[1] === "application-evidence"
-          && (segments[3] === "binding" || segments[3] === "challenges" || segments[3] === "submissions"))
+          && (segments[3] === "binding" || segments[3] === "challenges"
+            || segments[3] === "submissions" || segments[3] === "receipt"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -769,10 +770,9 @@ export const createTrustRegistryApiServer = (
         }
       }
 
-      if ((method === "POST" || method === "GET") && segments.length === 4 && segments[0] === "v1"
-        && segments[1] === "application-evidence"
-        && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "binding")
-        && (method === "GET") === (segments[3] === "binding")) {
+      if (segments.length === 4 && segments[0] === "v1" && segments[1] === "application-evidence"
+        && ((method === "GET" && (segments[3] === "binding" || segments[3] === "receipt"))
+          || (method === "POST" && (segments[3] === "challenges" || segments[3] === "submissions")))) {
         response.setHeader("cache-control", "no-store");
         if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
@@ -783,6 +783,14 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
         }
         try {
+          if (segments[3] === "receipt") {
+            if (options.applicationVp.resolveAcceptedEvidence === undefined) {
+              throw jsonProblem(problemBaseUri, "application-vp-receipt-unavailable", 503,
+                "application VP receipt unavailable");
+            }
+            writeJson(response, 200, await applicationVp.accepted(segments[2]!), false);
+            return;
+          }
           if (segments[3] === "binding") {
             writeJson(response, 200, await applicationVp.binding(segments[2]!), false);
             return;
