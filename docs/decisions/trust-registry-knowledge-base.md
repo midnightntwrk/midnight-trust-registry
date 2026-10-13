@@ -619,3 +619,12 @@ identifiers and commitments only. The simulator client and HTTP-governed demo
 reject changed audit purpose, cross-role evidence, and suspended/revoked
 mandates. Disclosure policy, holder consent, and data exchange remain outside
 the trust registry; an active grant is not blanket access.
+
+The #78 recognition boundary is now exercised against the actual active
+recognition evidence: the client accepts it as recognition but refuses to
+interpret it as issuer or verifier authorization. The Compact simulator also
+rejects the recognized authority DID as a local issuer and finds no local
+maintainer membership for that DID. The governed HTTP demo repeats the issuer
+and maintainer negatives. Recognition remains a scoped external-registry
+statement, not transitive local membership; these are simulator checks, not
+proof of another registry's independent accreditation process.

@@ -727,6 +727,21 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.recognition?.scope.resourceId).toBe(recognition.scopeResourceId);
     expect(bundle.subjectDid).toBe(recognition.recognizedAuthorityDid);
     expect(bundle.authorization).toBeUndefined();
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(
+      /does not contain issuer authorization/i,
+    );
+    expect(() => client.verifyVerifierAuthorizationBundle(bundle, {})).toThrow(
+      /does not contain verifier authorization/i,
+    );
+    expect(() => harness.simulator.assertIssuerAuthorized(
+      recognition.recognizedAuthorityDidCommitment,
+      IssuerResourceType.credentialFamily,
+      recognition.scopeResourceIdCommitment,
+    )).toThrow(/not registered|not active/i);
+    expect(() => client.getCurrentMaintainerMembership(
+      recognition.recognizedAuthorityDid,
+    )).toThrow(/not registered/i);
   });
 
   it("preserves recognition application history before activation", () => {

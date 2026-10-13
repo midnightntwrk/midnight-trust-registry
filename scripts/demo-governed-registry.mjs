@@ -653,6 +653,10 @@ try {
       assert.equal(bundle.recognition.status, "active");
       assert.equal(bundle.authorization, undefined);
       client.verifyRecognitionBundle(bundle, {});
+      assert.throws(() => client.verifyIssuerAuthorizationBundle(bundle, {}),
+        /does not contain issuer authorization/u);
+      assert.throws(() => client.getCurrentMaintainerMembership(recognition.recognizedAuthorityDid),
+        /not registered/u);
     } else {
       assert.equal(bundle.authorization.status, "active");
       if (role === "issuer") client.verifyIssuerAuthorizationBundle(bundle, {});
@@ -940,6 +944,7 @@ try {
       "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
+      "recognition-is-not-local-issuer-or-maintainer:client",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",
     ],
