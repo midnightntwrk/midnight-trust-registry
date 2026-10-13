@@ -116,6 +116,7 @@ describe("application VP HTTP intake", () => {
 
   it("requires an injected trusted port and rejects caller-supplied binding on both routes", async () => {
     await start(false);
+    expect((await fetch(`${base}${path}/binding`)).status).toBe(503);
     const unavailable = await post("challenges", {});
     expect(unavailable.status).toBe(503);
     expect(unavailable.headers.get("access-control-allow-origin")).toBeNull();
@@ -142,6 +143,9 @@ describe("application VP HTTP intake", () => {
       throw new Error("private-vp applicant token and raw claims");
     });
     await start();
+    const bindingResponse = await fetch(`${base}${path}/binding`);
+    expect(bindingResponse.status).toBe(403);
+    expect(await bindingResponse.text()).not.toMatch(/private-vp|applicant token|raw claims/iu);
     for (const suffix of ["challenges", "submissions"]) {
       const response = await fetch(`${base}${path}/${suffix}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: '{"presentation":',
@@ -152,7 +156,7 @@ describe("application VP HTTP intake", () => {
       expect(text).toContain("application VP forbidden");
       expect(text).not.toMatch(/private-vp|applicant token|raw claims|presentation/iu);
     }
-    expect(port.authorizeRequest).toHaveBeenCalledTimes(2);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(3);
     expect(port.resolvePendingApplication).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
     expect(readLive).not.toHaveBeenCalled();
@@ -163,6 +167,11 @@ describe("application VP HTTP intake", () => {
 
   it("verifies a submitted VP, persists only signed redacted evidence, and refuses replay", async () => {
     await start();
+    const bindingResponse = await fetch(`${base}${path}/binding`);
+    expect(bindingResponse.status).toBe(200);
+    expect(bindingResponse.headers.get("cache-control")).toBe("no-store");
+    expect(bindingResponse.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await bindingResponse.json()).toEqual(binding);
     const challengeResponse = await post("challenges", {});
     expect(challengeResponse.status).toBe(201);
     expect(challengeResponse.headers.get("cache-control")).toBe("no-store");
@@ -182,7 +191,7 @@ describe("application VP HTTP intake", () => {
     const result = JSON.parse(responseText) as { evidence: { commitment: string; envelope: { applicationId: string } }; receipt: { evidenceCommitment: string } };
     expect(result.evidence.envelope.applicationId).toBe(binding.applicationId);
     expect(result.receipt.evidenceCommitment).toBe(result.evidence.commitment);
-    expect(port.authorizeRequest).toHaveBeenCalledTimes(2);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(3);
     expect(port.persistRedactedEvidence).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(port.persistRedactedEvidence).mock.calls)).not.toContain("private-vp");
     expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(409);

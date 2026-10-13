@@ -18,6 +18,7 @@ import {
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
 } from "../application-vp-verifier.js";
+import { decodeApplicationVpProof, encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
 import { createApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
@@ -29,6 +30,7 @@ const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slic
 
 async function fixture() {
   const scenario = await createApplicationVpScenarioFixture();
+  if (scenario.input.scope.role !== "issuer") throw new Error("Expected issuer VP scenario");
   const family = {
     prepare: vi.fn(scenario.family.prepare),
     assertCredentialBodyBinding: vi.fn(scenario.family.assertCredentialBodyBinding),
@@ -37,13 +39,92 @@ async function fixture() {
     assertRoleClaims: vi.fn(scenario.family.assertRoleClaims),
   };
   return {
-    input: { ...scenario.input, family },
+    input: { ...scenario.input, scope: scenario.input.scope, family },
     material: scenario.material,
     family,
   };
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("round-trips submitted proof JSON without losing cryptographic fields", async () => {
+    const { input, material } = await fixture();
+    const submitted = structuredClone(input.submission);
+    expect(decodeApplicationVpProof(submitted.credentialProof)).toEqual(material.credentialProof);
+    expect(decodeApplicationVpProof(submitted.presentationProof)).toEqual(material.presentationProof);
+    expect(encodeApplicationVpProof(decodeApplicationVpProof(submitted.credentialProof))).toEqual(submitted.credentialProof);
+  });
+
+  it("rejects substituted submitted bodies and proof signatures before eligibility checks", async () => {
+    const { input, family } = await fixture();
+    const changedCredential = structuredClone(input.submission);
+    changedCredential.rawCredentialBody = "substituted-credential-body";
+    await expect(verifyApplicationVp({ ...input, submission: changedCredential })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const changedPresentation = structuredClone(input.submission);
+    changedPresentation.rawPresentationBody = "substituted-presentation-body";
+    await expect(verifyApplicationVp({ ...input, submission: changedPresentation })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const changedProof = structuredClone(input.submission);
+    const credentialProof = changedProof.credentialProof as Record<string, unknown>;
+    const signature = credentialProof.signature as Record<string, unknown>;
+    signature.s = (BigInt(signature.s as string) + 1n).toString();
+    await expect(verifyApplicationVp({ ...input, submission: changedProof })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
+  it("rejects a validly signed credential whose role scope differs from the application", async () => {
+    const { input } = await fixture();
+    const otherScope = { ...input.scope, credentialFamilyId: "credential-family:other" };
+    const signedOtherScope = await createApplicationVpScenarioFixture(input.nonce, { scope: otherScope });
+    const assertStatusActive = vi.fn(signedOtherScope.family.assertStatusActive);
+    await expect(verifyApplicationVp({
+      ...signedOtherScope.input,
+      scope: input.scope,
+      family: { ...signedOtherScope.family, assertStatusActive },
+    })).rejects.toMatchObject({ category: "ineligible" });
+    expect(assertStatusActive).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a validly signed presentation that names a different credential body root", async () => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, {
+      presentationCredentialBodyRoot: sha256Hex("another-credential-body"),
+    });
+    const family = {
+      ...scenario.family,
+      assertCredentialBodyBinding: vi.fn(scenario.family.assertCredentialBodyBinding),
+      assertIssuerEligible: vi.fn(scenario.family.assertIssuerEligible),
+    };
+    await expect(verifyApplicationVp({ ...scenario.input, family })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertCredentialBodyBinding).toHaveBeenCalledOnce();
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on malformed submitted proof JSON", async () => {
+    const { input, family } = await fixture();
+    const missingProof = structuredClone(input.submission);
+    delete (missingProof as Partial<typeof missingProof>).presentationProof;
+    await expect(verifyApplicationVp({ ...input, submission: missingProof })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const extraField = structuredClone(input.submission);
+    Object.assign(extraField.credentialProof, { unexpected: true });
+    await expect(verifyApplicationVp({ ...input, submission: extraField })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    const nonCanonical = structuredClone(input.submission);
+    Object.assign(nonCanonical.presentationProof, { createdAt: "01" });
+    await expect(verifyApplicationVp({ ...input, submission: nonCanonical })).rejects.toMatchObject({
+      category: "invalid_presentation",
+    });
+    expect(family.assertIssuerEligible).not.toHaveBeenCalled();
+  });
+
   it("provides redacted VP and DID-bound signing ports for one-use intake", async () => {
     const { input } = await fixture();
     const verifierDid = createMidnightDid("vp-evidence-verifier");
@@ -281,6 +362,23 @@ describe("published VC proof and DID application verifier port", () => {
     expect(family.assertStatusActive).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["revoked", { active: false }],
+    ["wrong registry", { registryId: sha256Hex("another-status-registry") }],
+    ["wrong status authority", { authorityMethod: `${createMidnightDid("other-issuer")}#assertion-1` }],
+    ["wrong status handle", { statusHandleCommitment: sha256Hex("another-status-handle") }],
+  ])("rejects a %s test-family status decision bound to the signed credential", async (_label, statusDecision) => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, { statusDecision });
+    await expect(verifyApplicationVp(scenario.input)).rejects.toMatchObject({ category: "ineligible" });
+  });
+
+  it("rejects a stale test-family status decision without extending evidence lifetime", async () => {
+    const scenario = await createApplicationVpScenarioFixture(NONCE, {
+      statusDecision: { validUntilMs: NOW - 1 },
+    });
+    await expect(verifyApplicationVp(scenario.input)).rejects.toMatchObject({ category: "expired" });
+  });
+
   it("requires the trusted family to bind claims, status, holder, and expiry to the signed credential body", async () => {
     const { input, family } = await fixture();
     family.assertCredentialBodyBinding = vi.fn(async () => false as unknown as true);
@@ -296,6 +394,7 @@ describe("published VC proof and DID application verifier port", () => {
   it("caps attestation lifetime even when the credential and status are longer lived", async () => {
     const { input, material, family } = await fixture();
     family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: NOW + 48 * 60 * 60_000 }));
+    family.assertCredentialBodyBinding = vi.fn(async () => true as const);
     family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 48 * 60 * 60_000 }));
     await expect(verifyApplicationVp(input)).resolves.toMatchObject({
       expiresAt: new Date(NOW + 24 * 60 * 60_000).toISOString(),

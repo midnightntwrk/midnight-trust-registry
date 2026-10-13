@@ -11,11 +11,14 @@ import {
   AuthorizationStatus as ContractAuthorizationStatus,
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { assertDecisionEpochPublicationSignatures } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import {
+  AcceptedDecisionEpochSchema,
   computeApplicationEvidenceCommitment,
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
+  DecisionEvidenceEpochSchema,
   deriveGovernancePolicySnapshot,
   requestGovernedResourceId,
   resolveGovernancePolicyTemplate,
@@ -437,6 +440,91 @@ describe("trust registry local simulator integration", () => {
 
     const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
+  });
+
+  it("verifies the complete simulator epoch witness against its committed publication event", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("epoch-quorum-witness");
+    const secondMaintainer = createMaintainerScenarioFixture("epoch-quorum-second");
+    const issuer = createIssuerScenarioFixture("epoch-quorum-issuer");
+    harness.authorizeMaintainer(secondMaintainer);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    harness.proposeIssuer(issuer, [secondMaintainer]);
+    harness.approveIssuer(issuer, [secondMaintainer]);
+    harness.activateIssuer(issuer, [secondMaintainer]);
+
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const epochId = bundle.epoch.epochId;
+    const record = harness.simulator.getEpochCommitment(bytes32Commitment(epochId));
+    const witness = harness.getEpochPublicationWitness(epochId);
+    expect(witness.signatures).toHaveLength(2);
+    expect(witness.eventHash).toBe(`0x${Buffer.from(record.publicationEventHash).toString("hex")}`);
+    expect(bytes32Commitment(witness.signatures[0]!.keyId)).toEqual(Buffer.from(record.maintainerKeyId));
+
+    const accepted = AcceptedDecisionEpochSchema.parse({
+      registryId: harness.registryId,
+      registryDid: harness.registryDid,
+      networkId: harness.registryDid.split(":")[2],
+      contractAddress: sha256Hex("simulator-contract"),
+      transactionHash: sha256Hex("simulator-epoch-transaction"),
+      blockHash: sha256Hex("simulator-epoch-block"),
+      epochId,
+      stateRoot: bundle.epoch.stateRoot,
+      eventRoot: bundle.epoch.eventRoot,
+      policyRoot: bundle.epoch.policyRoot,
+      publicationPolicyCommitment: `0x${Buffer.from(record.publicationPolicyCommitment).toString("hex")}`,
+      publicationSequence: record.publishedAtSequence.toString(),
+      validFromSequence: record.validFromSequence.toString(),
+      validUntilSequence: record.validUntilSequence.toString(),
+      publicationEventHash: witness.eventHash,
+      validFrom: bundle.epoch.validFrom,
+      validUntil: bundle.epoch.validUntil,
+      requiredSignatures: 2,
+    });
+    const epoch = DecisionEvidenceEpochSchema.parse({
+      epochId,
+      registryId: bundle.epoch.registryId,
+      stateRoot: bundle.epoch.stateRoot,
+      eventRoot: bundle.epoch.eventRoot,
+      policyRoot: bundle.epoch.policyRoot,
+      publicationPolicyCommitment: accepted.publicationPolicyCommitment,
+      publicationSequence: accepted.publicationSequence,
+      validFromSequence: accepted.validFromSequence,
+      validUntilSequence: accepted.validUntilSequence,
+      validFrom: bundle.epoch.validFrom,
+      validUntil: bundle.epoch.validUntil,
+      quorum: { requiredSignatures: 2, signatures: witness.signatures },
+    });
+    const context = {
+      registryIdCommitment: harness.registryIdCommitment,
+      epochIdCommitment: bytes32Commitment(epochId),
+      firstSignerKeyIdCommitment: record.maintainerKeyId,
+      activeMaintainersAtPublication: witness.signatures.map((signer) => {
+        const keyIdCommitment = bytes32Commitment(signer.keyId);
+        const maintainer = harness.simulator.getLedger().maintainerRecords.lookup(keyIdCommitment);
+        return { keyId: signer.keyId, keyIdCommitment, publicKey: maintainer.publicKey };
+      }),
+    };
+    expect(() => assertDecisionEpochPublicationSignatures(
+      epoch, witness.eventHash, accepted, context,
+    )).not.toThrow();
+
+    const coSignature = witness.signatures[1]!.signature;
+    for (const signatures of [
+      witness.signatures.slice(0, 1),
+      [witness.signatures[1]!, witness.signatures[0]!],
+      [witness.signatures[0]!, {
+        ...witness.signatures[1]!,
+        signature: `${coSignature.slice(0, -1)}${coSignature.endsWith("0") ? "1" : "0"}`,
+      }],
+    ]) {
+      expect(() => assertDecisionEpochPublicationSignatures(
+        { ...epoch, quorum: { ...epoch.quorum, signatures } },
+        witness.eventHash,
+        accepted,
+        context,
+      )).toThrow();
+    }
+    expect(() => harness.getEpochPublicationWitness("epoch:missing")).toThrow(/not available/u);
   });
 
   it("keeps historical evidence on the original policy after a signed threshold revision", () => {
@@ -978,6 +1066,14 @@ describe("trust registry local simulator integration", () => {
         maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
     })).toThrow("Epoch commitment must include exactly one maintainer signature");
+
+    expect(() => harness.assertPublishedEpochEvidence({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{ ...originalSignature, keyId: `${harness.registryDid}#key-1` }],
+      },
+    })).toThrow(/DID method does not match its ledger key commitment/u);
 
     const epochRecord = harness.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),

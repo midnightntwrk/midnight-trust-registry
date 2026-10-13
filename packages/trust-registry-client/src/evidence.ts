@@ -143,6 +143,9 @@ const assertEpochAnchor = (
   if (maintainerSignature.algorithm !== "jubjub-schnorr") {
     throw new Error("Epoch maintainer signature algorithm is unsupported");
   }
+  if (!sameBytes32(bytes32Commitment(maintainerSignature.keyId), epochRecord.maintainerKeyId)) {
+    throw new Error("Epoch maintainer DID method does not match its accepted key commitment");
+  }
   let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
   try {
     signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);

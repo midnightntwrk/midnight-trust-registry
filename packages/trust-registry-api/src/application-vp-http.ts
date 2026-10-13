@@ -105,6 +105,10 @@ function samePolicy(
 export function createApplicationVpHttpService(port: ApplicationVpHttpPort, clock: () => number) {
   const challenges = new ApplicationChallengeService(port.challengeStore, clock);
   return {
+    async binding(applicationIdInput: string): Promise<ApplicationChallengeBinding> {
+      const applicationId = parseApplicationId(applicationIdInput);
+      return (await resolve(port, applicationId)).binding;
+    },
     async issue(applicationIdInput: string, body: unknown) {
       const applicationId = parseApplicationId(applicationIdInput);
       if (typeof body !== "object" || body === null || Array.isArray(body)

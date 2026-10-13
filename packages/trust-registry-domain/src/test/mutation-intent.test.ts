@@ -79,6 +79,9 @@ describe("mutation intent v1", () => {
   });
 
   it("permits maintainer lifecycle and epoch intents but not applicant governance", () => {
+    expect(MutationIntentSchema.safeParse({ ...intent, action: "apply" }).success).toBe(true);
+    expect(MutationIntentSchema.safeParse({ ...intent, action: "apply", target: "issuer" }).success).toBe(false);
+    expect(MutationIntentSchema.safeParse({ ...intent, action: "apply", actorRole: "maintainer" }).success).toBe(false);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", action: "approve" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "recognition" }).success).toBe(true);
     expect(MutationIntentSchema.safeParse({ ...intent, actorRole: "maintainer", target: "maintainer" }).success).toBe(true);

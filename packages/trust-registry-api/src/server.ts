@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z, ZodError } from "zod";
 
 import { TrustRegistryOperatorWorkspaceOperationSchema } from "@midnight-ntwrk/trust-registry-cli";
-import { MutationIntentSchema, MutationIntentSignatureSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { MutationIntentSchema, MutationIntentSignatureSchema, SignedPendingAuditorApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -86,6 +86,10 @@ import {
   createApplicationVpHttpService,
   type ApplicationVpHttpPort,
 } from "./application-vp-http.js";
+import {
+  PendingAuditorRegistrationRejectedError,
+  type PendingAuditorRegistrationPort,
+} from "./pending-auditor-registration.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -142,6 +146,7 @@ export type TrustRegistryApiServerOptions = {
   governedAuditorProposals?: GovernedAuditorProposalPort;
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
+  pendingAuditorRegistration?: PendingAuditorRegistrationPort;
 };
 
 const SignedMutationRequestSchema = z.strictObject({
@@ -610,17 +615,19 @@ export const createTrustRegistryApiServer = (
     : createApplicationVpHttpService(options.applicationVp, () => Date.parse(options.clock?.() ?? new Date().toISOString()));
 
   return createServer(async (request, response) => {
-    let privateVpRoute = false;
+    let privateApplicantRoute = false;
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const segments = routeSegments(url.pathname);
-      privateVpRoute = segments.length === 4 && segments[0] === "v1"
-        && segments[1] === "application-evidence"
-        && (segments[3] === "challenges" || segments[3] === "submissions");
+      privateApplicantRoute = segments[0] === "v1" && (
+        (segments.length === 4 && segments[1] === "application-evidence"
+          && (segments[3] === "binding" || segments[3] === "challenges" || segments[3] === "submissions"))
+        || (segments.length === 3 && segments[1] === "pending-applications" && segments[2] === "auditor")
+      );
 
       if (method === "OPTIONS") {
-        writeNoContent(response, !privateVpRoute);
+        writeNoContent(response, !privateApplicantRoute);
         return;
       }
 
@@ -662,9 +669,38 @@ export const createTrustRegistryApiServer = (
         return;
       }
 
-      if (method === "POST" && segments.length === 4 && segments[0] === "v1"
+      if (method === "POST" && segments.length === 3 && segments[0] === "v1"
+        && segments[1] === "pending-applications" && segments[2] === "auditor") {
+        response.setHeader("cache-control", "no-store");
+        const port = options.pendingAuditorRegistration;
+        if (port === undefined) {
+          throw jsonProblem(problemBaseUri, "pending-application-unavailable", 503, "pending application unavailable");
+        }
+        const requestBody = await parseJsonBody(request, (value) => SignedPendingAuditorApplicationSchema.parse(value), problemBaseUri);
+        try {
+          const record = await port.register(requestBody, new Date(options.clock?.() ?? new Date().toISOString()));
+          writeJson(response, 201, record, false);
+          return;
+        } catch (error) {
+          if (error instanceof PendingAuditorRegistrationRejectedError) {
+            const status = error.reason === "invalid-signature" ? 401
+              : error.reason.startsWith("duplicate-") || error.reason === "nonce-used"
+                || error.reason === "stale-epoch" || error.reason === "stale-workspace"
+                || error.reason === "expired" || error.reason === "not-yet-valid" ? 409 : 403;
+            throw jsonProblem(problemBaseUri, `pending-application-${error.reason}`, status,
+              "pending application rejected");
+          }
+          if (error instanceof MutationIntentDidResolutionUnavailableError) {
+            throw jsonProblem(problemBaseUri, "did-resolution-unavailable", 503, "DID resolution unavailable");
+          }
+          throw error;
+        }
+      }
+
+      if ((method === "POST" || method === "GET") && segments.length === 4 && segments[0] === "v1"
         && segments[1] === "application-evidence"
-        && (segments[3] === "challenges" || segments[3] === "submissions")) {
+        && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "binding")
+        && (method === "GET") === (segments[3] === "binding")) {
         response.setHeader("cache-control", "no-store");
         if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
@@ -675,6 +711,10 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
         }
         try {
+          if (segments[3] === "binding") {
+            writeJson(response, 200, await applicationVp.binding(segments[2]!), false);
+            return;
+          }
           const raw = await readRequestBody(request, problemBaseUri);
           let body: unknown;
           try {
@@ -1499,8 +1539,12 @@ export const createTrustRegistryApiServer = (
         `No trust-registry API route matches ${method} ${url.pathname}.`,
       );
     } catch (error) {
-      const problem = asProblem(error, problemBaseUri);
-      writeJson(response, problem.status, problem, !privateVpRoute);
+      const problem = privateApplicantRoute && !(error instanceof HttpProblem)
+        ? jsonProblem(problemBaseUri, "private-request-rejected",
+          error instanceof SyntaxError || error instanceof ZodError ? 400 : 500,
+          "private request rejected").problem
+        : asProblem(error, problemBaseUri);
+      writeJson(response, problem.status, problem, !privateApplicantRoute);
     }
   });
 };

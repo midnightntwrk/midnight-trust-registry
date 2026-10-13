@@ -1,0 +1,175 @@
+import { Buffer } from "node:buffer";
+
+import { describe, expect, it } from "vitest";
+import {
+  computeCreateEpochCommitmentPayloadHash,
+  deriveJubjubPublicKeyFromSeed,
+  encodeCompactActionKind,
+  encodeJubjubSignature,
+  pureCircuits,
+  signPolicyBoundMaintainerActionFromSeed,
+} from "@midnight-ntwrk/trust-registry-contract";
+
+import { assertDecisionEpochPublicationSignatures } from "../decision-epoch-signatures.js";
+import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "../utils.js";
+
+const A = `0x${"a".repeat(64)}`;
+const B = `0x${"b".repeat(64)}`;
+const C = `0x${"c".repeat(64)}`;
+const E = `0x${"e".repeat(64)}`;
+const REGISTRY = "registry:midnight:university";
+const EPOCH = "epoch:0001";
+const DID1 = `did:midnight:devnet:${"1".repeat(64)}`;
+const DID2 = `did:midnight:devnet:${"2".repeat(64)}`;
+const PUBLISH = encodeCompactActionKind("tr:epoch:publish");
+const signatureHex = (value: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+  `0x${Buffer.from(encodeJubjubSignature(value)).toString("hex")}`;
+
+function fixture() {
+  const registryIdCommitment = bytes32Commitment(REGISTRY);
+  const epochIdCommitment = bytes32Commitment(EPOCH);
+  const policyCommitment = hashHexToBytes32(E);
+  const keys = [
+    { keyId: `${DID1}#key-1`, seed: new Uint8Array(32).fill(13) },
+    { keyId: `${DID2}#key-1`, seed: new Uint8Array(32).fill(17) },
+  ];
+  const activeMaintainersAtPublication = keys.map(({ keyId, seed }) => ({
+    keyId,
+    keyIdCommitment: bytes32Commitment(keyId),
+    publicKey: deriveJubjubPublicKeyFromSeed(seed),
+  }));
+  const payload = computeCreateEpochCommitmentPayloadHash(
+    epochIdCommitment,
+    hashHexToBytes32(A),
+    hashHexToBytes32(B),
+    hashHexToBytes32(C),
+    10n,
+    20n,
+  );
+  const signatures = keys.map(({ keyId, seed }) => ({
+    keyId,
+    algorithm: "jubjub-schnorr" as const,
+    signature: signatureHex(signPolicyBoundMaintainerActionFromSeed(
+      seed, registryIdCommitment, policyCommitment, PUBLISH, payload, 10n,
+    )),
+  }));
+  const signerSetHash = pureCircuits.maintainerSignerSetHash(
+    2n,
+    activeMaintainersAtPublication[0]!.keyIdCommitment,
+    activeMaintainersAtPublication[1]!.keyIdCommitment,
+    new Uint8Array(32), new Uint8Array(32), new Uint8Array(32),
+  );
+  const publicationEventHash = bytes32Hex(pureCircuits.governanceEventHash(
+    registryIdCommitment, policyCommitment, signerSetHash, PUBLISH, payload, 10n,
+  ));
+  const epoch = {
+    epochId: EPOCH,
+    registryId: REGISTRY,
+    stateRoot: A,
+    eventRoot: B,
+    policyRoot: C,
+    publicationPolicyCommitment: E,
+    publicationSequence: "10",
+    validFromSequence: "10",
+    validUntilSequence: "20",
+    validFrom: "2026-05-20T02:00:00Z",
+    validUntil: "2026-05-20T03:00:00Z",
+    quorum: { requiredSignatures: 2, signatures },
+  };
+  const accepted = {
+    registryId: REGISTRY,
+    registryDid: `did:midnight:devnet:${"3".repeat(64)}`,
+    networkId: "devnet",
+    contractAddress: A,
+    transactionHash: B,
+    blockHash: C,
+    epochId: EPOCH,
+    stateRoot: A,
+    eventRoot: B,
+    policyRoot: C,
+    publicationPolicyCommitment: E,
+    publicationSequence: "10",
+    validFromSequence: "10",
+    validUntilSequence: "20",
+    publicationEventHash,
+    validFrom: epoch.validFrom,
+    validUntil: epoch.validUntil,
+    requiredSignatures: 2,
+  };
+  const context = {
+    registryIdCommitment,
+    epochIdCommitment,
+    firstSignerKeyIdCommitment: activeMaintainersAtPublication[0]!.keyIdCommitment,
+    activeMaintainersAtPublication,
+  };
+  return { epoch, accepted, context, publicationEventHash };
+}
+
+describe("decision epoch publication signatures", () => {
+  it("verifies the complete two-signer set and anchored Compact event", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    expect(() => assertDecisionEpochPublicationSignatures(
+      epoch, publicationEventHash, accepted, context,
+    )).not.toThrow();
+  });
+
+  it("rejects bad signatures, repeated or missing signers, and unsafe keys", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    const signature = epoch.quorum.signatures[1]!.signature;
+    const tampered = `${signature.slice(0, -1)}${signature.endsWith("0") ? "1" : "0"}`;
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: [epoch.quorum.signatures[0], { ...epoch.quorum.signatures[1], signature: tampered }] },
+    }, publicationEventHash, accepted, context)).toThrow();
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: [epoch.quorum.signatures[0], epoch.quorum.signatures[0]] },
+    }, publicationEventHash, accepted, context)).toThrow(/distinct active maintainer/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, activeMaintainersAtPublication: context.activeMaintainersAtPublication.slice(0, 1),
+    })).toThrow(/distinct active maintainer/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, activeMaintainersAtPublication: [
+        { ...context.activeMaintainersAtPublication[0]!, keyIdCommitment: bytes32Commitment(`${DID1}#substituted`) },
+        context.activeMaintainersAtPublication[1]!,
+      ],
+    })).toThrow(/DID method does not match/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, activeMaintainersAtPublication: [
+        { ...context.activeMaintainersAtPublication[0]!, publicKey: { x: 0n, y: 1n } },
+        context.activeMaintainersAtPublication[1]!,
+      ],
+    })).toThrow(/prime order/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, activeMaintainersAtPublication: [
+        { ...context.activeMaintainersAtPublication[0]!, publicKey: {
+          x: 0n,
+          y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+        } },
+        context.activeMaintainersAtPublication[1]!,
+      ],
+    })).toThrow(/prime order/u);
+  });
+
+  it("rejects changed publication preimages, threshold, first signer, and event", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    for (const changed of [
+      { stateRoot: B },
+      { publicationPolicyCommitment: A },
+      { publicationSequence: "11" },
+      { validUntilSequence: "21" },
+    ]) {
+      expect(() => assertDecisionEpochPublicationSignatures(
+        { ...epoch, ...changed }, publicationEventHash, accepted, context,
+      )).toThrow(/accepted record/u);
+    }
+    expect(() => assertDecisionEpochPublicationSignatures(
+      { ...epoch, quorum: { ...epoch.quorum, requiredSignatures: 3 } },
+      publicationEventHash, { ...accepted, requiredSignatures: 3 }, context,
+    )).toThrow(/quorum/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, firstSignerKeyIdCommitment: context.activeMaintainersAtPublication[1]!.keyIdCommitment,
+    })).toThrow(/first signer/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, A, {
+      ...accepted, publicationEventHash: A,
+    }, context)).toThrow(/accepted event/u);
+  });
+});

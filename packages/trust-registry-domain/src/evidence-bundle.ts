@@ -124,23 +124,27 @@ export const computeMerkleNodeHash = (
 export const computeMerkleRootFromProof = (
   leafHash: string,
   path: readonly string[],
-  leafIndex: number,
+  leafIndex: number | bigint,
 ): string => {
-  if (leafIndex >= 2 ** path.length) {
+  if (typeof leafIndex === "number" && (!Number.isSafeInteger(leafIndex) || leafIndex < 0)) {
+    throw new Error("leafIndex must be a nonnegative safe integer or bigint");
+  }
+  const index = BigInt(leafIndex);
+  if (index < 0n || index >= (1n << BigInt(path.length))) {
     throw new Error(
       `leafIndex ${leafIndex.toString()} is out of range for proof path length ${path.length.toString()}`,
     );
   }
 
   let computed = leafHash;
-  let currentIndex = leafIndex;
+  let currentIndex = index;
 
   for (const siblingHash of path) {
     computed =
-      currentIndex % 2 === 0
+      currentIndex % 2n === 0n
         ? computeMerkleNodeHash(computed, siblingHash)
         : computeMerkleNodeHash(siblingHash, computed);
-    currentIndex = Math.floor(currentIndex / 2);
+    currentIndex /= 2n;
   }
 
   return computed;

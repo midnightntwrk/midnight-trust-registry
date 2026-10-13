@@ -46,7 +46,22 @@ Current coverage:
   then confirms the activated candidate can co-sign a later issuer action.
   Fixture helpers still sign internally; production signing and network
   submission are not provided by this simulator harness.
-- anchored epoch evidence validation
+- anchored epoch evidence validation. The simulator now retains the complete
+  ordered signature witness for epochs it publishes and checks that its event
+  hash matches the Compact record before returning it. A two-maintainer test
+  verifies both signatures against the contract's maintainer public keys and
+  the on-ledger publication event, and rejects missing, reordered, or changed
+  signatures. The contract stores the first signature and signer-set event
+  hash, not every co-signature. This session-local witness does not authenticate
+  a network transaction, historical maintainer state, or finality; production
+  consumers must obtain those independently.
+- A decision-evidence composition test combines the actual simulator issuer
+  grant, policy and Merkle root, retained two-signer publication witness, and
+  a DID Document resolved by the published Midnight DID package. It rejects a
+  removed issuer assertion relationship and a later suspended grant. The
+  transaction and block references are explicit simulator placeholders, not
+  independently accepted network anchors, so the test does not issue a VC
+  signer descriptor or establish production finality.
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
 - VC-backed issuer-descriptor construction using the published
@@ -72,6 +87,21 @@ Current coverage:
   issuance and presentation signatures, nonce, holder binding, proof time,
   and status-reference structure, then calls explicit trusted adapters for
   credential-body binding, issuer authorization, live status, and role claims.
+  The scenario fixture serializes both proofs into canonical JSON and derives
+  body roots from the submitted credential and presentation body strings;
+  changing either submitted body or a proof signature fails verification.
+  The signed fixture presentation body names the credential body root and
+  subject DID; a validly signed presentation naming a different credential is
+  rejected before eligibility checks.
+  The fixture's role scope, expiry, holder, status registry, handle, and
+  authority method are read from
+  the signed credential body, and its claims callback uses that observed scope
+  for issuer, verifier, auditor, and maintainer applications. Issuer eligibility
+  and live status are still fixture-controlled answers, not production trust
+  or revocation determinations. The test-family status decision must match the
+  signed registry, handle, and authority method and be active and fresh; tests
+  reject revoked, mismatched, and stale decisions. No authenticated external
+  status witness is verified here.
   The body-binding adapter is responsible for establishing that the holder,
   status, expiry, and role claims came from the signed credential body root;
   the published generic proof circuits alone do not establish that relation.

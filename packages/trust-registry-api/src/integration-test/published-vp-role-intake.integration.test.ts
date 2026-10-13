@@ -122,8 +122,10 @@ describe("published VP proof for non-issuer application roles", () => {
       subjectDid: applicant.subjectDid,
       evidenceVerifierDid: harness.evidenceVerifier.did,
       evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0]!.split("#")[1]!,
-      scopeCommitment: binding.scopeCommitment,
+      scope: applicant.scope,
     });
+    const preparedClaims = await proof.input.family.prepare(proof.input.submission);
+    expect((await proof.input.family.assertRoleClaims(preparedClaims)).scopeCommitment).toBe(binding.scopeCommitment);
     const ports = await createApplicationVpIntakePorts({
       resolver: proof.input.resolver,
       family: proof.input.family,

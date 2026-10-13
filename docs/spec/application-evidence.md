@@ -193,6 +193,20 @@ submission field. The evidence validator compares challenge hashes by byte value
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
 
+An auditor applicant MAY register a pending application by signing a distinct
+`apply` mutation intent with its Midnight DID key. The intent MUST commit to
+the canonical auditor scope and application ID; a successful registration
+creates only an off-ledger pending record. The server derives the binding from
+the current trusted workspace policy and verifier configuration, not from
+applicant-provided policy or binding fields. `GET
+/v1/application-evidence/:applicationId/binding` MUST authorize the applicant
+against that pending record before returning the binding. Registration MUST
+reject stale workspace context, reused nonces, duplicate IDs, and duplicate
+active subject/scope applications. A production host MUST persist those checks
+atomically, refresh policy and verifier authority from trusted sources, and
+recheck them when VP evidence is persisted. Neither a pending registration nor
+a VP receipt constitutes a governed Compact proposal or active membership.
+
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live
 challenge lookup, including the trusted stored time window, before expensive
@@ -226,8 +240,17 @@ context. Its separate deterministic challenge fixture still uses the same
 canonical scope commitment, but MUST NOT be used as a production nonce source.
 Production use still needs a host implementing genuine family/status VP
 verification, abuse controls, durable atomic challenge storage, and atomic
-pending-application persistence. The reference fixture family ignores arbitrary
-submitted presentations and MUST NOT be mounted as a public verifier.
+pending-application persistence. The reference fixture family parses submitted
+proof JSON, derives credential and presentation body roots from the submitted
+bytes, checks their published VC/VP signatures against Midnight DID keys, and
+derives role scope from the signed fixture credential body. The signed fixture
+presentation body names that credential body root and holder DID; a separately
+valid presentation for a different credential is rejected before eligibility.
+Its test-family status decision must match the signed registry, handle, and
+authority method and remain active and fresh. It still uses
+test-only issuer eligibility and status answers, accepts only its fixture
+credential-body format, and MUST NOT be mounted as a public verifier or treated
+as production accreditation/non-revocation evidence.
 
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store

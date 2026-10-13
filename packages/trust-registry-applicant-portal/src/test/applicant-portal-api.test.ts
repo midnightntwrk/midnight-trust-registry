@@ -74,6 +74,20 @@ describe("public auditor inspection", () => {
 });
 
 describe("private application VP exchange", () => {
+  it("submits a signed pending auditor application without cross-origin credentials", async () => {
+    const binding = { applicationId: "application:auditor:one", role: "auditor" };
+    const request = { applicationId: binding.applicationId, scope: { role: "auditor" }, intent: { action: "apply" }, signature: { value: "signed" } };
+    const fetchImpl = vi.fn(async () => Response.json({ binding, status: "pending" })) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.registerPendingAuditorApplication(request)).toEqual({ binding, status: "pending" });
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications/auditor", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  });
+
   it("sends only the challenge nonce, hash, and VP, then returns redacted evidence", async () => {
     const nonce = `0x${"1".repeat(64)}`;
     const challengeHash = `0x${"2".repeat(64)}`;
@@ -100,6 +114,17 @@ describe("private application VP exchange", () => {
     expect(calls[0]?.init.body).toBe("{}");
     expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ nonce, challengeHash, presentation });
     expect(result).toEqual({ evidence, receipt });
+  });
+
+  it("loads the canonical pending binding through the private authenticated route", async () => {
+    const binding = { applicationId: "application:auditor:one", role: "auditor", scope: { role: "auditor" } };
+    const fetchImpl = vi.fn(async () => Response.json(binding)) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.loadPendingApplicationBinding(binding.applicationId)).toEqual(binding);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/application-evidence/application%3Aauditor%3Aone/binding",
+      { method: "GET", credentials: "same-origin" },
+    );
   });
 
   it("does not expose a rejected server body's private presentation data", async () => {

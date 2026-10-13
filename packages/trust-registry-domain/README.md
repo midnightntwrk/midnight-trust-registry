@@ -9,6 +9,7 @@ This package owns:
   schemas
 - lifecycle transition validators
 - the first canonical evidence-bundle schema and JSON schema export
+- a separate strict `tr-decision-evidence-v1` envelope schema and JSON Schema
 
 This package does not own:
 
@@ -25,5 +26,33 @@ Primary exports:
 - `RecognitionRecordSchema`
 - `TrustRegistryEvidenceBundleSchema`
 - `TrustRegistryEvidenceBundleJsonSchema`
+- `DecisionEvidenceSchema`
+- `DecisionEvidenceJsonSchema`
+- `assertDecisionEvidenceInclusion`
+- `assertDecisionEvidencePolicyCommitment`
+- `assertDecisionEvidenceSelection`
 - `assertLifecycleTransition`
 
+`DecisionEvidenceSchema` is structural only. Its epoch and DID anchor references
+are untrusted lookup claims, not independently accepted anchors. A successful
+parse does not authenticate signatures, Merkle paths, DID state, policy
+currency, or signer authorization, and it does not produce a VC descriptor.
+The existing single-signature evidence bundle remains unchanged. Cross-field
+consistency checks in Zod (including declared quorum size and the `uint64`
+range) are not expressible in the exported JSON Schema; consumers must parse
+with Zod before attempting the later independent verification stages.
+Ledger and DID state versions use canonical decimal `uint64` strings, not JSON
+numbers, so values above JavaScript's safe-integer limit are not truncated.
+`assertDecisionEvidenceInclusion` recomputes the authorization leaf and Merkle
+path with a bigint index. It checks consistency with the envelope's claimed
+epoch root only; callers must independently authenticate that root, quorum,
+policy, current grant, and DID state before making a trust decision.
+`assertDecisionEvidencePolicyCommitment` similarly recomputes the snapshot
+commitment against the claimed epoch policy root without authenticating it.
+The issuer/verifier envelope carries the complete canonical authorization scope
+preimage and recomputes its governed resource ID against the included grant.
+`assertDecisionEvidenceSelection` additionally requires an exact caller-selected
+registry, subject, role, resource, scope preimage, and evaluation instant. It rejects non-active
+or out-of-window claims but does not prove that the grant is current. Do not
+turn its success into a VC signer descriptor without independent registry and
+DID-state verification.

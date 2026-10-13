@@ -186,6 +186,8 @@ Why: a VC `AuthorizedSignerDescriptor` must be derived from a real governed
 grant and active DID key, not from a caller-provided boolean or root. Current
 TR bundles prove authorization history but do not bind an exact DID method,
 observed DID version, and the authority context needed for descriptor signing.
+The [decision-evidence client profile](decision-evidence-client.md) defines
+the fail-closed trust boundary and ordered implementation slices.
 
 Subtasks:
 
