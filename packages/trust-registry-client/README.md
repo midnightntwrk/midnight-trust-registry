@@ -40,6 +40,9 @@ that simulator is a local reference, not a production trust source.
 the published Midnight DID package and matches the exact method, native JWK,
 controller, role relationship, block, state version, and (for ledger
 observations) transaction hash claimed by a decision evidence envelope. It
+accepts same-document fragment references in a DID relationship only after
+expanding them against the resolved document DID; a different fragment or
+foreign DID cannot name the claimed method. It
 also requires the observed DID state to be non-deactivated. The observation
 must come from a caller-authenticated,
 finalized DID-state source. The comparator does not validate a ledger proof or

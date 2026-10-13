@@ -30,6 +30,8 @@ export const assertDecisionEvidenceDidMethodMatchesObservation = (
     throw new Error("Decision evidence DID state anchor mismatch");
   }
   const document = parseMidnightDIDDocument(observation.didDocument);
+  const absoluteMethodId = (reference: string): string =>
+    reference.startsWith("#") ? `${document.id}${reference}` : reference;
   if (
     document.id !== claim.did
     || !claim.did.startsWith(`did:midnight:${expectedNetworkId}:`)
@@ -37,7 +39,9 @@ export const assertDecisionEvidenceDidMethodMatchesObservation = (
   ) {
     throw new Error("Decision evidence DID subject or controller mismatch");
   }
-  const methods = document.verificationMethod?.filter((method) => method.id === claim.methodId) ?? [];
+  const methods = document.verificationMethod?.filter(
+    (method) => absoluteMethodId(method.id) === claim.methodId,
+  ) ?? [];
   if (methods.length !== 1) {
     throw new Error("Decision evidence DID method is absent or ambiguous");
   }
@@ -52,7 +56,7 @@ export const assertDecisionEvidenceDidMethodMatchesObservation = (
   ) {
     throw new Error("Decision evidence DID method or key mismatch");
   }
-  if (!document[claim.relationship]?.some((id) => id === claim.methodId)) {
+  if (!document[claim.relationship]?.some((id) => absoluteMethodId(id) === claim.methodId)) {
     throw new Error("Decision evidence DID relationship is absent");
   }
 };

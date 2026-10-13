@@ -67,6 +67,37 @@ describe("decision evidence DID observation", () => {
     expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
       verifierClaim, observation(), "devnet",
     )).not.toThrow();
+    expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
+      issuerClaim,
+      {
+        ...observation(),
+        didDocument: { ...document(), assertionMethod: ["#key-1"] },
+      },
+      "devnet",
+    )).not.toThrow();
+    expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
+      issuerClaim,
+      {
+        ...observation(),
+        didDocument: {
+          ...document(),
+          verificationMethod: [
+            ...document().verificationMethod,
+            { ...document().verificationMethod[0], id: `${DID}#key-2` },
+          ],
+          assertionMethod: ["#key-2"],
+        },
+      },
+      "devnet",
+    )).toThrow(/relationship is absent/u);
+    expect(() => assertDecisionEvidenceDidMethodMatchesObservation(
+      issuerClaim,
+      {
+        ...observation(),
+        didDocument: { ...document(), assertionMethod: [`did:midnight:devnet:${"3".repeat(64)}#key-1`] },
+      },
+      "devnet",
+    )).toThrow();
   });
 
   it("rejects wrong network, block, version, removed method, and substituted key", () => {
