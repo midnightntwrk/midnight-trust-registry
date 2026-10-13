@@ -21,6 +21,7 @@ import {
   type MaintainerMembershipRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
+  type VerifierProposalEvidenceRecord,
   type IssuerResourceType,
   Contract,
   type Ledger,
@@ -530,6 +531,15 @@ export class TrustRegistrySimulator {
     );
   }
 
+  getVerifierProposalEvidence(authorizationId: Uint8Array): VerifierProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getVerifierProposalEvidence(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
   proposeIssuerAuthorization(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
@@ -740,6 +750,9 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -760,6 +773,9 @@ export class TrustRegistrySimulator {
         policyId,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applicationEvidenceSignatureDigest,
+  computeVerifierEvidenceBoundProposalPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
@@ -13,8 +14,11 @@ import {
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
+  signVerifierProposalEvidenceFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
+  verifyIssuerProposalEvidenceSignature,
   verifyPolicyBoundMaintainerAction,
+  verifyVerifierProposalEvidenceSignature,
 } from "../signing.js";
 
 const seed = new Uint8Array(32).fill(41);
@@ -70,6 +74,34 @@ describe("application evidence commitment signing", () => {
       commitment,
       { announcement: { x: 3n, y: 5n }, response: 12345n },
     )).toBe(false);
+  });
+
+  it("binds verifier proposal evidence to its policy, payload, key, and role", () => {
+    const registryId = new Uint8Array(32).fill(1);
+    const authorizationId = new Uint8Array(32).fill(2);
+    const policyCommitment = new Uint8Array(32).fill(3);
+    const basePayloadHash = new Uint8Array(32).fill(4);
+    const bound = computeVerifierEvidenceBoundProposalPayloadHash(
+      basePayloadHash, authorizationId, keyIdCommitment, policyCommitment, 1n,
+    );
+    const signature = signVerifierProposalEvidenceFromSeed(seed, registryId, keyIdCommitment, bound);
+    const publicKey = deriveJubjubPublicKeyFromSeed(seed);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment, bound, signature)).toBe(true);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+      computeVerifierEvidenceBoundProposalPayloadHash(
+        new Uint8Array(32).fill(5), authorizationId, keyIdCommitment, policyCommitment, 1n,
+      ), signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+      computeVerifierEvidenceBoundProposalPayloadHash(
+        basePayloadHash, authorizationId, keyIdCommitment, policyCommitment, 2n,
+      ), signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, new Uint8Array(32).fill(9),
+      keyIdCommitment, bound, signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId,
+      new Uint8Array(32).fill(8), bound, signature)).toBe(false);
+    expect(verifyIssuerProposalEvidenceSignature(publicKey, registryId, keyIdCommitment, bound, signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+      bound, { ...signature, response: signature.response + JUBJUB_ORDER })).toBe(false);
   });
 
   it("rejects ambiguous commitment and seed lengths", () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
+  signVerifierProposalEvidenceFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -52,6 +53,7 @@ describe("externally signed Compact verifier governance", () => {
       scope: createVerifierAuthorizationScopeFixture(verifier),
     });
     const proposal = harness.prepareVerifierProposalAction(verifier, evidence);
+    const verifierSignature = harness.signVerifierProposalEvidence(proposal);
     const firstProposalSigner = signPrepared(second, proposal);
     const secondProposalSigner = signPrepared(third, proposal);
     const beforeProposal = harness.simulator.getLedger().governanceActionCount;
@@ -61,18 +63,29 @@ describe("externally signed Compact verifier governance", () => {
       governedResource: { type: "requestProfile", id: "wrong-request-profile" },
     })).toThrow(/scope does not match/u);
     expect(() => harness.executeVerifierProposalWithSignatures(
-      verifier, evidence, [firstProposalSigner],
+      verifier, evidence, [firstProposalSigner], verifierSignature,
     )).toThrow();
     expect(() => harness.executeVerifierProposalWithSignatures(
-      verifier, evidence, [firstProposalSigner, firstProposalSigner],
+      verifier, evidence, [firstProposalSigner, firstProposalSigner], verifierSignature,
     )).toThrow();
     expect(() => harness.executeVerifierProposalWithSignatures(
-      verifier, evidence, [firstProposalSigner, signPrepared(outsider, proposal)],
+      verifier, evidence, [firstProposalSigner, signPrepared(outsider, proposal)], verifierSignature,
+    )).toThrow();
+    expect(() => harness.executeVerifierProposalWithSignatures(
+      verifier, evidence, [firstProposalSigner, secondProposalSigner],
+      signVerifierProposalEvidenceFromSeed(
+        outsider.seed, proposal.registryId,
+        proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
+      ),
     )).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
     harness.executeVerifierProposalWithSignatures(
-      verifier, evidence, [firstProposalSigner, secondProposalSigner],
+      verifier, evidence, [firstProposalSigner, secondProposalSigner], verifierSignature,
     );
+    const proposalEvidence = harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment);
+    expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
+    expect(proposalEvidence.evidenceVerifierKeyIdCommitment).toEqual(proposal.evidenceVerifierKeyIdCommitment);
+    expect(proposalEvidence.activePolicyVersion).toBe(proposal.policyVersion);
 
     const approval = harness.prepareVerifierDecisionAction(verifier, "approve");
     expect(() => harness.prepareVerifierDecisionAction(verifier, "unsupported" as "approve"))
