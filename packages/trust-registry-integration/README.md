@@ -55,6 +55,13 @@ Current coverage:
   hash, not every co-signature. This session-local witness does not authenticate
   a network transaction, historical maintainer state, or finality; production
   consumers must obtain those independently.
+- A decision-evidence composition test combines the actual simulator issuer
+  grant, policy and Merkle root, retained two-signer publication witness, and
+  a DID Document resolved by the published Midnight DID package. It rejects a
+  removed issuer assertion relationship and a later suspended grant. The
+  transaction and block references are explicit simulator placeholders, not
+  independently accepted network anchors, so the test does not issue a VC
+  signer descriptor or establish production finality.
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
 - VC-backed issuer-descriptor construction using the published
