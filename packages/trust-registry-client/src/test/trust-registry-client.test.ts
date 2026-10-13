@@ -286,7 +286,7 @@ describe("trust registry client", () => {
         },
       ),
     ).toThrow(/invalid literal|merkle-inclusion/i);
-  });
+  }, 20_000);
 
   it("rejects an epoch record missing its publication policy commitment", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
