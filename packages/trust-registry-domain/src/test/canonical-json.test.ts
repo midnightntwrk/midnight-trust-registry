@@ -30,4 +30,56 @@ describe("canonical mutation payloads", () => {
     expect(() => canonicalizeJson([1, undefined, 2])).toThrow(TypeError);
     expect(canonicalizeJson(["a", "b"])).not.toBe(canonicalizeJson(["b", "a"]));
   });
+
+  it("rejects cycles and ambiguous object properties without evaluating accessors", () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const arrayCycle: unknown[] = [];
+    arrayCycle.push(arrayCycle);
+    expect(() => canonicalizeJson(cycle)).toThrow(TypeError);
+    expect(() => canonicalizeJson(arrayCycle)).toThrow(TypeError);
+
+    const symbolProperty = { value: 1, [Symbol("extra")]: 2 };
+    expect(() => canonicalizeJson(symbolProperty)).toThrow(TypeError);
+
+    const hiddenProperty = { value: 1 };
+    Object.defineProperty(hiddenProperty, "hidden", { value: 2 });
+    expect(() => canonicalizeJson(hiddenProperty)).toThrow(TypeError);
+
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({}, "value", {
+      enumerable: true,
+      get: () => { getterCalls += 1; return 1; },
+    });
+    expect(() => canonicalizeJson(accessor)).toThrow(TypeError);
+    expect(getterCalls).toBe(0);
+
+    const extraArrayProperty = Object.assign([1], { extra: 2 });
+    expect(() => canonicalizeJson(extraArrayProperty)).toThrow(TypeError);
+    const accessorArray = [1];
+    Object.defineProperty(accessorArray, "0", { get: () => { getterCalls += 1; return 1; } });
+    expect(() => canonicalizeJson(accessorArray)).toThrow(TypeError);
+    expect(getterCalls).toBe(0);
+
+    const shared = { value: 1 };
+    expect(canonicalizeJson({ left: shared, right: shared })).toBe(
+      '{"left":{"value":1},"right":{"value":1}}',
+    );
+
+    const proxy = new Proxy({ value: 1 }, {
+      get: () => { getterCalls += 1; return 99; },
+    });
+    expect(canonicalizeJson(proxy)).toBe('{"value":1}');
+    const proxyArray = new Proxy([1], {
+      get: () => { getterCalls += 1; return 99; },
+    });
+    expect(canonicalizeJson(proxyArray)).toBe("[1]");
+    expect(getterCalls).toBe(0);
+
+    let doubled: unknown = { value: 1 };
+    for (let index = 0; index < 25; index += 1) {
+      doubled = { left: doubled, right: doubled };
+    }
+    expect(() => canonicalizeJson(doubled)).toThrow(/maximum length/);
+  });
 });

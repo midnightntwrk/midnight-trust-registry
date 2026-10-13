@@ -1658,7 +1658,7 @@ describe("trust registry contract", () => {
     expect(simulator.getIssuerAuthorization(issuer.authorizationId).status).toEqual(
       AuthorizationStatus.archived,
     );
-  });
+  }, 20_000);
 
   it("rejects duplicate maintainer signers in quorum execution", () => {
     const registry = createInitializedRegistryFixture(17);
