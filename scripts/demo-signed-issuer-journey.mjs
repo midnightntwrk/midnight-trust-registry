@@ -14,7 +14,7 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { createOperatorWorkspace, publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
+import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "../packages/trust-registry-cli/dist/index.js";
 import {
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
@@ -23,11 +23,11 @@ import {
   sha256Hex,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
-  bytes32Commitment,
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
@@ -38,7 +38,7 @@ import {
   GovernedIssuerProposalRejectedError,
   GovernedMembershipActionRejectedError,
   InMemoryApplicationChallengeStore,
-  InMemoryPendingApplicationRegistrationPort,
+  transitionPendingApplicationRegistration,
 } from "../packages/trust-registry-api/dist/index.js";
 
 const label = "signed-issuer-journey";
@@ -46,16 +46,25 @@ const now = new Date(VP_FIXTURE_TIME_MS);
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
 const harness = new LocalTrustRegistryIntegrationHarness(label);
-const workspace = createOperatorWorkspace({ label });
+const maintainers = [
+  createMaintainerScenarioFixture(`${label}-first`),
+  createMaintainerScenarioFixture(`${label}-second`),
+];
+for (const maintainer of maintainers) harness.authorizeMaintainer(maintainer);
+harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 const issuer = createIssuerScenarioFixture(label);
 const scope = createIssuerAuthorizationScopeFixture(issuer);
 const governedResource = { type: "credentialFamily", id: issuer.resourceId };
 const applicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
-const initialSnapshot = publishSimulatorSnapshot(harness, { label });
-
-assert.deepEqual(initialSnapshot.registry, workspace.snapshot.registry);
-assert.deepEqual(initialSnapshot.policy, workspace.snapshot.policy);
-assert.deepEqual(initialSnapshot.currentEpoch, workspace.snapshot.currentEpoch);
+let snapshot = publishSimulatorSnapshot(harness, { label });
+const workspaceForSnapshot = () => TrustRegistryOperatorWorkspaceSchema.parse({
+  workspaceVersion: "1",
+  updatedAt: snapshot.generatedAt,
+  registryLabel: label,
+  operations: [],
+  consumedMutationNonces: [],
+  snapshot,
+});
 
 const fixtureOptions = {
   subjectDid: issuer.subjectDid,
@@ -69,9 +78,26 @@ const signingPorts = await createApplicationVpIntakePorts({
   family: resolverFixture.input.family,
   signer: resolverFixture.signer,
 });
-const registration = new InMemoryPendingApplicationRegistrationPort({
-  workspace, applications: [], consumedNonces: [],
-}, harness.evidenceVerifier.did, resolverFixture.input.resolver);
+let pendingState = { applications: [], consumedNonces: [] };
+let pendingTail = Promise.resolve();
+const registration = {
+  register(request, at) {
+    const attempt = pendingTail.then(async () => {
+      const next = await transitionPendingApplicationRegistration(
+        { workspace: workspaceForSnapshot(), ...pendingState }, request,
+        harness.evidenceVerifier.did, at, resolverFixture.input.resolver,
+      );
+      pendingState = { applications: next.applications, consumedNonces: next.consumedNonces };
+      return structuredClone(next.applications.at(-1));
+    });
+    pendingTail = attempt.then(() => {}, () => {});
+    return attempt;
+  },
+  readPending(id) {
+    const record = pendingState.applications.find((item) => item.binding.applicationId === id);
+    return record === undefined ? null : structuredClone(record);
+  },
+};
 const acceptedEvidence = new Map();
 const token = randomBytes(32).toString("hex");
 const authorized = (request) => {
@@ -83,12 +109,10 @@ const admission = {
   resolvePendingApplication: async (id) => registration.readPending(id),
   resolveAcceptedEvidence: async (id) => acceptedEvidence.get(id) ?? null,
 };
-const bootstrapSeed = new Uint8Array(32).fill(17);
-const bootstrapKeyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
-const signAction = (prepared) => {
-  const publicKey = deriveJubjubPublicKeyFromSeed(bootstrapSeed);
+const signAction = (maintainer, prepared) => {
+  const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signPolicyBoundMaintainerActionFromSeed(
-    bootstrapSeed,
+    maintainer.seed,
     fromHex(prepared.registryId),
     fromHex(prepared.policyCommitment),
     fromHex(prepared.actionKind),
@@ -96,14 +120,14 @@ const signAction = (prepared) => {
     BigInt(prepared.actionSequence),
   );
   return {
-    keyId: asHex(bootstrapKeyId),
+    keyId: asHex(maintainer.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
     signature: asHex(encodeGovernanceSignature(signature)),
   };
 };
+const quorumSignatures = (prepared) => maintainers.map((maintainer) => signAction(maintainer, prepared));
 let currentProof;
 let acceptedChallengeHash;
-let snapshot = initialSnapshot;
 const expectedEvidence = () => {
   if (acceptedChallengeHash === undefined) throw new Error("No accepted application challenge");
   return { scope, challengeHash: acceptedChallengeHash, governedResource };
@@ -128,6 +152,7 @@ const server = createTrustRegistryApiServer({
         const eventHash = harness.executeIssuerProposalWithSignatures(
           issuer, evidence, signers, verifierSignature, expectedEvidence(),
         );
+        snapshot = publishSimulatorSnapshot(harness, { label }, snapshot);
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new GovernedIssuerProposalRejectedError("invalid-signers");
@@ -147,11 +172,10 @@ const server = createTrustRegistryApiServer({
       }
       try {
         const eventHash = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
-        if (action === "activate") {
-          snapshot = publishSimulatorSnapshot(harness, {
-            label, issuers: [{ label: "joined-issuer", fixture: issuer }],
-          }, snapshot);
-        }
+        snapshot = publishSimulatorSnapshot(harness, {
+          label,
+          ...(action === "activate" ? { issuers: [{ label: "joined-issuer", fixture: issuer }] } : {}),
+        }, snapshot);
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new GovernedMembershipActionRejectedError("invalid-signers");
@@ -216,8 +240,8 @@ const signedApplication = () => {
       applicationId, authorizationId: issuer.authorizationId, scope, governedResource,
     }),
     nonce: `0x${"22".repeat(32)}`,
-    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
-    expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspaceForSnapshot()),
+    expectedEpochId: snapshot.currentEpoch.epochId,
     issuedAt: new Date(VP_FIXTURE_TIME_MS - 60_000).toISOString(),
     expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
   };
@@ -303,19 +327,34 @@ try {
   const proposalBody = {
     evidence: submitted.evidence,
     prepared: preparedProposal,
-    signers: [signAction(preparedProposal)],
+    signers: quorumSignatures(preparedProposal),
     evidenceVerifierSignature: asHex(encodeGovernanceSignature(verifierSignature)),
   };
   acceptedEvidence.delete(applicationId);
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 403);
   acceptedEvidence.set(applicationId, acceptedRecord);
+  const beforeProposal = harness.simulator.getLedger().governanceActionCount;
+  assert.equal((await post(`${proposalPath}/submit`, {
+    ...proposalBody, signers: [signAction(maintainers[0], preparedProposal)],
+  })).status, 403);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeProposal);
+  assert.equal((await post(`${proposalPath}/submit`, {
+    ...proposalBody,
+    signers: [signAction(maintainers[0], preparedProposal), signAction(maintainers[0], preparedProposal)],
+  })).status, 403);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeProposal);
   const proposal = await expectHttp(await post(`${proposalPath}/submit`, proposalBody), 202);
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 409);
 
   for (const action of ["approve", "activate"]) {
     const actionPath = `/v1/governed/issuer/${issuer.authorizationId}/actions/${action}`;
     const prepared = await expectHttp(await fetch(`${base}${actionPath}`), 200);
-    await expectHttp(await post(actionPath, { prepared, signers: [signAction(prepared)] }), 202);
+    const beforeAction = harness.simulator.getLedger().governanceActionCount;
+    assert.equal((await post(actionPath, {
+      prepared, signers: [signAction(maintainers[0], prepared)],
+    })).status, 403);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
+    await expectHttp(await post(actionPath, { prepared, signers: quorumSignatures(prepared) }), 202);
   }
 
   const bundle = await expectHttp(await fetch(
@@ -335,6 +374,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     demo: "signed-issuer-journey",
     mode: "deterministic local Compact simulator and in-memory applicant state",
+    governance: "2-of-3 active maintainers",
     applicationId,
     authorizationId: issuer.authorizationId,
     proposalEventHash: proposal.eventHash,
@@ -343,7 +383,8 @@ try {
     trustedAtTime: evaluated.trustedAtTime,
     expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "wrong-proposal-target:403",
-      "missing-proposal-receipt:403", "proposal-replay:409"],
+      "missing-proposal-receipt:403", "single-maintainer:403",
+      "duplicate-maintainer:403", "proposal-replay:409"],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

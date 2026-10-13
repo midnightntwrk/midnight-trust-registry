@@ -358,10 +358,10 @@ to a governed proposal without promoting an applicant signature into approval.
 
 The local signed-issuer journey now exercises that binding through the HTTP
 proposal route: signed pending registration, one-use VP receipt, receipt-gated
-Compact proposal, maintainer approval and activation, epoch publication, and
-client-verified public evidence lookup. It rejects proposal preparation and
-submission when the accepted receipt is unavailable. The registration workspace
-and simulator have matching initial policy/epoch state, but remain separate
-in-memory stores; this is not durable admission, live VC status verification,
-or network finality. The next functional step is one authoritative state path
-with atomic pending/evidence persistence and multi-maintainer governance.
+Compact proposal, 2-of-3 maintainer approval and activation, epoch publication,
+and client-verified public evidence lookup. It rejects proposal preparation and
+submission when the accepted receipt is unavailable, and rejects one-signature
+governance actions without advancing the ledger. Registration preflight and
+public API snapshots project one simulator state. Pending applications and
+accepted evidence are still in-memory, not atomically durable with the ledger;
+this is not live VC status verification or network finality.

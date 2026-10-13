@@ -164,15 +164,13 @@ checks unauthorized access, wrong scope, and replay. The host uses a fixture
 identity, in-memory state, and a fixed virtual clock; it is not a public
 admission service or a production VC status verifier.
 
-`pnpm run demo:signed-issuer` runs a joined local issuer journey. It checks that
-the pending-registration workspace and Compact simulator start from the same
-policy and epoch root, then exercises DID-signed application, one-use VP,
-redacted receipt, Compact proposal/approval/activation, epoch publication,
-and an API bundle independently verified by the client. The proposal uses the
-fixture bootstrap maintainer (1-of-1); the separate governed demo covers
-2-of-3 signatures. The joined demo keeps applicant data in memory and does
-not establish durable shared state, production family/status verification, or
-network finality.
+`pnpm run demo:signed-issuer` runs a joined local issuer journey. It derives
+registration preflight and API snapshots from one Compact simulator, then
+exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
+maintainer proposal/approval/activation, epoch publication, and an API bundle
+independently verified by the client. Single-maintainer actions cannot advance
+the ledger. Applicant records remain in memory; this does not establish
+durable admission, production family/status verification, or network finality.
 
 Refresh published DID and VC dependencies with validation:
 

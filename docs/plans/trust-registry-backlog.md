@@ -34,13 +34,14 @@ have focused tests, but they drive separate state paths: the intake reaches the
 Compact simulator, while the HTTP gateway replays an operator workspace. The
 local workspace's fixture maintainer is not a Compact-backed 2-of-3 approval
 bundle. Combined VP/proposal HTTP hosts now require a receipt-backed admission
-port. A deterministic local issuer journey now checks identical initial policy
-and epoch roots before connecting signed registration, VP, Compact transitions,
-and public lookup, but the two state stores are not durable or live-synchronized.
-The next functional slice must join these paths in an authoritative host so an authenticated
-applicant proposal, governed decision, published epoch, and public lookup all
-refer to the same state transition. The Compact contract checks evidence hashes
-but does not itself resolve the evidence verifier's DID assertion key.
+port. A deterministic local issuer journey now projects registration preflight
+and public lookup from one Compact simulator and connects signed registration,
+VP receipt, 2-of-3 governed transitions, and epoch-backed lookup. Applicant
+records and accepted evidence remain in-memory and are not atomically durable
+with governance state. The next functional slice must provide authoritative
+persistence and crash/retry semantics for that handoff. The Compact contract
+checks evidence hashes but does not itself resolve the evidence verifier's DID
+assertion key.
 
 ## 0.1.0 Critical Path
 
