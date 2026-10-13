@@ -64,6 +64,15 @@ import {
   type GovernedVerifierProposalPort,
 } from "./governed-verifier-proposals.js";
 import {
+  decodeAuditorEvidenceVerifierSignature,
+  GovernedAuditorProposalPrepareRequestSchema,
+  GovernedAuditorProposalRejectedError,
+  GovernedAuditorProposalSubmitRequestSchema,
+  sameGovernedAuditorProposal,
+  serializeGovernedAuditorProposal,
+  type GovernedAuditorProposalPort,
+} from "./governed-auditor-proposals.js";
+import {
   ApplicationVpHttpError,
   createApplicationVpHttpService,
   type ApplicationVpHttpPort,
@@ -121,6 +130,7 @@ export type TrustRegistryApiServerOptions = {
   governedMembershipActions?: GovernedMembershipActionPort;
   governedIssuerProposals?: GovernedIssuerProposalPort;
   governedVerifierProposals?: GovernedVerifierProposalPort;
+  governedAuditorProposals?: GovernedAuditorProposalPort;
   applicationVp?: ApplicationVpHttpPort;
 };
 
@@ -543,6 +553,16 @@ const mapGovernedVerifierProposalError = (error: unknown, problemBaseUri: string
   throw error;
 };
 
+const mapGovernedAuditorProposalError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedAuditorProposalRejectedError) {
+    const unknown = error.reason === "unknown-authorization";
+    throw jsonProblem(problemBaseUri, unknown ? "authorization-not-found" : "governed-proposal-rejected",
+      unknown ? 404 : 403, unknown ? "authorization not found" : "governed proposal rejected",
+      error.reason);
+  }
+  throw error;
+};
+
 const performMutation = async (
   source: ReturnType<typeof requireMutableSource>,
   operation: Parameters<typeof applyMutationOperation>[1],
@@ -773,6 +793,66 @@ export const createTrustRegistryApiServer = (
           return;
         } catch (error) {
           return mapGovernedVerifierProposalError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 6
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "auditor"
+        && segments[4] === "proposal"
+        && (segments[5] === "prepare" || segments[5] === "submit")
+      ) {
+        const port = options.governedAuditorProposals;
+        if (port === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-proposal-unavailable", 503,
+            "governed proposal unavailable", "A Compact-backed auditor proposal port is not configured.");
+        }
+        const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        response.setHeader("cache-control", "no-store");
+        if (segments[5] === "prepare") {
+          const body = await parseJsonBody(request,
+            (value) => GovernedAuditorProposalPrepareRequestSchema.parse(value), problemBaseUri);
+          try {
+            writeJson(response, 200, serializeGovernedAuditorProposal(
+              await port.prepare(authorizationId, body.evidence),
+            ));
+            return;
+          } catch (error) {
+            return mapGovernedAuditorProposalError(error, problemBaseUri);
+          }
+        }
+        const body = await parseJsonBody(request,
+          (value) => GovernedAuditorProposalSubmitRequestSchema.parse(value), problemBaseUri);
+        let prepared;
+        try {
+          prepared = serializeGovernedAuditorProposal(await port.prepare(authorizationId, body.evidence));
+        } catch (error) {
+          return mapGovernedAuditorProposalError(error, problemBaseUri);
+        }
+        if (!sameGovernedAuditorProposal(prepared, body.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-proposal", 409,
+            "stale governed proposal", "The signed proposal context no longer matches current ledger state.");
+        }
+        let signers;
+        let evidenceVerifierSignature;
+        try {
+          signers = decodeGovernedMembershipSigners(body);
+          evidenceVerifierSignature = decodeAuditorEvidenceVerifierSignature(body.evidenceVerifierSignature);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        try {
+          const receipt = GovernedMembershipActionReceiptSchema.parse(
+            await port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature),
+          );
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedAuditorProposalError(error, problemBaseUri);
         }
       }
 
