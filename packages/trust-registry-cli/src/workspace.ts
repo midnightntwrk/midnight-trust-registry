@@ -231,10 +231,43 @@ const buildSnapshotFromTrackedFixtures = (
     verifierEntries,
     auditorEntries,
     recognitionEntries,
+    evidenceArchive: [],
     notes: [
       "Operator workspace snapshot derived from governed CLI operations.",
       `Replayed operations: ${operationCount.toString()}.`,
     ],
+  };
+};
+
+const snapshotBundles = (
+  snapshot: TrustRegistryOperatorSnapshot,
+): TrustRegistryEvidenceBundle[] => [
+  ...snapshot.issuerEntries.map((entry) => entry.evidence),
+  ...snapshot.verifierEntries.map((entry) => entry.evidence),
+  ...snapshot.auditorEntries.map((entry) => entry.evidence),
+  ...snapshot.recognitionEntries.map((entry) => entry.evidence),
+];
+
+const archiveKey = (bundle: TrustRegistryEvidenceBundle): string =>
+  `${bundle.authorization?.role ?? "recognition"}:${bundle.authorization?.authorizationId ?? bundle.recognition?.recognitionId}:${bundle.epoch.epochId}`;
+
+const retainHistoricalEvidence = (
+  previous: TrustRegistryOperatorSnapshot,
+  next: TrustRegistryOperatorSnapshot,
+): TrustRegistryOperatorSnapshot => {
+  const nextCurrent = new Set(snapshotBundles(next).map(archiveKey));
+  const archive = new Map(previous.evidenceArchive.map((bundle) => [archiveKey(bundle), bundle]));
+  for (const bundle of snapshotBundles(previous)) {
+    const key = archiveKey(bundle);
+    if (!nextCurrent.has(key)) archive.set(key, bundle);
+  }
+  const epochs = new Map(previous.epochs.map((epoch) => [epoch.epochId, epoch]));
+  for (const epoch of next.epochs) epochs.set(epoch.epochId, epoch);
+  return {
+    ...next,
+    epochs: Array.from(epochs.values()).sort((left, right) =>
+      left.validFrom.localeCompare(right.validFrom) || left.epochId.localeCompare(right.epochId)),
+    evidenceArchive: Array.from(archive.values()),
   };
 };
 
@@ -502,12 +535,12 @@ export const applyWorkspaceOperation = (
 ): TrustRegistryOperatorWorkspace => {
   const operations = [...workspace.operations, operation];
   const { harness, trackedFixtures } = replayWorkspace(workspace.registryLabel, operations);
-  const snapshot = buildSnapshotFromTrackedFixtures(
+  const snapshot = retainHistoricalEvidence(workspace.snapshot, buildSnapshotFromTrackedFixtures(
     workspace.registryLabel,
     operations.length,
     harness,
     trackedFixtures,
-  );
+  ));
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
     workspaceVersion: "1",

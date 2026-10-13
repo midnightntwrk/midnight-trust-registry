@@ -43,6 +43,7 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0"
   }
 }
