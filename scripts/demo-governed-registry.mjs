@@ -102,6 +102,13 @@ adversarialMatrix.expectThrown(() => lastActiveHarness.suspendMaintainer(bootstr
   messagePattern: /threshold policy/iu,
   category: "last-active-maintainer-protected",
 });
+adversarialMatrix.expectThrown(() => lastActiveHarness.revokeMaintainer(bootstrapMembership), {
+  id: "compact-last-active-maintainer-revocation",
+  invariant: "The final active maintainer cannot be revoked",
+  boundary: "compact",
+  messagePattern: /threshold policy/iu,
+  category: "last-active-maintainer-protected",
+});
 assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
 assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
 
@@ -267,6 +274,22 @@ adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundl
   boundary: "client",
   messagePattern: /event sibling/iu,
   category: "historical-merkle-path-rejected",
+});
+const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
+assert.ok(historicalEpochSignature);
+const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
+  ...historicalPolicyBundle,
+  epoch: {
+    ...historicalPolicyBundle.epoch,
+    maintainerSignatures: [{ ...historicalEpochSignature, signature: alteredEpochSignature }],
+  },
+}, {}), {
+  id: "issuer-historical-epoch-signature-tampered",
+  invariant: "A policy revision cannot make a forged historical epoch signature valid",
+  boundary: "client",
+  messagePattern: /invalid/iu,
+  category: "historical-epoch-signature-rejected",
 });
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
@@ -859,7 +882,24 @@ try {
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
   const compactApproval = harness.prepareIssuerDecisionAction(issuer, "approve");
   const compactSigner = signCompact(second, compactApproval);
+  const compactCoSigner = signCompact(third, compactApproval);
   const governanceActionsBeforeRejections = harness.simulator.getLedger().governanceActionCount;
+  const alteredEvidenceHash = Uint8Array.from(compactApproval.evidenceHash);
+  alteredEvidenceHash[0] ^= 1;
+  adversarialMatrix.expectThrown(() => harness.simulator.authorizeIssuerAuthorization(
+    compactSigner.keyId,
+    compactSigner.publicKey,
+    compactSigner.signature,
+    issuer.authorizationIdCommitment,
+    alteredEvidenceHash,
+    [compactCoSigner],
+  ), {
+    id: "compact-issuer-altered-evidence-hash",
+    invariant: "A signed approval cannot swap the proposed issuer evidence hash",
+    boundary: "compact",
+    messagePattern: /evidence|match/iu,
+    category: "evidence-hash-mismatch",
+  });
   adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [compactSigner],
   ), {
@@ -939,6 +979,13 @@ try {
       await adversarialMatrix.expectHttp(await submit(prepared, signers.slice(0, 1)), {
         id: `${role}-${action}-insufficient-quorum`,
         invariant: "Governed membership transition requires the active maintainer quorum",
+        boundary: "api",
+        status: 403,
+        problemType: "governed-action-rejected",
+      });
+      await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], signers[0]]), {
+        id: `${role}-${action}-duplicate-signer`,
+        invariant: "One maintainer key cannot be counted twice toward a governed decision quorum",
         boundary: "api",
         status: 403,
         problemType: "governed-action-rejected",

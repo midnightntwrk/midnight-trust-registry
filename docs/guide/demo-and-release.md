@@ -152,7 +152,8 @@ emitted only after those assertions pass and contains no credential or VP
 bodies. It covers four-role challenge replay and unauthorized challenge access,
 issuer VP scope/body/status failures, governed proposal and action quorum,
 self-vote, duplicate/removed Compact signer, unauthorized evidence verifier,
-last-active-maintainer protection, altered proposal commitment, policy-threshold
+last-active-maintainer protection, altered proposal commitment and signed
+Compact evidence hash, duplicate signer rejection, policy-threshold
 replay, historical evidence under old and new policy snapshots, client evidence
 checks, signed evidence expiry/policy-ID substitution, exact public scope
 queries, and TRQP unknown
