@@ -102,6 +102,17 @@ describe("private application VP exchange", () => {
     expect(result).toEqual({ evidence, receipt });
   });
 
+  it("loads the canonical pending binding through the private authenticated route", async () => {
+    const binding = { applicationId: "application:auditor:one", role: "auditor", scope: { role: "auditor" } };
+    const fetchImpl = vi.fn(async () => Response.json(binding)) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.loadPendingApplicationBinding(binding.applicationId)).toEqual(binding);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/application-evidence/application%3Aauditor%3Aone/binding",
+      { method: "GET", credentials: "same-origin" },
+    );
+  });
+
   it("does not expose a rejected server body's private presentation data", async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       title: "private-presentation-payload", detail: "secret credential claims",

@@ -662,9 +662,10 @@ export const createTrustRegistryApiServer = (
         return;
       }
 
-      if (method === "POST" && segments.length === 4 && segments[0] === "v1"
+      if ((method === "POST" || method === "GET") && segments.length === 4 && segments[0] === "v1"
         && segments[1] === "application-evidence"
-        && (segments[3] === "challenges" || segments[3] === "submissions")) {
+        && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "binding")
+        && (method === "GET") === (segments[3] === "binding")) {
         response.setHeader("cache-control", "no-store");
         if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
@@ -675,6 +676,10 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
         }
         try {
+          if (segments[3] === "binding") {
+            writeJson(response, 200, await applicationVp.binding(segments[2]!), false);
+            return;
+          }
           const raw = await readRequestBody(request, problemBaseUri);
           let body: unknown;
           try {

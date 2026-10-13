@@ -6,6 +6,7 @@ import type {
   TrustRegistryApiSummary,
   ApplicationVpHttpIssueResult,
   ApplicationVpHttpSubmissionResult,
+  ApplicationChallengeBinding,
 } from "@midnight-ntwrk/trust-registry-api";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
@@ -52,7 +53,7 @@ export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
 
-const privateApplicationPath = (applicationId: string, action: "challenges" | "submissions"): string => {
+const privateApplicationPath = (applicationId: string, action: "binding" | "challenges" | "submissions"): string => {
   if (applicationId.length === 0 || applicationId !== applicationId.trim()) {
     throw new Error("A valid application ID is required.");
   }
@@ -155,9 +156,19 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */
+  async loadPendingApplicationBinding(applicationId: string): Promise<ApplicationChallengeBinding> {
+    const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "binding")}`, {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    return parsePrivateResponse<ApplicationChallengeBinding>(response);
+  }
+
+  /** Use only with an authenticated same-origin host; no presentation is stored by this client. */
   async issueApplicationChallenge(applicationId: string): Promise<ApplicationVpHttpIssueResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "challenges")}`, {
       method: "POST",
+      credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: "{}",
     });
@@ -172,6 +183,7 @@ export class TrustRegistryApplicantPortalClient {
   ): Promise<ApplicationVpHttpSubmissionResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "submissions")}`, {
       method: "POST",
+      credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         nonce: challenge.nonce,

@@ -1,5 +1,6 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -10,6 +11,20 @@ type AppState = {
   inspection: PublicInspection | undefined;
   loading: boolean;
   submitting: boolean;
+  evidenceBusy: boolean;
+  evidenceError: string | undefined;
+  evidenceFlash: string | undefined;
+  pendingAuditor: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
+};
+
+export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
+  try {
+    const api = new URL(apiBase);
+    return api.username === "" && api.password === "" && api.origin === pageUrl.origin
+      && (api.protocol === "https:" || api.hostname === "localhost" || api.hostname === "127.0.0.1");
+  } catch {
+    return false;
+  }
 };
 
 export const escapeHtml = (value: string): string =>
@@ -51,7 +66,12 @@ export const createApplicantPortalApp = (
     inspection: undefined,
     loading: false,
     submitting: false,
+    evidenceBusy: false,
+    evidenceError: undefined,
+    evidenceFlash: undefined,
+    pendingAuditor: undefined,
   };
+  let evidenceRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -59,6 +79,84 @@ export const createApplicantPortalApp = (
   };
 
   const client = () => new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl);
+
+  const requirePrivateHost = () => {
+    if (!canUsePrivateEvidenceHost(state.apiBase, initialUrl)) {
+      throw new Error("Private evidence requires an authenticated same-origin HTTPS or localhost host.");
+    }
+  };
+
+  const loadAuditorBinding = async (applicationId: string) => {
+    const requestId = ++evidenceRequestId;
+    setState({ evidenceBusy: true, pendingAuditor: undefined, evidenceError: undefined, evidenceFlash: undefined });
+    try {
+      requirePrivateHost();
+      const binding = await client().loadPendingApplicationBinding(applicationId);
+      if (requestId !== evidenceRequestId) return;
+      if (binding.applicationId !== applicationId || binding.role !== "auditor"
+        || binding.scope.role !== "auditor" || binding.governedResource.type !== "requestProfile") {
+        throw new Error("This pending application is not a canonical auditor request.");
+      }
+      setState({ pendingAuditor: { binding } });
+    } catch (error) {
+      if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
+    } finally {
+      if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
+  const issueAuditorChallenge = async () => {
+    const pending = state.pendingAuditor;
+    if (pending === undefined) return;
+    const requestId = ++evidenceRequestId;
+    setState({ evidenceBusy: true, pendingAuditor: { binding: pending.binding }, evidenceError: undefined, evidenceFlash: undefined });
+    try {
+      requirePrivateHost();
+      const challenge = await client().issueApplicationChallenge(pending.binding.applicationId);
+      if (requestId !== evidenceRequestId) return;
+      if (challenge.applicationId !== pending.binding.applicationId) {
+        throw new Error("Challenge application ID did not match the pending auditor application.");
+      }
+      setState({ pendingAuditor: { binding: pending.binding, challenge } });
+    } catch (error) {
+      if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
+    } finally {
+      if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
+  const submitAuditorPresentation = async (rawPresentation: string) => {
+    const pending = state.pendingAuditor;
+    if (pending?.challenge === undefined) return;
+    const requestId = ++evidenceRequestId;
+    setState({ evidenceBusy: true, evidenceError: undefined, evidenceFlash: undefined });
+    try {
+      requirePrivateHost();
+      let presentation: unknown;
+      try {
+        presentation = JSON.parse(rawPresentation);
+      } catch {
+        throw new Error("Presentation must be valid JSON.");
+      }
+      if (presentation === null || typeof presentation !== "object" || Array.isArray(presentation)) {
+        throw new Error("Presentation must be a JSON object.");
+      }
+      const result = await client().submitApplicationPresentation(
+        pending.binding.applicationId, pending.challenge, presentation,
+      );
+      if (requestId !== evidenceRequestId) return;
+      setState({
+        pendingAuditor: { binding: pending.binding },
+        evidenceFlash: `Auditor evidence accepted: ${result.receipt.receiptId}. The application still requires governance approval.`,
+      });
+    } catch (error) {
+      if (requestId === evidenceRequestId) {
+        setState({ pendingAuditor: { binding: pending.binding }, evidenceError: formatApiError(error) });
+      }
+    } finally {
+      if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
 
   const refreshInspection = async (flash?: string) => {
     setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
@@ -115,7 +213,8 @@ export const createApplicantPortalApp = (
       }
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
-      setState({ apiBase });
+      evidenceRequestId += 1;
+      setState({ apiBase, pendingAuditor: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
       void refreshInspection();
     });
 
@@ -141,6 +240,27 @@ export const createApplicantPortalApp = (
       }
       void submitApplication(target, labelInput.value.trim());
     });
+
+    root.querySelector<HTMLFormElement>("[data-auditor-binding-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const applicationId = form.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
+      if (applicationId !== undefined && applicationId.length > 0) void loadAuditorBinding(applicationId);
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-auditor-challenge]")?.addEventListener("click", () => {
+      void issueAuditorChallenge();
+    });
+
+    root.querySelector<HTMLFormElement>("[data-auditor-vp-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const input = form.querySelector<HTMLTextAreaElement>("[name='presentation']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void submitAuditorPresentation(raw);
+    });
   };
 
   const renderInspectionLane = (
@@ -165,18 +285,23 @@ export const createApplicantPortalApp = (
   `;
 
   const render = () => {
+    const previousVpForm = root.querySelector<HTMLFormElement>("[data-auditor-vp-form]");
+    const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
+    const previousChallengeHash = previousVpForm?.dataset.challengeHash;
     const cards = state.inspection === undefined ? [] : toInspectionCards(state.inspection);
     const issuerCards = cards.filter((card) => card.target === "issuer");
     const verifierCards = cards.filter((card) => card.target === "verifier");
     const auditorCards = cards.filter((card) => card.target === "auditor");
     const recognitionCards = cards.filter((card) => card.target === "recognition");
+    const privateHost = canUsePrivateEvidenceHost(state.apiBase, initialUrl);
+    const pending = state.pendingAuditor;
 
     root.innerHTML = `
       <main class="shell">
         <section class="hero">
           <p class="eyebrow">Public Trust Entry</p>
           <h1>Trust Registry Applicant Portal</h1>
-          <p>Submit a new issuer, verifier, or recognition application, then inspect active issuer, verifier, auditor, and recognition records from the same local-first API. Auditor submission awaits the governed evidence flow.</p>
+          <p>Inspect active trust records and submit local demo applications. Pending auditor applicants can present challenge-bound evidence through an authenticated same-origin host.</p>
           <div class="toolbar">
             <form class="panel" data-api-base-form>
               <label class="label">
@@ -203,8 +328,8 @@ export const createApplicantPortalApp = (
         </section>
         <section class="content">
           <form class="form-panel" data-submit-form>
-            <h2>Apply for membership</h2>
-            <p>Applications enter the governed workflow as proposed records. Approval and activation remain in the admin console.</p>
+            <h2>Local demo application</h2>
+            <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
             <label class="label">
               Role
               <select class="select" name="target">
@@ -217,6 +342,42 @@ export const createApplicantPortalApp = (
             </label>
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
+          <section class="form-panel">
+            <h2>Pending auditor evidence</h2>
+            <p>Use an application ID already created by a trusted admission host. Its canonical DID, scope, policy, and resource are loaded from the server, not entered here. This does not create or approve membership.</p>
+            ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}
+            ${state.evidenceFlash === undefined ? "" : `<div class="alert success">${escapeHtml(state.evidenceFlash)}</div>`}
+            ${privateHost ? "" : `<p class="alert error">Private evidence is disabled: serve the portal and authenticated API from the same HTTPS or localhost origin.</p>`}
+            <form data-auditor-binding-form>
+              <label class="label">Pending application ID
+                <input class="input mono" name="applicationId" type="text" maxlength="256" required />
+              </label>
+              <button class="button secondary" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Load auditor request</button>
+            </form>
+            ${pending === undefined ? "" : `
+              <div class="panel">
+                <p>Applicant DID: <span class="mono">${escapeHtml(pending.binding.subjectDid)}</span></p>
+                <p>Policy: ${escapeHtml(pending.binding.policyId)} · ${escapeHtml(pending.binding.policyVersion)}</p>
+                <p>Governed resource: ${escapeHtml(pending.binding.governedResource.type)}:${escapeHtml(pending.binding.governedResource.id)}</p>
+                <p>Scope commitment: <span class="mono">${escapeHtml(pending.binding.scopeCommitment)}</span></p>
+                <pre class="mono">${escapeHtml(JSON.stringify(pending.binding.scope, null, 2))}</pre>
+                <button class="button secondary" type="button" data-auditor-challenge${state.evidenceBusy ? " disabled" : ""}>Issue one-use VP challenge</button>
+              </div>
+              ${pending.challenge === undefined ? "" : `
+                <div class="panel">
+                  <p>Challenge expires: ${escapeHtml(pending.challenge.expiresAt)}</p>
+                  <p>Nonce: <span class="mono">${escapeHtml(pending.challenge.nonce)}</span></p>
+                  <p>Challenge hash: <span class="mono">${escapeHtml(pending.challenge.challengeHash)}</span></p>
+                  <form data-auditor-vp-form data-challenge-hash="${escapeHtml(pending.challenge.challengeHash)}">
+                    <label class="label">Presentation JSON
+                      <textarea class="input mono" name="presentation" rows="6" required></textarea>
+                    </label>
+                    <button class="button" type="submit"${state.evidenceBusy ? " disabled" : ""}>Submit VP evidence</button>
+                  </form>
+                </div>
+              `}
+            `}
+          </section>
           <div class="lanes">
             ${renderInspectionLane("Active issuers", issuerCards)}
             ${renderInspectionLane("Active verifiers", verifierCards)}
@@ -226,6 +387,10 @@ export const createApplicantPortalApp = (
         </section>
       </main>
     `;
+    if (previousVp !== undefined && previousChallengeHash === state.pendingAuditor?.challenge?.challengeHash) {
+      const currentVp = root.querySelector<HTMLTextAreaElement>("[data-auditor-vp-form] [name='presentation']");
+      if (currentVp !== null) currentVp.value = previousVp;
+    }
     bindEvents();
   };
 
