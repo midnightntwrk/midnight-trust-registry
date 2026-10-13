@@ -3,6 +3,7 @@ import { decodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
 
 import { computeAuthorizationStatementLeafHash, computeMerkleRootFromProof } from "./evidence-bundle.js";
 import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
+import { compareRfc3339Instants } from "./instant.js";
 import { LifecycleStatusSchema } from "./lifecycle.js";
 import { GovernancePolicySnapshotSchema, computeGovernancePolicySnapshotCommitment } from "./policy-snapshot.js";
 import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
@@ -186,7 +187,7 @@ export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidenc
   if (BigInt(evidence.decisionSequence) > BigInt(evidence.epoch.validUntilSequence)) {
     ctx.addIssue({ code: "custom", path: ["decisionSequence"], message: "Decision sequence is outside the epoch window" });
   }
-  if (Date.parse(evidence.epoch.validFrom) >= Date.parse(evidence.epoch.validUntil)) {
+  if (compareRfc3339Instants(evidence.epoch.validFrom, evidence.epoch.validUntil) >= 0) {
     ctx.addIssue({ code: "custom", path: ["epoch", "validUntil"], message: "Epoch validity window must increase" });
   }
   if (
@@ -387,14 +388,14 @@ export const assertDecisionEvidenceSelection = (
   ) {
     throw new Error("Decision evidence grant is not active");
   }
-  const at = Date.parse(TimestampSchema.parse(expected.evaluationTime));
+  const at = TimestampSchema.parse(expected.evaluationTime);
   if (
-    at < Date.parse(evidence.epoch.validFrom)
-    || at > Date.parse(evidence.epoch.validUntil)
-    || at < Date.parse(evidence.policy.effectiveFrom)
-    || (evidence.policy.effectiveUntil !== null && at >= Date.parse(evidence.policy.effectiveUntil))
-    || at < Date.parse(evidence.grant.activeFrom)
-    || (evidence.grant.effectiveUntil !== undefined && at > Date.parse(evidence.grant.effectiveUntil))
+    compareRfc3339Instants(at, evidence.epoch.validFrom) < 0
+    || compareRfc3339Instants(at, evidence.epoch.validUntil) > 0
+    || compareRfc3339Instants(at, evidence.policy.effectiveFrom) < 0
+    || (evidence.policy.effectiveUntil !== null && compareRfc3339Instants(at, evidence.policy.effectiveUntil) >= 0)
+    || compareRfc3339Instants(at, evidence.grant.activeFrom) < 0
+    || (evidence.grant.effectiveUntil !== undefined && compareRfc3339Instants(at, evidence.grant.effectiveUntil) > 0)
   ) {
     throw new Error("Decision evidence is outside its claimed active window");
   }

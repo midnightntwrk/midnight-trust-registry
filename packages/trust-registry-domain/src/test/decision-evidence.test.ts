@@ -485,6 +485,28 @@ describe("decision evidence envelope", () => {
     expect(() => assertDecisionEvidenceSelection(expiredPolicy, expectedIssuerSelection)).toThrow(/active window/u);
   });
 
+  it("does not round a selected instant back into a closed sub-millisecond window", () => {
+    const selected = { ...expectedIssuerSelection, evaluationTime: "2026-05-20T02:30:00.000001Z" };
+    expect(() => assertDecisionEvidenceSelection(
+      consistentIssuerEvidence({ effectiveUntil: "2026-05-20T02:30:00.000Z" }),
+      selected,
+    )).toThrow(/active window/u);
+
+    const epochEnded = consistentIssuerEvidence();
+    epochEnded.epoch.validUntil = "2026-05-20T02:30:00.000Z";
+    expect(() => assertDecisionEvidenceSelection(epochEnded, selected)).toThrow(/active window/u);
+
+    const policyBase = consistentIssuerEvidence();
+    const policyEnded = {
+      ...policyBase,
+      policy: { ...policyBase.policy, effectiveUntil: "2026-05-20T02:30:00.000Z" },
+    };
+    policyEnded.epoch.policyRoot = computeGovernancePolicySnapshotCommitment(
+      GovernancePolicySnapshotSchema.parse(policyEnded.policy),
+    );
+    expect(() => assertDecisionEvidenceSelection(policyEnded, selected)).toThrow(/active window/u);
+  });
+
   it("checks an exact verifier request profile separately from issuer scope", () => {
     const issuer = issuerEvidence();
     const requestResourceId = `tr:request-resource:v1:${"f".repeat(64)}`;
