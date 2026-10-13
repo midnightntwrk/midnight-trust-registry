@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   computeCreateEpochCommitmentPayloadHash,
   deriveJubjubPublicKeyFromSeed,
@@ -14,6 +14,7 @@ import {
   DecisionEvidenceSchema,
   GovernancePolicySnapshotSchema,
   computeAuthorizationStatementLeafHash,
+  computeAuthorizationScopeCommitment,
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
@@ -21,7 +22,10 @@ import {
   requestGovernedResourceId,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-import { assertDecisionEvidenceConsistentWithSuppliedContext } from "../decision-context.js";
+import {
+  assertDecisionEvidenceConsistentWithSuppliedContext,
+  verifyDecisionEvidenceWithTrustedReaders,
+} from "../decision-context.js";
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "../utils.js";
 
 const A = `0x${"a".repeat(64)}`;
@@ -382,5 +386,96 @@ describe("decision evidence supplied-context composition", () => {
     ] as const) {
       expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(candidate, supplied)).toThrow();
     }
+  });
+});
+
+describe("decision evidence trusted-reader candidate", () => {
+  it.each(["issuer", "verifier"] as const)("returns an exact %s candidate after both authenticated reads", async (role) => {
+    const { evidence, context } = fixture(role);
+    const readRegistry = vi.fn(async () => ({
+      acceptedEpoch: context.acceptedEpoch,
+      publication: context.publication,
+      decisionPoint: context.decisionPoint,
+    }));
+    const readDid = vi.fn(async () => context.didState);
+    const candidate = await verifyDecisionEvidenceWithTrustedReaders(
+      evidence,
+      context.selection,
+      {
+        readCurrentFinalizedRegistryDecision: readRegistry,
+        readCurrentFinalizedDidState: readDid,
+      },
+    );
+    expect(readRegistry).toHaveBeenCalledWith(context.selection, evidence.epoch.epochId);
+    expect(readDid).toHaveBeenCalledWith(context.selection.subjectDid, context.selection.networkId, "11");
+    expect(candidate).toMatchObject({
+      role,
+      registryId: REGISTRY,
+      authorizationId: evidence.grant.authorizationId,
+      subjectDid: DID,
+      resourceId: evidence.grant.resourceId,
+      scope: evidence.scope,
+      scopeCommitment: computeAuthorizationScopeCommitment(evidence.scope),
+      policyId: evidence.policy.policyId,
+      policyVersion: evidence.policy.policyVersion,
+      policyRoot: evidence.epoch.policyRoot,
+      decisionSequence: "11",
+      evaluationTime: context.decisionPoint.evaluationTime,
+      didMethod: evidence.didMethod,
+      didStateVersion: "3",
+      publicationEventHash: evidence.governanceEvents.epochPublication,
+    });
+    if (role === "issuer") {
+      expect(candidate.statusPolicyBinding).toEqual(evidence.statusPolicyBinding);
+    } else {
+      expect(candidate).not.toHaveProperty("statusPolicyBinding");
+    }
+  });
+
+  it("fails closed for unavailable or stale finalized state and does not derive anchors from the bundle", async () => {
+    const { evidence, context } = fixture();
+    const registry = {
+      acceptedEpoch: context.acceptedEpoch,
+      publication: context.publication,
+      decisionPoint: context.decisionPoint,
+    };
+    const readDid = vi.fn(async () => context.didState);
+    await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+      readCurrentFinalizedRegistryDecision: async () => null,
+      readCurrentFinalizedDidState: readDid,
+    })).rejects.toThrow(/registry decision is unavailable/u);
+    expect(readDid).not.toHaveBeenCalled();
+    await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+      readCurrentFinalizedRegistryDecision: async () => registry,
+      readCurrentFinalizedDidState: async () => null,
+    })).rejects.toThrow(/DID state is unavailable/u);
+    for (const changed of [
+      { ...registry, acceptedEpoch: { ...registry.acceptedEpoch, stateRoot: C } },
+      { ...registry, decisionPoint: { ...registry.decisionPoint, sequence: "12" } },
+      { ...registry, decisionPoint: {
+        ...registry.decisionPoint,
+        currentPolicy: { ...registry.decisionPoint.currentPolicy, root: C },
+      } },
+      { ...registry, decisionPoint: {
+        ...registry.decisionPoint,
+        currentGrant: { ...registry.decisionPoint.currentGrant, status: "suspended" },
+      } },
+    ]) {
+      await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+        readCurrentFinalizedRegistryDecision: async () => changed,
+        readCurrentFinalizedDidState: async () => context.didState,
+      })).rejects.toThrow();
+    }
+    await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+      readCurrentFinalizedRegistryDecision: async () => registry,
+      readCurrentFinalizedDidState: async () => ({ ...context.didState, stateVersion: "4" }),
+    })).rejects.toThrow(/DID state anchor mismatch/u);
+    await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, {
+      ...context.selection,
+      resourceId: `tr:issuer-resource:v1:${"a".repeat(64)}`,
+    }, {
+      readCurrentFinalizedRegistryDecision: async () => registry,
+      readCurrentFinalizedDidState: async () => context.didState,
+    })).rejects.toThrow(/role or resource scope mismatch/u);
   });
 });

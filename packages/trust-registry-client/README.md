@@ -57,3 +57,12 @@ sequence/evaluation time. It returns no descriptor. Callers must authenticate
 that joint observation, including the active policy root and current grant at
 the selected sequence, and the other supplied contexts, then establish
 finality and currentness separately; Midnight does not bind sequence to time.
+
+`verifyDecisionEvidenceWithTrustedReaders` takes an explicit caller-selected
+role and scope, obtains the current finalized registry snapshot and DID state
+from injected readers, runs those checks, and returns a role-discriminated
+decision candidate only on success. It passes the claimed epoch ID merely as
+a lookup hint; neither reader may copy an anchor from the candidate bundle or
+answer from unfinalized/stale state. No production authenticated reader is
+provided here, and the candidate is not a VC `AuthorizedSignerDescriptor` or
+authority proof. Consumers must not provide fixture readers in production.

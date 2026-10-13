@@ -5,6 +5,7 @@ import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-co
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
+  verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -183,6 +184,33 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
     };
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, context)).not.toThrow();
+    const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, {
+      readCurrentFinalizedRegistryDecision: async (selection, epochIdHint) => {
+        expect(selection).toEqual(context.selection);
+        expect(epochIdHint).toBe(bundle.epoch.epochId);
+        return {
+          acceptedEpoch: context.acceptedEpoch,
+          publication: context.publication,
+          decisionPoint: context.decisionPoint,
+        };
+      },
+      readCurrentFinalizedDidState: async (did, network, decisionSequence) => {
+        expect([did, network, decisionSequence]).toEqual([
+          issuer.subjectDid,
+          networkId,
+          epochRecord.publishedAtSequence.toString(),
+        ]);
+        return context.didState;
+      },
+    });
+    expect(candidate).toMatchObject({
+      role: "issuer",
+      authorizationId: issuer.authorizationId,
+      resourceId: issuer.resourceId,
+      statusPolicyBinding: bundle.statusPolicyBinding,
+      didStateVersion: stateVersion,
+      publicationEventHash: witness.eventHash,
+    });
 
     expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
       ...context,
