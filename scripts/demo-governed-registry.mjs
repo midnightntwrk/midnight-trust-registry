@@ -80,74 +80,84 @@ harness.advanceEvidenceTimeBy(60_000);
 
 // Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
 harness.proposeRecognition(recognition);
-const verifierEvidence = harness.createApplicationEvidence({
-  applicationId: verifier.authorizationId,
-  subjectDid: verifier.subjectDid,
-  role: "verifier",
-  scope: createVerifierAuthorizationScopeFixture(verifier),
-});
-const auditorEvidence = harness.createApplicationEvidence({
-  applicationId: auditor.authorizationId,
-  subjectDid: auditor.subjectDid,
-  role: "auditor",
-  scope: createAuditorAuthorizationScopeFixture(auditor),
-});
-const candidateEvidence = harness.createApplicationEvidence({
-  applicationId: candidate.maintainerId,
-  subjectDid: candidate.subjectDid,
-  role: "maintainer",
-  scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
-});
-
-const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
-const issuerResource = { type: "credentialFamily", id: issuer.resourceId };
-const binding = ApplicationChallengeBindingSchema.parse({
-  registryId: harness.registryId,
-  applicationId: createScopedIdentifier("application", "issuer", issuer.authorizationId),
-  subjectDid: issuer.subjectDid,
-  evidenceVerifierDid: harness.evidenceVerifier.did,
-  role: "issuer",
-  policyId: harness.policyId,
-  policyVersion: harness.policyRecord.version,
-  scope: issuerScope,
-  scopeCommitment: computeAuthorizationScopeCommitment(issuerScope),
-  governedResource: issuerResource,
-});
 const challengeService = new ApplicationChallengeService(
   new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
 );
-const challenge = await challengeService.issue(binding);
-const proof = await createApplicationVpScenarioFixture(challenge.nonce, {
-  subjectDid: issuer.subjectDid,
-  evidenceVerifierDid: harness.evidenceVerifier.did,
-  evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
-  scopeCommitment: computeAuthorizationScopeCommitment(issuerScope),
-});
-const vpPorts = await createApplicationVpIntakePorts({
-  resolver: proof.input.resolver,
-  family: proof.input.family,
-  signer: proof.signer,
-});
-const issuerEvidence = await consumeChallengeAndSubmitApplication({
-  challengeService,
-  binding,
-  expectedBinding: binding,
-  nonce: challenge.nonce,
-  challengeHash: challenge.challengeHash,
-  presentation: proof.input.submission,
-  ...vpPorts,
-  authorizedVerifiers: [harness.evidenceVerifier],
-  evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
-  propose: async ({ evidence }) => evidence,
-});
-assert.equal(await challengeService.isLive({
-  binding, nonce: challenge.nonce, challengeHash: challenge.challengeHash,
-}), false);
-const expectedIssuerEvidence = {
-  scope: issuerScope,
-  challengeHash: challenge.challengeHash,
-  governedResource: issuerResource,
+const verifiedApplicationEvidence = async ({ role, id, subjectDid, scope, governedResource }) => {
+  const binding = ApplicationChallengeBindingSchema.parse({
+    registryId: harness.registryId,
+    applicationId: createScopedIdentifier("application", role, id),
+    subjectDid,
+    evidenceVerifierDid: harness.evidenceVerifier.did,
+    role,
+    policyId: harness.policyId,
+    policyVersion: harness.policyRecord.version,
+    scope,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope),
+    governedResource,
+  });
+  const challenge = await challengeService.issue(binding);
+  const proof = await createApplicationVpScenarioFixture(challenge.nonce, {
+    subjectDid,
+    evidenceVerifierDid: harness.evidenceVerifier.did,
+    evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
+    scope,
+  });
+  const vpPorts = await createApplicationVpIntakePorts({
+    resolver: proof.input.resolver,
+    family: proof.input.family,
+    signer: proof.signer,
+  });
+  const intake = {
+    challengeService,
+    binding,
+    expectedBinding: binding,
+    nonce: challenge.nonce,
+    challengeHash: challenge.challengeHash,
+    presentation: proof.input.submission,
+    ...vpPorts,
+    authorizedVerifiers: [harness.evidenceVerifier],
+    evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+    propose: async ({ evidence: submitted }) => submitted,
+  };
+  const evidence = await consumeChallengeAndSubmitApplication(intake);
+  assert.equal(await challengeService.isLive({
+    binding, nonce: challenge.nonce, challengeHash: challenge.challengeHash,
+  }), false);
+  await assert.rejects(consumeChallengeAndSubmitApplication(intake), /already consumed/);
+  assert.equal(JSON.stringify(evidence).includes(proof.input.submission.rawCredentialBody), false);
+  assert.equal(JSON.stringify(evidence).includes(proof.input.submission.rawPresentationBody), false);
+  return { evidence, expected: { scope, challengeHash: challenge.challengeHash, governedResource } };
 };
+const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
+const { evidence: issuerEvidence, expected: expectedIssuerEvidence } = await verifiedApplicationEvidence({
+  role: "issuer",
+  id: issuer.authorizationId,
+  subjectDid: issuer.subjectDid,
+  scope: issuerScope,
+  governedResource: { type: "credentialFamily", id: issuer.resourceId },
+});
+const { evidence: verifierEvidence, expected: expectedVerifierEvidence } = await verifiedApplicationEvidence({
+  role: "verifier",
+  id: verifier.authorizationId,
+  subjectDid: verifier.subjectDid,
+  scope: createVerifierAuthorizationScopeFixture(verifier),
+  governedResource: { type: "requestProfile", id: verifier.scopeResourceId },
+});
+const { evidence: auditorEvidence, expected: expectedAuditorEvidence } = await verifiedApplicationEvidence({
+  role: "auditor",
+  id: auditor.authorizationId,
+  subjectDid: auditor.subjectDid,
+  scope: createAuditorAuthorizationScopeFixture(auditor),
+  governedResource: { type: "requestProfile", id: auditor.scopeResourceId },
+});
+const { evidence: candidateEvidence, expected: expectedMaintainerEvidence } = await verifiedApplicationEvidence({
+  role: "maintainer",
+  id: candidate.maintainerId,
+  subjectDid: candidate.subjectDid,
+  scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
+  governedResource: { type: "registry", id: harness.registryId },
+});
 
 const fixtures = {
   label: "governed-registry-demo",
@@ -214,9 +224,11 @@ const proposalTargets = new Map([
   ["verifier", {
     id: verifier.authorizationId,
     evidence: verifierEvidence,
-    prepare: (evidence) => harness.prepareVerifierProposalAction(verifier, evidence),
+    prepare: (evidence) => harness.prepareVerifierProposalAction(verifier, evidence, expectedVerifierEvidence),
     execute: (evidence, signers, signature) =>
-      harness.executeVerifierProposalWithSignatures(verifier, evidence, signers, signature),
+      harness.executeVerifierProposalWithSignatures(
+        verifier, evidence, signers, signature, expectedVerifierEvidence,
+      ),
     signEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
     rejected: GovernedVerifierProposalRejectedError,
     missing: "unknown-authorization",
@@ -224,9 +236,11 @@ const proposalTargets = new Map([
   ["auditor", {
     id: auditor.authorizationId,
     evidence: auditorEvidence,
-    prepare: (evidence) => harness.prepareAuditorProposalAction(auditor, evidence),
+    prepare: (evidence) => harness.prepareAuditorProposalAction(auditor, evidence, expectedAuditorEvidence),
     execute: (evidence, signers, signature) =>
-      harness.executeAuditorProposalWithSignatures(auditor, evidence, signers, signature),
+      harness.executeAuditorProposalWithSignatures(
+        auditor, evidence, signers, signature, expectedAuditorEvidence,
+      ),
     signEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
     rejected: GovernedAuditorProposalRejectedError,
     missing: "unknown-authorization",
@@ -234,9 +248,11 @@ const proposalTargets = new Map([
   ["maintainer", {
     id: candidate.maintainerId,
     evidence: candidateEvidence,
-    prepare: (evidence) => harness.prepareMaintainerProposalAction(candidate, evidence),
+    prepare: (evidence) => harness.prepareMaintainerProposalAction(candidate, evidence, expectedMaintainerEvidence),
     execute: (evidence, signers, signature) =>
-      harness.executeMaintainerProposalWithSignatures(candidate, evidence, signers, signature),
+      harness.executeMaintainerProposalWithSignatures(
+        candidate, evidence, signers, signature, expectedMaintainerEvidence,
+      ),
     signEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
     rejected: GovernedMaintainerProposalRejectedError,
     missing: "unknown-maintainer",
@@ -365,7 +381,12 @@ try {
     await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
     const accepted = await expectHttp(await submit(body), 202);
     await expectHttp(await submit(body), 409);
-    otherProposals.push({ role, eventHash: accepted.eventHash, evidenceCommitment: target.evidence.commitment });
+    otherProposals.push({
+      role,
+      eventHash: accepted.eventHash,
+      evidenceCommitment: target.evidence.commitment,
+      source: "published VC/VP fixture and one-use challenge via HTTP proposal",
+    });
   }
   const decisions = [];
   for (const [role, target] of targets) {

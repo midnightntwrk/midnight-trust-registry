@@ -100,13 +100,14 @@ Run the separate quorum-backed reference demo:
 pnpm run demo:governed
 ```
 
-It verifies a published fixture VC/VP against Midnight DID keys, consumes a
-one-use application challenge, and submits the redacted issuer evidence through
-the governed HTTP proposal route with an evidence-verifier signature and 2-of-3
-maintainer quorum. Verifier, auditor, and maintainer proposals also use their
-governed HTTP prepare/submit routes with registered evidence-verifier signatures
-and external 2-of-3 maintainer votes; their eligibility evidence is generated
-by local fixtures rather than the issuer's published VC/VP challenge flow.
+For issuer, verifier, auditor, and maintainer membership, it verifies published
+fixture VC/VP signatures against Midnight DID keys, consumes a separate one-use
+application challenge, and submits redacted evidence through the governed HTTP
+proposal route. Each proposal requires a registered evidence-verifier signature
+and external 2-of-3 maintainer votes. The signed fixture credential body carries
+the role-specific scope; a mismatched signed scope or altered body is rejected.
+Reusing a consumed challenge is rejected, and neither credential nor
+presentation body appears in the evidence response or scrubbed report.
 External-recognition proposal remains fixture-signed because third-party
 accreditation proof is not implemented. Each approval and activation then uses the
 governed HTTP prepare and submit endpoints with two independently produced
@@ -126,9 +127,10 @@ and governance event hashes, not the VP transcript or holder secrets.
 Eligibility and status decisions use trusted fixture adapters; the negative
 suspension and revocation fixtures are contract-backed but are not submitted
 through the external-signature HTTP action port. Finality is simulated, not a
-transaction submitted to Midnight. The fixture credential-family verifier is
-bound to its known test presentation and is **not** a verifier for arbitrary
-uploaded VPs; this demo must not be exposed as a public applicant endpoint.
+transaction submitted to Midnight. The fixture credential-family verifier uses
+test-only issuer eligibility and status decisions; it is **not** a verifier for
+arbitrary uploaded VPs. This demo must not be exposed as a public applicant
+endpoint.
 
 ## Artifact Boundaries
 
