@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -531,6 +531,33 @@ describe("trust registry operator CLI", () => {
     ]);
     expect(evidence.exitCode).toBe(0);
     expect(JSON.parse(evidence.stdout).authorization.status).toBe("archived");
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it("uses the API workspace lock and loads an existing workspace without nonce history", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-cli-shared-lock-"));
+    const workspacePath = join(directory, "workspace.json");
+    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
+    const stored = JSON.parse(await readFile(workspacePath, "utf8")) as Record<string, unknown>;
+    delete stored.consumedMutationNonces;
+    await writeFile(workspacePath, JSON.stringify(stored));
+    expect((await loadWorkspaceFromFile(workspacePath)).consumedMutationNonces).toEqual([]);
+
+    await writeFile(`${workspacePath}.lock`, "other writer", { flag: "wx" });
+    try {
+      const blocked = await captureCli([
+        "submit", "--workspace", workspacePath, "--kind", "issuer", "--label", "blocked",
+      ]);
+      expect(blocked.exitCode).not.toBe(0);
+      expect(blocked.stderr).toContain("locked by another writer");
+      expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
+    } finally {
+      await unlink(`${workspacePath}.lock`);
+    }
+    const accepted = await captureCli([
+      "submit", "--workspace", workspacePath, "--kind", "issuer", "--label", "accepted",
+    ]);
+    expect(accepted.exitCode).toBe(0);
+    expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(1);
   }, CLI_TEST_TIMEOUT_MS);
 
   it("retains prior issuer evidence and epoch commitments across workspace writes", async () => {

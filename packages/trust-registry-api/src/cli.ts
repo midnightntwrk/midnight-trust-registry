@@ -102,6 +102,12 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.host.trim().length === 0) {
     throw new Error(`--host must not be empty\n\n${HELP_TEXT}`);
   }
+  if (
+    options.unsafeDemoMutations === true
+    && !["127.0.0.1", "::1"].includes(options.host)
+  ) {
+    throw new Error("--unsafe-demo-mutations requires a loopback host");
+  }
 
   return options;
 };

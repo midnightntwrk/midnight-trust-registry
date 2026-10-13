@@ -98,7 +98,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures);
+        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -163,6 +163,11 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(bundle.authorization.status).toBe("active");
       expect(() => new TrustRegistrySimulatorClient(harness.simulator)
         .verifyIssuerAuthorizationBundle(bundle, {})).not.toThrow();
+      expect(snapshot.evidenceArchive.map((entry) => entry.authorization?.status))
+        .toEqual(expect.arrayContaining(["proposed", "authorized"]));
+      for (const archived of snapshot.evidenceArchive) {
+        expect(snapshot.epochs).toContainEqual(archived.epoch);
+      }
 
       const wrongScope = await fetch(`${base}/v1/authorizations/resolve`, {
         method: "POST",
@@ -219,7 +224,7 @@ describe("Compact-backed membership governance over HTTP", () => {
           if (error instanceof GovernedMembershipActionRejectedError) throw error;
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures);
+        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -410,7 +415,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures);
+        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };

@@ -132,7 +132,8 @@ each transition.
 
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
-`--unsafe-demo-mutations`; never expose that mode on a public listener.
+`--unsafe-demo-mutations`; the CLI accepts that mode only on literal loopback
+listeners (`127.0.0.1` or `::1`) and never on a public listener.
 Those demo routes:
 
 - require `--workspace`, not `--snapshot`

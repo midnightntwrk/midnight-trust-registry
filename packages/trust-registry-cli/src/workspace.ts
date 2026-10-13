@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import {
   LocalTrustRegistryIntegrationHarness,
@@ -97,6 +97,36 @@ const loadWorkspaceJson = async (
 ): Promise<TrustRegistryOperatorWorkspace> => {
   const raw = await readFile(workspacePath, "utf8");
   return TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(raw));
+};
+
+export class WorkspaceMutationLockedError extends Error {
+  constructor() {
+    super("Operator workspace is locked by another writer; stale locks require operator recovery");
+    this.name = "WorkspaceMutationLockedError";
+  }
+}
+
+export const withExclusiveWorkspaceWrite = async <T>(
+  workspacePath: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const lockPath = `${resolve(workspacePath)}.lock`;
+  await mkdir(dirname(lockPath), { recursive: true });
+  let lock;
+  try {
+    lock = await open(lockPath, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new WorkspaceMutationLockedError();
+    }
+    throw error;
+  }
+  try {
+    return await operation();
+  } finally {
+    await lock.close();
+    await unlink(lockPath);
+  }
 };
 
 const currentOrHistoricalIssuerEvidence = (
@@ -259,6 +289,7 @@ const buildSnapshotFromTrackedFixtures = (
 export const publishSimulatorSnapshot = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixtures: SimulatorSnapshotFixtures,
+  previous?: TrustRegistryOperatorSnapshot,
 ): TrustRegistryOperatorSnapshot => {
   const tracked = createTrackedFixtures();
   for (const entry of fixtures.issuers ?? []) {
@@ -277,9 +308,13 @@ export const publishSimulatorSnapshot = (
     if (tracked.recognitions.has(entry.fixture.recognitionId)) throw new Error("Duplicate recognition fixture");
     tracked.recognitions.set(entry.fixture.recognitionId, entry);
   }
-  return buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
+  const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
     "Snapshot projected from the supplied Compact simulator state.",
   ]);
+  if (previous !== undefined && previous.registry.registryId !== next.registry.registryId) {
+    throw new Error("Cannot retain evidence from another registry");
+  }
+  return previous === undefined ? next : retainHistoricalEvidence(previous, next);
 };
 
 const snapshotBundles = (

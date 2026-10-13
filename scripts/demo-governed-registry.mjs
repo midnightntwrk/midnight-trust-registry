@@ -134,7 +134,7 @@ const server = createTrustRegistryApiServer({
       } catch {
         throw new GovernedMembershipActionRejectedError("invalid-signers");
       }
-      snapshot = publishSimulatorSnapshot(harness, fixtures);
+      snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
       return { eventHash: asHex(eventHash) };
     },
   },

@@ -33,6 +33,7 @@ import {
   applyWorkspaceOperation,
   createOperatorWorkspace,
   loadWorkspaceFromFile,
+  withExclusiveWorkspaceWrite,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
 } from "./workspace.js";
@@ -258,7 +259,7 @@ const runInitWorkspace = async (
       : {},
   );
 
-  await writeWorkspaceToFile(workspacePath, workspace);
+  await withExclusiveWorkspaceWrite(workspacePath, () => writeWorkspaceToFile(workspacePath, workspace));
   io.stdout(`Wrote operator workspace to ${workspacePath}\n`);
   return 0;
 };
@@ -498,9 +499,12 @@ const runWorkspaceMutation = async (
   io: CliIo,
   json = false,
 ): Promise<number> => {
-  const workspace = await loadWorkspaceFromFile(workspacePath);
-  const updatedWorkspace = applyWorkspaceOperation(workspace, operation);
-  await writeWorkspaceToFile(workspacePath, updatedWorkspace);
+  const updatedWorkspace = await withExclusiveWorkspaceWrite(workspacePath, async () => {
+    const workspace = await loadWorkspaceFromFile(workspacePath);
+    const updated = applyWorkspaceOperation(workspace, operation);
+    await writeWorkspaceToFile(workspacePath, updated);
+    return updated;
+  });
   const result = resolveWorkspaceOperationRecord(updatedWorkspace, operation);
 
   if (json) {

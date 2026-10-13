@@ -244,7 +244,7 @@ export const TrustRegistryOperatorWorkspaceSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
   registryLabel: SnapshotEntryLabelSchema,
   operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),
-  consumedMutationNonces: z.array(z.string()),
+  consumedMutationNonces: z.array(z.string()).default([]),
   snapshot: TrustRegistryOperatorSnapshotSchema,
 });
 

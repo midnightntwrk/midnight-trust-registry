@@ -1,6 +1,3 @@
-import { mkdir, open, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
-
 import {
   applyWorkspaceOperation,
   buildSnapshotSummary,
@@ -13,6 +10,7 @@ import {
   resolveVerifierEntryAtTimestamp,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
+  withExclusiveWorkspaceWrite,
   type SnapshotTemporalAuthorizationInspection,
   type SnapshotTemporalRecognitionInspection,
   type TrustRegistryOperatorWorkspace,
@@ -22,6 +20,7 @@ import {
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistrySummary,
 } from "@midnight-ntwrk/trust-registry-cli";
+export { WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
 import type {
   TrqpAuthorizationDecision,
   TrqpAuthorizationRequest,
@@ -63,13 +62,6 @@ export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
   writeWorkspace(workspace: TrustRegistryOperatorWorkspace): Promise<void>;
   withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T>;
 };
-
-export class WorkspaceMutationLockedError extends Error {
-  constructor() {
-    super("Operator workspace is locked by another writer; stale locks require operator recovery");
-    this.name = "WorkspaceMutationLockedError";
-  }
-}
 
 export type TrustRegistryApiMutationRecord =
   | {
@@ -205,21 +197,7 @@ export const createWorkspaceFileSource = (
     await writeWorkspaceToFile(workspacePath, workspace);
   },
   async withExclusiveWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const lockPath = `${workspacePath}.lock`;
-    await mkdir(dirname(lockPath), { recursive: true });
-    let lock;
-    try {
-      lock = await open(lockPath, "wx", 0o600);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new WorkspaceMutationLockedError();
-      throw error;
-    }
-    try {
-      return await operation();
-    } finally {
-      await lock.close();
-      await unlink(lockPath);
-    }
+    return withExclusiveWorkspaceWrite(workspacePath, operation);
   },
 });
 

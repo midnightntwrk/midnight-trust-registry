@@ -220,7 +220,7 @@ describe("published VP proof to governed issuer decision", () => {
           } catch {
             throw new GovernedMembershipActionRejectedError("invalid-signers");
           }
-          snapshot = publishSimulatorSnapshot(harness, fixtures);
+          snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
           return { eventHash: `0x${Buffer.from(accepted).toString("hex")}` };
         },
       },
