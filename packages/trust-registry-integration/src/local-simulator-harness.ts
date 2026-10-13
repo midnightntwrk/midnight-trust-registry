@@ -136,6 +136,19 @@ export type SimulatorApplicationEvidenceExpectation = {
   governedResource: GovernedResource;
 };
 
+export type IssuerDecisionAction = "approve" | "activate";
+
+export type PreparedIssuerDecisionAction = {
+  registryId: Uint8Array;
+  authorizationId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  previousLifecycleEventHash: Uint8Array;
+  evidenceHash: Uint8Array;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -1081,6 +1094,61 @@ export class LocalTrustRegistryIntegrationHarness {
     if (!Buffer.from(commitment).equals(Buffer.from(proposal.evidenceCommitment))) {
       throw new Error("Issuer application evidence no longer matches the governed proposal");
     }
+  }
+
+  prepareIssuerDecisionAction(
+    fixture: IssuerScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedIssuerDecisionAction {
+    if (action !== "approve" && action !== "activate") {
+      throw new Error("Unsupported issuer decision action");
+    }
+    this.recheckIssuerApplicationEvidence(fixture);
+    const ledger = this.simulator.getLedger();
+    const current = this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment);
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_ISSUER_ACTION_KIND : ACTIVATE_ISSUER_ACTION_KIND),
+      actionPayloadHash: computeUpdateIssuerAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        current.lifecycleEventHash,
+        current.evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(current.evidenceHash),
+    };
+  }
+
+  /** The Compact simulator verifies current context, active signer membership, and quorum. */
+  executeIssuerDecisionWithSignatures(
+    fixture: IssuerScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Issuer decision requires a maintainer signature");
+    const prepared = this.prepareIssuerDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeIssuerAuthorization(
+        primary.keyId,
+        primary.publicKey,
+        primary.signature,
+        fixture.authorizationIdCommitment,
+        prepared.evidenceHash,
+        signers.slice(1),
+      );
+    }
+    return this.simulator.activateIssuerAuthorization(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      fixture.authorizationIdCommitment,
+      prepared.evidenceHash,
+      signers.slice(1),
+    );
   }
 
   approveIssuer(

@@ -5,6 +5,15 @@ Integration scenarios for `midnight-trust-registry`.
 Current coverage:
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
+- `prepareIssuerDecisionAction` and `executeIssuerDecisionWithSignatures`
+  expose the exact policy-bound Compact digest inputs for issuer approval and
+  activation, then accept an explicit maintainer signature bundle. The focused
+  integration test uses two distinct non-bootstrap maintainers under a 2-of-3
+  policy and rejects insufficient, duplicate, stale, and wrong-policy bundles.
+  This is a local simulator path, not yet wired to the signed HTTP gateway;
+  fixture-driven `approveIssuer` and `activateIssuer` still sign internally.
+  Run `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run
+  src/test/external-issuer-signers.integration.test.ts` to reproduce it.
 - anchored epoch evidence validation
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
