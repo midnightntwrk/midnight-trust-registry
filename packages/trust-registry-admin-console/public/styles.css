@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -104,7 +105,8 @@ input {
 }
 
 .toolbar label,
-.detail-panel label {
+.detail-panel label,
+.proposal-panel label {
   display: grid;
   gap: 0.35rem;
   font-size: 0.86rem;
@@ -374,6 +376,27 @@ input {
   border: 1px solid rgba(24, 33, 39, 0.14);
   border-radius: 18px;
   background: rgba(236, 244, 237, 0.65);
+}
+
+.proposal-panel {
+  margin: 1.25rem 0;
+  background: rgba(255, 248, 239, 0.88);
+}
+
+.proposal-panel h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+.proposal-panel form {
+  max-width: 68rem;
+}
+
+.proposal-evidence {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+  font-size: 0.78rem;
 }
 
 .governed-panel h3,

@@ -9,6 +9,10 @@ Current scope:
 - prepare policy-bound Compact approval and activation contexts for issuer,
   verifier, auditor, and recognition cards; paste externally produced public
   signer entries and submit them through the optional governed-action API port
+- prepare an issuer application proposal from a redacted signed evidence
+  envelope, then submit external maintainer signatures and a separate
+  registered evidence-verifier JubJub signature through the optional governed
+  issuer-proposal API port
 - require explicit confirmation before submitting signed actions; the contract
   remains responsible for current-policy, signer-membership, and quorum checks
 - retain separate local fixture mutation and epoch controls for the deliberately
@@ -41,11 +45,18 @@ Notes:
 - the console expects the API server to run on loopback
 - the API package now serves permissive CORS headers for this local-only UI
 - the packaged CLI does **not** configure `governedMembershipActions`, so the
-  Compact panel receives 503 in this basic workspace setup. An embedding
-  server must inject a Compact-backed port that submits supplied signatures;
-  it must not fall back to fixture replay. The panel never stores private keys
-  or signatures in browser storage, and a prepared context is discarded when
-  the selected record changes or the board refreshes
+  Compact action panel receives 503 in this basic workspace setup. It also
+  does not configure `governedIssuerProposals`, so issuer proposal preparation
+  receives 503 until an embedding server injects the Compact-backed port. The
+  server must submit supplied signatures, never fall back to fixture replay.
+  The browser accepts only redacted evidence and externally produced signatures;
+  it does not handle private keys or persist evidence/signatures in browser
+  storage. Prepared proposal context is discarded when the issuer ID, evidence,
+  API connection, or board changes. The contract rechecks current policy,
+  sequence, evidence, verifier identity, and quorum at submission
+- the governed proposal panel currently supports issuers only. Do not use it
+  to infer on-chain evidence-verifier coverage for verifier, auditor, or
+  maintainer proposals
 - `--unsafe-demo-mutations` enables the old fixture controls only on loopback;
   remove that flag when the signed mutation and Compact ports are wired for a
   real deployment

@@ -1,6 +1,7 @@
 import type {
   GovernedMembershipAction,
   GovernedMembershipSignatureRequest,
+  PreparedGovernedIssuerProposal,
   PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -39,6 +40,11 @@ type AppState = {
   governedSignersJson: string;
   loading: boolean;
   publishing: boolean;
+  proposalAuthorizationId: string;
+  proposalEvidenceJson: string;
+  proposalPrepared: PreparedGovernedIssuerProposal | undefined;
+  proposalSignersJson: string;
+  proposalVerifierSignature: string;
   selectedKey: string | undefined;
 };
 
@@ -113,6 +119,11 @@ export const createAdminConsoleApp = (
     governedSignersJson: "",
     loading: false,
     publishing: false,
+    proposalAuthorizationId: "",
+    proposalEvidenceJson: "",
+    proposalPrepared: undefined,
+    proposalSignersJson: "",
+    proposalVerifierSignature: "",
     selectedKey: undefined,
   };
 
@@ -142,6 +153,7 @@ export const createAdminConsoleApp = (
         governedKey: undefined,
         governedPrepared: undefined,
         governedSignersJson: "",
+        proposalPrepared: undefined,
         loading: false,
         selectedKey: nextSelectedKey,
       });
@@ -153,6 +165,7 @@ export const createAdminConsoleApp = (
         flash: undefined,
         governedKey: undefined,
         governedPrepared: undefined,
+        proposalPrepared: undefined,
         loading: false,
         selectedKey: undefined,
       });
@@ -260,6 +273,74 @@ export const createAdminConsoleApp = (
     }
   };
 
+  const prepareIssuerProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy) return;
+    const id = state.proposalAuthorizationId.trim();
+    if (id.length === 0) {
+      setState({ error: "Enter the exact issuer authorization ID." });
+      return;
+    }
+    const evidenceJson = state.proposalEvidenceJson;
+    let evidence: unknown;
+    try {
+      evidence = JSON.parse(evidenceJson);
+    } catch {
+      setState({ error: "Application evidence must be valid redacted JSON." });
+      return;
+    }
+    setState({ governedBusy: true, proposalPrepared: undefined, proposalSignersJson: "",
+      proposalVerifierSignature: "", error: undefined, flash: undefined });
+    try {
+      const prepared = await getClient().prepareIssuerProposal(id, evidence);
+      setState({ governedBusy: false, proposalPrepared:
+        state.proposalAuthorizationId.trim() === id && state.proposalEvidenceJson === evidenceJson
+          ? prepared : undefined });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitIssuerProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy || state.proposalPrepared === undefined) return;
+    const id = state.proposalAuthorizationId.trim();
+    const evidenceJson = state.proposalEvidenceJson;
+    const verifierSignature = state.proposalVerifierSignature;
+    let evidence: unknown;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      evidence = JSON.parse(evidenceJson);
+      signers = parseSignerInput(state.proposalSignersJson);
+      if (!/^0x[0-9a-f]+$/u.test(verifierSignature)) {
+        throw new Error("Provide the registered evidence-verifier JubJub signature as hex.");
+      }
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    const prepared = state.proposalPrepared;
+    if (prepared === undefined) return;
+    if (!(await confirm(`Submit ${signers.length} maintainer signatures and evidence-verifier signature for issuer ${id}?`))) return;
+    if (state.proposalPrepared !== prepared || state.proposalAuthorizationId.trim() !== id
+      || state.proposalEvidenceJson !== evidenceJson || state.proposalVerifierSignature !== verifierSignature) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = await getClient().submitIssuerProposal(id, {
+        evidence,
+        prepared,
+        signers,
+        evidenceVerifierSignature: verifierSignature,
+      });
+      await refreshBoard(`Compact issuer proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      setState({ governedBusy: false, proposalAuthorizationId: "", proposalEvidenceJson: "",
+        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error),
+        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+          ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
+          : {}) });
+    }
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -311,6 +392,33 @@ export const createAdminConsoleApp = (
     root.querySelector<HTMLFormElement>("[data-governed-submit]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       void submitGoverned();
+    });
+
+    root.querySelector<HTMLInputElement>("[data-proposal-id]")?.addEventListener("input", (event) => {
+      state.proposalAuthorizationId = (event.currentTarget as HTMLInputElement).value;
+      state.proposalPrepared = undefined;
+      root.querySelector("[data-proposal-submit]")?.remove();
+      root.querySelector("[data-proposal-context]")?.remove();
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-proposal-evidence]")?.addEventListener("input", (event) => {
+      state.proposalEvidenceJson = (event.currentTarget as HTMLTextAreaElement).value;
+      state.proposalPrepared = undefined;
+      root.querySelector("[data-proposal-submit]")?.remove();
+      root.querySelector("[data-proposal-context]")?.remove();
+    });
+    root.querySelector<HTMLFormElement>("[data-proposal-prepare]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void prepareIssuerProposal();
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-proposal-signers]")?.addEventListener("input", (event) => {
+      state.proposalSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLInputElement>("[data-proposal-verifier-signature]")?.addEventListener("input", (event) => {
+      state.proposalVerifierSignature = (event.currentTarget as HTMLInputElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitIssuerProposal();
     });
 
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => {
@@ -472,6 +580,35 @@ export const createAdminConsoleApp = (
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           ${state.board === undefined ? "" : renderMetrics(state.board)}
+        </section>
+        <section class="proposal-panel governed-panel">
+          <div>
+            <p class="eyebrow">Issuer application</p>
+            <h2>Submit a governed proposal</h2>
+            <p>Use a redacted, signed evidence envelope from the applicant. Maintainers and the registered evidence verifier sign outside this browser; no private keys or raw VC/VP claims belong here.</p>
+          </div>
+          <form data-proposal-prepare>
+            <label>Issuer authorization ID
+              <input class="input mono" data-proposal-id value="${escapeHtml(state.proposalAuthorizationId)}" placeholder="exact authorization ID" autocomplete="off" />
+            </label>
+            <label>Redacted application evidence JSON
+              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"credentialCommitment":"..."}'>${escapeHtml(state.proposalEvidenceJson)}</textarea>
+            </label>
+            <button class="button secondary" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare issuer proposal</button>
+          </form>
+          ${state.proposalPrepared === undefined ? "" : `
+            <p>Sign this exact policy, sequence, and evidence context. If the ledger or evidence changes, prepare again.</p>
+            <pre class="governed-context mono" data-proposal-context>${escapeHtml(JSON.stringify(state.proposalPrepared, null, 2))}</pre>
+            <form data-proposal-submit>
+              <label>External maintainer signer entries as JSON array
+                <textarea class="input mono governed-signers" data-proposal-signers spellcheck="false">${escapeHtml(state.proposalSignersJson)}</textarea>
+              </label>
+              <label>Registered evidence-verifier JubJub signature (hex)
+                <input class="input mono" data-proposal-verifier-signature value="${escapeHtml(state.proposalVerifierSignature)}" autocomplete="off" spellcheck="false" />
+              </label>
+              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
+            </form>
+          `}
         </section>
         <section class="workspace">
           <div class="board">

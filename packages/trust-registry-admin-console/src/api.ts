@@ -3,6 +3,7 @@ import type {
   GovernedMembershipActionReceipt,
   GovernedMembershipRole,
   GovernedMembershipSignatureRequest,
+  PreparedGovernedIssuerProposal,
   PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationMutationResponse,
@@ -111,6 +112,39 @@ export class TrustRegistryAdminConsoleClient {
   ): Promise<GovernedMembershipActionReceipt> {
     return this.request<GovernedMembershipActionReceipt>(
       `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+      },
+    );
+  }
+
+  async prepareIssuerProposal(
+    id: string,
+    evidence: unknown,
+  ): Promise<PreparedGovernedIssuerProposal> {
+    return this.request<PreparedGovernedIssuerProposal>(
+      `/v1/governed/issuer/${encodeURIComponent(id)}/proposal/prepare`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ evidence }),
+      },
+    );
+  }
+
+  async submitIssuerProposal(
+    id: string,
+    request: {
+      evidence: unknown;
+      prepared: PreparedGovernedIssuerProposal;
+      signers: GovernedMembershipSignatureRequest["signers"];
+      evidenceVerifierSignature: string;
+    },
+  ): Promise<GovernedMembershipActionReceipt> {
+    return this.request<GovernedMembershipActionReceipt>(
+      `/v1/governed/issuer/${encodeURIComponent(id)}/proposal/submit`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
