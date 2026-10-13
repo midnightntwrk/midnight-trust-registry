@@ -107,9 +107,13 @@ only its redacted signed evidence through the governed HTTP proposal route.
 Each proposal requires a registered evidence-verifier signature
 and external 2-of-3 maintainer votes. The signed fixture credential body carries
 the role-specific scope; a mismatched signed scope or altered body is rejected.
-Unauthenticated intake, a validly signed wrong-scope credential, and reuse of a
-consumed challenge are rejected. Neither credential nor presentation body
-appears in the evidence response, persisted demo evidence, or scrubbed report.
+The local host uses independent random per-applicant bearer secrets, rejects
+missing or another applicant's secret before reading a body, and closes the
+pending application when evidence is persisted. A validly signed wrong-scope
+credential is rejected without closing it. Reuse of a consumed challenge or a
+fresh challenge after acceptance is rejected. Neither credential nor
+presentation body appears in the evidence response, persisted demo evidence,
+or scrubbed report.
 External-recognition proposal remains fixture-signed because third-party
 accreditation proof is not implemented. Each approval and activation then uses the
 governed HTTP prepare and submit endpoints with two independently produced

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -125,6 +126,8 @@ const bindings = new Map(applicantSpecs.map((spec) => {
   });
   return [binding.applicationId, binding];
 }));
+const pendingApplications = new Set(bindings.keys());
+const applicantTokens = new Map([...bindings.keys()].map((id) => [id, randomBytes(32).toString("hex")]));
 const vpPortsByApplication = new Map();
 const evidenceByRole = new Map();
 const expectedEvidenceByRole = new Map();
@@ -272,13 +275,18 @@ const server = createTrustRegistryApiServer({
   applicationVp: {
     challengeStore: new InMemoryApplicationChallengeStore(),
     authorizeRequest: async (applicationId, request) => {
-      if (request.headers.authorization !== `Bearer demo-applicant-${applicationId}`) {
+      const expected = applicantTokens.get(applicationId);
+      const supplied = request.headers.authorization?.replace(/^Bearer /u, "");
+      if (
+        expected === undefined || supplied === undefined || supplied.length !== expected.length
+        || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+      ) {
         throw new Error("Demo applicant authorization failed");
       }
     },
     resolvePendingApplication: async (applicationId) => {
       const binding = bindings.get(applicationId);
-      return binding === undefined ? null : {
+      return binding === undefined || !pendingApplications.has(applicationId) ? null : {
         binding,
         authorizedVerifiers: [harness.evidenceVerifier],
       };
@@ -291,6 +299,10 @@ const server = createTrustRegistryApiServer({
     signEvidence: signingPorts.signEvidence,
     verifyEvidenceSignature: signingPorts.verifyEvidenceSignature,
     persistRedactedEvidence: async (applicationId, evidence) => {
+      if (!pendingApplications.has(applicationId) || persistedEvidence.has(applicationId)) {
+        throw new Error("Demo application is no longer pending");
+      }
+      pendingApplications.delete(applicationId);
       persistedEvidence.set(applicationId, evidence);
       return {
         receiptId: sha256Hex(`receipt:${applicationId}:${evidence.commitment}`),
@@ -361,7 +373,7 @@ try {
     const endpoint = `${base}/v1/application-evidence/${applicationId}`;
     const headers = {
       "content-type": "application/json",
-      authorization: `Bearer demo-applicant-${applicationId}`,
+      authorization: `Bearer ${applicantTokens.get(applicationId)}`,
     };
     const post = (suffix, body, requestHeaders = headers) => fetch(`${endpoint}/${suffix}`, {
       method: "POST",
@@ -370,6 +382,12 @@ try {
     });
     await expectHttp(await post("challenges", {}, {
       "content-type": "application/json",
+    }), 403);
+    const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
+    const otherId = createScopedIdentifier("application", other.role, other.id);
+    await expectHttp(await post("challenges", {}, {
+      "content-type": "application/json",
+      authorization: `Bearer ${applicantTokens.get(otherId)}`,
     }), 403);
     const challenge = await expectHttp(await post("challenges", {}), 201);
     if (spec.role === "issuer") {
@@ -412,7 +430,8 @@ try {
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawPresentationBody), false);
-    await expectHttp(await post("submissions", submission), 409);
+    await expectHttp(await post("submissions", submission), 404);
+    await expectHttp(await post("challenges", {}), 404);
     evidenceByRole.set(spec.role, submitted.evidence);
     expectedEvidenceByRole.set(spec.role, {
       scope: spec.scope,
@@ -711,7 +730,7 @@ try {
     otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
     expectedRejections: [
-      "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-challenge-replay:409",
+      "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-challenge-replay:404",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
