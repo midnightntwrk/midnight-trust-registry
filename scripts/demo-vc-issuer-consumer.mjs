@@ -30,15 +30,15 @@ import {
   issueVcSignerAuthorizationFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainFields,
+  vcScopeCommitmentFromRegistryScope,
 } from "../packages/trust-registry-integration/dist/index.js";
 
 const hex = (value) => `0x${Buffer.from(value).toString("hex")}`;
-const fixtureProof = (seed, authority, root, decisionSequence) => {
-  const secret = seedBytesToJubjubSecretScalar(seed);
+const methodProof = (secret, methodRef, root, decisionSequence, challengeCircuit) => {
   let nonce = 0n;
   while (nonce === 0n) nonce = seedBytesToJubjubSecretScalar(randomBytes(32));
   const unsigned = {
-    signerVerificationMethodRef: authority.verificationMethodRef,
+    signerVerificationMethodRef: methodRef,
     createdAt: decisionSequence,
     challengeHash: randomBytes(32),
     publicKey: deriveJubjubPublicKey(secret),
@@ -48,19 +48,27 @@ const fixtureProof = (seed, authority, root, decisionSequence) => {
     ...unsigned,
     signature: {
       r: unsigned.signature.r,
-      s: normalizeScalar(nonce + pureCircuits.signerAuthorizationProofChallenge(root, unsigned) * secret),
+      s: normalizeScalar(nonce + challengeCircuit(root, unsigned) * secret),
     },
   };
 };
+const fixtureProof = (seed, authority, root, decisionSequence) => methodProof(
+  seedBytesToJubjubSecretScalar(seed), authority.verificationMethodRef, root,
+  decisionSequence, pureCircuits.signerAuthorizationProofChallenge,
+);
 
-/** Simulator-only bridge from accepted HTTP evidence to the published VC consumer. */
-export async function verifyGovernedIssuerCredential(input) {
-  const { harness, issuer, apiBundle, applicantVp, authorityAnchor, authoritySeed, authorityKeyIdCommitment } = input;
-  assert.equal(applicantVp.input.expectedSubjectDid, issuer.subjectDid);
-  const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+/** Simulator-only bridge from accepted HTTP evidence to a governed VC descriptor. */
+async function prepareGovernedSignerAuthorization(input) {
+  const { harness, subject, role, scope, apiBundle, applicantVp, authorityAnchor, authoritySeed, authorityKeyIdCommitment } = input;
+  assert.ok(role === "issuer" || role === "verifier");
+  assert.equal(applicantVp.input.expectedSubjectDid, subject.subjectDid);
+  const bundle = role === "issuer"
+    ? harness.evaluateCurrentIssuerDecision(subject)
+    : harness.evaluateCurrentVerifierDecision(subject);
   assert.equal(bundle.epoch.epochId, apiBundle.epoch.epochId);
   assert.equal(bundle.epoch.stateRoot, apiBundle.epoch.stateRoot);
-  assert.ok(bundle.authorization && bundle.statusPolicyBinding);
+  assert.ok(bundle.authorization);
+  if (role === "issuer") assert.ok(bundle.statusPolicyBinding);
   const epochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
   const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
   const ledger = harness.simulator.getLedger();
@@ -91,18 +99,19 @@ export async function verifyGovernedIssuerCredential(input) {
     requiredSignatures: Number(ledger.maintainerThreshold),
   });
   assert.equal(witness.eventHash, acceptedEpoch.publicationEventHash);
-  const subjectResolution = await applicantVp.input.resolver.resolveResult(issuer.subjectDid);
+  const subjectResolution = await applicantVp.input.resolver.resolveResult(subject.subjectDid);
   assert.ok(subjectResolution);
   const stateVersion = subjectResolution.didDocumentMetadata.versionId;
   assert.equal(typeof stateVersion, "string");
-  const methodId = `${issuer.subjectDid}#assertion-1`;
+  const relationship = role === "issuer" ? "assertionMethod" : "authentication";
+  const methodId = `${subject.subjectDid}#${role === "issuer" ? "assertion-1" : "auth-1"}`;
   const method = subjectResolution.didDocument.verificationMethod?.find((entry) => entry.id === methodId);
   assert.ok(method);
-  assert.ok(subjectResolution.didDocument.assertionMethod?.includes(methodId));
+  assert.ok(subjectResolution.didDocument[relationship]?.includes(methodId));
   const grant = bundle.authorization;
   const evidence = DecisionEvidenceSchema.parse({
     format: "tr-decision-evidence-v1",
-    role: "issuer",
+    role,
     registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
     anchorReferences: {
       registryEpoch: { networkId, contractAddress, transactionHash: epochTransaction, blockHash: epochBlock },
@@ -123,15 +132,15 @@ export async function verifyGovernedIssuerCredential(input) {
       quorum: { requiredSignatures: acceptedEpoch.requiredSignatures, signatures: witness.signatures },
     },
     grant,
-    scope: issuer.authorizationScope,
-    statusPolicyBinding: bundle.statusPolicyBinding,
+    scope,
+    ...(role === "issuer" ? { statusPolicyBinding: bundle.statusPolicyBinding } : {}),
     didMethod: {
-      did: issuer.subjectDid,
+      did: subject.subjectDid,
       methodId,
       methodType: "JsonWebKey",
-      controller: issuer.subjectDid,
+      controller: subject.subjectDid,
       publicKeyJwk: method.publicKeyJwk,
-      relationship: "assertionMethod",
+      relationship,
       stateVersion,
       stateEvidence: { evidenceType: "ledger-observation", blockHash: didBlock, transactionHash: didTransaction },
     },
@@ -145,18 +154,25 @@ export async function verifyGovernedIssuerCredential(input) {
     },
     decisionSequence: epochRecord.publishedAtSequence.toString(),
   });
-  const currentGrant = harness.simulator.getCurrentIssuerAuthorization(
-    issuer.subjectDidCommitment, issuer.resourceType, issuer.resourceIdCommitment,
-  );
+  const currentGrant = role === "issuer"
+    ? harness.simulator.getCurrentIssuerAuthorization(
+      subject.subjectDidCommitment, subject.resourceType, subject.resourceIdCommitment,
+    )
+    : harness.simulator.getCurrentVerifierAuthorization(
+      subject.subjectDidCommitment, subject.requestResourceIdCommitment,
+      subject.allowedAttributeSetCommitment, subject.allowedPredicateSetCommitment,
+      subject.disclosureLevelCommitment,
+    );
+  assert.ok(currentGrant);
   const selection = {
     registryId: harness.registryId,
     networkId,
     contractAddress,
-    subjectDid: issuer.subjectDid,
-    role: "issuer",
+    subjectDid: subject.subjectDid,
+    role,
     resourceType: grant.resourceType,
-    resourceId: issuer.resourceId,
-    scope: issuer.authorizationScope,
+    resourceId: role === "issuer" ? subject.resourceId : subject.scopeResourceId,
+    scope,
   };
   const decisionPoint = {
     sequence: epochRecord.publishedAtSequence.toString(),
@@ -210,7 +226,7 @@ export async function verifyGovernedIssuerCredential(input) {
       },
       decisionPoint,
     }),
-    readCurrentFinalizedDidState: async (did) => did === issuer.subjectDid
+    readCurrentFinalizedDidState: async (did) => did === subject.subjectDid
       ? subjectDidState
       : did === authorityAnchor.domain.authorityDid ? authorityDidState : null,
   };
@@ -231,7 +247,7 @@ export async function verifyGovernedIssuerCredential(input) {
     evidence,
     selection,
     readers,
-    method: applicantVp.subjectAssertion.method,
+    method: role === "issuer" ? applicantVp.subjectAssertion.method : applicantVp.subjectAuthentication.method,
     pinnedAnchor: authorityAnchor,
     authorityKeyIdCommitment,
     authorityKeyReader,
@@ -243,10 +259,16 @@ export async function verifyGovernedIssuerCredential(input) {
     evidence,
     selection,
     readers,
-    method: applicantVp.subjectAssertion.method,
+    method: role === "issuer" ? applicantVp.subjectAssertion.method : applicantVp.subjectAuthentication.method,
     anchor: authorityAnchor,
     signer,
   });
+  return signed;
+}
+
+let compiledConsumer;
+async function loadCompiledConsumer() {
+  if (compiledConsumer) return compiledConsumer;
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const cacheRoot = resolve(projectRoot, "node_modules/.cache");
   await mkdir(cacheRoot, { recursive: true });
@@ -264,24 +286,42 @@ export async function verifyGovernedIssuerCredential(input) {
     ], { encoding: "utf8" });
     if (compile.error) throw compile.error;
     assert.equal(compile.status, 0, compile.stderr);
-    const compiled = await import(pathToFileURL(join(output, "contract/index.js")).href);
-    const consumer = new compiled.Contract({});
-    const initial = consumer.initialState(
-      createConstructorContext({}, "0".repeat(64)),
-      pinnedVcAuthority(authorityAnchor),
-      vcAuthorityDomainFields(authorityAnchor.domain),
-    );
-    const consumerContractAddress = authorityAnchor.domain.consumerContractAddress.slice(2);
-    let circuitContext = createCircuitContext(
-      consumerContractAddress,
-      initial.currentZswapLocalState,
-      initial.currentContractState,
-      initial.currentPrivateState,
-    );
+    compiledConsumer = await import(pathToFileURL(join(output, "contract/index.js")).href);
+    return compiledConsumer;
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
+}
+
+async function withCompiledConsumer(authorityAnchor, execute) {
+  const compiled = await loadCompiledConsumer();
+  const consumer = new compiled.Contract({});
+  const initial = consumer.initialState(
+    createConstructorContext({}, "0".repeat(64)),
+    pinnedVcAuthority(authorityAnchor),
+    vcAuthorityDomainFields(authorityAnchor.domain),
+  );
+  const consumerContractAddress = authorityAnchor.domain.consumerContractAddress.slice(2);
+  const circuitContext = createCircuitContext(
+    consumerContractAddress,
+    initial.currentZswapLocalState,
+    initial.currentContractState,
+    initial.currentPrivateState,
+  );
+  return execute({ compiled, consumer, circuitContext, consumerContractAddress });
+}
+
+/** End-to-end issuer VC proof after the HTTP and Compact governance path. */
+export async function verifyGovernedIssuerCredential(input) {
+  const { issuer, applicantVp, authorityAnchor } = input;
+  const signed = await prepareGovernedSignerAuthorization({
+    ...input, subject: issuer, role: "issuer", scope: issuer.authorizationScope,
+  });
+  return withCompiledConsumer(authorityAnchor, ({ compiled, consumer, circuitContext: initialContext, consumerContractAddress }) => {
     const installed = consumer.circuits.installSignerAuthorization(
-      circuitContext, signed.descriptor, signed.proof,
+      initialContext, signed.descriptor, signed.proof,
     );
-    circuitContext = createCircuitContext(
+    const circuitContext = createCircuitContext(
       consumerContractAddress,
       installed.context.currentZswapLocalState,
       installed.context.currentQueryContext.state,
@@ -337,7 +377,54 @@ export async function verifyGovernedIssuerCredential(input) {
       forgedSignatureRejected: true,
       scope: "schema-level issuer proof; definition and status require separate governed checks",
     };
-  } finally {
-    await rm(output, { recursive: true, force: true });
-  }
+  });
+}
+
+/** End-to-end verifier request proof, not a holder-presentation authorization. */
+export async function verifyGovernedVerifierRequest(input) {
+  const { verifier, scope, applicantVp, authorityAnchor } = input;
+  const signed = await prepareGovernedSignerAuthorization({
+    ...input, subject: verifier, role: "verifier", scope,
+  });
+  return withCompiledConsumer(authorityAnchor, ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
+    const installed = consumer.circuits.installSignerAuthorization(
+      initialContext, signed.descriptor, signed.proof,
+    );
+    const circuitContext = createCircuitContext(
+      consumerContractAddress,
+      installed.context.currentZswapLocalState,
+      installed.context.currentQueryContext.state,
+      installed.context.currentPrivateState,
+    );
+    const requestScopeCommitment = vcScopeCommitmentFromRegistryScope(scope);
+    const requestProof = methodProof(
+      applicantVp.subjectAuthentication.secretScalar,
+      applicantVp.subjectAuthentication.method.verificationMethodRef,
+      requestScopeCommitment,
+      2n,
+      pureCircuits.verifierRequestProofChallenge,
+    );
+    consumer.circuits.assertVerifierRequestAuthorized(
+      circuitContext, requestScopeCommitment, requestProof, signed.descriptor.authorizationId,
+    );
+    assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+      circuitContext, bytes32Commitment("wrong-verifier-request-profile"), requestProof,
+      signed.descriptor.authorizationId,
+    ));
+    assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+      circuitContext, requestScopeCommitment,
+      { ...requestProof, signature: { ...requestProof.signature, s: requestProof.signature.s + 1n } },
+      signed.descriptor.authorizationId,
+    ));
+    return {
+      authorizationId: hex(signed.descriptor.authorizationId),
+      decisionSequence: signed.descriptor.decisionSequence.toString(),
+      policyCommitment: hex(signed.descriptor.policyCommitment),
+      requestScopeCommitment: hex(requestScopeCommitment),
+      accepted: true,
+      wrongProfileRejected: true,
+      forgedSignatureRejected: true,
+      scope: "approved verifier request profile; holder VP trust is a separate decision",
+    };
+  });
 }

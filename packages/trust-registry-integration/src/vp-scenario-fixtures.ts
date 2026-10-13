@@ -337,6 +337,7 @@ export async function createApplicationVpScenarioFixture(
     material,
     family,
     signer,
+    subjectAuthentication: { method: holderMethod, secretScalar: holderSecret },
     subjectAssertion: { method: subjectAssertionMethod, secretScalar: subjectAssertionSecret },
   };
 }

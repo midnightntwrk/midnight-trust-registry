@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 
-import { verifyGovernedIssuerCredential } from "./demo-vc-issuer-consumer.mjs";
+import { verifyGovernedIssuerCredential, verifyGovernedVerifierRequest } from "./demo-vc-issuer-consumer.mjs";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -433,6 +433,7 @@ try {
   const base = `http://127.0.0.1:${address.port}`;
   const client = new TrustRegistrySimulatorClient(harness.simulator);
   let issuerVpFixture;
+  let verifierVpFixture;
   for (const spec of applicantSpecs) {
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const endpoint = `${base}/v1/application-evidence/${applicationId}`;
@@ -491,6 +492,7 @@ try {
       scope: spec.scope,
     });
     if (spec.role === "issuer") issuerVpFixture = proof;
+    if (spec.role === "verifier") verifierVpFixture = proof;
     vpPortsByApplication.set(applicationId, await createApplicationVpIntakePorts({
       resolver: proof.input.resolver,
       family: proof.input.family,
@@ -681,6 +683,20 @@ try {
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
   });
+  assert.ok(verifierVpFixture);
+  const verifierBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
+  ), 200);
+  const verifierConsumer = await verifyGovernedVerifierRequest({
+    harness,
+    verifier,
+    scope: createVerifierAuthorizationScopeFixture(verifier),
+    apiBundle: verifierBundle,
+    applicantVp: verifierVpFixture,
+    authorityAnchor: vcAuthorityAnchor,
+    authoritySeed: vcAuthoritySeed,
+    authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+  });
   const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -840,6 +856,7 @@ try {
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     vcConsumer,
+    verifierConsumer,
     issuerEvidenceEpoch: {
       epochId: issuerBundle.epoch.epochId,
       stateRoot: issuerBundle.epoch.stateRoot,

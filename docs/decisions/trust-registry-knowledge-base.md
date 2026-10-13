@@ -584,3 +584,9 @@ installs it in the compiled Compact VC consumer. That consumer accepts a VC
 signed by the same DID's assertion key and rejects wrong schema and forged
 signature. The authority and DID observations are simulator fixtures; this is
 not a network-finality adapter or an arbitrary uploaded-credential verifier.
+
+The #78 verifier follow-on reuses that decision evidence and VC authority gate
+with the applicant DID's `#auth-1` relationship. Its governed demo installs a
+verifier descriptor in a separate compiled consumer and proves an exact signed
+request profile. Wrong-profile and forged request signatures fail. The request
+decision does not replace independent holder VP or issuer trust evaluation.

@@ -140,6 +140,11 @@ wrong-schema credential and a forged issuer signature. This proves the
 schema-level issuer trust path; credential definition and status remain separate
 checks. The descriptor readers use simulator ledger and DID fixtures, not a
 production authenticated Midnight finality source.
+The verifier follows the same governed descriptor path using its Midnight DID
+authentication key and exact approved request-profile commitment. A compiled
+consumer accepts the signed request and rejects a different profile or forged
+request signature. The issuer and verifier examples use separate local
+consumer instances; they do not authorize a holder presentation on their own.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
 and governance event hashes, not the VP transcript or holder secrets.
