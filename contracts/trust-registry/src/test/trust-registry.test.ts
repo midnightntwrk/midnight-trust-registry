@@ -10,6 +10,7 @@ import {
   computeCreateEvidenceVerifierKeyPayloadHash,
   computeUpdateEvidenceVerifierKeyPayloadHash,
   computeIssuerEvidenceBoundProposalPayloadHash,
+  computeVerifierEvidenceBoundProposalPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
@@ -23,6 +24,7 @@ import {
   encodeCompactActionKind,
   signPolicyBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  signVerifierProposalEvidenceFromSeed,
   verifyPolicyBoundMaintainerAction,
 } from "../signing.js";
 import {
@@ -229,6 +231,38 @@ const issuerProposalProof = (
   };
 };
 
+const verifierProposalProof = (
+  registry: RegistryFixture,
+  verifierAuthorization: ReturnType<typeof createVerifierAuthorizationFixture>,
+) => {
+  const { simulator, registryId } = registry;
+  const verifier = registerIssuerEvidenceVerifier(registry);
+  const baseHash = computeCreateVerifierAuthorizationPayloadHash(
+    verifierAuthorization.authorizationId,
+    verifierAuthorization.subjectDidCommitment,
+    verifierAuthorization.requestResourceId,
+    verifierAuthorization.allowedAttributeSetCommitment,
+    verifierAuthorization.allowedPredicateSetCommitment,
+    verifierAuthorization.disclosureLevelCommitment,
+    verifierAuthorization.policyId,
+    verifierAuthorization.trustLevel,
+    verifierAuthorization.evidenceHash,
+  );
+  const payloadHash = computeVerifierEvidenceBoundProposalPayloadHash(
+    baseHash, verifier.authorizationId, verifier.keyId,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  return {
+    payloadHash,
+    verifierAuthorizationId: verifier.authorizationId,
+    verifierKeyIdCommitment: verifier.keyId,
+    evidenceSignature: signVerifierProposalEvidenceFromSeed(
+      verifier.seed, registryId, verifier.keyId, payloadHash,
+    ),
+  };
+};
+
 const activateIssuerAuthorizationFixture = (
   registry: ReturnType<typeof createInitializedRegistryFixture>,
   authorization: ReturnType<typeof createIssuerAuthorizationFixture>,
@@ -317,6 +351,7 @@ const activateVerifierAuthorizationFixture = (
   authorization: ReturnType<typeof createVerifierAuthorizationFixture>,
 ): Uint8Array => {
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const proof = verifierProposalProof(registry, authorization);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
     signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -329,17 +364,7 @@ const activateVerifierAuthorizationFixture = (
   simulator.proposeVerifierAuthorization(
     bootstrapMaintainer.keyId,
     bootstrapPublicKey,
-    sign(PROPOSE_VERIFIER_ACTION_KIND, computeCreateVerifierAuthorizationPayloadHash(
-      authorization.authorizationId,
-      authorization.subjectDidCommitment,
-      authorization.requestResourceId,
-      authorization.allowedAttributeSetCommitment,
-      authorization.allowedPredicateSetCommitment,
-      authorization.disclosureLevelCommitment,
-      authorization.policyId,
-      authorization.trustLevel,
-      authorization.evidenceHash,
-    )),
+    sign(PROPOSE_VERIFIER_ACTION_KIND, proof.payloadHash),
     authorization.authorizationId,
     authorization.subjectDidCommitment,
     authorization.requestResourceId,
@@ -349,6 +374,9 @@ const activateVerifierAuthorizationFixture = (
     authorization.policyId,
     authorization.trustLevel,
     authorization.evidenceHash,
+    proof.verifierAuthorizationId,
+    proof.verifierKeyIdCommitment,
+    proof.evidenceSignature,
   );
   simulator.authorizeVerifierAuthorization(
     bootstrapMaintainer.keyId,
@@ -2915,23 +2943,15 @@ describe("trust registry contract", () => {
     } = registry;
     const verifierAuthorization = createVerifierAuthorizationFixture("employment-application");
     const proposalEvidenceHash = labelToBytes32("evidence:employment:proposal");
+    const proposed = { ...verifierAuthorization, evidenceHash: proposalEvidenceHash };
+    const proposalProof = verifierProposalProof(registry, proposed);
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_VERIFIER_ACTION_KIND,
-      computeCreateVerifierAuthorizationPayloadHash(
-        verifierAuthorization.authorizationId,
-        verifierAuthorization.subjectDidCommitment,
-        verifierAuthorization.requestResourceId,
-        verifierAuthorization.allowedAttributeSetCommitment,
-        verifierAuthorization.allowedPredicateSetCommitment,
-        verifierAuthorization.disclosureLevelCommitment,
-        verifierAuthorization.policyId,
-        verifierAuthorization.trustLevel,
-        proposalEvidenceHash,
-      ),
+      proposalProof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeVerifierAuthorization(
@@ -2947,6 +2967,9 @@ describe("trust registry contract", () => {
       verifierAuthorization.policyId,
       verifierAuthorization.trustLevel,
       proposalEvidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     );
 
     const proposedRecord = simulator.getVerifierAuthorization(
@@ -3185,24 +3208,14 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/scope is not registered/i);
 
-    const proposePayloadHash = computeCreateVerifierAuthorizationPayloadHash(
-      verifierAuthorization.authorizationId,
-      verifierAuthorization.subjectDidCommitment,
-      verifierAuthorization.requestResourceId,
-      verifierAuthorization.allowedAttributeSetCommitment,
-      verifierAuthorization.allowedPredicateSetCommitment,
-      verifierAuthorization.disclosureLevelCommitment,
-      verifierAuthorization.policyId,
-      verifierAuthorization.trustLevel,
-      verifierAuthorization.evidenceHash,
-    );
+    const proposalProof = verifierProposalProof(registry, verifierAuthorization);
     const tamperedProposeSignature = {
       ...signPolicyBoundMaintainerActionFromSeed(
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
         PROPOSE_VERIFIER_ACTION_KIND,
-        proposePayloadHash,
+        proposalProof.payloadHash,
         simulator.getLedger().governanceActionCount,
       ),
       response: 0n,
@@ -3220,6 +3233,9 @@ describe("trust registry contract", () => {
       verifierAuthorization.policyId,
       verifierAuthorization.trustLevel,
       verifierAuthorization.evidenceHash,
+      proposalProof.verifierAuthorizationId,
+      proposalProof.verifierKeyIdCommitment,
+      proposalProof.evidenceSignature,
     )).toThrow(/invalid jubjub schnorr signature/i);
 
     activateVerifierAuthorizationFixture(registry, verifierAuthorization);
@@ -3228,6 +3244,7 @@ describe("trust registry contract", () => {
       authorizationId: labelToBytes32("verifier-auth:passport:duplicate"),
       evidenceHash: labelToBytes32("evidence:passport:duplicate"),
     };
+    const duplicateProof = verifierProposalProof(registry, duplicate);
     expect(() => simulator.proposeVerifierAuthorization(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
@@ -3236,17 +3253,7 @@ describe("trust registry contract", () => {
         registryId,
         simulator.getLedger().governancePolicyCommitment,
         PROPOSE_VERIFIER_ACTION_KIND,
-        computeCreateVerifierAuthorizationPayloadHash(
-          duplicate.authorizationId,
-          duplicate.subjectDidCommitment,
-          duplicate.requestResourceId,
-          duplicate.allowedAttributeSetCommitment,
-          duplicate.allowedPredicateSetCommitment,
-          duplicate.disclosureLevelCommitment,
-          duplicate.policyId,
-          duplicate.trustLevel,
-          duplicate.evidenceHash,
-        ),
+        duplicateProof.payloadHash,
         simulator.getLedger().governanceActionCount,
       ),
       duplicate.authorizationId,
@@ -3258,6 +3265,9 @@ describe("trust registry contract", () => {
       duplicate.policyId,
       duplicate.trustLevel,
       duplicate.evidenceHash,
+      duplicateProof.verifierAuthorizationId,
+      duplicateProof.verifierKeyIdCommitment,
+      duplicateProof.evidenceSignature,
     )).toThrow(/live authorization/i);
     const createdRecord = simulator.getVerifierAuthorization(
       verifierAuthorization.authorizationId,
