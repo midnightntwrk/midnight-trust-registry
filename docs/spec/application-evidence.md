@@ -199,19 +199,33 @@ whose commitment differs from the live challenge before it spends the nonce.
 The intake then consumes the challenge once only after the VP nonce and subject
 DID match, and
 passes a signed evidence envelope to an injected proposal callback. The seam
-does not itself implement the official VC verifier or a public route. An
+does not itself implement the official VC verifier. The API exposes optional
+`POST /v1/application-evidence/:applicationId/challenges` and
+`POST /v1/application-evidence/:applicationId/submissions` routes only when a
+trusted host injects an application VP port. That port MUST authenticate and
+authorize the applicant against the pending application before request-body
+parsing or VP work; authentication by an external proxy alone is insufficient.
+The server derives binding and authorized verifier policy from the host, never
+from the applicant's request. It rechecks both just before evidence persistence;
+the host MUST atomically recheck pending status and policy at persistence. These
+private routes do not advertise wildcard cross-origin access. Same-origin
+hosting or a narrowly configured authenticated proxy, plus CSRF protection
+where cookie credentials are used, is required for a browser flow. The
+packaged CLI does not inject the port, so it returns 503. An
 integration-only test uses the real challenge service and JubJub signing with
 all four simulator proposal circuits; the simulator verifies the consumed
 challenge hash and canonical scope commitment supplied by the trusted intake
 context. Its separate deterministic challenge fixture still uses the same
 canonical scope commitment, but MUST NOT be used as a production nonce source.
-Production use still needs an authenticated public issuance route, official
-VP verification, and a durable atomic store.
+Production use still needs a host implementing genuine family/status VP
+verification, abuse controls, durable atomic challenge storage, and atomic
+pending-application persistence. The reference fixture family ignores arbitrary
+submitted presentations and MUST NOT be mounted as a public verifier.
 
 The reference API package exposes an in-memory store for local tests only. It
 caps live entries and schedules expiry cleanup even without another request;
 these bounds do not replace distributed durability or abuse controls. A
-public issuance route requires a durable atomic store, applicant authentication,
+public issuance deployment requires a durable atomic store, applicant authentication,
 abuse controls, and a retention/cleanup policy; those are not delivered by
 this reference store. Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
