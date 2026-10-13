@@ -179,6 +179,13 @@ const rotate = (
 };
 
 describe("governed VC authority keys", () => {
+  it("uses the emergency quorum for VC authority suspension and revocation", () => {
+    expect(pureCircuits.actionScopedMaintainerThreshold(REGISTER, 2n, 1n, 3n)).toBe(2n);
+    expect(pureCircuits.actionScopedMaintainerThreshold(SUSPEND, 2n, 1n, 3n)).toBe(1n);
+    expect(pureCircuits.actionScopedMaintainerThreshold(REVOKE, 2n, 1n, 3n)).toBe(1n);
+    expect(pureCircuits.actionScopedMaintainerThreshold(ROTATE, 2n, 1n, 3n)).toBe(2n);
+  });
+
   it("registers an exact DID/method/consumer-bound key with committed event evidence", () => {
     const registry = fixture();
     const key = candidate("one", 41);

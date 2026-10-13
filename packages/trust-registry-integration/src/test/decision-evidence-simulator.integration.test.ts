@@ -432,6 +432,17 @@ describe("simulator-backed VC decision evidence composition", () => {
       authority: pinnedVcAuthority(authorityAnchor),
     })).rejects.toThrow(/does not match finalized descriptor/u);
     await expect(gatedSigner({
+      ...validSignerRequest,
+      authority: {
+        ...validSignerRequest.authority,
+        verificationMethodRef: {
+          ...validSignerRequest.authority.verificationMethodRef,
+          controllerAddress: { bytes: bytes32Commitment("substituted-controller") },
+        },
+      },
+    })).rejects.toThrow(/does not match finalized descriptor/u);
+    expect(authoritySignCount).toBe(1);
+    await expect(gatedSigner({
       decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
         signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
       ),

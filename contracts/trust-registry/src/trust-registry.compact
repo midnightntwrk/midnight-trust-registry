@@ -1799,6 +1799,8 @@ export pure circuit actionUsesEmergencyMaintainerThreshold(
     || actionKind == pad(32, "tr:verifier:revoke")
     || actionKind == pad(32, "tr:evidence-verifier:suspend")
     || actionKind == pad(32, "tr:evidence-verifier:revoke")
+    || actionKind == pad(32, "tr:vc-authority:key:suspend")
+    || actionKind == pad(32, "tr:vc-authority:key:revoke")
     || actionKind == pad(32, "tr:auditor:suspend")
     || actionKind == pad(32, "tr:auditor:revoke")
     || actionKind == pad(32, "tr:recognition:suspend")
