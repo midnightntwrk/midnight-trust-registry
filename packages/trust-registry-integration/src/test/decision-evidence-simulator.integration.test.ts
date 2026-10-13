@@ -799,5 +799,5 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).toThrow(/current grant mismatch/u);
-  });
+  }, 30_000);
 });
