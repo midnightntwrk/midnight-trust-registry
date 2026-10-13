@@ -142,16 +142,17 @@ must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
-Verifier and auditor proposals use the same prepare/submit pattern at
+Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
-injected `governedVerifierProposals` and `governedAuditorProposals` ports.
+injected `governedVerifierProposals`, `governedAuditorProposals`, and
+`governedMaintainerProposals` ports. For maintainers, `:id` is the candidate
+membership ID; the prepared context binds the registry-scoped maintainer
+application and candidate key to the evidence verifier's current key.
 Each role's prepared digest additionally
 binds the registered evidence-verifier identity and active policy version;
 the contract verifies that key's role-separated proposal signature and the
 maintainer quorum. The packaged CLI does not inject any proposal port, so
-all three routes return 503 without a Compact-backed host. Maintainer proposal
-HTTP remains out of scope until its evidence-verifier signature is bound in
-the contract.
+all four routes return 503 without a Compact-backed host.
 The integration journey verifies a published fixture VC/VP, consumes one
 challenge, submits the resulting redacted evidence through this HTTP proposal
 route, and then approves and activates the issuer with external 2-of-3 votes.

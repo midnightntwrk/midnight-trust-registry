@@ -73,6 +73,15 @@ import {
   type GovernedAuditorProposalPort,
 } from "./governed-auditor-proposals.js";
 import {
+  decodeMaintainerEvidenceVerifierSignature,
+  GovernedMaintainerProposalPrepareRequestSchema,
+  GovernedMaintainerProposalRejectedError,
+  GovernedMaintainerProposalSubmitRequestSchema,
+  sameGovernedMaintainerProposal,
+  serializeGovernedMaintainerProposal,
+  type GovernedMaintainerProposalPort,
+} from "./governed-maintainer-proposals.js";
+import {
   ApplicationVpHttpError,
   createApplicationVpHttpService,
   type ApplicationVpHttpPort,
@@ -131,6 +140,7 @@ export type TrustRegistryApiServerOptions = {
   governedIssuerProposals?: GovernedIssuerProposalPort;
   governedVerifierProposals?: GovernedVerifierProposalPort;
   governedAuditorProposals?: GovernedAuditorProposalPort;
+  governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
 };
 
@@ -563,6 +573,16 @@ const mapGovernedAuditorProposalError = (error: unknown, problemBaseUri: string)
   throw error;
 };
 
+const mapGovernedMaintainerProposalError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedMaintainerProposalRejectedError) {
+    const unknown = error.reason === "unknown-maintainer";
+    throw jsonProblem(problemBaseUri, unknown ? "maintainer-not-found" : "governed-proposal-rejected",
+      unknown ? 404 : 403, unknown ? "maintainer not found" : "governed proposal rejected",
+      error.reason);
+  }
+  throw error;
+};
+
 const performMutation = async (
   source: ReturnType<typeof requireMutableSource>,
   operation: Parameters<typeof applyMutationOperation>[1],
@@ -853,6 +873,66 @@ export const createTrustRegistryApiServer = (
           return;
         } catch (error) {
           return mapGovernedAuditorProposalError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 6
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "maintainer"
+        && segments[4] === "proposal"
+        && (segments[5] === "prepare" || segments[5] === "submit")
+      ) {
+        const port = options.governedMaintainerProposals;
+        if (port === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-proposal-unavailable", 503,
+            "governed proposal unavailable", "A Compact-backed maintainer proposal port is not configured.");
+        }
+        const maintainerId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        response.setHeader("cache-control", "no-store");
+        if (segments[5] === "prepare") {
+          const body = await parseJsonBody(request,
+            (value) => GovernedMaintainerProposalPrepareRequestSchema.parse(value), problemBaseUri);
+          try {
+            writeJson(response, 200, serializeGovernedMaintainerProposal(
+              await port.prepare(maintainerId, body.evidence),
+            ));
+            return;
+          } catch (error) {
+            return mapGovernedMaintainerProposalError(error, problemBaseUri);
+          }
+        }
+        const body = await parseJsonBody(request,
+          (value) => GovernedMaintainerProposalSubmitRequestSchema.parse(value), problemBaseUri);
+        let prepared;
+        try {
+          prepared = serializeGovernedMaintainerProposal(await port.prepare(maintainerId, body.evidence));
+        } catch (error) {
+          return mapGovernedMaintainerProposalError(error, problemBaseUri);
+        }
+        if (!sameGovernedMaintainerProposal(prepared, body.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-proposal", 409,
+            "stale governed proposal", "The signed proposal context no longer matches current ledger state.");
+        }
+        let signers;
+        let evidenceVerifierSignature;
+        try {
+          signers = decodeGovernedMembershipSigners(body);
+          evidenceVerifierSignature = decodeMaintainerEvidenceVerifierSignature(body.evidenceVerifierSignature);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        try {
+          const receipt = GovernedMembershipActionReceiptSchema.parse(
+            await port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature),
+          );
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedMaintainerProposalError(error, problemBaseUri);
         }
       }
 

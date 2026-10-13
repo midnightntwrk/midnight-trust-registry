@@ -11,6 +11,7 @@ export * from "./governed-membership-actions.js";
 export * from "./governed-issuer-proposals.js";
 export * from "./governed-verifier-proposals.js";
 export * from "./governed-auditor-proposals.js";
+export * from "./governed-maintainer-proposals.js";
 export * from "./cli.js";
 export * from "./schemas.js";
 export * from "./server.js";

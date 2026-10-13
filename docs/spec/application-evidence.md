@@ -2,12 +2,12 @@
 
 Status: draft v0.1
 
-The issuer, verifier, and auditor reference paths register a policy-scoped JubJub
+The issuer, verifier, auditor, and maintainer reference paths register a policy-scoped JubJub
 assertion key and verify its signature over the exact governed proposal in
 Compact. The local
 simulator also signs the envelope commitment with a test-only JubJub key. It
 does not resolve either key through a DID document or verify a real VC/VP.
-On-chain DID resolution, maintainer proposal binding, and real VC/VP attestation
+On-chain DID resolution and real VC/VP attestation
 remain 0.1.0 requirements, not claims about the current simulator.
 See the [0.1.0 reference profile](milestone-0.1.0.md) and
 [issue plan](../plans/milestone-0.1.0-issues.md).
@@ -93,7 +93,7 @@ The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
 signs this commitment with a policy-authorized assertion key for off-chain
 intake. The signature and key reference need not be included in the commitment
-itself. For issuer, verifier, and auditor proposals, the evidence verifier separately signs the governed
+itself. For issuer, verifier, auditor, and maintainer proposals, the evidence verifier separately signs the governed
 proposal payload bound to the evidence commitment, registered verifier key,
 and active policy snapshot. This second signature is checked in Compact; an
 intake signature alone cannot authorize a proposal.
@@ -111,7 +111,9 @@ uses `issuerEvidenceBoundProposalPayloadHash` and
 role-separated `verifierEvidenceBoundProposalPayloadHash` and
 `verifierProposalEvidenceSignatureDigest`; the auditor proposal uses
 `auditorEvidenceBoundProposalPayloadHash` and
-`auditorProposalEvidenceSignatureDigest`. Each pair binds the complete
+`auditorProposalEvidenceSignatureDigest`; the maintainer proposal uses
+`maintainerEvidenceBoundProposalPayloadHash` and
+`maintainerProposalEvidenceSignatureDigest`. Each pair binds the complete
 role-specific authorization payload, evidence-verifier authorization and key
 identifiers, registry identifier, and active policy commitment and version. The contract verifies
 this distinct digest against the active registered JubJub key. The intake
@@ -241,7 +243,7 @@ contract has a datetime primitive.
 
 ## 4. Contract Inputs And Checks
 
-The issuer, verifier, and auditor governed proposal transitions consume:
+The issuer, verifier, auditor, and maintainer governed proposal transitions consume:
 
 - `applicationEvidenceCommitment`
 - the active policy commitment and version
@@ -249,7 +251,7 @@ The issuer, verifier, and auditor governed proposal transitions consume:
 - the evidence-verifier signature over the proposal-bound commitment
 - the maintainer signer bundle required for the decision family
 
-These three contract paths MUST reject a proposal when any of the following holds:
+These four contract paths MUST reject a proposal when any of the following holds:
 
 - the application id, subject, role, registry, policy, or scope differs from the
   signed proposal payload;

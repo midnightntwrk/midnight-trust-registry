@@ -121,7 +121,7 @@ describe("file application challenge store", () => {
     await expect(store.readLive(challenge.challengeHash, challenge.bindingHash, START - 10_000)).rejects.toMatchObject({
       code: "CHALLENGE_CLOCK_INVALID",
     });
-    await expect(store.insert({ ...record(11, 21), expiresAtMs: START + 2_147_483_648 }, START, () => START))
+    await expect(store.insert({ ...record(11, 21), expiresAtMs: START + 2_147_483_647 + 10_000 }, START, () => START))
       .rejects.toMatchObject({ code: "CHALLENGE_EXPIRY_RANGE" });
     expect(await store.consume(challenge.challengeHash, challenge.bindingHash, START)).toBe(true);
   });

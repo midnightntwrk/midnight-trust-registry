@@ -1,16 +1,16 @@
 # Evidence-verifier ledger binding for issue #67
 
-Status: issuer, verifier, and auditor reference paths implemented locally.
-Maintainer proposals remain out of scope until the existing circuit is
-migrated without an unsigned bypass.
+Status: issuer, verifier, auditor, and maintainer reference paths implemented locally.
+On-ledger DID resolution, real VC/VP proof verification, and attested time
+remain outside these reference circuits.
 
 ## Current boundary
 
 `applicationEvidenceSignatureDigest` binds a key reference and canonical
-envelope commitment for off-ledger intake. Issuer, verifier, and auditor proposals each
+envelope commitment for off-ledger intake. Issuer, verifier, auditor, and maintainer proposals each
 look up a governed evidence-verifier key and verify a role-separated,
-proposal-bound signature. The maintainer proposal circuit still
-accept an opaque evidence hash after a maintainer quorum action. Off-ledger DID resolution and VP checks do
+proposal-bound signature. No proposal circuit accepts an opaque evidence hash
+without this signature and the maintainer quorum. Off-ledger DID resolution and VP checks do
 not by themselves turn that hash into an on-ledger attestation. A second,
 optional proposal circuit would leave an unsigned bypass, so each implemented
 role replaces its existing proposal entry point rather than adding one.
@@ -57,7 +57,7 @@ atomically retires the old active record and installs a fresh ID/key while
 preserving historical evidence. No self-registration or overwrite of old key
 material is allowed. Each action has a domain-separated payload and event hash.
 
-## Requester membership slices
+## Requester and maintainer membership slices
 
 Verifier and auditor membership proposals sign their complete request-profile
 authorization payloads with role-separated bound hashes and Schnorr digests.
@@ -69,6 +69,14 @@ The optional HTTP prepare/submit route accepts only redacted application
 evidence and externally supplied signatures; it has no unsigned fixture
 fallback. This does not authenticate the real-world authority of the applicant
 or prove credential validity in Compact.
+
+The maintainer proposal follows the same rule using a registry-scoped
+application. Its role-separated bound payload includes the candidate's DID and
+key commitments, evidence commitment, evidence-verifier authorization/key,
+and active policy. Approval and activation recheck the immutable proposal
+evidence record against the current policy and active evidence-verifier key.
+The bootstrap initializer is a distinct genesis action, not an alternate
+non-bootstrap application path.
 
 The contract proves that a maintainer quorum authorized a DID/key assertion;
 it does not prove that the key appears in the DID method's current document.
@@ -94,5 +102,6 @@ part of issue #67 complete.
    full local-simulator integration from a fresh full Compact build. Require
    independent final-head security review and protected-branch checks.
 
-This pilot is a partial #67 delivery. Remaining roles and proof of DID-document
-key control require separately reviewable slices before closing the issue.
+This is a partial #67 delivery. Proof of DID-document key control, real VC/VP
+attestation, and a trusted time rule require separately reviewable slices before
+closing the issue.
