@@ -100,17 +100,35 @@ Run the separate quorum-backed reference demo:
 pnpm run demo:governed
 ```
 
-It proposes issuer, verifier, auditor, maintainer, and external-recognition
-records in one Compact simulator. Each approval and activation then uses the
+It verifies a published fixture VC/VP against Midnight DID keys, consumes a
+one-use application challenge, and submits the redacted issuer evidence through
+the governed HTTP proposal route with an evidence-verifier signature and 2-of-3
+maintainer quorum. Verifier, auditor, and maintainer proposals also use their
+governed HTTP prepare/submit routes with registered evidence-verifier signatures
+and external 2-of-3 maintainer votes; their eligibility evidence is generated
+by local fixtures rather than the issuer's published VC/VP challenge flow.
+External-recognition proposal remains fixture-signed because third-party
+accreditation proof is not implemented. Each approval and activation then uses the
 governed HTTP prepare and submit endpoints with two independently produced
 JubJub signatures from existing maintainers. The script rejects one-signer,
 candidate self-vote, replayed context, cross-role ID, and wrong-scope requests.
 It independently verifies active issuer, verifier, auditor, and recognition
 evidence returned by the API; recognition never becomes local membership. The
-new maintainer then co-signs another issuer proposal. The JSON transcript
-contains the ten decision event hashes. Proposals use fixture signatures and
-application evidence; finality is simulated, not a production VC/VP decision
-or a transaction submitted to Midnight.
+new maintainer then co-signs another issuer proposal. The issuer journey checks
+the published epoch root plus wrong-registry and expired-epoch rejection. Issuer,
+verifier, auditor, and recognition each check current and historical API
+evaluations across active, suspended, and revoked states. Historical trust at
+the active instant remains verifiable after both lifecycle changes; recognition
+remains external authority recognition, not local membership.
+`./run.sh integration` runs this scenario after the package integration
+tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
+and governance event hashes, not the VP transcript or holder secrets.
+Eligibility and status decisions use trusted fixture adapters; the negative
+suspension and revocation fixtures are contract-backed but are not submitted
+through the external-signature HTTP action port. Finality is simulated, not a
+transaction submitted to Midnight. The fixture credential-family verifier is
+bound to its known test presentation and is **not** a verifier for arbitrary
+uploaded VPs; this demo must not be exposed as a public applicant endpoint.
 
 ## Artifact Boundaries
 

@@ -55,7 +55,7 @@ export const GovernedResourceSchema = z.strictObject({
 });
 
 export const ApplicationEvidenceEnvelopeSchema = z
-  .object({
+  .strictObject({
     version: z.literal("tr-application-evidence-v1"),
     registryId: ScopedIdentifierSchema,
     applicationId: ScopedIdentifierSchema,
@@ -121,13 +121,13 @@ export const ApplicationEvidenceEnvelopeSchema = z
     }
   });
 
-export const ApplicationEvidenceSignatureSchema = z.object({
+export const ApplicationEvidenceSignatureSchema = z.strictObject({
   keyId: KeyReferenceSchema,
   algorithm: z.enum(["jubjub-schnorr", "secp256k1", "secp256r1", "ed25519"]),
   value: NonEmptyStringSchema,
 });
 
-export const ApplicationEvidenceSubmissionSchema = z.object({
+export const ApplicationEvidenceSubmissionSchema = z.strictObject({
   envelope: ApplicationEvidenceEnvelopeSchema,
   commitment: HashHexSchema,
   signature: ApplicationEvidenceSignatureSchema,

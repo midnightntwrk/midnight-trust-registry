@@ -22,13 +22,15 @@ export const PreparedGovernedMembershipActionSchema = z.strictObject({
   evidenceHash: Bytes32Schema,
 });
 
-export const GovernedMembershipSignatureRequestSchema = z.strictObject({
-  prepared: PreparedGovernedMembershipActionSchema,
-  signers: z.array(z.strictObject({
+export const GovernedMembershipSignersSchema = z.array(z.strictObject({
     keyId: Bytes32Schema,
     publicKey: z.strictObject({ x: ScalarSchema, y: ScalarSchema }),
     signature: z.string().regex(/^0x[0-9a-f]+$/u),
-  })).min(1).max(16),
+  })).min(1).max(16);
+
+export const GovernedMembershipSignatureRequestSchema = z.strictObject({
+  prepared: PreparedGovernedMembershipActionSchema,
+  signers: GovernedMembershipSignersSchema,
 });
 
 export const GovernedMembershipActionReceiptSchema = z.strictObject({
@@ -109,7 +111,7 @@ export const sameGovernedMembershipAction = (
 );
 
 export const decodeGovernedMembershipSigners = (
-  request: GovernedMembershipSignatureRequest,
+  request: Pick<GovernedMembershipSignatureRequest, "signers">,
 ): GovernedMembershipSigner[] => request.signers.map((signer) => ({
   keyId: Buffer.from(signer.keyId.slice(2), "hex"),
   publicKey: { x: BigInt(signer.publicKey.x), y: BigInt(signer.publicKey.y) },

@@ -9,17 +9,35 @@ import {
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
+  ApplicationChallengeBindingSchema,
+  computeAuthorizationScopeCommitment,
+  createScopedIdentifier,
+} from "../packages/trust-registry-domain/dist/index.js";
+import {
+  createApplicationVpIntakePorts,
+  createApplicationVpScenarioFixture,
+  createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
+  createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
   createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
   createRecognitionScenarioFixture,
+  createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
+  ApplicationChallengeService,
+  InMemoryApplicationChallengeStore,
+  consumeChallengeAndSubmitApplication,
   createTrustRegistryApiServer,
+  GovernedAuditorProposalRejectedError,
+  GovernedIssuerProposalRejectedError,
+  GovernedMaintainerProposalRejectedError,
   GovernedMembershipActionRejectedError,
+  GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -58,19 +76,78 @@ const recognition = createRecognitionScenarioFixture("governed-demo-recognition"
 harness.authorizeMaintainer(second);
 harness.authorizeMaintainer(third);
 harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+harness.advanceEvidenceTimeBy(60_000);
 
-// Proposals use fixture signatures; the HTTP decisions below use supplied signatures only.
-harness.proposeIssuer(issuer, [second]);
-harness.proposeVerifier(verifier);
-harness.proposeAuditor(auditor);
+// Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
 harness.proposeRecognition(recognition);
+const verifierEvidence = harness.createApplicationEvidence({
+  applicationId: verifier.authorizationId,
+  subjectDid: verifier.subjectDid,
+  role: "verifier",
+  scope: createVerifierAuthorizationScopeFixture(verifier),
+});
+const auditorEvidence = harness.createApplicationEvidence({
+  applicationId: auditor.authorizationId,
+  subjectDid: auditor.subjectDid,
+  role: "auditor",
+  scope: createAuditorAuthorizationScopeFixture(auditor),
+});
 const candidateEvidence = harness.createApplicationEvidence({
   applicationId: candidate.maintainerId,
   subjectDid: candidate.subjectDid,
   role: "maintainer",
   scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
 });
-harness.proposeMaintainerWithApplicationEvidence(candidate, candidateEvidence);
+
+const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
+const issuerResource = { type: "credentialFamily", id: issuer.resourceId };
+const binding = ApplicationChallengeBindingSchema.parse({
+  registryId: harness.registryId,
+  applicationId: createScopedIdentifier("application", "issuer", issuer.authorizationId),
+  subjectDid: issuer.subjectDid,
+  evidenceVerifierDid: harness.evidenceVerifier.did,
+  role: "issuer",
+  policyId: harness.policyId,
+  policyVersion: harness.policyRecord.version,
+  scope: issuerScope,
+  scopeCommitment: computeAuthorizationScopeCommitment(issuerScope),
+  governedResource: issuerResource,
+});
+const challengeService = new ApplicationChallengeService(
+  new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
+);
+const challenge = await challengeService.issue(binding);
+const proof = await createApplicationVpScenarioFixture(challenge.nonce, {
+  subjectDid: issuer.subjectDid,
+  evidenceVerifierDid: harness.evidenceVerifier.did,
+  evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
+  scopeCommitment: computeAuthorizationScopeCommitment(issuerScope),
+});
+const vpPorts = await createApplicationVpIntakePorts({
+  resolver: proof.input.resolver,
+  family: proof.input.family,
+  signer: proof.signer,
+});
+const issuerEvidence = await consumeChallengeAndSubmitApplication({
+  challengeService,
+  binding,
+  expectedBinding: binding,
+  nonce: challenge.nonce,
+  challengeHash: challenge.challengeHash,
+  presentation: proof.input.submission,
+  ...vpPorts,
+  authorizedVerifiers: [harness.evidenceVerifier],
+  evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  propose: async ({ evidence }) => evidence,
+});
+assert.equal(await challengeService.isLive({
+  binding, nonce: challenge.nonce, challengeHash: challenge.challengeHash,
+}), false);
+const expectedIssuerEvidence = {
+  scope: issuerScope,
+  challengeHash: challenge.challengeHash,
+  governedResource: issuerResource,
+};
 
 const fixtures = {
   label: "governed-registry-demo",
@@ -79,7 +156,20 @@ const fixtures = {
   auditors: [{ label: "auditor", fixture: auditor }],
   recognitions: [{ label: "recognition", fixture: recognition }],
 };
-let snapshot = publishSimulatorSnapshot(harness, fixtures);
+const projectedRoles = new Set();
+let snapshot = publishSimulatorSnapshot(harness, {
+  label: fixtures.label,
+  recognitions: fixtures.recognitions,
+});
+const publishCurrentSnapshot = () => {
+  snapshot = publishSimulatorSnapshot(harness, {
+    label: fixtures.label,
+    issuers: projectedRoles.has("issuer") ? fixtures.issuers : [],
+    verifiers: projectedRoles.has("verifier") ? fixtures.verifiers : [],
+    auditors: projectedRoles.has("auditor") ? fixtures.auditors : [],
+    recognitions: fixtures.recognitions,
+  }, snapshot);
+};
 const targets = new Map([
   ["issuer", {
     id: issuer.authorizationId,
@@ -120,8 +210,93 @@ const findTarget = (role, id) => {
   }
   return target;
 };
+const proposalTargets = new Map([
+  ["verifier", {
+    id: verifier.authorizationId,
+    evidence: verifierEvidence,
+    prepare: (evidence) => harness.prepareVerifierProposalAction(verifier, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeVerifierProposalWithSignatures(verifier, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
+    rejected: GovernedVerifierProposalRejectedError,
+    missing: "unknown-authorization",
+  }],
+  ["auditor", {
+    id: auditor.authorizationId,
+    evidence: auditorEvidence,
+    prepare: (evidence) => harness.prepareAuditorProposalAction(auditor, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeAuditorProposalWithSignatures(auditor, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
+    rejected: GovernedAuditorProposalRejectedError,
+    missing: "unknown-authorization",
+  }],
+  ["maintainer", {
+    id: candidate.maintainerId,
+    evidence: candidateEvidence,
+    prepare: (evidence) => harness.prepareMaintainerProposalAction(candidate, evidence),
+    execute: (evidence, signers, signature) =>
+      harness.executeMaintainerProposalWithSignatures(candidate, evidence, signers, signature),
+    signEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
+    rejected: GovernedMaintainerProposalRejectedError,
+    missing: "unknown-maintainer",
+  }],
+]);
+const proposalPort = (role, target) => ({
+  async prepare(id, evidence) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    try {
+      return target.prepare(evidence);
+    } catch {
+      throw new target.rejected("invalid-evidence");
+    }
+  },
+  async execute(id, evidence, signers, verifierSignature) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    let eventHash;
+    try {
+      eventHash = target.execute(evidence, signers, verifierSignature);
+    } catch {
+      throw new target.rejected("invalid-signers");
+    }
+    projectedRoles.add(role);
+    publishCurrentSnapshot();
+    return { eventHash: asHex(eventHash) };
+  },
+});
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
+  governedIssuerProposals: {
+    async prepare(authorizationId, evidence) {
+      if (authorizationId !== issuer.authorizationId) {
+        throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+      }
+      try {
+        return harness.prepareIssuerProposalAction(issuer, evidence, expectedIssuerEvidence);
+      } catch {
+        throw new GovernedIssuerProposalRejectedError("invalid-evidence");
+      }
+    },
+    async execute(authorizationId, evidence, signers, verifierSignature) {
+      if (authorizationId !== issuer.authorizationId) {
+        throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+      }
+      let eventHash;
+      try {
+        eventHash = harness.executeIssuerProposalWithSignatures(
+          issuer, evidence, signers, verifierSignature, expectedIssuerEvidence,
+        );
+      } catch {
+        throw new GovernedIssuerProposalRejectedError("invalid-signers");
+      }
+      projectedRoles.add("issuer");
+      publishCurrentSnapshot();
+      return { eventHash: asHex(eventHash) };
+    },
+  },
+  governedVerifierProposals: proposalPort("verifier", proposalTargets.get("verifier")),
+  governedAuditorProposals: proposalPort("auditor", proposalTargets.get("auditor")),
+  governedMaintainerProposals: proposalPort("maintainer", proposalTargets.get("maintainer")),
   governedMembershipActions: {
     async prepare(role, authorizationId, action) {
       return findTarget(role, authorizationId).prepare(action);
@@ -146,6 +321,52 @@ try {
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
   const client = new TrustRegistrySimulatorClient(harness.simulator);
+  const proposalEndpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
+  const proposalPrepared = await expectHttp(await fetch(`${proposalEndpoint}/prepare`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evidence: issuerEvidence }),
+  }), 200);
+  const verifierSignature = harness.signIssuerProposalEvidence(
+    harness.prepareIssuerProposalAction(issuer, issuerEvidence, expectedIssuerEvidence),
+  );
+  const proposalBody = {
+    evidence: issuerEvidence,
+    prepared: proposalPrepared,
+    signers: [sign(second, proposalPrepared), sign(third, proposalPrepared)],
+    evidenceVerifierSignature: asHex(encodeJubjubSignature(verifierSignature)),
+  };
+  const submitProposal = (body) => fetch(`${proposalEndpoint}/submit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
+  const issuerProposal = await expectHttp(await submitProposal(proposalBody), 202);
+  await expectHttp(await submitProposal(proposalBody), 409);
+  assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
+  const otherProposals = [];
+  for (const [role, target] of proposalTargets) {
+    const endpoint = `${base}/v1/governed/${role}/${target.id}/proposal`;
+    const prepared = await expectHttp(await fetch(`${endpoint}/prepare`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ evidence: target.evidence }),
+    }), 200);
+    const signature = target.signEvidence(target.prepare(target.evidence));
+    const body = {
+      evidence: target.evidence,
+      prepared,
+      signers: [sign(second, prepared), sign(third, prepared)],
+      evidenceVerifierSignature: asHex(encodeJubjubSignature(signature)),
+    };
+    const submit = (payload) => fetch(`${endpoint}/submit`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+    });
+    await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
+    const accepted = await expectHttp(await submit(body), 202);
+    await expectHttp(await submit(body), 409);
+    otherProposals.push({ role, eventHash: accepted.eventHash, evidenceCommitment: target.evidence.commitment });
+  }
   const decisions = [];
   for (const [role, target] of targets) {
     const events = {};
@@ -197,19 +418,189 @@ try {
       resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
     }),
   }), 404);
+  const issuerBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    expectedSubjectDid: issuer.subjectDid,
+    expectedResourceId: issuer.resourceId,
+  });
+  const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ role: "issuer", subjectDid: issuer.subjectDid, resourceId: issuer.resourceId, at }),
+  });
+  const activeAt = issuerBundle.authorization.activeFrom;
+  const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(activeEvaluation.trustedAtTime, true);
+  assert.equal(activeEvaluation.statusAtTime, "active");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: "registry:wrong",
+  }), /registry mismatch/i);
+  const afterEpochExpiry = new Date(Date.parse(issuerBundle.epoch.validUntil) + 1).toISOString();
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: afterEpochExpiry,
+  }), /epoch|expired|valid/i);
+
   const candidateCoSignedProposal = harness.proposeIssuer(
     createIssuerScenarioFixture("governed-demo-candidate-proposal"), [candidate],
   );
+  harness.suspendIssuer(issuer);
+  snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+  const suspendedBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  assert.equal(suspendedBundle.authorization.status, "suspended");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
+    expectedRegistryId: harness.registryId,
+  }), /not active/i);
+  const suspendedEvaluation = await expectHttp(await evaluateIssuerAt(
+    suspendedBundle.authorization.suspendedAt,
+  ), 200);
+  assert.equal(suspendedEvaluation.trustedAtTime, false);
+  assert.equal(suspendedEvaluation.statusAtTime, "suspended");
+  const historicalAfterSuspension = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(historicalAfterSuspension.trustedAtTime, true);
+  harness.revokeIssuer(issuer);
+  snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+  const revokedBundle = await expectHttp(await fetch(
+    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+  ), 200);
+  assert.equal(revokedBundle.authorization.status, "revoked");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
+    expectedRegistryId: harness.registryId,
+  }), /not active/i);
+  const revokedEvaluation = await expectHttp(await evaluateIssuerAt(
+    revokedBundle.authorization.revokedAt,
+  ), 200);
+  assert.equal(revokedEvaluation.trustedAtTime, false);
+  assert.equal(revokedEvaluation.statusAtTime, "revoked");
+  const historicalAfterRevocation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
+  assert.equal(historicalAfterRevocation.trustedAtTime, true);
+  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: activeAt,
+  });
+
+  const temporalTargets = [
+    {
+      role: "verifier",
+      path: `/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
+      suspend: () => harness.suspendVerifier(verifier),
+      revoke: () => harness.revokeVerifier(verifier),
+      verify: (bundle, options) => client.verifyVerifierAuthorizationBundle(bundle, options),
+      evaluationBody: (at) => ({
+        role: "verifier", subjectDid: verifier.subjectDid, resourceId: verifier.scopeResourceId, at,
+      }),
+    },
+    {
+      role: "auditor",
+      path: `/v1/authorizations/auditor/${auditor.authorizationId}/evidence`,
+      suspend: () => harness.suspendAuditor(auditor),
+      revoke: () => harness.revokeAuditor(auditor),
+      verify: (bundle, options) => client.verifyAuditorAuthorizationBundle(bundle, options),
+      evaluationBody: (at) => ({
+        role: "auditor", subjectDid: auditor.subjectDid, resourceId: auditor.scopeResourceId, at,
+      }),
+    },
+    {
+      role: "recognition",
+      path: `/v1/recognitions/${recognition.recognitionId}/evidence`,
+      suspend: () => harness.suspendRecognition(recognition),
+      revoke: () => harness.revokeRecognition(recognition),
+      verify: (bundle, options) => client.verifyRecognitionBundle(bundle, options),
+      evaluationBody: (at) => ({
+        recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+        recognizedRegistryId: recognition.recognizedRegistryId,
+        scopeResourceType: recognition.scopeResourceType,
+        scopeResourceId: recognition.scopeResourceId,
+        at,
+      }),
+    },
+  ];
+  const temporalChecks = [];
+  for (const target of temporalTargets) {
+    const recognitionTarget = target.role === "recognition";
+    const statusRecord = (bundle) => recognitionTarget ? bundle.recognition : bundle.authorization;
+    const evaluateAt = (at) => fetch(`${base}/v1/${recognitionTarget ? "recognitions" : "authorizations"}/evaluate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(target.evaluationBody(at)),
+    });
+    const activeBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    const roleActiveAt = recognitionTarget
+      ? activeBundle.recognition.effectiveFrom : activeBundle.authorization.activeFrom;
+    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    const active = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(active.trustedAtTime, true, `${target.role} must be trusted at activation`);
+
+    target.suspend();
+    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+    const suspendedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    assert.equal(statusRecord(suspendedBundle).status, "suspended");
+    assert.throws(() => target.verify(suspendedBundle, {
+      expectedRegistryId: harness.registryId,
+    }), /not active/i);
+    const suspended = await expectHttp(await evaluateAt(statusRecord(suspendedBundle).suspendedAt), 200);
+    assert.equal(suspended.trustedAtTime, false, `${target.role} must be denied while suspended`);
+    const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(historicalAfterSuspension.trustedAtTime, true);
+
+    target.revoke();
+    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+    const revokedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
+    assert.equal(statusRecord(revokedBundle).status, "revoked");
+    assert.throws(() => target.verify(revokedBundle, {
+      expectedRegistryId: harness.registryId,
+    }), /not active/i);
+    const revoked = await expectHttp(await evaluateAt(statusRecord(revokedBundle).revokedAt), 200);
+    assert.equal(revoked.trustedAtTime, false, `${target.role} must be denied after revocation`);
+    const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
+    assert.equal(historicalAfterRevocation.trustedAtTime, true);
+    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    temporalChecks.push({
+      role: target.role,
+      activeAt: roleActiveAt,
+      activeAfterSuspension: historicalAfterSuspension.trustedAtTime,
+      activeAfterRevocation: historicalAfterRevocation.trustedAtTime,
+      suspendedAtSuspension: suspended.trustedAtTime,
+      revokedAtRevocation: revoked.trustedAtTime,
+    });
+  }
 
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
     governance: "2-of-3 external JubJub signatures for all decisions",
-    proposals: "fixture-signed; not public applicant intake",
+    issuerProposal: {
+      eventHash: issuerProposal.eventHash,
+      evidenceCommitment: issuerEvidence.commitment,
+      source: "published VC/VP fixture and one-use challenge via HTTP proposal",
+    },
+    otherProposals,
+    recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
+    issuerEvidenceEpoch: {
+      epochId: issuerBundle.epoch.epochId,
+      stateRoot: issuerBundle.epoch.stateRoot,
+      validFrom: issuerBundle.epoch.validFrom,
+      validUntil: issuerBundle.epoch.validUntil,
+    },
+    issuerTemporalChecks: {
+      activeAt,
+      activeAtProposal: activeEvaluation.trustedAtTime,
+      activeAfterSuspension: historicalAfterSuspension.trustedAtTime,
+      activeAfterRevocation: historicalAfterRevocation.trustedAtTime,
+      suspendedAtSuspension: suspendedEvaluation.trustedAtTime,
+      revokedAtRevocation: revokedEvaluation.trustedAtTime,
+      currentStatus: revokedBundle.authorization.status,
+    },
+    otherTemporalChecks: temporalChecks,
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
-    expectedRejections: ["one-signer:403", "candidate-self-vote:403", "replayed-context:409", "cross-role:404", "wrong-scope:404"],
+    expectedRejections: ["proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403", "candidate-self-vote:403", "replayed-context:409", "cross-role:404", "wrong-scope:404", "wrong-registry:client", "expired-epoch:client", "suspended:client", "revoked:client"],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
+  signAuditorProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -53,6 +54,7 @@ describe("externally signed Compact auditor governance", () => {
       scope,
     });
     const proposal = harness.prepareAuditorProposalAction(auditor, evidence);
+    const verifierSignature = harness.signAuditorProposalEvidence(proposal);
     const initialCount = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.prepareAuditorProposalAction(auditor, evidence, {
       scope,
@@ -61,17 +63,26 @@ describe("externally signed Compact auditor governance", () => {
     })).toThrow(/scope does not match/u);
     expect(() => harness.executeAuditorProposalWithSignatures(auditor, evidence, [
       signPrepared(second, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
     expect(() => harness.executeAuditorProposalWithSignatures(auditor, evidence, [
       signPrepared(second, proposal), signPrepared(second, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
     expect(() => harness.executeAuditorProposalWithSignatures(auditor, evidence, [
       signPrepared(second, proposal), signPrepared(outsider, proposal),
-    ])).toThrow();
+    ], verifierSignature)).toThrow();
+    expect(() => harness.executeAuditorProposalWithSignatures(auditor, evidence, [
+      signPrepared(second, proposal), signPrepared(third, proposal),
+    ], signAuditorProposalEvidenceFromSeed(
+      outsider.seed, proposal.registryId,
+      proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
+    ))).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(initialCount);
     harness.executeAuditorProposalWithSignatures(auditor, evidence, [
       signPrepared(second, proposal), signPrepared(third, proposal),
-    ]);
+    ], verifierSignature);
+    const proposalEvidence = harness.simulator.getAuditorProposalEvidence(auditor.authorizationIdCommitment);
+    expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
+    expect(proposalEvidence.activePolicyVersion).toBe(proposal.policyVersion);
 
     const approval = harness.prepareAuditorDecisionAction(auditor, "approve");
     expect(() => harness.prepareAuditorDecisionAction(auditor, "unsupported" as "approve"))

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { TrustRegistryApplicantPortalClient } from "../api.js";
 
@@ -70,5 +70,50 @@ describe("public auditor inspection", () => {
       expect(inspection.activeAuditors).toHaveLength(0);
       expect(inspection.warnings).toEqual(["Auditor records are temporarily unavailable."]);
     }
+  });
+});
+
+describe("private application VP exchange", () => {
+  it("sends only the challenge nonce, hash, and VP, then returns redacted evidence", async () => {
+    const nonce = `0x${"1".repeat(64)}`;
+    const challengeHash = `0x${"2".repeat(64)}`;
+    const evidence = { envelope: { applicationId: "application:issuer:one" }, commitment: `0x${"3".repeat(64)}` };
+    const receipt = { receiptId: `0x${"4".repeat(64)}`, evidenceCommitment: evidence.commitment };
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init: init! });
+      return Response.json(calls.length === 1
+        ? { applicationId: "application:issuer:one", nonce, challengeHash, issuedAt: "2026-10-13T00:00:00Z",
+          expiresAt: "2026-10-13T00:05:00Z", supersededPrevious: false }
+        : { evidence, receipt });
+    }) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("http://127.0.0.1:4400", fetchImpl);
+    const challenge = await client.issueApplicationChallenge("application:issuer:one");
+    const presentation = { privateClaim: "not-for-storage" };
+    const result = await client.submitApplicationPresentation("application:issuer:one", challenge, presentation);
+
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/v1/application-evidence/application%3Aissuer%3Aone/challenges",
+      "/v1/application-evidence/application%3Aissuer%3Aone/submissions",
+    ]);
+    expect(calls.map((call) => call.init.method)).toEqual(["POST", "POST"]);
+    expect(calls[0]?.init.body).toBe("{}");
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ nonce, challengeHash, presentation });
+    expect(result).toEqual({ evidence, receipt });
+  });
+
+  it("does not expose a rejected server body's private presentation data", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      title: "private-presentation-payload", detail: "secret credential claims",
+    }, { status: 403 })) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("http://127.0.0.1:4400", fetchImpl);
+    await expect(client.issueApplicationChallenge("application:issuer:one"))
+      .rejects.toThrow("application evidence request failed (403)");
+    await expect(client.submitApplicationPresentation("application:issuer:one", {
+      nonce: `0x${"1".repeat(64)}`, challengeHash: `0x${"2".repeat(64)}`,
+    }, { secret: "private-presentation-payload" }))
+      .rejects.not.toThrow(/private-presentation-payload|credential claims/u);
+    await expect(client.issueApplicationChallenge(" ")).rejects.toThrow("A valid application ID is required.");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

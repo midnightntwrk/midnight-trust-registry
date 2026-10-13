@@ -2,11 +2,12 @@
 
 Status: draft v0.1
 
-The issuer pilot registers a policy-scoped JubJub assertion key and verifies
-its signature over the exact governed issuer proposal in Compact. The local
+The issuer, verifier, auditor, and maintainer reference paths register a policy-scoped JubJub
+assertion key and verify its signature over the exact governed proposal in
+Compact. The local
 simulator also signs the envelope commitment with a test-only JubJub key. It
 does not resolve either key through a DID document or verify a real VC/VP.
-On-chain DID resolution, other applicant roles, and real VC/VP attestation
+On-chain DID resolution and real VC/VP attestation
 remain 0.1.0 requirements, not claims about the current simulator.
 See the [0.1.0 reference profile](milestone-0.1.0.md) and
 [issue plan](../plans/milestone-0.1.0-issues.md).
@@ -92,7 +93,7 @@ The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
 signs this commitment with a policy-authorized assertion key for off-chain
 intake. The signature and key reference need not be included in the commitment
-itself. For the issuer pilot, the verifier separately signs the governed
+itself. For issuer, verifier, auditor, and maintainer proposals, the evidence verifier separately signs the governed
 proposal payload bound to the evidence commitment, registered verifier key,
 and active policy snapshot. This second signature is checked in Compact; an
 intake signature alone cannot authorize a proposal.
@@ -104,11 +105,17 @@ circuit from the domain tag `tr:app:evidence:sig:v1`, the key id commitment,
 the application evidence commitment, and profile version `1`. This prevents
 reuse as an unscoped DID payload signature and binds the signature to the
 specific assertion key reference. The signer uses the published DID package's
-seed-derived signing helper over that circuit digest. The issuer pilot's
-governed proposal instead uses `issuerEvidenceBoundProposalPayloadHash` and
-`issuerProposalEvidenceSignatureDigest`, which bind the complete issuer
-authorization payload, verifier authorization and key identifiers, registry
-identifier, and active policy commitment and version. The contract verifies
+seed-derived signing helper over that circuit digest. The issuer proposal
+uses `issuerEvidenceBoundProposalPayloadHash` and
+`issuerProposalEvidenceSignatureDigest`; the verifier proposal uses the
+role-separated `verifierEvidenceBoundProposalPayloadHash` and
+`verifierProposalEvidenceSignatureDigest`; the auditor proposal uses
+`auditorEvidenceBoundProposalPayloadHash` and
+`auditorProposalEvidenceSignatureDigest`; the maintainer proposal uses
+`maintainerEvidenceBoundProposalPayloadHash` and
+`maintainerProposalEvidenceSignatureDigest`. Each pair binds the complete
+role-specific authorization payload, evidence-verifier authorization and key
+identifiers, registry identifier, and active policy commitment and version. The contract verifies
 this distinct digest against the active registered JubJub key. The intake
 signature value is the DID package's 96-byte encoding rendered as lowercase,
 `0x`-prefixed hex, with a response scalar below the JubJub group order and
@@ -199,28 +206,44 @@ whose commitment differs from the live challenge before it spends the nonce.
 The intake then consumes the challenge once only after the VP nonce and subject
 DID match, and
 passes a signed evidence envelope to an injected proposal callback. The seam
-does not itself implement the official VC verifier or a public route. An
+does not itself implement the official VC verifier. The API exposes optional
+`POST /v1/application-evidence/:applicationId/challenges` and
+`POST /v1/application-evidence/:applicationId/submissions` routes only when a
+trusted host injects an application VP port. That port MUST authenticate and
+authorize the applicant against the pending application before request-body
+parsing or VP work; authentication by an external proxy alone is insufficient.
+The server derives binding and authorized verifier policy from the host, never
+from the applicant's request. It rechecks both just before evidence persistence;
+the host MUST atomically recheck pending status and policy at persistence. These
+private routes do not advertise wildcard cross-origin access. Same-origin
+hosting or a narrowly configured authenticated proxy, plus CSRF protection
+where cookie credentials are used, is required for a browser flow. The
+packaged CLI does not inject the port, so it returns 503. An
 integration-only test uses the real challenge service and JubJub signing with
 all four simulator proposal circuits; the simulator verifies the consumed
 challenge hash and canonical scope commitment supplied by the trusted intake
 context. Its separate deterministic challenge fixture still uses the same
 canonical scope commitment, but MUST NOT be used as a production nonce source.
-Production use still needs an authenticated public issuance route, official
-VP verification, and a durable atomic store.
+Production use still needs a host implementing genuine family/status VP
+verification, abuse controls, durable atomic challenge storage, and atomic
+pending-application persistence. The reference fixture family ignores arbitrary
+submitted presentations and MUST NOT be mounted as a public verifier.
 
-The reference API package exposes an in-memory store for local tests only. It
-caps live entries and schedules expiry cleanup even without another request;
-these bounds do not replace distributed durability or abuse controls. A
-public issuance route requires a durable atomic store, applicant authentication,
-abuse controls, and a retention/cleanup policy; those are not delivered by
-this reference store. Challenge expiry uses the evidence verifier's off-ledger
+The reference API package exposes an in-memory store for local tests and a
+bounded file-backed store for a single local deployment. The in-memory store
+caps live entries and schedules expiry cleanup; the file-backed store uses
+private atomic file replacement and a cross-process lock for one-use consume,
+and prunes expired records during writes. Neither supplies distributed storage,
+crash-durable commits, applicant authentication, abuse controls, or a complete
+retention/cleanup policy. A public deployment MUST provide and test those
+properties as appropriate to its failure model. Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
 errors, not invalid applicant challenges. It is not a claim that the Midnight
 contract has a datetime primitive.
 
 ## 4. Contract Inputs And Checks
 
-The issuer pilot's governed proposal transition consumes:
+The issuer, verifier, auditor, and maintainer governed proposal transitions consume:
 
 - `applicationEvidenceCommitment`
 - the active policy commitment and version
@@ -228,7 +251,7 @@ The issuer pilot's governed proposal transition consumes:
 - the evidence-verifier signature over the proposal-bound commitment
 - the maintainer signer bundle required for the decision family
 
-The issuer pilot contract MUST reject a proposal when any of the following holds:
+These four contract paths MUST reject a proposal when any of the following holds:
 
 - the application id, subject, role, registry, policy, or scope differs from the
   signed proposal payload;
@@ -237,16 +260,16 @@ The issuer pilot contract MUST reject a proposal when any of the following holds
 - the required maintainer quorum is not satisfied; or
 - the same live authorization scope already exists for the subject.
 
-The issuer pilot retains the commitment, policy snapshot, verifier DID and key
+Each role retains the commitment, policy snapshot, evidence-verifier DID and key
 commitments, verifier signature, and governance event reference in a proposal
-evidence record keyed by issuer authorization ID. This is historical evidence:
+evidence record keyed by its authorization ID. This is historical evidence:
 subsequent verifier-key suspension does not delete a prior proposal record. The
 envelope's `verifiedAt` and `expiresAt` remain off-ledger data committed by its
 canonical hash. The intake service MUST validate the evidence window against a
 trusted off-ledger clock when accepting the application and again before any
 later approval or activation. Compact cannot independently parse the envelope
 from its hash or compare its timestamps with a trusted wall clock. Therefore
-the pilot MUST NOT claim that expiry or verifier activity at historical
+the reference implementation MUST NOT claim that expiry or verifier activity at historical
 `verifiedAt` was proven by the contract. A sequence-bound validity rule or an
 authenticated time attestation, with an on-ledger verification-window record,
 is required before the broader on-chain expiry rejection target is met.

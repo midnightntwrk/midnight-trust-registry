@@ -4,6 +4,8 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  ApplicationVpHttpIssueResult,
+  ApplicationVpHttpSubmissionResult,
 } from "@midnight-ntwrk/trust-registry-api";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
@@ -49,6 +51,27 @@ export class TrustRegistryApplicantPortalApiError extends Error {
 export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
+
+const privateApplicationPath = (applicationId: string, action: "challenges" | "submissions"): string => {
+  if (applicationId.length === 0 || applicationId !== applicationId.trim()) {
+    throw new Error("A valid application ID is required.");
+  }
+  return `/v1/application-evidence/${encodeURIComponent(applicationId)}/${action}`;
+};
+
+const parsePrivateResponse = async <T>(response: Response): Promise<T> => {
+  if (!response.ok) {
+    throw new TrustRegistryApplicantPortalApiError({
+      status: response.status,
+      title: `application evidence request failed (${response.status})`,
+    });
+  }
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error("Application evidence response was invalid.");
+  }
+};
 
 const parseJson = async <T>(
   response: Response,
@@ -129,6 +152,34 @@ export class TrustRegistryApplicantPortalClient {
         body: JSON.stringify({ target, label }),
       },
     );
+  }
+
+  /** Use only with an authenticated same-origin host; no presentation is stored by this client. */
+  async issueApplicationChallenge(applicationId: string): Promise<ApplicationVpHttpIssueResult> {
+    const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "challenges")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    return parsePrivateResponse<ApplicationVpHttpIssueResult>(response);
+  }
+
+  /** The VP exists only in this request; the server returns signed redacted evidence. */
+  async submitApplicationPresentation(
+    applicationId: string,
+    challenge: Pick<ApplicationVpHttpIssueResult, "nonce" | "challengeHash">,
+    presentation: unknown,
+  ): Promise<ApplicationVpHttpSubmissionResult> {
+    const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "submissions")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        nonce: challenge.nonce,
+        challengeHash: challenge.challengeHash,
+        presentation,
+      }),
+    });
+    return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
   }
 
   private async request<T>(

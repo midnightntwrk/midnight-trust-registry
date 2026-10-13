@@ -12,6 +12,7 @@ import {
 
 import {
   type AuditorAuthorizationRecord,
+  type AuditorProposalEvidenceRecord,
   type EvidenceVerifierKeyRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
@@ -19,8 +20,10 @@ import {
   type MaintainerAuthorizationBundle,
   type MaintainerAuthorizationSigner,
   type MaintainerMembershipRecord,
+  type MaintainerProposalEvidenceRecord,
   type RecognitionRecord,
   type VerifierAuthorizationRecord,
+  type VerifierProposalEvidenceRecord,
   type IssuerResourceType,
   Contract,
   type Ledger,
@@ -257,6 +260,9 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -275,6 +281,9 @@ export class TrustRegistrySimulator {
         policyId,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }
@@ -405,6 +414,17 @@ export class TrustRegistrySimulator {
     );
   }
 
+  getMaintainerProposalEvidence(
+    maintainerId: Uint8Array,
+  ): MaintainerProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getMaintainerProposalEvidence(
+        this.circuitContext,
+        maintainerId,
+      ),
+    );
+  }
+
   getCurrentMaintainerMembership(
     maintainerDidCommitment: Uint8Array,
   ): MaintainerMembershipRecord {
@@ -524,6 +544,15 @@ export class TrustRegistrySimulator {
   getIssuerProposalEvidence(authorizationId: Uint8Array): IssuerProposalEvidenceRecord {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.getIssuerProposalEvidence(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
+  getVerifierProposalEvidence(authorizationId: Uint8Array): VerifierProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getVerifierProposalEvidence(
         this.circuitContext,
         authorizationId,
       ),
@@ -740,6 +769,9 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -760,6 +792,9 @@ export class TrustRegistrySimulator {
         policyId,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }
@@ -1100,6 +1135,9 @@ export class TrustRegistrySimulator {
     policyId: Uint8Array,
     trustLevel: Uint8Array,
     evidenceHash: Uint8Array,
+    evidenceVerifierAuthorizationId: Uint8Array,
+    evidenceVerifierKeyIdCommitment: Uint8Array,
+    evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): Uint8Array {
     return this.executeCircuit(() =>
@@ -1120,6 +1158,9 @@ export class TrustRegistrySimulator {
         policyId,
         trustLevel,
         evidenceHash,
+        evidenceVerifierAuthorizationId,
+        evidenceVerifierKeyIdCommitment,
+        evidenceSignature,
       ),
     );
   }
@@ -1244,6 +1285,17 @@ export class TrustRegistrySimulator {
   ): AuditorAuthorizationRecord {
     return this.executeCircuit(() =>
       this.contract.impureCircuits.getAuditorAuthorization(
+        this.circuitContext,
+        authorizationId,
+      ),
+    );
+  }
+
+  getAuditorProposalEvidence(
+    authorizationId: Uint8Array,
+  ): AuditorProposalEvidenceRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getAuditorProposalEvidence(
         this.circuitContext,
         authorizationId,
       ),

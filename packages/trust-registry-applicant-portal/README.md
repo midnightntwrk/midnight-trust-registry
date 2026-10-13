@@ -13,6 +13,16 @@ Current scope:
 - keep the first portal slice static and local-first instead of adding a second
   backend or browser persistence layer
 
+The portal client also has `issueApplicationChallenge` and
+`submitApplicationPresentation` methods for a future authenticated same-origin
+host. They send the nonce/hash and raw VP only in the submission request, then
+return the server's signed redacted evidence and receipt. Private-route errors
+discard the server response body so a failing verifier cannot echo claims into
+the UI. The page does not expose a VP form, and neither presentation nor
+challenge is saved to browser storage. The packaged API CLI does not mount the
+required applicant-authenticated verifier port; these methods are not a public
+membership flow on their own.
+
 Run locally from the repo root:
 
 ```bash

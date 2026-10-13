@@ -23,6 +23,8 @@ Current route set:
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
 - `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
 - `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
+- `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
+- `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -130,6 +132,31 @@ not configure this optional port. The reference integration test injects the
 local simulator and projects that *same* simulator into the read API after
 each transition.
 
+The governed issuer proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
+with `{ "evidence": <signed application evidence> }`, followed by
+`POST /v1/governed/issuer/:id/proposal/submit` with the same evidence, the
+exact prepared response, external maintainer `signers`, and an
+`evidenceVerifierSignature`. It is available only when the embedding server
+injects `governedIssuerProposals`; the packaged CLI returns 503. The port
+must recheck the already verified, one-use-challenge evidence and current
+Compact context. Compact verifies the registered evidence-verifier key and
+maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
+by this API, and a 202 is simulator acceptance, not network finality.
+Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
+`/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
+injected `governedVerifierProposals`, `governedAuditorProposals`, and
+`governedMaintainerProposals` ports. For maintainers, `:id` is the candidate
+membership ID; the prepared context binds the registry-scoped maintainer
+application and candidate key to the evidence verifier's current key.
+Each role's prepared digest additionally
+binds the registered evidence-verifier identity and active policy version;
+the contract verifies that key's role-separated proposal signature and the
+maintainer quorum. The packaged CLI does not inject any proposal port, so
+all four routes return 503 without a Compact-backed host.
+The integration journey verifies a published fixture VC/VP, consumes one
+challenge, submits the resulting redacted evidence through this HTTP proposal
+route, and then approves and activates the issuer with external 2-of-3 votes.
+
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
 `--unsafe-demo-mutations`; the CLI accepts that mode only on literal loopback
@@ -143,11 +170,53 @@ Those demo routes:
   epoch publication
 - bypass actor authorization and are unsuitable for real membership decisions
 - serialize in-process requests and reject cross-process lock contention
-- return permissive local CORS headers plus `OPTIONS` preflight responses so the
-  admin console can call the same loopback API from a separate port
+- return permissive local CORS headers plus `OPTIONS` preflight responses for
+  local operator routes so the admin console can use a separate port; private
+  application VP routes do not return wildcard CORS headers
+
+The application-evidence HTTP routes require an injected `applicationVp` port;
+without one, both return 503. Its required `authorizeRequest(applicationId,
+request)` callback must authenticate the caller and authorize access to the
+current application, throwing on denial. It runs on both routes before the
+request body is read or any challenge or VP work begins. Denials return a
+generic 403 without exposing callback errors. Reverse-proxy authentication
+alone is not an API authorization seam; the port must still bind the
+authenticated principal to the application and enforce CSRF protection where
+cookie credentials are used. Host the applicant frontend and these routes on
+the same origin or provide a narrowly configured authenticated reverse proxy;
+the reference server does not grant cross-origin browser access to raw VPs.
+Challenge issuance accepts only `{}`. Submission
+accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
+The server never accepts a caller-supplied binding, policy, verifier list, or
+evaluated timestamp. The trusted port must resolve the current pending
+application and authorized verifier policy at issuance and submission, derive
+the subject DID, nonce, and scope from a genuine verified VP, sign canonical
+redacted evidence, and atomically persist only that evidence. The server
+re-resolves the binding and verifier policy just before persistence. Policy
+rotations must update the binding's policy version so challenges issued under
+old policy cannot be reused; the port must also recheck pending status and
+policy atomically at persistence. A 202 response contains only signed evidence
+and a validated redacted receipt, not the VP or its claims. Errors from VP
+verification and storage are intentionally generic and do not echo exception
+messages or raw request data. Challenges are one-use and expire after five
+minutes according to the injected server clock; signing or persistence failure
+after consumption does not make a challenge reusable. The optional port owns
+the challenge store, which must provide durable atomic consumption in a
+multi-process deployment. No fixture verifier is installed by default.
+
+`FileApplicationChallengeStore` is a local reference adapter for the port. It
+stores only challenge, binding, and application hashes with issuance/expiry
+instants in a versioned private (`0600`) file. A shared cross-process lock
+serializes replacement and one-use consumption; a second instance can read and
+consume the same challenge, but cannot consume it twice. It fails closed on
+malformed or insecurely permissioned files, bounds capacity, and leaves stale
+locks for operator recovery. Atomic rename does not guarantee crash-durable
+writes, and this adapter does not provide distributed transactions, VP
+verification, applicant authentication, rate limits, or atomic pending-state
+persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
 
 The exported application-challenge service and
-`consumeChallengeAndSubmitApplication` reference intake are not HTTP routes.
+`consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.
 Their binding requires the versioned role-specific scope object, a separately
 checked governed resource, and a matching canonical scope commitment; an
 arbitrary 32-byte scope digest is not accepted. The caller must supply a
@@ -166,9 +235,10 @@ decides whether a challenge is spent. The process-local store uses the same
 injected clock for timer reclamation and consume, copies records on insertion,
 and reports whether issuing a new challenge superseded a live one for that
 application. Capacity, invalid-clock, expiry-range, and collision failures
-have stable `code` and `name` fields. A production route still needs an
-authenticated per-applicant quota, durable atomic storage, request limits,
-and VP verification timeouts before public exposure.
+have stable `code` and `name` fields. Before public exposure, the embedding
+gateway must implement the port's applicant authorization callback, enforce per-applicant challenge quotas
+and VP verification timeouts, and provide a durable challenge store and atomic
+pending-application persistence.
 The existing `POST /v1/applications` route is a local operator workspace route,
 not a public VC/VP-verified membership endpoint.
 
@@ -198,8 +268,9 @@ The governed-action HTTP integration test covers externally signed 2-of-3
 approval and activation, stale and malformed requests, cross-role identifier
 substitution, and independently verified issuer, verifier, and auditor
 evidence on one simulator. It is a reference journey; the VP intake above is
-not yet exposed as an authenticated HTTP endpoint or connected to this route
-in a deployable server.
+only mounted when a trusted host injects the full authenticated port. The
+packaged CLI does not mount it, and this journey does not use an arbitrary VP
+submitted to that endpoint.
 
 Example applicant submission:
 
