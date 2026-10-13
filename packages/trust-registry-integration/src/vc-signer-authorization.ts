@@ -12,7 +12,7 @@ import { parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnig
 import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
 import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createVcSignerCandidateFromTrustedDecision, type ScopeMapping } from "./vc-signer-candidate.js";
+import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 
 export type VcAuthorityDomain = {
   networkId: string;
@@ -90,12 +90,11 @@ export const issueVcSignerAuthorizationFromTrustedDecision = async (input: {
   selection: Omit<DecisionEvidenceSelection, "evaluationTime">;
   readers: TrustedDecisionEvidenceReaders;
   method: MidnightDIDMethodBinding;
-  scopeMapping: ScopeMapping;
   anchor: PinnedVcAuthority;
   signer: VcAuthoritySigner;
 }): Promise<{ descriptor: AuthorizedSignerDescriptor; proof: Proof }> => {
   const { candidate, descriptor } = await createVcSignerCandidateFromTrustedDecision(
-    input.evidence, input.selection, input.readers, input.method, input.scopeMapping,
+    input.evidence, input.selection, input.readers, input.method,
   );
   if (
     input.anchor.domain.networkId !== candidate.networkId

@@ -49,6 +49,7 @@ import {
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
+import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 import {
   issueVcSignerAuthorizationFromTrustedDecision,
   pinnedVcAuthority,
@@ -277,55 +278,39 @@ describe("simulator-backed VC decision evidence composition", () => {
       verificationMethodId: "#assertion-1",
       relationship: "assertionMethod",
     });
-    const vcSchema = {
-      packageId: bytes32Commitment("vc-decision-package"),
-      schemaId: bytes32Commitment("vc-decision-schema"),
-      majorVersion: 1n,
-      minorVersion: 0n,
-    };
-    const scopeMapping = {
-      registryScopeCommitment: candidate.scopeCommitment,
-      vcScopeCommitment: pureCircuits.issuerScopeCommitment(vcSchema),
-    };
+    if (candidate.scope.role !== "issuer") throw new Error("Expected issuer scope");
+    const vcSchema = issuerSchemaRefFromRegistryScope(candidate.scope);
     const converted = await createVcSignerCandidateFromTrustedDecision(
-      evidence, context.selection, readers, binding, scopeMapping,
+      evidence, context.selection, readers, binding,
     );
     expect(converted.descriptor.decisionSequence).toBe(BigInt(epochRecord.publishedAtSequence));
     expect(converted.descriptor.didStateVersion).toBe(3n);
-    expect(converted.descriptor.scopeCommitment).toEqual(scopeMapping.vcScopeCommitment);
+    expect(converted.descriptor.scopeCommitment).toEqual(pureCircuits.issuerScopeCommitment(vcSchema));
     expect(converted.descriptor.policyCommitment).toEqual(Uint8Array.from(Buffer.from(candidate.policyRoot.slice(2), "hex")));
     await expect(createVcSignerCandidateFromTrustedDecision(
-      evidence, context.selection, readers, binding,
-      { ...scopeMapping, registryScopeCommitment: sha256Hex("unrelated-tr-scope") },
-    )).rejects.toThrow(/scope mapping/u);
-    await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
-      { ...binding, didStateVersion: 2n }, scopeMapping,
+      { ...binding, didStateVersion: 2n },
     )).rejects.toThrow(/DID state version/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
-      { ...binding, publicKey: { ...binding.publicKey, x: binding.publicKey.x + 1n } }, scopeMapping,
+      { ...binding, publicKey: { ...binding.publicKey, x: binding.publicKey.x + 1n } },
     )).rejects.toThrow(/method key/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
       { ...binding, verificationMethodRef: {
         ...binding.verificationMethodRef,
         methodId: bytes32Commitment("other-method"),
-      } }, scopeMapping,
+      } },
     )).rejects.toThrow(/method binding/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
-      { ...binding, verificationRelationship: VerificationRelationship.authentication }, scopeMapping,
+      { ...binding, verificationRelationship: VerificationRelationship.authentication },
     )).rejects.toThrow(/relationship/u);
-    await expect(createVcSignerCandidateFromTrustedDecision(
-      evidence, context.selection, readers, binding,
-      { ...scopeMapping, vcScopeCommitment: new Uint8Array(32) },
-    )).rejects.toThrow(/VC scope commitment/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, {
         ...readers,
         readCurrentFinalizedRegistryDecision: async () => null,
-      }, binding, scopeMapping,
+      }, binding,
     )).rejects.toThrow(/registry decision is unavailable/u);
 
     const authoritySeed = new Uint8Array(32).fill(77);
@@ -350,7 +335,6 @@ describe("simulator-backed VC decision evidence composition", () => {
       selection: context.selection,
       readers,
       method: binding,
-      scopeMapping,
       anchor: authorityAnchor,
       signer: async ({ decisionRoot, decisionSequence, authority }) => signFixtureContextProof(
         secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
@@ -554,16 +538,13 @@ describe("simulator-backed VC decision evidence composition", () => {
       verificationMethodId: "#request-1",
       relationship: "authentication",
     });
-    const requestScopeCommitment = bytes32Commitment("vc-verifier-request-scope");
+    if (verifierCandidate.scope.role !== "verifier") throw new Error("Expected verifier scope");
+    const requestScopeCommitment = vcScopeCommitmentFromRegistryScope(verifierCandidate.scope);
     const verifierSigned = await issueVcSignerAuthorizationFromTrustedDecision({
       evidence: verifierEvidence,
       selection: verifierSelection,
       readers: verifierReaders,
       method: verifierBinding,
-      scopeMapping: {
-        registryScopeCommitment: verifierCandidate.scopeCommitment,
-        vcScopeCommitment: requestScopeCommitment,
-      },
       anchor: authorityAnchor,
       signer: async ({ decisionRoot, decisionSequence, authority }) => signFixtureContextProof(
         secret, authority.verificationMethodRef, decisionRoot, decisionSequence,
@@ -767,10 +748,6 @@ describe("simulator-backed VC decision evidence composition", () => {
         }),
       },
       method: verifierBinding,
-      scopeMapping: {
-        registryScopeCommitment: verifierCandidate.scopeCommitment,
-        vcScopeCommitment: requestScopeCommitment,
-      },
       anchor: authorityAnchor,
       signer: async () => { throw new Error("Suspended grant must not reach the authority signer"); },
     })).rejects.toThrow(/current grant mismatch/u);

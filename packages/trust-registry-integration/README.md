@@ -71,7 +71,14 @@ Current coverage:
   method verification. This is a candidate descriptor, not a live
   cross-contract trust anchor. The bundle's `referencedStatusRegistryId` is
   metadata outside the signed authorization leaf and must not be treated as
-  authenticated status-policy evidence. Policy-to-VC scope mapping, anchored
+  authenticated status-policy evidence. The VC scope is derived from the
+  verified registry scope, never supplied as a separate caller-selected hash.
+  Issuer package and schema IDs are SHA-256 of respectively
+  `tr:vc-schema-package:v1:` plus the exact family ID and
+  `tr:vc-schema-id:v1:` plus the exact schema ID. Only `major.minor.0` with
+  major 1..65535 and minor 0..65535 can map to VC `SchemaRef`. Verifier request
+  scope is the canonical 32-byte registry request-scope commitment; the signed
+  request must use that same value. Governed VC schema enrollment, anchored
   status policy, and live revocation checks remain separate work.
 - `issueVcSignerAuthorizationFromTrustedDecision` re-reads current finalized
   registry and DID state through caller-supplied trusted readers, maps their

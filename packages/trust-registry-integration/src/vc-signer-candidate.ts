@@ -15,13 +15,7 @@ import {
   sha256Hex,
   type DecisionEvidenceSelection,
 } from "@midnight-ntwrk/trust-registry-domain";
-
-export type ScopeMapping = {
-  /** Canonical TR scope commitment independently approved for this VC scope. */
-  registryScopeCommitment: string;
-  /** VC SchemaRef or signed-request commitment selected by the consumer. */
-  vcScopeCommitment: Uint8Array;
-};
+import { vcScopeCommitmentFromRegistryScope } from "./vc-scope.js";
 
 const bytes32FromHex = (value: string, label: string): Uint8Array => {
   if (!/^0x[0-9a-f]{64}$/u.test(value)) throw new Error(`${label} must be a canonical 32-byte hash`);
@@ -30,22 +24,16 @@ const bytes32FromHex = (value: string, label: string): Uint8Array => {
 
 /**
  * Constructs a VC descriptor candidate, not a signer-authorization proof.
- * Readers, DID resolver, and scope mapping must be independently trusted by the caller.
+ * Readers and DID resolver must be independently trusted by the caller.
  */
 export const createVcSignerCandidateFromTrustedDecision = async (
   evidence: unknown,
   selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
   readers: TrustedDecisionEvidenceReaders,
   method: MidnightDIDMethodBinding,
-  scopeMapping: ScopeMapping,
 ) => {
   const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, selection, readers);
-  if (scopeMapping.registryScopeCommitment !== candidate.scopeCommitment) {
-    throw new Error("VC scope mapping does not match the trusted registry scope");
-  }
-  if (scopeMapping.vcScopeCommitment.length !== 32 || scopeMapping.vcScopeCommitment.every((byte) => byte === 0)) {
-    throw new Error("VC scope commitment must be a nonzero 32-byte value");
-  }
+  const vcScopeCommitment = vcScopeCommitmentFromRegistryScope(candidate.scope);
   const didId = parseMidnightDID(parseMidnightDIDString(candidate.subjectDid)).id;
   const fragment = candidate.didMethod.methodId.slice(candidate.subjectDid.length);
   if (!/^#[^#]+$/u.test(fragment)
@@ -68,7 +56,7 @@ export const createVcSignerCandidateFromTrustedDecision = async (
     decisionSequence: BigInt(candidate.decisionSequence),
     state: AuthorizationState.active,
     role: candidate.role === "issuer" ? SignerRole.issuer : SignerRole.verifier,
-    scopeCommitment: scopeMapping.vcScopeCommitment,
+    scopeCommitment: vcScopeCommitment,
     policyCommitment: bytes32FromHex(candidate.policyRoot, "policyRoot"),
   });
   pureCircuits.assertValidAuthorizedSignerDescriptor(descriptor);
