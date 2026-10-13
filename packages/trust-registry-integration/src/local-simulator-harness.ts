@@ -1193,6 +1193,15 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
+  signIssuerProposalEvidence(prepared: PreparedIssuerProposalAction): TrustRegistryJubjubSignature {
+    return signIssuerProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
   executeIssuerProposalWithSignatures(
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,

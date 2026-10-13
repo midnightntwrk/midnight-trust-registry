@@ -130,6 +130,19 @@ not configure this optional port. The reference integration test injects the
 local simulator and projects that *same* simulator into the read API after
 each transition.
 
+The issuer-only proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
+with `{ "evidence": <signed application evidence> }`, followed by
+`POST /v1/governed/issuer/:id/proposal/submit` with the same evidence, the
+exact prepared response, external maintainer `signers`, and an
+`evidenceVerifierSignature`. It is available only when the embedding server
+injects `governedIssuerProposals`; the packaged CLI returns 503. The port
+must recheck the already verified, one-use-challenge evidence and current
+Compact context. Compact verifies the registered evidence-verifier key and
+maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
+by this API, and a 202 is simulator acceptance, not network finality.
+Verifier, auditor, and maintainer proposal HTTP routes remain out of scope
+until their evidence-verifier signatures are bound in the contract.
+
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
 `--unsafe-demo-mutations`; the CLI accepts that mode only on literal loopback
