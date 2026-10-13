@@ -6,7 +6,15 @@ import { HashHexSchema, ScopedIdentifierSchema } from "./ids.js";
 import { compareRfc3339Instants } from "./instant.js";
 import { LifecycleStatusSchema } from "./lifecycle.js";
 import { GovernancePolicySnapshotSchema, computeGovernancePolicySnapshotCommitment } from "./policy-snapshot.js";
-import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
+import {
+  IssuerGovernedResourceIdSchema,
+  IssuerScopeSchema,
+  RequestGovernedResourceIdSchema,
+  VerifierScopeSchema,
+  computeAuthorizationScopeCommitment,
+  issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceId,
+} from "./scope.js";
 import { IssuerStatusPolicyBindingSchema, computeIssuerStatusPolicyBindingCommitment } from "./status-policy.js";
 import { AuthorizationRecordSchema, ResourceTypeSchema } from "./types.js";
 
@@ -38,6 +46,14 @@ const SignatureSchema = z.strictObject({
   algorithm: z.literal("jubjub-schnorr"),
   signature: z.string().regex(/^0x[0-9a-f]{192}$/u),
 });
+
+const IssuerResourceKind = {
+  "credential-family": "credentialFamily",
+  schema: "schema",
+  "schema-version": "schemaVersion",
+  "credential-definition": "credentialDefinition",
+  "status-method-requirement": "statusMethodRequirement",
+} as const;
 
 const GrantFields = {
   ...AuthorizationRecordSchema.shape,
@@ -168,6 +184,7 @@ const DecisionEvidenceShape = z.discriminatedUnion("role", [
     ...BaseEnvelope,
     role: z.literal("issuer"),
     grant: DecisionEvidenceGrantSchema.options[0],
+    scope: IssuerScopeSchema,
     didMethod: IssuerDidMethodSchema,
     statusPolicyBinding: IssuerStatusPolicyBindingSchema,
   }),
@@ -175,6 +192,7 @@ const DecisionEvidenceShape = z.discriminatedUnion("role", [
     ...BaseEnvelope,
     role: z.literal("verifier"),
     grant: DecisionEvidenceGrantSchema.options[1],
+    scope: VerifierScopeSchema,
     didMethod: VerifierDidMethodSchema,
     statusPolicyBinding: z.never().optional(),
   }),
@@ -232,6 +250,15 @@ export const DecisionEvidenceSchema = DecisionEvidenceShape.superRefine((evidenc
   }
   if (evidence.grant.policyId !== evidence.policy.policyId) {
     ctx.addIssue({ code: "custom", path: ["policy", "policyId"], message: "Grant and policy identifiers must agree" });
+  }
+  const scopeResourceId = evidence.role === "issuer"
+    ? issuerGovernedResourceIdFromScopeCommitment(
+      computeAuthorizationScopeCommitment(evidence.scope),
+      IssuerResourceKind[evidence.grant.resourceType],
+    )
+    : requestGovernedResourceId(evidence.scope);
+  if (scopeResourceId !== evidence.grant.resourceId) {
+    ctx.addIssue({ code: "custom", path: ["scope"], message: "Decision scope preimage does not match the governed grant" });
   }
   if (evidence.role === "issuer" && (
     evidence.statusPolicyBinding.trustRegistryId !== evidence.registry.registryId
@@ -352,6 +379,7 @@ export type DecisionEvidenceSelection = {
   role: "issuer" | "verifier";
   resourceType: z.infer<typeof ResourceTypeSchema>;
   resourceId: string;
+  scope: z.infer<typeof IssuerScopeSchema> | z.infer<typeof VerifierScopeSchema>;
   evaluationTime: string;
 };
 
@@ -377,6 +405,12 @@ export const assertDecisionEvidenceSelection = (
     || evidence.grant.resourceId !== expected.resourceId
   ) {
     throw new Error("Decision evidence role or resource scope mismatch");
+  }
+  const selectedScope = evidence.role === "issuer"
+    ? IssuerScopeSchema.parse(expected.scope)
+    : VerifierScopeSchema.parse(expected.scope);
+  if (computeAuthorizationScopeCommitment(selectedScope) !== computeAuthorizationScopeCommitment(evidence.scope)) {
+    throw new Error("Decision evidence selected scope preimage mismatch");
   }
   if (
     evidence.grant.status !== "active"

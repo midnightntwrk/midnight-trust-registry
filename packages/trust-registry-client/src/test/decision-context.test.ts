@@ -17,6 +17,8 @@ import {
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
+  issuerGovernedResourceId,
+  requestGovernedResourceId,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { assertDecisionEvidenceConsistentWithSuppliedContext } from "../decision-context.js";
@@ -36,6 +38,25 @@ const MAINTAINER_DIDS = [
   `did:midnight:devnet:${"4".repeat(64)}`,
 ];
 const METHOD = `${DID}#key-1`;
+const ISSUER_SCOPE = {
+  version: "tr-scope-v1",
+  role: "issuer",
+  credentialFamilyId: "credential-family:birth",
+  schemaId: "schema:birth",
+  schemaVersion: "1.0.0",
+  credentialDefinitionId: "credential-definition:birth",
+  statusMethod: "midnight-status-registry-v1",
+} as const;
+const VERIFIER_SCOPE = {
+  version: "tr-scope-v1" as const,
+  role: "verifier" as const,
+  requestProfileId: "request-profile:birth",
+  purpose: "age-verification",
+  credentialScopeCommitment: C,
+  allowedAttributes: ["age"],
+  allowedPredicates: ["over-18"],
+  disclosureLevel: "minimal",
+};
 const KEY = {
   kty: "EC" as const,
   crv: "Jubjub" as const,
@@ -64,8 +85,8 @@ function fixture(
     role,
     resourceType: role === "issuer" ? "credential-family" : "request-profile",
     resourceId: role === "issuer"
-      ? `tr:issuer-resource:v1:${"f".repeat(64)}`
-      : `tr:request-resource:v1:${"f".repeat(64)}`,
+      ? issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily")
+      : requestGovernedResourceId(VERIFIER_SCOPE),
     policyId: "policy:university:v1",
     trustLevel: "approved",
     ...(role === "issuer" ? { statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(statusPolicyBinding) } : {}),
@@ -167,6 +188,7 @@ function fixture(
     },
     epoch,
     grant,
+    scope: role === "issuer" ? ISSUER_SCOPE : VERIFIER_SCOPE,
     didMethod: {
       did: DID,
       methodId: METHOD,
@@ -238,6 +260,7 @@ function fixture(
       role,
       resourceType: grant.resourceType,
       resourceId: grant.resourceId,
+      scope: role === "issuer" ? ISSUER_SCOPE : VERIFIER_SCOPE,
     },
     decisionPoint: {
       sequence: "11",

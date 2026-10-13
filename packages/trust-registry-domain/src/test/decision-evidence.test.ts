@@ -14,6 +14,8 @@ import {
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   computeMerkleRootFromProof,
+  issuerGovernedResourceId,
+  requestGovernedResourceId,
 } from "../index.js";
 
 const A = `0x${"a".repeat(64)}`;
@@ -25,6 +27,25 @@ const DID = `did:midnight:devnet:${"1".repeat(64)}`;
 const REGISTRY_DID = `did:midnight:devnet:${"2".repeat(64)}`;
 const MAINTAINER = `did:midnight:devnet:${"3".repeat(64)}`;
 const NOW = "2026-05-20T02:00:00Z";
+const ISSUER_SCOPE = {
+  version: "tr-scope-v1",
+  role: "issuer",
+  credentialFamilyId: "credential-family:birth",
+  schemaId: "schema:birth",
+  schemaVersion: "1.0.0",
+  credentialDefinitionId: "credential-definition:birth",
+  statusMethod: "midnight-status-registry-v1",
+} as const;
+const VERIFIER_SCOPE = {
+  version: "tr-scope-v1" as const,
+  role: "verifier" as const,
+  requestProfileId: "request-profile:birth",
+  purpose: "age-verification",
+  credentialScopeCommitment: C,
+  allowedAttributes: ["age"],
+  allowedPredicates: ["over-18"],
+  disclosureLevel: "minimal",
+};
 const STATUS_BINDING = {
   version: "tr-issuer-status-policy-v1" as const,
   trustRegistryId: "registry:midnight:university",
@@ -75,7 +96,7 @@ const issuerEvidence = () => ({
     subjectDid: DID,
     role: "issuer",
     resourceType: "credential-family",
-    resourceId: `tr:issuer-resource:v1:${"f".repeat(64)}`,
+    resourceId: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily"),
     policyId: "policy:university:v1",
     trustLevel: "approved",
     statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(STATUS_BINDING),
@@ -86,6 +107,7 @@ const issuerEvidence = () => ({
     activeFrom: "2026-05-20T01:00:00Z",
     evidenceHash: D,
   },
+  scope: ISSUER_SCOPE,
   didMethod: {
     did: DID,
     methodId: `${DID}#key-1`,
@@ -145,7 +167,8 @@ const expectedIssuerSelection = {
   subjectDid: DID,
   role: "issuer" as const,
   resourceType: "credential-family" as const,
-  resourceId: `tr:issuer-resource:v1:${"f".repeat(64)}`,
+  resourceId: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily"),
+  scope: ISSUER_SCOPE,
   evaluationTime: "2026-05-20T02:30:00Z",
 };
 
@@ -189,12 +212,13 @@ describe("decision evidence envelope", () => {
     const verifier = {
       ...issuer,
       role: "verifier",
+      scope: VERIFIER_SCOPE,
       statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
         role: "verifier",
         resourceType: "request-profile",
-        resourceId: `tr:request-resource:v1:${"f".repeat(64)}`,
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
         statusPolicyBindingCommitment: undefined,
       },
       didMethod: {
@@ -244,16 +268,24 @@ describe("decision evidence envelope", () => {
 
   it("accepts structural issuer and verifier claims without authenticating them", () => {
     expect(DecisionEvidenceSchema.safeParse(issuerEvidence()).success).toBe(true);
+    const missingScope = issuerEvidence();
+    Reflect.deleteProperty(missingScope, "scope");
+    expect(DecisionEvidenceSchema.safeParse(missingScope).success).toBe(false);
+    expect(DecisionEvidenceSchema.safeParse({
+      ...issuerEvidence(),
+      scope: { ...ISSUER_SCOPE, schemaVersion: "2.0.0" },
+    }).success).toBe(false);
     const issuer = issuerEvidence();
     const verifier = {
       ...issuer,
       role: "verifier",
+      scope: VERIFIER_SCOPE,
       statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
         role: "verifier",
         resourceType: "request-profile",
-        resourceId: `tr:request-resource:v1:${"f".repeat(64)}`,
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
         statusPolicyBindingCommitment: undefined,
       },
       didMethod: {
@@ -311,11 +343,12 @@ describe("decision evidence envelope", () => {
     const verifier = {
       ...issuer,
       role: "verifier",
+      scope: VERIFIER_SCOPE,
       grant: {
         ...issuer.grant,
         role: "verifier",
         resourceType: "request-profile",
-        resourceId: `tr:request-resource:v1:${"f".repeat(64)}`,
+        resourceId: requestGovernedResourceId(VERIFIER_SCOPE),
         statusPolicyBindingCommitment: undefined,
       },
       didMethod: { ...issuer.didMethod, relationship: "authentication" },
@@ -445,6 +478,7 @@ describe("decision evidence envelope", () => {
       { subjectDid: MAINTAINER },
       { role: "verifier" as const },
       { resourceId: `tr:issuer-resource:v1:${"a".repeat(64)}` },
+      { scope: { ...ISSUER_SCOPE, schemaVersion: "2.0.0" } },
       { evaluationTime: "2026-05-20T01:59:59Z" },
       { evaluationTime: "2026-05-20T03:00:01Z" },
     ]) {
@@ -509,10 +543,11 @@ describe("decision evidence envelope", () => {
 
   it("checks an exact verifier request profile separately from issuer scope", () => {
     const issuer = issuerEvidence();
-    const requestResourceId = `tr:request-resource:v1:${"f".repeat(64)}`;
+    const requestResourceId = requestGovernedResourceId(VERIFIER_SCOPE);
     const verifier = {
       ...issuer,
       role: "verifier",
+      scope: VERIFIER_SCOPE,
       statusPolicyBinding: undefined,
       grant: {
         ...issuer.grant,
@@ -535,11 +570,16 @@ describe("decision evidence envelope", () => {
       role: "verifier" as const,
       resourceType: "request-profile" as const,
       resourceId: requestResourceId,
+      scope: VERIFIER_SCOPE,
     };
     expect(() => assertDecisionEvidenceSelection(verifier, expected)).not.toThrow();
     expect(() => assertDecisionEvidenceSelection(verifier, {
       ...expected,
       resourceId: `tr:request-resource:v1:${"a".repeat(64)}`,
     })).toThrow(/scope mismatch/u);
+    expect(() => assertDecisionEvidenceSelection(verifier, {
+      ...expected,
+      scope: { ...VERIFIER_SCOPE, purpose: "different-purpose" },
+    })).toThrow(/scope preimage mismatch/u);
   });
 });

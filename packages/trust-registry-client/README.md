@@ -47,7 +47,7 @@ implemented; only authenticated ledger observations are accepted in v1.
 
 `assertDecisionEvidenceConsistentWithSuppliedContext` composes that DID check
 with accepted-epoch equality, complete Compact publication signatures, exact
-grant inclusion/policy/scope/window checks, and a jointly observed decision
+grant inclusion/policy/scope-preimage/window checks, and a jointly observed decision
 sequence/evaluation time. It returns no descriptor. Callers must authenticate
 that joint observation, including the active policy root and current grant at
 the selected sequence, and the other supplied contexts, then establish
