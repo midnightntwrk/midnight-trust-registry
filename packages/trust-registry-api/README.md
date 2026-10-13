@@ -132,7 +132,7 @@ not configure this optional port. The reference integration test injects the
 local simulator and projects that *same* simulator into the read API after
 each transition.
 
-The issuer-only proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
+The governed issuer proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
 with `{ "evidence": <signed application evidence> }`, followed by
 `POST /v1/governed/issuer/:id/proposal/submit` with the same evidence, the
 exact prepared response, external maintainer `signers`, and an
@@ -142,8 +142,15 @@ must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
-Verifier, auditor, and maintainer proposal HTTP routes remain out of scope
-until their evidence-verifier signatures are bound in the contract.
+The verifier proposal uses the same prepare/submit pattern at
+`/v1/governed/verifier/:id/proposal/{prepare,submit}` with an independently
+injected `governedVerifierProposals` port. Its prepared digest additionally
+binds the registered evidence-verifier identity and active policy version;
+the contract verifies that key's proposal signature and the maintainer quorum.
+The packaged CLI does not inject either proposal port, so both routes return
+503 without a Compact-backed host. Auditor and maintainer proposal HTTP routes
+remain out of scope until their evidence-verifier signatures are bound in the
+contract.
 The integration journey verifies a published fixture VC/VP, consumes one
 challenge, submits the resulting redacted evidence through this HTTP proposal
 route, and then approves and activates the issuer with external 2-of-3 votes.

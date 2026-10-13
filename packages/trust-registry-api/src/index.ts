@@ -9,6 +9,7 @@ export * from "./application-intake.js";
 export * from "./application-vp-http.js";
 export * from "./governed-membership-actions.js";
 export * from "./governed-issuer-proposals.js";
+export * from "./governed-verifier-proposals.js";
 export * from "./cli.js";
 export * from "./schemas.js";
 export * from "./server.js";
