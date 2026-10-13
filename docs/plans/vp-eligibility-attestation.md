@@ -11,9 +11,11 @@ also run 2-of-3 approval and activation; the issuer fixture continues through
 HTTP quorum decisions and authenticated lookup. Policy/status assertions in
 these fixtures are test-only. Production family/status adapters, durable
 challenge storage, and a public route remain open.
-The fixture family's `prepare` callback ignores the submitted VP and supplies
-prebuilt proof material; these tests cover proof/intake wiring and rejection of
-stubbed policy decisions, not authenticity of submitted claims or live status.
+The fixture family's `prepare` callback parses bounded submitted credential
+and presentation bodies, decodes their submitted proofs, derives their body
+roots, and rejects substituted bodies or signatures. Its status decision and
+issuer eligibility are still fixture-supplied; these tests do not establish
+live status authority, production family-policy decisions, or network finality.
 The evidence signer re-resolves its DID assertion method at signing time;
 the synchronous signature verifier checks the signed snapshot, not live DID
 revocation at a later governed transition.
