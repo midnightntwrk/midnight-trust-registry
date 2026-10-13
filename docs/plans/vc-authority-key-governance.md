@@ -26,8 +26,9 @@ Registration requires a currently active governance policy, unused historical
 key ID, nonzero DID/method/network/consumer fields, prime-order key, and no
 other active authority key for that consumer. Suspension prevents new proofs
 immediately but leaves historical evidence. Rotation creates a new key record
-and links the predecessor; an explicit bounded logical-sequence overlap must
-be recorded before both keys can be accepted. Revocation is terminal. A
+and links the predecessor. It atomically retires the old current key and
+activates the new key at one governance sequence; registry overlap is zero.
+Revocation is terminal. A
 consumer may accept an old proof only under its own pinned-key and monotonic
 sequence policy; registry rotation does not silently mutate deployed
 consumers.
@@ -47,7 +48,7 @@ explicit, not inferred from a network lookup.
 
 1. Add registration and exact ledger query with negative Compact simulator
    tests. No signer integration claim yet.
-2. Add suspension/revocation and rotation with explicit overlap/retirement
+2. Add suspension/revocation and rotation with zero-overlap retirement
    semantics, historical evidence, and policy-bound quorum tests.
 3. Add trusted current-key reader and signer-gate integration, then exercise
    issuer/verifier proofs through the compiled consumer.

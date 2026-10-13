@@ -219,8 +219,9 @@ descriptorRoot])` using the VC `midnight:vc:signer-auth:v1` context;
 `Proof.createdAt` equals the decision sequence, not wall-clock time.
 Published vectors MUST match the VC
 [signer-authorization conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json).
-Authority-key rotation is governed and published with overlap/retirement
-rules. The signing service MUST only sign a decision already committed under
+Authority-key rotation is governed and published with zero registry overlap:
+the old key retires and the successor becomes current at one logical action
+sequence. The signing service MUST only sign a decision already committed under
 the required maintainer quorum; its single key is a portable attestation of
 that decision, not a replacement for quorum evidence.
 

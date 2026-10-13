@@ -94,6 +94,7 @@ const ROTATE_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidenc
 const REGISTER_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:register");
 const SUSPEND_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:suspend");
 const REVOKE_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:revoke");
+const ROTATE_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:rotate");
 const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
@@ -122,7 +123,7 @@ it("pins every governed action kind to a Compact literal", () => {
     REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
     REVOKE_EVIDENCE_VERIFIER_ACTION_KIND, ROTATE_EVIDENCE_VERIFIER_ACTION_KIND,
     REGISTER_VC_AUTHORITY_ACTION_KIND, SUSPEND_VC_AUTHORITY_ACTION_KIND,
-    REVOKE_VC_AUTHORITY_ACTION_KIND,
+    REVOKE_VC_AUTHORITY_ACTION_KIND, ROTATE_VC_AUTHORITY_ACTION_KIND,
     UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, CREATE_EPOCH_ACTION_KIND, GENERIC_AUDIT_ACTION_KIND,
   ];
   expect(new Set(compactKinds.map((kind) => Buffer.from(encodeCompactActionKind(kind)).toString("hex"))))

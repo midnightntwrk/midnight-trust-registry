@@ -445,6 +445,18 @@ export const computeUpdateVcAuthorityKeyPayloadHash = (
   require32Bytes(reasonHash, "VC authority reason"),
 );
 
+export const computeRotateVcAuthorityKeyPayloadHash = (
+  oldKeyIdCommitment: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  newCreatePayloadHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array => pureCircuits.rotateVcAuthorityKeyPayloadHash(
+  require32Bytes(oldKeyIdCommitment, "Old VC authority key id"),
+  require32Bytes(previousLifecycleEventHash, "Previous VC authority event"),
+  require32Bytes(newCreatePayloadHash, "New VC authority payload"),
+  require32Bytes(reasonHash, "VC authority rotation reason"),
+);
+
 export const computeUpdateEvidenceVerifierKeyPayloadHash = (
   authorizationId: Uint8Array,
   previousLifecycleEventHash: Uint8Array,

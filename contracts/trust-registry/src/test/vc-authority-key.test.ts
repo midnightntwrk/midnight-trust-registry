@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { pureCircuits, VcAuthorityKeyStatus } from "../managed/trust-registry/contract/index.js";
 import {
   computeCreateVcAuthorityKeyPayloadHash,
+  computeRotateVcAuthorityKeyPayloadHash,
   computeUpdateVcAuthorityKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
@@ -17,6 +18,7 @@ import { createMaintainerFixture, labelToBytes32, TrustRegistrySimulator } from 
 const REGISTER = encodeCompactActionKind("tr:vc-authority:key:register");
 const SUSPEND = encodeCompactActionKind("tr:vc-authority:key:suspend");
 const REVOKE = encodeCompactActionKind("tr:vc-authority:key:revoke");
+const ROTATE = encodeCompactActionKind("tr:vc-authority:key:rotate");
 const committed = (value: string): Uint8Array => new Uint8Array(createHash("sha256").update(value).digest());
 
 const fixture = () => {
@@ -122,6 +124,60 @@ const update = (
     : simulator.revokeVcAuthorityKey(maintainer.keyId, maintainerPublicKey, signature, keyIdCommitment, reasonHash);
 };
 
+const rotate = (
+  registry: ReturnType<typeof fixture>,
+  oldKeyIdCommitment: Uint8Array,
+  replacement: ReturnType<typeof candidate>,
+  reasonHash: Uint8Array,
+  payloadOverride?: Uint8Array,
+) => {
+  const { simulator, registryId, maintainer, maintainerPublicKey } = registry;
+  const old = simulator.getVcAuthorityKey(oldKeyIdCommitment);
+  const newDomain = pureCircuits.createVcAuthorityDomainCommitment(
+    old.networkIdCommitment,
+    old.consumerContractAddress,
+    registryId,
+    encodeContractAddress(simulator.contractAddress),
+    old.authorityDidCommitment,
+    replacement.authorityMethodIdCommitment,
+  );
+  const newCreatePayload = computeCreateVcAuthorityKeyPayloadHash(
+    replacement.keyIdCommitment,
+    old.authorityDidCommitment,
+    replacement.authorityMethodIdCommitment,
+    replacement.publicKey,
+    old.networkIdCommitment,
+    old.consumerContractAddress,
+    newDomain,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  const payload = computeRotateVcAuthorityKeyPayloadHash(
+    oldKeyIdCommitment,
+    old.lifecycleEventHash,
+    newCreatePayload,
+    reasonHash,
+  );
+  const signature = signPolicyBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    registryId,
+    simulator.getLedger().governancePolicyCommitment,
+    ROTATE,
+    payloadOverride ?? payload,
+    simulator.getLedger().governanceActionCount,
+  );
+  return simulator.rotateVcAuthorityKey(
+    maintainer.keyId,
+    maintainerPublicKey,
+    signature,
+    oldKeyIdCommitment,
+    replacement.keyIdCommitment,
+    replacement.authorityMethodIdCommitment,
+    replacement.publicKey,
+    reasonHash,
+  );
+};
+
 describe("governed VC authority keys", () => {
   it("registers an exact DID/method/consumer-bound key with committed event evidence", () => {
     const registry = fixture();
@@ -210,5 +266,44 @@ describe("governed VC authority keys", () => {
     expect(Buffer.from(registry.simulator.getCurrentVcAuthorityKey(successor.consumerContractAddress).keyIdCommitment))
       .toEqual(Buffer.from(successor.keyIdCommitment));
     expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.revoked);
+  });
+
+  it("atomically retires an active or suspended key and links the current replacement", () => {
+    for (const suspendFirst of [false, true]) {
+      const registry = fixture();
+      const first = candidate("one", 41);
+      const replacement = candidate("two", 42);
+      register(registry, first);
+      if (suspendFirst) update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
+      const eventHash = rotate(registry, first.keyIdCommitment, replacement, labelToBytes32("reason:rotate"));
+      const retired = registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
+      const current = registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress);
+      expect(retired.status).toBe(VcAuthorityKeyStatus.retired);
+      expect(retired.retiredAtSequence).toBe(current.registeredAtSequence);
+      expect(Buffer.from(retired.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
+      expect(current.status).toBe(VcAuthorityKeyStatus.active);
+      expect(Buffer.from(current.predecessorKeyIdCommitment)).toEqual(Buffer.from(first.keyIdCommitment));
+      expect(Buffer.from(current.authorityDidCommitment)).toEqual(Buffer.from(first.authorityDidCommitment));
+      expect(Buffer.from(current.authorityMethodIdCommitment)).toEqual(Buffer.from(replacement.authorityMethodIdCommitment));
+      expect(Buffer.from(current.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
+      expect(() => rotate(registry, first.keyIdCommitment, candidate("three", 43), labelToBytes32("reason:again")))
+        .toThrow();
+    }
+  });
+
+  it("rejects a substituted rotation payload and keeps the old key current", () => {
+    const registry = fixture();
+    const first = candidate("one", 41);
+    register(registry, first);
+    const replacement = candidate("two", 42);
+    expect(() => rotate(
+      registry,
+      first.keyIdCommitment,
+      replacement,
+      labelToBytes32("reason:rotate"),
+      labelToBytes32("wrong:rotation-payload"),
+    )).toThrow();
+    expect(Buffer.from(registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress).keyIdCommitment))
+      .toEqual(Buffer.from(first.keyIdCommitment));
   });
 });

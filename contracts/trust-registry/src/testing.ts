@@ -524,6 +524,32 @@ export class TrustRegistrySimulator {
     );
   }
 
+  rotateVcAuthorityKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    oldKeyIdCommitment: Uint8Array,
+    newKeyIdCommitment: Uint8Array,
+    newAuthorityMethodIdCommitment: Uint8Array,
+    newPublicKey: JubjubPoint,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.rotateVcAuthorityKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        oldKeyIdCommitment,
+        newKeyIdCommitment,
+        newAuthorityMethodIdCommitment,
+        newPublicKey,
+        reasonHash,
+      ),
+    );
+  }
+
   registerEvidenceVerifierKey(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
