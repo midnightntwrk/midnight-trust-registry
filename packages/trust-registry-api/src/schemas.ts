@@ -9,6 +9,7 @@ import {
 import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
+  HashHexSchema,
   IssuerGovernedResourceIdSchema,
   RequestGovernedResourceIdSchema,
   RecognitionRecordSchema,
@@ -167,6 +168,11 @@ export const TrustRegistryApiRecognitionEvaluationResponseSchema =
 
 export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
 export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
+export const TrustRegistryApiMutationContextSchema = z.strictObject({
+  registryId: RegistryRecordSchema.shape.registryId,
+  expectedEpochId: EpochCommitmentSchema.shape.epochId,
+  expectedWorkspaceCommitment: HashHexSchema,
+});
 export const TrustRegistryApiAuthorizationResponseSchema =
   TrustRegistryAuthorizationSnapshotEntrySchema;
 export const TrustRegistryApiRecognitionResponseSchema =

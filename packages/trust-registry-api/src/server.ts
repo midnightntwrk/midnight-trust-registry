@@ -28,6 +28,7 @@ import {
   type TrustRegistryApiMutationResult,
   type TrustRegistryApiStateSource,
 } from "./source.js";
+import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
   TrustRegistryApiApplicationMutationResponseSchema,
@@ -43,6 +44,7 @@ import {
   TrustRegistryApiEvaluateRecognitionRequestSchema,
   TrustRegistryApiEvidenceResponseSchema,
   TrustRegistryApiHealthResponseSchema,
+  TrustRegistryApiMutationContextSchema,
   TrustRegistryApiProblemDetailsSchema,
   TrustRegistryApiRecognitionEvaluationResponseSchema,
   TrustRegistryApiRecognitionListQuerySchema,
@@ -476,6 +478,18 @@ export const createTrustRegistryApiServer = (
             await loadRegistryRecord(options.source),
           ),
         );
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "v1"
+        && segments[1] === "registry" && segments[2] === "mutation-context") {
+        const workspace = await requireMutableSource(options.source, problemBaseUri).loadWorkspace();
+        response.setHeader("cache-control", "no-store");
+        writeJson(response, 200, TrustRegistryApiMutationContextSchema.parse({
+          registryId: workspace.snapshot.registry.registryId,
+          expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+          expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+        }));
         return;
       }
 
