@@ -3,6 +3,14 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveJubjubPublicKeyFromSeed,
+  signIssuerProposalEvidenceFromSeed,
+  signPolicyBoundMaintainerActionFromSeed,
+} from "@midnight-ntwrk/trust-registry-contract";
+import { createMaintainerFixture, type MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+
+import {
   ApplicationChallengeBindingSchema,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
@@ -14,16 +22,41 @@ import {
   createApplicationVpScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  type MaintainerScenarioFixture,
+  type PreparedIssuerDecisionAction,
   VP_FIXTURE_TIME_MS,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
 
-describe("published VP proof to governed issuer proposal", () => {
-  it("submits one redacted, DID-signed evidence commitment to the Compact simulator", async () => {
+const signAction = (
+  maintainer: MaintainerScenarioFixture,
+  action: Pick<PreparedIssuerDecisionAction,
+    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+): MaintainerCoAuthorizer => ({
+  keyId: maintainer.keyId,
+  publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
+  signature: signPolicyBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    action.registryId,
+    action.policyCommitment,
+    action.actionKind,
+    action.actionPayloadHash,
+    action.actionSequence,
+  ),
+});
+
+describe("published VP proof to governed issuer decision", () => {
+  it("carries one redacted VC/VP intake through a 2-of-3 issuer decision and authenticated lookup", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
+    const second = createMaintainerScenarioFixture("vp-quorum-second");
+    const third = createMaintainerScenarioFixture("vp-quorum-third");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     harness.advanceEvidenceTimeBy(60_000);
     const issuer = createIssuerScenarioFixture("vp");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
@@ -47,6 +80,7 @@ describe("published VP proof to governed issuer proposal", () => {
     const proof = await createApplicationVpScenarioFixture(issued.nonce, {
       subjectDid: issuer.subjectDid,
       evidenceVerifierDid: harness.evidenceVerifier.did,
+      evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0]!.split("#")[1]!,
     });
     const ports = await createApplicationVpIntakePorts({
       resolver: proof.input.resolver,
@@ -66,11 +100,28 @@ describe("published VP proof to governed issuer proposal", () => {
       evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
       propose: async ({ evidence }: { evidence: ApplicationEvidenceSubmission }) => {
         submitted = evidence;
-        return harness.proposeIssuerWithApplicationEvidence(issuer, evidence, [], {
+        expect(evidence.signature.keyId).toBe(harness.evidenceVerifier.keyIds[0]);
+        expect(harness.verifyApplicationEvidenceSignature(
+          evidence.commitment, evidence.signature, harness.evidenceVerifier,
+        )).toBe(true);
+        const expectedEvidence = {
           scope,
           challengeHash: issued.challengeHash,
           governedResource,
-        });
+        };
+        const action = harness.prepareIssuerProposalAction(issuer, evidence, expectedEvidence);
+        const verifierSignature = signIssuerProposalEvidenceFromSeed(
+          createMaintainerFixture("evidence-verifier", 41).seed,
+          action.registryId,
+          action.evidenceVerifierKeyIdCommitment,
+          action.actionPayloadHash,
+        );
+        return harness.executeIssuerProposalWithSignatures(
+          issuer, evidence,
+          [signAction(second, action), signAction(third, action)],
+          verifierSignature,
+          expectedEvidence,
+        );
       },
     };
 
@@ -119,5 +170,22 @@ describe("published VP proof to governed issuer proposal", () => {
     expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/u);
     expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
+
+    const approval = harness.prepareIssuerDecisionAction(issuer, "approve");
+    harness.executeIssuerDecisionWithSignatures(issuer, "approve", [
+      signAction(second, approval), signAction(third, approval),
+    ]);
+    const activation = harness.prepareIssuerDecisionAction(issuer, "activate");
+    harness.executeIssuerDecisionWithSignatures(issuer, "activate", [
+      signAction(second, activation), signAction(third, activation),
+    ]);
+    const decision = harness.evaluateCurrentIssuerDecision(issuer, {
+      expectedRegistryId: harness.registryId,
+    });
+    expect(decision.authorization?.status).toBe("active");
+    expect(decision.authorization?.subjectDid).toBe(issuer.subjectDid);
+    expect(decision.epoch.stateRoot).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(() => new TrustRegistrySimulatorClient(harness.simulator)
+      .verifyIssuerAuthorizationBundle(decision, {})).not.toThrow();
   });
 });
