@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { pureCircuits } from "@midnight-ntwrk/credential-compact";
+import { AuthorizationState, pureCircuits } from "@midnight-ntwrk/credential-compact";
 import { signMidnightDIDCredentialProof } from "@midnight-ntwrk/credential-did-midnight";
 import { createCircuitContext, createConstructorContext } from "@midnight-ntwrk/compact-runtime";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
+import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import {
   AcceptedDecisionEpochSchema,
   DecisionEvidenceSchema,
@@ -28,6 +29,7 @@ import {
   createQuorumGatedVcAuthoritySigner,
   issuerSchemaRefFromRegistryScope,
   issueVcSignerAuthorizationFromTrustedDecision,
+  issueVcSignerStatusTransitionFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainFields,
   vcScopeCommitmentFromRegistryScope,
@@ -59,14 +61,18 @@ const fixtureProof = (seed, authority, root, decisionSequence) => methodProof(
 
 /** Simulator-only bridge from accepted HTTP evidence to a governed VC descriptor. */
 async function prepareGovernedSignerAuthorization(input) {
-  const { harness, subject, role, scope, apiBundle, applicantVp, authorityAnchor, authoritySeed, authorityKeyIdCommitment } = input;
+  const {
+    harness, subject, role, scope, apiBundle, applicantVp, authorityAnchor,
+    authoritySeed, authorityKeyIdCommitment, inactiveState, previous,
+  } = input;
   assert.ok(role === "issuer" || role === "verifier");
   assert.equal(applicantVp.input.expectedSubjectDid, subject.subjectDid);
-  const bundle = role === "issuer"
-    ? harness.evaluateCurrentIssuerDecision(subject)
-    : harness.evaluateCurrentVerifierDecision(subject);
+  const bundle = inactiveState === undefined
+    ? role === "issuer" ? harness.evaluateCurrentIssuerDecision(subject) : harness.evaluateCurrentVerifierDecision(subject)
+    : role === "issuer" ? harness.buildIssuerHistoricalEvidence(subject) : harness.buildVerifierHistoricalEvidence(subject);
   assert.equal(bundle.epoch.epochId, apiBundle.epoch.epochId);
   assert.equal(bundle.epoch.stateRoot, apiBundle.epoch.stateRoot);
+  assert.equal(bundle.authorization?.status, inactiveState ?? "active");
   assert.ok(bundle.authorization);
   if (role === "issuer") assert.ok(bundle.statusPolicyBinding);
   const epochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
@@ -164,6 +170,7 @@ async function prepareGovernedSignerAuthorization(input) {
       subject.disclosureLevelCommitment,
     );
   assert.ok(currentGrant);
+  assert.equal(AuthorizationStatus[currentGrant.status], inactiveState ?? "active");
   const selection = {
     registryId: harness.registryId,
     networkId,
@@ -184,7 +191,7 @@ async function prepareGovernedSignerAuthorization(input) {
     currentGrant: {
       authorizationId: grant.authorizationId,
       lifecycleEventRoot: hex(currentGrant.lifecycleEventHash),
-      status: "active",
+      status: inactiveState ?? "active",
       observedAtSequence: epochRecord.publishedAtSequence.toString(),
     },
   };
@@ -251,18 +258,24 @@ async function prepareGovernedSignerAuthorization(input) {
     pinnedAnchor: authorityAnchor,
     authorityKeyIdCommitment,
     authorityKeyReader,
+    inactiveState,
     sign: async ({ decisionRoot, decisionSequence, authority }) => fixtureProof(
       authoritySeed, authority, decisionRoot, decisionSequence,
     ),
   });
-  const signed = await issueVcSignerAuthorizationFromTrustedDecision({
+  const request = {
     evidence,
     selection,
     readers,
     method: role === "issuer" ? applicantVp.subjectAssertion.method : applicantVp.subjectAuthentication.method,
     anchor: authorityAnchor,
     signer,
-  });
+  };
+  const signed = inactiveState === undefined
+    ? await issueVcSignerAuthorizationFromTrustedDecision(request)
+    : await issueVcSignerStatusTransitionFromTrustedDecision({
+      ...request, previous, state: inactiveState,
+    });
   return signed;
 }
 
@@ -367,15 +380,83 @@ export async function verifyGovernedIssuerCredential(input) {
       signed.descriptor.authorizationId,
     ));
     return {
-      authorizationId: hex(signed.descriptor.authorizationId),
-      decisionSequence: signed.descriptor.decisionSequence.toString(),
-      policyCommitment: hex(signed.descriptor.policyCommitment),
-      schemaScopeCommitment: hex(signed.descriptor.scopeCommitment),
-      credentialBodyRoot: hex(credentialBodyRoot),
-      accepted: true,
-      wrongSchemaRejected: true,
-      forgedSignatureRejected: true,
-      scope: "schema-level issuer proof; definition and status require separate governed checks",
+      signedHistory: [signed],
+      credential,
+      credentialProof,
+      report: {
+        authorizationId: hex(signed.descriptor.authorizationId),
+        decisionSequence: signed.descriptor.decisionSequence.toString(),
+        policyCommitment: hex(signed.descriptor.policyCommitment),
+        schemaScopeCommitment: hex(signed.descriptor.scopeCommitment),
+        credentialBodyRoot: hex(credentialBodyRoot),
+        accepted: true,
+        wrongSchemaRejected: true,
+        forgedSignatureRejected: true,
+        scope: "schema-level issuer proof; definition and status require separate governed checks",
+      },
+    };
+  });
+}
+
+/** Relayer fixture: replay accepted descriptors, then install a newer inactive decision. */
+export async function verifyGovernedIssuerStatusUpdate(input) {
+  const { issuer, applicantVp, authorityAnchor, state, previousJourney } = input;
+  assert.ok(state === "suspended" || state === "revoked");
+  assert.ok(previousJourney.signedHistory.length > 0);
+  const previous = previousJourney.signedHistory.at(-1).descriptor;
+  const signed = await prepareGovernedSignerAuthorization({
+    ...input, subject: issuer, role: "issuer", scope: issuer.authorizationScope,
+    inactiveState: state, previous,
+  });
+  return withCompiledConsumer(authorityAnchor, ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
+    let circuitContext = initialContext;
+    for (const accepted of [...previousJourney.signedHistory, signed]) {
+      const installed = consumer.circuits.installSignerAuthorization(
+        circuitContext, accepted.descriptor, accepted.proof,
+      );
+      circuitContext = createCircuitContext(
+        consumerContractAddress,
+        installed.context.currentZswapLocalState,
+        installed.context.currentQueryContext.state,
+        installed.context.currentPrivateState,
+      );
+    }
+    assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+      circuitContext, previousJourney.credential, previousJourney.credentialProof,
+      signed.descriptor.authorizationId,
+    ), /must be active/u);
+    assert.throws(() => consumer.circuits.installSignerAuthorization(
+      circuitContext, previousJourney.signedHistory[0].descriptor,
+      previousJourney.signedHistory[0].proof,
+    ), /sequence must increase/u);
+    if (state === "revoked") {
+      const resurrected = {
+        ...signed.descriptor,
+        state: AuthorizationState.active,
+        decisionSequence: signed.descriptor.decisionSequence + 1n,
+      };
+      const authority = pinnedVcAuthority(authorityAnchor);
+      const resurrectionRoot = pureCircuits.signerAuthorizationDecisionRoot(
+        resurrected, authority.domainCommitment,
+      );
+      const resurrectionProof = fixtureProof(
+        input.authoritySeed, authority, resurrectionRoot, resurrected.decisionSequence,
+      );
+      assert.throws(() => consumer.circuits.installSignerAuthorization(
+        circuitContext, resurrected, resurrectionProof,
+      ), /must remain revoked/u);
+    }
+    return {
+      ...previousJourney,
+      signedHistory: [...previousJourney.signedHistory, signed],
+      report: {
+        status: state,
+        decisionSequence: signed.descriptor.decisionSequence.toString(),
+        authorizationId: hex(signed.descriptor.authorizationId),
+        priorCredentialProofRejected: true,
+        staleDescriptorReplayRejected: true,
+        ...(state === "revoked" ? { resurrectionRejected: true } : {}),
+      },
     };
   });
 }

@@ -9,6 +9,7 @@ import {
 import { decodeJubjubJwkCoordinate, parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
 import {
   verifyDecisionEvidenceWithTrustedReaders,
+  verifyInactiveDecisionEvidenceWithTrustedReaders,
   type TrustedDecisionEvidenceReaders,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -26,13 +27,16 @@ const bytes32FromHex = (value: string, label: string): Uint8Array => {
  * Constructs a VC descriptor candidate, not a signer-authorization proof.
  * Readers and DID resolver must be independently trusted by the caller.
  */
-export const createVcSignerCandidateFromTrustedDecision = async (
+const createVcSignerCandidateForExpectedState = async (
   evidence: unknown,
   selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
   readers: TrustedDecisionEvidenceReaders,
   method: MidnightDIDMethodBinding,
+  expectedState: "active" | "suspended" | "revoked",
 ) => {
-  const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, selection, readers);
+  const candidate = expectedState === "active"
+    ? await verifyDecisionEvidenceWithTrustedReaders(evidence, selection, readers)
+    : await verifyInactiveDecisionEvidenceWithTrustedReaders(evidence, selection, readers, expectedState);
   const vcScopeCommitment = vcScopeCommitmentFromRegistryScope(candidate.scope);
   const didId = parseMidnightDID(parseMidnightDIDString(candidate.subjectDid)).id;
   const fragment = candidate.didMethod.methodId.slice(candidate.subjectDid.length);
@@ -54,7 +58,7 @@ export const createVcSignerCandidateFromTrustedDecision = async (
   const descriptor = createMidnightDIDSignerDescriptor(method, {
     authorizationId: bytes32FromHex(sha256Hex(candidate.authorizationId), "authorizationId"),
     decisionSequence: BigInt(candidate.decisionSequence),
-    state: AuthorizationState.active,
+    state: AuthorizationState[expectedState],
     role: candidate.role === "issuer" ? SignerRole.issuer : SignerRole.verifier,
     scopeCommitment: vcScopeCommitment,
     policyCommitment: bytes32FromHex(candidate.policyRoot, "policyRoot"),
@@ -62,3 +66,19 @@ export const createVcSignerCandidateFromTrustedDecision = async (
   pureCircuits.assertValidAuthorizedSignerDescriptor(descriptor);
   return { candidate, descriptor };
 };
+
+export const createVcSignerCandidateFromTrustedDecision = (
+  evidence: unknown,
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
+  readers: TrustedDecisionEvidenceReaders,
+  method: MidnightDIDMethodBinding,
+) => createVcSignerCandidateForExpectedState(evidence, selection, readers, method, "active");
+
+/** Explicitly inactive: this candidate cannot authorize a new issuer proof or verifier request. */
+export const createInactiveVcSignerCandidateFromTrustedDecision = (
+  evidence: unknown,
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
+  readers: TrustedDecisionEvidenceReaders,
+  method: MidnightDIDMethodBinding,
+  state: "suspended" | "revoked",
+) => createVcSignerCandidateForExpectedState(evidence, selection, readers, method, state);

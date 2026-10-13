@@ -252,6 +252,13 @@ method, and key in its own ledger state, then verify the proof and monotonic
 descriptor update before materializing current authorization. A relayer may
 deliver a decision but has no authority. Revocation is not synchronous: until
 the consumer accepts the newer signed decision it sees its last stored state.
+Inactive descriptor production MUST select `suspended` or `revoked` explicitly,
+verify a matching current finalized grant and policy snapshot, accepted epoch
+publication quorum and inclusion proof, and the subject DID observation before
+the governed authority signs. The active-only evidence path MUST continue to
+reject inactive grants. A consumer MUST enforce increasing decision sequence
+and terminal revocation when installing an update; a caller-supplied prior
+descriptor is not a substitute for the consumer's stored prior state.
 Historical issuance-time authorization remains a separate TR query with an
 authenticated epoch; the current VC core descriptor does not prove historical
 trust. Recognition or OpenID Federation metadata alone never pins an

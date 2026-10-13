@@ -3,7 +3,11 @@ import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 
-import { verifyGovernedIssuerCredential, verifyGovernedVerifierRequest } from "./demo-vc-issuer-consumer.mjs";
+import {
+  verifyGovernedIssuerCredential,
+  verifyGovernedIssuerStatusUpdate,
+  verifyGovernedVerifierRequest,
+} from "./demo-vc-issuer-consumer.mjs";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -724,6 +728,11 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(suspendedBundle.authorization.status, "suspended");
+  const suspendedConsumer = await verifyGovernedIssuerStatusUpdate({
+    harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
+    authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBundle: suspendedBundle, state: "suspended", previousJourney: vcConsumer,
+  });
   assert.throws(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
   }), /not active/i);
@@ -740,6 +749,11 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(revokedBundle.authorization.status, "revoked");
+  const revokedConsumer = await verifyGovernedIssuerStatusUpdate({
+    harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
+    authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBundle: revokedBundle, state: "revoked", previousJourney: suspendedConsumer,
+  });
   assert.throws(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
   }), /not active/i);
@@ -855,7 +869,8 @@ try {
     recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
     decisions,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
-    vcConsumer,
+    vcConsumer: vcConsumer.report,
+    vcConsumerLifecycle: [suspendedConsumer.report, revokedConsumer.report],
     verifierConsumer,
     issuerEvidenceEpoch: {
       epochId: issuerBundle.epoch.epochId,

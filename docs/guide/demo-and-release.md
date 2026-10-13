@@ -145,6 +145,13 @@ authentication key and exact approved request-profile commitment. A compiled
 consumer accepts the signed request and rejects a different profile or forged
 request signature. The issuer and verifier examples use separate local
 consumer instances; they do not authorize a holder presentation on their own.
+The issuer consumer also installs newer authority-signed suspended and revoked
+descriptors from independently checked registry epoch, grant, and DID evidence.
+After each update the prior credential proof fails in the consumer. The demo
+replays the accepted descriptor history into a fresh local consumer instance;
+it does not imply that registry status changes appear synchronously in a
+deployed consumer. The authority signer rejects inactive evidence on its
+active-only path, and status updates require an explicit target state.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
 and governance event hashes, not the VP transcript or holder secrets.

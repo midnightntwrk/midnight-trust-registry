@@ -24,7 +24,9 @@ import {
 
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
+  assertInactiveDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
+  verifyInactiveDecisionEvidenceWithTrustedReaders,
 } from "../decision-context.js";
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "../utils.js";
 
@@ -390,6 +392,78 @@ describe("decision evidence supplied-context composition", () => {
 });
 
 describe("decision evidence trusted-reader candidate", () => {
+  it("rejects a runtime active-state injection through the inactive entry point", async () => {
+    const { evidence, context } = fixture();
+    const readers = {
+      readCurrentFinalizedRegistryDecision: vi.fn(async () => ({
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        decisionPoint: context.decisionPoint,
+      })),
+      readCurrentFinalizedDidState: vi.fn(async () => context.didState),
+    };
+    await expect(verifyInactiveDecisionEvidenceWithTrustedReaders(
+      evidence, context.selection, readers, "active" as "suspended",
+    )).rejects.toThrow(/state is invalid/u);
+    expect(readers.readCurrentFinalizedRegistryDecision).not.toHaveBeenCalled();
+  });
+
+  it.each(["issuer", "verifier"] as const)("verifies explicit inactive %s states without authorizing an active candidate", async (role) => {
+    for (const state of ["suspended", "revoked"] as const) {
+      const { evidence, context } = fixture(role, state);
+      const current = {
+        ...context,
+        decisionPoint: {
+          ...context.decisionPoint,
+          currentGrant: { ...context.decisionPoint.currentGrant, status: state },
+        },
+      };
+      const readers = {
+        readCurrentFinalizedRegistryDecision: async () => ({
+          acceptedEpoch: current.acceptedEpoch,
+          publication: current.publication,
+          decisionPoint: current.decisionPoint,
+        }),
+        readCurrentFinalizedDidState: async () => current.didState,
+      };
+      const candidate = await verifyInactiveDecisionEvidenceWithTrustedReaders(
+        evidence, current.selection, readers, state,
+      );
+      expect(candidate).toMatchObject({ role, grantStatus: state, authorizationId: evidence.grant.authorizationId });
+      await expect(verifyDecisionEvidenceWithTrustedReaders(evidence, current.selection, readers))
+        .rejects.toThrow(/current grant mismatch/u);
+      expect(() => assertInactiveDecisionEvidenceConsistentWithSuppliedContext(
+        evidence, current, state === "suspended" ? "revoked" : "suspended",
+      )).toThrow(/current grant mismatch/u);
+      await expect(verifyInactiveDecisionEvidenceWithTrustedReaders(
+        evidence, current.selection, {
+          ...readers,
+          readCurrentFinalizedRegistryDecision: async () => ({
+            acceptedEpoch: current.acceptedEpoch,
+            publication: current.publication,
+            decisionPoint: {
+              ...current.decisionPoint,
+              currentGrant: { ...current.decisionPoint.currentGrant, lifecycleEventRoot: C },
+            },
+          }),
+        }, state,
+      )).rejects.toThrow(/current grant mismatch/u);
+      await expect(verifyInactiveDecisionEvidenceWithTrustedReaders(
+        evidence, current.selection, {
+          ...readers,
+          readCurrentFinalizedDidState: async () => ({ ...current.didState, stateVersion: "4" }),
+        }, state,
+      )).rejects.toThrow(/DID state anchor mismatch/u);
+      const beforeTransition = {
+        ...current,
+        decisionPoint: { ...current.decisionPoint, evaluationTime: "2026-05-20T02:14:59Z" },
+      };
+      expect(() => assertInactiveDecisionEvidenceConsistentWithSuppliedContext(
+        evidence, beforeTransition, state,
+      )).toThrow(/claimed .* window/u);
+    }
+  });
+
   it.each(["issuer", "verifier"] as const)("returns an exact %s candidate after both authenticated reads", async (role) => {
     const { evidence, context } = fixture(role);
     const readRegistry = vi.fn(async () => ({

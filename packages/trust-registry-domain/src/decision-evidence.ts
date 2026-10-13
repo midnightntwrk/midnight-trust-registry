@@ -383,10 +383,10 @@ export type DecisionEvidenceSelection = {
   evaluationTime: string;
 };
 
-/** Compares claimed evidence with caller-selected context; no anchor is authenticated here. */
-export const assertDecisionEvidenceSelection = (
+const assertDecisionEvidenceSelectionForExpectedState = (
   input: unknown,
   expected: DecisionEvidenceSelection,
+  expectedState: "active" | "suspended" | "revoked",
 ): void => {
   const evidence = DecisionEvidenceSchema.parse(input);
   assertDecisionEvidenceInclusion(evidence);
@@ -412,15 +412,16 @@ export const assertDecisionEvidenceSelection = (
   if (computeAuthorizationScopeCommitment(selectedScope) !== computeAuthorizationScopeCommitment(evidence.scope)) {
     throw new Error("Decision evidence selected scope preimage mismatch");
   }
-  if (
-    evidence.grant.status !== "active"
+  const lifecycleAt = expectedState === "suspended" ? evidence.grant.suspendedAt
+    : expectedState === "revoked" ? evidence.grant.revokedAt : undefined;
+  if (evidence.grant.status !== expectedState
     || evidence.grant.activeFrom === undefined
-    || evidence.grant.suspendedAt !== undefined
-    || evidence.grant.revokedAt !== undefined
     || evidence.grant.supersededAt !== undefined
     || evidence.grant.archivedAt !== undefined
-  ) {
-    throw new Error("Decision evidence grant is not active");
+    || (expectedState === "active" && (evidence.grant.suspendedAt !== undefined || evidence.grant.revokedAt !== undefined))
+    || (expectedState === "suspended" && evidence.grant.revokedAt !== undefined)
+    || (expectedState !== "active" && lifecycleAt === undefined)) {
+    throw new Error(`Decision evidence grant is not ${expectedState}`);
   }
   const at = TimestampSchema.parse(expected.evaluationTime);
   if (
@@ -430,7 +431,24 @@ export const assertDecisionEvidenceSelection = (
     || (evidence.policy.effectiveUntil !== null && compareRfc3339Instants(at, evidence.policy.effectiveUntil) >= 0)
     || compareRfc3339Instants(at, evidence.grant.activeFrom) < 0
     || (evidence.grant.effectiveUntil !== undefined && compareRfc3339Instants(at, evidence.grant.effectiveUntil) > 0)
+    || (lifecycleAt !== undefined && compareRfc3339Instants(at, lifecycleAt) < 0)
   ) {
-    throw new Error("Decision evidence is outside its claimed active window");
+    throw new Error(`Decision evidence is outside its claimed ${expectedState} window`);
   }
+};
+
+/** Compares an active claim with caller-selected context; no anchor is authenticated here. */
+export const assertDecisionEvidenceSelection = (
+  input: unknown,
+  expected: DecisionEvidenceSelection,
+): void => assertDecisionEvidenceSelectionForExpectedState(input, expected, "active");
+
+/** An inactive claim cannot be accepted through the active-only selector. */
+export const assertInactiveDecisionEvidenceSelection = (
+  input: unknown,
+  expected: DecisionEvidenceSelection,
+  state: "suspended" | "revoked",
+): void => {
+  if (state !== "suspended" && state !== "revoked") throw new Error("Inactive decision state is invalid");
+  assertDecisionEvidenceSelectionForExpectedState(input, expected, state);
 };

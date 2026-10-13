@@ -2,6 +2,7 @@ import {
   DecisionEvidenceSchema,
   assertDecisionEvidenceMatchesAcceptedEpoch,
   assertDecisionEvidenceSelection,
+  assertInactiveDecisionEvidenceSelection,
   computeAuthorizationScopeCommitment,
   type AcceptedDecisionEpoch,
   type DecisionEvidence,
@@ -57,6 +58,7 @@ export type TrustedDecisionEvidenceReaders = {
 };
 
 type DecisionEvidenceCandidateBase = {
+  grantStatus: "active" | "suspended" | "revoked";
   registryId: string;
   networkId: string;
   contractAddress: string;
@@ -91,10 +93,10 @@ export type DecisionEvidenceCandidate =
     statusPolicyBinding?: never;
   };
 
-/** Consistency only: the caller must authenticate every supplied ledger/DID context and establish finality. */
-export const assertDecisionEvidenceConsistentWithSuppliedContext = (
+const assertDecisionEvidenceConsistentWithExpectedState = (
   input: unknown,
   context: DecisionEvidenceSuppliedContext,
+  expectedState: "active" | "suspended" | "revoked",
 ): void => {
   const evidence = DecisionEvidenceSchema.parse(input);
   if (evidence.decisionSequence !== context.decisionPoint.sequence) {
@@ -111,7 +113,7 @@ export const assertDecisionEvidenceConsistentWithSuppliedContext = (
     currentGrant.observedAtSequence !== context.decisionPoint.sequence
     || currentGrant.authorizationId !== evidence.grant.authorizationId
     || currentGrant.lifecycleEventRoot !== evidence.grant.lifecycleEventRoot
-    || currentGrant.status !== "active"
+    || currentGrant.status !== expectedState
   ) {
     throw new Error("Decision evidence current grant mismatch");
   }
@@ -122,10 +124,12 @@ export const assertDecisionEvidenceConsistentWithSuppliedContext = (
     context.acceptedEpoch,
     context.publication,
   );
-  assertDecisionEvidenceSelection(evidence, {
+  const selection = {
     ...context.selection,
     evaluationTime: context.decisionPoint.evaluationTime,
-  });
+  };
+  if (expectedState === "active") assertDecisionEvidenceSelection(evidence, selection);
+  else assertInactiveDecisionEvidenceSelection(evidence, selection, expectedState);
   assertDecisionEvidenceDidMethodMatchesObservation(
     evidence.didMethod,
     context.didState,
@@ -133,11 +137,24 @@ export const assertDecisionEvidenceConsistentWithSuppliedContext = (
   );
 };
 
-/** A candidate is safe only to the extent that both readers authenticate current finalized state. */
-export const verifyDecisionEvidenceWithTrustedReaders = async (
+/** Consistency only: the caller must authenticate every supplied ledger/DID context and establish finality. */
+export const assertDecisionEvidenceConsistentWithSuppliedContext = (
+  input: unknown,
+  context: DecisionEvidenceSuppliedContext,
+): void => assertDecisionEvidenceConsistentWithExpectedState(input, context, "active");
+
+/** An inactive status must be selected explicitly; it never qualifies as an active grant. */
+export const assertInactiveDecisionEvidenceConsistentWithSuppliedContext = (
+  input: unknown,
+  context: DecisionEvidenceSuppliedContext,
+  state: "suspended" | "revoked",
+): void => assertDecisionEvidenceConsistentWithExpectedState(input, context, state);
+
+const verifyDecisionEvidenceForExpectedState = async (
   input: unknown,
   selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
   readers: TrustedDecisionEvidenceReaders,
+  expectedState: "active" | "suspended" | "revoked",
 ): Promise<DecisionEvidenceCandidate> => {
   const evidence = DecisionEvidenceSchema.parse(input);
   const snapshot = await readers.readCurrentFinalizedRegistryDecision(selection, evidence.epoch.epochId);
@@ -152,12 +169,13 @@ export const verifyDecisionEvidenceWithTrustedReaders = async (
   if (didState === null) {
     throw new Error("Current finalized DID state is unavailable");
   }
-  assertDecisionEvidenceConsistentWithSuppliedContext(evidence, {
+  assertDecisionEvidenceConsistentWithExpectedState(evidence, {
     ...snapshot,
     didState,
     selection,
-  });
+  }, expectedState);
   const common: DecisionEvidenceCandidateBase = {
+    grantStatus: expectedState,
     registryId: snapshot.acceptedEpoch.registryId,
     networkId: snapshot.acceptedEpoch.networkId,
     contractAddress: snapshot.acceptedEpoch.contractAddress,
@@ -191,4 +209,24 @@ export const verifyDecisionEvidenceWithTrustedReaders = async (
       scope: evidence.scope,
       didMethod: evidence.didMethod,
     };
+};
+
+/** A candidate is safe only to the extent that both readers authenticate current finalized state. */
+export const verifyDecisionEvidenceWithTrustedReaders = (
+  input: unknown,
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
+  readers: TrustedDecisionEvidenceReaders,
+): Promise<DecisionEvidenceCandidate> => verifyDecisionEvidenceForExpectedState(input, selection, readers, "active");
+
+/** Inactive evidence is suitable for status updates, never for new active authorization. */
+export const verifyInactiveDecisionEvidenceWithTrustedReaders = (
+  input: unknown,
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
+  readers: TrustedDecisionEvidenceReaders,
+  state: "suspended" | "revoked",
+): Promise<DecisionEvidenceCandidate> => {
+  if (state !== "suspended" && state !== "revoked") {
+    return Promise.reject(new Error("Inactive decision state is invalid"));
+  }
+  return verifyDecisionEvidenceForExpectedState(input, selection, readers, state);
 };

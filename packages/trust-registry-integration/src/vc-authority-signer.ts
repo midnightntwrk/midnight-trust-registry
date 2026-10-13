@@ -11,7 +11,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
+import { createInactiveVcSignerCandidateFromTrustedDecision, createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 import {
   pinnedVcAuthority,
   vcAuthorityDomainFields,
@@ -79,10 +79,15 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
   authorityKeyIdCommitment: Uint8Array;
   authorityKeyReader: TrustedVcAuthorityKeyReader;
   sign: VcAuthoritySigner;
+  inactiveState?: "suspended" | "revoked";
 }): VcAuthoritySigner => async (request) => {
-  const { candidate, descriptor } = await createVcSignerCandidateFromTrustedDecision(
-    input.evidence, input.selection, input.readers, input.method,
-  );
+  const { candidate, descriptor } = input.inactiveState === undefined
+    ? await createVcSignerCandidateFromTrustedDecision(
+      input.evidence, input.selection, input.readers, input.method,
+    )
+    : await createInactiveVcSignerCandidateFromTrustedDecision(
+      input.evidence, input.selection, input.readers, input.method, input.inactiveState,
+    );
   if (candidate.networkId !== input.pinnedAnchor.domain.networkId
     || candidate.registryId !== input.pinnedAnchor.domain.registryId
     || candidate.contractAddress !== input.pinnedAnchor.domain.registryContractAddress) {

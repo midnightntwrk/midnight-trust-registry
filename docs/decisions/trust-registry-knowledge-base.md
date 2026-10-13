@@ -590,3 +590,13 @@ with the applicant DID's `#auth-1` relationship. Its governed demo installs a
 verifier descriptor in a separate compiled consumer and proves an exact signed
 request profile. Wrong-profile and forged request signatures fail. The request
 decision does not replace independent holder VP or issuer trust evaluation.
+
+The issuer lifecycle follow-on adds an explicit inactive decision-evidence
+reader for `suspended` and `revoked`. The default reader remains active-only.
+The authority signer independently rechecks the selected inactive state,
+current grant lifecycle root, policy, epoch quorum and DID method before
+signing a monotonic VC descriptor update. The simulator demo installs active,
+suspended, and revoked descriptors in order and confirms that the issuer proof
+fails after the inactive updates. This proves local propagation only; a live
+consumer needs an authenticated relayer/finality adapter and can be stale
+until it receives the newer decision.

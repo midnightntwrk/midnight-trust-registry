@@ -12,7 +12,7 @@ import { pureCircuits as registryPureCircuits } from "@midnight-ntwrk/trust-regi
 import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
 import { sha256Hex, type DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
+import { createInactiveVcSignerCandidateFromTrustedDecision, createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 
 export type VcAuthorityDomain = {
   networkId: string;
@@ -109,6 +109,36 @@ export const issueVcSignerAuthorizationFromTrustedDecision = async (input: {
   ) {
     throw new Error("VC authority domain does not bind the trusted registry decision");
   }
+  const authority = pinnedVcAuthority(input.anchor);
+  const proof = await input.signer({
+    decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(descriptor, authority.domainCommitment),
+    decisionSequence: descriptor.decisionSequence,
+    authority,
+  });
+  pureCircuits.assertValidSignerAuthorizationProof(descriptor, proof, authority);
+  return { descriptor, proof };
+};
+
+/** Publish an explicitly inactive VC descriptor only after current finalized registry evidence is verified. */
+export const issueVcSignerStatusTransitionFromTrustedDecision = async (input: {
+  evidence: unknown;
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">;
+  readers: TrustedDecisionEvidenceReaders;
+  method: MidnightDIDMethodBinding;
+  anchor: PinnedVcAuthority;
+  signer: VcAuthoritySigner;
+  previous: AuthorizedSignerDescriptor;
+  state: "suspended" | "revoked";
+}): Promise<{ descriptor: AuthorizedSignerDescriptor; proof: Proof }> => {
+  const { candidate, descriptor } = await createInactiveVcSignerCandidateFromTrustedDecision(
+    input.evidence, input.selection, input.readers, input.method, input.state,
+  );
+  if (input.anchor.domain.networkId !== candidate.networkId
+    || input.anchor.domain.registryId !== candidate.registryId
+    || input.anchor.domain.registryContractAddress !== candidate.contractAddress) {
+    throw new Error("VC authority domain does not bind the trusted registry decision");
+  }
+  pureCircuits.assertValidSignerAuthorizationUpdate(input.previous, descriptor);
   const authority = pinnedVcAuthority(input.anchor);
   const proof = await input.signer({
     decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(descriptor, authority.domainCommitment),
