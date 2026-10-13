@@ -119,6 +119,12 @@ Current coverage:
   current governance-policy version; the descriptor's semantic policy label
   is not that numeric version. Fixture readers do not establish network
   finality or production key custody.
+- `prepareVcAuthorityKeyRegistration` validates the canonical Midnight DID,
+  absolute method, network, consumer address, and exact target registry ID and
+  contract address before deriving the Compact action payload for quorum
+  signatures. The local harness registers that payload in simulator ledger
+  state and confirms suspension blocks the signer. This is action preparation,
+  not finalized network submission or a trusted finalized-key reader.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

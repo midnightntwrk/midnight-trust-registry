@@ -115,13 +115,9 @@ describe("simulator-backed VC decision evidence composition", () => {
     const authorityFields = vcAuthorityDomainFields(authorityAnchor.domain);
     const authorityKeyIdCommitment = bytes32Commitment("vc-authority:decision-key");
     harness.registerVcAuthorityKey({
+      domain: authorityAnchor.domain,
       keyIdCommitment: authorityKeyIdCommitment,
-      authorityDidCommitment: authorityFields.authorityDidCommitment,
-      authorityMethodIdCommitment: authorityFields.authorityMethodIdCommitment,
       publicKey: authorityAnchor.publicKey,
-      networkIdCommitment: authorityFields.networkIdCommitment,
-      consumerContractAddress: authorityFields.consumerContractAddress,
-      domainCommitment: vcAuthorityDomainCommitment(authorityAnchor.domain),
     });
     harness.proposeIssuer(issuer, [coMaintainer]);
     harness.approveIssuer(issuer, [coMaintainer]);

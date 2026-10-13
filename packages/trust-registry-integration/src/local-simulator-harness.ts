@@ -9,7 +9,6 @@ import {
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateEvidenceVerifierKeyPayloadHash,
-  computeCreateVcAuthorityKeyPayloadHash,
   computeUpdateVcAuthorityKeyPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
@@ -100,6 +99,8 @@ import {
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
 } from "./fixtures.js";
+import { prepareVcAuthorityKeyRegistration } from "./vc-authority-registration.js";
+import type { VcAuthorityDomain } from "./vc-signer-authorization.js";
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
 const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
@@ -474,44 +475,38 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   registerVcAuthorityKey(input: {
+    domain: VcAuthorityDomain;
     keyIdCommitment: Uint8Array;
-    authorityDidCommitment: Uint8Array;
-    authorityMethodIdCommitment: Uint8Array;
     publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
-    networkIdCommitment: Uint8Array;
-    consumerContractAddress: Uint8Array;
-    domainCommitment: Uint8Array;
   }): void {
     const policyCommitment = this.simulator.getLedger().governancePolicyCommitment;
     const policyVersion = this.simulator.getLedger().governancePolicyVersion;
-    const payload = computeCreateVcAuthorityKeyPayloadHash(
-      input.keyIdCommitment,
-      input.authorityDidCommitment,
-      input.authorityMethodIdCommitment,
-      input.publicKey,
-      input.networkIdCommitment,
-      input.consumerContractAddress,
-      input.domainCommitment,
+    const prepared = prepareVcAuthorityKeyRegistration({
+      domain: input.domain,
+      registryId: this.registryId,
+      registryContractAddress: `0x${this.simulator.contractAddress}`,
+      keyIdCommitment: input.keyIdCommitment,
+      publicKey: input.publicKey,
       policyCommitment,
       policyVersion,
-    );
+    });
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     this.simulator.registerVcAuthorityKey(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, payload, actionSequence),
-      input.keyIdCommitment,
-      input.authorityDidCommitment,
-      input.authorityMethodIdCommitment,
-      input.publicKey,
-      input.networkIdCommitment,
-      input.consumerContractAddress,
-      policyCommitment,
-      policyVersion,
+      this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, prepared.payloadHash, actionSequence),
+      prepared.keyIdCommitment,
+      prepared.authorityDidCommitment,
+      prepared.authorityMethodIdCommitment,
+      prepared.publicKey,
+      prepared.networkIdCommitment,
+      prepared.consumerContractAddress,
+      prepared.policyCommitment,
+      prepared.policyVersion,
       this.maintainerCoAuthorizers(
         this.activeDefaultQuorumCoMaintainers(),
         REGISTER_VC_AUTHORITY_KEY_ACTION_KIND,
-        payload,
+        prepared.payloadHash,
         actionSequence,
       ),
     );

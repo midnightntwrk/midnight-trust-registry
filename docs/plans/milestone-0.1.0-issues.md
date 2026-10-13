@@ -242,6 +242,10 @@ not the older transcript-digest draft.
 - [ ] Specify `domainCommitment` preimage (network, consumer contract,
       registry, authority), governed authority key lifecycle, and the signer
       service's refusal to sign a decision without a committed quorum.
+      Local registration preparation checks canonical DID/method/network
+      preimages and the exact registry address before constructing the quorum
+      payload; the simulator reads the registered key and refuses signing after
+      a governed suspension. Finalized production reads remain open.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
       A simulator fixture now exercises this exact VC proof circuit through
