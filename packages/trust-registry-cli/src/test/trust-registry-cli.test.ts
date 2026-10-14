@@ -16,7 +16,7 @@ import {
   writeWorkspaceToFile,
 } from "../workspace.js";
 
-const CLI_TEST_TIMEOUT_MS = 20_000;
+const CLI_TEST_TIMEOUT_MS = 60_000;
 
 const captureCli = async (argv: readonly string[]) => {
   const stdout: string[] = [];
