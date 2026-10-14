@@ -10,6 +10,10 @@ info:
 servers:
   - url: http://127.0.0.1:4400
     description: Local reference server only
+# There is no global HTTP authentication scheme. Governed mutations verify
+# signed request bodies through trusted ports; public query routes are anonymous.
+security:
+  - {}
 tags:
   - name: Query
   - name: Private intake
@@ -112,6 +116,8 @@ components:
         prepared: { type: object, description: Exact current prepare response }
         signers:
           type: array
+          minItems: 1
+          maxItems: 16
           items:
             type: object
             required: [keyId, publicKey, signature]
