@@ -19,6 +19,35 @@ asynchronous VC/VP/status verification, before challenge consumption. Its
 redacted evidence hash binds that policy commitment. This is not an atomic
 policy-and-proposal transaction: durable admission must revalidate against
 current ledger state at the write boundary.
+An optional file-backed admission adapter now replaces a challenge with a
+redacted receipt in one locked file transaction. It takes the governance
+workspace write lock and rereads the governed policy before that transaction
+commits. The host MUST pass the same governance workspace path used by every
+policy mutation; a second independent path does not serialize policy changes.
+The private authenticated accepted-receipt read supports recovery after a
+lost HTTP response. Neither a receipt nor an old active evidence bundle
+authorizes a new recognition proposal on its own.
+The reusable proposal-admission gate now rechecks the exact binding, receipt
+identity, combined evidence commitment, expiry, active policy commitment, and
+current accreditor anchor under the governance workspace write lock. Its
+callback is required to execute the Compact-backed proposal and recheck
+signatures, quorum, sequence, recognition-record status, and ledger state
+without acquiring a second copy of that lock. An opt-in recognition
+prepare/submit HTTP port now wires the gate to simulator-backed proposal
+execution. It refuses a mismatched intake/proposal admission store, raw VP
+fields, stale prepared contexts, insufficient quorum, and wrong verifier keys.
+The existing signed and unsafe workspace recognition-submit routes fail closed
+when that port is installed; otherwise they would bypass accreditation. The
+trusted binding is read under the same lock and passed to prepare/execute.
+The receipt remains non-authorizing without independent Compact signatures.
+The private HTTP integration now composes a real signed accreditation VP and
+authority DID assertion with its persisted receipt, then submits that exact
+redacted commitment through the gated Compact recognition route. It verifies
+the ledger evidence hash matches and no local issuer grant is created. The
+2-of-3 external signer negatives remain in the separate proposal integration
+test; the joined proof test uses the simulator's one-signer policy.
+The file lock is local reference behavior, not distributed consensus or
+Midnight transaction finality.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof
@@ -101,10 +130,11 @@ not an accreditation proof.
 - Compose both proofs and the atomic challenge in private API intake. The
   private path now resolves the anchor against an active Compact policy
   commitment rather than accepting a raw anchor. The optional HTTP port
-  supplies policy and status from the server, not the request, and returns no
-  durable acceptance receipt. Fail closed unless a trusted ledger policy
-  reader and live status adapter are configured; do not mount a production
-  public route before durable admission and atomic write-boundary checks exist.
+  supplies policy and status from the server, not the request. Its opt-in
+  file store records a redacted acceptance receipt with the one-use challenge
+  in the same transaction. Fail closed unless a trusted ledger policy reader
+  and live status adapter are configured; do not mount a production public
+  route before proposal-time policy/current-grant checks exist.
 - Carry the redacted commitment through Compact proposal, epoch evidence,
   public query and TRQP parity. Extend the joined demo and full integration
   suite. Run fresh Compact proving once at the publication checkpoint.

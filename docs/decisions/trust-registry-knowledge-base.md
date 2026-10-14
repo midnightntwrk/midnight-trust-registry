@@ -842,3 +842,71 @@ failures do not spend the nonce, and successful verification returns only a
 redacted commitment and expiry. The route is disabled without a trusted port
 and is not mounted by the CLI. It does not persist a receipt or authorize a
 Compact proposal; those are separate production admission requirements.
+
+The next local #78 slice adds a private, opt-in recognition admission store.
+It persists only a redacted receipt and challenge hashes in one private file;
+under the configured governance-workspace writer lock, acceptance rereads the
+active policy and atomically replaces the challenge with that receipt. A
+private authenticated recovery route handles a lost HTTP response. It rejects
+separate challenge and receipt stores, stale policy at the final read, duplicate
+recognition IDs, and concurrent replays. The host must use the exact same
+workspace lock path as all policy writers. A receipt is not a Compact proposal
+grant: proposal-time policy/current-record validation, production DID/status
+readers, and a live network finality source remain open.
+
+The preceding accreditation branch bound the current governance commitment
+into the verified VP evidence hash and reread the governed anchor before
+challenge consumption. It passed fresh full integration (94 integration
+tests and governed demos), local light (20/20), and audit; the initial Compact
+proving-key generation took about 22 minutes. For TypeScript-only iterations,
+package typechecks and focused tests take seconds and integration-light avoids
+that proving cost. A maintainer simulator test passed alone in 1.6 seconds but
+timed out twice at the five-second default under the parallel integration
+suite; its explicit 15-second bound restored the full integration-light lane
+without weakening assertions.
+
+The proposal-admission gate is now available as a typed API helper. It
+validates the exact accepted receipt ID, challenge binding and recognition
+identity, combined evidence commitment, expiry, current governed policy
+commitment, and exact active accreditor anchor while holding the governance
+workspace writer lock through the caller's execution callback. Four focused
+tests cover positive lock ownership and wrong receipt, evidence, scope,
+expiry, anchor, and policy. `./run.sh --light` passed (20/20 tasks, 162 API
+tests). The helper is not wired to a public proposal route or ledger adapter;
+its callback must perform fresh Compact signature, quorum, sequence, and
+record-state checks without reacquiring the lock. A private file receipt is
+not a grant or distributed finality. This slice took one full light run of
+about 41 seconds; avoid repeatedly running full integration with fresh
+proving keys for TypeScript-only changes. The test fixture initially used an
+invalid policy without all four decision families; reuse a valid shared
+policy fixture in future tests to avoid schema-debugging iterations.
+
+An opt-in governed recognition prepare/submit HTTP port now composes this
+receipt gate with the simulator's current Compact proposal context, 2-of-3
+maintainer signatures, and independent registered evidence-verifier key.
+The private file-backed test verifies wrong receipt/evidence, raw VP fields,
+insufficient quorum, wrong verifier key, stale context, replay, and no local
+issuer grant. Both intake/proposal ports must use the same store. A second
+opinion caught two P1 gaps: the binding was initially read before the
+governance lock, and legacy workspace recognition-submit routes could create
+a proposal without accreditation. The binding is now read inside the lock and
+passed unchanged to the trusted adapter; signed and unsafe workspace submit
+routes reject recognition creation while this port is configured. The
+simulator test clock must advance beyond receipt acceptance time, because
+the file store accounts for lock elapsed time; a frozen instant passed alone
+but failed in the full integration suite. This is a test-clock issue, not a
+reason to weaken the receipt's future-acceptance guard. Production status
+ledger evidence, distributed admission/finality, and recovery after uncertain
+network submission remain open.
+
+The joined private HTTP test now carries a signed Midnight accreditation VC/VP
+and separate authority DID assertion through one-use challenge acceptance,
+private receipt recovery, and the governed Compact recognition proposal. It
+compares the exact redacted evidence commitment with the resulting ledger
+record and confirms recognition did not grant local issuer authorization.
+Separate integration tests exercise external 2-of-3 quorum negatives. The
+joined test uses the simulator's one-signer policy because its short-lived VP
+fixture window precedes later multi-action policy-effective times. Avoid
+comparing parsed binding objects by reference (Zod clones them) or comparing
+`Buffer` and `Uint8Array` objects directly; compare canonical binding hashes
+and normalized hex commitments instead.

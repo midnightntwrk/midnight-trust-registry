@@ -41,6 +41,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
+import type { GovernedRecognitionProposalPort } from "../governed-recognition-proposals.js";
 import { createWorkspaceFileSource } from "../source.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
@@ -397,4 +398,51 @@ describe("DID-signed HTTP mutation journey", () => {
     expect(workspace.snapshot.issuerEntries).toHaveLength(0);
     expect(workspace.snapshot.recognitionEntries[0]?.recognition.status).toBe("proposed");
   }, 60_000);
+
+  it("blocks legacy recognition submit when a governed recognition proposal port is configured", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tr-guarded-recognition-"));
+    const workspacePath = join(tempDir, "workspace.json");
+    const initial = createOperatorWorkspace({ label: "guarded-recognition" });
+    await writeWorkspaceToFile(workspacePath, initial);
+    const recognition = createRecognitionScenarioFixture("guarded-recognition");
+    const maintainerDid = initial.snapshot.registry.maintainerDids[0];
+    if (maintainerDid === undefined) throw new Error("maintainer fixture missing");
+    const resolver = createMidnightDidResolver([createMidnightDidLedgerFixture(maintainerDid, {
+      verificationMethodId: "assertion-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(maintainerSeed),
+      capabilityInvocation: true,
+    })]);
+    const guardedPort: GovernedRecognitionProposalPort = {
+      governanceWorkspacePath: workspacePath,
+      admissionStore: { readAccepted: async () => null },
+      readBinding: async () => { throw new Error("not called"); },
+      readCurrentGovernance: async () => { throw new Error("not called"); },
+      prepare: async () => { throw new Error("not called"); },
+      execute: async () => { throw new Error("not called"); },
+    };
+    server = createTrustRegistryApiServer({
+      source: createWorkspaceFileSource(workspacePath), clock: () => now,
+      mutationDidResolver: resolver, governedRecognitionProposals: guardedPort,
+      allowUnsafeDemoMutations: true,
+    });
+    const url = await listen(server);
+    const operation = { operation: "submit", target: "recognition", label: "guarded-recognition" } as const;
+    const next = applyWorkspaceOperation(initial, operation);
+    const entry = resolveWorkspaceOperationRecord(next, operation);
+    if (!("recognition" in entry)) throw new Error("recognition fixture missing");
+    const intent = buildIntent(initial, operation, maintainerDid, "maintainer", "77", {
+      targetId: recognition.recognitionId,
+      scopeCommitment: computeRecognitionMutationScopeCommitment(entry.recognition.scope),
+    });
+    const post = (path: string, body: unknown) => fetch(`${url}${path}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await post("/v1/mutations", { intent, signature: signatureFor(intent, maintainerSeed), operation })).status)
+      .toBe(403);
+    expect((await post("/v1/applications", { target: "recognition", label: "guarded-recognition" })).status)
+      .toBe(403);
+    const unchanged = await loadWorkspaceFromFile(workspacePath);
+    expect(unchanged.operations).toHaveLength(0);
+    expect(unchanged.consumedMutationNonces).toHaveLength(0);
+  });
 });
