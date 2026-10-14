@@ -14,6 +14,17 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- Local `codex/trust-registry-operator-applicant-e2e` now has signed/DCO commits
+  `9591889` and `d85dffa` for externally signed two-action quorum revision.
+  The first action changes thresholds under the old policy; the second
+  registers the evidence-verifier key under the new policy. The governed HTTP
+  demo uses the injected Compact simulator port rather than the fixture helper
+  for this transition, while other fixture paths remain. The admin page warns
+  about the intermediate state only within its browser session; operators must
+  inspect ledger state after reload. The packaged CLI still returns 503 without
+  an injected port. These local checks do not establish transaction atomicity
+  or network finality.
+
 - The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
   VC authority slice and is not yet published. Its governed demo now emits a
   checked `tr-adversarial-matrix-v1` with 90 cases across API, Compact simulator,

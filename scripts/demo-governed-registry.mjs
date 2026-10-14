@@ -51,6 +51,7 @@ import {
   GovernedIssuerProposalRejectedError,
   GovernedMaintainerProposalRejectedError,
   GovernedMembershipActionRejectedError,
+  GovernedPolicyActionRejectedError,
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
@@ -654,6 +655,35 @@ const server = createTrustRegistryApiServer({
       }
       snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
       return { eventHash: asHex(eventHash) };
+    },
+  },
+  governedPolicyActions: {
+    async prepareThresholds(value) {
+      return harness.prepareThresholdPolicyRevisionAction(
+        BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+      );
+    },
+    async executeThresholds(value, signers) {
+      try {
+        const eventHash = harness.executeThresholdPolicyRevisionWithSignatures(
+          BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+        );
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
+    async prepareEvidenceVerifier() {
+      return harness.prepareEvidenceVerifierRegistrationAction();
+    },
+    async executeEvidenceVerifier(signers) {
+      try {
+        const eventHash = harness.executeEvidenceVerifierRegistrationWithSignatures(signers);
+        publishCurrentSnapshot();
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
     },
   },
 });
@@ -1777,9 +1807,48 @@ try {
   }
 
   const policyVersionBeforeRevision = harness.simulator.getLedger().governancePolicyVersion;
-  const thresholdRevision = harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+  const policyEndpoint = `${base}/v1/governed/policy`;
+  const postPolicy = (path, body) => fetch(`${policyEndpoint}/${path}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  const thresholds = { default: "3", emergency: "1", archival: "2" };
+  const revisionContext = await expectHttp(await postPolicy("thresholds/prepare", { thresholds }), 200);
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext, signers: [sign(second, revisionContext)],
+  }), {
+    id: "policy-revision-one-signer",
+    invariant: "Old-policy quorum is required for threshold revision",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  const revisionReceipt = await expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext,
+    signers: [sign(second, revisionContext), sign(third, revisionContext)],
+  }), 202);
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext,
+    signers: [sign(second, revisionContext), sign(third, revisionContext)],
+  }), {
+    id: "policy-revision-stale-replay",
+    invariant: "A consumed old-policy context cannot revise governance twice",
+    boundary: "api", status: 409, problemType: "stale-governed-policy",
+  });
   assert.equal(harness.simulator.getLedger().governancePolicyVersion, policyVersionBeforeRevision + 1n);
   const threeSignerIssuer = createIssuerScenarioFixture("governed-demo-three-signer-issuer");
+  assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second, third]),
+    /policy|evidence|verifier|active|registered|signature|assert/iu);
+  const registrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
+  await adversarialMatrix.expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: registrationContext,
+    signers: [sign(second, registrationContext), sign(third, registrationContext)],
+  }), {
+    id: "new-policy-registration-two-signers",
+    invariant: "New-policy quorum is required to register the evidence verifier",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  const registrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: registrationContext,
+    signers: [sign(second, registrationContext), sign(third, registrationContext), sign(candidate, registrationContext)],
+  }), 202);
   assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
   harness.proposeIssuer(threeSignerIssuer, [second, third]);
   const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
@@ -1792,7 +1861,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures for actor decisions; revised to 3-of-4",
+    governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
@@ -1829,7 +1898,8 @@ try {
     maintainerLifecycle: {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
       policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
-      thresholdRevisionEventHash: asHex(thresholdRevision),
+      thresholdRevisionEventHash: revisionReceipt.eventHash,
+      evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
       suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
       remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
       remainingQuorumEventHash: asHex(remainingQuorumEventHash),
@@ -1843,6 +1913,8 @@ try {
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "recognition-is-not-local-issuer-or-maintainer:client",
       "revised-threshold-rejects-two-signers:simulator",
+      "policy-revision-one-signer:403", "policy-revision-stale-replay:409",
+      "new-policy-registration-two-signers:403",
       "suspended-maintainer-cannot-vote:simulator",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",
