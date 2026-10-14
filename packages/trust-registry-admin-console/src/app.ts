@@ -3,7 +3,9 @@ import type {
   TrustRegistryApiSignedMutationRequest,
   GovernedMembershipAction,
   GovernedMembershipSignatureRequest,
+  GovernedThresholds,
   PreparedGovernedMembershipAction,
+  PreparedGovernedPolicyAction,
   TrustRegistryApiApplicationAction,
 } from "@midnight-ntwrk/trust-registry-api";
 
@@ -51,6 +53,12 @@ type AppState = {
   proposalPrepared: PreparedGovernedProposal | undefined;
   proposalSignersJson: string;
   proposalVerifierSignature: string;
+  policyThresholds: GovernedThresholds;
+  policyPhase: "thresholds" | "evidence-verifier" | undefined;
+  policyPrepared: PreparedGovernedPolicyAction | undefined;
+  policyPreparedThresholds: GovernedThresholds | undefined;
+  policySignersJson: string;
+  policyRegistrationPending: boolean;
   selectedKey: string | undefined;
 };
 
@@ -182,6 +190,12 @@ export const createAdminConsoleApp = (
     proposalPrepared: undefined,
     proposalSignersJson: "",
     proposalVerifierSignature: "",
+    policyThresholds: { default: "2", emergency: "2", archival: "2" },
+    policyPhase: undefined,
+    policyPrepared: undefined,
+    policyPreparedThresholds: undefined,
+    policySignersJson: "",
+    policyRegistrationPending: false,
     selectedKey: undefined,
   };
   let signedContextRequestId = 0;
@@ -275,6 +289,10 @@ export const createAdminConsoleApp = (
         governedPrepared: undefined,
         governedSignersJson: "",
         proposalPrepared: undefined,
+        policyPhase: undefined,
+        policyPrepared: undefined,
+        policyPreparedThresholds: undefined,
+        policySignersJson: "",
         loading: false,
         selectedKey: nextSelectedKey,
       });
@@ -287,6 +305,10 @@ export const createAdminConsoleApp = (
         governedKey: undefined,
         governedPrepared: undefined,
         proposalPrepared: undefined,
+        policyPhase: undefined,
+        policyPrepared: undefined,
+        policyPreparedThresholds: undefined,
+        policySignersJson: "",
         loading: false,
         selectedKey: undefined,
       });
@@ -391,6 +413,68 @@ export const createAdminConsoleApp = (
           ? { governedKey: undefined, governedPrepared: undefined, governedSignersJson: "" }
           : {}),
       });
+    }
+  };
+
+  const preparePolicyAction = async (phase: "thresholds" | "evidence-verifier") => {
+    if (state.loading || state.publishing || state.governedBusy) return;
+    const thresholds = { ...state.policyThresholds };
+    if (phase === "thresholds" && Object.values(thresholds).some((value) =>
+      !/^(0|[1-9][0-9]*)$/u.test(value))) {
+      setState({ error: "Thresholds must be canonical nonnegative integers." });
+      return;
+    }
+    setState({ governedBusy: true, policyPhase: undefined, policyPrepared: undefined,
+      policyPreparedThresholds: undefined, policySignersJson: "", error: undefined, flash: undefined });
+    try {
+      const prepared = phase === "thresholds"
+        ? await getClient().prepareThresholdRevision(thresholds)
+        : await getClient().prepareEvidenceVerifierRegistration();
+      setState({ governedBusy: false, policyPhase: phase, policyPrepared: prepared,
+        policyPreparedThresholds: phase === "thresholds" ? thresholds : undefined });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitPolicyAction = async () => {
+    if (state.loading || state.publishing || state.governedBusy
+      || state.policyPrepared === undefined || state.policyPhase === undefined) return;
+    const prepared = state.policyPrepared;
+    const phase = state.policyPhase;
+    const thresholds = state.policyPreparedThresholds;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      signers = parseSignerInput(state.policySignersJson);
+      if (phase === "thresholds" && (thresholds === undefined
+        || Object.keys(thresholds).some((key) =>
+          thresholds[key as keyof GovernedThresholds] !== state.policyThresholds[key as keyof GovernedThresholds]))) {
+        throw new Error("Threshold values changed. Prepare a fresh action before signing.");
+      }
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    if (!(await confirm(`Submit ${signers.length} external signatures for ${phase}?`))) return;
+    if (state.policyPrepared !== prepared || state.policyPhase !== phase) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = phase === "thresholds"
+        ? await getClient().submitThresholdRevision({ thresholds: thresholds!, prepared, signers })
+        : await getClient().submitEvidenceVerifierRegistration({ prepared, signers });
+      const pending = phase === "thresholds";
+      setState({ policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+        policySignersJson: "", policyRegistrationPending: pending });
+      await refreshBoard(pending
+        ? `Policy revision accepted: ${receipt.eventHash}. Register the evidence-verifier key under the new policy before accepting new applications.`
+        : `Evidence-verifier registration accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      setState({ governedBusy: false });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error),
+        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+          ? { policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+            policySignersJson: "" }
+          : {}) });
     }
   };
 
@@ -519,7 +603,9 @@ export const createAdminConsoleApp = (
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
       signedContextRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined });
+      setState({ apiBase, signedBusy: false, signedContext: undefined,
+        policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+        policySignersJson: "", policyRegistrationPending: false });
       void refreshBoard();
     });
 
@@ -569,6 +655,31 @@ export const createAdminConsoleApp = (
     root.querySelector<HTMLFormElement>("[data-governed-submit]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       void submitGoverned();
+    });
+
+    root.querySelectorAll<HTMLInputElement>("[data-policy-threshold]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const field = input.dataset.policyThreshold as keyof GovernedThresholds;
+        state.policyThresholds[field] = input.value;
+        state.policyPhase = undefined;
+        state.policyPrepared = undefined;
+        state.policyPreparedThresholds = undefined;
+        root.querySelector("[data-policy-context]")?.remove();
+        root.querySelector("[data-policy-submit]")?.remove();
+      });
+    });
+    root.querySelector<HTMLButtonElement>("[data-policy-prepare-thresholds]")?.addEventListener("click", () => {
+      void preparePolicyAction("thresholds");
+    });
+    root.querySelector<HTMLButtonElement>("[data-policy-prepare-verifier]")?.addEventListener("click", () => {
+      void preparePolicyAction("evidence-verifier");
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-policy-signers]")?.addEventListener("input", (event) => {
+      state.policySignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-policy-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitPolicyAction();
     });
 
     root.querySelector<HTMLInputElement>("[data-proposal-id]")?.addEventListener("input", (event) => {
@@ -814,6 +925,35 @@ export const createAdminConsoleApp = (
                 <input class="input mono" data-proposal-verifier-signature value="${escapeHtml(state.proposalVerifierSignature)}" autocomplete="off" spellcheck="false"${state.governedBusy ? " disabled" : ""} />
               </label>
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
+            </form>
+          `}
+        </section>
+        <section class="proposal-panel governed-panel">
+          <div>
+            <p class="eyebrow">Governance policy</p>
+            <h2>Revise maintainer quorum</h2>
+            <p>Prepare a threshold revision for external maintainer signatures. After Compact accepts it, separately register the evidence-verifier key under the new policy. Neither step implies network finality.</p>
+            ${state.policyRegistrationPending ? `<p class="alert error">Policy revision accepted locally; evidence-verifier registration is still required before new applications.</p>` : ""}
+          </div>
+          <div class="actions">
+            ${(["default", "emergency", "archival"] as const).map((field) => `
+              <label>${field} threshold
+                <input class="input mono" type="number" min="1" max="5" step="1" data-policy-threshold="${field}" value="${escapeHtml(state.policyThresholds[field])}"${state.governedBusy ? " disabled" : ""} />
+              </label>
+            `).join("")}
+          </div>
+          <div class="actions">
+            <button class="button secondary" type="button" data-policy-prepare-thresholds${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare threshold revision</button>
+            <button class="button secondary" type="button" data-policy-prepare-verifier${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare evidence-verifier registration</button>
+          </div>
+          ${state.policyPrepared === undefined ? "" : `
+            <p>Sign this exact ${state.policyPhase === "thresholds" ? "old-policy revision" : "new-policy registration"} context outside the browser. Changed policy or sequence requires fresh signatures.</p>
+            <pre class="governed-context mono" data-policy-context>${escapeHtml(JSON.stringify(state.policyPrepared, null, 2))}</pre>
+            <form data-policy-submit>
+              <label>External maintainer signer entries as JSON array
+                <textarea class="input mono governed-signers" data-policy-signers spellcheck="false"${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.policySignersJson)}</textarea>
+              </label>
+              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
             </form>
           `}
         </section>

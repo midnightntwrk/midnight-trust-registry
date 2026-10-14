@@ -247,6 +247,14 @@ per-grant projection publishes another epoch after the registry epoch.
 Per-grant evidence bundles may still be created by fixture
 signing during projection. This reference path is not network finality and
 does not yet prove that every published evidence epoch used external signers.
+For quorum changes, `POST /v1/governed/policy/thresholds/prepare` and
+`/submit` carry the old-policy signer context and requested thresholds.
+After Compact accepts the revision, the evidence-verifier key must be
+registered under the new policy through
+`POST /v1/governed/policy/evidence-verifier/prepare` and `/submit`, using
+fresh external signatures. Both actions recheck current ledger state; the
+second action is not automatically signed or atomic with the first. Until it
+succeeds, new application evidence is not authorized by the revised policy.
 Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional

@@ -520,7 +520,7 @@ export class LocalTrustRegistryIntegrationHarness {
     if (primary === undefined) throw new Error("Evidence-verifier registration requires a maintainer signature");
     const prepared = this.prepareEvidenceVerifierRegistrationAction();
     const keyId = `${this.evidenceVerifier.did}#assertion-${prepared.policyVersion.toString()}`;
-    this.simulator.registerEvidenceVerifierKey(
+    const eventHash = this.simulator.registerEvidenceVerifierKey(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -536,7 +536,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.currentEvidenceVerifierAuthorizationId = prepared.authorizationId;
     this.currentEvidenceVerifierKeyIdCommitment = prepared.keyIdCommitment;
     if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
-    return prepared.authorizationId;
+    return eventHash;
   }
 
   registerVcAuthorityKey(input: {

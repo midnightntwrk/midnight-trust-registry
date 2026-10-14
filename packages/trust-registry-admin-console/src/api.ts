@@ -5,7 +5,12 @@ import type {
   GovernedMembershipSignatureRequest,
   GovernedEpochPublicationReceipt,
   GovernedEpochPublishRequest,
+  GovernedEvidenceVerifierSubmitRequest,
+  GovernedPolicyActionReceipt,
+  GovernedThresholdSubmitRequest,
+  GovernedThresholds,
   PreparedGovernedEpochPublication,
+  PreparedGovernedPolicyAction,
   PreparedGovernedIssuerProposal,
   PreparedGovernedVerifierProposal,
   PreparedGovernedMaintainerProposal,
@@ -227,6 +232,40 @@ export class TrustRegistryAdminConsoleClient {
 
   async submitGovernedEpoch(request: GovernedEpochPublishRequest): Promise<GovernedEpochPublicationReceipt> {
     return this.request<GovernedEpochPublicationReceipt>("/v1/governed/epochs/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async prepareThresholdRevision(thresholds: GovernedThresholds): Promise<PreparedGovernedPolicyAction> {
+    return this.request<PreparedGovernedPolicyAction>("/v1/governed/policy/thresholds/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ thresholds }),
+    });
+  }
+
+  async submitThresholdRevision(request: GovernedThresholdSubmitRequest): Promise<GovernedPolicyActionReceipt> {
+    return this.request<GovernedPolicyActionReceipt>("/v1/governed/policy/thresholds/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async prepareEvidenceVerifierRegistration(): Promise<PreparedGovernedPolicyAction> {
+    return this.request<PreparedGovernedPolicyAction>("/v1/governed/policy/evidence-verifier/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+  }
+
+  async submitEvidenceVerifierRegistration(
+    request: GovernedEvidenceVerifierSubmitRequest,
+  ): Promise<GovernedPolicyActionReceipt> {
+    return this.request<GovernedPolicyActionReceipt>("/v1/governed/policy/evidence-verifier/submit", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request),

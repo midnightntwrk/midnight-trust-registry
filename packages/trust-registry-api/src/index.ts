@@ -12,6 +12,7 @@ export * from "./pending-application-registration.js";
 export * from "./proposal-admission.js";
 export * from "./governed-membership-actions.js";
 export * from "./governed-epoch-publication.js";
+export * from "./governed-policy-actions.js";
 export * from "./governed-proposal-observation.js";
 export * from "./governed-issuer-proposals.js";
 export * from "./governed-verifier-proposals.js";

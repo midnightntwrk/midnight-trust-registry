@@ -53,6 +53,8 @@ Current route set:
 - `POST /v1/applications/:target/:id/revoke`
 - `POST /v1/applications/:target/:id/archive`
 - `POST /v1/epochs/publish`
+- `POST /v1/governed/policy/thresholds/prepare` and `/submit` (optional Compact-backed port)
+- `POST /v1/governed/policy/evidence-verifier/prepare` and `/submit` (optional Compact-backed port)
 
 Authorization `:role` supports `issuer`, `verifier`, and `auditor`. Issuer
 lookups require a canonical `tr:issuer-resource:v1:<sha256>` ID; verifier and
@@ -134,6 +136,17 @@ and asynchronous query projection remain future work. The packaged CLI does
 not configure this optional port. The reference integration test injects the
 local simulator and projects that *same* simulator into the read API after
 each transition.
+
+Threshold revision is a two-action workflow. Prepare with
+`{ "thresholds": { "default": "3", "emergency": "2", "archival": "2" } }`;
+submit the exact prepared context, the same thresholds, and external signer
+entries. The old policy and sequence govern this signature. After acceptance,
+prepare and submit evidence-verifier registration with a new signature set
+under the new policy and next sequence. The server recomputes each context;
+stale contexts return 409, malformed requests 400, rejected Compact quorum
+403, and missing `governedPolicyActions` port 503. The first 202 is not enough
+to accept new application evidence, and neither 202 proves network finality or
+an atomic two-action transaction. The packaged CLI does not inject this port.
 
 The governed issuer proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
 with `{ "evidence": <signed application evidence> }`, followed by

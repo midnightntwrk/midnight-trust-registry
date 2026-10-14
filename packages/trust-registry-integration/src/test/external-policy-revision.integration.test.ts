@@ -90,8 +90,7 @@ describe("externally signed policy revision", () => {
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
 
-    expect(register([bootstrapVote, secondRegistrationVote, thirdRegistrationVote]))
-      .toEqual(registration.authorizationId);
+    expect(register([bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).toHaveLength(32);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 2n);
     expect(() => register([bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).toThrow();
     harness.proposeIssuer(issuer, [second, third]);
