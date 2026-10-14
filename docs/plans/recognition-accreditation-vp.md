@@ -40,6 +40,12 @@ The existing signed and unsafe workspace recognition-submit routes fail closed
 when that port is installed; otherwise they would bypass accreditation. The
 trusted binding is read under the same lock and passed to prepare/execute.
 The receipt remains non-authorizing without independent Compact signatures.
+The private HTTP integration now composes a real signed accreditation VP and
+authority DID assertion with its persisted receipt, then submits that exact
+redacted commitment through the gated Compact recognition route. It verifies
+the ledger evidence hash matches and no local issuer grant is created. The
+2-of-3 external signer negatives remain in the separate proposal integration
+test; the joined proof test uses the simulator's one-signer policy.
 The file lock is local reference behavior, not distributed consensus or
 Midnight transaction finality.
 

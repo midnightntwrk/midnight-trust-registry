@@ -898,3 +898,15 @@ but failed in the full integration suite. This is a test-clock issue, not a
 reason to weaken the receipt's future-acceptance guard. Production status
 ledger evidence, distributed admission/finality, and recovery after uncertain
 network submission remain open.
+
+The joined private HTTP test now carries a signed Midnight accreditation VC/VP
+and separate authority DID assertion through one-use challenge acceptance,
+private receipt recovery, and the governed Compact recognition proposal. It
+compares the exact redacted evidence commitment with the resulting ledger
+record and confirms recognition did not grant local issuer authorization.
+Separate integration tests exercise external 2-of-3 quorum negatives. The
+joined test uses the simulator's one-signer policy because its short-lived VP
+fixture window precedes later multi-action policy-effective times. Avoid
+comparing parsed binding objects by reference (Zod clones them) or comparing
+`Buffer` and `Uint8Array` objects directly; compare canonical binding hashes
+and normalized hex commitments instead.
