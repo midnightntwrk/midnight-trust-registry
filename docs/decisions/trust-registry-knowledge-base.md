@@ -14,6 +14,13 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- #60's joined adversarial matrix now calls the Compact simulator directly
+  with otherwise valid recognition signatures but a substituted external
+  registry or resource commitment. Both reject without advancing governance
+  state; a valid proposal still succeeds afterward. This is scoped-signature
+  evidence, not proof that the external accreditation is valid. Retrospective:
+  direct simulator mutation is needed for this case because the harness
+  preflight rejects stale contexts before Compact sees them.
 - #59's signed HTTP mutation test now uses a separate Node process to hold
   the real workspace lock. The request returns a typed 409 without consuming
   the nonce, then succeeds after release. This proves same-host

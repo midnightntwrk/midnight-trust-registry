@@ -420,15 +420,53 @@ const recognitionPrepared = harness.prepareRecognitionProposalAction(
 );
 assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognitionAssertion.evidenceCommitment);
 const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
+const recognitionSigners = [
+  signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared),
+];
+const proposeRecognitionWithChangedScope = (registryIdCommitment, resourceIdCommitment) =>
+  harness.simulator.proposeRecognition(
+    recognitionSigners[0].keyId,
+    recognitionSigners[0].publicKey,
+    recognitionSigners[0].signature,
+    recognition.recognitionIdCommitment,
+    recognition.recognizedAuthorityDidCommitment,
+    registryIdCommitment,
+    recognition.scopeResourceTypeCommitment,
+    resourceIdCommitment,
+    recognitionPrepared.policyCommitment,
+    bytes32Commitment(recognition.trustLevel),
+    recognitionPrepared.evidenceHash,
+    recognitionPrepared.evidenceVerifierAuthorizationId,
+    recognitionPrepared.evidenceVerifierKeyIdCommitment,
+    recognitionEvidenceSignature,
+    recognitionSigners.slice(1),
+  );
+adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  bytes32Commitment("registry:external:substituted:v1"), recognition.scopeResourceIdCommitment,
+), {
+  id: "compact-recognition-external-registry-substitution",
+  invariant: "A recognition quorum signature cannot be reused for another external registry",
+  boundary: "compact", messagePattern: /signature|payload/iu,
+  category: "recognition-scope-signature-rejected",
+});
+adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  recognition.recognizedRegistryIdCommitment, bytes32Commitment("credential-family:substituted:v1"),
+), {
+  id: "compact-recognition-resource-substitution",
+  invariant: "A recognition quorum signature cannot be reused for another resource scope",
+  boundary: "compact", messagePattern: /signature|payload/iu,
+  category: "recognition-scope-signature-rejected",
+});
+assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
 assert.throws(() => harness.executeRecognitionProposalWithSignatures(
   recognition,
-  [signCompact(second, recognitionPrepared)],
+  recognitionSigners.slice(0, 1),
   recognitionEvidenceSignature,
   recognitionPrepared,
 ), /action threshold/u);
 const recognitionProposalEventHash = harness.executeRecognitionProposalWithSignatures(
   recognition,
-  [signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared)],
+  recognitionSigners,
   recognitionEvidenceSignature,
   recognitionPrepared,
 );
