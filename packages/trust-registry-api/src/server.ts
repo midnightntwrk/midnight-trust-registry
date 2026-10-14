@@ -755,7 +755,7 @@ export const createTrustRegistryApiServer = (
           && (segments[3] === "binding" || segments[3] === "challenges"
             || segments[3] === "submissions" || segments[3] === "receipt"))
         || (segments.length === 4 && segments[1] === "recognition-evidence"
-          && (segments[3] === "challenges" || segments[3] === "submissions"))
+          && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "accepted"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -880,6 +880,30 @@ export const createTrustRegistryApiServer = (
           const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404
             : reason === "stale-policy" || reason === "invalid-challenge" ? 409 : 403;
           throw jsonProblem(problemBaseUri, `application-vp-${reason}`, status, `application VP ${reason}`);
+        }
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "recognition-evidence" && segments[3] === "accepted") {
+        response.setHeader("cache-control", "no-store");
+        if (recognitionAccreditation === undefined || options.recognitionAccreditation === undefined) {
+          throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+            "recognition accreditation unavailable");
+        }
+        try {
+          await options.recognitionAccreditation.authorizeRequest(segments[2]!, request);
+        } catch {
+          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+            "recognition accreditation forbidden");
+        }
+        try {
+          writeJson(response, 200, await recognitionAccreditation.accepted(segments[2]!), false);
+          return;
+        } catch (error) {
+          const reason = error instanceof RecognitionAccreditationHttpError ? error.reason : "rejected";
+          const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404 : 403;
+          throw jsonProblem(problemBaseUri, `recognition-accreditation-${reason}`, status,
+            `recognition accreditation ${reason}`);
         }
       }
 

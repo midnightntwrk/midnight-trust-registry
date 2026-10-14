@@ -13,6 +13,7 @@ import type {
 import { z } from "zod";
 
 import type { ApplicationChallengeStore } from "./application-challenges.js";
+import { RecognitionAdmissionReceiptSchema, type RecognitionAdmissionStore } from "./file-recognition-admission.js";
 import {
   RecognitionAuthorityChallengeBindingSchema,
   RecognitionAuthorityChallengeService,
@@ -34,6 +35,8 @@ const SubmissionSchema = z.strictObject({
 
 export interface RecognitionAccreditationHttpPort {
   challengeStore: ApplicationChallengeStore;
+  /** Must be the same physical store as challengeStore for atomic one-use acceptance. */
+  admissionStore?: RecognitionAdmissionStore;
   /** The embedding server must authenticate access before any request body is read. */
   authorizeRequest(recognitionId: string, request: IncomingMessage): Promise<void>;
   /** Must read policy and commitment from trusted current ledger state, never the applicant request. */
@@ -55,6 +58,9 @@ export class RecognitionAccreditationHttpError extends Error {
 
 /** Local/private evidence verification only; no durable admission receipt or public route by default. */
 export function createRecognitionAccreditationHttpService(port: RecognitionAccreditationHttpPort, clock: () => number) {
+  if (port.admissionStore !== undefined && port.admissionStore !== port.challengeStore) {
+    throw new Error("Recognition challenge and admission stores must be identical");
+  }
   const challenges = new RecognitionAuthorityChallengeService(port.challengeStore, clock);
   const parseId = (value: string): string => {
     const parsed = IdentifierSchema.safeParse(value);
@@ -80,6 +86,13 @@ export function createRecognitionAccreditationHttpService(port: RecognitionAccre
     return { ...context, binding };
   };
   return {
+    async accepted(recognitionIdInput: string) {
+      const recognitionId = parseId(recognitionIdInput);
+      if (port.admissionStore === undefined) throw new RecognitionAccreditationHttpError("not-found");
+      const receipt = await port.admissionStore.readAccepted(recognitionId);
+      if (receipt === null) throw new RecognitionAccreditationHttpError("not-found");
+      return RecognitionAdmissionReceiptSchema.parse(receipt);
+    },
     async issue(recognitionIdInput: string, body: unknown) {
       const recognitionId = parseId(recognitionIdInput);
       if (body === null || typeof body !== "object" || Array.isArray(body)
@@ -98,6 +111,7 @@ export function createRecognitionAccreditationHttpService(port: RecognitionAccre
           nonce: parsed.data.nonce,
           signed: parsed.data.signed,
           accreditation: parsed.data.accreditation as RecognitionAccreditationSubmission,
+          ...(port.admissionStore === undefined ? {} : { admissionStore: port.admissionStore }),
           readCurrentGovernance: async () => {
             const latest = await current(recognitionId);
             if (Object.keys(context.binding).some((key) =>
@@ -116,6 +130,7 @@ export function createRecognitionAccreditationHttpService(port: RecognitionAccre
         return {
           recognitionId,
           evidenceCommitment: verified.evidenceCommitment,
+          ...(verified.receipt === undefined ? {} : { receipt: verified.receipt }),
           expiresAt: new Date(Math.min(
             verified.accreditation.expiresAtMs,
             Date.parse(verified.authority.statement.expiresAt),

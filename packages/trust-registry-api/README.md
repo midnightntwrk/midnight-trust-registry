@@ -369,7 +369,12 @@ resolver, and status source from trusted server-side state. Neither the anchor
 nor status decision can be supplied by the HTTP caller. Failed proof or stale
 policy leaves the challenge usable; a successful submission returns only a
 redacted evidence commitment and expiry. This reference route has no durable
-acceptance receipt or proposal-admission transaction. The service rereads
+acceptance receipt unless the host configures the optional file recognition
+admission store. With that store, the authenticated private accepted endpoint
+can recover the redacted receipt after a lost response. The challenge and
+receipt share one file transaction; the host must pass the exact governance
+workspace path used by all policy writes so the final recheck holds its write
+lock. This is not a proposal-admission transaction. The service rereads
 trusted governance after asynchronous proof verification and before nonce
 consumption, and binds the current policy commitment into the evidence hash;
 the later ledger write must still revalidate policy atomically. It is disabled

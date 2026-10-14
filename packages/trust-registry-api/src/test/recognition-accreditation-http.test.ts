@@ -1,5 +1,8 @@
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
@@ -19,8 +22,8 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
-import type { RecognitionAccreditationHttpPort } from "../recognition-accreditation-http.js";
+import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js";
+import { createRecognitionAccreditationHttpService, type RecognitionAccreditationHttpPort } from "../recognition-accreditation-http.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
 
@@ -46,11 +49,21 @@ const post = (url: string, body: unknown, authorized = true) => fetch(url, {
 
 describe("private recognition accreditation HTTP", () => {
   let server: Server | undefined;
+  const directories: string[] = [];
+  const pathsForStore = async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-recognition-http-"));
+    directories.push(directory);
+    return {
+      path: join(directory, "recognition.json"),
+      governancePath: join(directory, "governance-workspace.json"),
+    };
+  };
   afterEach(async () => {
     if (server !== undefined) {
       await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
       server = undefined;
     }
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
   });
 
   it("fails closed without a trusted port and does not expose private CORS", async () => {
@@ -64,6 +77,19 @@ describe("private recognition accreditation HTTP", () => {
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     const preflight = await fetch(path, { method: "OPTIONS", headers: { origin: "https://untrusted.example" } });
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("refuses separate challenge and receipt stores that cannot commit atomically", async () => {
+    const first = await pathsForStore();
+    const second = await pathsForStore();
+    const port: RecognitionAccreditationHttpPort = {
+      challengeStore: new FileRecognitionAdmissionStore(first.path, first.governancePath),
+      admissionStore: new FileRecognitionAdmissionStore(second.path, second.governancePath),
+      authorizeRequest: async () => {},
+      resolveCurrentContext: async () => null,
+    };
+    expect(() => createRecognitionAccreditationHttpService(port, () => NOW))
+      .toThrow(/must be identical/u);
   });
 
   it("verifies signed accreditation over HTTP with governed policy and one-use challenge", async () => {
@@ -84,18 +110,28 @@ describe("private recognition accreditation HTTP", () => {
       scopeResourceId: anchor.scopeResourceId,
     };
     let policyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    const governedCommitment = policyCommitment;
+    let failAtAdmissionRead = false;
+    let contextReads = 0;
     let fixture: Awaited<ReturnType<typeof createRecognitionAccreditationVpScenarioFixture>> | undefined;
+    const { path: admissionPath, governancePath } = await pathsForStore();
+    const admissionStore = new FileRecognitionAdmissionStore(admissionPath, governancePath);
     const port: RecognitionAccreditationHttpPort = {
-      challengeStore: new InMemoryApplicationChallengeStore(),
+      challengeStore: admissionStore,
+      admissionStore,
       authorizeRequest: async (_id, request) => {
         if (request.headers["x-authority-did"] !== authorityDid) throw new Error("forbidden");
       },
-      resolveCurrentContext: async (id) => id !== recognitionId || fixture === undefined ? null : {
-        binding,
-        governancePolicy: harness.policyRecord,
-        activePolicyCommitment: policyCommitment,
-        resolver: fixture.input.resolver,
-        statusSource: fixture.input.statusSource,
+      resolveCurrentContext: async (id) => {
+        if (id !== recognitionId || fixture === undefined) return null;
+        if (failAtAdmissionRead && ++contextReads === 4) policyCommitment = sha256Hex("policy-switched-at-admission");
+        return {
+          binding,
+          governancePolicy: harness.policyRecord,
+          activePolicyCommitment: policyCommitment,
+          resolver: fixture.input.resolver,
+          statusSource: fixture.input.statusSource,
+        };
       },
     };
     // The server supplies the current policy/status dependencies; no such fields occur in the submitted body.
@@ -142,18 +178,44 @@ describe("private recognition accreditation HTTP", () => {
     })).status).toBe(400);
     policyCommitment = sha256Hex("stale-policy");
     expect((await post(`${path}/submissions`, body)).status).toBe(403);
-    policyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    policyCommitment = governedCommitment;
+    failAtAdmissionRead = true;
+    contextReads = 0;
+    expect((await post(`${path}/submissions`, body)).status).toBe(403);
+    expect(contextReads).toBe(4);
+    failAtAdmissionRead = false;
+    policyCommitment = governedCommitment;
+    expect(await admissionStore.readAccepted(recognitionId)).toBeNull();
+    const bindingHash = sha256Hex(JSON.stringify([
+      "tr:recognition:authority-challenge-binding:v1",
+      binding.targetRegistryId, binding.recognitionId, binding.authorityDid, binding.recognizedRegistryId,
+      binding.scopeResourceType, binding.scopeResourceId,
+    ]));
+    expect(await admissionStore.readLive(challenge.challengeHash, bindingHash, NOW)).not.toBeNull();
     const accepted = await post(`${path}/submissions`, body);
     expect(accepted.status).toBe(200);
     expect(accepted.headers.get("access-control-allow-origin")).toBeNull();
     expect(accepted.headers.get("cache-control")).toBe("no-store");
     const result = await accepted.json() as Record<string, unknown>;
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       recognitionId,
       evidenceCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
       expiresAt: new Date(NOW + 5 * 60_000).toISOString(),
+      receipt: {
+        recognitionId,
+        evidenceCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        policyCommitment,
+        anchorCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      },
     });
     expect(JSON.stringify(result)).not.toContain(authorityDid);
+    const acceptedPath = `${path}/accepted`;
+    expect((await fetch(acceptedPath)).status).toBe(403);
+    const recovered = await fetch(acceptedPath, { headers: { "x-authority-did": authorityDid } });
+    expect(recovered.status).toBe(200);
+    expect(recovered.headers.get("cache-control")).toBe("no-store");
+    expect(recovered.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await recovered.json()).toEqual(result.receipt);
     expect((await post(`${path}/submissions`, body)).status).toBe(403);
   });
 });

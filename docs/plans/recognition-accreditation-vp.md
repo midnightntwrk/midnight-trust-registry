@@ -19,6 +19,14 @@ asynchronous VC/VP/status verification, before challenge consumption. Its
 redacted evidence hash binds that policy commitment. This is not an atomic
 policy-and-proposal transaction: durable admission must revalidate against
 current ledger state at the write boundary.
+An optional file-backed admission adapter now replaces a challenge with a
+redacted receipt in one locked file transaction. It takes the governance
+workspace write lock and rereads the governed policy before that transaction
+commits. The host MUST pass the same governance workspace path used by every
+policy mutation; a second independent path does not serialize policy changes.
+The private authenticated accepted-receipt read supports recovery after a
+lost HTTP response. Neither a receipt nor an old active evidence bundle
+authorizes a new recognition proposal on its own.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof
@@ -101,10 +109,11 @@ not an accreditation proof.
 - Compose both proofs and the atomic challenge in private API intake. The
   private path now resolves the anchor against an active Compact policy
   commitment rather than accepting a raw anchor. The optional HTTP port
-  supplies policy and status from the server, not the request, and returns no
-  durable acceptance receipt. Fail closed unless a trusted ledger policy
-  reader and live status adapter are configured; do not mount a production
-  public route before durable admission and atomic write-boundary checks exist.
+  supplies policy and status from the server, not the request. Its opt-in
+  file store records a redacted acceptance receipt with the one-use challenge
+  in the same transaction. Fail closed unless a trusted ledger policy reader
+  and live status adapter are configured; do not mount a production public
+  route before proposal-time policy/current-grant checks exist.
 - Carry the redacted commitment through Compact proposal, epoch evidence,
   public query and TRQP parity. Extend the joined demo and full integration
   suite. Run fresh Compact proving once at the publication checkpoint.

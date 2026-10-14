@@ -47,6 +47,23 @@ export const RecognitionAdmissionReceiptSchema = z.strictObject({
   expiresAtMs: TimestampSchema,
 }).refine((receipt) => receipt.expiresAtMs > receipt.acceptedAtMs);
 export type RecognitionAdmissionReceipt = z.infer<typeof RecognitionAdmissionReceiptSchema>;
+export type RecognitionAdmissionInput = {
+  targetRegistryId: string;
+  recognitionId: string;
+  challengeHash: string;
+  bindingHash: string;
+  policyCommitment: string;
+  anchorCommitment: string;
+  evidenceCommitment: string;
+  expiresAtMs: number;
+  nowMs: number;
+  /** Must read the policy under the same workspace lock used by governance mutations. */
+  assertCurrentGovernance: () => Promise<void>;
+};
+export interface RecognitionAdmissionStore extends ApplicationChallengeStore {
+  accept(input: RecognitionAdmissionInput): Promise<RecognitionAdmissionReceipt | null>;
+  readAccepted(recognitionId: string): Promise<RecognitionAdmissionReceipt | null>;
+}
 
 const receiptId = (receipt: Omit<RecognitionAdmissionReceipt, "receiptId">): string => sha256Hex(JSON.stringify([
   "tr:recognition:admission-receipt:v1",
@@ -99,7 +116,7 @@ export class InvalidRecognitionAdmissionFileError extends Error {
 }
 
 /** A local reference store; the governance lock path must be the same one used by policy mutations. */
-export class FileRecognitionAdmissionStore implements ApplicationChallengeStore {
+export class FileRecognitionAdmissionStore implements RecognitionAdmissionStore {
   private readonly path: string;
   private readonly governanceWorkspacePath: string;
 
@@ -174,19 +191,7 @@ export class FileRecognitionAdmissionStore implements ApplicationChallengeStore 
     });
   }
 
-  async accept(input: {
-    targetRegistryId: string;
-    recognitionId: string;
-    challengeHash: string;
-    bindingHash: string;
-    policyCommitment: string;
-    anchorCommitment: string;
-    evidenceCommitment: string;
-    expiresAtMs: number;
-    nowMs: number;
-    /** Must read the policy under the same workspace lock used by governance mutations. */
-    assertCurrentGovernance: () => Promise<void>;
-  }): Promise<RecognitionAdmissionReceipt | null> {
+  async accept(input: RecognitionAdmissionInput): Promise<RecognitionAdmissionReceipt | null> {
     this.assertClock(input.nowMs);
     const startedAt = performance.now();
     return this.withWrite(this.governanceWorkspacePath, () => this.withWrite(this.path, async () => {
