@@ -10,6 +10,7 @@ import {
 import {
   verifyRecognitionAuthorityAssertion,
   verifyRecognitionAccreditationVp,
+  recognitionAccreditationSubmissionCommitment,
   type RecognitionAccreditationStatusSource,
   type RecognitionAccreditationSubmission,
   type VerifiedRecognitionAccreditation,
@@ -118,6 +119,7 @@ export class RecognitionAuthorityChallengeService {
   }): Promise<{
     authority: VerifiedRecognitionAuthorityAssertion;
     accreditation: VerifiedRecognitionAccreditation;
+    evidenceCommitment: string;
   }> {
     const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
     if (input.anchor.targetRegistryId !== binding.targetRegistryId
@@ -127,6 +129,10 @@ export class RecognitionAuthorityChallengeService {
       throw new Error("Recognition accreditation anchor does not match the challenge tuple");
     }
     const result = await this.verifyThenConsume(input, async (authority, evaluatedAtMs) => {
+      if (authority.statement.accreditationEvidenceCommitment
+        !== recognitionAccreditationSubmissionCommitment(input.accreditation)) {
+        throw new Error("Recognition assertion does not commit to the submitted accreditation VP");
+      }
       const accreditation = await verifyRecognitionAccreditationVp({
         submission: input.accreditation,
         anchor: input.anchor,
@@ -137,12 +143,17 @@ export class RecognitionAuthorityChallengeService {
         resolver: input.resolver,
         statusSource: input.statusSource,
       });
-      if (authority.statement.accreditationEvidenceCommitment !== accreditation.evidenceCommitment) {
-        throw new Error("Recognition assertion does not commit to the verified accreditation VP");
-      }
       return accreditation;
     });
-    return { authority: result.authority, accreditation: result.evidence };
+    return {
+      authority: result.authority,
+      accreditation: result.evidence,
+      evidenceCommitment: sha256Hex(JSON.stringify([
+        "tr:recognition:combined-verified-evidence:v1",
+        result.authority.evidenceCommitment,
+        result.evidence.evidenceCommitment,
+      ])),
+    };
   }
 
   private async verifyThenConsume<Evidence>(input: {

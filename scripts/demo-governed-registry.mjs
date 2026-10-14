@@ -31,9 +31,8 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
-  createMidnightDidLedgerFixture,
-  createMidnightDidResolver,
   createMidnightDid,
+  createRecognitionAccreditationVpScenarioFixture,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
@@ -45,6 +44,7 @@ import {
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   recognitionAuthorityAssertionDigest,
+  recognitionAccreditationSubmissionCommitment,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -347,15 +347,7 @@ harness.registerVcAuthorityKey({
 });
 harness.advanceEvidenceTimeBy(60_000);
 
-const recognitionMethodId = `${recognitionAuthorityDid}#assert-1`;
-const recognitionResolver = createMidnightDidResolver([
-  createMidnightDidLedgerFixture(recognitionAuthorityDid, {
-    schnorrJubjubAssertionMethods: [{
-      id: "assert-1",
-      publicKey: deriveJubjubPublicKeyFromSeed(recognitionAuthoritySeed),
-    }],
-  }),
-]);
+const recognitionMethodId = `${recognitionAuthorityDid}#assertion-1`;
 const recognitionChallengeService = new RecognitionAuthorityChallengeService(
   new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
 );
@@ -369,10 +361,24 @@ const recognitionChallengeBinding = {
 };
 const recognitionChallenge = await recognitionChallengeService.issue(recognitionChallengeBinding);
 const recognitionChallengeHash = recognitionChallenge.challengeHash;
+const recognitionAccreditationFixture = await createRecognitionAccreditationVpScenarioFixture({
+  nonce: recognitionChallenge.nonce,
+  evaluatedAtMs: VP_FIXTURE_TIME_MS,
+  authorityDid: recognitionAuthorityDid,
+  authorityAssertionSeed: recognitionAuthoritySeed,
+  anchor: {
+    targetRegistryId: harness.registryId,
+    recognizedRegistryId: recognition.recognizedRegistryId,
+    scopeResourceType: recognition.scopeResourceType,
+    scopeResourceId: recognition.scopeResourceId,
+  },
+});
 const recognitionStatement = {
   version: "tr-recognition-authority-assertion-v1",
   ...recognitionChallengeBinding,
-  accreditationEvidenceCommitment: sha256Hex("governed-demo-unverified-accreditation-reference"),
+  accreditationEvidenceCommitment: recognitionAccreditationSubmissionCommitment(
+    recognitionAccreditationFixture.input.submission,
+  ),
   challengeHash: recognitionChallengeHash,
   issuedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
   expiresAt: "2026-05-20T01:00:00.000Z",
@@ -388,11 +394,15 @@ const recognitionAssertion = {
     ))),
   },
 };
-const verifyRecognitionChallenge = (signed) => recognitionChallengeService.verifyAndConsumeDidAssertion({
+const verifyRecognitionChallenge = (signed, overrides = {}) => recognitionChallengeService.verifyAndConsumeAccreditedAssertion({
   binding: recognitionChallengeBinding,
   nonce: recognitionChallenge.nonce,
   signed,
-  resolver: recognitionResolver,
+  accreditation: recognitionAccreditationFixture.input.submission,
+  anchor: recognitionAccreditationFixture.input.anchor,
+  resolver: recognitionAccreditationFixture.input.resolver,
+  statusSource: recognitionAccreditationFixture.input.statusSource,
+  ...overrides,
 });
 const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
 await assert.rejects(verifyRecognitionChallenge({
@@ -412,13 +422,27 @@ await assert.rejects(verifyRecognitionChallenge({
     ))),
   },
 }), /signature is invalid/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  statusSource: {
+    verifyPinnedStatus: async () => ({
+      ...await recognitionAccreditationFixture.input.statusSource.verifyPinnedStatus(),
+      active: false,
+    }),
+  },
+}), /status is not active/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  accreditation: {
+    ...recognitionAccreditationFixture.input.submission,
+    rawCredentialBody: `${recognitionAccreditationFixture.input.submission.rawCredentialBody} `,
+  },
+}), /submitted accreditation VP/u);
 assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
-const verifiedRecognitionAssertion = await verifyRecognitionChallenge(recognitionAssertion);
+const verifiedRecognition = await verifyRecognitionChallenge(recognitionAssertion);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion), /already consumed/u);
 const recognitionPrepared = harness.prepareRecognitionProposalAction(
-  recognition, fromHex(verifiedRecognitionAssertion.evidenceCommitment),
+  recognition, fromHex(verifiedRecognition.evidenceCommitment),
 );
-assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognitionAssertion.evidenceCommitment);
+assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognition.evidenceCommitment);
 const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
 const recognitionSigners = [
   signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared),
@@ -472,7 +496,7 @@ const recognitionProposalEventHash = harness.executeRecognitionProposalWithSigna
 );
 assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
   recognition.recognitionIdCommitment,
-).evidenceCommitment), verifiedRecognitionAssertion.evidenceCommitment);
+).evidenceCommitment), verifiedRecognition.evidenceCommitment);
 const applicantSpecs = [
   {
     role: "issuer",
@@ -1504,6 +1528,7 @@ try {
   const recognitionBundle = await expectHttp(await fetch(
     `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
   ), 200);
+  assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
     id: "recognition-not-issuer-authorization",
     invariant: "External registry recognition cannot authorize local VC issuance",
@@ -2006,12 +2031,15 @@ try {
     otherProposals,
     recognitionProposal: {
       eventHash: asHex(recognitionProposalEventHash),
-      evidenceCommitment: verifiedRecognitionAssertion.evidenceCommitment,
-      authorityDidStateVersionId: verifiedRecognitionAssertion.didStateVersionId,
+      evidenceCommitment: verifiedRecognition.evidenceCommitment,
+      authorityDidStateVersionId: verifiedRecognition.authority.didStateVersionId,
+      accreditorDidStateVersionId: verifiedRecognition.accreditation.accreditorDidStateVersionId,
+      anchorCommitment: verifiedRecognition.accreditation.anchorCommitment,
+      statusDecisionCommitment: verifiedRecognition.accreditation.statusDecisionCommitment,
       oneUseChallengeConsumed: true,
-      source: "Midnight DID authority statement verified; local evidence verifier is fixture-held",
-      accreditation: "referenced but not independently verified",
-      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "challenge-replay", "one-maintainer"],
+      source: "Midnight DID authority assertion and independent accreditor VC/VP verified; local evidence verifier is fixture-held",
+      accreditation: "signed VC/VP and anchor-pinned fixture status verified; anchor/status provisioning is not production governance",
+      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
     actorReport,

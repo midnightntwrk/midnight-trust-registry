@@ -29,6 +29,22 @@ export type RecognitionAccreditationSubmission = {
   presentationProof: unknown;
 };
 
+/** Applicant-computable commitment to the exact submitted VP, before registry evaluation. */
+export function recognitionAccreditationSubmissionCommitment(input: RecognitionAccreditationSubmission): string {
+  const submission = strictRecord(input, [
+    "rawCredentialBody", "rawPresentationBody", "credentialProof", "presentationProof",
+  ]);
+  const rawCredentialBody = boundedBody(submission.rawCredentialBody);
+  const rawPresentationBody = boundedBody(submission.rawPresentationBody);
+  return sha256Hex(JSON.stringify([
+    "tr:recognition:accreditation-submission:v1",
+    rawCredentialBody,
+    rawPresentationBody,
+    canonicalizeJson(submission.credentialProof),
+    canonicalizeJson(submission.presentationProof),
+  ]));
+}
+
 export type RecognitionStatusDecision = {
   registryId: string;
   authorityMethodId: string;

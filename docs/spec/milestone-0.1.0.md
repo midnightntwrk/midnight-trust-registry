@@ -172,24 +172,29 @@ external registry ID, resource scope, local policy version, and evidence
 commitment to a signature from an active, governed evidence-verifier key.
 Maintainer quorum is separate and signs that bound proposal. This proves a
 local verifier attested the scoped evidence; it does not independently prove
-the external registry's accreditation, trust chain, or finality. The reference
-simulator's synthetic evidence commitment and fixture-held verifier key are
-test inputs, not an external authority proof.
+the external registry's trust chain or finality. The reference simulator uses
+real Midnight DID and VC/VP signatures for the accreditation profile, but its
+accreditor anchor, status source, and evidence-verifier key are provisioned as
+fixtures rather than governed production dependencies.
 
 The reference Midnight DID authority-assertion profile is narrower than
 external accreditation. An authority assertion signs the target registry,
 recognition ID, authority DID, external registry ID, exact resource scope,
-referenced accreditation-evidence commitment, one-use challenge, and bounded
+exact accreditation-VP submission commitment, one-use challenge, and bounded
 validity interval with an assertion-method JubJub key. The verifier checks the
 current DID method and relationship, exact tuple, challenge, signature, and
-off-chain evaluation time, then commits the signed envelope together with the
-observed DID state version and evaluation instant. The local evidence verifier
-must separately attest that commitment to Compact. A signed authority
-statement proves key control, not the truth or status of the referenced
-accreditation. The joined demo consumes a challenge once, but its accreditation
-reference is synthetic; the simulator convenience path does not consume a
-challenge. Public intake MUST independently validate the accreditation source
-and consume the challenge exactly once before it may be exposed. `did:web` and
+off-chain evaluation time. The authority can compute the exact submitted VP
+commitment before registry evaluation; it cannot sign a later status decision.
+After independently verifying the accredited VC/VP and status under the local
+anchor, the registry combines the verified authority and accreditation evidence
+into a separate redacted commitment. The local evidence verifier and maintainer
+quorum bind that commitment into Compact. A signed authority statement alone
+proves key control, not the truth or status of the accreditation. The joined
+simulator demo verifies credential, presentation, and assertion signatures and
+consumes one challenge before the
+Compact proposal; its anchor and status source remain fixtures. Public intake
+MUST resolve a governed active anchor and independently validate live status
+before it may expose this flow. `did:web` and
 non-JubJub authority proofs require a separate adapter and trust-anchor policy
 before they can enter this profile.
 

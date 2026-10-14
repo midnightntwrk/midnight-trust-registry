@@ -8,6 +8,7 @@ import {
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   recognitionAuthorityAssertionDigest,
+  recognitionAccreditationSubmissionCommitment,
   verifyRecognitionAccreditationVp,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it, vi } from "vitest";
@@ -179,29 +180,36 @@ describe("recognition authority DID challenge", () => {
       new InMemoryApplicationChallengeStore(), () => issuedAtMs + 1000,
     );
     const challenge = await service.issue(accreditedBinding);
+    const accreditation = {
+      rawCredentialBody: "not used by mocked verifier",
+      rawPresentationBody: "not used by mocked verifier",
+      credentialProof: {},
+      presentationProof: {},
+    };
     const signed = signedFor(challenge.challengeHash, {
       ...accreditedBinding,
-      accreditationEvidenceCommitment: commitment,
+      accreditationEvidenceCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
       issuedAt: new Date(issuedAtMs + 1000).toISOString(),
     });
     const request = {
       binding: accreditedBinding,
       nonce: challenge.nonce,
       signed,
-      accreditation: {
-        rawCredentialBody: "not used by mocked verifier",
-        rawPresentationBody: "not used by mocked verifier",
-        credentialProof: {},
-        presentationProof: {},
-      },
+      accreditation,
       anchor,
       resolver,
       statusSource: { verifyPinnedStatus: vi.fn() },
     };
     verifier.mockRejectedValueOnce(new Error("accreditation VP is invalid"));
     await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/VP is invalid/u);
-    verifier.mockResolvedValueOnce({ ...verifiedAccreditation, evidenceCommitment: sha256Hex("other") });
-    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/does not commit/u);
+    await expect(service.verifyAndConsumeAccreditedAssertion({
+      ...request,
+      signed: signedFor(challenge.challengeHash, {
+        ...accreditedBinding,
+        accreditationEvidenceCommitment: sha256Hex("another-submission"),
+        issuedAt: new Date(issuedAtMs + 1000).toISOString(),
+      }),
+    })).rejects.toThrow(/submitted accreditation VP/u);
     verifier.mockResolvedValue(verifiedAccreditation);
     await expect(service.verifyAndConsumeAccreditedAssertion({
       ...request,
@@ -213,6 +221,12 @@ describe("recognition authority DID challenge", () => {
     ]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const successful = results.find((result) => result.status === "fulfilled");
+    expect(successful?.value.evidenceCommitment).toBe(sha256Hex(JSON.stringify([
+      "tr:recognition:combined-verified-evidence:v1",
+      successful?.value.authority.evidenceCommitment,
+      verifiedAccreditation.evidenceCommitment,
+    ])));
     expect(verifier).toHaveBeenCalledWith(expect.objectContaining({
       nonce: challenge.nonce,
       authorityDid,

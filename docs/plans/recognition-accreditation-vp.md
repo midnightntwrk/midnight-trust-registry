@@ -2,24 +2,18 @@
 
 Status: implementation plan for issue #78, 2026-10-14
 
-Local implementation checkpoint: the domain anchor/claims schema, reusable
-Midnight VC/VP proof verifier, and private recognition accreditation VP verifier
-have signed-fixture positive and negative tests. The status decision port is
-injected by trusted code and the test fixture is not a production status
-source. The private challenge service can verify both the DID assertion and VP
-before one atomic consume, with service-level failure/replay tests; those tests
-mock the independently signed VP verifier, so a joined end-to-end flow remains
-to be built. A focused integration test verifies both real signatures and
-their common accreditation evidence commitment, but does not yet carry the
-result through the challenge service and Compact ledger. No public intake route or governed anchor lookup consumes this
-result yet. The DID-only consume path is still used by the pre-accreditation
-demo and must not be presented as an accredited recognition decision.
+Local implementation checkpoint: the domain anchor/claims schema and private
+recognition accreditation VP verifier have signed-fixture positive and negative
+tests. The joined simulator demo uses the same fixture to verify the accreditor
+VC, authority VP and separate authority DID assertion, consumes an exact-tuple
+challenge once, and commits combined verified evidence through Compact. The
+status decision port and accreditor anchor are fixture-provisioned, not a
+production governed lookup. No public intake route exposes this flow yet.
 
-The existing recognition flow verifies a Midnight DID authority assertion,
-consumes an exact-scope challenge, and binds a local evidence-verifier signature
-and maintainer quorum into Compact. It does **not** validate the referenced
-accreditation. This plan defines the missing independent evidence path without
-turning recognition into local issuer, verifier, or maintainer membership.
+The existing DID-only convenience path proves authority key control, not
+accreditation. The composed simulator path adds independent signed VC/VP proof
+checks while keeping recognition separate from local issuer, verifier, and
+maintainer membership.
 
 ## Decision Boundary
 
@@ -55,12 +49,15 @@ not an accreditation proof.
    using the installed VC/DID packages. Verify active credential status from
    the policy-pinned status source at the trusted evaluation instant; a
    fixture-only status decision cannot authorize public intake.
-4. Verify the authority's separate DID assertion with the same tuple and
-   challenge. Consume the challenge only after both proofs and policy/status
+4. The authority assertion signs an applicant-computable commitment to the
+   exact submitted VP, not the registry's later status decision. Verify this
+   separate DID assertion with the same tuple and challenge. Consume the
+   challenge only after both proofs and policy/status
    checks pass. A failed proof must leave it usable, while a concurrent valid
    replay must lose the atomic consume race.
-5. Commit a redacted envelope containing the authority assertion commitment,
-   accreditation VP/claims commitment, anchor-policy commitment, observed
+5. Commit a redacted combination of verified authority assertion evidence and
+   verified accreditation evidence, including VP/claims and anchor-policy
+   commitments, observed
    accreditor/authority DID state versions, status decision commitment, and
    evaluation instant. Do not store raw VC/VP bodies, claims, or holder data in
    the ledger, operator journal, or public response.
