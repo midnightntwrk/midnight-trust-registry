@@ -24,6 +24,7 @@ import {
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
+  requestGovernedResourceId,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
   createApplicationVpIntakePorts,
@@ -565,6 +566,23 @@ try {
       at: bundle.authorization.activeFrom,
     });
     assert.equal(wrongScope.status, 404);
+    if (role === "verifier" || role === "auditor") {
+      const expandedScopes = [
+        { ...scope, allowedAttributes: [...scope.allowedAttributes, "extra-attribute"] },
+        { ...scope, allowedPredicates: [...scope.allowedPredicates, "extra-predicate"] },
+        { ...scope, purpose: `${scope.purpose}-other` },
+        { ...scope, disclosureLevel: `${scope.disclosureLevel}-other` },
+      ];
+      for (const expandedScope of expandedScopes) {
+        const expandedResourceId = requestGovernedResourceId(expandedScope);
+        assert.notEqual(expandedResourceId, resourceId);
+        const expandedDecision = await post("/v1/authorizations/evaluate", {
+          role, subjectDid: participant.subjectDid, resourceId: expandedResourceId,
+          at: bundle.authorization.activeFrom,
+        });
+        assert.equal(expandedDecision.status, 404);
+      }
+    }
     let trqpAgreement = null;
     if (role === "issuer" || role === "verifier") {
       const request = {
@@ -664,6 +682,7 @@ try {
       "premature-activation:403", "stale-governed-context:409",
       ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
         "expired-evidence:client", "out-of-scope-query:404"]),
+      ...(role === "verifier" || role === "auditor" ? ["expanded-request-permissions:404"] : []),
       "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);
 } finally {
