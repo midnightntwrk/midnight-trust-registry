@@ -790,3 +790,20 @@ The issuer proposal API now has a matrix case for a correctly signed, admitted
 receipt whose evidence has expired under the virtual evidence clock. The test
 restores the original accepted fixture after asserting the exact governed
 proposal rejection, so downstream successful decisions remain unchanged.
+
+The local #78 accreditation composition branch now joins real Midnight DID
+authority assertion, independent accreditor VC signature, and authority VP
+signature under one recognition challenge. The authority signs a canonical
+commitment to the exact VP submission, which is computable before registry
+evaluation; it does not sign the later status decision. After checking the
+governed tuple, DID relationships, fixture-pinned accreditation anchor, and
+fixture status source, the registry combines both verified evidence commitments
+and consumes the challenge once. The governed demo passes this combined hash
+through the Compact recognition proposal and checks the public evidence bundle
+retains it. The assertion field is `accreditationSubmissionCommitment`;
+`evidenceCommitment` names the separate post-verification output. This is not
+yet public accredited-recognition intake: anchor/status provisioning is still
+fixture-only. Local `./run.sh --light`, `./run.sh integration --light`, and
+`pnpm audit --audit-level low` passed after the naming change. Run light and
+integration sequentially in one worktree because they share generated outputs;
+reserve fresh proving-key generation for a coherent publication checkpoint.
