@@ -32,6 +32,22 @@ async function fixture(options: Parameters<typeof createRecognitionAccreditation
 }
 
 describe("independently signed recognition accreditation VP", () => {
+  it("commits to exact submitted bodies but canonicalizes proof object order", async () => {
+    const { input } = await fixture();
+    const commitment = recognitionAccreditationSubmissionCommitment(input.submission);
+    const reorderedProof = Object.fromEntries(
+      Object.entries(input.submission.credentialProof).reverse(),
+    );
+    expect(recognitionAccreditationSubmissionCommitment({
+      ...input.submission,
+      credentialProof: reorderedProof,
+    })).toBe(commitment);
+    expect(recognitionAccreditationSubmissionCommitment({
+      ...input.submission,
+      rawCredentialBody: `${input.submission.rawCredentialBody} `,
+    })).not.toBe(commitment);
+  });
+
   it("verifies distinct accreditor, holder and status DID methods and returns redacted evidence", async () => {
     const { input, claims, statusSource } = await fixture();
     const result = await verifyRecognitionAccreditationVp(input);
@@ -57,7 +73,7 @@ describe("independently signed recognition accreditation VP", () => {
       recognizedRegistryId: anchor.recognizedRegistryId,
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
-      accreditationEvidenceCommitment: recognitionAccreditationSubmissionCommitment(input.submission),
+      accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(input.submission),
       challengeHash,
       issuedAt: new Date(NOW).toISOString(),
       expiresAt: new Date(NOW + 60_000).toISOString(),
@@ -79,14 +95,14 @@ describe("independently signed recognition accreditation VP", () => {
       expected: { ...statement, evaluatedAtMs: NOW },
       resolver: input.resolver,
     });
-    expect(verifiedAuthority.statement.accreditationEvidenceCommitment).toBe(
+    expect(verifiedAuthority.statement.accreditationSubmissionCommitment).toBe(
       recognitionAccreditationSubmissionCommitment(input.submission),
     );
-    expect(verifiedAuthority.statement.accreditationEvidenceCommitment).not.toBe(accreditation.evidenceCommitment);
+    expect(verifiedAuthority.statement.accreditationSubmissionCommitment).not.toBe(accreditation.evidenceCommitment);
     await expect(verifyRecognitionAuthorityAssertion({
       signed: {
         ...signed,
-        statement: { ...statement, accreditationEvidenceCommitment: sha256Hex("substituted-accreditation") },
+        statement: { ...statement, accreditationSubmissionCommitment: sha256Hex("substituted-accreditation") },
       },
       expected: { ...statement, evaluatedAtMs: NOW },
       resolver: input.resolver,

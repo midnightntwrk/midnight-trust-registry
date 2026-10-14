@@ -376,7 +376,7 @@ const recognitionAccreditationFixture = await createRecognitionAccreditationVpSc
 const recognitionStatement = {
   version: "tr-recognition-authority-assertion-v1",
   ...recognitionChallengeBinding,
-  accreditationEvidenceCommitment: recognitionAccreditationSubmissionCommitment(
+  accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(
     recognitionAccreditationFixture.input.submission,
   ),
   challengeHash: recognitionChallengeHash,

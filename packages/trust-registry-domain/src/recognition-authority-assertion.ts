@@ -18,7 +18,7 @@ export const RecognitionAuthorityAssertionSchema = z.strictObject({
   recognizedRegistryId: ScopedIdentifierSchema,
   scopeResourceType: ScopedIdentifierSchema,
   scopeResourceId: ScopedIdentifierSchema,
-  accreditationEvidenceCommitment: NonzeroHashHexSchema,
+  accreditationSubmissionCommitment: NonzeroHashHexSchema,
   challengeHash: NonzeroHashHexSchema,
   issuedAt: TimestampSchema,
   expiresAt: TimestampSchema,

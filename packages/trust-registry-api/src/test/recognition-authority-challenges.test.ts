@@ -48,7 +48,7 @@ const signedFor = (challengeHash: string, changes: Partial<RecognitionAuthorityA
   const statement: RecognitionAuthorityAssertion = {
     version: "tr-recognition-authority-assertion-v1",
     ...binding,
-    accreditationEvidenceCommitment: sha256Hex("referenced-accreditation"),
+    accreditationSubmissionCommitment: sha256Hex("referenced-accreditation"),
     challengeHash,
     issuedAt: new Date(issuedAtMs).toISOString(),
     expiresAt: new Date(issuedAtMs + 60 * 60_000).toISOString(),
@@ -92,7 +92,7 @@ describe("recognition authority DID challenge", () => {
       nonce: challenge.nonce,
       signed: {
         ...signed,
-        statement: { ...signed.statement, accreditationEvidenceCommitment: sha256Hex("substituted") },
+        statement: { ...signed.statement, accreditationSubmissionCommitment: sha256Hex("substituted") },
       },
       resolver,
     })).rejects.toThrow(/signature is invalid/u);
@@ -188,7 +188,7 @@ describe("recognition authority DID challenge", () => {
     };
     const signed = signedFor(challenge.challengeHash, {
       ...accreditedBinding,
-      accreditationEvidenceCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
+      accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
       issuedAt: new Date(issuedAtMs + 1000).toISOString(),
     });
     const request = {
@@ -206,7 +206,7 @@ describe("recognition authority DID challenge", () => {
       ...request,
       signed: signedFor(challenge.challengeHash, {
         ...accreditedBinding,
-        accreditationEvidenceCommitment: sha256Hex("another-submission"),
+        accreditationSubmissionCommitment: sha256Hex("another-submission"),
         issuedAt: new Date(issuedAtMs + 1000).toISOString(),
       }),
     })).rejects.toThrow(/submitted accreditation VP/u);

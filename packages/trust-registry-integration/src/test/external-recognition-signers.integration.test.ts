@@ -72,7 +72,7 @@ describe("externally signed Compact authority recognition", () => {
       recognizedRegistryId: recognition.recognizedRegistryId,
       scopeResourceType: recognition.scopeResourceType,
       scopeResourceId: recognition.scopeResourceId,
-      accreditationEvidenceCommitment: sha256Hex("external-accreditation-document"),
+      accreditationSubmissionCommitment: sha256Hex("external-accreditation-document"),
       challengeHash,
       issuedAt: "2026-05-20T00:00:00.000Z",
       expiresAt: "2026-05-20T01:00:00.000Z",

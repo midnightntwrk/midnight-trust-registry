@@ -129,7 +129,7 @@ export class RecognitionAuthorityChallengeService {
       throw new Error("Recognition accreditation anchor does not match the challenge tuple");
     }
     const result = await this.verifyThenConsume(input, async (authority, evaluatedAtMs) => {
-      if (authority.statement.accreditationEvidenceCommitment
+      if (authority.statement.accreditationSubmissionCommitment
         !== recognitionAccreditationSubmissionCommitment(input.accreditation)) {
         throw new Error("Recognition assertion does not commit to the submitted accreditation VP");
       }
