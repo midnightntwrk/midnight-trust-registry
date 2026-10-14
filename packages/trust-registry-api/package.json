@@ -58,10 +58,8 @@
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
+    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
     "zod": "^4.1.0"
-  },
-  "devDependencies": {
-    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0"
   }
 }

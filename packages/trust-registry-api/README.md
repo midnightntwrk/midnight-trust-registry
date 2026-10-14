@@ -344,6 +344,22 @@ only mounted when a trusted host injects the full authenticated port. The
 packaged CLI does not mount it, and this journey does not use an arbitrary VP
 submitted to that endpoint.
 
+### Recognition authority challenge primitive
+
+`RecognitionAuthorityChallengeService` issues a five-minute challenge bound to
+the target registry, recognition ID, Midnight authority DID, external registry,
+and exact resource scope. It reuses the API's atomic challenge-store interface,
+verifies the authority's current DID assertion key and signed tuple, rejects
+statements outside the challenge window, and consumes the nonce once. A failed
+signature or tuple check does not consume it. The process-local store is a
+reference adapter; a multi-process host needs durable atomic storage.
+
+This library primitive is **not mounted as public HTTP intake**. It proves DID
+key control and replay resistance only. The accreditation commitment in the
+statement remains an unverified reference; public recognition intake must also
+validate an independently trusted accreditation source and governed local
+evidence-verifier policy before proposing a ledger transition.
+
 Example applicant submission:
 
 ```bash

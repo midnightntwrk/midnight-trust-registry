@@ -1,4 +1,5 @@
 export * from "./application-challenges.js";
+export * from "./recognition-authority-challenges.js";
 export * from "./file-application-challenges.js";
 export * from "./file-application-admission.js";
 export * from "./workspace-commitment.js";
