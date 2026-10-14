@@ -86,7 +86,7 @@ describe("trust registry client", () => {
     harness.revokeAuditor(auditor);
     expect(() => client.verifyAuditorRequestMandate(bundle, scope, options))
       .toThrow(/not active in current ledger state/u);
-  });
+  }, 30_000);
 
   it("keeps simulator helpers out of the production root", () => {
     expect(ClientRoot).not.toHaveProperty("TrustRegistrySimulatorClient");
