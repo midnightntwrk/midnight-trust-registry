@@ -988,3 +988,15 @@ resulting proof and confirms missing finalized registry state cannot call the
 signer. Schnorr proof bytes are not expected to be identical across valid
 signings of the same decision. Production finality and authority key custody
 remain open.
+
+The governed simulator demo now exercises the optional public decision-evidence
+query for both issuer and verifier, requires its `client-required` envelope,
+verifies the claim against separately supplied simulator ledger/DID readers,
+obtains a gated VC authority proof, and installs it in the compiled consumer.
+The demo reader re-reads current ledger status and action sequence for every
+verification; after suspension and revocation it rejects the previously served
+active API claim before issuing an inactive transition proof.
+The demo uses `buildDecisionEvidenceClaim` rather than duplicating envelope
+assembly. Its injected evidence source and reader state are simulator fixtures;
+they must not be described as a production finalized-ledger adapter. The
+focused governed demo passes locally in about 14 seconds.

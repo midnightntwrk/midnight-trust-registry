@@ -15,12 +15,14 @@ import {
   seedBytesToJubjubSecretScalar,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
-import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
+import {
+  buildDecisionEvidenceClaim,
+  bytes32Commitment,
+  verifyDecisionEvidenceFromApi,
+} from "../packages/trust-registry-client/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import {
   AcceptedDecisionEpochSchema,
-  DecisionEvidenceSchema,
-  deriveGovernancePolicySnapshot,
   sha256Hex,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
@@ -28,7 +30,7 @@ import {
   createMidnightDidResolver,
   createQuorumGatedVcAuthoritySigner,
   issuerSchemaRefFromRegistryScope,
-  issueVcSignerAuthorizationFromTrustedDecision,
+  issueVcSignerAuthorizationFromApi,
   issueVcSignerStatusTransitionFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainFields,
@@ -115,31 +117,13 @@ async function prepareGovernedSignerAuthorization(input) {
   assert.ok(method);
   assert.ok(subjectResolution.didDocument[relationship]?.includes(methodId));
   const grant = bundle.authorization;
-  const evidence = DecisionEvidenceSchema.parse({
-    format: "tr-decision-evidence-v1",
-    role,
-    registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
-    anchorReferences: {
-      registryEpoch: { networkId, contractAddress, transactionHash: epochTransaction, blockHash: epochBlock },
-      didState: { networkId, blockHash: didBlock },
-    },
-    epoch: {
-      epochId: bundle.epoch.epochId,
-      registryId: bundle.epoch.registryId,
-      stateRoot: bundle.epoch.stateRoot,
-      eventRoot: bundle.epoch.eventRoot,
-      policyRoot: bundle.epoch.policyRoot,
-      publicationPolicyCommitment: acceptedEpoch.publicationPolicyCommitment,
-      publicationSequence: acceptedEpoch.publicationSequence,
-      validFromSequence: acceptedEpoch.validFromSequence,
-      validUntilSequence: acceptedEpoch.validUntilSequence,
-      validFrom: bundle.epoch.validFrom,
-      validUntil: bundle.epoch.validUntil,
-      quorum: { requiredSignatures: acceptedEpoch.requiredSignatures, signatures: witness.signatures },
-    },
-    grant,
+  const decisionSequence = ledger.governanceActionCount.toString();
+  const evidence = buildDecisionEvidenceClaim({
+    bundle,
+    acceptedEpoch,
+    publicationSignatures: witness.signatures,
+    didStateBlockHash: didBlock,
     scope,
-    ...(role === "issuer" ? { statusPolicyBinding: bundle.statusPolicyBinding } : {}),
     didMethod: {
       did: subject.subjectDid,
       methodId,
@@ -150,17 +134,15 @@ async function prepareGovernedSignerAuthorization(input) {
       stateVersion,
       stateEvidence: { evidenceType: "ledger-observation", blockHash: didBlock, transactionHash: didTransaction },
     },
-    policy: deriveGovernancePolicySnapshot(bundle.policy),
-    inclusionProof: { ...bundle.inclusionProof, leafIndex: String(bundle.inclusionProof.leafIndex) },
     governanceEvents: {
       grantTransition: grant.lifecycleEventRoot,
       quorumApproval: sha256Hex("simulator:governed-demo:approval-lookup"),
       epochPublication: witness.eventHash,
       policySnapshot: bundle.epoch.policyRoot,
     },
-    decisionSequence: epochRecord.publishedAtSequence.toString(),
+    decisionSequence,
   });
-  const currentGrant = role === "issuer"
+  const readCurrentGrant = () => role === "issuer"
     ? harness.simulator.getCurrentIssuerAuthorization(
       subject.subjectDidCommitment, subject.resourceType, subject.resourceIdCommitment,
     )
@@ -169,6 +151,7 @@ async function prepareGovernedSignerAuthorization(input) {
       subject.allowedAttributeSetCommitment, subject.allowedPredicateSetCommitment,
       subject.disclosureLevelCommitment,
     );
+  const currentGrant = readCurrentGrant();
   assert.ok(currentGrant);
   assert.equal(AuthorizationStatus[currentGrant.status], inactiveState ?? "active");
   const selection = {
@@ -181,19 +164,25 @@ async function prepareGovernedSignerAuthorization(input) {
     resourceId: role === "issuer" ? subject.resourceId : subject.scopeResourceId,
     scope,
   };
-  const decisionPoint = {
-    sequence: epochRecord.publishedAtSequence.toString(),
-    evaluationTime: bundle.epoch.validFrom,
-    currentPolicy: {
-      root: hex(ledger.governancePolicyCommitment),
-      observedAtSequence: epochRecord.publishedAtSequence.toString(),
-    },
-    currentGrant: {
-      authorizationId: grant.authorizationId,
-      lifecycleEventRoot: hex(currentGrant.lifecycleEventHash),
-      status: inactiveState ?? "active",
-      observedAtSequence: epochRecord.publishedAtSequence.toString(),
-    },
+  const readDecisionPoint = () => {
+    const current = harness.simulator.getLedger();
+    const selected = readCurrentGrant();
+    assert.ok(selected);
+    const sequence = current.governanceActionCount.toString();
+    return {
+      sequence,
+      evaluationTime: bundle.epoch.validFrom,
+      currentPolicy: {
+        root: hex(current.governancePolicyCommitment),
+        observedAtSequence: sequence,
+      },
+      currentGrant: {
+        authorizationId: grant.authorizationId,
+        lifecycleEventRoot: hex(selected.lifecycleEventHash),
+        status: AuthorizationStatus[selected.status],
+        observedAtSequence: sequence,
+      },
+    };
   };
   const subjectDidState = {
     networkId,
@@ -231,7 +220,7 @@ async function prepareGovernedSignerAuthorization(input) {
           return { keyId: signer.keyId, keyIdCommitment, publicKey: maintainer.publicKey };
         }),
       },
-      decisionPoint,
+      decisionPoint: readDecisionPoint(),
     }),
     readCurrentFinalizedDidState: async (did) => did === subject.subjectDid
       ? subjectDidState
@@ -271,8 +260,27 @@ async function prepareGovernedSignerAuthorization(input) {
     anchor: authorityAnchor,
     signer,
   };
+  if (inactiveState === undefined) {
+    assert.equal(typeof input.apiBase, "string");
+    assert.equal(typeof input.publishDecisionEvidence, "function");
+    input.publishDecisionEvidence(role, subject.authorizationId, evidence);
+  } else {
+    assert.equal(typeof input.apiBase, "string");
+    await assert.rejects(
+      verifyDecisionEvidenceFromApi(input.apiBase, subject.authorizationId, selection, readers),
+      /mismatch|unavailable/u,
+    );
+  }
   const signed = inactiveState === undefined
-    ? await issueVcSignerAuthorizationFromTrustedDecision(request)
+    ? await issueVcSignerAuthorizationFromApi({
+      apiBase: input.apiBase,
+      authorizationId: subject.authorizationId,
+      selection,
+      readers,
+      method: request.method,
+      anchor: authorityAnchor,
+      signer,
+    })
     : await issueVcSignerStatusTransitionFromTrustedDecision({
       ...request, previous, state: inactiveState,
     });
@@ -461,6 +469,7 @@ async function verifyGovernedStatusUpdate(input, role, subject, scope) {
         decisionSequence: signed.descriptor.decisionSequence.toString(),
         authorizationId: hex(signed.descriptor.authorizationId),
         [role === "issuer" ? "priorCredentialProofRejected" : "priorRequestProofRejected"]: true,
+        staleApiDecisionRejected: true,
         staleDescriptorReplayRejected: true,
         ...(state === "revoked" ? { resurrectionRejected: true } : {}),
       },

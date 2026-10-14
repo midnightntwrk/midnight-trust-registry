@@ -725,8 +725,14 @@ const proposalPort = (role, target) => ({
     };
   },
 });
+const decisionEvidenceByGrant = new Map();
+const publishDecisionEvidence = (role, authorizationId, evidence) => {
+  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, evidence);
+};
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
+  readDecisionEvidence: async (role, authorizationId) =>
+    decisionEvidenceByGrant.get(`${role}:${authorizationId}`) ?? null,
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
   proposalAdmission: {
     resolvePendingApplication: async (applicationId) => registeredApplications.get(applicationId) ?? null,
@@ -1504,7 +1510,17 @@ try {
     authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBase: base,
+    publishDecisionEvidence,
   });
+  const issuerDecision = await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 200);
+  assert.equal(issuerDecision.verification, "client-required");
+  assert.equal(issuerDecision.evidence.grant.authorizationId, issuer.authorizationId);
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 404);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
     ...issuerBundle,
     inclusionProof: {
@@ -1540,7 +1556,14 @@ try {
     authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBase: base,
+    publishDecisionEvidence,
   });
+  const verifierDecision = await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+  ), 200);
+  assert.equal(verifierDecision.verification, "client-required");
+  assert.equal(verifierDecision.evidence.grant.authorizationId, verifier.authorizationId);
   adversarialMatrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
     expectedResourceId: "request-profile:unknown",
   }), {
@@ -1694,6 +1717,7 @@ try {
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: suspendedBundle, state: "suspended", previousJourney: vcConsumer,
+    apiBase: base,
   });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
@@ -1751,6 +1775,7 @@ try {
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: revokedBundle, state: "revoked", previousJourney: suspendedConsumer,
+    apiBase: base,
   });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
@@ -1904,6 +1929,7 @@ try {
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
         authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
         apiBundle: suspendedBundle, state: "suspended", previousJourney: verifierJourney,
+        apiBase: base,
       });
       verifierLifecycle.push(verifierJourney.report);
     }
@@ -1955,6 +1981,7 @@ try {
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
         authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
         apiBundle: revokedBundle, state: "revoked", previousJourney: verifierJourney,
+        apiBase: base,
       });
       verifierLifecycle.push(verifierJourney.report);
     }
