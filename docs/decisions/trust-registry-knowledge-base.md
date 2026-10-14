@@ -842,3 +842,25 @@ failures do not spend the nonce, and successful verification returns only a
 redacted commitment and expiry. The route is disabled without a trusted port
 and is not mounted by the CLI. It does not persist a receipt or authorize a
 Compact proposal; those are separate production admission requirements.
+
+The next local #78 slice adds a private, opt-in recognition admission store.
+It persists only a redacted receipt and challenge hashes in one private file;
+under the configured governance-workspace writer lock, acceptance rereads the
+active policy and atomically replaces the challenge with that receipt. A
+private authenticated recovery route handles a lost HTTP response. It rejects
+separate challenge and receipt stores, stale policy at the final read, duplicate
+recognition IDs, and concurrent replays. The host must use the exact same
+workspace lock path as all policy writers. A receipt is not a Compact proposal
+grant: proposal-time policy/current-record validation, production DID/status
+readers, and a live network finality source remain open.
+
+The preceding accreditation branch bound the current governance commitment
+into the verified VP evidence hash and reread the governed anchor before
+challenge consumption. It passed fresh full integration (94 integration
+tests and governed demos), local light (20/20), and audit; the initial Compact
+proving-key generation took about 22 minutes. For TypeScript-only iterations,
+package typechecks and focused tests take seconds and integration-light avoids
+that proving cost. A maintainer simulator test passed alone in 1.6 seconds but
+timed out twice at the five-second default under the parallel integration
+suite; its explicit 15-second bound restored the full integration-light lane
+without weakening assertions.
