@@ -151,7 +151,7 @@ export class RecognitionAuthorityChallengeService {
         statusSource: input.statusSource,
       });
       return accreditation;
-    });
+    }, (accreditation) => accreditation.expiresAtMs);
     return {
       authority: result.authority,
       accreditation: result.evidence,
@@ -171,7 +171,7 @@ export class RecognitionAuthorityChallengeService {
   }, verifyEvidence: (
     authority: VerifiedRecognitionAuthorityAssertion,
     evaluatedAtMs: number,
-  ) => Promise<Evidence>): Promise<{
+  ) => Promise<Evidence>, evidenceExpiresAtMs?: (evidence: Evidence) => number): Promise<{
     authority: VerifiedRecognitionAuthorityAssertion;
     evidence: Evidence;
   }> {
@@ -199,7 +199,14 @@ export class RecognitionAuthorityChallengeService {
       throw new Error("Recognition authority assertion was signed outside the challenge window");
     }
     const evidence = await verifyEvidence(verified, nowMs);
-    if (!await this.store.consume(challengeHash, hash, this.now())) {
+    const consumeAtMs = this.now();
+    const evidenceExpiry = evidenceExpiresAtMs?.(evidence);
+    if (Date.parse(verified.statement.expiresAt) <= consumeAtMs
+      || (evidenceExpiry !== undefined && (!Number.isSafeInteger(evidenceExpiry)
+        || evidenceExpiry <= consumeAtMs))) {
+      throw new Error("Recognition proof expired before challenge consumption");
+    }
+    if (!await this.store.consume(challengeHash, hash, consumeAtMs)) {
       throw new Error("Recognition authority challenge is invalid or already consumed");
     }
     return { authority: verified, evidence };

@@ -11,8 +11,9 @@ status decision port now has a challenge-bound, five-minute JubJub-signed
 status-authority attestation adapter; the demo still fetches that attestation
 from a deterministic fixture, not a live status registry. The accreditor anchor is now a
 maintainer-quorum-approved governance-policy preimage checked against the
-current Compact policy commitment in the private challenge path. No public
-intake route exposes this flow yet.
+current Compact policy commitment in the private challenge path. An opt-in,
+authenticated private HTTP route now exercises challenge and redacted evidence
+verification; it is not mounted by the CLI and is not public intake.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof
@@ -93,9 +94,11 @@ not an accreditation proof.
   authority/registry/scope, expired, revoked, stale status, and replay cases.
 - Compose both proofs and the atomic challenge in private API intake. The
   private path now resolves the anchor against an active Compact policy
-  commitment rather than accepting a raw anchor. Fail closed unless a trusted
-  ledger policy reader and live status adapter are configured; do not mount a
-  public route before these dependencies exist.
+  commitment rather than accepting a raw anchor. The optional HTTP port
+  supplies policy and status from the server, not the request, and returns no
+  durable acceptance receipt. Fail closed unless a trusted ledger policy
+  reader and live status adapter are configured; do not mount a production
+  public route before durable admission and atomic write-boundary checks exist.
 - Carry the redacted commitment through Compact proposal, epoch evidence,
   public query and TRQP parity. Extend the joined demo and full integration
   suite. Run fresh Compact proving once at the publication checkpoint.

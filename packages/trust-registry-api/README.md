@@ -27,6 +27,8 @@ Current route set:
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/receipt` (applicant-authorized accepted redacted evidence and receipt recovery; optional trusted port)
+- `POST /v1/recognition-evidence/:recognitionId/challenges` (private accredited-recognition challenge; optional trusted port)
+- `POST /v1/recognition-evidence/:recognitionId/submissions` (private signed VC/VP plus authority assertion verification; optional trusted port)
 - `POST /v1/pending-applications` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
@@ -359,11 +361,19 @@ statements outside the challenge window, and consumes the nonce once. A failed
 signature or tuple check does not consume it. The process-local store is a
 reference adapter; a multi-process host needs durable atomic storage.
 
-This library primitive is **not mounted as public HTTP intake**. It proves DID
-key control and replay resistance only. The accreditation commitment in the
-statement remains an unverified reference; public recognition intake must also
-validate an independently trusted accreditation source and governed local
-evidence-verifier policy before proposing a ledger transition.
+The DID-only primitive is not public intake: it proves key control and replay
+resistance, not accreditation. An opt-in `recognitionAccreditation` server port
+adds private HTTP challenge/submission routes. The host must authenticate each
+request and provide the current policy record, Compact policy commitment, DID
+resolver, and status source from trusted server-side state. Neither the anchor
+nor status decision can be supplied by the HTTP caller. Failed proof or stale
+policy leaves the challenge usable; a successful submission returns only a
+redacted evidence commitment and expiry. This reference route has no durable
+acceptance receipt or proposal-admission transaction, is disabled in the CLI,
+and must not be exposed as production public intake. The local signed-status
+fixture authenticates an authority statement, not live status-registry state.
+Production intake still needs live status evidence, durable admission, and
+atomic policy revalidation at the write boundary before a ledger transition.
 The joined governed demo exercises issue, invalid assertion rejection, valid
 consumption, replay rejection, and the resulting Compact proposal.
 

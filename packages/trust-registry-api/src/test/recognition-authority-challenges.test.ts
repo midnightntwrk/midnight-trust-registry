@@ -177,12 +177,13 @@ describe("recognition authority DID challenge", () => {
       statusAuthorityDidStateVersionId: "status-state",
       statusDecisionCommitment: sha256Hex("status"),
       evaluatedAtMs,
-      expiresAtMs: issuedAtMs + 60_000,
+      expiresAtMs: evaluatedAtMs + 60_000,
     };
     const verifier = vi.mocked(verifyRecognitionAccreditationVp);
     verifier.mockReset();
+    let nowMs = evaluatedAtMs;
     const service = new RecognitionAuthorityChallengeService(
-      new InMemoryApplicationChallengeStore(), () => evaluatedAtMs,
+      new InMemoryApplicationChallengeStore(), () => nowMs,
     );
     const challenge = await service.issue(accreditedBinding);
     const accreditation = {
@@ -224,6 +225,12 @@ describe("recognition authority DID challenge", () => {
         recognitionAccreditorAnchors: [{ ...anchor, scopeResourceId: "credential-family:other:v1" }],
       },
     })).rejects.toThrow(/active governed policy/u);
+    verifier.mockImplementationOnce(async () => {
+      nowMs += 1000;
+      return { ...verifiedAccreditation, expiresAtMs: evaluatedAtMs + 500 };
+    });
+    await expect(service.verifyAndConsumeAccreditedAssertion(request))
+      .rejects.toThrow(/expired before challenge consumption/u);
     const results = await Promise.allSettled([
       service.verifyAndConsumeAccreditedAssertion(request),
       service.verifyAndConsumeAccreditedAssertion(request),

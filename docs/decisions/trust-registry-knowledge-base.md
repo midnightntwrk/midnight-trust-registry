@@ -832,3 +832,13 @@ future-dated status cases fail in focused tests, and the joined demo passes.
 The fetcher is still a deterministic fixture, not a live status-registry
 ledger reader. A trustworthy production fetcher and independent status-ledger
 evidence remain necessary before public accredited-recognition intake.
+
+An opt-in private `recognition-evidence` HTTP port now exposes the joined
+challenge and signed accreditation verification to an authenticated local
+caller. The host injects the current governed policy commitment, DID resolver,
+and signed-status source; no policy or status decision is accepted from the
+request body. Challenge issuance and submission reject stale policy, proof
+failures do not spend the nonce, and successful verification returns only a
+redacted commitment and expiry. The route is disabled without a trusted port
+and is not mounted by the CLI. It does not persist a receipt or authorize a
+Compact proposal; those are separate production admission requirements.
