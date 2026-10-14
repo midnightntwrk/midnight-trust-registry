@@ -219,6 +219,21 @@ export type PreparedMaintainerProposalAction = PreparedMaintainerAction & {
   evidenceVerifierKeyIdCommitment: Uint8Array;
 };
 
+export type PreparedRegistryEpochPublicationAction = {
+  epochId: string;
+  registryId: Uint8Array;
+  epochIdCommitment: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  stateRoot: Uint8Array;
+  eventRoot: Uint8Array;
+  policyRoot: Uint8Array;
+  validFromSequence: bigint;
+  validUntilSequence: bigint;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -2934,6 +2949,88 @@ export class LocalTrustRegistryIntegrationHarness {
     return revision;
   }
 
+  private prepareEpochPublicationAction(input: {
+    statementLeafHash: string;
+    lastStatusSequence: bigint;
+    lifecycleEventRoot: string;
+  }): PreparedRegistryEpochPublicationAction {
+    this.assertSupportedContractFormat();
+    const epochId = createScopedIdentifier("epoch", this.registryId,
+      `seq-${input.lastStatusSequence.toString()}`);
+    const epochIdCommitment = bytes32Commitment(epochId);
+    const stateRoot = hashHexToBytes32(computeSingleStatementStateRoot(
+      input.statementLeafHash, input.lifecycleEventRoot,
+    ));
+    const eventRoot = hashHexToBytes32(input.lifecycleEventRoot);
+    const policyRoot = Uint8Array.from(this.policyRevisionAtSequence(input.lastStatusSequence).commitment);
+    const validFromSequence = input.lastStatusSequence;
+    const validUntilSequence = input.lastStatusSequence + 60n;
+    return {
+      epochId,
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      epochIdCommitment,
+      policyCommitment: Uint8Array.from(this.simulator.getLedger().governancePolicyCommitment),
+      actionKind: Uint8Array.from(CREATE_EPOCH_ACTION_KIND),
+      actionPayloadHash: computeCreateEpochCommitmentPayloadHash(
+        epochIdCommitment, stateRoot, eventRoot, policyRoot,
+        validFromSequence, validUntilSequence,
+      ),
+      actionSequence: this.simulator.getLedger().governanceActionCount,
+      stateRoot,
+      eventRoot,
+      policyRoot,
+      validFromSequence,
+      validUntilSequence,
+    };
+  }
+
+  prepareRegistryEpochPublicationAction(label = "registry-current"): PreparedRegistryEpochPublicationAction {
+    const ledger = this.assertSupportedContractFormat();
+    const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
+    return this.prepareEpochPublicationAction({
+      statementLeafHash: computeRegistryStatementLeafHash({
+        registryId: this.registryId,
+        statementId,
+        statementStatus: this.registryRecord.status,
+        lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      }),
+      lastStatusSequence: ledger.governanceActionCount,
+      lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+    });
+  }
+
+  /** Compact verifies the active maintainer keys, signatures, policy, sequence, and quorum. */
+  executeRegistryEpochPublicationWithSignatures(
+    label: string,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): EpochCommitment {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Epoch publication requires a maintainer signature");
+    const prepared = this.prepareRegistryEpochPublicationAction(label);
+    const signersWithDids = signers.map((signer) => {
+      const maintainer = [...this.knownMaintainers.values()].find((candidate) =>
+        sameBytes(candidate.keyId, signer.keyId));
+      if (maintainer === undefined) throw new Error("Epoch signer is not a known maintainer");
+      return { signer, maintainer };
+    });
+    const eventHash = this.simulator.publishEpochCommitment(
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.epochIdCommitment, prepared.stateRoot, prepared.eventRoot,
+      prepared.policyRoot, prepared.validFromSequence, prepared.validUntilSequence,
+      signers.slice(1),
+    );
+    this.epochPublicationWitnesses.set(prepared.epochId, {
+      eventHash: bytes32Hex(eventHash),
+      signatures: signersWithDids.map(({ signer, maintainer }) => ({
+        keyId: `${maintainer.subjectDid}#key-1`,
+        algorithm: "jubjub-schnorr" as const,
+        signature: bytes32Hex(encodeJubjubSignature(signer.signature)),
+      })),
+    });
+    return this.buildEpochCommitment(prepared.epochId,
+      this.simulator.getEpochCommitment(prepared.epochIdCommitment));
+  }
+
   private ensurePublishedEpochCommitment(input: {
     statementId: string;
     statementLeafHash: string;
@@ -2941,69 +3038,45 @@ export class LocalTrustRegistryIntegrationHarness {
     lifecycleEventRoot: string;
     statementStatus: string;
   }): EpochCommitment {
-    this.assertSupportedContractFormat();
-    const epochId = createScopedIdentifier(
-      "epoch",
-      this.registryId,
-      `seq-${input.lastStatusSequence.toString()}`,
-    );
-    const epochIdCommitment = bytes32Commitment(epochId);
-    const epochValidFromSequence = input.lastStatusSequence;
-    const epochValidUntilSequence = input.lastStatusSequence + 60n;
-    const stateRoot = computeSingleStatementStateRoot(
-      input.statementLeafHash,
-      input.lifecycleEventRoot,
-    );
-    const eventRoot = input.lifecycleEventRoot;
-    const policyRevision = this.policyRevisionAtSequence(input.lastStatusSequence);
-    const policyRoot = bytes32Hex(policyRevision.commitment);
+    const prepared = this.prepareEpochPublicationAction(input);
 
     let record: ContractEpochCommitmentRecord;
     try {
-      record = this.simulator.getEpochCommitment(epochIdCommitment);
+      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (!/not registered/i.test(message)) {
         throw error;
       }
 
-      const actionSequence = this.simulator.getLedger().governanceActionCount;
-      const payloadHash = computeCreateEpochCommitmentPayloadHash(
-        epochIdCommitment,
-        hashHexToBytes32(stateRoot),
-        hashHexToBytes32(eventRoot),
-        hashHexToBytes32(policyRoot),
-        epochValidFromSequence,
-        epochValidUntilSequence,
-      );
       const signature = this.signMaintainerActionFromSeed(
         this.bootstrapMaintainer.seed,
-        this.registryIdCommitment,
-        CREATE_EPOCH_ACTION_KIND,
-        payloadHash,
-        actionSequence,
+        prepared.registryId,
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
       );
       const coMaintainers = this.activeDefaultQuorumCoMaintainers();
       const coAuthorizers = this.maintainerCoAuthorizers(
         coMaintainers,
-        CREATE_EPOCH_ACTION_KIND,
-        payloadHash,
-        actionSequence,
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
       );
       const eventHash = this.simulator.publishEpochCommitment(
         this.bootstrapMaintainer.keyId,
         this.bootstrapPublicKey,
         signature,
-        epochIdCommitment,
-        hashHexToBytes32(stateRoot),
-        hashHexToBytes32(eventRoot),
-        hashHexToBytes32(policyRoot),
-        epochValidFromSequence,
-        epochValidUntilSequence,
+        prepared.epochIdCommitment,
+        prepared.stateRoot,
+        prepared.eventRoot,
+        prepared.policyRoot,
+        prepared.validFromSequence,
+        prepared.validUntilSequence,
         coAuthorizers,
       );
-      record = this.simulator.getEpochCommitment(epochIdCommitment);
-      this.epochPublicationWitnesses.set(epochId, {
+      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
+      this.epochPublicationWitnesses.set(prepared.epochId, {
         eventHash: bytes32Hex(eventHash),
         signatures: [
           {
@@ -3020,7 +3093,7 @@ export class LocalTrustRegistryIntegrationHarness {
       });
     }
 
-    return this.buildEpochCommitment(epochId, record);
+    return this.buildEpochCommitment(prepared.epochId, record);
   }
 
   publishRegistryEpoch(label = "registry-current"): EpochCommitment {
@@ -3058,10 +3131,18 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
+  getPublishedEpochCommitment(epochId: string): EpochCommitment {
+    return this.buildEpochCommitment(epochId,
+      this.simulator.getEpochCommitment(bytes32Commitment(epochId)));
+  }
+
   private buildEpochCommitment(
     epochId: string,
     record: ContractEpochCommitmentRecord,
   ): EpochCommitment {
+    const primary = [...this.knownMaintainers.values()].find((maintainer) =>
+      sameBytes(maintainer.keyId, record.maintainerKeyId));
+    if (primary === undefined) throw new Error("Epoch primary signer is not a known maintainer");
     return EpochCommitmentSchema.parse({
       epochId,
       registryId: this.registryId,
@@ -3072,7 +3153,7 @@ export class LocalTrustRegistryIntegrationHarness {
       validUntil: timestampForSequence(record.validUntilSequence),
       maintainerSignatures: [
         {
-          keyId: `${this.maintainerDid}#key-1`,
+          keyId: `${primary.subjectDid}#key-1`,
           algorithm: "jubjub-schnorr",
           signature: bytes32Hex(
             encodeJubjubSignature({

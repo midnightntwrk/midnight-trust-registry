@@ -177,7 +177,10 @@ admission service or a production VC status verifier.
 for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
-maintainer proposal/approval/activation, and epoch publication. The issuer,
+maintainer proposal/approval/activation, and externally signed registry epoch
+publication through the admin console API client. The publish route rejects
+a stale context or insufficient quorum before accepting a ledger commitment;
+the public epoch lookup then observes that exact commitment. The issuer,
 verifier, and auditor paths then use the same signed quorum to suspend and
 revoke the grant, reject single or duplicate signers, deny current trust,
 and preserve the earlier active decision. The maintainer path likewise
@@ -196,6 +199,9 @@ joined journeys as the deterministic local CI target. The local
 file adapter does not make challenge consumption, evidence acceptance, and
 Compact governance one atomic transaction; the demo does not establish
 production family/status verification or network finality.
+Per-grant evidence snapshots still use simulator fixture signing; the
+externally signed route covers registry epoch publication, not every evidence
+bundle created during projection.
 The auditor grant proves an exact request-profile mandate; it does not grant
 automatic access to a verifier's private records.
 The maintainer journey verifies activation in the Compact membership record;

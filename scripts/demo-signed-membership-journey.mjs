@@ -37,6 +37,7 @@ import {
   createMaintainerScenarioFixture,
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
+  bytes32Commitment,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
@@ -48,6 +49,7 @@ import {
   GovernedIssuerProposalRejectedError,
   GovernedMaintainerProposalRejectedError,
   GovernedMembershipActionRejectedError,
+  GovernedEpochPublicationRejectedError,
   GovernedVerifierProposalRejectedError,
   FileApplicationAdmissionStore,
   FileApplicationChallengeStore,
@@ -228,7 +230,6 @@ const server = createTrustRegistryApiServer({
       if (id !== profile.id) throw new profile.rejected("unknown-authorization");
       try {
         const eventHash = profile.executeProposal(evidence, signers, verifierSignature, expectedEvidence());
-        snapshot = publishSimulatorSnapshot(harness, { label }, snapshot);
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new profile.rejected("invalid-signers");
@@ -256,16 +257,32 @@ const server = createTrustRegistryApiServer({
       }
       try {
         const eventHash = profile.executeDecision(action, signers);
-        snapshot = publishSimulatorSnapshot(harness, {
-          label,
-          ...(profile.snapshotKey !== null ? {
-            [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
-          } : {}),
-        }, snapshot);
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new GovernedMembershipActionRejectedError("invalid-signers");
       }
+    },
+  },
+  governedEpochPublication: {
+    async prepare(epochLabel) {
+      return harness.prepareRegistryEpochPublicationAction(epochLabel);
+    },
+    async execute(epochLabel, signers) {
+      let epoch;
+      try {
+        epoch = harness.executeRegistryEpochPublicationWithSignatures(epochLabel, signers);
+      } catch {
+        throw new GovernedEpochPublicationRejectedError();
+      }
+      snapshot = publishSimulatorSnapshot(harness, {
+        label,
+        ...(profile.snapshotKey !== null ? {
+          [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
+        } : {}),
+      }, snapshot, epoch);
+      assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
+        asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
+      return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
     },
   },
   authorizePendingApplicationRegistration: async (request) => {
@@ -354,6 +371,39 @@ try {
   });
   const applicantClient = new TrustRegistryApplicantPortalClient(base, authenticatedFetch);
   const adminClient = new TrustRegistryAdminConsoleClient(base, authenticatedFetch);
+  const publishedEpochIds = [];
+  const publishGovernedEpoch = async (phase) => {
+    const epochLabel = `${role}-${phase}`;
+    const prepared = await adminClient.prepareGovernedEpoch(epochLabel);
+    const before = harness.simulator.getLedger().governanceActionCount;
+    const publishPath = "/v1/governed/epochs/publish";
+    assert.equal((await post(publishPath, {
+      label: epochLabel, prepared, signers: [signAction(maintainers[0], prepared)],
+    })).status, 403);
+    assert.equal((await post(publishPath, {
+      label: epochLabel,
+      prepared,
+      signers: [signAction(maintainers[0], prepared), signAction(maintainers[0], prepared)],
+    })).status, 403);
+    assert.equal((await post(publishPath, {
+      label: `${epochLabel}-other`, prepared, signers: quorumSignatures(prepared),
+    })).status, 409);
+    assert.equal((await post(publishPath, {
+      label: epochLabel,
+      prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
+      signers: quorumSignatures(prepared),
+    })).status, 409);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    const receipt = await adminClient.submitGovernedEpoch({
+      label: epochLabel, prepared, signers: quorumSignatures(prepared),
+    });
+    assert.equal(receipt.epoch.epochId, prepared.epochId);
+    const published = await expectHttp(await fetch(
+      `${base}/v1/epochs/${encodeURIComponent(receipt.epoch.epochId)}`,
+    ), 200);
+    assert.equal(published.epochId, receipt.epoch.epochId);
+    publishedEpochIds.push(receipt.epoch.epochId);
+  };
   const post = (path, body, withToken = true) => fetch(`${base}${path}`, {
     method: "POST",
     headers: {
@@ -490,6 +540,7 @@ try {
     await adminClient.submitGovernedAction(role, profile.id, action, {
       prepared, signers: quorumSignatures(prepared),
     });
+    if (action === "activate") await publishGovernedEpoch(action);
   }
 
   let trustResult;
@@ -519,6 +570,7 @@ try {
       await adminClient.submitGovernedAction(role, profile.id, action, {
         prepared, signers: quorumSignatures(prepared),
       });
+      await publishGovernedEpoch(action);
       assert.equal(harness.simulator.getMaintainerMembership(profile.idCommitment).status,
         action === "suspend" ? AuthorizationStatus.suspended : AuthorizationStatus.revoked);
       assert.equal(harness.simulator.getLedger().activeMaintainerCount, activeMaintainersBeforeApplication);
@@ -632,6 +684,7 @@ try {
       await adminClient.submitGovernedAction(role, profile.id, action, {
         prepared, signers: quorumSignatures(prepared),
       });
+      await publishGovernedEpoch(action);
       const entry = await expectHttp(await fetch(
         `${base}/v1/authorizations/${role}/${profile.id}`,
       ), 200);
@@ -670,6 +723,7 @@ try {
     proposalEventHash: proposal.eventHash,
     evidenceCommitment: submitted.evidence.commitment,
     currentEpochId: snapshot.currentEpoch.epochId,
+    externallyPublishedEpochIds: publishedEpochIds,
     clientSurfaces: ["applicant portal", "admin console"],
     lifecycle: lifecycleResult,
     ...trustResult,
@@ -680,6 +734,8 @@ try {
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
       "proposal-replay:409", "lost-response-recovered:200",
       "premature-activation:403", "stale-governed-context:409",
+      "single-epoch-signer:403", "duplicate-epoch-signer:403",
+      "wrong-epoch-label:409", "stale-epoch-context:409",
       ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
         "expired-evidence:client", "out-of-scope-query:404"]),
       ...(role === "verifier" || role === "auditor" ? ["expanded-request-permissions:404"] : []),
