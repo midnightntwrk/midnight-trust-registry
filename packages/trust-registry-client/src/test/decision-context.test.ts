@@ -28,6 +28,7 @@ import {
   verifyDecisionEvidenceWithTrustedReaders,
   verifyInactiveDecisionEvidenceWithTrustedReaders,
 } from "../decision-context.js";
+import { verifyDecisionEvidenceFromApi } from "../decision-evidence-http.js";
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "../utils.js";
 
 const A = `0x${"a".repeat(64)}`;
@@ -388,6 +389,42 @@ describe("decision evidence supplied-context composition", () => {
     ] as const) {
       expect(() => assertDecisionEvidenceConsistentWithSuppliedContext(candidate, supplied)).toThrow();
     }
+  });
+});
+
+describe("HTTP decision-evidence consumer", () => {
+  it("requires independently authenticated registry and DID readers before producing a candidate", async () => {
+    const { evidence, context } = fixture();
+    const readers = {
+      readCurrentFinalizedRegistryDecision: vi.fn(async () => ({
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        decisionPoint: context.decisionPoint,
+      })),
+      readCurrentFinalizedDidState: vi.fn(async () => context.didState),
+    };
+    const fetchImpl = vi.fn(async () => Response.json({ verification: "client-required", evidence })) as typeof fetch;
+    const candidate = await verifyDecisionEvidenceFromApi(
+      "https://registry.example", evidence.grant.authorizationId, context.selection, readers, fetchImpl,
+    );
+    expect(candidate.authorizationId).toBe(evidence.grant.authorizationId);
+    expect(readers.readCurrentFinalizedRegistryDecision).toHaveBeenCalledOnce();
+    expect(readers.readCurrentFinalizedDidState).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: `/v1/decision-evidence/issuer/${encodeURIComponent(evidence.grant.authorizationId)}` }),
+      { cache: "no-store" },
+    );
+    await expect(verifyDecisionEvidenceFromApi("https://registry.example", evidence.grant.authorizationId,
+      context.selection, { ...readers, readCurrentFinalizedDidState: async () => null }, fetchImpl))
+      .rejects.toThrow(/DID state is unavailable/u);
+    await expect(verifyDecisionEvidenceFromApi("https://registry.example", evidence.grant.authorizationId,
+      context.selection, readers, vi.fn(async () => Response.json({ verification: "verified", evidence })) as typeof fetch))
+      .rejects.toThrow();
+    await expect(verifyDecisionEvidenceFromApi("http://registry.example", evidence.grant.authorizationId,
+      context.selection, readers, fetchImpl)).rejects.toThrow(/HTTPS or loopback/u);
+    await expect(verifyDecisionEvidenceFromApi("https://registry.example", evidence.grant.authorizationId,
+      { ...context.selection, role: "auditor" } as unknown as typeof context.selection, readers, fetchImpl))
+      .rejects.toThrow(/Invalid decision-evidence role/u);
   });
 });
 

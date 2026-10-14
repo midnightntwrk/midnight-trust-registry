@@ -59,6 +59,22 @@ The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
 JubJub point. Other suites require a separately specified verification path.
 
+The optional read-only `GET /v1/decision-evidence/{role}/{id}` endpoint may
+return an issuer or verifier `tr-decision-evidence-v1` bundle from an injected
+finalized source. It is disabled with 503 when no source is configured, rejects
+malformed or cross-registry/role/authorization records, and marks a successful
+response `verification: client-required`. The API performs structural parsing
+only. Neither an HTTP 200 nor the source's assertion of finality replaces
+`verifyDecisionEvidenceWithTrustedReaders` with independently authenticated
+accepted epoch and DID observations. Consumers MUST NOT create VC signer
+descriptors directly from this endpoint's response.
+`verifyDecisionEvidenceFromApi` is the client composition helper: it fetches
+the envelope without caching, requires the `client-required` marker and exact
+grant ID/role, then calls `verifyDecisionEvidenceWithTrustedReaders`. It
+accepts only HTTPS or loopback HTTP base URLs. The caller still supplies the
+independent authenticated registry and DID readers; the helper does not
+convert HTTP transport trust into a ledger anchor.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and

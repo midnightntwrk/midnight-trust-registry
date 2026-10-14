@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
-import { SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -201,6 +201,8 @@ export type TrustRegistryApiServerOptions = {
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
   recognitionAccreditation?: RecognitionAccreditationHttpPort;
+  /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
+  readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   proposalAdmission?: ProposalAdmissionPort;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
@@ -826,6 +828,36 @@ export const createTrustRegistryApiServer = (
             await loadRegistryRecord(options.source),
           ),
         );
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "decision-evidence" && (segments[2] === "issuer" || segments[2] === "verifier")) {
+        response.setHeader("cache-control", "no-store");
+        const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        if (authorizationId.length > 256) {
+          throw jsonProblem(problemBaseUri, "invalid-path-parameter", 400, "invalid path parameter");
+        }
+        if (options.readDecisionEvidence === undefined) {
+          throw jsonProblem(problemBaseUri, "decision-evidence-unavailable", 503, "decision evidence unavailable");
+        }
+        let evidence;
+        try {
+          const result = await options.readDecisionEvidence(segments[2], authorizationId);
+          if (result === null) {
+            throw jsonProblem(problemBaseUri, "decision-evidence-not-found", 404, "decision evidence not found");
+          }
+          evidence = DecisionEvidenceSchema.parse(result);
+          const registry = await loadRegistryRecord(options.source);
+          if (evidence.role !== segments[2] || evidence.grant.authorizationId !== authorizationId
+            || evidence.registry.registryId !== registry.registryId) {
+            throw new Error("Decision evidence source returned a different grant or registry");
+          }
+        } catch (error) {
+          if (error instanceof HttpProblem) throw error;
+          throw jsonProblem(problemBaseUri, "decision-evidence-unavailable", 503, "decision evidence unavailable");
+        }
+        writeJson(response, 200, { verification: "client-required", evidence });
         return;
       }
 

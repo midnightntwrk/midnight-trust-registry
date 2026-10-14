@@ -947,3 +947,17 @@ VC/VP/status, accreditor policy, and receipt verification. Focused portal
 tests and `./run.sh --light` pass (20/20), docs build passes, and audit is
 clean. The demo host still needs a real authenticated recognition port and
 finality reader before this can be presented as live-network onboarding.
+
+The next local #79 slice adds an optional public `GET
+/v1/decision-evidence/{role}/{id}` query for issuer and verifier bundles.
+The server accepts only structurally valid `tr-decision-evidence-v1` from an
+injected finalized source, checks exact role, authorization ID, and registry
+identity, and otherwise returns 404/503 without falling back to a mutable
+snapshot. The response explicitly says `verification: client-required`.
+`verifyDecisionEvidenceFromApi` then fetches over HTTPS or loopback HTTP and
+composes the existing trusted-reader verifier. HTTP source trust is not an
+accepted epoch, current grant, DID-state proof, or descriptor authority.
+Focused tests reject missing/malformed/wrong-registry source data and absent
+DID readers. Full light validation passed (20/20 tasks, about 57 seconds with
+downstream client/API tests), docs build passed, and audit was clean. A real
+finalized decision-evidence source remains a separate production integration.
