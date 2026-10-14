@@ -24,18 +24,18 @@ describe("finalized Compact proposal observation", () => {
       const id = "maintainerId" in fixture ? fixture.maintainerId : fixture.authorizationId;
       const read = async () => harness.simulator.getLedger();
 
-      expect(await resolveCompactProposalObservation(read, role, id)).toBeNull();
+      expect(await resolveCompactProposalObservation(read, harness.registryId, role, id)).toBeNull();
       const eventHash = role === "issuer" ? harness.proposeIssuer(fixture as ReturnType<typeof createIssuerScenarioFixture>)
         : role === "verifier" ? harness.proposeVerifier(fixture as ReturnType<typeof createVerifierScenarioFixture>)
           : role === "auditor" ? harness.proposeAuditor(fixture as ReturnType<typeof createAuditorScenarioFixture>)
             : harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>);
-      const observed = await resolveCompactProposalObservation(read, role, id);
+      const observed = await resolveCompactProposalObservation(read, harness.registryId, role, id);
       expect(observed?.eventHash).toBe(`0x${Buffer.from(eventHash).toString("hex")}`);
       expect(observed?.evidenceCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(await resolveCompactProposalObservation(read, role, `${id}:other`)).toBeNull();
+      expect(await resolveCompactProposalObservation(read, harness.registryId, role, `${id}:other`)).toBeNull();
       for (const otherRole of ["issuer", "verifier", "auditor", "maintainer"] as const) {
         if (otherRole !== role) {
-          expect(await resolveCompactProposalObservation(read, otherRole, id)).toBeNull();
+          expect(await resolveCompactProposalObservation(read, harness.registryId, otherRole, id)).toBeNull();
         }
       }
     },
@@ -44,7 +44,7 @@ describe("finalized Compact proposal observation", () => {
   it("does not turn an unavailable finalized ledger into a retry-safe absence", async () => {
     await expect(resolveCompactProposalObservation(async () => {
       throw new Error("finality source unavailable");
-    }, "issuer", "candidate")).rejects.toThrow("finality source unavailable");
+    }, "registry:test", "issuer", "candidate")).rejects.toThrow("finality source unavailable");
   });
 
   it("waits for the supplied finalized view rather than reporting an unfinalized simulator write", async () => {
@@ -54,13 +54,15 @@ describe("finalized Compact proposal observation", () => {
     const read = async () => finalized;
     const eventHash = harness.proposeIssuer(issuer);
 
-    expect(await resolveCompactProposalObservation(read, "issuer", issuer.authorizationId)).toBeNull();
+    expect(await resolveCompactProposalObservation(read, harness.registryId, "issuer", issuer.authorizationId)).toBeNull();
     finalized = harness.simulator.getLedger();
-    expect(await resolveCompactProposalObservation(read, "issuer", issuer.authorizationId)).toEqual({
+    expect(await resolveCompactProposalObservation(read, harness.registryId, "issuer", issuer.authorizationId)).toEqual({
       eventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
       evidenceCommitment: `0x${Buffer.from(finalized.issuerProposalEvidenceRecords.lookup(
         issuer.authorizationIdCommitment,
       ).evidenceCommitment).toString("hex")}`,
     });
+    await expect(resolveCompactProposalObservation(read, "registry:wrong:trusted", "issuer", issuer.authorizationId))
+      .rejects.toThrow("different trust registry");
   });
 });

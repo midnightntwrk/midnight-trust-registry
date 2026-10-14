@@ -95,7 +95,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
         if (maintainerId !== candidate.maintainerId) {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");
         }
-        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "maintainer", maintainerId);
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "maintainer", maintainerId);
       },
     };
     const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port });

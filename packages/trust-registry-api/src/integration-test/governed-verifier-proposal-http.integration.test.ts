@@ -105,7 +105,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
         if (authorizationId !== verifier.authorizationId) {
           throw new GovernedVerifierProposalRejectedError("unknown-authorization");
         }
-        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "verifier", authorizationId);
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "verifier", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({

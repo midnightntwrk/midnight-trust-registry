@@ -96,7 +96,8 @@ describe("Compact-backed auditor proposals over HTTP", () => {
         if (authorizationId !== auditor.authorizationId) {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
         }
-        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "auditor", authorizationId);
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "auditor", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({ source, governedAuditorProposals: port });

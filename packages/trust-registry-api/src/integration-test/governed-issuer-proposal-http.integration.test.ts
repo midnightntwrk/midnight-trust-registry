@@ -106,7 +106,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         if (authorizationId !== issuer.authorizationId) {
           throw new GovernedIssuerProposalRejectedError("unknown-authorization");
         }
-        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "issuer", authorizationId);
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "issuer", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({

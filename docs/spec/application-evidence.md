@@ -262,7 +262,8 @@ governed proposal resolution port can recover a lost HTTP submit receipt by
 reading the Compact proposal evidence record and matching its evidence
 commitment to the admitted application. The API package exports
 `resolveCompactProposalObservation` for all four membership roles. Its caller
-MUST provide an independently finalized ledger view; an unconfirmed
+MUST provide an independently finalized ledger view and the expected registry
+ID; the resolver checks the latter against Compact state. An unconfirmed
 transaction result is not a substitute. A `not-observed` response is
 ambiguous, not a failed-transaction proof, and MUST NOT trigger automatic
 resubmission. Simulator tests show that an unfinalized write remains

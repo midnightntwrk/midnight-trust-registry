@@ -21,14 +21,19 @@ const hex = (value: Uint8Array): string => {
 
 export async function resolveCompactProposalObservation(
   readFinalizedLedger: FinalizedProposalLedgerReader,
+  expectedRegistryId: string,
   role: ProposalRole,
   authorizationId: string,
 ): Promise<GovernedProposalObservation | null> {
-  if (authorizationId.length === 0 || authorizationId.length > 256) {
+  if (expectedRegistryId.length === 0 || expectedRegistryId.length > 256
+    || authorizationId.length === 0 || authorizationId.length > 256) {
     throw new RangeError("Invalid proposal authorization ID");
   }
   const key = Buffer.from(sha256Hex(authorizationId).slice(2), "hex");
   const ledger = await readFinalizedLedger();
+  if (hex(ledger.registryId) !== sha256Hex(expectedRegistryId)) {
+    throw new Error("Finalized ledger belongs to a different trust registry");
+  }
   const records = role === "issuer" ? ledger.issuerProposalEvidenceRecords
     : role === "verifier" ? ledger.verifierProposalEvidenceRecords
       : role === "auditor" ? ledger.auditorProposalEvidenceRecords
