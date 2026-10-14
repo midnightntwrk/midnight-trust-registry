@@ -85,6 +85,13 @@ authenticate the supplied accepted epoch, maintainer keys, DID observation,
 or current decision point. The existing verifier remains mandatory before
 using the result for VC authorization.
 
+The VC integration adapter can now consume the optional API route through
+`createVcSignerCandidateFromApi`. It uses the client verifier with independent
+finalized registry and DID readers before converting the candidate into a VC
+signer descriptor. It rejects an API response that omits the `client-required`
+marker or whose evidence cannot be corroborated by the trusted readers. The
+HTTP response itself is never a signer-authorization proof.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and

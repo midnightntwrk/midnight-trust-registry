@@ -50,7 +50,7 @@ import {
   createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
-import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
+import { createVcSignerCandidateFromApi, createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
 import { createQuorumGatedVcAuthoritySigner } from "../vc-authority-signer.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 import {
@@ -299,6 +299,22 @@ describe("simulator-backed VC decision evidence composition", () => {
     expect(converted.descriptor.didStateVersion).toBe(3n);
     expect(converted.descriptor.scopeCommitment).toEqual(pureCircuits.issuerScopeCommitment(vcSchema));
     expect(converted.descriptor.policyCommitment).toEqual(Uint8Array.from(Buffer.from(candidate.policyRoot.slice(2), "hex")));
+    const apiFetch: typeof fetch = async (url) => {
+      expect(String(url)).toBe(`http://localhost:3000/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`);
+      return new Response(JSON.stringify({ verification: "client-required", evidence }), { status: 200 });
+    };
+    const fromApi = await createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection, readers, binding, apiFetch,
+    );
+    expect(fromApi.descriptor).toEqual(converted.descriptor);
+    await expect(createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection, readers, binding,
+      async () => new Response(JSON.stringify({ verification: "server-verified", evidence }), { status: 200 }),
+    )).rejects.toThrow(/must require client verification/u);
+    await expect(createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection,
+      { ...readers, readCurrentFinalizedRegistryDecision: async () => null }, binding, apiFetch,
+    )).rejects.toThrow(/registry decision is unavailable/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
       { ...binding, didStateVersion: 2n },

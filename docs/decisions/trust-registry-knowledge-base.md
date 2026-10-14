@@ -971,3 +971,11 @@ commitment consistency before returning. It does not authenticate the accepted
 epoch, DID observation, maintainer keys, or current decision point; callers
 must still use the trusted-reader verifier. Simulator tests exercise both roles
 and reject a different accepted root or grant leaf.
+
+The follow-on VC adapter `createVcSignerCandidateFromApi` connects the optional
+public evidence query to the existing trusted-reader VC descriptor conversion.
+It accepts only the client-required API envelope and independently checks the
+finalized registry decision and DID state before constructing a descriptor.
+The simulator journey covers valid API delivery, a false server-verification
+claim, and an unavailable finalized reader. This is a compositional test, not
+a live-network finalized-reader implementation.
