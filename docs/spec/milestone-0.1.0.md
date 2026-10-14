@@ -129,6 +129,16 @@ require a contract change. A maintainer cannot vote on its own admission,
 suspension, or removal, and no decision may leave fewer active maintainers
 than the live threshold. Other policies must preserve these invariants.
 
+A threshold-policy revision and registration of the evidence-verifier key under
+the new policy are separate governed ledger actions. Maintainers sign the
+revision against the old policy and its current action sequence; the registered
+key for the new version requires a fresh signature set against the new policy
+and next sequence, satisfying the new ordinary-action threshold. If the second
+action has not succeeded, operators MUST NOT accept new application evidence
+as authorized under the new policy. A local simulator may perform both steps
+with fixture keys for demonstrations; the external-signing path exposes both
+steps separately and does not imply atomic execution or network finality.
+
 Application states are `proposed -> authorized -> active`, followed by
 `suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
 lifecycle validators. A rejected proposal MUST be terminal or represented by

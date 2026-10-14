@@ -234,6 +234,27 @@ export type PreparedRegistryEpochPublicationAction = {
   validUntilSequence: bigint;
 };
 
+export type PreparedThresholdPolicyRevisionAction = {
+  registryId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  nextPolicyCommitment: Uint8Array;
+  nextPolicyVersion: bigint;
+};
+
+export type PreparedEvidenceVerifierRegistrationAction = {
+  registryId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  authorizationId: Uint8Array;
+  keyIdCommitment: Uint8Array;
+  policyVersion: bigint;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -445,6 +466,23 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   private authorizeEvidenceVerifierForCurrentPolicy(): void {
+    const prepared = this.prepareEvidenceVerifierRegistrationAction();
+    this.executeEvidenceVerifierRegistrationWithSignatures([
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
+  }
+
+  prepareEvidenceVerifierRegistrationAction(): PreparedEvidenceVerifierRegistrationAction {
     const version = this.simulator.getLedger().governancePolicyVersion;
     const keyId = `${this.evidenceVerifier.did}#assertion-${version.toString()}`;
     const authorizationId = bytes32Commitment(
@@ -462,31 +500,43 @@ export class LocalTrustRegistryIntegrationHarness {
       version,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    this.simulator.registerEvidenceVerifierKey(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        REGISTER_EVIDENCE_VERIFIER_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
-      ),
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
+      actionKind: Uint8Array.from(REGISTER_EVIDENCE_VERIFIER_ACTION_KIND),
+      actionPayloadHash,
+      actionSequence,
       authorizationId,
-      didCommitment,
       keyIdCommitment,
+      policyVersion: version,
+    };
+  }
+
+  /** Registration is a distinct governance action after a policy revision. */
+  executeEvidenceVerifierRegistrationWithSignatures(
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Evidence-verifier registration requires a maintainer signature");
+    const prepared = this.prepareEvidenceVerifierRegistrationAction();
+    const keyId = `${this.evidenceVerifier.did}#assertion-${prepared.policyVersion.toString()}`;
+    this.simulator.registerEvidenceVerifierKey(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      prepared.authorizationId,
+      bytes32Commitment(this.evidenceVerifier.did),
+      prepared.keyIdCommitment,
       this.evidenceVerifierPublicKey,
       labelToBytes32("jubjub-schnorr"),
       this.governancePolicyCommitment,
-      version,
-      this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
-        REGISTER_EVIDENCE_VERIFIER_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
-      ),
+      prepared.policyVersion,
+      signers.slice(1),
     );
-    this.currentEvidenceVerifierAuthorizationId = authorizationId;
-    this.currentEvidenceVerifierKeyIdCommitment = keyIdCommitment;
+    this.currentEvidenceVerifierAuthorizationId = prepared.authorizationId;
+    this.currentEvidenceVerifierKeyIdCommitment = prepared.keyIdCommitment;
     if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
+    return prepared.authorizationId;
   }
 
   registerVcAuthorityKey(input: {
@@ -908,6 +958,31 @@ export class LocalTrustRegistryIntegrationHarness {
     archivalThreshold: bigint,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
+    const prepared = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    const result = this.executeThresholdPolicyRevisionWithSignatures(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      [{
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      }, ...this.maintainerCoAuthorizers(
+        additionalMaintainers, prepared.actionKind, prepared.actionPayloadHash,
+        prepared.actionSequence,
+      )],
+    );
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+    return result;
+  }
+
+  prepareThresholdPolicyRevisionAction(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+  ): PreparedThresholdPolicyRevisionAction {
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const nextPolicyVersion = this.simulator.getLedger().governancePolicyVersion + 1n;
     const nextPolicyRecord = this.buildPolicyRecord(
@@ -934,40 +1009,52 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
     );
-    const result = this.simulator.updateMaintainerThresholdPolicy(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
-      ),
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
+      actionKind: Uint8Array.from(UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND),
+      actionPayloadHash,
+      actionSequence,
       nextPolicyCommitment,
       nextPolicyVersion,
-      defaultThreshold,
-      emergencyThreshold,
-      archivalThreshold,
-      this.maintainerCoAuthorizers(
-        additionalMaintainers,
-        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
-      ),
+    };
+  }
+
+  /** Compact checks current policy, sequence, distinct active keys, signatures, and quorum. */
+  executeThresholdPolicyRevisionWithSignatures(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Threshold revision requires a maintainer signature");
+    const prepared = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      prepared.nextPolicyVersion, prepared.actionSequence + 1n,
+    );
+    const result = this.simulator.updateMaintainerThresholdPolicy(
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      signers.slice(1),
     );
     this.policyRecordValue = nextPolicyRecord;
-    this.governancePolicyCommitment = nextPolicyCommitment;
+    this.governancePolicyCommitment = prepared.nextPolicyCommitment;
     this.registryRecord = RegistryRecordSchema.parse({
       ...this.registryRecord,
       policyUri: nextPolicyRecord.policyUri,
-      updatedAt: timestampForSequence(actionSequence),
+      updatedAt: timestampForSequence(prepared.actionSequence),
       lifecycleEventRoot: bytes32Hex(result),
     });
     this.policyRevisions.push({
-      effectiveFromSequence: actionSequence + 1n,
-      commitment: nextPolicyCommitment,
+      effectiveFromSequence: prepared.actionSequence + 1n,
+      commitment: prepared.nextPolicyCommitment,
       record: nextPolicyRecord,
     });
-    this.authorizeEvidenceVerifierForCurrentPolicy();
     return result;
   }
 
