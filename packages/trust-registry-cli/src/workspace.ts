@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   LocalTrustRegistryIntegrationHarness,
@@ -12,8 +13,9 @@ import {
   type IssuerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
+  bytes32Commitment,
 } from "@midnight-ntwrk/trust-registry-integration";
-import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+import type { EpochCommitment, TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorWorkspaceSchema,
@@ -229,8 +231,9 @@ const buildSnapshotFromTrackedFixtures = (
     "Operator workspace snapshot derived from governed CLI operations.",
     `Replayed operations: ${operationCount.toString()}.`,
   ],
+  publishedRegistryEpoch?: EpochCommitment,
 ): TrustRegistryOperatorSnapshot => {
-  const registryEpoch = harness.publishRegistryEpoch("workspace-current");
+  const registryEpoch = publishedRegistryEpoch ?? harness.publishRegistryEpoch("workspace-current");
   const issuerEntries = Array.from(trackedFixtures.issuers.values())
     .map((tracked) => issuerEntryFromFixture(harness, tracked))
     .sort((left, right) =>
@@ -266,7 +269,12 @@ const buildSnapshotFromTrackedFixtures = (
   const epochs = Array.from(epochsById.values()).sort((left, right) =>
     left.validFrom.localeCompare(right.validFrom),
   );
-  const currentEpoch = epochs.at(-1) ?? registryEpoch;
+  const ledgerCurrentEpochId = harness.simulator.getCurrentEpochCommitment().epochId;
+  const currentEpoch = epochs.find((epoch) =>
+    Buffer.from(bytes32Commitment(epoch.epochId)).equals(Buffer.from(ledgerCurrentEpochId)));
+  if (currentEpoch === undefined) {
+    throw new Error("Current Compact epoch is missing from the projected snapshot");
+  }
 
   return {
     snapshotVersion: "1",
@@ -290,7 +298,20 @@ export const publishSimulatorSnapshot = (
   harness: LocalTrustRegistryIntegrationHarness,
   fixtures: SimulatorSnapshotFixtures,
   previous?: TrustRegistryOperatorSnapshot,
+  publishedRegistryEpoch?: EpochCommitment,
 ): TrustRegistryOperatorSnapshot => {
+  if (publishedRegistryEpoch !== undefined) {
+    if (publishedRegistryEpoch.registryId !== harness.registryId) {
+      throw new Error("Published registry epoch belongs to another registry");
+    }
+    harness.getEpochPublicationWitness(publishedRegistryEpoch.epochId);
+    if (!isDeepStrictEqual(
+      publishedRegistryEpoch,
+      harness.getPublishedEpochCommitment(publishedRegistryEpoch.epochId),
+    )) {
+      throw new Error("Published registry epoch does not match the Compact ledger commitment");
+    }
+  }
   const tracked = createTrackedFixtures();
   for (const entry of fixtures.issuers ?? []) {
     if (tracked.issuers.has(entry.fixture.authorizationId)) throw new Error("Duplicate issuer fixture");
@@ -310,7 +331,7 @@ export const publishSimulatorSnapshot = (
   }
   const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
     "Snapshot projected from the supplied Compact simulator state.",
-  ]);
+  ], publishedRegistryEpoch);
   if (previous !== undefined && previous.registry.registryId !== next.registry.registryId) {
     throw new Error("Cannot retain evidence from another registry");
   }

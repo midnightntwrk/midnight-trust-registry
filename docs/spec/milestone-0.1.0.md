@@ -129,6 +129,16 @@ require a contract change. A maintainer cannot vote on its own admission,
 suspension, or removal, and no decision may leave fewer active maintainers
 than the live threshold. Other policies must preserve these invariants.
 
+A threshold-policy revision and registration of the evidence-verifier key under
+the new policy are separate governed ledger actions. Maintainers sign the
+revision against the old policy and its current action sequence; the registered
+key for the new version requires a fresh signature set against the new policy
+and next sequence, satisfying the new ordinary-action threshold. If the second
+action has not succeeded, operators MUST NOT accept new application evidence
+as authorized under the new policy. A local simulator may perform both steps
+with fixture keys for demonstrations; the external-signing path exposes both
+steps separately and does not imply atomic execution or network finality.
+
 Application states are `proposed -> authorized -> active`, followed by
 `suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
 lifecycle validators. A rejected proposal MUST be terminal or represented by
@@ -156,6 +166,30 @@ than using the bare request-profile ID as a key.
 Comparison is exact. No wildcard, delegated grant, implicit schema-version
 range, or transitive recognition is valid in 0.1.0. Domain, contract adapters,
 client, and API MUST share test vectors for the same canonical commitment.
+
+A recognition proposal MUST bind the exact external authority DID commitment,
+external registry ID, resource scope, local policy version, and evidence
+commitment to a signature from an active, governed evidence-verifier key.
+Maintainer quorum is separate and signs that bound proposal. This proves a
+local verifier attested the scoped evidence; it does not independently prove
+the external registry's accreditation, trust chain, or finality. The reference
+simulator's synthetic evidence commitment and fixture-held verifier key are
+test inputs, not an external authority proof.
+
+The reference Midnight DID authority-assertion profile is narrower than
+external accreditation. An authority assertion signs the target registry,
+recognition ID, authority DID, external registry ID, exact resource scope,
+referenced accreditation-evidence commitment, one-use challenge, and bounded
+validity interval with an assertion-method JubJub key. The verifier checks the
+current DID method and relationship, exact tuple, challenge, signature, and
+off-chain evaluation time, then commits the signed envelope together with the
+observed DID state version and evaluation instant. The local evidence verifier
+must separately attest that commitment to Compact. A signed authority
+statement proves key control, not the truth or status of the referenced
+accreditation. Public intake MUST independently validate the accreditation
+source and consume the challenge exactly once; the simulator fixture does
+neither. `did:web` and non-JubJub authority proofs require a separate adapter
+and trust-anchor policy before they can enter this profile.
 
 A current trust answer uses the latest accepted finalized epoch and evaluates
 the grant at the query time. A historical answer names the evaluation time and

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GovernedMembershipActionSchema,
   sameGovernedMembershipAction,
   serializeGovernedMembershipAction,
   type GovernedMembershipActionContext,
@@ -21,6 +22,13 @@ const context = (
 });
 
 describe("governed membership action target", () => {
+  it("admits only the four signed lifecycle actions", () => {
+    for (const action of ["approve", "activate", "suspend", "revoke"]) {
+      expect(GovernedMembershipActionSchema.parse(action)).toBe(action);
+    }
+    expect(() => GovernedMembershipActionSchema.parse("archive")).toThrow();
+  });
+
   for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {
     it(`serializes the actual ${role} Compact target without a role-specific alias`, () => {
       const field = role === "maintainer" ? "maintainerId"

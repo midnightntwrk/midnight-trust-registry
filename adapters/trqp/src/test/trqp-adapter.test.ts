@@ -393,6 +393,81 @@ describe("trust registry TRQP adapter", () => {
     );
   });
 
+  it("rejects a source that attaches another issuer's evidence to an authorization request", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const requested = createIssuerScenarioFixture("requested-issuer");
+    const substituted = createIssuerScenarioFixture("substituted-issuer");
+    harness.authorizeIssuer(requested);
+    harness.authorizeIssuer(substituted);
+    const bundle = harness.evaluateCurrentIssuerDecision(substituted);
+    const source: TrustRegistryTrqpSource = {
+      getRegistryRecord: () => harness.registryRecord,
+      getAuthorizationDecision: () => ({ bundle, statusAtTime: "active", trustedAtTime: true }),
+      getRecognitionDecision: () => null,
+    };
+    const adapter = new TrustRegistryTrqpAdapter(source);
+    const request = {
+      entity_id: substituted.subjectDid,
+      authority_id: harness.registryDid,
+      action: "issue",
+      resource: substituted.resourceId,
+      context: { time: bundle.epoch.validFrom },
+    };
+    for (const mismatch of [
+      { ...request, entity_id: requested.subjectDid },
+      { ...request, action: "verify" },
+      { ...request, resource: requested.resourceId },
+      { ...request, authority_id: "did:midnight:other" },
+    ]) {
+      const problem = expectProblem(await adapter.getAuthorizationEvidence(mismatch));
+      expect(problem.status).toBe(500);
+      expect(problem.type).toMatch(/invalid-source-data$/u);
+    }
+    const otherRegistry = new LocalTrustRegistryIntegrationHarness("other-registry");
+    otherRegistry.authorizeIssuer(substituted);
+    const crossRegistry = new TrustRegistryTrqpAdapter({
+      ...source,
+      getAuthorizationDecision: () => ({
+        bundle: otherRegistry.evaluateCurrentIssuerDecision(substituted),
+        statusAtTime: "active",
+        trustedAtTime: true,
+      }),
+    });
+    const crossRegistryProblem = expectProblem(await crossRegistry.getAuthorizationEvidence(request));
+    expect(crossRegistryProblem.status).toBe(500);
+    expect(crossRegistryProblem.type).toMatch(/invalid-source-data$/u);
+  });
+
+  it("rejects recognition evidence for a different external registry", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("requested-recognition");
+    harness.authorizeRecognition(recognition);
+    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    const source: TrustRegistryTrqpSource = {
+      getRegistryRecord: () => harness.registryRecord,
+      getAuthorizationDecision: () => null,
+      getRecognitionDecision: () => ({ bundle, statusAtTime: "active", trustedAtTime: true }),
+    };
+    const adapter = new TrustRegistryTrqpAdapter(source);
+    const request = {
+      entity_id: recognition.recognizedAuthorityDid,
+      authority_id: harness.registryDid,
+      action: recognition.scopeResourceType,
+      resource: recognition.scopeResourceId,
+      context: { time: bundle.epoch.validFrom, recognized_registry_id: recognition.recognizedRegistryId },
+    };
+    for (const mismatch of [
+      { ...request, entity_id: "did:midnight:other" },
+      { ...request, action: "other-action" },
+      { ...request, resource: "resource:other" },
+      { ...request, context: { ...request.context, recognized_registry_id: "registry:external:other:v1" } },
+    ]) {
+      const problem = expectProblem(await adapter.getRecognitionEvidence(mismatch));
+      expect(problem.status).toBe(500);
+      expect(problem.type).toMatch(/invalid-source-data$/u);
+    }
+  });
+
   it("returns problem details for unknown authorities or unmatched tuples", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");

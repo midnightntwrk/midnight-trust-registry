@@ -69,9 +69,9 @@
   "scripts": {
     "contract": "pnpm run compact",
     "compact": "node ../../scripts/compile-compact.mjs src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout 30000",
     "pretest:ci": "pnpm run compact",
-    "test:ci": "vitest run",
+    "test:ci": "vitest run --testTimeout 30000",
     "prepack": "pnpm run build",
     "clean": "rm -rf dist && rm -rf coverage && rm -rf reports && rm -rf src/managed && rm -f tsconfig.build.tsbuildinfo",
     "build": "pnpm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",

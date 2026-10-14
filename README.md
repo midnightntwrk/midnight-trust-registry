@@ -177,14 +177,31 @@ admission service or a production VC status verifier.
 for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
-maintainer proposal/approval/activation, and epoch publication. Issuer,
+maintainer proposal/approval/activation, and externally signed registry epoch
+publication through the admin console API client. The publish route rejects
+a stale context or insufficient quorum before accepting a ledger commitment;
+the public epoch lookup then observes that exact commitment. The issuer,
+verifier, and auditor paths then use the same signed quorum to suspend and
+revoke the grant, reject single or duplicate signers, deny current trust,
+and preserve the earlier active decision. The maintainer path likewise
+suspends and revokes its non-bootstrap member and checks the active governor
+count in Compact. Issuer,
 verifier, and auditor grants reach an API bundle independently verified by the
 client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
 the ledger. Pending records, consumed nonces, challenges, and accepted redacted
 receipts use private files that a second store instance can reopen. The local
+journeys use the applicant portal client for the signed application and VP
+admission, and the admin console client for quorum proposal and lifecycle
+actions. Issuer and verifier journeys compare the public API trust decision
+and evidence leaf with TRQP at the same selected time; auditor has no TRQP
+mapping in this profile. `./run.sh integration --light` executes all four
+joined journeys as the deterministic local CI target. The local
 file adapter does not make challenge consumption, evidence acceptance, and
 Compact governance one atomic transaction; the demo does not establish
 production family/status verification or network finality.
+Per-grant evidence snapshots still use simulator fixture signing; the
+externally signed route covers registry epoch publication, not every evidence
+bundle created during projection.
 The auditor grant proves an exact request-profile mandate; it does not grant
 automatic access to a verifier's private records.
 The maintainer journey verifies activation in the Compact membership record;

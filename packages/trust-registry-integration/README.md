@@ -39,6 +39,18 @@ Current coverage:
   stale bundles, then verifies the active recognition evidence. Recognition
   is not a local issuer, verifier, auditor, or maintainer membership grant;
   the demo evidence hash is a fixture, not third-party accreditation proof.
+  `prepareRecognitionProposalFromAuthorityAssertion` is the distinct
+  Midnight-DID-backed path: it verifies the authority's assertion-method
+  JubJub signature over the exact target registry, recognition ID, external
+  registry, scope, challenge, and bounded validity interval, then commits the
+  signed envelope, observed DID version, and evaluation instant as proposal
+  evidence. `executeRecognitionProposalWithSignatures` takes that prepared
+  context plus separate evidence-verifier and maintainer signatures; it
+  refuses stale or substituted contexts. The test uses a fixture DID ledger
+  and fixture-held evidence-verifier key. It does not validate the referenced
+  accreditation, consume a one-use challenge, support `did:web`, or establish
+  network finality. A production intake must supply those boundaries before
+  exposing this as external-registry accreditation.
 - Maintainer onboarding exposes prepared proposal, approval, and activation
   digests and accepts signatures from existing maintainers at each transition.
   The 2-of-3 simulator test rejects insufficient, duplicate, candidate

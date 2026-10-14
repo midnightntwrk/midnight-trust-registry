@@ -45,6 +45,26 @@ import {
   type GovernedMembershipActionPort,
 } from "./governed-membership-actions.js";
 import {
+  GovernedEpochPrepareRequestSchema,
+  GovernedEpochPublicationReceiptSchema,
+  GovernedEpochPublicationRejectedError,
+  GovernedEpochPublishRequestSchema,
+  sameGovernedEpochPublication,
+  serializeGovernedEpochPublication,
+  type GovernedEpochPublicationPort,
+} from "./governed-epoch-publication.js";
+import {
+  GovernedEvidenceVerifierPrepareRequestSchema,
+  GovernedEvidenceVerifierSubmitRequestSchema,
+  GovernedPolicyActionReceiptSchema,
+  GovernedPolicyActionRejectedError,
+  GovernedThresholdPrepareRequestSchema,
+  GovernedThresholdSubmitRequestSchema,
+  sameGovernedPolicyAction,
+  serializeGovernedPolicyAction,
+  type GovernedPolicyActionPort,
+} from "./governed-policy-actions.js";
+import {
   decodeIssuerEvidenceVerifierSignature,
   GovernedIssuerProposalPrepareRequestSchema,
   GovernedIssuerProposalRejectedError,
@@ -150,6 +170,8 @@ export type TrustRegistryApiServerOptions = {
   mutationDidResolver?: Parameters<typeof verifyMutationIntentDidSignature>[2];
   allowUnsafeDemoMutations?: boolean;
   governedMembershipActions?: GovernedMembershipActionPort;
+  governedEpochPublication?: GovernedEpochPublicationPort;
+  governedPolicyActions?: GovernedPolicyActionPort;
   governedIssuerProposals?: GovernedIssuerProposalPort;
   governedVerifierProposals?: GovernedVerifierProposalPort;
   governedAuditorProposals?: GovernedAuditorProposalPort;
@@ -543,6 +565,44 @@ const requireGovernedMembershipActions = (
       "governed membership unavailable", "A Compact-backed membership action port is not configured.");
   }
   return options.governedMembershipActions;
+};
+
+const requireGovernedEpochPublication = (
+  options: TrustRegistryApiServerOptions,
+  problemBaseUri: string,
+): GovernedEpochPublicationPort => {
+  if (options.governedEpochPublication === undefined) {
+    throw jsonProblem(problemBaseUri, "governed-epoch-unavailable", 503,
+      "governed epoch publication unavailable", "A Compact-backed epoch publication port is not configured.");
+  }
+  return options.governedEpochPublication;
+};
+
+const requireGovernedPolicyActions = (
+  options: TrustRegistryApiServerOptions,
+  problemBaseUri: string,
+): GovernedPolicyActionPort => {
+  if (options.governedPolicyActions === undefined) {
+    throw jsonProblem(problemBaseUri, "governed-policy-unavailable", 503,
+      "governed policy actions unavailable", "A Compact-backed policy action port is not configured.");
+  }
+  return options.governedPolicyActions;
+};
+
+const mapGovernedPolicyError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedPolicyActionRejectedError) {
+    throw jsonProblem(problemBaseUri, "governed-policy-rejected", 403,
+      "governed policy action rejected");
+  }
+  throw error;
+};
+
+const mapGovernedEpochError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedEpochPublicationRejectedError) {
+    throw jsonProblem(problemBaseUri, "governed-epoch-rejected", 403,
+      "governed epoch publication rejected");
+  }
+  throw error;
 };
 
 const mapGovernedMembershipError = (error: unknown, problemBaseUri: string): never => {
@@ -1075,6 +1135,116 @@ export const createTrustRegistryApiServer = (
           return;
         } catch (error) {
           return mapGovernedMaintainerProposalError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 5
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "policy"
+        && (segments[3] === "thresholds" || segments[3] === "evidence-verifier")
+        && (segments[4] === "prepare" || segments[4] === "submit")
+      ) {
+        const port = requireGovernedPolicyActions(options, problemBaseUri);
+        const thresholdsAction = segments[3] === "thresholds";
+        const preparing = segments[4] === "prepare";
+        const body = await parseJsonBody(request, (value) => thresholdsAction
+          ? (preparing ? GovernedThresholdPrepareRequestSchema : GovernedThresholdSubmitRequestSchema).parse(value)
+          : (preparing ? GovernedEvidenceVerifierPrepareRequestSchema
+            : GovernedEvidenceVerifierSubmitRequestSchema).parse(value), problemBaseUri);
+        const thresholds = thresholdsAction
+          ? (preparing ? GovernedThresholdPrepareRequestSchema
+            : GovernedThresholdSubmitRequestSchema).parse(body).thresholds
+          : undefined;
+        let current;
+        try {
+          current = serializeGovernedPolicyAction(thresholds === undefined
+            ? await port.prepareEvidenceVerifier()
+            : await port.prepareThresholds(thresholds));
+        } catch (error) {
+          return mapGovernedPolicyError(error, problemBaseUri);
+        }
+        response.setHeader("cache-control", "no-store");
+        if (preparing) {
+          writeJson(response, 200, current);
+          return;
+        }
+        const submitted = thresholdsAction
+          ? GovernedThresholdSubmitRequestSchema.parse(body)
+          : GovernedEvidenceVerifierSubmitRequestSchema.parse(body);
+        if (!sameGovernedPolicyAction(current, submitted.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+            "stale governed policy action", "The signed context no longer matches current ledger state.");
+        }
+        let signers;
+        try {
+          signers = decodeGovernedMembershipSigners(submitted);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        try {
+          const receipt = GovernedPolicyActionReceiptSchema.parse(thresholds === undefined
+            ? await port.executeEvidenceVerifier(signers)
+            : await port.executeThresholds(thresholds, signers));
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedPolicyError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 4
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "epochs"
+        && (segments[3] === "prepare" || segments[3] === "publish")
+      ) {
+        const port = requireGovernedEpochPublication(options, problemBaseUri);
+        if (segments[3] === "prepare") {
+          const body = await parseJsonBody(request,
+            (value) => GovernedEpochPrepareRequestSchema.parse(value), problemBaseUri);
+          try {
+            const prepared = serializeGovernedEpochPublication(await port.prepare(body.label));
+            response.setHeader("cache-control", "no-store");
+            writeJson(response, 200, prepared);
+            return;
+          } catch (error) {
+            return mapGovernedEpochError(error, problemBaseUri);
+          }
+        }
+        const body = await parseJsonBody(request,
+          (value) => GovernedEpochPublishRequestSchema.parse(value), problemBaseUri);
+        let current;
+        try {
+          current = serializeGovernedEpochPublication(await port.prepare(body.label));
+        } catch (error) {
+          return mapGovernedEpochError(error, problemBaseUri);
+        }
+        if (!sameGovernedEpochPublication(current, body.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-epoch", 409,
+            "stale governed epoch", "The signed epoch context no longer matches current ledger state.");
+        }
+        let signers;
+        try {
+          signers = decodeGovernedMembershipSigners(body);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        try {
+          const receipt = GovernedEpochPublicationReceiptSchema.parse(
+            await port.execute(body.label, signers),
+          );
+          response.setHeader("cache-control", "no-store");
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedEpochError(error, problemBaseUri);
         }
       }
 

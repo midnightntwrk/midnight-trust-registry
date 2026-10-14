@@ -232,6 +232,29 @@ snapshots from one Compact simulator, then carries one accepted VP through
 2-of-3 maintainer proposal, decisions, and epoch publication. Issuer, verifier,
 and auditor grants reach independently verified public evidence lookup;
 maintainer enrollment is checked against the Compact membership record.
+For registry epoch publication, `POST /v1/governed/epochs/prepare` returns the
+current ledger-derived registry ID, policy commitment, action kind, payload
+hash, sequence, epoch ID and roots. Each maintainer signs that exact
+policy-bound action outside the API host. `POST /v1/governed/epochs/publish`
+recomputes the context, returns 409 for a stale submission, and forwards the
+provided signatures to a Compact-backed publication port. A missing port is
+503; invalid quorum or signatures are rejected without a ledger event. The
+returned epoch MUST be the ledger-recorded commitment, not a caller-supplied
+root. The local simulator projects that exact registry epoch into the query
+snapshot. Its `currentEpoch` MUST identify the Compact ledger's current epoch
+record; sorting projected epochs by their declared time is insufficient when
+per-grant projection publishes another epoch after the registry epoch.
+Per-grant evidence bundles may still be created by fixture
+signing during projection. This reference path is not network finality and
+does not yet prove that every published evidence epoch used external signers.
+For quorum changes, `POST /v1/governed/policy/thresholds/prepare` and
+`/submit` carry the old-policy signer context and requested thresholds.
+After Compact accepts the revision, the evidence-verifier key must be
+registered under the new policy through
+`POST /v1/governed/policy/evidence-verifier/prepare` and `/submit`, using
+fresh external signatures. Both actions recheck current ledger state; the
+second action is not automatically signed or atomic with the first. Until it
+succeeds, new application evidence is not authorized by the revised policy.
 Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional

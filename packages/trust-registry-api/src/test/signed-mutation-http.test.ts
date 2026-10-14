@@ -1,8 +1,10 @@
 import { Buffer } from "node:buffer";
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { fork, type ChildProcess } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   createOperatorWorkspace,
@@ -108,11 +110,70 @@ const close = async (server: Server): Promise<void> => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 };
 
+const holdWorkspaceLockInChild = async (workspacePath: string): Promise<{
+  child: ChildProcess;
+  release: () => Promise<void>;
+}> => {
+  const child = fork(
+    fileURLToPath(new URL("./fixtures/hold-workspace-lock.mjs", import.meta.url)),
+    [workspacePath],
+    { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+  );
+  let diagnostic = "";
+  child.stderr?.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Child did not acquire workspace lock: ${diagnostic}`));
+    }, 10_000);
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off("message", onMessage);
+      child.off("error", onError);
+      child.off("exit", onExit);
+    };
+    const onMessage = (message: unknown) => {
+      if (message !== "locked") return;
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onExit = (code: number | null) => {
+      cleanup();
+      reject(new Error(`Child exited before acquiring workspace lock (${String(code)}): ${diagnostic}`));
+    };
+    child.on("message", onMessage);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
+  return {
+    child,
+    release: () => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error(`Lock holder did not exit after release: ${diagnostic}`));
+      }, 5000);
+      child.once("error", (error) => { clearTimeout(timer); reject(error); });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`Lock holder failed: ${diagnostic}`));
+      });
+      child.send("release");
+    }),
+  };
+};
+
 describe("DID-signed HTTP mutation journey", () => {
   let tempDir: string | undefined;
   let server: Server | undefined;
+  let lockHolder: ChildProcess | undefined;
 
   afterEach(async () => {
+    if (lockHolder !== undefined && lockHolder.exitCode === null) lockHolder.kill();
     if (server !== undefined) await close(server);
     if (tempDir !== undefined) await rm(tempDir, { force: true, recursive: true });
     server = undefined;
@@ -171,10 +232,14 @@ describe("DID-signed HTTP mutation journey", () => {
     expect((await post({ intent: wrongScopeIntent, signature: signatureFor(wrongScopeIntent, applicantSeed), operation: submit })).status).toBe(403);
     expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
 
-    await writeFile(`${workspacePath}.lock`, "other writer", { flag: "wx" });
-    expect((await post(signedSubmit)).status).toBe(409);
+    const holder = await holdWorkspaceLockInChild(workspacePath);
+    lockHolder = holder.child;
+    const lockedResponse = await post(signedSubmit);
+    expect(lockedResponse.status).toBe(409);
+    expect((await lockedResponse.json()).type).toMatch(/workspace-locked/u);
     expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
-    await unlink(`${workspacePath}.lock`);
+    await holder.release();
+    lockHolder = undefined;
 
     expect((await post(signedSubmit)).status).toBe(201);
     if (server !== undefined) await close(server);

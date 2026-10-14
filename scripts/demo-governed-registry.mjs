@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import {
   verifyGovernedIssuerCredential,
@@ -30,6 +31,8 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
   createMidnightDid,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
@@ -41,16 +44,19 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  recognitionAuthorityAssertionDigest,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   InMemoryApplicationChallengeStore,
+  RecognitionAuthorityChallengeService,
   createTrustRegistryApiServer,
   GovernedAuditorProposalRejectedError,
   GovernedIssuerProposalRejectedError,
   GovernedMaintainerProposalRejectedError,
   GovernedMembershipActionRejectedError,
+  GovernedPolicyActionRejectedError,
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
@@ -310,7 +316,13 @@ const candidate = createMaintainerScenarioFixture("governed-demo-candidate");
 const issuer = createIssuerScenarioFixture("governed-demo-issuer");
 const verifier = createVerifierScenarioFixture("governed-demo-verifier");
 const auditor = createAuditorScenarioFixture("governed-demo-auditor");
-const recognition = createRecognitionScenarioFixture("governed-demo-recognition");
+const recognitionAuthoritySeed = new Uint8Array(32).fill(116);
+const recognitionAuthorityDid = createMidnightDid("governed-demo-recognition-authority");
+const recognition = {
+  ...createRecognitionScenarioFixture("governed-demo-recognition"),
+  recognizedAuthorityDid: recognitionAuthorityDid,
+  recognizedAuthorityDidCommitment: bytes32Commitment(recognitionAuthorityDid),
+};
 harness.authorizeMaintainer(second);
 harness.authorizeMaintainer(third);
 harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
@@ -335,8 +347,132 @@ harness.registerVcAuthorityKey({
 });
 harness.advanceEvidenceTimeBy(60_000);
 
-// Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
-harness.proposeRecognition(recognition);
+const recognitionMethodId = `${recognitionAuthorityDid}#assert-1`;
+const recognitionResolver = createMidnightDidResolver([
+  createMidnightDidLedgerFixture(recognitionAuthorityDid, {
+    schnorrJubjubAssertionMethods: [{
+      id: "assert-1",
+      publicKey: deriveJubjubPublicKeyFromSeed(recognitionAuthoritySeed),
+    }],
+  }),
+]);
+const recognitionChallengeService = new RecognitionAuthorityChallengeService(
+  new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
+);
+const recognitionChallengeBinding = {
+  targetRegistryId: harness.registryId,
+  recognitionId: recognition.recognitionId,
+  authorityDid: recognitionAuthorityDid,
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+};
+const recognitionChallenge = await recognitionChallengeService.issue(recognitionChallengeBinding);
+const recognitionChallengeHash = recognitionChallenge.challengeHash;
+const recognitionStatement = {
+  version: "tr-recognition-authority-assertion-v1",
+  ...recognitionChallengeBinding,
+  accreditationEvidenceCommitment: sha256Hex("governed-demo-unverified-accreditation-reference"),
+  challengeHash: recognitionChallengeHash,
+  issuedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  expiresAt: "2026-05-20T01:00:00.000Z",
+};
+const recognitionAssertion = {
+  statement: recognitionStatement,
+  proof: {
+    verificationMethodId: recognitionMethodId,
+    algorithm: "jubjub-schnorr",
+    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
+      recognitionAuthoritySeed,
+      recognitionAuthorityAssertionDigest(recognitionStatement, recognitionMethodId),
+    ))),
+  },
+};
+const verifyRecognitionChallenge = (signed) => recognitionChallengeService.verifyAndConsumeDidAssertion({
+  binding: recognitionChallengeBinding,
+  nonce: recognitionChallenge.nonce,
+  signed,
+  resolver: recognitionResolver,
+});
+const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
+await assert.rejects(verifyRecognitionChallenge({
+  ...recognitionAssertion,
+  statement: { ...recognitionStatement, recognizedRegistryId: "registry:external:wrong:v1" },
+}), /does not match/u);
+await assert.rejects(verifyRecognitionChallenge({
+  ...recognitionAssertion,
+  proof: {
+    ...recognitionAssertion.proof,
+    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
+      recognitionAuthoritySeed,
+      recognitionAuthorityAssertionDigest({
+        ...recognitionStatement,
+        scopeResourceId: "credential-family:wrong:v1",
+      }, recognitionMethodId),
+    ))),
+  },
+}), /signature is invalid/u);
+assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
+const verifiedRecognitionAssertion = await verifyRecognitionChallenge(recognitionAssertion);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion), /already consumed/u);
+const recognitionPrepared = harness.prepareRecognitionProposalAction(
+  recognition, fromHex(verifiedRecognitionAssertion.evidenceCommitment),
+);
+assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognitionAssertion.evidenceCommitment);
+const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
+const recognitionSigners = [
+  signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared),
+];
+const proposeRecognitionWithChangedScope = (registryIdCommitment, resourceIdCommitment) =>
+  harness.simulator.proposeRecognition(
+    recognitionSigners[0].keyId,
+    recognitionSigners[0].publicKey,
+    recognitionSigners[0].signature,
+    recognition.recognitionIdCommitment,
+    recognition.recognizedAuthorityDidCommitment,
+    registryIdCommitment,
+    recognition.scopeResourceTypeCommitment,
+    resourceIdCommitment,
+    recognitionPrepared.policyCommitment,
+    bytes32Commitment(recognition.trustLevel),
+    recognitionPrepared.evidenceHash,
+    recognitionPrepared.evidenceVerifierAuthorizationId,
+    recognitionPrepared.evidenceVerifierKeyIdCommitment,
+    recognitionEvidenceSignature,
+    recognitionSigners.slice(1),
+  );
+adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  bytes32Commitment("registry:external:substituted:v1"), recognition.scopeResourceIdCommitment,
+), {
+  id: "compact-recognition-external-registry-substitution",
+  invariant: "A recognition quorum signature cannot be reused for another external registry",
+  boundary: "compact", messagePattern: /signature|payload/iu,
+  category: "recognition-scope-signature-rejected",
+});
+adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  recognition.recognizedRegistryIdCommitment, bytes32Commitment("credential-family:substituted:v1"),
+), {
+  id: "compact-recognition-resource-substitution",
+  invariant: "A recognition quorum signature cannot be reused for another resource scope",
+  boundary: "compact", messagePattern: /signature|payload/iu,
+  category: "recognition-scope-signature-rejected",
+});
+assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
+assert.throws(() => harness.executeRecognitionProposalWithSignatures(
+  recognition,
+  recognitionSigners.slice(0, 1),
+  recognitionEvidenceSignature,
+  recognitionPrepared,
+), /action threshold/u);
+const recognitionProposalEventHash = harness.executeRecognitionProposalWithSignatures(
+  recognition,
+  recognitionSigners,
+  recognitionEvidenceSignature,
+  recognitionPrepared,
+);
+assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
+  recognition.recognitionIdCommitment,
+).evidenceCommitment), verifiedRecognitionAssertion.evidenceCommitment);
 const applicantSpecs = [
   {
     role: "issuer",
@@ -654,6 +790,35 @@ const server = createTrustRegistryApiServer({
       }
       snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
       return { eventHash: asHex(eventHash) };
+    },
+  },
+  governedPolicyActions: {
+    async prepareThresholds(value) {
+      return harness.prepareThresholdPolicyRevisionAction(
+        BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+      );
+    },
+    async executeThresholds(value, signers) {
+      try {
+        const eventHash = harness.executeThresholdPolicyRevisionWithSignatures(
+          BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+        );
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
+    async prepareEvidenceVerifier() {
+      return harness.prepareEvidenceVerifierRegistrationAction();
+    },
+    async executeEvidenceVerifier(signers) {
+      try {
+        const eventHash = harness.executeEvidenceVerifierRegistrationWithSignatures(signers);
+        publishCurrentSnapshot();
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
     },
   },
 });
@@ -1777,9 +1942,48 @@ try {
   }
 
   const policyVersionBeforeRevision = harness.simulator.getLedger().governancePolicyVersion;
-  const thresholdRevision = harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+  const policyEndpoint = `${base}/v1/governed/policy`;
+  const postPolicy = (path, body) => fetch(`${policyEndpoint}/${path}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  const thresholds = { default: "3", emergency: "1", archival: "2" };
+  const revisionContext = await expectHttp(await postPolicy("thresholds/prepare", { thresholds }), 200);
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext, signers: [sign(second, revisionContext)],
+  }), {
+    id: "policy-revision-one-signer",
+    invariant: "Old-policy quorum is required for threshold revision",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  const revisionReceipt = await expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext,
+    signers: [sign(second, revisionContext), sign(third, revisionContext)],
+  }), 202);
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
+    thresholds, prepared: revisionContext,
+    signers: [sign(second, revisionContext), sign(third, revisionContext)],
+  }), {
+    id: "policy-revision-stale-replay",
+    invariant: "A consumed old-policy context cannot revise governance twice",
+    boundary: "api", status: 409, problemType: "stale-governed-policy",
+  });
   assert.equal(harness.simulator.getLedger().governancePolicyVersion, policyVersionBeforeRevision + 1n);
   const threeSignerIssuer = createIssuerScenarioFixture("governed-demo-three-signer-issuer");
+  assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second, third]),
+    /policy|evidence|verifier|active|registered|signature|assert/iu);
+  const registrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
+  await adversarialMatrix.expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: registrationContext,
+    signers: [sign(second, registrationContext), sign(third, registrationContext)],
+  }), {
+    id: "new-policy-registration-two-signers",
+    invariant: "New-policy quorum is required to register the evidence verifier",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  const registrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: registrationContext,
+    signers: [sign(second, registrationContext), sign(third, registrationContext), sign(candidate, registrationContext)],
+  }), 202);
   assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
   harness.proposeIssuer(threeSignerIssuer, [second, third]);
   const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
@@ -1792,7 +1996,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures for actor decisions; revised to 3-of-4",
+    governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
@@ -1800,7 +2004,15 @@ try {
       source: "authenticated VP HTTP intake and governed HTTP proposal",
     },
     otherProposals,
-    recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
+    recognitionProposal: {
+      eventHash: asHex(recognitionProposalEventHash),
+      evidenceCommitment: verifiedRecognitionAssertion.evidenceCommitment,
+      authorityDidStateVersionId: verifiedRecognitionAssertion.didStateVersionId,
+      oneUseChallengeConsumed: true,
+      source: "Midnight DID authority statement verified; local evidence verifier is fixture-held",
+      accreditation: "referenced but not independently verified",
+      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "challenge-replay", "one-maintainer"],
+    },
     decisions,
     actorReport,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
@@ -1829,7 +2041,8 @@ try {
     maintainerLifecycle: {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
       policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
-      thresholdRevisionEventHash: asHex(thresholdRevision),
+      thresholdRevisionEventHash: revisionReceipt.eventHash,
+      evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
       suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
       remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
       remainingQuorumEventHash: asHex(remainingQuorumEventHash),
@@ -1843,6 +2056,8 @@ try {
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "recognition-is-not-local-issuer-or-maintainer:client",
       "revised-threshold-rejects-two-signers:simulator",
+      "policy-revision-one-signer:403", "policy-revision-stale-replay:409",
+      "new-policy-registration-two-signers:403",
       "suspended-maintainer-cannot-vote:simulator",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",

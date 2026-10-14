@@ -159,16 +159,15 @@ importers:
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
+      '@midnight-ntwrk/trust-registry-integration':
+        specifier: workspace:0.1.0
+        version: link:../trust-registry-integration
       '@midnight-ntwrk/trust-registry-trqp-adapter':
         specifier: workspace:0.1.0
         version: link:../../adapters/trqp
       zod:
         specifier: ^4.1.0
         version: 4.4.3
-    devDependencies:
-      '@midnight-ntwrk/trust-registry-integration':
-        specifier: workspace:0.1.0
-        version: link:../trust-registry-integration
 
   packages/trust-registry-applicant-portal:
     dependencies:
@@ -239,6 +238,9 @@ importers:
       '@midnight-ntwrk/midnight-did-domain':
         specifier: 0.7.0
         version: 0.7.0
+      '@midnight-ntwrk/midnight-did-jubjub-schnorr':
+        specifier: 0.7.0
+        version: 0.7.0
       '@midnight-ntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
@@ -252,9 +254,6 @@ importers:
       '@midnight-ntwrk/compact-runtime':
         specifier: 0.16.0
         version: 0.16.0
-      '@midnight-ntwrk/midnight-did-jubjub-schnorr':
-        specifier: 0.7.0
-        version: 0.7.0
 
 packages:
 

@@ -16,6 +16,9 @@ Current scope:
   the matching Compact proposal event without replaying the action
 - require explicit confirmation before submitting signed actions; the contract
   remains responsible for current-policy, signer-membership, and quorum checks
+- prepare threshold-policy revision and subsequent evidence-verifier key
+  registration as separate Compact actions with external maintainer signatures;
+  warn while the second action remains pending in the current browser session
 - load a no-cache workspace mutation context and submit an externally signed
   maintainer action envelope after explicit confirmation. This local file-backed
   workspace path is not a Compact quorum action and does not establish network
@@ -54,6 +57,9 @@ Notes:
   does not configure governed proposal ports, so proposal preparation and
   resolution receive 503 until an embedding server injects Compact-backed ports. The
   server must submit supplied signatures, never fall back to fixture replay.
+  The governed policy panel also requires an injected `governedPolicyActions`
+  port. Its pending-registration warning is session-local; after reload, the
+  operator must inspect ledger state before accepting new application evidence.
   The browser accepts only redacted evidence and externally produced signatures;
   it does not handle private keys or persist evidence/signatures in browser
   storage. Prepared proposal context is discarded when the role, target ID, evidence,

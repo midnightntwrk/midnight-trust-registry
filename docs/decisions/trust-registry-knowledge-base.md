@@ -14,6 +14,90 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- #60's joined adversarial matrix now calls the Compact simulator directly
+  with otherwise valid recognition signatures but a substituted external
+  registry or resource commitment. Both reject without advancing governance
+  state; a valid proposal still succeeds afterward. This is scoped-signature
+  evidence, not proof that the external accreditation is valid. Retrospective:
+  direct simulator mutation is needed for this case because the harness
+  preflight rejects stale contexts before Compact sees them.
+- #59's signed HTTP mutation test now uses a separate Node process to hold
+  the real workspace lock. The request returns a typed 409 without consuming
+  the nonce, then succeeds after release. This proves same-host
+  shared-filesystem exclusion in the reference adapter, not distributed
+  locking or crash-durable transactions. Retrospective: the first child helper
+  left IPC open after releasing its lock and the test hung; explicit IPC
+  disconnect plus a bounded release wait made the focused 8-second test
+  reliable. Prefer a focused process test before the broad API suite.
+- The API library now has a recognition-specific, one-use Midnight DID
+  authority challenge primitive over the existing atomic challenge-store
+  interface. It binds the exact recognition tuple, rejects pre-challenge and
+  future statements, and consumes only after DID assertion verification.
+  The joined governed demo now issues that challenge, rejects bad assertions,
+  consumes it once, rejects replay, and carries the verified commitment into
+  the Compact proposal. It is not mounted on HTTP and does not validate
+  external accreditation; #78 remains open. Retrospective: the membership
+  challenge binding cannot represent recognition, but its low-level atomic
+  store can be reused without weakening the membership schema. A focused API
+  test runs in about one second; run it before the much broader API suite.
+- The joined governed demo now proposes recognition from a verified Midnight
+  DID authority assertion, a separately signed local evidence-verifier proof,
+  and 2-of-3 maintainer signatures. It rejects a wrong external registry,
+  wrong-scope signature, and one-maintainer attempt before mutation, then
+  carries the proposal through approval, activation, and public trust checks.
+  The accreditation commitment remains an unverified reference and the
+  evidence verifier is fixture-held; this is not external accreditation or
+  network finality. Retrospective: extend the existing joined demo rather
+  than adding a disconnected happy-path test, and use its focused run before
+  the broader light lane.
+- Local #78 continuation after signed `10ebdf6`: the integration package now
+  has a bounded Midnight DID authority assertion for recognition, with exact
+  registry/authority/scope/challenge checks, assertion-method JubJub signature
+  verification, a 24-hour maximum statement lifetime, and a commitment to
+  the signed envelope plus observed DID state version and evaluation instant.
+  A distinct harness method prepares a Compact proposal from that verified
+  commitment. Focused tests cover substitution, expiry, key rotation, wrong
+  DID relationship, stale proposal context, and a positive 2-of-3 proposal.
+  It does not verify the referenced accreditation or consume a challenge, so
+  #78 remains open and public intake must not use this fixture as proof of
+  external trust.
+- Iteration retrospective: promoting the DID Schnorr package from dev to
+  runtime dependency required a lockfile update; the first typecheck read
+  stale domain output until the domain package was rebuilt. Use dependency-
+  ordered Turbo builds for the broad gate, direct package tests for the inner
+  loop. TypeScript also caught a test reaching private bootstrap keys; use
+  public maintainer onboarding and 2-of-3 signatures instead.
+
+- Local #78 recognition-evidence slice is in progress after `452627c` on
+  `codex/trust-registry-operator-applicant-e2e`. Compact now verifies a
+  registered active evidence-verifier Schnorr signature over the complete
+  scoped recognition proposal and stores a separate proof snapshot. Approval
+  and activation recheck that verifier key and policy. The simulator's
+  externally signed execution method requires the verifier signature; only
+  the fixture convenience path signs from a test seed. Contract and integration
+  tests reject bad evidence signatures, substituted registry scope, and
+  suspended-key approval. This is local attestation, not independent external
+  accreditation; the fixture evidence commitment remains synthetic.
+- Iteration retrospective: `compact:light` and contract typecheck completed in
+  about one second each, a focused contract negative test in about one second,
+  the external-recognition integration test in under two seconds, and the
+  complete `./run.sh --light` lane in about 48 seconds. A broad patch context
+  initially placed new arguments in the wrong simulator method; inspect each
+  diff before compiling and use method-specific patch contexts. Keep full
+  proving (previously about 24 minutes for 65 circuits) for a coherent
+  publication checkpoint, not each small recognition edit.
+
+- Local `codex/trust-registry-operator-applicant-e2e` now has signed/DCO commits
+  `9591889` and `d85dffa` for externally signed two-action quorum revision.
+  The first action changes thresholds under the old policy; the second
+  registers the evidence-verifier key under the new policy. The governed HTTP
+  demo uses the injected Compact simulator port rather than the fixture helper
+  for this transition, while other fixture paths remain. The admin page warns
+  about the intermediate state only within its browser session; operators must
+  inspect ledger state after reload. The packaged CLI still returns 503 without
+  an injected port. These local checks do not establish transaction atomicity
+  or network finality.
+
 - The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
   VC authority slice and is not yet published. Its governed demo now emits a
   checked `tr-adversarial-matrix-v1` with 90 cases across API, Compact simulator,

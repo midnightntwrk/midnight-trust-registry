@@ -53,6 +53,8 @@ Current route set:
 - `POST /v1/applications/:target/:id/revoke`
 - `POST /v1/applications/:target/:id/archive`
 - `POST /v1/epochs/publish`
+- `POST /v1/governed/policy/thresholds/prepare` and `/submit` (optional Compact-backed port)
+- `POST /v1/governed/policy/evidence-verifier/prepare` and `/submit` (optional Compact-backed port)
 
 Authorization `:role` supports `issuer`, `verifier`, and `auditor`. Issuer
 lookups require a canonical `tr:issuer-resource:v1:<sha256>` ID; verifier and
@@ -100,6 +102,11 @@ does not silently break a lock. Invalid signatures return 401; unauthorized
 or substituted actors/scopes return 403; replay, stale state, and lock
 contention return 409. Failed requests do not append an operation or consume
 a nonce.
+The signed HTTP test holds the real workspace lock in a separate Node process,
+asserts the `workspace-locked` problem, then retries after release. This is a
+same-host, shared-filesystem exclusion guarantee only: it is not a distributed
+lock or crash-durable transaction protocol. Operators must inspect stale locks
+before removal.
 Operator workspaces created before `consumedMutationNonces` existed must be
 regenerated; this unreleased format has no compatibility default.
 
@@ -134,6 +141,17 @@ and asynchronous query projection remain future work. The packaged CLI does
 not configure this optional port. The reference integration test injects the
 local simulator and projects that *same* simulator into the read API after
 each transition.
+
+Threshold revision is a two-action workflow. Prepare with
+`{ "thresholds": { "default": "3", "emergency": "2", "archival": "2" } }`;
+submit the exact prepared context, the same thresholds, and external signer
+entries. The old policy and sequence govern this signature. After acceptance,
+prepare and submit evidence-verifier registration with a new signature set
+under the new policy and next sequence. The server recomputes each context;
+stale contexts return 409, malformed requests 400, rejected Compact quorum
+403, and missing `governedPolicyActions` port 503. The first 202 is not enough
+to accept new application evidence, and neither 202 proves network finality or
+an atomic two-action transaction. The packaged CLI does not inject this port.
 
 The governed issuer proposal route is `POST /v1/governed/issuer/:id/proposal/prepare`
 with `{ "evidence": <signed application evidence> }`, followed by
@@ -330,6 +348,24 @@ evidence on one simulator. It is a reference journey; the VP intake above is
 only mounted when a trusted host injects the full authenticated port. The
 packaged CLI does not mount it, and this journey does not use an arbitrary VP
 submitted to that endpoint.
+
+### Recognition authority challenge primitive
+
+`RecognitionAuthorityChallengeService` issues a five-minute challenge bound to
+the target registry, recognition ID, Midnight authority DID, external registry,
+and exact resource scope. It reuses the API's atomic challenge-store interface,
+verifies the authority's current DID assertion key and signed tuple, rejects
+statements outside the challenge window, and consumes the nonce once. A failed
+signature or tuple check does not consume it. The process-local store is a
+reference adapter; a multi-process host needs durable atomic storage.
+
+This library primitive is **not mounted as public HTTP intake**. It proves DID
+key control and replay resistance only. The accreditation commitment in the
+statement remains an unverified reference; public recognition intake must also
+validate an independently trusted accreditation source and governed local
+evidence-verifier policy before proposing a ledger transition.
+The joined governed demo exercises issue, invalid assertion rejection, valid
+consumption, replay rejection, and the resulting Compact proposal.
 
 Example applicant submission:
 
