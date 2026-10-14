@@ -81,7 +81,10 @@ const countCards = (
   + board.summary.recognitionCounts[status];
 
 const governedActionFor = (card: ReviewCard): GovernedMembershipAction | undefined =>
-  card.status === "proposed" ? "approve" : card.status === "authorized" ? "activate" : undefined;
+  card.status === "proposed" ? "approve"
+    : card.status === "authorized" ? "activate"
+      : card.status === "active" ? "suspend"
+        : card.status === "suspended" ? "revoke" : undefined;
 
 const assertExactFields = (value: unknown, fields: readonly string[], label: string): void => {
   if (value === null || typeof value !== "object" || Array.isArray(value)

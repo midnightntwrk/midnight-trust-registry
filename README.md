@@ -177,7 +177,10 @@ admission service or a production VC status verifier.
 for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
-maintainer proposal/approval/activation, and epoch publication. Issuer,
+maintainer proposal/approval/activation, and epoch publication. The issuer,
+verifier, and auditor paths then use the same signed quorum to suspend and
+revoke the grant, reject single or duplicate signers, deny current trust,
+and preserve the earlier active decision. Issuer,
 verifier, and auditor grants reach an API bundle independently verified by the
 client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
 the ledger. Pending records, consumed nonces, challenges, and accepted redacted

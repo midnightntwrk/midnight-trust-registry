@@ -125,13 +125,15 @@ describe("admin console browser handlers", () => {
       signature: "0x0102",
     }];
     const posted: { path: string; body: string | undefined }[] = [];
-    let status: "proposed" | "authorized" = "proposed";
+    let status: "proposed" | "authorized" | "active" | "suspended" | "revoked" = "proposed";
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (path.startsWith("/v1/governed/")) {
         if (init?.method === "POST") {
           posted.push({ path, body: init.body?.toString() });
-          status = "authorized";
+          status = path.endsWith("/approve") ? "authorized"
+            : path.endsWith("/activate") ? "active"
+              : path.endsWith("/suspend") ? "suspended" : "revoked";
           return Response.json({ eventHash: `0x${"09".repeat(32)}` }, { status: 202 });
         }
         return Response.json(prepared);
@@ -190,6 +192,27 @@ describe("admin console browser handlers", () => {
     expect(JSON.parse(posted[0]!.body!)).toEqual({ prepared, signers });
     await vi.waitFor(() => expect(root.textContent).toContain("Compact approve accepted"));
     expect(root.querySelector("[data-governed-prepare]")?.textContent).toContain("activate");
+    for (const [action, nextAction] of [
+      ["activate", "suspend"], ["suspend", "revoke"], ["revoke", null],
+    ] as const) {
+      root.querySelector<HTMLButtonElement>("[data-governed-prepare]")!.click();
+      await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
+      const input = root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")!;
+      input.value = JSON.stringify(signers);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      root.querySelector<HTMLFormElement>("[data-governed-submit]")!.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      await vi.waitFor(() => expect(posted.at(-1)?.path).toBe(
+        `/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/${action}`,
+      ));
+      if (nextAction === null) {
+        await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).toBeNull());
+      } else {
+        await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")?.textContent)
+          .toContain(nextAction));
+      }
+    }
     expect(posted.every((request) => !request.path.startsWith("/v1/applications/"))).toBe(true);
   });
 

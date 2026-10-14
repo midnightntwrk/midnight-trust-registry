@@ -148,7 +148,7 @@ export type SimulatorApplicationEvidenceExpectation = {
   governedResource: GovernedResource;
 };
 
-export type IssuerDecisionAction = "approve" | "activate";
+export type IssuerDecisionAction = "approve" | "activate" | "suspend" | "revoke";
 
 export type PreparedIssuerDecisionAction = {
   registryId: Uint8Array;
@@ -1376,25 +1376,33 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (action !== "approve" && action !== "activate") {
+    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
       throw new Error("Unsupported issuer decision action");
     }
-    this.recheckIssuerApplicationEvidence(fixture);
+    if (action === "approve" || action === "activate") this.recheckIssuerApplicationEvidence(fixture);
     const ledger = this.simulator.getLedger();
     const current = this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment);
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_ISSUER_ACTION_KIND,
+      activate: ACTIVATE_ISSUER_ACTION_KIND,
+      suspend: SUSPEND_ISSUER_ACTION_KIND,
+      revoke: REVOKE_ISSUER_ACTION_KIND,
+    };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
-      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_ISSUER_ACTION_KIND : ACTIVATE_ISSUER_ACTION_KIND),
+      actionKind: Uint8Array.from(actionKinds[action]),
       actionPayloadHash: computeUpdateIssuerAuthorizationPayloadHash(
         fixture.authorizationIdCommitment,
         current.lifecycleEventHash,
-        current.evidenceHash,
+        evidenceHash,
       ),
       actionSequence: ledger.governanceActionCount,
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash: Uint8Array.from(current.evidenceHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
     };
   }
 
@@ -1417,14 +1425,11 @@ export class LocalTrustRegistryIntegrationHarness {
         signers.slice(1),
       );
     }
-    return this.simulator.activateIssuerAuthorization(
-      primary.keyId,
-      primary.publicKey,
-      primary.signature,
-      fixture.authorizationIdCommitment,
-      prepared.evidenceHash,
-      signers.slice(1),
-    );
+    const circuit = action === "activate" ? this.simulator.activateIssuerAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendIssuerAuthorization.bind(this.simulator)
+        : this.simulator.revokeIssuerAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
   approveIssuer(
@@ -1675,22 +1680,30 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: VerifierScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (action !== "approve" && action !== "activate") {
+    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
       throw new Error("Unsupported verifier decision action");
     }
     const current = this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
     const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_VERIFIER_ACTION_KIND,
+      activate: ACTIVATE_VERIFIER_ACTION_KIND,
+      suspend: SUSPEND_VERIFIER_ACTION_KIND,
+      revoke: REVOKE_VERIFIER_ACTION_KIND,
+    };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
-      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_VERIFIER_ACTION_KIND : ACTIVATE_VERIFIER_ACTION_KIND),
+      actionKind: Uint8Array.from(actionKinds[action]),
       actionPayloadHash: computeUpdateVerifierAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+        fixture.authorizationIdCommitment, current.lifecycleEventHash, evidenceHash,
       ),
       actionSequence: ledger.governanceActionCount,
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash: Uint8Array.from(current.evidenceHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
     };
   }
 
@@ -1708,10 +1721,11 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
       );
     }
-    return this.simulator.activateVerifierAuthorization(
-      primary.keyId, primary.publicKey, primary.signature,
-      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
-    );
+    const circuit = action === "activate" ? this.simulator.activateVerifierAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendVerifierAuthorization.bind(this.simulator)
+        : this.simulator.revokeVerifierAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
   private fixtureVerifierDecision(fixture: VerifierScenarioFixture, action: IssuerDecisionAction): Uint8Array {
@@ -2054,22 +2068,30 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: AuditorScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (action !== "approve" && action !== "activate") {
+    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
       throw new Error("Unsupported auditor decision action");
     }
     const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
     const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_AUDITOR_ACTION_KIND,
+      activate: ACTIVATE_AUDITOR_ACTION_KIND,
+      suspend: SUSPEND_AUDITOR_ACTION_KIND,
+      revoke: REVOKE_AUDITOR_ACTION_KIND,
+    };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
-      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_AUDITOR_ACTION_KIND : ACTIVATE_AUDITOR_ACTION_KIND),
+      actionKind: Uint8Array.from(actionKinds[action]),
       actionPayloadHash: computeUpdateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+        fixture.authorizationIdCommitment, current.lifecycleEventHash, evidenceHash,
       ),
       actionSequence: ledger.governanceActionCount,
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash: Uint8Array.from(current.evidenceHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
     };
   }
 
@@ -2087,10 +2109,11 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
       );
     }
-    return this.simulator.activateAuditorAuthorization(
-      primary.keyId, primary.publicKey, primary.signature,
-      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
-    );
+    const circuit = action === "activate" ? this.simulator.activateAuditorAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendAuditorAuthorization.bind(this.simulator)
+        : this.simulator.revokeAuditorAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
   private fixtureAuditorDecision(fixture: AuditorScenarioFixture, action: IssuerDecisionAction): Uint8Array {

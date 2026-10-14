@@ -68,7 +68,7 @@ const maintainers = [
   createMaintainerScenarioFixture(`${label}-second`),
 ];
 for (const maintainer of maintainers) harness.authorizeMaintainer(maintainer);
-harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
 const activeMaintainersBeforeApplication = harness.simulator.getLedger().activeMaintainerCount;
 const profiles = {
   issuer: () => {
@@ -257,7 +257,7 @@ const server = createTrustRegistryApiServer({
         const eventHash = profile.executeDecision(action, signers);
         snapshot = publishSimulatorSnapshot(harness, {
           label,
-          ...(action === "activate" && profile.snapshotKey !== null ? {
+          ...(profile.snapshotKey !== null ? {
             [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
           } : {}),
         }, snapshot);
@@ -475,6 +475,7 @@ try {
   }
 
   let trustResult;
+  let lifecycleResult = null;
   if (role === "maintainer") {
     const membership = harness.simulator.getMaintainerMembership(profile.idCommitment);
     assert.equal(membership.status, AuthorizationStatus.active);
@@ -520,6 +521,57 @@ try {
       trqpAgreement,
       verificationSurface: "UI clients, public API bundle, TRQP, and independent client",
     };
+    const activeAt = bundle.authorization.activeFrom;
+    const queryDecision = (at) => post("/v1/authorizations/evaluate", {
+      role, subjectDid: participant.subjectDid, resourceId, at,
+    });
+    const trqpRequest = (at) => ({
+      entity_id: participant.subjectDid,
+      authority_id: harness.registryDid,
+      action: role === "issuer" ? "issue" : "verify",
+      resource: resourceId,
+      context: { time: at },
+    });
+    const lifecycle = [];
+    for (const action of ["suspend", "revoke"]) {
+      const prepared = await adminClient.prepareGovernedAction(role, profile.id, action);
+      const actionPath = `/v1/governed/${role}/${profile.id}/actions/${action}`;
+      const beforeAction = harness.simulator.getLedger().governanceActionCount;
+      assert.equal((await post(actionPath, {
+        prepared, signers: [signAction(maintainers[0], prepared)],
+      })).status, 403);
+      assert.equal((await post(actionPath, {
+        prepared,
+        signers: [signAction(maintainers[0], prepared), signAction(maintainers[0], prepared)],
+      })).status, 403);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
+      await adminClient.submitGovernedAction(role, profile.id, action, {
+        prepared, signers: quorumSignatures(prepared),
+      });
+      const entry = await expectHttp(await fetch(
+        `${base}/v1/authorizations/${role}/${profile.id}`,
+      ), 200);
+      assert.equal(entry.authorization.status, action === "suspend" ? "suspended" : "revoked");
+      const changedAt = action === "suspend"
+        ? entry.authorization.suspendedAt : entry.authorization.revokedAt;
+      assert.ok(changedAt);
+      const currentDecision = await expectHttp(await queryDecision(changedAt), 200);
+      const historicalDecision = await expectHttp(await queryDecision(activeAt), 200);
+      assert.equal(currentDecision.trustedAtTime, false);
+      assert.equal(historicalDecision.trustedAtTime, true);
+      if (role === "issuer" || role === "verifier") {
+        const trqp = await expectHttp(await post(
+          "/v1/trqp/authorizations/query", trqpRequest(changedAt),
+        ), 200);
+        assert.equal(trqp.authorized, currentDecision.trustedAtTime);
+      }
+      if (role === "auditor") {
+        const portalRecord = await applicantClient.loadAuditorAuthorization(profile.id);
+        assert.equal(portalRecord?.authorization.status, entry.authorization.status);
+      }
+      lifecycle.push({ action, changedAt, currentTrusted: false, historicalActiveRetained: true });
+    }
+    lifecycleResult = lifecycle;
   }
   process.stdout.write(`${JSON.stringify({
     demo: `signed-${role}-journey`,
@@ -531,6 +583,7 @@ try {
     evidenceCommitment: submitted.evidence.commitment,
     activeEpochId: snapshot.currentEpoch.epochId,
     clientSurfaces: ["applicant portal", "admin console"],
+    lifecycle: lifecycleResult,
     ...trustResult,
     expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",
