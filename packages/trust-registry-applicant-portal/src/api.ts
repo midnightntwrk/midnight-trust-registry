@@ -4,6 +4,8 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
   ApplicationVpHttpIssueResult,
   ApplicationVpHttpSubmissionResult,
   ApplicationChallengeBinding,
@@ -154,6 +156,23 @@ export class TrustRegistryApplicantPortalClient {
         body: JSON.stringify({ target, label }),
       },
     );
+  }
+
+  async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {
+    return this.request<TrustRegistryApiMutationContext>("/v1/registry/mutation-context", {
+      cache: "no-store",
+    });
+  }
+
+  /** Submit an externally signed intent; this client never receives a private key. */
+  async submitSignedMutation(
+    request: TrustRegistryApiSignedMutationRequest,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/mutations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */

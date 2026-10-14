@@ -645,3 +645,14 @@ from each verified record-specific bundle. The maintainer row uses an active
 membership observation and its then-current snapshot epoch; it must not be
 misrepresented as a public authorization bundle. No VP body, claim, private
 key, or signature bytes are exported in this table.
+
+The #59 local public-client slice exports the signed mutation envelope from
+the API schema and uses it in both applicant-portal and admin-console clients.
+Each client fetches the no-cache workspace context and forwards an externally
+signed intent without handling a private key. The existing signed-workspace
+demo now drives issuer submission, approval, activation, and epoch publication
+through those clients, then compares public temporal trust with TRQP decision
+and inclusion evidence. Stale context, invalid transition, replay, and invalid
+signature return structured problems. This remains a single-process local
+fixture; cross-process locking and a browser-driven signed-intent flow are
+still open acceptance work under #59.

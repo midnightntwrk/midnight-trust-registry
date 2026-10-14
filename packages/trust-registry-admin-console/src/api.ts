@@ -14,6 +14,8 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
 } from "@midnight-ntwrk/trust-registry-api";
 
 import type { ReviewBoard } from "./model.js";
@@ -98,6 +100,23 @@ export class TrustRegistryAdminConsoleClient {
         method: "POST",
       },
     );
+  }
+
+  async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {
+    return this.request<TrustRegistryApiMutationContext>("/v1/registry/mutation-context", {
+      cache: "no-store",
+    });
+  }
+
+  /** Submit an externally signed intent; this client never receives a private key. */
+  async submitSignedMutation(
+    request: TrustRegistryApiSignedMutationRequest,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/mutations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
   }
 
   async prepareGovernedAction(
