@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import {
   verifyGovernedIssuerCredential,
@@ -30,6 +31,8 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
   createMidnightDid,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
@@ -41,6 +44,8 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  recognitionAuthorityAssertionDigest,
+  verifyRecognitionAuthorityAssertion,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -311,7 +316,13 @@ const candidate = createMaintainerScenarioFixture("governed-demo-candidate");
 const issuer = createIssuerScenarioFixture("governed-demo-issuer");
 const verifier = createVerifierScenarioFixture("governed-demo-verifier");
 const auditor = createAuditorScenarioFixture("governed-demo-auditor");
-const recognition = createRecognitionScenarioFixture("governed-demo-recognition");
+const recognitionAuthoritySeed = new Uint8Array(32).fill(116);
+const recognitionAuthorityDid = createMidnightDid("governed-demo-recognition-authority");
+const recognition = {
+  ...createRecognitionScenarioFixture("governed-demo-recognition"),
+  recognizedAuthorityDid: recognitionAuthorityDid,
+  recognizedAuthorityDidCommitment: bytes32Commitment(recognitionAuthorityDid),
+};
 harness.authorizeMaintainer(second);
 harness.authorizeMaintainer(third);
 harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
@@ -336,8 +347,99 @@ harness.registerVcAuthorityKey({
 });
 harness.advanceEvidenceTimeBy(60_000);
 
-// Recognition still uses a fixture assertion; the four membership proposals cross HTTP below.
-harness.proposeRecognition(recognition);
+const recognitionMethodId = `${recognitionAuthorityDid}#assert-1`;
+const recognitionResolver = createMidnightDidResolver([
+  createMidnightDidLedgerFixture(recognitionAuthorityDid, {
+    schnorrJubjubAssertionMethods: [{
+      id: "assert-1",
+      publicKey: deriveJubjubPublicKeyFromSeed(recognitionAuthoritySeed),
+    }],
+  }),
+]);
+const recognitionChallengeHash = sha256Hex("governed-demo-recognition-challenge");
+const recognitionStatement = {
+  version: "tr-recognition-authority-assertion-v1",
+  targetRegistryId: harness.registryId,
+  recognitionId: recognition.recognitionId,
+  authorityDid: recognitionAuthorityDid,
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+  accreditationEvidenceCommitment: sha256Hex("governed-demo-unverified-accreditation-reference"),
+  challengeHash: recognitionChallengeHash,
+  issuedAt: "2026-05-20T00:00:00.000Z",
+  expiresAt: "2026-05-20T01:00:00.000Z",
+};
+const recognitionAssertion = {
+  statement: recognitionStatement,
+  proof: {
+    verificationMethodId: recognitionMethodId,
+    algorithm: "jubjub-schnorr",
+    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
+      recognitionAuthoritySeed,
+      recognitionAuthorityAssertionDigest(recognitionStatement, recognitionMethodId),
+    ))),
+  },
+};
+const recognitionExpected = {
+  targetRegistryId: harness.registryId,
+  recognitionId: recognition.recognitionId,
+  authorityDid: recognitionAuthorityDid,
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+  challengeHash: recognitionChallengeHash,
+  evaluatedAtMs: VP_FIXTURE_TIME_MS,
+};
+const prepareRecognition = (signed) => harness.prepareRecognitionProposalFromAuthorityAssertion({
+  fixture: recognition,
+  signed,
+  challengeHash: recognitionChallengeHash,
+  evaluatedAtMs: VP_FIXTURE_TIME_MS,
+  resolver: recognitionResolver,
+});
+const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
+await assert.rejects(prepareRecognition({
+  ...recognitionAssertion,
+  statement: { ...recognitionStatement, recognizedRegistryId: "registry:external:wrong:v1" },
+}), /does not match/u);
+await assert.rejects(prepareRecognition({
+  ...recognitionAssertion,
+  proof: {
+    ...recognitionAssertion.proof,
+    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
+      recognitionAuthoritySeed,
+      recognitionAuthorityAssertionDigest({
+        ...recognitionStatement,
+        scopeResourceId: "credential-family:wrong:v1",
+      }, recognitionMethodId),
+    ))),
+  },
+}), /signature is invalid/u);
+assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
+const verifiedRecognitionAssertion = await verifyRecognitionAuthorityAssertion({
+  signed: recognitionAssertion,
+  expected: recognitionExpected,
+  resolver: recognitionResolver,
+});
+const recognitionPrepared = await prepareRecognition(recognitionAssertion);
+assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognitionAssertion.evidenceCommitment);
+const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
+assert.throws(() => harness.executeRecognitionProposalWithSignatures(
+  recognition,
+  [signCompact(second, recognitionPrepared)],
+  recognitionEvidenceSignature,
+  recognitionPrepared,
+), /action threshold/u);
+const recognitionProposalEventHash = harness.executeRecognitionProposalWithSignatures(
+  recognition,
+  [signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared)],
+  recognitionEvidenceSignature,
+  recognitionPrepared,
+);
+assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
+  recognition.recognitionIdCommitment,
+).evidenceCommitment), verifiedRecognitionAssertion.evidenceCommitment);
 const applicantSpecs = [
   {
     role: "issuer",
@@ -1869,7 +1971,14 @@ try {
       source: "authenticated VP HTTP intake and governed HTTP proposal",
     },
     otherProposals,
-    recognitionProposal: "fixture-signed; external authority accreditation proof not yet implemented",
+    recognitionProposal: {
+      eventHash: asHex(recognitionProposalEventHash),
+      evidenceCommitment: verifiedRecognitionAssertion.evidenceCommitment,
+      authorityDidStateVersionId: verifiedRecognitionAssertion.didStateVersionId,
+      source: "Midnight DID authority statement verified; local evidence verifier is fixture-held",
+      accreditation: "referenced but not independently verified",
+      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "one-maintainer"],
+    },
     decisions,
     actorReport,
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",

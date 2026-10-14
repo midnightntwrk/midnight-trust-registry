@@ -14,6 +14,16 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- The joined governed demo now proposes recognition from a verified Midnight
+  DID authority assertion, a separately signed local evidence-verifier proof,
+  and 2-of-3 maintainer signatures. It rejects a wrong external registry,
+  wrong-scope signature, and one-maintainer attempt before mutation, then
+  carries the proposal through approval, activation, and public trust checks.
+  The accreditation commitment remains an unverified reference and the
+  evidence verifier is fixture-held; this is not external accreditation or
+  network finality. Retrospective: extend the existing joined demo rather
+  than adding a disconnected happy-path test, and use its focused run before
+  the broader light lane.
 - Local #78 continuation after signed `10ebdf6`: the integration package now
   has a bounded Midnight DID authority assertion for recognition, with exact
   registry/authority/scope/challenge checks, assertion-method JubJub signature
