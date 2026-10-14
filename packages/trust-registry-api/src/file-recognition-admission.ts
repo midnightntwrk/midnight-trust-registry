@@ -18,6 +18,7 @@ import {
   type ApplicationChallengeRecord,
   type ApplicationChallengeStore,
 } from "./application-challenges.js";
+import { recognitionAuthorityChallengeIdentityHash } from "./recognition-authority-challenges.js";
 
 const MAX_ENTRIES = 10_000;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -200,11 +201,10 @@ export class FileRecognitionAdmissionStore implements RecognitionAdmissionStore 
       const state = await this.readState();
       const challenge = state.challenges.find((record) => record.challengeHash === input.challengeHash);
       if (challenge === undefined || challenge.bindingHash !== input.bindingHash
-        || challenge.applicationHash !== sha256Hex(JSON.stringify([
-          "tr:recognition:authority-challenge-identity:v1",
-          input.targetRegistryId,
-          input.recognitionId,
-        ]))
+        || challenge.applicationHash !== recognitionAuthorityChallengeIdentityHash({
+          targetRegistryId: input.targetRegistryId,
+          recognitionId: input.recognitionId,
+        })
         || nowMs < challenge.issuedAtMs || nowMs >= challenge.expiresAtMs
         || state.accepted.some((receipt) => receipt.applicationHash === challenge.applicationHash)) return null;
       await input.assertCurrentGovernance();

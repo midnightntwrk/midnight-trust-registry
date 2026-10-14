@@ -4,6 +4,7 @@ export * from "./recognition-accreditation-http.js";
 export * from "./file-application-challenges.js";
 export * from "./file-application-admission.js";
 export * from "./file-recognition-admission.js";
+export * from "./recognition-proposal-admission.js";
 export * from "./workspace-commitment.js";
 export * from "./mutation-intent-verifier.js";
 export * from "./mutation-intent-preflight.js";

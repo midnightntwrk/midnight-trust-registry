@@ -27,6 +27,15 @@ policy mutation; a second independent path does not serialize policy changes.
 The private authenticated accepted-receipt read supports recovery after a
 lost HTTP response. Neither a receipt nor an old active evidence bundle
 authorizes a new recognition proposal on its own.
+The reusable proposal-admission gate now rechecks the exact binding, receipt
+identity, combined evidence commitment, expiry, active policy commitment, and
+current accreditor anchor under the governance workspace write lock. Its
+callback is required to execute the Compact-backed proposal and recheck
+signatures, quorum, sequence, recognition-record status, and ledger state
+without acquiring a second copy of that lock. No public route currently wires
+this gate to proposal execution, so the admitted receipt remains non-authorizing.
+The file lock is local reference behavior, not distributed consensus or
+Midnight transaction finality.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof

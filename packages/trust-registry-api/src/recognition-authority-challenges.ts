@@ -42,7 +42,7 @@ export const RecognitionAuthorityChallengeBindingSchema = z.strictObject({
 
 export type RecognitionAuthorityChallengeBinding = z.infer<typeof RecognitionAuthorityChallengeBindingSchema>;
 
-const bindingHash = (binding: RecognitionAuthorityChallengeBinding): string => {
+export const recognitionAuthorityChallengeBindingHash = (binding: RecognitionAuthorityChallengeBinding): string => {
   const value = RecognitionAuthorityChallengeBindingSchema.parse(binding);
   return sha256Hex(JSON.stringify([
     "tr:recognition:authority-challenge-binding:v1",
@@ -55,7 +55,9 @@ const bindingHash = (binding: RecognitionAuthorityChallengeBinding): string => {
   ]));
 };
 
-const identityHash = (binding: RecognitionAuthorityChallengeBinding): string =>
+export const recognitionAuthorityChallengeIdentityHash = (
+  binding: Pick<RecognitionAuthorityChallengeBinding, "targetRegistryId" | "recognitionId">,
+): string =>
   sha256Hex(JSON.stringify([
     "tr:recognition:authority-challenge-identity:v1",
     binding.targetRegistryId,
@@ -83,8 +85,8 @@ export class RecognitionAuthorityChallengeService {
       const challengeHash = sha256Hex(nonce);
       const result = await this.store.insert({
         challengeHash,
-        bindingHash: bindingHash(binding),
-        applicationHash: identityHash(binding),
+        bindingHash: recognitionAuthorityChallengeBindingHash(binding),
+        applicationHash: recognitionAuthorityChallengeIdentityHash(binding),
         issuedAtMs: nowMs,
         expiresAtMs,
       }, nowMs, () => this.now());
@@ -246,7 +248,7 @@ export class RecognitionAuthorityChallengeService {
       throw new Error("Recognition authority challenge nonce or hash is invalid");
     }
     const nowMs = this.now();
-    const hash = bindingHash(binding);
+    const hash = recognitionAuthorityChallengeBindingHash(binding);
     const window = await this.store.readLive(challengeHash, hash, nowMs);
     if (window === null || window.challengeHash !== challengeHash || window.bindingHash !== hash
       || !Number.isSafeInteger(window.issuedAtMs) || !Number.isSafeInteger(window.expiresAtMs)
