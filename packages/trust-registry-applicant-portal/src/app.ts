@@ -20,6 +20,8 @@ type AppState = {
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
   auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
   auditorStatusBusy: boolean;
+  recognitionRecoveryBusy: boolean;
+  recognitionRecoveryMessage: string | undefined;
 };
 
 type AuditorScopeInput = {
@@ -131,6 +133,8 @@ export const createApplicantPortalApp = (
     pendingApplication: undefined,
     auditorStatus: undefined,
     auditorStatusBusy: false,
+    recognitionRecoveryBusy: false,
+    recognitionRecoveryMessage: undefined,
   };
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
@@ -142,6 +146,24 @@ export const createApplicantPortalApp = (
   };
 
   const client = () => new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl);
+
+  const recoverRecognitionProposal = async (recognitionId: string, receiptId: string, evidenceCommitment: string) => {
+    if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    if (recognitionId.length === 0 || !/^0x[0-9a-f]{64}$/u.test(receiptId)
+      || !/^0x[0-9a-f]{64}$/u.test(evidenceCommitment)) {
+      setState({ recognitionRecoveryMessage: "Enter the exact recognition ID and 32-byte receipt and evidence commitments." });
+      return;
+    }
+    setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined });
+    try {
+      const result = await client().resolveRecognitionProposal(recognitionId, receiptId, evidenceCommitment);
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: result.state === "observed"
+        ? `Compact recognition proposal observed: ${result.eventHash}. Network finality is not implied.`
+        : "Recognition proposal not observed. This does not prove failure; do not resubmit automatically." });
+    } catch (error) {
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
+    }
+  };
 
   const requirePrivateHost = () => {
     if (!canUsePrivateEvidenceHost(state.apiBase, initialUrl)) {
@@ -505,6 +527,16 @@ export const createApplicantPortalApp = (
       const applicationId = form?.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
       if (applicationId !== undefined && applicationId.length > 0) void recoverAcceptedEvidence(applicationId);
     });
+    root.querySelector<HTMLFormElement>("[data-recognition-recovery-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const value = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const recognitionId = value("recognitionId");
+      const receiptId = value("receiptId");
+      const evidenceCommitment = value("evidenceCommitment");
+      form.reset();
+      void recoverRecognitionProposal(recognitionId, receiptId, evidenceCommitment);
+    });
 
     root.querySelector<HTMLFormElement>("[data-application-registration-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -726,6 +758,17 @@ export const createApplicantPortalApp = (
                 </div>
               `}
             `}
+          </section>
+          <section class="form-panel">
+            <h2>Recover external recognition</h2>
+            <p>Accredited authorities can check a submitted recognition against finalized Compact evidence using the accepted admission receipt. Only an authenticated same-origin session can access this private result. A missing observation never triggers a retry.</p>
+            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
+            <form data-recognition-recovery-form autocomplete="off">
+              <label class="label">Recognition ID <input class="input mono" name="recognitionId" required autocomplete="off" /></label>
+              <label class="label">Admission receipt ID <input class="input mono" name="receiptId" required autocomplete="off" spellcheck="false" /></label>
+              <label class="label">Evidence commitment <input class="input mono" name="evidenceCommitment" required autocomplete="off" spellcheck="false" /></label>
+              <button class="button secondary" type="submit"${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Recover recognition receipt</button>
+            </form>
           </section>
           <div class="lanes">
             ${renderInspectionLane("Active issuers", issuerCards)}

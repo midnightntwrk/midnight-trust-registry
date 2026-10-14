@@ -918,3 +918,19 @@ fixture window precedes later multi-action policy-effective times. Avoid
 comparing parsed binding objects by reference (Zod clones them) or comparing
 `Buffer` and `Uint8Array` objects directly; compare canonical binding hashes
 and normalized hex commitments instead.
+
+The local proposal recovery branch now covers all five proposal roles,
+including recognition. The recognition HTTP resolver is private: it checks
+the authority session, accepted accreditation receipt, canonical challenge
+binding, and exact evidence commitment before reading an injected finalized
+Compact view. It returns `not-observed` for stale/absent finalized records,
+never an automatic retry signal. The applicant portal exposes this lookup
+only on its existing authenticated same-origin private host; the admin
+console remains maintainer-only. The portal sends receipt ID and evidence
+commitment without storing raw VP, session material, or receipt inputs in
+browser storage. Negative tests cover receipt substitution, denied access,
+stale finality, ledger evidence mismatch, reader outage, and cross-origin UI
+disablement. `./run.sh --light` passed (20/20 tasks) and `pnpm audit
+--audit-level low` reported no vulnerabilities. A production finalized-ledger
+reader and distributed admission store remain open; simulator confirmation
+must not be described as network finality.

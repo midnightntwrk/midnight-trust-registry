@@ -74,6 +74,21 @@ describe("public auditor inspection", () => {
 });
 
 describe("private application VP exchange", () => {
+  it("recovers recognition by receipt using only a same-origin authenticated session", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ state: "not-observed" })) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    const receiptId = `0x${"11".repeat(32)}`;
+    const evidenceCommitment = `0x${"22".repeat(32)}`;
+    expect(await client.resolveRecognitionProposal("recognition:partner", receiptId, evidenceCommitment))
+      .toEqual({ state: "not-observed" });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/governed/recognition/recognition%3Apartner/proposal/resolve",
+      { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ receiptId, evidenceCommitment }) },
+    );
+  });
+
   it("submits a signed pending auditor application without cross-origin credentials", async () => {
     const binding = { applicationId: "application:auditor:one", role: "auditor" };
     const request = { applicationId: binding.applicationId, scope: { role: "auditor" }, intent: { action: "apply" }, signature: { value: "signed" } };

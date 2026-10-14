@@ -249,6 +249,23 @@ export class TrustRegistryApplicantPortalClient {
     return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
   }
 
+  /** Only the accredited authority's authenticated same-origin session may inspect this result. */
+  async resolveRecognitionProposal(recognitionId: string, receiptId: string, evidenceCommitment: string): Promise<
+    { state: "not-observed" } | { state: "observed"; eventHash: string }
+  > {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/v1/governed/recognition/${encodeURIComponent(recognitionId)}/proposal/resolve`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ receiptId, evidenceCommitment }),
+      },
+    );
+    return parsePrivateResponse(response);
+  }
+
   private async request<T>(
     path: string,
     init?: RequestInit,
