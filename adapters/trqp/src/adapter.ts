@@ -330,6 +330,10 @@ export class TrustRegistryTrqpAdapter {
       };
     }
 
+    const registry = RegistryRecordSchema.parse(record);
+    if (registry.registryDid !== request.authority_id) {
+      return { ok: false, problem: invalidSourceProblem(this.problemBaseUri, "Authority record does not match the request.") };
+    }
     const decision = await this.source.getAuthorizationDecision(request, evaluatedAt);
     if (decision === null) {
       return {
@@ -354,6 +358,19 @@ export class TrustRegistryTrqpAdapter {
           "Authorization query resolved to a bundle without an authorization statement.",
         ),
       };
+    }
+    if (parsedBundle !== undefined) {
+      const authorization = parsedBundle.authorization!;
+      const expectedRole = request.action === "issue" ? "issuer"
+        : request.action === "verify" ? "verifier" : null;
+      if (parsedBundle.registryId !== registry.registryId
+        || authorization.registryId !== registry.registryId
+        || authorization.subjectDid !== request.entity_id
+        || authorization.resourceId !== request.resource
+        || authorization.role !== expectedRole) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Authorization evidence does not match the requested authority, entity, action, and resource.") };
+      }
     }
     if (requireEvidence && parsedBundle !== undefined) {
       if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
@@ -391,6 +408,10 @@ export class TrustRegistryTrqpAdapter {
       };
     }
 
+    const registry = RegistryRecordSchema.parse(record);
+    if (registry.registryDid !== request.authority_id) {
+      return { ok: false, problem: invalidSourceProblem(this.problemBaseUri, "Authority record does not match the request.") };
+    }
     const decision = await this.source.getRecognitionDecision(request, evaluatedAt);
     if (decision === null) {
       return {
@@ -415,6 +436,19 @@ export class TrustRegistryTrqpAdapter {
           "Recognition query resolved to a bundle without a recognition statement.",
         ),
       };
+    }
+    if (parsedBundle !== undefined) {
+      const recognition = parsedBundle.recognition!;
+      if (parsedBundle.registryId !== registry.registryId
+        || recognition.registryId !== registry.registryId
+        || recognition.recognizedAuthorityDid !== request.entity_id
+        || recognition.scope.resourceType !== request.action
+        || recognition.scope.resourceId !== request.resource
+        || (request.context?.recognized_registry_id !== undefined
+          && recognition.recognizedRegistryId !== request.context.recognized_registry_id)) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Recognition evidence does not match the requested authority, entity, action, resource, and registry.") };
+      }
     }
     if (requireEvidence && parsedBundle !== undefined) {
       if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0

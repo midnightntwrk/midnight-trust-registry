@@ -35,6 +35,12 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   a given request. A 424 evidence response does not negate the query decision;
   it states that the requested proof is unavailable. Clients must not promote
   the query projection into an independently verifiable assertion.
+- Before attaching a source bundle, the adapter MUST match its registry ID and
+  statement tuple to the requested authority, entity, action, and resource.
+  Recognition additionally matches `recognized_registry_id` when requested.
+  A mismatch is invalid source data, not a negative trust decision or evidence
+  for another party. This structural check does not replace independent
+  verification of the epoch anchor, signatures, and inclusion proof.
 - Epoch window and bundle equality checks compare RFC3339 instants
   semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
 
