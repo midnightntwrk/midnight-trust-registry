@@ -359,6 +359,8 @@ key control and replay resistance only. The accreditation commitment in the
 statement remains an unverified reference; public recognition intake must also
 validate an independently trusted accreditation source and governed local
 evidence-verifier policy before proposing a ledger transition.
+The joined governed demo exercises issue, invalid assertion rejection, valid
+consumption, replay rejection, and the resulting Compact proposal.
 
 Example applicant submission:
 

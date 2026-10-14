@@ -18,11 +18,13 @@ shorter-lived and more action-oriented than the normative specification.
   authority challenge primitive over the existing atomic challenge-store
   interface. It binds the exact recognition tuple, rejects pre-challenge and
   future statements, and consumes only after DID assertion verification.
-  It is not mounted on HTTP and does not validate external accreditation;
-  #78 remains open. Retrospective: the membership challenge binding cannot
-  represent recognition, but its low-level atomic store can be reused without
-  weakening the membership schema. A focused API test runs in about one
-  second; run it before the much broader API suite.
+  The joined governed demo now issues that challenge, rejects bad assertions,
+  consumes it once, rejects replay, and carries the verified commitment into
+  the Compact proposal. It is not mounted on HTTP and does not validate
+  external accreditation; #78 remains open. Retrospective: the membership
+  challenge binding cannot represent recognition, but its low-level atomic
+  store can be reused without weakening the membership schema. A focused API
+  test runs in about one second; run it before the much broader API suite.
 - The joined governed demo now proposes recognition from a verified Midnight
   DID authority assertion, a separately signed local evidence-verifier proof,
   and 2-of-3 maintainer signatures. It rejects a wrong external registry,
