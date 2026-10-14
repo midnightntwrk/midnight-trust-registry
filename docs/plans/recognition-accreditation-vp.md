@@ -6,8 +6,12 @@ Local implementation checkpoint: the domain anchor/claims schema, reusable
 Midnight VC/VP proof verifier, and private recognition accreditation VP verifier
 have signed-fixture positive and negative tests. The status decision port is
 injected by trusted code and the test fixture is not a production status
-source. No public intake route or governed anchor lookup consumes this result
-yet; the challenge service still has a DID-only consume path.
+source. The private challenge service can verify both the DID assertion and VP
+before one atomic consume, with service-level failure/replay tests; those tests
+mock the independently signed VP verifier, so a joined end-to-end flow remains
+to be built. No public intake route or governed anchor lookup consumes this
+result yet. The DID-only consume path is still used by the pre-accreditation
+demo and must not be presented as an accredited recognition decision.
 
 The existing recognition flow verifies a Midnight DID authority assertion,
 consumes an exact-scope challenge, and binds a local evidence-verifier signature

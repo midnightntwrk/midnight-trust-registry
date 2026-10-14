@@ -9,8 +9,13 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   verifyRecognitionAuthorityAssertion,
+  verifyRecognitionAccreditationVp,
+  type RecognitionAccreditationStatusSource,
+  type RecognitionAccreditationSubmission,
+  type VerifiedRecognitionAccreditation,
   type VerifiedRecognitionAuthorityAssertion,
 } from "@midnight-ntwrk/trust-registry-integration";
+import type { RecognitionAccreditorAnchor } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import {
@@ -97,6 +102,61 @@ export class RecognitionAuthorityChallengeService {
     signed: SignedRecognitionAuthorityAssertion;
     resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
   }): Promise<VerifiedRecognitionAuthorityAssertion> {
+    const result = await this.verifyThenConsume(input, async () => null);
+    return result.authority;
+  }
+
+  /** Private composed path; caller must resolve the active anchor and status source from governed state. */
+  async verifyAndConsumeAccreditedAssertion(input: {
+    binding: RecognitionAuthorityChallengeBinding;
+    nonce: string;
+    signed: SignedRecognitionAuthorityAssertion;
+    accreditation: RecognitionAccreditationSubmission;
+    anchor: RecognitionAccreditorAnchor;
+    resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+    statusSource: RecognitionAccreditationStatusSource;
+  }): Promise<{
+    authority: VerifiedRecognitionAuthorityAssertion;
+    accreditation: VerifiedRecognitionAccreditation;
+  }> {
+    const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
+    if (input.anchor.targetRegistryId !== binding.targetRegistryId
+      || input.anchor.recognizedRegistryId !== binding.recognizedRegistryId
+      || input.anchor.scopeResourceType !== binding.scopeResourceType
+      || input.anchor.scopeResourceId !== binding.scopeResourceId) {
+      throw new Error("Recognition accreditation anchor does not match the challenge tuple");
+    }
+    const result = await this.verifyThenConsume(input, async (authority, evaluatedAtMs) => {
+      const accreditation = await verifyRecognitionAccreditationVp({
+        submission: input.accreditation,
+        anchor: input.anchor,
+        targetRegistryId: binding.targetRegistryId,
+        authorityDid: binding.authorityDid,
+        nonce: input.nonce,
+        evaluatedAtMs,
+        resolver: input.resolver,
+        statusSource: input.statusSource,
+      });
+      if (authority.statement.accreditationEvidenceCommitment !== accreditation.evidenceCommitment) {
+        throw new Error("Recognition assertion does not commit to the verified accreditation VP");
+      }
+      return accreditation;
+    });
+    return { authority: result.authority, accreditation: result.evidence };
+  }
+
+  private async verifyThenConsume<Evidence>(input: {
+    binding: RecognitionAuthorityChallengeBinding;
+    nonce: string;
+    signed: SignedRecognitionAuthorityAssertion;
+    resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  }, verifyEvidence: (
+    authority: VerifiedRecognitionAuthorityAssertion,
+    evaluatedAtMs: number,
+  ) => Promise<Evidence>): Promise<{
+    authority: VerifiedRecognitionAuthorityAssertion;
+    evidence: Evidence;
+  }> {
     const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
     const challengeHash = input.signed.statement.challengeHash.toLowerCase();
     if (!hasMatchingApplicationChallengeHash(input.nonce, challengeHash)) {
@@ -120,10 +180,11 @@ export class RecognitionAuthorityChallengeService {
     if (issuedAtMs < window.issuedAtMs || issuedAtMs > nowMs || issuedAtMs >= window.expiresAtMs) {
       throw new Error("Recognition authority assertion was signed outside the challenge window");
     }
+    const evidence = await verifyEvidence(verified, nowMs);
     if (!await this.store.consume(challengeHash, hash, this.now())) {
       throw new Error("Recognition authority challenge is invalid or already consumed");
     }
-    return verified;
+    return { authority: verified, evidence };
   }
 
   private now(): number {

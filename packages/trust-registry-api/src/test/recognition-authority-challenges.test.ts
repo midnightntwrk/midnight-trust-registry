@@ -2,14 +2,20 @@ import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+import { sha256Hex, type RecognitionAccreditorAnchor, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   recognitionAuthorityAssertionDigest,
+  verifyRecognitionAccreditationVp,
 } from "@midnight-ntwrk/trust-registry-integration";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
+  verifyRecognitionAccreditationVp: vi.fn(),
+}));
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import {
@@ -132,5 +138,86 @@ describe("recognition authority DID challenge", () => {
     await expect(service.verifyAndConsumeDidAssertion({
       binding, nonce: expired.nonce, signed: signedFor(expired.challengeHash), resolver,
     })).rejects.toThrow(/invalid or already consumed/u);
+  });
+
+  it("spends the nonce only after both proofs and the accreditation commitment match", async () => {
+    const accreditedBinding = { ...binding, scopeResourceType: "credentialfamily" };
+    const anchor: RecognitionAccreditorAnchor = {
+      format: "tr-recognition-accreditor-anchor-v1",
+      targetRegistryId: binding.targetRegistryId,
+      policyId: "policy:recognition:accreditors",
+      policyVersion: "v1",
+      accreditorDid: createMidnightDid("accreditor"),
+      accreditorAssertionMethodId: `${createMidnightDid("accreditor")}#assertion-1`,
+      credentialFamilyId: "credential-family:accreditation:v1",
+      schemaId: "schema:accreditation:v1",
+      statusRegistryId: "status-registry:accreditation:v1",
+      statusAuthorityDid: createMidnightDid("status-authority"),
+      statusAuthorityMethodId: `${createMidnightDid("status-authority")}#assertion-1`,
+      recognizedRegistryId: binding.recognizedRegistryId,
+      scopeResourceType: accreditedBinding.scopeResourceType,
+      scopeResourceId: binding.scopeResourceId,
+      effectiveFrom: "2026-05-20T00:00:00.000Z",
+      effectiveUntil: "2026-05-21T00:00:00.000Z",
+    };
+    const commitment = sha256Hex("verified-accreditation-evidence");
+    const verifiedAccreditation = {
+      evidenceCommitment: commitment,
+      anchorCommitment: sha256Hex("anchor"),
+      claimsCommitment: sha256Hex("claims"),
+      presentationHash: sha256Hex("presentation"),
+      accreditorDidStateVersionId: "accreditor-state",
+      authorityDidStateVersionId: "authority-state",
+      statusAuthorityDidStateVersionId: "status-state",
+      statusDecisionCommitment: sha256Hex("status"),
+      evaluatedAtMs: issuedAtMs + 1000,
+      expiresAtMs: issuedAtMs + 60_000,
+    };
+    const verifier = vi.mocked(verifyRecognitionAccreditationVp);
+    verifier.mockReset();
+    const service = new RecognitionAuthorityChallengeService(
+      new InMemoryApplicationChallengeStore(), () => issuedAtMs + 1000,
+    );
+    const challenge = await service.issue(accreditedBinding);
+    const signed = signedFor(challenge.challengeHash, {
+      ...accreditedBinding,
+      accreditationEvidenceCommitment: commitment,
+      issuedAt: new Date(issuedAtMs + 1000).toISOString(),
+    });
+    const request = {
+      binding: accreditedBinding,
+      nonce: challenge.nonce,
+      signed,
+      accreditation: {
+        rawCredentialBody: "not used by mocked verifier",
+        rawPresentationBody: "not used by mocked verifier",
+        credentialProof: {},
+        presentationProof: {},
+      },
+      anchor,
+      resolver,
+      statusSource: { verifyPinnedStatus: vi.fn() },
+    };
+    verifier.mockRejectedValueOnce(new Error("accreditation VP is invalid"));
+    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/VP is invalid/u);
+    verifier.mockResolvedValueOnce({ ...verifiedAccreditation, evidenceCommitment: sha256Hex("other") });
+    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/does not commit/u);
+    verifier.mockResolvedValue(verifiedAccreditation);
+    await expect(service.verifyAndConsumeAccreditedAssertion({
+      ...request,
+      anchor: { ...anchor, scopeResourceId: "credential-family:other:v1" },
+    })).rejects.toThrow(/anchor does not match/u);
+    const results = await Promise.allSettled([
+      service.verifyAndConsumeAccreditedAssertion(request),
+      service.verifyAndConsumeAccreditedAssertion(request),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(verifier).toHaveBeenCalledWith(expect.objectContaining({
+      nonce: challenge.nonce,
+      authorityDid,
+      targetRegistryId: binding.targetRegistryId,
+      evaluatedAtMs: issuedAtMs + 1000,
+    }));
   });
 });
