@@ -1,0 +1,66 @@
+import { Buffer } from "node:buffer";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  createAuditorScenarioFixture,
+  createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
+  createVerifierScenarioFixture,
+  LocalTrustRegistryIntegrationHarness,
+} from "@midnight-ntwrk/trust-registry-integration";
+
+import { resolveCompactProposalObservation, type ProposalRole } from "../compact-proposal-observation.js";
+
+describe("finalized Compact proposal observation", () => {
+  it.each(["issuer", "verifier", "auditor", "maintainer"] as const)(
+    "recovers a lost %s receipt from proposal evidence, not a process-local flag",
+    async (role: ProposalRole) => {
+      const harness = new LocalTrustRegistryIntegrationHarness(`proposal-observation-${role}`);
+      const fixture = role === "issuer" ? createIssuerScenarioFixture("observation")
+        : role === "verifier" ? createVerifierScenarioFixture("observation")
+          : role === "auditor" ? createAuditorScenarioFixture("observation")
+            : createMaintainerScenarioFixture("observation");
+      const id = "maintainerId" in fixture ? fixture.maintainerId : fixture.authorizationId;
+      const read = async () => harness.simulator.getLedger();
+
+      expect(await resolveCompactProposalObservation(read, role, id)).toBeNull();
+      const eventHash = role === "issuer" ? harness.proposeIssuer(fixture as ReturnType<typeof createIssuerScenarioFixture>)
+        : role === "verifier" ? harness.proposeVerifier(fixture as ReturnType<typeof createVerifierScenarioFixture>)
+          : role === "auditor" ? harness.proposeAuditor(fixture as ReturnType<typeof createAuditorScenarioFixture>)
+            : harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>);
+      const observed = await resolveCompactProposalObservation(read, role, id);
+      expect(observed?.eventHash).toBe(`0x${Buffer.from(eventHash).toString("hex")}`);
+      expect(observed?.evidenceCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(await resolveCompactProposalObservation(read, role, `${id}:other`)).toBeNull();
+      for (const otherRole of ["issuer", "verifier", "auditor", "maintainer"] as const) {
+        if (otherRole !== role) {
+          expect(await resolveCompactProposalObservation(read, otherRole, id)).toBeNull();
+        }
+      }
+    },
+  );
+
+  it("does not turn an unavailable finalized ledger into a retry-safe absence", async () => {
+    await expect(resolveCompactProposalObservation(async () => {
+      throw new Error("finality source unavailable");
+    }, "issuer", "candidate")).rejects.toThrow("finality source unavailable");
+  });
+
+  it("waits for the supplied finalized view rather than reporting an unfinalized simulator write", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-finality-lag");
+    const issuer = createIssuerScenarioFixture("finality-lag");
+    let finalized = harness.simulator.getLedger();
+    const read = async () => finalized;
+    const eventHash = harness.proposeIssuer(issuer);
+
+    expect(await resolveCompactProposalObservation(read, "issuer", issuer.authorizationId)).toBeNull();
+    finalized = harness.simulator.getLedger();
+    expect(await resolveCompactProposalObservation(read, "issuer", issuer.authorizationId)).toEqual({
+      eventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
+      evidenceCommitment: `0x${Buffer.from(finalized.issuerProposalEvidenceRecords.lookup(
+        issuer.authorizationIdCommitment,
+      ).evidenceCommitment).toString("hex")}`,
+    });
+  });
+});

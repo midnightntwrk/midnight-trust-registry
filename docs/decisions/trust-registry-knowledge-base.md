@@ -899,6 +899,14 @@ reason to weaken the receipt's future-acceptance guard. Production status
 ledger evidence, distributed admission/finality, and recovery after uncertain
 network submission remain open.
 
+The follow-on local proposal-resolution helper reads the immutable Compact
+proposal-evidence map for issuer, verifier, auditor, and maintainer roles from
+an injected finalized ledger view. HTTP recovery tests no longer rely on an
+in-memory `proposed` flag. A deliberately stale finalized view returns
+`not-observed` even after the simulator has accepted a write; only advancing
+that view exposes the event. This narrows the recovery boundary but does not
+provide a live-network finality reader or make a negative lookup retry-safe.
+
 The joined private HTTP test now carries a signed Midnight accreditation VC/VP
 and separate authority DID assertion through one-use challenge acceptance,
 private receipt recovery, and the governed Compact recognition proposal. It

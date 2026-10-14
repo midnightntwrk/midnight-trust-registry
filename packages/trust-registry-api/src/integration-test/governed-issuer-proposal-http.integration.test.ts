@@ -23,6 +23,7 @@ import {
   type GovernedIssuerProposalPort,
   type PreparedGovernedIssuerProposal,
 } from "../governed-issuer-proposals.js";
+import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
@@ -78,7 +79,6 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       scope: createIssuerAuthorizationScopeFixture(issuer),
       governedResource: { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId },
     });
-    let observed: { eventHash: string; evidenceCommitment: string } | null = null;
     const port: GovernedIssuerProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== issuer.authorizationId) {
@@ -100,17 +100,13 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         } catch {
           throw new GovernedIssuerProposalRejectedError("invalid-signers");
         }
-        observed = {
-          eventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
-          evidenceCommitment: submitted.commitment,
-        };
-        return { eventHash: observed.eventHash };
+        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
       async resolve(authorizationId) {
         if (authorizationId !== issuer.authorizationId) {
           throw new GovernedIssuerProposalRejectedError("unknown-authorization");
         }
-        return observed;
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "issuer", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({

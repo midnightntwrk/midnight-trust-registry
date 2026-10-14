@@ -23,6 +23,7 @@ import {
   type PreparedGovernedAuditorProposal,
 } from "../governed-auditor-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -67,7 +68,6 @@ describe("Compact-backed auditor proposals over HTTP", () => {
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
     }
-    let proposed = false;
     const port: GovernedAuditorProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== auditor.authorizationId) {
@@ -87,7 +87,6 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           const eventHash = harness.executeAuditorProposalWithSignatures(
             auditor, submitted, signers, verifierSignature,
           );
-          proposed = true;
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
         } catch {
           throw new GovernedAuditorProposalRejectedError("invalid-signers");
@@ -97,12 +96,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
         if (authorizationId !== auditor.authorizationId) {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
         }
-        if (!proposed) return null;
-        const record = harness.simulator.getAuditorProposalEvidence(auditor.authorizationIdCommitment);
-        return {
-          eventHash: `0x${Buffer.from(record.proposalGovernanceEventHash).toString("hex")}`,
-          evidenceCommitment: `0x${Buffer.from(record.evidenceCommitment).toString("hex")}`,
-        };
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(), "auditor", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({ source, governedAuditorProposals: port });

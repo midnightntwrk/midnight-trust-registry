@@ -259,12 +259,15 @@ Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional
 governed proposal resolution port can recover a lost HTTP submit receipt by
-reading the Compact proposal event and matching its evidence commitment to
-the admitted application. A `not-observed` response is ambiguous, not a
-failed-transaction proof, and MUST NOT trigger automatic resubmission.
-The local simulator observes committed actions immediately for issuer,
-verifier, auditor, and maintainer proposals; this is not a production finality
-or cross-store recovery protocol.
+reading the Compact proposal evidence record and matching its evidence
+commitment to the admitted application. The API package exports
+`resolveCompactProposalObservation` for all four membership roles. Its caller
+MUST provide an independently finalized ledger view; an unconfirmed
+transaction result is not a substitute. A `not-observed` response is
+ambiguous, not a failed-transaction proof, and MUST NOT trigger automatic
+resubmission. Simulator tests show that an unfinalized write remains
+unobserved until the supplied finalized view advances. A production finality
+reader, authoritative host, and cross-store recovery protocol remain open.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live
