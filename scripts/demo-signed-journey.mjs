@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -84,6 +87,25 @@ const expectStatus = async (response, expected) => {
   return payload;
 };
 
+const withOtherProcessHoldingWorkspace = async (workspacePath, operation) => {
+  const child = spawn(process.execPath, [
+    fileURLToPath(new URL("./hold-workspace-lock.mjs", import.meta.url)), workspacePath,
+  ], { stdio: ["pipe", "pipe", "pipe"] });
+  const exited = once(child, "exit", { signal: AbortSignal.timeout(10_000) });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  try {
+    const [ready] = await once(child.stdout, "data", { signal: AbortSignal.timeout(5_000) });
+    assert.equal(String(ready), "locked\n");
+    await operation();
+  } finally {
+    child.stdin.end();
+    const [code] = await exited;
+    assert.equal(code, 0, stderr);
+  }
+};
+
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "trust-registry-signed-demo-"));
 const workspacePath = join(temporaryDirectory, "workspace.json");
 let server;
@@ -144,9 +166,17 @@ try {
     const context = await admin.loadMutationContext();
     const operation = { operation: action, target: "issuer", id: fixture.authorizationId };
     const intent = intentFor(context, operation, maintainerDid, "maintainer", index === 0 ? "34" : "35");
-    const result = await admin.submitSignedMutation({
+    const envelope = {
       intent, signature: signatureFor(intent, maintainerSeed), operation,
-    });
+    };
+    if (action === "approve") {
+      await withOtherProcessHoldingWorkspace(workspacePath, async () => {
+        await assert.rejects(admin.submitSignedMutation(envelope),
+          (error) => error.problem?.status === 409
+            && error.problem?.type?.endsWith("/workspace-locked"));
+      });
+    }
+    const result = await admin.submitSignedMutation(envelope);
     assert.equal(result.recordKind, "authorization");
     operations.push(result.operation.operation);
   }
@@ -196,6 +226,42 @@ try {
   assert.equal(trqpEvidence.bundle.epoch.stateRoot, evidence.epoch.stateRoot);
   assert.equal(trqpEvidence.bundle.inclusionProof.leafHash, evidence.inclusionProof.leafHash);
 
+  const suspensionContext = await admin.loadMutationContext();
+  const suspend = { operation: "suspend", target: "issuer", id: fixture.authorizationId };
+  const suspensionIntent = intentFor(suspensionContext, suspend, maintainerDid, "maintainer", "39");
+  const suspended = await admin.submitSignedMutation({
+    intent: suspensionIntent, signature: signatureFor(suspensionIntent, maintainerSeed), operation: suspend,
+  });
+  assert.equal(suspended.recordKind, "authorization");
+  assert.equal(suspended.entry.authorization.status, "suspended");
+  operations.push(suspended.operation.operation);
+  const suspensionEpochContext = await admin.loadMutationContext();
+  const publishSuspension = { operation: "publish-epoch", label: "signed-demo-suspended-epoch" };
+  const suspensionEpochIntent = intentFor(
+    suspensionEpochContext, publishSuspension, maintainerDid, "maintainer", "40",
+  );
+  const publishedSuspension = await admin.submitSignedMutation({
+    intent: suspensionEpochIntent,
+    signature: signatureFor(suspensionEpochIntent, maintainerSeed),
+    operation: publishSuspension,
+  });
+  assert.equal(publishedSuspension.recordKind, "epoch");
+  operations.push(publishedSuspension.operation.operation);
+  const suspendedAt = suspended.entry.authorization.suspendedAt;
+  assert.ok(suspendedAt);
+  const suspendedPublicDecision = await expectStatus(await post("/v1/authorizations/evaluate", {
+    role: "issuer", subjectDid: fixture.subjectDid, resourceId: fixture.resourceId, at: suspendedAt,
+  }), 200);
+  const suspendedTrqpDecision = await expectStatus(await post("/v1/trqp/authorizations/query", {
+    ...trqpRequest, context: { time: suspendedAt },
+  }), 200);
+  assert.equal(suspendedPublicDecision.trustedAtTime, false);
+  assert.equal(suspendedTrqpDecision.authorized, suspendedPublicDecision.trustedAtTime);
+  const stillActiveAtPriorTime = await expectStatus(await post("/v1/authorizations/evaluate", {
+    role: "issuer", subjectDid: fixture.subjectDid, resourceId: fixture.resourceId, at: evaluatedAt,
+  }), 200);
+  assert.equal(stillActiveAtPriorTime.trustedAtTime, true);
+
   process.stdout.write(`${JSON.stringify({
     mode: "local-simulator-fixture; finality simulated",
     registryId: current.registryId,
@@ -203,13 +269,19 @@ try {
     authorizationId: fixture.authorizationId,
     scopeCommitment: computeAuthorizationScopeCommitment(fixture.authorizationScope),
     maintainerDid,
-    status: entry.authorization.status,
-    epochId: current.expectedEpochId,
-    stateRoot: evidence.epoch.stateRoot,
+    status: suspended.entry.authorization.status,
+    activeEpochId: evidence.epoch.epochId,
+    activeStateRoot: evidence.epoch.stateRoot,
+    suspendedEpochId: publishedSuspension.epoch.epochId,
     operations,
     publicAndTrqpAgree: trqpDecision.authorized === publicDecision.trustedAtTime,
     trqpEvidenceCommitment: trqpEvidence.bundle.inclusionProof.leafHash,
-    expectedRejections: ["unsigned:403", "invalid-signature:401", "replay:409", "stale-context:409", "invalid-transition:403", "wrong-query-scope:404"],
+    lifecycle: {
+      suspendedAt,
+      publicAndTrqpDenyAfterSuspension: !suspendedPublicDecision.trustedAtTime && !suspendedTrqpDecision.authorized,
+      historicalActiveDecisionRetained: stillActiveAtPriorTime.trustedAtTime,
+    },
+    expectedRejections: ["unsigned:403", "invalid-signature:401", "replay:409", "stale-context:409", "cross-process-lock:409", "invalid-transition:403", "wrong-query-scope:404"],
   }, null, 2)}\n`);
 } finally {
   if (server !== undefined) await new Promise((resolve) => server.close(resolve));

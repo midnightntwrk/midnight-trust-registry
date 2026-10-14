@@ -83,12 +83,16 @@ workspace and fixture Midnight DID resolver, and signs applicant and maintainer
 mutation intents with separate JubJub keys outside the UI clients. The applicant
 portal and admin console clients fetch non-cacheable mutation contexts and
 submit already-signed envelopes through their public API methods. The sequence
-submits an issuer, approves and activates it, publishes an epoch, and reads the
-active authorization and associated epoch evidence. Public temporal lookup and
-TRQP query/evidence must agree on the decision and inclusion commitment at
-the same historical instant. The script also checks that unsigned writes, an
-invalid signature, replay, a stale context, an invalid transition, and a
-wrong-scope lookup are rejected with structured HTTP problems. It prints a
+submits an issuer, approves and activates it, publishes an epoch, then suspends
+it and publishes another epoch. Public temporal lookup and TRQP query/evidence
+must agree on the active decision and inclusion commitment at the same
+historical instant. Both query paths must deny after suspension while the
+earlier active-time decision remains true. The script also checks that unsigned
+writes, an invalid signature, replay, a stale context, an invalid transition,
+and a wrong-scope lookup are rejected with structured HTTP problems. A second
+process holds the workspace write lock during approval: the API rejects the
+conflicting signed write with 409, then accepts the same intent after unlock.
+It prints a
 compact JSON transcript and deletes its temporary workspace on exit.
 
 This is a **local fixture demonstration**, not a live-network or proving demo:
@@ -96,8 +100,9 @@ finality is simulated, the workspace has one fixture maintainer rather than a
 2-of-3 Compact-backed approval bundle, and the script does not issue or verify
 a VC/VP or independently verify a Compact proof. The reported epoch root is
 operator-workspace evidence, not a network-finality claim.
-Cross-process write-conflict coverage and a browser-driven signed-intent
-workflow remain separate #59 work; the clients do not hold signing keys.
+The cross-process check covers one shared local filesystem, not a distributed
+multi-writer deployment. A browser-driven signed-intent workflow remains
+separate #59 work; the clients do not hold signing keys.
 
 ### Compact-Governed Registry Journey
 

@@ -650,9 +650,13 @@ The #59 local public-client slice exports the signed mutation envelope from
 the API schema and uses it in both applicant-portal and admin-console clients.
 Each client fetches the no-cache workspace context and forwards an externally
 signed intent without handling a private key. The existing signed-workspace
-demo now drives issuer submission, approval, activation, and epoch publication
-through those clients, then compares public temporal trust with TRQP decision
-and inclusion evidence. Stale context, invalid transition, replay, and invalid
-signature return structured problems. This remains a single-process local
-fixture; cross-process locking and a browser-driven signed-intent flow are
-still open acceptance work under #59.
+demo now drives issuer submission, approval, activation, suspension, and two
+epoch publications through those clients, then compares public temporal trust
+with TRQP decision and inclusion evidence. Both query paths deny at the
+suspension instant while retaining the prior active-time decision. Stale
+context, invalid transition, replay, and invalid signature return structured
+problems. A second process holds the shared local workspace lock during a
+signed approval; the API returns 409 without consuming the intent, and the
+same intent succeeds after release. A browser-driven signed-intent flow remains
+open acceptance work under #59. This fixture is not a distributed multi-writer
+or live-network finality test.
