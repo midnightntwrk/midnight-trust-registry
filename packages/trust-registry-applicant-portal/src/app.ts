@@ -145,6 +145,7 @@ export const createApplicantPortalApp = (
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
+  let recognitionRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -159,13 +160,17 @@ export const createApplicantPortalApp = (
       setState({ recognitionRecoveryMessage: "Enter the exact recognition ID." });
       return;
     }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
     setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId,
       recognitionChallenge: undefined, recognitionAdmission: undefined });
     try {
       const challenge = await client().issueRecognitionChallenge(recognitionId);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       if (challenge.recognitionId !== recognitionId) throw new Error("Recognition challenge ID mismatch.");
       setState({ recognitionRecoveryBusy: false, recognitionChallenge: challenge });
     } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
     }
   };
@@ -186,9 +191,12 @@ export const createApplicantPortalApp = (
       setState({ recognitionRecoveryMessage: "Accreditation submission must be JSON with the current challenge nonce." });
       return;
     }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
     setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
     try {
       const accepted = await client().submitRecognitionAccreditation(recognitionId, submission);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       if (accepted.recognitionId !== recognitionId || accepted.receipt?.evidenceCommitment !== accepted.evidenceCommitment) {
         throw new Error("Accepted recognition receipt does not match the submission.");
       }
@@ -196,6 +204,7 @@ export const createApplicantPortalApp = (
         recognitionAdmission: accepted.receipt,
         recognitionRecoveryMessage: `Recognition accreditation accepted. Governance approval is still required.` });
     } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       setState({ recognitionRecoveryBusy: false, recognitionChallenge: undefined,
         recognitionRecoveryMessage: formatApiError(error) });
     }
@@ -207,13 +216,17 @@ export const createApplicantPortalApp = (
       setState({ recognitionRecoveryMessage: "Enter the exact recognition ID." });
       return;
     }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
     setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
     try {
       const receipt = await client().loadAcceptedRecognitionAccreditation(recognitionId);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       if (receipt.recognitionId !== recognitionId) throw new Error("Accepted recognition receipt ID mismatch.");
       setState({ recognitionRecoveryBusy: false, recognitionAdmission: receipt,
         recognitionRecoveryMessage: "Accepted accreditation receipt recovered. Governance approval is still required." });
     } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
     }
   };
@@ -225,13 +238,17 @@ export const createApplicantPortalApp = (
       setState({ recognitionRecoveryMessage: "Enter the exact recognition ID and 32-byte receipt and evidence commitments." });
       return;
     }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
     setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
     try {
       const result = await client().resolveRecognitionProposal(recognitionId, receiptId, evidenceCommitment);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: result.state === "observed"
         ? `Compact recognition proposal observed: ${result.eventHash}. Network finality is not implied.`
         : "Recognition proposal not observed. This does not prove failure; do not resubmit automatically." });
     } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
       setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
     }
   };
@@ -548,7 +565,10 @@ export const createApplicantPortalApp = (
       evidenceRequestId += 1;
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      recognitionRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+        recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
+        recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
     });
 

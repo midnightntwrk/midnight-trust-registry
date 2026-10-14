@@ -7,6 +7,40 @@ const counts = () => ({ proposed: 0, authorized: 0, active: 0, suspended: 0, rev
   superseded: 0, archived: 0 });
 
 describe("accredited recognition recovery", () => {
+  it("discards a late challenge when the authenticated host changes", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    window.localStorage.clear();
+    let finishChallenge: ((response: Response) => void) | undefined;
+    const challengeResponse = new Promise<Response>((resolve) => { finishChallenge = resolve; });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith("/challenges")) return challengeResponse;
+      if (path === "/v1/registry/summary") return Response.json({ issuerCounts: counts(),
+        verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts(),
+        currentEpochId: "epoch:1", registryLabel: "local", registryId: "registry:local",
+        registryDid: "did:midnight:testnet:registry", policyId: "policy:local", epochCount: 1 });
+      return Response.json({ entries: [] });
+    });
+    createApplicantPortalApp(root, { initialUrl: new URL("http://127.0.0.1:4400/"),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch });
+    await vi.waitFor(() => expect(root.querySelector("[data-recognition-challenge]")
+      ?.hasAttribute("disabled")).toBe(false));
+    root.querySelector<HTMLInputElement>("[data-recognition-recovery-form] [name='recognitionId']")!
+      .value = "recognition:partner";
+    root.querySelector<HTMLButtonElement>("[data-recognition-challenge]")!.click();
+    await vi.waitFor(() => expect(finishChallenge).toBeTypeOf("function"));
+    root.querySelector<HTMLInputElement>("[data-api-base-form] [name='apiBase']")!
+      .value = "http://127.0.0.1:4400/next";
+    root.querySelector<HTMLFormElement>("[data-api-base-form]")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    finishChallenge!(Response.json({ recognitionId: "recognition:partner", nonce: "stale-nonce",
+      challengeHash: `0x${"44".repeat(32)}`, issuedAt: "2026-10-15T00:00:00Z",
+      expiresAt: "2026-10-15T00:10:00Z" }));
+    await vi.waitFor(() => expect(root.querySelector("[data-recognition-challenge-context]")).toBeNull());
+    expect(root.textContent).not.toContain("stale-nonce");
+  });
+
   it("completes the private challenge, external-signature submission, and accepted receipt journey", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
