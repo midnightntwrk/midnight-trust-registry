@@ -15,6 +15,8 @@ import {
   RECOGNITION_VP_FIXTURE_AUTHORITY_DID,
   RECOGNITION_VP_FIXTURE_TIME_MS,
 } from "../recognition-accreditation-vp-fixtures.js";
+import { createMaintainerScenarioFixture } from "../fixtures.js";
+import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { recognitionAuthorityAssertionDigest, verifyRecognitionAuthorityAssertion } from "../recognition-authority-assertion.js";
 import { recognitionAccreditationSubmissionCommitment, verifyRecognitionAccreditationVp } from "../recognition-accreditation-vp.js";
 
@@ -32,6 +34,36 @@ async function fixture(options: Parameters<typeof createRecognitionAccreditation
 }
 
 describe("independently signed recognition accreditation VP", () => {
+  it("requires maintainer quorum before resolving an anchor from the Compact policy commitment", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("accreditor-policy");
+    const second = createMaintainerScenarioFixture("accreditor-policy-second");
+    harness.authorizeMaintainer(second);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const anchor = {
+      ...RECOGNITION_VP_FIXTURE_ANCHOR,
+      targetRegistryId: harness.registryId,
+      policyId: harness.policyId,
+      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+    };
+    const before = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.governRecognitionAccreditorAnchor(anchor)).toThrow(/threshold/u);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    harness.governRecognitionAccreditorAnchor(anchor, [second]);
+    const resolved = harness.resolveCurrentRecognitionAccreditorAnchor({
+      recognizedRegistryId: anchor.recognizedRegistryId,
+      scopeResourceType: anchor.scopeResourceType,
+      scopeResourceId: anchor.scopeResourceId,
+      evaluatedAtMs: Math.max(NOW, Date.parse(harness.policyRecord.effectiveFrom) + 1000),
+    });
+    expect(resolved.anchor).toEqual(anchor);
+    expect(() => harness.resolveCurrentRecognitionAccreditorAnchor({
+      recognizedRegistryId: "registry:external:wrong",
+      scopeResourceType: anchor.scopeResourceType,
+      scopeResourceId: anchor.scopeResourceId,
+      evaluatedAtMs: NOW,
+    })).toThrow(/exact scope/u);
+  });
+
   it("commits to exact submitted bodies but canonicalizes proof object order", async () => {
     const { input } = await fixture();
     const commitment = recognitionAccreditationSubmissionCommitment(input.submission);

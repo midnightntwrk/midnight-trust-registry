@@ -173,9 +173,10 @@ commitment to a signature from an active, governed evidence-verifier key.
 Maintainer quorum is separate and signs that bound proposal. This proves a
 local verifier attested the scoped evidence; it does not independently prove
 the external registry's trust chain or finality. The reference simulator uses
-real Midnight DID and VC/VP signatures for the accreditation profile, but its
-accreditor anchor, status source, and evidence-verifier key are provisioned as
-fixtures rather than governed production dependencies.
+real Midnight DID and VC/VP signatures for the accreditation profile. Its
+accreditor anchor is committed in the maintainer-approved governance policy
+snapshot; the status source and evidence-verifier private key remain simulator
+fixtures rather than production dependencies.
 
 The reference Midnight DID authority-assertion profile is narrower than
 external accreditation. An authority assertion signs the target registry,
@@ -191,8 +192,8 @@ into a separate redacted commitment. The local evidence verifier and maintainer
 quorum bind that commitment into Compact. A signed authority statement alone
 proves key control, not the truth or status of the accreditation. The joined
 simulator demo verifies credential, presentation, and assertion signatures and
-consumes one challenge before the
-Compact proposal; its anchor and status source remain fixtures. Public intake
+consumes one challenge before the Compact proposal; it checks the anchor against
+the current Compact policy commitment, while status remains fixture-backed. Public intake
 MUST resolve a governed active anchor and independently validate live status
 before it may expose this flow. `did:web` and
 non-JubJub authority proofs require a separate adapter and trust-anchor policy

@@ -7,13 +7,21 @@ recognition accreditation VP verifier have signed-fixture positive and negative
 tests. The joined simulator demo uses the same fixture to verify the accreditor
 VC, authority VP and separate authority DID assertion, consumes an exact-tuple
 challenge once, and commits combined verified evidence through Compact. The
-status decision port and accreditor anchor are fixture-provisioned, not a
-production governed lookup. No public intake route exposes this flow yet.
+status decision port is fixture-provisioned. The accreditor anchor is now a
+maintainer-quorum-approved governance-policy preimage checked against the
+current Compact policy commitment in the private challenge path. No public
+intake route exposes this flow yet.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof
 checks while keeping recognition separate from local issuer, verifier, and
 maintainer membership.
+
+The simulator currently revises the governance policy content through the
+existing quorum-signed policy/threshold revision circuit while retaining the
+same thresholds. A dedicated accreditor-anchor management action, durable
+policy-source adapter, and live status verifier remain follow-on work. Public
+intake must not accept a caller-provided policy record or ledger commitment.
 
 ## Decision Boundary
 
@@ -77,9 +85,11 @@ not an accreditation proof.
 - Add a concrete recognition accreditation verifier and a deterministic
   independently signed VC/VP fixture with valid, wrong issuer/key, wrong
   authority/registry/scope, expired, revoked, stale status, and replay cases.
-- Compose both proofs and the atomic challenge in private API intake. Fail
-  closed unless a governed anchor and status adapter are configured; do not
-  mount a public route before these dependencies exist.
+- Compose both proofs and the atomic challenge in private API intake. The
+  private path now resolves the anchor against an active Compact policy
+  commitment rather than accepting a raw anchor. Fail closed unless a trusted
+  ledger policy reader and live status adapter are configured; do not mount a
+  public route before these dependencies exist.
 - Carry the redacted commitment through Compact proposal, epoch evidence,
   public query and TRQP parity. Extend the joined demo and full integration
   suite. Run fresh Compact proving once at the publication checkpoint.

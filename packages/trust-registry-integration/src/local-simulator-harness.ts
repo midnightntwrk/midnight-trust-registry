@@ -68,6 +68,7 @@ import {
   type AuthorizedEvidenceVerifier,
   type EpochCommitment,
   GovernancePolicyRecordSchema,
+  RecognitionAccreditorAnchorSchema,
   RecognitionRecordSchema,
   type RegistryRecord,
   RegistryRecordSchema,
@@ -77,6 +78,7 @@ import {
   type GovernancePolicyRecord,
   type GovernedResource,
   type RecognitionRecord,
+  type RecognitionAccreditorAnchor,
   type SignedRecognitionAuthorityAssertion,
   type TrustRegistryEvidenceBundle,
   assertGovernancePolicyRevision,
@@ -88,6 +90,7 @@ import {
   deriveGovernancePolicySnapshot,
   governedResourceInScope,
   requestGovernedResourceId,
+  resolveGovernedRecognitionAccreditorAnchor,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -733,6 +736,7 @@ export class LocalTrustRegistryIntegrationHarness {
     archivalThreshold: bigint,
     version = 1n,
     effectiveFromSequence = 0n,
+    recognitionAccreditorAnchors: readonly RecognitionAccreditorAnchor[] = [],
   ): GovernancePolicyRecord {
     return GovernancePolicyRecordSchema.parse({
       policyId: this.policyId,
@@ -741,6 +745,7 @@ export class LocalTrustRegistryIntegrationHarness {
       policyUri: `https://registry.example/policies/kanon-v${version.toString()}`,
       status: "active",
       effectiveFrom: timestampForSequence(effectiveFromSequence),
+      recognitionAccreditorAnchors,
       policyTemplates: [
         {
           templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
@@ -992,19 +997,84 @@ export class LocalTrustRegistryIntegrationHarness {
     return result;
   }
 
+  governRecognitionAccreditorAnchor(
+    input: RecognitionAccreditorAnchor,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
+    const anchor = RecognitionAccreditorAnchorSchema.parse(input);
+    const ledger = this.simulator.getLedger();
+    const nextVersion = `v${(ledger.governancePolicyVersion + 1n).toString()}`;
+    if (anchor.targetRegistryId !== this.registryId
+      || anchor.policyId !== this.policyId || anchor.policyVersion !== nextVersion) {
+      throw new Error("Recognition accreditor anchor must name the next governed policy revision");
+    }
+    const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors
+      .filter((current) => current.recognizedRegistryId !== anchor.recognizedRegistryId
+        || current.scopeResourceType !== anchor.scopeResourceType
+        || current.scopeResourceId !== anchor.scopeResourceId)
+      .map((current) => ({ ...current, policyVersion: nextVersion }));
+    nextAnchors.push(anchor);
+    const thresholds = [
+      ledger.maintainerThreshold,
+      ledger.emergencyMaintainerThreshold,
+      ledger.archivalMaintainerThreshold,
+    ] as const;
+    const prepared = this.prepareThresholdPolicyRevisionAction(...thresholds, nextAnchors);
+    const result = this.executeThresholdPolicyRevisionWithSignatures(
+      ...thresholds,
+      [{
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      }, ...this.maintainerCoAuthorizers(
+        additionalMaintainers, prepared.actionKind, prepared.actionPayloadHash,
+        prepared.actionSequence,
+      )],
+      nextAnchors,
+    );
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+    return result;
+  }
+
+  resolveCurrentRecognitionAccreditorAnchor(input: {
+    recognizedRegistryId: string;
+    scopeResourceType: string;
+    scopeResourceId: string;
+    evaluatedAtMs: number;
+  }): ReturnType<typeof resolveGovernedRecognitionAccreditorAnchor> {
+    return resolveGovernedRecognitionAccreditorAnchor({
+      policy: this.policyRecordValue,
+      activePolicyCommitment: bytes32Hex(this.simulator.getLedger().governancePolicyCommitment),
+      scope: {
+        registryId: this.registryId,
+        recognizedRegistryId: input.recognizedRegistryId,
+        scopeResourceType: input.scopeResourceType,
+        scopeResourceId: input.scopeResourceId,
+      },
+      evaluatedAtMs: input.evaluatedAtMs,
+    });
+  }
+
   prepareThresholdPolicyRevisionAction(
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
+    recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
   ): PreparedThresholdPolicyRevisionAction {
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     const nextPolicyVersion = this.simulator.getLedger().governancePolicyVersion + 1n;
+    const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${nextPolicyVersion.toString()}` }),
+    );
     const nextPolicyRecord = this.buildPolicyRecord(
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
       nextPolicyVersion,
       actionSequence + 1n,
+      nextAnchors,
     );
     assertGovernancePolicyRevision(
       deriveGovernancePolicySnapshot(this.policyRecordValue),
@@ -1040,15 +1110,20 @@ export class LocalTrustRegistryIntegrationHarness {
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
     signers: readonly MaintainerCoAuthorizer[],
+    recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
   ): Uint8Array {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Threshold revision requires a maintainer signature");
     const prepared = this.prepareThresholdPolicyRevisionAction(
-      defaultThreshold, emergencyThreshold, archivalThreshold,
+      defaultThreshold, emergencyThreshold, archivalThreshold, recognitionAccreditorAnchors,
+    );
+    const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${prepared.nextPolicyVersion.toString()}` }),
     );
     const nextPolicyRecord = this.buildPolicyRecord(
       defaultThreshold, emergencyThreshold, archivalThreshold,
       prepared.nextPolicyVersion, prepared.actionSequence + 1n,
+      nextAnchors,
     );
     const result = this.simulator.updateMaintainerThresholdPolicy(
       primary.keyId, primary.publicKey, primary.signature,

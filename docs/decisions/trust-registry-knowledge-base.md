@@ -807,3 +807,17 @@ fixture-only. Local `./run.sh --light`, `./run.sh integration --light`, and
 `pnpm audit --audit-level low` passed after the naming change. Run light and
 integration sequentially in one worktree because they share generated outputs;
 reserve fresh proving-key generation for a coherent publication checkpoint.
+
+The next local #78 slice binds recognition accreditor anchors into the
+canonical governance policy content preimage. The simulator obtains a 2-of-2
+maintainer quorum for a policy revision, reads the resulting Compact policy
+commitment, and resolves the exact external-registry/resource anchor only when
+the record hashes to that current commitment and both policy and anchor windows
+are active. The private composed challenge no longer accepts a raw anchor:
+it resolves the anchor from a policy record and the current ledger commitment
+before VC/VP verification. The joined demo rejects stale policy commitments,
+then binds the verified result to Compact, public API, and TRQP evidence.
+Current simulator reuse of the threshold-policy revision circuit retains the
+thresholds while changing policy content; a dedicated anchor-management
+action and production policy reader remain open. Status verification still
+uses a fixture source, so no public accredited-recognition route is mounted.

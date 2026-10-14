@@ -33,6 +33,7 @@ import {
   createApplicationVpScenarioFixture,
   createMidnightDid,
   createRecognitionAccreditationVpScenarioFixture,
+  RECOGNITION_VP_FIXTURE_ANCHOR,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
@@ -340,17 +341,8 @@ const vcAuthorityAnchor = {
   publicKey: deriveJubjubPublicKeyFromSeed(vcAuthoritySeed),
 };
 const vcAuthorityKeyIdCommitment = bytes32Commitment("vc-authority:governed-demo");
-harness.registerVcAuthorityKey({
-  domain: vcAuthorityAnchor.domain,
-  keyIdCommitment: vcAuthorityKeyIdCommitment,
-  publicKey: vcAuthorityAnchor.publicKey,
-});
-harness.advanceEvidenceTimeBy(60_000);
 
 const recognitionMethodId = `${recognitionAuthorityDid}#assertion-1`;
-const recognitionChallengeService = new RecognitionAuthorityChallengeService(
-  new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
-);
 const recognitionChallengeBinding = {
   targetRegistryId: harness.registryId,
   recognitionId: recognition.recognitionId,
@@ -359,19 +351,42 @@ const recognitionChallengeBinding = {
   scopeResourceType: recognition.scopeResourceType,
   scopeResourceId: recognition.scopeResourceId,
 };
+const recognitionAnchor = {
+  ...RECOGNITION_VP_FIXTURE_ANCHOR,
+  targetRegistryId: harness.registryId,
+  policyId: harness.policyId,
+  policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+};
+harness.governRecognitionAccreditorAnchor(recognitionAnchor, [second]);
+harness.registerVcAuthorityKey({
+  domain: vcAuthorityAnchor.domain,
+  keyIdCommitment: vcAuthorityKeyIdCommitment,
+  publicKey: vcAuthorityAnchor.publicKey,
+});
+harness.advanceEvidenceTimeBy(60_000);
+const recognitionEvaluationMs = Math.max(
+  VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000,
+);
+const governedRecognitionAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+  evaluatedAtMs: recognitionEvaluationMs,
+});
+const recognitionChallengeService = new RecognitionAuthorityChallengeService(
+  new InMemoryApplicationChallengeStore(), () => recognitionEvaluationMs,
+);
 const recognitionChallenge = await recognitionChallengeService.issue(recognitionChallengeBinding);
 const recognitionChallengeHash = recognitionChallenge.challengeHash;
 const recognitionAccreditationFixture = await createRecognitionAccreditationVpScenarioFixture({
   nonce: recognitionChallenge.nonce,
-  evaluatedAtMs: VP_FIXTURE_TIME_MS,
+  evaluatedAtMs: recognitionEvaluationMs,
   authorityDid: recognitionAuthorityDid,
   authorityAssertionSeed: recognitionAuthoritySeed,
-  anchor: {
-    targetRegistryId: harness.registryId,
-    recognizedRegistryId: recognition.recognizedRegistryId,
-    scopeResourceType: recognition.scopeResourceType,
-    scopeResourceId: recognition.scopeResourceId,
-  },
+  anchor: governedRecognitionAnchor.anchor,
 });
 const recognitionStatement = {
   version: "tr-recognition-authority-assertion-v1",
@@ -380,8 +395,8 @@ const recognitionStatement = {
     recognitionAccreditationFixture.input.submission,
   ),
   challengeHash: recognitionChallengeHash,
-  issuedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
-  expiresAt: "2026-05-20T01:00:00.000Z",
+  issuedAt: new Date(recognitionEvaluationMs).toISOString(),
+  expiresAt: new Date(recognitionEvaluationMs + 50 * 60_000).toISOString(),
 };
 const recognitionAssertion = {
   statement: recognitionStatement,
@@ -399,7 +414,8 @@ const verifyRecognitionChallenge = (signed, overrides = {}) => recognitionChalle
   nonce: recognitionChallenge.nonce,
   signed,
   accreditation: recognitionAccreditationFixture.input.submission,
-  anchor: recognitionAccreditationFixture.input.anchor,
+  governancePolicy: harness.policyRecord,
+  activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
   resolver: recognitionAccreditationFixture.input.resolver,
   statusSource: recognitionAccreditationFixture.input.statusSource,
   ...overrides,
@@ -422,6 +438,9 @@ await assert.rejects(verifyRecognitionChallenge({
     ))),
   },
 }), /signature is invalid/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  activePolicyCommitment: sha256Hex("stale-recognition-policy"),
+}), /active governed policy/u);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
   statusSource: {
     verifyPinnedStatus: async () => ({
@@ -2039,11 +2058,13 @@ try {
       authorityDidStateVersionId: verifiedRecognition.authority.didStateVersionId,
       accreditorDidStateVersionId: verifiedRecognition.accreditation.accreditorDidStateVersionId,
       anchorCommitment: verifiedRecognition.accreditation.anchorCommitment,
+      governedPolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+      governedPolicyVersion: harness.policyRecord.version,
       statusDecisionCommitment: verifiedRecognition.accreditation.statusDecisionCommitment,
       oneUseChallengeConsumed: true,
       source: "Midnight DID authority assertion and independent accreditor VC/VP verified; local evidence verifier is fixture-held",
-      accreditation: "signed VC/VP and anchor-pinned fixture status verified; anchor/status provisioning is not production governance",
-      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
+      accreditation: "signed VC/VP with quorum-governed anchor; status source remains a fixture, not production status governance",
+      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
     actorReport,

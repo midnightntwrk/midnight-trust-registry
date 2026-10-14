@@ -3,8 +3,10 @@ import { randomBytes } from "node:crypto";
 import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import {
   DidSchema,
+  resolveGovernedRecognitionAccreditorAnchor,
   ScopedIdentifierSchema,
   sha256Hex,
+  type GovernancePolicyRecord,
   type SignedRecognitionAuthorityAssertion,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -16,7 +18,6 @@ import {
   type VerifiedRecognitionAccreditation,
   type VerifiedRecognitionAuthorityAssertion,
 } from "@midnight-ntwrk/trust-registry-integration";
-import type { RecognitionAccreditorAnchor } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import {
@@ -107,13 +108,14 @@ export class RecognitionAuthorityChallengeService {
     return result.authority;
   }
 
-  /** Private composed path; caller must resolve the active anchor and status source from governed state. */
+  /** Private composed path; caller supplies the current ledger policy commitment and a trusted status source. */
   async verifyAndConsumeAccreditedAssertion(input: {
     binding: RecognitionAuthorityChallengeBinding;
     nonce: string;
     signed: SignedRecognitionAuthorityAssertion;
     accreditation: RecognitionAccreditationSubmission;
-    anchor: RecognitionAccreditorAnchor;
+    governancePolicy: GovernancePolicyRecord;
+    activePolicyCommitment: string;
     resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
     statusSource: RecognitionAccreditationStatusSource;
   }): Promise<{
@@ -122,20 +124,25 @@ export class RecognitionAuthorityChallengeService {
     evidenceCommitment: string;
   }> {
     const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
-    if (input.anchor.targetRegistryId !== binding.targetRegistryId
-      || input.anchor.recognizedRegistryId !== binding.recognizedRegistryId
-      || input.anchor.scopeResourceType !== binding.scopeResourceType
-      || input.anchor.scopeResourceId !== binding.scopeResourceId) {
-      throw new Error("Recognition accreditation anchor does not match the challenge tuple");
-    }
     const result = await this.verifyThenConsume(input, async (authority, evaluatedAtMs) => {
+      const { anchor } = resolveGovernedRecognitionAccreditorAnchor({
+        policy: input.governancePolicy,
+        activePolicyCommitment: input.activePolicyCommitment,
+        scope: {
+          registryId: binding.targetRegistryId,
+          recognizedRegistryId: binding.recognizedRegistryId,
+          scopeResourceType: binding.scopeResourceType,
+          scopeResourceId: binding.scopeResourceId,
+        },
+        evaluatedAtMs,
+      });
       if (authority.statement.accreditationSubmissionCommitment
         !== recognitionAccreditationSubmissionCommitment(input.accreditation)) {
         throw new Error("Recognition assertion does not commit to the submitted accreditation VP");
       }
       const accreditation = await verifyRecognitionAccreditationVp({
         submission: input.accreditation,
-        anchor: input.anchor,
+        anchor,
         targetRegistryId: binding.targetRegistryId,
         authorityDid: binding.authorityDid,
         nonce: input.nonce,
