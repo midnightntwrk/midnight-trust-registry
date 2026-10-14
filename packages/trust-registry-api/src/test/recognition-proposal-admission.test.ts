@@ -99,7 +99,8 @@ const fixture = async () => {
   let governance = { governancePolicy: policy, activePolicyCommitment: policyCommitment };
   let executions = 0;
   const input = {
-    binding,
+    recognitionId: binding.recognitionId,
+    readBinding: async () => binding,
     receiptId: receipt.receiptId,
     evidenceCommitment: receipt.evidenceCommitment,
     governanceWorkspacePath,
@@ -122,6 +123,11 @@ afterEach(async () => {
 describe("recognition proposal admission", () => {
   it("executes only for current exact-scope accepted evidence under the governance lock", async () => {
     const { input } = await fixture();
+    input.readBinding = async () => {
+      await expect(withExclusiveWorkspaceWrite(input.governanceWorkspacePath, async () => "mutated"))
+        .rejects.toBeInstanceOf(WorkspaceMutationLockedError);
+      return binding;
+    };
     input.execute = async () => {
       await expect(withExclusiveWorkspaceWrite(input.governanceWorkspacePath, async () => "mutated"))
         .rejects.toBeInstanceOf(WorkspaceMutationLockedError);
@@ -135,8 +141,9 @@ describe("recognition proposal admission", () => {
     const wrong = [
       { ...f.input, receiptId: sha256Hex("other-receipt") },
       { ...f.input, evidenceCommitment: sha256Hex("other-evidence") },
-      { ...f.input, binding: { ...binding, authorityDid: "did:midnight:undeployed:other" } },
-      { ...f.input, binding: { ...binding, scopeResourceId: "credential-family:other:v1" } },
+      { ...f.input, readBinding: async () => ({ ...binding, authorityDid: "did:midnight:undeployed:other" }) },
+      { ...f.input, readBinding: async () => ({ ...binding, scopeResourceId: "credential-family:other:v1" }) },
+      { ...f.input, recognitionId: "recognition:other:v1" },
       { ...f.input, clock: () => receipt.expiresAtMs },
     ];
     for (const input of wrong) await expect(withRecognitionProposalAdmission(input)).rejects.toThrow();

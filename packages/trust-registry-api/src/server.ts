@@ -74,6 +74,16 @@ import {
   type GovernedIssuerProposalPort,
 } from "./governed-issuer-proposals.js";
 import {
+  decodeRecognitionEvidenceVerifierSignature,
+  GovernedRecognitionProposalPrepareRequestSchema,
+  GovernedRecognitionProposalRejectedError,
+  GovernedRecognitionProposalSubmitRequestSchema,
+  sameGovernedRecognitionProposal,
+  serializeGovernedRecognitionProposal,
+  type GovernedRecognitionProposalPort,
+} from "./governed-recognition-proposals.js";
+import { withRecognitionProposalAdmission } from "./recognition-proposal-admission.js";
+import {
   GovernedProposalObservationSchema,
   GovernedProposalResolveRequestSchema,
   type GovernedProposalObservation,
@@ -178,6 +188,7 @@ export type TrustRegistryApiServerOptions = {
   governedEpochPublication?: GovernedEpochPublicationPort;
   governedPolicyActions?: GovernedPolicyActionPort;
   governedIssuerProposals?: GovernedIssuerProposalPort;
+  governedRecognitionProposals?: GovernedRecognitionProposalPort;
   governedVerifierProposals?: GovernedVerifierProposalPort;
   governedAuditorProposals?: GovernedAuditorProposalPort;
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
@@ -650,6 +661,20 @@ const mapGovernedAuditorProposalError = (error: unknown, problemBaseUri: string)
   throw error;
 };
 
+const mapGovernedRecognitionProposalError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof GovernedRecognitionProposalRejectedError) {
+    const unknown = error.reason === "unknown-recognition";
+    throw jsonProblem(problemBaseUri, unknown ? "recognition-not-found" : "governed-proposal-rejected",
+      unknown ? 404 : 403, unknown ? "recognition not found" : "governed proposal rejected",
+      error.reason);
+  }
+  if (error instanceof WorkspaceMutationLockedError) {
+    throw jsonProblem(problemBaseUri, "governance-write-locked", 409, "governance write locked");
+  }
+  throw jsonProblem(problemBaseUri, "unadmitted-recognition-proposal", 403,
+    "unadmitted recognition proposal");
+};
+
 const mapGovernedMaintainerProposalError = (error: unknown, problemBaseUri: string): never => {
   if (error instanceof GovernedMaintainerProposalRejectedError) {
     const unknown = error.reason === "unknown-maintainer";
@@ -680,6 +705,11 @@ export const createTrustRegistryApiServer = (
       || options.governedAuditorProposals !== undefined || options.governedMaintainerProposals !== undefined)
     && options.proposalAdmission === undefined) {
     throw new Error("Combined VP intake and governed proposals require an accepted-application admission port");
+  }
+  if (options.recognitionAccreditation !== undefined && options.governedRecognitionProposals !== undefined
+    && (options.recognitionAccreditation.admissionStore === undefined
+      || options.recognitionAccreditation.admissionStore !== options.governedRecognitionProposals.admissionStore)) {
+    throw new Error("Recognition accreditation and governed proposals require the same admission store");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const trqpAdapter = new TrustRegistryTrqpAdapter(
@@ -940,6 +970,70 @@ export const createTrustRegistryApiServer = (
           const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404 : 403;
           throw jsonProblem(problemBaseUri, `recognition-accreditation-${reason}`, status,
             `recognition accreditation ${reason}`);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 6
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "recognition"
+        && segments[4] === "proposal"
+        && (segments[5] === "prepare" || segments[5] === "submit")
+      ) {
+        const port = options.governedRecognitionProposals;
+        if (port === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-proposal-unavailable", 503,
+            "governed proposal unavailable", "A Compact-backed recognition proposal port is not configured.");
+        }
+        const recognitionId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        response.setHeader("cache-control", "no-store");
+        const body = await parseJsonBody(request,
+          (value) => (segments[5] === "prepare"
+            ? GovernedRecognitionProposalPrepareRequestSchema
+            : GovernedRecognitionProposalSubmitRequestSchema).parse(value), problemBaseUri);
+        try {
+          const result = await withRecognitionProposalAdmission({
+            recognitionId,
+            readBinding: () => port.readBinding(recognitionId),
+            receiptId: body.receiptId,
+            evidenceCommitment: body.evidenceCommitment,
+            governanceWorkspacePath: port.governanceWorkspacePath,
+            admissionStore: port.admissionStore,
+            readCurrentGovernance: () => port.readCurrentGovernance(),
+            execute: async (_receipt, binding) => {
+              const current = await port.prepare(binding, body.evidenceCommitment);
+              const prepared = serializeGovernedRecognitionProposal(current);
+              if (prepared.evidenceHash !== body.evidenceCommitment) {
+                throw new GovernedRecognitionProposalRejectedError("invalid-evidence");
+              }
+              if (segments[5] === "prepare") return prepared;
+              const submitted = GovernedRecognitionProposalSubmitRequestSchema.parse(body);
+              if (!sameGovernedRecognitionProposal(prepared, submitted.prepared)) {
+                throw jsonProblem(problemBaseUri, "stale-governed-proposal", 409,
+                  "stale governed proposal", "The signed proposal context no longer matches current ledger state.");
+              }
+              let signers;
+              let evidenceVerifierSignature;
+              try {
+                signers = decodeGovernedMembershipSigners(submitted);
+                evidenceVerifierSignature = decodeRecognitionEvidenceVerifierSignature(submitted.evidenceVerifierSignature);
+              } catch {
+                throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+                  "invalid governed signature");
+              }
+              return GovernedMembershipActionReceiptSchema.parse(await port.execute(
+                binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
+              ));
+            },
+            clock: () => Date.parse(options.clock?.() ?? new Date().toISOString()),
+          });
+          writeJson(response, segments[5] === "prepare" ? 200 : 202, result);
+          return;
+        } catch (error) {
+          if (error instanceof HttpProblem) throw error;
+          return mapGovernedRecognitionProposalError(error, problemBaseUri);
         }
       }
 
@@ -1455,6 +1549,12 @@ export const createTrustRegistryApiServer = (
             "did resolver required", "Signed mutations need a configured Midnight DID resolver.");
         }
         const body = await parseJsonBody(request, (value) => TrustRegistryApiSignedMutationRequestSchema.parse(value), problemBaseUri);
+        if (options.governedRecognitionProposals !== undefined
+          && body.operation.operation === "submit" && body.operation.target === "recognition") {
+          throw jsonProblem(problemBaseUri, "recognition-proposal-admission-required", 403,
+            "recognition proposal admission required",
+            "Use the governed recognition proposal route with accepted accreditation evidence.");
+        }
         let result: TrustRegistryApiMutationResult;
         try {
           result = await applySignedMutationOperation(
@@ -1481,6 +1581,11 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiApplicationSubmitRequestSchema.parse(value),
           problemBaseUri,
         );
+        if (options.governedRecognitionProposals !== undefined && body.target === "recognition") {
+          throw jsonProblem(problemBaseUri, "recognition-proposal-admission-required", 403,
+            "recognition proposal admission required",
+            "Use the governed recognition proposal route with accepted accreditation evidence.");
+        }
         const result = await performMutation(source, {
           operation: "submit",
           target: body.target,

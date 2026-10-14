@@ -18,7 +18,8 @@ import {
 } from "./recognition-authority-challenges.js";
 
 export type RecognitionProposalAdmissionInput<T> = {
-  binding: RecognitionAuthorityChallengeBinding;
+  recognitionId: string;
+  readBinding: () => Promise<RecognitionAuthorityChallengeBinding>;
   receiptId: string;
   evidenceCommitment: string;
   governanceWorkspacePath: string;
@@ -28,18 +29,21 @@ export type RecognitionProposalAdmissionInput<T> = {
     activePolicyCommitment: string;
   }>;
   /** Must execute the current-ledger proposal, including its own signature, quorum and sequence checks. */
-  execute: (receipt: RecognitionAdmissionReceipt) => Promise<T>;
+  execute: (receipt: RecognitionAdmissionReceipt, binding: RecognitionAuthorityChallengeBinding) => Promise<T>;
   clock?: () => number;
 };
 
 /** Admission is private evidence, not authority: the governed proposal must run under this same lock. */
 export async function withRecognitionProposalAdmission<T>(input: RecognitionProposalAdmissionInput<T>): Promise<T> {
-  const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
   const receiptId = HashHexSchema.parse(input.receiptId).toLowerCase();
   const evidenceCommitment = HashHexSchema.parse(input.evidenceCommitment).toLowerCase();
   if (input.governanceWorkspacePath.length === 0) throw new RangeError("Governance workspace path is required");
 
   return withExclusiveWorkspaceWrite(input.governanceWorkspacePath, async () => {
+    const binding = RecognitionAuthorityChallengeBindingSchema.parse(await input.readBinding());
+    if (binding.recognitionId !== input.recognitionId) {
+      throw new Error("Recognition proposal binding does not match the requested recognition ID");
+    }
     const nowMs = (input.clock ?? Date.now)();
     if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new RangeError("Recognition proposal clock is invalid");
     const candidate = await input.admissionStore.readAccepted(binding.recognitionId);
@@ -71,6 +75,6 @@ export async function withRecognitionProposalAdmission<T>(input: RecognitionProp
       || (input.clock ?? Date.now)() >= receipt.expiresAtMs) {
       throw new Error("Recognition proposal admission is stale");
     }
-    return input.execute(receipt);
+    return input.execute(receipt, binding);
   });
 }
