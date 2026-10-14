@@ -75,6 +75,16 @@ accepts only HTTPS or loopback HTTP base URLs. The caller still supplies the
 independent authenticated registry and DID readers; the helper does not
 convert HTTP transport trust into a ledger anchor.
 
+`buildDecisionEvidenceClaim` assembles the v1 issuer/verifier claim from a TR
+evidence bundle, independently supplied accepted-epoch metadata, publication
+signatures, a resolved DID method, exact scope, and governance event
+references. It derives the policy snapshot and Merkle path from the bundle,
+checks the accepted epoch identity/roots/validity, inclusion leaf, and policy
+commitment, and rejects recognition or auditor records. The builder does not
+authenticate the supplied accepted epoch, maintainer keys, DID observation,
+or current decision point. The existing verifier remains mandatory before
+using the result for VC authorization.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and

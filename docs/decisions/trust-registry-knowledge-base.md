@@ -961,3 +961,13 @@ Focused tests reject missing/malformed/wrong-registry source data and absent
 DID readers. Full light validation passed (20/20 tasks, about 57 seconds with
 downstream client/API tests), docs build passed, and audit was clean. A real
 finalized decision-evidence source remains a separate production integration.
+
+The local #79 client builder `buildDecisionEvidenceClaim` now assembles issuer
+and verifier decision-evidence claims from the evidence bundle, an independently
+supplied accepted epoch, publication signatures, resolved DID method, scope,
+and event references. It derives the policy snapshot and inclusion proof,
+rejects other roles, and checks accepted-epoch, grant-inclusion, and policy
+commitment consistency before returning. It does not authenticate the accepted
+epoch, DID observation, maintainer keys, or current decision point; callers
+must still use the trusted-reader verifier. Simulator tests exercise both roles
+and reject a different accepted root or grant leaf.

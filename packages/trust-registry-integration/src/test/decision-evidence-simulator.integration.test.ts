@@ -29,6 +29,7 @@ import {
   VcAuthorityKeyStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
+  buildDecisionEvidenceClaim,
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
@@ -36,8 +37,6 @@ import {
 } from "@midnight-ntwrk/trust-registry-client";
 import {
   AcceptedDecisionEpochSchema,
-  DecisionEvidenceSchema,
-  deriveGovernancePolicySnapshot,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -175,31 +174,12 @@ describe("simulator-backed VC decision evidence composition", () => {
     expect(didDocument.assertionMethod).toContain(methodId);
 
     const grant = bundle.authorization;
-    const evidence = DecisionEvidenceSchema.parse({
-      format: "tr-decision-evidence-v1",
-      role: "issuer",
-      registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
-      anchorReferences: {
-        registryEpoch: { networkId, contractAddress, transactionHash: epochTransaction, blockHash: epochBlock },
-        didState: { networkId, blockHash: didBlock },
-      },
-      epoch: {
-        epochId: bundle.epoch.epochId,
-        registryId: bundle.epoch.registryId,
-        stateRoot: bundle.epoch.stateRoot,
-        eventRoot: bundle.epoch.eventRoot,
-        policyRoot: bundle.epoch.policyRoot,
-        publicationPolicyCommitment: acceptedEpoch.publicationPolicyCommitment,
-        publicationSequence: acceptedEpoch.publicationSequence,
-        validFromSequence: acceptedEpoch.validFromSequence,
-        validUntilSequence: acceptedEpoch.validUntilSequence,
-        validFrom: bundle.epoch.validFrom,
-        validUntil: bundle.epoch.validUntil,
-        quorum: { requiredSignatures: acceptedEpoch.requiredSignatures, signatures: witness.signatures },
-      },
-      grant,
+    const buildInput = {
+      bundle,
+      acceptedEpoch,
+      publicationSignatures: witness.signatures,
+      didStateBlockHash: didBlock,
       scope: issuer.authorizationScope,
-      statusPolicyBinding: bundle.statusPolicyBinding,
       didMethod: {
         did: issuer.subjectDid,
         methodId,
@@ -210,8 +190,6 @@ describe("simulator-backed VC decision evidence composition", () => {
         stateVersion,
         stateEvidence: { evidenceType: "ledger-observation", blockHash: didBlock, transactionHash: didTransaction },
       },
-      policy: deriveGovernancePolicySnapshot(bundle.policy),
-      inclusionProof: { ...bundle.inclusionProof, leafIndex: String(bundle.inclusionProof.leafIndex) },
       governanceEvents: {
         grantTransition: grant.lifecycleEventRoot,
         quorumApproval: sha256Hex("simulator:vc-decision:approval-lookup"),
@@ -219,7 +197,15 @@ describe("simulator-backed VC decision evidence composition", () => {
         policySnapshot: bundle.epoch.policyRoot,
       },
       decisionSequence: epochRecord.publishedAtSequence.toString(),
-    });
+    } satisfies Parameters<typeof buildDecisionEvidenceClaim>[0];
+    const evidence = buildDecisionEvidenceClaim(buildInput);
+    expect(() => buildDecisionEvidenceClaim({ ...buildInput,
+      acceptedEpoch: { ...acceptedEpoch, stateRoot: sha256Hex("different-accepted-root") },
+    })).toThrow(/accepted epoch root mismatch/u);
+    expect(() => buildDecisionEvidenceClaim({ ...buildInput,
+      bundle: { ...bundle, inclusionProof: { ...bundle.inclusionProof,
+        leafHash: sha256Hex("different-grant-leaf") } },
+    })).toThrow(/grant leaf hash mismatch/u);
     const currentGrant = harness.simulator.getCurrentIssuerAuthorization(
       issuer.subjectDidCommitment,
       issuer.resourceType,
@@ -656,31 +642,11 @@ describe("simulator-backed VC decision evidence composition", () => {
     if (verifierMethod === undefined) throw new Error("Expected a native verifier method");
     const verifierGrant = verifierBundle.authorization;
     const verifierScope = createVerifierAuthorizationScopeFixture(verifier);
-    const verifierEvidence = DecisionEvidenceSchema.parse({
-      format: "tr-decision-evidence-v1",
-      role: "verifier",
-      registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
-      anchorReferences: {
-        registryEpoch: {
-          networkId, contractAddress, transactionHash: verifierEpochTransaction, blockHash: verifierEpochBlock,
-        },
-        didState: { networkId, blockHash: verifierDidBlock },
-      },
-      epoch: {
-        epochId: verifierBundle.epoch.epochId,
-        registryId: verifierBundle.epoch.registryId,
-        stateRoot: verifierBundle.epoch.stateRoot,
-        eventRoot: verifierBundle.epoch.eventRoot,
-        policyRoot: verifierBundle.epoch.policyRoot,
-        publicationPolicyCommitment: acceptedVerifierEpoch.publicationPolicyCommitment,
-        publicationSequence: acceptedVerifierEpoch.publicationSequence,
-        validFromSequence: acceptedVerifierEpoch.validFromSequence,
-        validUntilSequence: acceptedVerifierEpoch.validUntilSequence,
-        validFrom: verifierBundle.epoch.validFrom,
-        validUntil: verifierBundle.epoch.validUntil,
-        quorum: { requiredSignatures: acceptedVerifierEpoch.requiredSignatures, signatures: verifierWitness.signatures },
-      },
-      grant: verifierGrant,
+    const verifierEvidence = buildDecisionEvidenceClaim({
+      bundle: verifierBundle,
+      acceptedEpoch: acceptedVerifierEpoch,
+      publicationSignatures: verifierWitness.signatures,
+      didStateBlockHash: verifierDidBlock,
       scope: verifierScope,
       didMethod: {
         did: verifier.subjectDid,
@@ -694,8 +660,6 @@ describe("simulator-backed VC decision evidence composition", () => {
           evidenceType: "ledger-observation", blockHash: verifierDidBlock, transactionHash: verifierDidTransaction,
         },
       },
-      policy: deriveGovernancePolicySnapshot(verifierBundle.policy),
-      inclusionProof: { ...verifierBundle.inclusionProof, leafIndex: String(verifierBundle.inclusionProof.leafIndex) },
       governanceEvents: {
         grantTransition: verifierGrant.lifecycleEventRoot,
         quorumApproval: sha256Hex("simulator:vc-verifier:approval-lookup"),
