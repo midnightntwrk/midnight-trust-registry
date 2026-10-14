@@ -10,6 +10,15 @@ if (document.openapi !== "3.1.0" || !document.info?.version || !document.paths) 
   throw new Error("OpenAPI document is missing its version, info, or paths");
 }
 
+if (document.security?.length !== 1 || Object.keys(document.security[0] ?? {}).length !== 0) {
+  throw new Error("OpenAPI must declare anonymous HTTP access; mutations are signed in their bodies");
+}
+
+const signers = document.components?.schemas?.GovernedSigners?.properties?.signers;
+if (signers?.minItems !== 1 || signers.maxItems !== 16) {
+  throw new Error("OpenAPI signer bounds must match GovernedMembershipSignersSchema");
+}
+
 const requiredPaths = [
   "/health",
   "/v1/registry",

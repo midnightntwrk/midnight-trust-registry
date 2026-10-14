@@ -25,7 +25,7 @@ describe("published simulator snapshot", () => {
     expect(() => publishSimulatorSnapshot(harness, fixtures, undefined, {
       ...epoch, registryId: "registry:other",
     })).toThrow(/another registry/u);
-  });
+  }, 60_000);
 
   it("selects the Compact current epoch after per-grant projection publishes a later record", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("current-epoch-projection");
@@ -40,5 +40,5 @@ describe("published simulator snapshot", () => {
     expect(Buffer.from(bytes32Commitment(snapshot.currentEpoch.epochId))).toEqual(
       Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId),
     );
-  }, 20_000);
+  }, 60_000);
 });

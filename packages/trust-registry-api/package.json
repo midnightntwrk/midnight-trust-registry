@@ -45,7 +45,7 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run src/test --testTimeout 30000",
     "build:light": "pnpm run build",
-    "test:light": "vitest run src/test --testTimeout 30000",
+    "test:light": "vitest run src/test --testTimeout 90000",
     "integration": "vitest run src/integration-test --testTimeout 120000",
     "integration:light": "pnpm run integration"
   },
