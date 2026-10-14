@@ -201,6 +201,7 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
         presentationProof: encodeApplicationVpProof(presentationProof),
       },
       anchor,
+      activePolicyCommitment: sha256Hex("fixture-recognition-governance-policy"),
       targetRegistryId: anchor.targetRegistryId,
       authorityDid,
       nonce,

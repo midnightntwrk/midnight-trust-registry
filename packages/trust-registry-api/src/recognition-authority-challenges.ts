@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import {
   DidSchema,
+  HashHexSchema,
+  recognitionAccreditorAnchorCommitment,
   resolveGovernedRecognitionAccreditorAnchor,
   ScopedIdentifierSchema,
   sha256Hex,
@@ -108,14 +110,16 @@ export class RecognitionAuthorityChallengeService {
     return result.authority;
   }
 
-  /** Private composed path; caller supplies the current ledger policy commitment and a trusted status source. */
+  /** Private composed path; current governance must be read from trusted state, including immediately before consumption. */
   async verifyAndConsumeAccreditedAssertion(input: {
     binding: RecognitionAuthorityChallengeBinding;
     nonce: string;
     signed: SignedRecognitionAuthorityAssertion;
     accreditation: RecognitionAccreditationSubmission;
-    governancePolicy: GovernancePolicyRecord;
-    activePolicyCommitment: string;
+    readCurrentGovernance: () => Promise<{
+      governancePolicy: GovernancePolicyRecord;
+      activePolicyCommitment: string;
+    }>;
     resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
     statusSource: RecognitionAccreditationStatusSource;
   }): Promise<{
@@ -124,18 +128,24 @@ export class RecognitionAuthorityChallengeService {
     evidenceCommitment: string;
   }> {
     const binding = RecognitionAuthorityChallengeBindingSchema.parse(input.binding);
+    let verifiedPolicyCommitment: string | undefined;
+    let verifiedAnchorCommitment: string | undefined;
+    const scope = {
+      registryId: binding.targetRegistryId,
+      recognizedRegistryId: binding.recognizedRegistryId,
+      scopeResourceType: binding.scopeResourceType,
+      scopeResourceId: binding.scopeResourceId,
+    };
     const result = await this.verifyThenConsume(input, async (authority, evaluatedAtMs) => {
+      const governance = await input.readCurrentGovernance();
       const { anchor } = resolveGovernedRecognitionAccreditorAnchor({
-        policy: input.governancePolicy,
-        activePolicyCommitment: input.activePolicyCommitment,
-        scope: {
-          registryId: binding.targetRegistryId,
-          recognizedRegistryId: binding.recognizedRegistryId,
-          scopeResourceType: binding.scopeResourceType,
-          scopeResourceId: binding.scopeResourceId,
-        },
+        policy: governance.governancePolicy,
+        activePolicyCommitment: governance.activePolicyCommitment,
+        scope,
         evaluatedAtMs,
       });
+      verifiedPolicyCommitment = HashHexSchema.parse(governance.activePolicyCommitment).toLowerCase();
+      verifiedAnchorCommitment = recognitionAccreditorAnchorCommitment(anchor);
       if (authority.statement.accreditationSubmissionCommitment
         !== recognitionAccreditationSubmissionCommitment(input.accreditation)) {
         throw new Error("Recognition assertion does not commit to the submitted accreditation VP");
@@ -143,6 +153,7 @@ export class RecognitionAuthorityChallengeService {
       const accreditation = await verifyRecognitionAccreditationVp({
         submission: input.accreditation,
         anchor,
+        activePolicyCommitment: verifiedPolicyCommitment,
         targetRegistryId: binding.targetRegistryId,
         authorityDid: binding.authorityDid,
         nonce: input.nonce,
@@ -151,7 +162,19 @@ export class RecognitionAuthorityChallengeService {
         statusSource: input.statusSource,
       });
       return accreditation;
-    }, (accreditation) => accreditation.expiresAtMs);
+    }, (accreditation) => accreditation.expiresAtMs, async (consumeAtMs) => {
+      const governance = await input.readCurrentGovernance();
+      const { anchor } = resolveGovernedRecognitionAccreditorAnchor({
+        policy: governance.governancePolicy,
+        activePolicyCommitment: governance.activePolicyCommitment,
+        scope,
+        evaluatedAtMs: consumeAtMs,
+      });
+      if (HashHexSchema.parse(governance.activePolicyCommitment).toLowerCase() !== verifiedPolicyCommitment
+        || recognitionAccreditorAnchorCommitment(anchor) !== verifiedAnchorCommitment) {
+        throw new Error("Recognition governance changed during accreditation verification");
+      }
+    });
     return {
       authority: result.authority,
       accreditation: result.evidence,
@@ -171,7 +194,8 @@ export class RecognitionAuthorityChallengeService {
   }, verifyEvidence: (
     authority: VerifiedRecognitionAuthorityAssertion,
     evaluatedAtMs: number,
-  ) => Promise<Evidence>, evidenceExpiresAtMs?: (evidence: Evidence) => number): Promise<{
+  ) => Promise<Evidence>, evidenceExpiresAtMs?: (evidence: Evidence) => number,
+  beforeConsume?: (consumeAtMs: number) => Promise<void>): Promise<{
     authority: VerifiedRecognitionAuthorityAssertion;
     evidence: Evidence;
   }> {
@@ -199,11 +223,17 @@ export class RecognitionAuthorityChallengeService {
       throw new Error("Recognition authority assertion was signed outside the challenge window");
     }
     const evidence = await verifyEvidence(verified, nowMs);
-    const consumeAtMs = this.now();
+    let consumeAtMs = this.now();
     const evidenceExpiry = evidenceExpiresAtMs?.(evidence);
     if (Date.parse(verified.statement.expiresAt) <= consumeAtMs
       || (evidenceExpiry !== undefined && (!Number.isSafeInteger(evidenceExpiry)
         || evidenceExpiry <= consumeAtMs))) {
+      throw new Error("Recognition proof expired before challenge consumption");
+    }
+    await beforeConsume?.(consumeAtMs);
+    consumeAtMs = this.now();
+    if (Date.parse(verified.statement.expiresAt) <= consumeAtMs
+      || (evidenceExpiry !== undefined && evidenceExpiry <= consumeAtMs)) {
       throw new Error("Recognition proof expired before challenge consumption");
     }
     if (!await this.store.consume(challengeHash, hash, consumeAtMs)) {

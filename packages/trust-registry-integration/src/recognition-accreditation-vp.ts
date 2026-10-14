@@ -67,6 +67,7 @@ export type RecognitionAccreditationStatusSource = {
 
 export type VerifiedRecognitionAccreditation = {
   evidenceCommitment: string;
+  governedPolicyCommitment: string;
   anchorCommitment: string;
   claimsCommitment: string;
   presentationHash: string;
@@ -83,6 +84,7 @@ export async function verifyRecognitionAccreditationVp(input: {
   submission: RecognitionAccreditationSubmission;
   anchor: RecognitionAccreditorAnchor;
   targetRegistryId: string;
+  activePolicyCommitment: string;
   authorityDid: string;
   nonce: string;
   evaluatedAtMs: number;
@@ -90,6 +92,7 @@ export async function verifyRecognitionAccreditationVp(input: {
   statusSource: RecognitionAccreditationStatusSource;
 }): Promise<VerifiedRecognitionAccreditation> {
   const anchor = RecognitionAccreditorAnchorSchema.parse(input.anchor);
+  const governedPolicyCommitment = HashHexSchema.parse(input.activePolicyCommitment).toLowerCase();
   if (anchor.targetRegistryId !== input.targetRegistryId
     || !HEX32.test(input.nonce)
     || !validTime(input.evaluatedAtMs)) {
@@ -217,6 +220,7 @@ export async function verifyRecognitionAccreditationVp(input: {
   const expiresAtMs = Math.min(Date.parse(claims.expiresAt), status.validUntilMs, Date.parse(anchor.effectiveUntil));
   const evidenceCommitment = sha256Hex(JSON.stringify([
     "tr:recognition:verified-accreditation-evidence:v1",
+    governedPolicyCommitment,
     anchorCommitment,
     claimsCommitment,
     verifiedProofs.presentationHash,
@@ -229,6 +233,7 @@ export async function verifyRecognitionAccreditationVp(input: {
   ]));
   return {
     evidenceCommitment,
+    governedPolicyCommitment,
     anchorCommitment,
     claimsCommitment,
     presentationHash: verifiedProofs.presentationHash,

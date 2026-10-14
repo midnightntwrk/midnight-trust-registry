@@ -99,6 +99,7 @@ const policy: EvidenceBundle["policy"] = {
     },
   ],
   decisionRules: ["maintainer threshold applies"],
+  recognitionAccreditorAnchors: [],
   disputeRules: ["appeal to maintainers"],
   retentionRules: ["retain historical evidence"],
   emergencyRules: ["suspend on incident evidence"],

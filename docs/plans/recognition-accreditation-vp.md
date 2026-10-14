@@ -14,6 +14,11 @@ maintainer-quorum-approved governance-policy preimage checked against the
 current Compact policy commitment in the private challenge path. An opt-in,
 authenticated private HTTP route now exercises challenge and redacted evidence
 verification; it is not mounted by the CLI and is not public intake.
+The private path rereads the governed anchor and policy commitment after
+asynchronous VC/VP/status verification, before challenge consumption. Its
+redacted evidence hash binds that policy commitment. This is not an atomic
+policy-and-proposal transaction: durable admission must revalidate against
+current ledger state at the write boundary.
 
 The existing DID-only convenience path proves authority key control, not
 accreditation. The composed simulator path adds independent signed VC/VP proof
@@ -69,7 +74,8 @@ not an accreditation proof.
    separate DID assertion with the same tuple and challenge. Consume the
    challenge only after both proofs and policy/status
    checks pass. A failed proof must leave it usable, while a concurrent valid
-   replay must lose the atomic consume race.
+   replay must lose the atomic consume race. Reread the trusted governance
+   source and reject a changed commitment or anchor immediately before consume.
 5. Commit a redacted combination of verified authority assertion evidence and
    verified accreditation evidence, including VP/claims and anchor-policy
    commitments, observed

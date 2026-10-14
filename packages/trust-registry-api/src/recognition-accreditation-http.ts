@@ -98,8 +98,18 @@ export function createRecognitionAccreditationHttpService(port: RecognitionAccre
           nonce: parsed.data.nonce,
           signed: parsed.data.signed,
           accreditation: parsed.data.accreditation as RecognitionAccreditationSubmission,
-          governancePolicy: context.governancePolicy,
-          activePolicyCommitment: context.activePolicyCommitment,
+          readCurrentGovernance: async () => {
+            const latest = await current(recognitionId);
+            if (Object.keys(context.binding).some((key) =>
+              latest.binding[key as keyof RecognitionAuthorityChallengeBinding]
+                !== context.binding[key as keyof RecognitionAuthorityChallengeBinding])) {
+              throw new Error("Recognition binding changed during accreditation verification");
+            }
+            return {
+              governancePolicy: latest.governancePolicy,
+              activePolicyCommitment: latest.activePolicyCommitment,
+            };
+          },
           resolver: context.resolver,
           statusSource: context.statusSource,
         });

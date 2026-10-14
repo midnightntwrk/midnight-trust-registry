@@ -169,6 +169,7 @@ describe("recognition authority DID challenge", () => {
     const commitment = sha256Hex("verified-accreditation-evidence");
     const verifiedAccreditation = {
       evidenceCommitment: commitment,
+      governedPolicyCommitment: sha256Hex("policy"),
       anchorCommitment: sha256Hex("anchor"),
       claimsCommitment: sha256Hex("claims"),
       presentationHash: sha256Hex("presentation"),
@@ -197,13 +198,15 @@ describe("recognition authority DID challenge", () => {
       accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
       issuedAt: new Date(evaluatedAtMs).toISOString(),
     });
+    const activePolicyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    let currentPolicy = harness.policyRecord;
+    let currentPolicyCommitment = activePolicyCommitment;
     const request = {
       binding: accreditedBinding,
       nonce: challenge.nonce,
       signed,
       accreditation,
-      governancePolicy: harness.policyRecord,
-      activePolicyCommitment: `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`,
+      readCurrentGovernance: async () => ({ governancePolicy: currentPolicy, activePolicyCommitment: currentPolicyCommitment }),
       resolver,
       statusSource: { verifyPinnedStatus: vi.fn() },
     };
@@ -218,13 +221,19 @@ describe("recognition authority DID challenge", () => {
       }),
     })).rejects.toThrow(/submitted accreditation VP/u);
     verifier.mockResolvedValue(verifiedAccreditation);
-    await expect(service.verifyAndConsumeAccreditedAssertion({
-      ...request,
-      governancePolicy: {
-        ...harness.policyRecord,
-        recognitionAccreditorAnchors: [{ ...anchor, scopeResourceId: "credential-family:other:v1" }],
-      },
-    })).rejects.toThrow(/active governed policy/u);
+    currentPolicy = {
+      ...harness.policyRecord,
+      recognitionAccreditorAnchors: [{ ...anchor, scopeResourceId: "credential-family:other:v1" }],
+    };
+    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/active governed policy/u);
+    currentPolicy = harness.policyRecord;
+    verifier.mockImplementationOnce(async () => {
+      currentPolicyCommitment = sha256Hex("changed-governance-policy");
+      return verifiedAccreditation;
+    });
+    await expect(service.verifyAndConsumeAccreditedAssertion(request))
+      .rejects.toThrow(/active governed policy|governance changed/u);
+    currentPolicyCommitment = activePolicyCommitment;
     verifier.mockImplementationOnce(async () => {
       nowMs += 1000;
       return { ...verifiedAccreditation, expiresAtMs: evaluatedAtMs + 500 };
@@ -248,6 +257,7 @@ describe("recognition authority DID challenge", () => {
       authorityDid,
       targetRegistryId: binding.targetRegistryId,
       evaluatedAtMs,
+      activePolicyCommitment,
     }));
   });
 });

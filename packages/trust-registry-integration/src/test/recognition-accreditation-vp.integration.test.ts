@@ -85,12 +85,18 @@ describe("independently signed recognition accreditation VP", () => {
     const result = await verifyRecognitionAccreditationVp(input);
     expect(result.claimsCommitment).toBe(recognitionAccreditationClaimsCommitment(claims));
     expect(result.evidenceCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(result.governedPolicyCommitment).toBe(input.activePolicyCommitment);
+    const otherPolicy = await verifyRecognitionAccreditationVp({
+      ...input,
+      activePolicyCommitment: sha256Hex("different-governance-policy"),
+    });
+    expect(otherPolicy.evidenceCommitment).not.toBe(result.evidenceCommitment);
     expect(result.accreditorDidStateVersionId).toBeTruthy();
     expect(result.authorityDidStateVersionId).toBeTruthy();
     expect(result.statusAuthorityDidStateVersionId).toBeTruthy();
     expect(result.expiresAtMs).toBe(NOW + 5 * 60_000);
     expect(JSON.stringify(result)).not.toContain(authorityDid);
-    expect(statusSource.verifyPinnedStatus).toHaveBeenCalledOnce();
+    expect(statusSource.verifyPinnedStatus).toHaveBeenCalledTimes(2);
   });
 
   it("binds a separate signed authority DID assertion to the verified accreditation evidence", async () => {

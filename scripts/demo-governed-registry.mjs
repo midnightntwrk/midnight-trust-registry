@@ -414,8 +414,10 @@ const verifyRecognitionChallenge = (signed, overrides = {}) => recognitionChalle
   nonce: recognitionChallenge.nonce,
   signed,
   accreditation: recognitionAccreditationFixture.input.submission,
-  governancePolicy: harness.policyRecord,
-  activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+  readCurrentGovernance: async () => ({
+    governancePolicy: harness.policyRecord,
+    activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+  }),
   resolver: recognitionAccreditationFixture.input.resolver,
   statusSource: recognitionAccreditationFixture.input.statusSource,
   ...overrides,
@@ -439,7 +441,10 @@ await assert.rejects(verifyRecognitionChallenge({
   },
 }), /signature is invalid/u);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
-  activePolicyCommitment: sha256Hex("stale-recognition-policy"),
+  readCurrentGovernance: async () => ({
+    governancePolicy: harness.policyRecord,
+    activePolicyCommitment: sha256Hex("stale-recognition-policy"),
+  }),
 }), /active governed policy/u);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
   statusSource: {
