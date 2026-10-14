@@ -443,8 +443,8 @@ await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
 }), /active governed policy/u);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
   statusSource: {
-    verifyPinnedStatus: async () => ({
-      ...await recognitionAccreditationFixture.input.statusSource.verifyPinnedStatus(),
+    verifyPinnedStatus: async (request) => ({
+      ...await recognitionAccreditationFixture.input.statusSource.verifyPinnedStatus(request),
       active: false,
     }),
   },
@@ -2063,7 +2063,7 @@ try {
       statusDecisionCommitment: verifiedRecognition.accreditation.statusDecisionCommitment,
       oneUseChallengeConsumed: true,
       source: "Midnight DID authority assertion and independent accreditor VC/VP verified; local evidence verifier is fixture-held",
-      accreditation: "signed VC/VP with quorum-governed anchor; status source remains a fixture, not production status governance",
+      accreditation: "signed VC/VP and challenge-bound status attestation with quorum-governed anchor; attestation is fixture-fetched, not live status-ledger evidence",
       expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,

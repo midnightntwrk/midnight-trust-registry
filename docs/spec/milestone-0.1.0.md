@@ -193,7 +193,9 @@ quorum bind that commitment into Compact. A signed authority statement alone
 proves key control, not the truth or status of the accreditation. The joined
 simulator demo verifies credential, presentation, and assertion signatures and
 consumes one challenge before the Compact proposal; it checks the anchor against
-the current Compact policy commitment, while status remains fixture-backed. Public intake
+the current Compact policy commitment. Local accreditation status is now a
+policy-pinned, nonce-bound Midnight DID/JubJub attestation fetched from a fixture;
+it is not independent proof of live status-registry state. Public intake
 MUST resolve a governed active anchor and independently validate live status
 before it may expose this flow. `did:web` and
 non-JubJub authority proofs require a separate adapter and trust-anchor policy

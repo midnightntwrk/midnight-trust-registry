@@ -7,7 +7,9 @@ recognition accreditation VP verifier have signed-fixture positive and negative
 tests. The joined simulator demo uses the same fixture to verify the accreditor
 VC, authority VP and separate authority DID assertion, consumes an exact-tuple
 challenge once, and commits combined verified evidence through Compact. The
-status decision port is fixture-provisioned. The accreditor anchor is now a
+status decision port now has a challenge-bound, five-minute JubJub-signed
+status-authority attestation adapter; the demo still fetches that attestation
+from a deterministic fixture, not a live status registry. The accreditor anchor is now a
 maintainer-quorum-approved governance-policy preimage checked against the
 current Compact policy commitment in the private challenge path. No public
 intake route exposes this flow yet.
@@ -20,7 +22,7 @@ maintainer membership.
 The simulator currently revises the governance policy content through the
 existing quorum-signed policy/threshold revision circuit while retaining the
 same thresholds. A dedicated accreditor-anchor management action, durable
-policy-source adapter, and live status verifier remain follow-on work. Public
+policy-source adapter, and live status-registry evidence adapter remain follow-on work. Public
 intake must not accept a caller-provided policy record or ledger commitment.
 
 ## Decision Boundary
@@ -56,7 +58,11 @@ not an accreditation proof.
    nonce, holder binding, body roots, expiry, and registry-bound status binding
    using the installed VC/DID packages. Verify active credential status from
    the policy-pinned status source at the trusted evaluation instant; a
-   fixture-only status decision cannot authorize public intake.
+   fixture-only status decision cannot authorize public intake. The local
+   signed-status profile pins the status authority DID assertion method, exact
+   handle and challenge, a bounded observation interval, and the observed DID
+   state version. It authenticates the authority's statement but does not
+   prove the authority's underlying status-ledger state.
 4. The authority assertion signs an applicant-computable commitment to the
    exact submitted VP, not the registry's later status decision. Verify this
    separate DID assertion with the same tuple and challenge. Consume the

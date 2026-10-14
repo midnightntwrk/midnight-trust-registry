@@ -821,3 +821,14 @@ Current simulator reuse of the threshold-policy revision circuit retains the
 thresholds while changing policy content; a dedicated anchor-management
 action and production policy reader remain open. Status verification still
 uses a fixture source, so no public accredited-recognition route is mounted.
+
+The subsequent local #78 slice replaces the default unsigned fixture status
+decision with a five-minute, challenge-bound status attestation signed by the
+policy-pinned status authority's Midnight DID assertion key. The verifier
+checks registry, method, status handle, nonce hash, observation time, signature,
+and current DID state version; the signed attestation commitment is included
+in the redacted evidence. Tampered, replayed, revoked, substituted, and
+future-dated status cases fail in focused tests, and the joined demo passes.
+The fetcher is still a deterministic fixture, not a live status-registry
+ledger reader. A trustworthy production fetcher and independent status-ledger
+evidence remain necessary before public accredited-recognition intake.

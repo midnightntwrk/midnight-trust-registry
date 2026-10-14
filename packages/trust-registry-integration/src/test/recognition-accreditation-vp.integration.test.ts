@@ -88,7 +88,7 @@ describe("independently signed recognition accreditation VP", () => {
     expect(result.accreditorDidStateVersionId).toBeTruthy();
     expect(result.authorityDidStateVersionId).toBeTruthy();
     expect(result.statusAuthorityDidStateVersionId).toBeTruthy();
-    expect(result.expiresAtMs).toBe(NOW + 15 * 60_000);
+    expect(result.expiresAtMs).toBe(NOW + 5 * 60_000);
     expect(JSON.stringify(result)).not.toContain(authorityDid);
     expect(statusSource.verifyPinnedStatus).toHaveBeenCalledOnce();
   });
@@ -216,14 +216,9 @@ describe("independently signed recognition accreditation VP", () => {
       { authorityMethodId: `${accreditorDid}#assertion-1` },
       { statusHandleCommitment: sha256Hex("substituted") },
     ]) {
-      const { input, statusSource } = await fixture();
+      const { input, statusSource, statusDecision } = await fixture();
       statusSource.verifyPinnedStatus.mockImplementationOnce(async () => ({
-        registryId: anchor.statusRegistryId,
-        authorityMethodId: anchor.statusAuthorityMethodId,
-        statusHandleCommitment: sha256Hex("accreditation-status-handle"),
-        active: true,
-        validUntilMs: NOW + 15 * 60_000,
-        decisionCommitment: sha256Hex("pinned-status-decision"),
+        ...statusDecision,
         ...changed,
       }));
       await expect(verifyRecognitionAccreditationVp(input)).rejects.toThrow(/status is not active/u);

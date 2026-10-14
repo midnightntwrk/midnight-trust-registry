@@ -52,6 +52,7 @@ export type RecognitionStatusDecision = {
   active: boolean;
   validUntilMs: number;
   decisionCommitment: string;
+  didStateVersionId: string;
 };
 
 /** Only a trusted adapter for the anchor-pinned status source may implement this port. */
@@ -60,6 +61,7 @@ export type RecognitionAccreditationStatusSource = {
     anchor: RecognitionAccreditorAnchor;
     statusHandleCommitment: string;
     evaluatedAtMs: number;
+    nonce: string;
   }): Promise<RecognitionStatusDecision>;
 };
 
@@ -200,10 +202,12 @@ export async function verifyRecognitionAccreditationVp(input: {
     anchor,
     statusHandleCommitment: claims.statusHandleCommitment,
     evaluatedAtMs: input.evaluatedAtMs,
+    nonce: input.nonce,
   });
   if (!status.active || status.registryId !== anchor.statusRegistryId
     || status.authorityMethodId !== anchor.statusAuthorityMethodId
     || status.statusHandleCommitment !== claims.statusHandleCommitment
+    || status.didStateVersionId !== statusAuthorityDidStateVersionId
     || !validTime(status.validUntilMs) || status.validUntilMs <= input.evaluatedAtMs) {
     throw new Error("Recognition accreditation status is not active under the anchor");
   }

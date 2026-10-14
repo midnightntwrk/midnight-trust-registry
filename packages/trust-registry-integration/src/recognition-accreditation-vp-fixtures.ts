@@ -6,9 +6,11 @@ import {
   signMidnightDIDPresentationProof,
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import {
   RecognitionAccreditorAnchorSchema,
+  RecognitionStatusAttestationSchema,
   canonicalizeJson,
   sha256Hex,
   type RecognitionAccreditationClaims,
@@ -19,6 +21,7 @@ import { encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
 import { createMidnightDid } from "./fixtures.js";
 import type { RecognitionStatusDecision } from "./recognition-accreditation-vp.js";
+import { createAttestedRecognitionStatusSource, recognitionStatusAttestationDigest } from "./recognition-status-attestation.js";
 
 export const RECOGNITION_VP_FIXTURE_TIME_MS = Date.parse("2026-05-20T00:10:00.000Z");
 export const RECOGNITION_VP_FIXTURE_NONCE = `0x${"11".repeat(32)}`;
@@ -57,6 +60,7 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
   presentationCredentialBodyRoot?: string;
   holderMethodId?: string;
   statusDecision?: Partial<RecognitionStatusDecision>;
+  statusAttestation?: Record<string, unknown>;
 } = {}) {
   const evaluatedAtMs = options.evaluatedAtMs ?? RECOGNITION_VP_FIXTURE_TIME_MS;
   const nonce = options.nonce ?? RECOGNITION_VP_FIXTURE_NONCE;
@@ -68,7 +72,7 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
   });
   const accreditorSecret = 19n;
   const holderSecret = 23n;
-  const statusSecret = 29n;
+  const statusSeed = new Uint8Array(32).fill(29);
   const resolver = createMidnightDidResolver([
     createMidnightDidLedgerFixture(anchor.accreditorDid, {
       verificationMethodId: "assertion-1",
@@ -84,7 +88,7 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
     }),
     createMidnightDidLedgerFixture(anchor.statusAuthorityDid, {
       verificationMethodId: "assertion-1",
-      schnorrJubjubPublicKey: deriveJubjubPublicKey(statusSecret),
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(statusSeed),
     }),
   ]);
   const [accreditorMethod, holderMethod] = await Promise.all([
@@ -143,6 +147,11 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
     createdAt: BigInt(evaluatedAtMs),
     challengeHash: bytes32(Buffer.from(nonce.slice(2), "hex")),
   });
+  const statusDidResult = await resolver.resolveResult(parseMidnightDIDString(anchor.statusAuthorityDid));
+  const statusDidStateVersionId = statusDidResult?.didDocumentMetadata.versionId;
+  if (typeof statusDidStateVersionId !== "string" || statusDidStateVersionId.length === 0) {
+    throw new Error("Status authority fixture DID version is unavailable");
+  }
   const statusDecision: RecognitionStatusDecision = {
     registryId: anchor.statusRegistryId,
     authorityMethodId: anchor.statusAuthorityMethodId,
@@ -150,9 +159,39 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
     active: true,
     validUntilMs: evaluatedAtMs + 15 * 60_000,
     decisionCommitment: sha256Hex("pinned-status-decision"),
+    didStateVersionId: statusDidStateVersionId,
     ...options.statusDecision,
   };
-  const statusSource = { verifyPinnedStatus: async () => statusDecision };
+  const statusStatement = RecognitionStatusAttestationSchema.parse({
+    version: "tr-recognition-status-attestation-v1",
+    targetRegistryId: anchor.targetRegistryId,
+    statusRegistryId: anchor.statusRegistryId,
+    statusAuthorityDid: anchor.statusAuthorityDid,
+    statusAuthorityMethodId: anchor.statusAuthorityMethodId,
+    statusHandleCommitment: claims.statusHandleCommitment,
+    challengeHash: hex(bytes32(Buffer.from(nonce.slice(2), "hex"))),
+    active: true,
+    observedAt: new Date(evaluatedAtMs).toISOString(),
+    expiresAt: new Date(evaluatedAtMs + 5 * 60_000).toISOString(),
+    ...options.statusAttestation,
+  });
+  const signedStatusAttestation = {
+    statement: statusStatement,
+    proof: {
+      verificationMethodId: anchor.statusAuthorityMethodId,
+      algorithm: "jubjub-schnorr" as const,
+      signature: hex(encodeJubjubSignature(signJubjubDigestFromSeed(
+        statusSeed,
+        recognitionStatusAttestationDigest(statusStatement, anchor.statusAuthorityMethodId),
+      ))),
+    },
+  };
+  const statusSource = options.statusDecision
+    ? { verifyPinnedStatus: async () => statusDecision }
+    : createAttestedRecognitionStatusSource({
+      resolver,
+      fetchAttestation: async () => signedStatusAttestation,
+    });
   return {
     input: {
       submission: {
@@ -171,6 +210,8 @@ export async function createRecognitionAccreditationVpScenarioFixture(options: {
     },
     claims,
     statusSource,
+    statusDecision,
+    signedStatusAttestation,
     authorityAssertionSeed,
   };
 }
