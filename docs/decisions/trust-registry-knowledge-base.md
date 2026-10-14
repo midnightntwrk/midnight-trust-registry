@@ -14,6 +14,14 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- #59's signed HTTP mutation test now uses a separate Node process to hold
+  the real workspace lock. The request returns a typed 409 without consuming
+  the nonce, then succeeds after release. This proves same-host
+  shared-filesystem exclusion in the reference adapter, not distributed
+  locking or crash-durable transactions. Retrospective: the first child helper
+  left IPC open after releasing its lock and the test hung; explicit IPC
+  disconnect plus a bounded release wait made the focused 8-second test
+  reliable. Prefer a focused process test before the broad API suite.
 - The API library now has a recognition-specific, one-use Midnight DID
   authority challenge primitive over the existing atomic challenge-store
   interface. It binds the exact recognition tuple, rejects pre-challenge and

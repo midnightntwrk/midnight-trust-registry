@@ -102,6 +102,11 @@ does not silently break a lock. Invalid signatures return 401; unauthorized
 or substituted actors/scopes return 403; replay, stale state, and lock
 contention return 409. Failed requests do not append an operation or consume
 a nonce.
+The signed HTTP test holds the real workspace lock in a separate Node process,
+asserts the `workspace-locked` problem, then retries after release. This is a
+same-host, shared-filesystem exclusion guarantee only: it is not a distributed
+lock or crash-durable transaction protocol. Operators must inspect stale locks
+before removal.
 Operator workspaces created before `consumedMutationNonces` existed must be
 regenerated; this unreleased format has no compatibility default.
 
