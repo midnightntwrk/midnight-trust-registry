@@ -864,3 +864,19 @@ that proving cost. A maintainer simulator test passed alone in 1.6 seconds but
 timed out twice at the five-second default under the parallel integration
 suite; its explicit 15-second bound restored the full integration-light lane
 without weakening assertions.
+
+The proposal-admission gate is now available as a typed API helper. It
+validates the exact accepted receipt ID, challenge binding and recognition
+identity, combined evidence commitment, expiry, current governed policy
+commitment, and exact active accreditor anchor while holding the governance
+workspace writer lock through the caller's execution callback. Four focused
+tests cover positive lock ownership and wrong receipt, evidence, scope,
+expiry, anchor, and policy. `./run.sh --light` passed (20/20 tasks, 162 API
+tests). The helper is not wired to a public proposal route or ledger adapter;
+its callback must perform fresh Compact signature, quorum, sequence, and
+record-state checks without reacquiring the lock. A private file receipt is
+not a grant or distributed finality. This slice took one full light run of
+about 41 seconds; avoid repeatedly running full integration with fresh
+proving keys for TypeScript-only changes. The test fixture initially used an
+invalid policy without all four decision families; reuse a valid shared
+policy fixture in future tests to avoid schema-debugging iterations.
