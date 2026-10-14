@@ -979,3 +979,12 @@ finalized registry decision and DID state before constructing a descriptor.
 The simulator journey covers valid API delivery, a false server-verification
 claim, and an unavailable finalized reader. This is a compositional test, not
 a live-network finalized-reader implementation.
+
+The next local #73 slice connects verified API evidence to authority proof
+issuance through `issueVcSignerAuthorizationFromApi`. It reuses pinned-domain
+checks and proof verification, while the separately gated signer rechecks the
+governed authority key before key custody. A simulator test verifies the
+resulting proof and confirms missing finalized registry state cannot call the
+signer. Schnorr proof bytes are not expected to be identical across valid
+signings of the same decision. Production finality and authority key custody
+remain open.

@@ -54,6 +54,7 @@ import { createVcSignerCandidateFromApi, createVcSignerCandidateFromTrustedDecis
 import { createQuorumGatedVcAuthoritySigner } from "../vc-authority-signer.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 import {
+  issueVcSignerAuthorizationFromApi,
   issueVcSignerAuthorizationFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainCommitment,
@@ -429,6 +430,32 @@ describe("simulator-backed VC decision evidence composition", () => {
       signer: gatedSigner,
     });
     expect(authoritySignCount).toBe(1);
+    const signedFromApi = await issueVcSignerAuthorizationFromApi({
+      apiBase: "http://localhost:3000",
+      authorizationId: issuer.authorizationId,
+      selection: context.selection,
+      readers,
+      method: binding,
+      anchor: authorityAnchor,
+      signer: gatedSigner,
+      fetchImpl: apiFetch,
+    });
+    expect(signedFromApi.descriptor).toEqual(signed.descriptor);
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signedFromApi.descriptor, signedFromApi.proof, authorityAnchor, null,
+    )).not.toThrow();
+    expect(authoritySignCount).toBe(2);
+    await expect(issueVcSignerAuthorizationFromApi({
+      apiBase: "http://localhost:3000",
+      authorizationId: issuer.authorizationId,
+      selection: context.selection,
+      readers: { ...readers, readCurrentFinalizedRegistryDecision: async () => null },
+      method: binding,
+      anchor: authorityAnchor,
+      signer: gatedSigner,
+      fetchImpl: apiFetch,
+    })).rejects.toThrow(/registry decision is unavailable/u);
+    expect(authoritySignCount).toBe(2);
     const validSignerRequest = {
       decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
         signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
@@ -485,7 +512,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
     }
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     for (const currentAuthorityDidState of [
       null,
       { ...authorityDidState, deactivated: true },
@@ -516,7 +543,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/authority DID/u);
     }
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     await expect(gatedSigner({
       decisionRoot: bytes32Commitment("substituted-decision-root"),
       decisionSequence: signed.descriptor.decisionSequence,
@@ -532,7 +559,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).rejects.toThrow(/does not match finalized descriptor/u);
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     await expect(gatedSigner({
       decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
         signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
@@ -571,7 +598,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       anchor: authorityAnchor,
       signer: staleSigner,
     })).rejects.toThrow(/current grant mismatch/u);
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     expect(() => verifyVcSignerAuthorizationForConsumer(
       signed.descriptor, signed.proof, authorityAnchor, null,
     )).not.toThrow();

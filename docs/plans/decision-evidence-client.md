@@ -92,6 +92,14 @@ signer descriptor. It rejects an API response that omits the `client-required`
 marker or whose evidence cannot be corroborated by the trusted readers. The
 HTTP response itself is never a signer-authorization proof.
 
+`issueVcSignerAuthorizationFromApi` carries that authenticated candidate into
+the existing pinned-domain authority signer. It validates the returned proof
+before publication, while the signer port still has to independently recheck
+current finalized decision and governed authority-key state before using key
+custody. The simulator journey verifies the proof against the pinned VC
+authority and confirms a missing finalized registry decision does not invoke
+the authority signer.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and
