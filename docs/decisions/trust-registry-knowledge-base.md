@@ -687,3 +687,11 @@ load fresh signing context and accept externally signed envelopes. Their
 DOM-handler tests cover the accepted path and stale context; real-browser
 signed-intent smoke remains open acceptance work under #59. This fixture is
 not a distributed multi-writer or live-network finality test.
+
+The local #60 adversarial matrix branch was stacked on the signed-client
+journey without rewriting its seven signed commits. Its governed demo now
+records temporal API decisions for issuer, verifier, auditor, and recognition,
+plus issuer TRQP parity at activation, suspension, revocation, and historical
+active instants. The `tr-adversarial-matrix-v1` report still documents uncovered
+combinations in `docs/plans/adversarial-matrix-coverage.md`; simulator outcomes
+are not claims of network finality.

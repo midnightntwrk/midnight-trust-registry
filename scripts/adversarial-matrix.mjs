@@ -41,6 +41,19 @@ export class AdversarialMatrix {
     });
   }
 
+  expectDecision(decision, { id, invariant, boundary, trusted, statusAtTime }) {
+    assert.ok(["api", "adapter"].includes(boundary));
+    assert.equal(typeof trusted, "boolean");
+    const observed = boundary === "api" ? decision.trustedAtTime : decision.authorized;
+    assert.equal(observed, trusted, `${id}: unexpected trust decision`);
+    if (statusAtTime !== undefined) {
+      assert.equal(boundary, "api");
+      assert.equal(decision.statusAtTime, statusAtTime, `${id}: unexpected lifecycle status`);
+    }
+    const category = `decision:${trusted ? "allow" : "deny"}${statusAtTime === undefined ? "" : `/${statusAtTime}`}`;
+    this.#record({ id, invariant, boundary, expected: category, observed: category });
+  }
+
   expectThrown(operation, { id, invariant, boundary, messagePattern, category }) {
     assert.ok(["compact", "integration", "client", "adapter"].includes(boundary));
     assert.ok(messagePattern instanceof RegExp);

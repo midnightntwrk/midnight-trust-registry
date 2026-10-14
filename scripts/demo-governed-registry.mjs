@@ -1240,12 +1240,27 @@ try {
   const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(activeEvaluation.trustedAtTime, true);
   assert.equal(activeEvaluation.statusAtTime, "active");
+  adversarialMatrix.expectDecision(activeEvaluation, {
+    id: "issuer-active-api",
+    invariant: "Issuer trust is active at its committed activation instant",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
   const trqpRequest = {
     entity_id: issuer.subjectDid,
     authority_id: harness.registryRecord.registryDid,
     action: "issue",
     resource: issuer.resourceId,
   };
+  const queryTrqpIssuerAt = (at) => fetch(`${base}/v1/trqp/authorizations/query`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...trqpRequest, context: { time: at } }),
+  });
+  adversarialMatrix.expectDecision(await expectHttp(await queryTrqpIssuerAt(activeAt), 200), {
+    id: "issuer-active-trqp",
+    invariant: "TRQP and public API agree on issuer trust at activation",
+    boundary: "adapter", trusted: activeEvaluation.trustedAtTime,
+  });
   const trqpAdapter = new TrustRegistryTrqpAdapter({
     getRegistryRecord: async (authorityId) => authorityId === harness.registryRecord.registryDid
       ? harness.registryRecord : null,
@@ -1360,8 +1375,30 @@ try {
   ), 200);
   assert.equal(suspendedEvaluation.trustedAtTime, false);
   assert.equal(suspendedEvaluation.statusAtTime, "suspended");
+  adversarialMatrix.expectDecision(suspendedEvaluation, {
+    id: "issuer-suspended-api",
+    invariant: "Public lookup denies issuer trust at suspension",
+    boundary: "api", trusted: false, statusAtTime: "suspended",
+  });
+  adversarialMatrix.expectDecision(await expectHttp(await queryTrqpIssuerAt(
+    suspendedBundle.authorization.suspendedAt,
+  ), 200), {
+    id: "issuer-suspended-trqp",
+    invariant: "TRQP denies issuer trust at the same suspension instant",
+    boundary: "adapter", trusted: suspendedEvaluation.trustedAtTime,
+  });
   const historicalAfterSuspension = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterSuspension.trustedAtTime, true);
+  adversarialMatrix.expectDecision(historicalAfterSuspension, {
+    id: "issuer-historical-api-after-suspension",
+    invariant: "Public lookup retains active issuer trust before later suspension",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  adversarialMatrix.expectDecision(await expectHttp(await queryTrqpIssuerAt(activeAt), 200), {
+    id: "issuer-historical-trqp-after-suspension",
+    invariant: "TRQP agrees with the earlier active issuer decision after suspension",
+    boundary: "adapter", trusted: historicalAfterSuspension.trustedAtTime,
+  });
   adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
@@ -1395,8 +1432,30 @@ try {
   ), 200);
   assert.equal(revokedEvaluation.trustedAtTime, false);
   assert.equal(revokedEvaluation.statusAtTime, "revoked");
+  adversarialMatrix.expectDecision(revokedEvaluation, {
+    id: "issuer-revoked-api",
+    invariant: "Public lookup denies issuer trust at revocation",
+    boundary: "api", trusted: false, statusAtTime: "revoked",
+  });
+  adversarialMatrix.expectDecision(await expectHttp(await queryTrqpIssuerAt(
+    revokedBundle.authorization.revokedAt,
+  ), 200), {
+    id: "issuer-revoked-trqp",
+    invariant: "TRQP denies issuer trust at the same revocation instant",
+    boundary: "adapter", trusted: revokedEvaluation.trustedAtTime,
+  });
   const historicalAfterRevocation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterRevocation.trustedAtTime, true);
+  adversarialMatrix.expectDecision(historicalAfterRevocation, {
+    id: "issuer-historical-api-after-revocation",
+    invariant: "Public lookup retains active issuer trust before later revocation",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  adversarialMatrix.expectDecision(await expectHttp(await queryTrqpIssuerAt(activeAt), 200), {
+    id: "issuer-historical-trqp-after-revocation",
+    invariant: "TRQP agrees with the earlier active issuer decision after revocation",
+    boundary: "adapter", trusted: historicalAfterRevocation.trustedAtTime,
+  });
   adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
@@ -1459,6 +1518,11 @@ try {
     target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
     const active = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(active.trustedAtTime, true, `${target.role} must be trusted at activation`);
+    adversarialMatrix.expectDecision(active, {
+      id: `${target.role}-active-api`,
+      invariant: `Public lookup trusts ${target.role} at its activation instant`,
+      boundary: "api", trusted: true,
+    });
 
     target.suspend();
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
@@ -1484,8 +1548,18 @@ try {
     }), /not active/i);
     const suspended = await expectHttp(await evaluateAt(statusRecord(suspendedBundle).suspendedAt), 200);
     assert.equal(suspended.trustedAtTime, false, `${target.role} must be denied while suspended`);
+    adversarialMatrix.expectDecision(suspended, {
+      id: `${target.role}-suspended-api`,
+      invariant: `Public lookup denies ${target.role} at suspension`,
+      boundary: "api", trusted: false,
+    });
     const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterSuspension.trustedAtTime, true);
+    adversarialMatrix.expectDecision(historicalAfterSuspension, {
+      id: `${target.role}-historical-api-after-suspension`,
+      invariant: `Public lookup retains earlier ${target.role} trust after suspension`,
+      boundary: "api", trusted: true,
+    });
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
@@ -1519,8 +1593,18 @@ try {
     }), /not active/i);
     const revoked = await expectHttp(await evaluateAt(statusRecord(revokedBundle).revokedAt), 200);
     assert.equal(revoked.trustedAtTime, false, `${target.role} must be denied after revocation`);
+    adversarialMatrix.expectDecision(revoked, {
+      id: `${target.role}-revoked-api`,
+      invariant: `Public lookup denies ${target.role} at revocation`,
+      boundary: "api", trusted: false,
+    });
     const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterRevocation.trustedAtTime, true);
+    adversarialMatrix.expectDecision(historicalAfterRevocation, {
+      id: `${target.role}-historical-api-after-revocation`,
+      invariant: `Public lookup retains earlier ${target.role} trust after revocation`,
+      boundary: "api", trusted: true,
+    });
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,

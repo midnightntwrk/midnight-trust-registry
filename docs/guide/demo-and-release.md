@@ -206,6 +206,11 @@ The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
 Each recorded case names the violated invariant, boundary, expected category,
 and observed result. API cases assert the exact problem-type slug as well as
 HTTP status; TRQP adapter cases assert the exact problem type and status.
+Temporal decision cases record `decision:allow` or `decision:deny`, with the
+API lifecycle status where available. Issuer public API and TRQP decisions are
+compared at activation, suspension, revocation, and the earlier active instant
+after each later transition. The report also records public historical
+decisions for verifier, auditor, and recognition.
 Compact/integration/client cases assert a rejection pattern and report the actual thrown
 error type, not a product error category. Failed Compact approval must also
 leave the governance action count unchanged. The report is

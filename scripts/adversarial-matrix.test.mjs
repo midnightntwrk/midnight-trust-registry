@@ -131,3 +131,29 @@ test("does not record a rejected historical verification", () => {
   }), /invalid proof/u);
   assert.deepEqual(matrix.report().cases, []);
 });
+
+test("records API and TRQP temporal decisions only when outcomes agree", () => {
+  const matrix = new AdversarialMatrix();
+  matrix.expectDecision({ trustedAtTime: false, statusAtTime: "suspended" }, {
+    id: "issuer-suspended-api",
+    invariant: "Suspended issuer trust must be denied",
+    boundary: "api", trusted: false, statusAtTime: "suspended",
+  });
+  matrix.expectDecision({ authorized: false }, {
+    id: "issuer-suspended-trqp",
+    invariant: "TRQP must deny the same suspended issuer",
+    boundary: "adapter", trusted: false,
+  });
+  assert.deepEqual(matrix.report().cases.map(({ expected, observed }) => [expected, observed]), [
+    ["decision:deny/suspended", "decision:deny/suspended"],
+    ["decision:deny", "decision:deny"],
+  ]);
+  assert.throws(() => matrix.expectDecision({ authorized: true }, {
+    id: "issuer-wrong-trqp", invariant: "TRQP must agree", boundary: "adapter", trusted: false,
+  }), /unexpected trust decision/u);
+  assert.throws(() => matrix.expectDecision({ trustedAtTime: false, statusAtTime: "revoked" }, {
+    id: "issuer-wrong-status", invariant: "Status must agree", boundary: "api",
+    trusted: false, statusAtTime: "suspended",
+  }), /unexpected lifecycle status/u);
+  assert.equal(matrix.report().cases.length, 2);
+});
