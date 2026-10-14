@@ -695,3 +695,7 @@ plus issuer TRQP parity at activation, suspension, revocation, and historical
 active instants. The `tr-adversarial-matrix-v1` report still documents uncovered
 combinations in `docs/plans/adversarial-matrix-coverage.md`; simulator outcomes
 are not claims of network finality.
+The issuer proposal API now has a matrix case for a correctly signed, admitted
+receipt whose evidence has expired under the virtual evidence clock. The test
+restores the original accepted fixture after asserting the exact governed
+proposal rejection, so downstream successful decisions remain unchanged.

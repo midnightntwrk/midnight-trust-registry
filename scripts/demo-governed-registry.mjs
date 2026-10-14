@@ -801,6 +801,53 @@ try {
     messagePattern: /commitment|evidence/iu,
     category: "evidence-commitment-rejected",
   });
+  const issuerApplicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
+  const acceptedIssuerEvidence = persistedEvidence.get(issuerApplicationId);
+  const acceptedIssuerReceipt = evidenceReceipts.get(issuerApplicationId);
+  assert.ok(acceptedIssuerEvidence);
+  assert.ok(acceptedIssuerReceipt);
+  const expiredEnvelope = {
+    ...issuerEvidence.envelope,
+    expiresAt: new Date(Date.parse(issuerEvidence.envelope.verifiedAt) + 1).toISOString(),
+  };
+  const expiredCommitment = computeApplicationEvidenceCommitment(expiredEnvelope);
+  const expiredIssuerEvidence = {
+    envelope: expiredEnvelope,
+    commitment: expiredCommitment,
+    signature: harness.signApplicationEvidenceCommitment(expiredCommitment),
+  };
+  assert.equal(harness.verifyApplicationEvidenceSignature(
+    expiredCommitment, expiredIssuerEvidence.signature, harness.evidenceVerifier,
+  ), true);
+  assert.ok(Date.parse(issuerEvidence.envelope.expiresAt) > Date.parse(expiredEnvelope.expiresAt) + 1000);
+  harness.advanceEvidenceTimeBy(1000);
+  adversarialMatrix.expectThrown(() => harness.prepareIssuerProposalAction(
+    issuer, expiredIssuerEvidence, expectedIssuerEvidence,
+  ), {
+    id: "issuer-expired-evidence-api-preflight",
+    invariant: "Accepted signed evidence cannot authorize a proposal after its expiry",
+    boundary: "integration",
+    messagePattern: /expired/iu,
+    category: "expired-application-evidence",
+  });
+  persistedEvidence.set(issuerApplicationId, expiredIssuerEvidence);
+  evidenceReceipts.set(issuerApplicationId, {
+    ...acceptedIssuerReceipt,
+    receiptId: sha256Hex(`receipt:${issuerApplicationId}:${expiredCommitment}`),
+    evidenceCommitment: expiredCommitment,
+  });
+  try {
+    await adversarialMatrix.expectHttp(await proposePrepare(proposalEndpoint, expiredIssuerEvidence), {
+      id: "issuer-expired-accepted-evidence-api",
+      invariant: "The governed API rejects an admitted issuer receipt when its signed evidence has expired",
+      boundary: "api",
+      status: 403,
+      problemType: "governed-proposal-rejected",
+    });
+  } finally {
+    persistedEvidence.set(issuerApplicationId, acceptedIssuerEvidence);
+    evidenceReceipts.set(issuerApplicationId, acceptedIssuerReceipt);
+  }
   for (const spec of applicantSpecs) {
     const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
@@ -838,7 +885,6 @@ try {
     await expectHttp(await proposePrepare(endpoint, evidence), 403);
     registeredApplications.set(applicationId, pending);
   }
-  const issuerApplicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
   const issuerReceipt = evidenceReceipts.get(issuerApplicationId);
   const proposalPrepared = await expectHttp(await fetch(`${proposalEndpoint}/prepare`, {
     method: "POST",
