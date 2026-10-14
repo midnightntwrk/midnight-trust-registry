@@ -1,6 +1,6 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -11,6 +11,8 @@ type AppState = {
   inspection: PublicInspection | undefined;
   loading: boolean;
   submitting: boolean;
+  signedBusy: boolean;
+  signedContext: TrustRegistryApiMutationContext | undefined;
   evidenceBusy: boolean;
   evidenceError: string | undefined;
   evidenceFlash: string | undefined;
@@ -88,6 +90,8 @@ export const createApplicantPortalApp = (
     inspection: undefined,
     loading: false,
     submitting: false,
+    signedBusy: false,
+    signedContext: undefined,
     evidenceBusy: false,
     evidenceError: undefined,
     evidenceFlash: undefined,
@@ -95,6 +99,7 @@ export const createApplicantPortalApp = (
     pendingApplication: undefined,
   };
   let evidenceRequestId = 0;
+  let signedContextRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -304,6 +309,62 @@ export const createApplicantPortalApp = (
     setState({ submitting: false });
   };
 
+  const loadSignedContext = async () => {
+    if (state.signedBusy) return;
+    const requestId = ++signedContextRequestId;
+    setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
+    try {
+      const signedContext = await client().loadMutationContext();
+      if (requestId === signedContextRequestId) setState({ signedContext });
+    } catch (error) {
+      if (requestId === signedContextRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === signedContextRequestId) setState({ signedBusy: false });
+    }
+  };
+
+  const submitSignedApplication = async (raw: string) => {
+    if (state.signedBusy || state.signedContext === undefined) return;
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      setState({ error: "Signed mutation envelope must be valid JSON." });
+      return;
+    }
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      setState({ error: "Paste an externally signed issuer or verifier submission envelope." });
+      return;
+    }
+    const parsed = candidate as Partial<TrustRegistryApiSignedMutationRequest>;
+    if (parsed.operation?.operation !== "submit"
+      || !["issuer", "verifier"].includes(parsed.operation.target)
+      || parsed.intent === null || typeof parsed.intent !== "object"
+      || parsed.signature === null || typeof parsed.signature !== "object") {
+      setState({ error: "Paste an externally signed issuer or verifier submission envelope." });
+      return;
+    }
+    const { intent } = parsed;
+    const context = state.signedContext;
+    if (intent.registryId !== context.registryId || intent.expectedEpochId !== context.expectedEpochId
+      || intent.expectedWorkspaceCommitment !== context.expectedWorkspaceCommitment) {
+      setState({ signedContext: undefined, error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    const apiBase = state.apiBase;
+    setState({ signedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await client().submitSignedMutation(parsed as TrustRegistryApiSignedMutationRequest);
+      if (state.apiBase !== apiBase) return;
+      state.signedContext = undefined;
+      await refreshInspection(`Signed ${result.operation.operation} accepted for ${parsed.operation.target}.`);
+    } catch (error) {
+      if (state.apiBase === apiBase) setState({ signedContext: undefined, error: formatApiError(error) });
+    } finally {
+      setState({ signedBusy: false });
+    }
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -318,12 +379,25 @@ export const createApplicantPortalApp = (
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
       evidenceRequestId += 1;
-      setState({ apiBase, pendingApplication: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      signedContextRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
       void refreshInspection();
     });
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       void refreshInspection();
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
+      void loadSignedContext();
+    });
+    root.querySelector<HTMLFormElement>("[data-signed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = (event.currentTarget as HTMLFormElement).querySelector<HTMLTextAreaElement>("[name='signedEnvelope']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void submitSignedApplication(raw);
     });
 
     root.querySelector<HTMLFormElement>("[data-submit-form]")?.addEventListener("submit", (event) => {
@@ -404,6 +478,7 @@ export const createApplicantPortalApp = (
   `;
 
   const render = () => {
+    const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -446,6 +521,18 @@ export const createApplicantPortalApp = (
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">
+          <section class="form-panel">
+            <h2>Signed issuer or verifier submission</h2>
+            <p>Load the current workspace context, sign an issuer or verifier submission outside this browser, then paste only the signed envelope. No private key belongs here. A stale context must be signed again.</p>
+            <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+            ${state.signedContext === undefined ? "" : `<pre class="mono signing-context">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+            <form data-signed-submit>
+              <label class="label">Externally signed envelope
+                <textarea class="input mono signed-envelope" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+              </label>
+              <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed intent</button>
+            </form>
+          </section>
           <form class="form-panel" data-submit-form>
             <h2>Local demo application</h2>
             <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
@@ -524,6 +611,10 @@ export const createApplicantPortalApp = (
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
+    }
+    if (previousSignedEnvelope !== undefined) {
+      const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;
     }
     bindEvents();
   };

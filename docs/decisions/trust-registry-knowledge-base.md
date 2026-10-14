@@ -657,6 +657,8 @@ suspension instant while retaining the prior active-time decision. Stale
 context, invalid transition, replay, and invalid signature return structured
 problems. A second process holds the shared local workspace lock during a
 signed approval; the API returns 409 without consuming the intent, and the
-same intent succeeds after release. A browser-driven signed-intent flow remains
-open acceptance work under #59. This fixture is not a distributed multi-writer
-or live-network finality test.
+same intent succeeds after release. The static applicant and admin pages now
+load fresh signing context and accept externally signed envelopes. Their
+DOM-handler tests cover the accepted path and stale context; real-browser
+signed-intent smoke remains open acceptance work under #59. This fixture is
+not a distributed multi-writer or live-network finality test.

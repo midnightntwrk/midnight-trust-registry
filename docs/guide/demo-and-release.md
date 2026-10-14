@@ -101,8 +101,11 @@ finality is simulated, the workspace has one fixture maintainer rather than a
 a VC/VP or independently verify a Compact proof. The reported epoch root is
 operator-workspace evidence, not a network-finality claim.
 The cross-process check covers one shared local filesystem, not a distributed
-multi-writer deployment. A browser-driven signed-intent workflow remains
-separate #59 work; the clients do not hold signing keys.
+multi-writer deployment. The applicant and admin pages now expose this public
+client path: load a fresh signing context, paste an externally signed envelope,
+and submit without handing either page a private key. Their DOM-handler tests
+cover accepted and stale-context paths; a real-browser signed-intent smoke
+remains separate #59 work.
 
 ### Compact-Governed Registry Journey
 

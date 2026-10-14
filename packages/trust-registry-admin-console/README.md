@@ -16,6 +16,10 @@ Current scope:
   the matching Compact proposal event without replaying the action
 - require explicit confirmation before submitting signed actions; the contract
   remains responsible for current-policy, signer-membership, and quorum checks
+- load a no-cache workspace mutation context and submit an externally signed
+  maintainer action envelope after explicit confirmation. This local file-backed
+  workspace path is not a Compact quorum action and does not establish network
+  finality. The page clears the pasted envelope and never handles private keys
 - retain separate local fixture mutation and epoch controls for the deliberately
   unsafe workspace demo, not for public or production governance
 - keep the first UI slice static and local-first instead of introducing a

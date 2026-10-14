@@ -16,6 +16,10 @@ Current scope:
 - register a pending issuer, verifier, auditor, or maintainer application with
   an externally signed Midnight DID `apply` intent. The browser accepts a
   signed request, never a private key.
+- load a no-cache workspace mutation context and submit an externally signed
+  issuer or verifier `submit` envelope. This local workspace flow is separate
+  from the governed VP application and Compact quorum approval path. The
+  browser clears pasted envelopes after submission and does not retain keys.
 - do not offer label-only auditor submission. The demo API's unsigned mutation
   route is not a governed admission boundary and must not be publicly exposed.
 - keep the first portal slice static and local-first instead of adding a second
