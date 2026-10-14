@@ -1101,22 +1101,30 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: MaintainerScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedMaintainerAction {
-    if (action !== "approve" && action !== "activate") {
+    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
       throw new Error("Unsupported maintainer decision action");
     }
     const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
     const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.maintainerId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_MAINTAINER_ACTION_KIND,
+      activate: ACTIVATE_MAINTAINER_ACTION_KIND,
+      suspend: SUSPEND_MAINTAINER_ACTION_KIND,
+      revoke: REVOKE_MAINTAINER_ACTION_KIND,
+    };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
-      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_MAINTAINER_ACTION_KIND : ACTIVATE_MAINTAINER_ACTION_KIND),
+      actionKind: Uint8Array.from(actionKinds[action]),
       actionPayloadHash: computeUpdateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+        fixture.maintainerIdCommitment, current.lifecycleEventHash, evidenceHash,
       ),
       actionSequence: ledger.governanceActionCount,
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash: Uint8Array.from(current.evidenceHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
     };
   }
 
@@ -1134,11 +1142,12 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1),
       );
     }
-    const result = this.simulator.activateMaintainerMembership(
-      primary.keyId, primary.publicKey, primary.signature,
-      fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1),
-    );
-    this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
+    const circuit = action === "activate" ? this.simulator.activateMaintainerMembership.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendMaintainerMembership.bind(this.simulator)
+        : this.simulator.revokeMaintainerMembership.bind(this.simulator);
+    const result = circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1));
+    if (action === "activate") this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
     return result;
   }
 

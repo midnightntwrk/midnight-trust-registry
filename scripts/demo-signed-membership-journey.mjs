@@ -480,7 +480,33 @@ try {
     const membership = harness.simulator.getMaintainerMembership(profile.idCommitment);
     assert.equal(membership.status, AuthorizationStatus.active);
     assert.equal(harness.simulator.getLedger().activeMaintainerCount, activeMaintainersBeforeApplication + 1n);
-    trustResult = { membershipActive: true, verificationSurface: "Compact membership record" };
+    trustResult = {
+      activatedBeforeRevocation: true,
+      currentMembershipActive: false,
+      verificationSurface: "Compact membership record",
+    };
+    const lifecycle = [];
+    for (const action of ["suspend", "revoke"]) {
+      const prepared = await adminClient.prepareGovernedAction(role, profile.id, action);
+      const actionPath = `/v1/governed/${role}/${profile.id}/actions/${action}`;
+      const beforeAction = harness.simulator.getLedger().governanceActionCount;
+      assert.equal((await post(actionPath, {
+        prepared, signers: [signAction(maintainers[0], prepared)],
+      })).status, 403);
+      assert.equal((await post(actionPath, {
+        prepared,
+        signers: [signAction(maintainers[0], prepared), signAction(maintainers[0], prepared)],
+      })).status, 403);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
+      await adminClient.submitGovernedAction(role, profile.id, action, {
+        prepared, signers: quorumSignatures(prepared),
+      });
+      assert.equal(harness.simulator.getMaintainerMembership(profile.idCommitment).status,
+        action === "suspend" ? AuthorizationStatus.suspended : AuthorizationStatus.revoked);
+      assert.equal(harness.simulator.getLedger().activeMaintainerCount, activeMaintainersBeforeApplication);
+      lifecycle.push({ action, remainingActiveMaintainers: Number(activeMaintainersBeforeApplication) });
+    }
+    lifecycleResult = lifecycle;
   } else {
     const board = await adminClient.loadReviewBoard();
     assert.equal(board[profile.snapshotKey].some((entry) =>
@@ -517,7 +543,8 @@ try {
       trqpAgreement = true;
     }
     trustResult = {
-      trustedAtTime: true,
+      trustedAtActivation: true,
+      currentTrustedAfterRevocation: false,
       trqpAgreement,
       verificationSurface: "UI clients, public API bundle, TRQP, and independent client",
     };
@@ -581,7 +608,7 @@ try {
     targetId: profile.id,
     proposalEventHash: proposal.eventHash,
     evidenceCommitment: submitted.evidence.commitment,
-    activeEpochId: snapshot.currentEpoch.epochId,
+    currentEpochId: snapshot.currentEpoch.epochId,
     clientSurfaces: ["applicant portal", "admin console"],
     lifecycle: lifecycleResult,
     ...trustResult,
@@ -590,7 +617,8 @@ try {
       "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
-      "proposal-replay:409", "lost-response-recovered:200"],
+      "proposal-replay:409", "lost-response-recovered:200",
+      "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
