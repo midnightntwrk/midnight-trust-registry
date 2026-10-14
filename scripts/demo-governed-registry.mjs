@@ -126,12 +126,22 @@ const bindings = new Map(applicantSpecs.map((spec) => {
   });
   return [binding.applicationId, binding];
 }));
+const registeredApplications = new Map(applicantSpecs.map((spec) => {
+  const applicationId = createScopedIdentifier("application", spec.role, spec.id);
+  return [applicationId, {
+    authorizationId: spec.id,
+    binding: bindings.get(applicationId),
+    status: "pending",
+    createdAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  }];
+}));
 const pendingApplications = new Set(bindings.keys());
 const applicantTokens = new Map([...bindings.keys()].map((id) => [id, randomBytes(32).toString("hex")]));
 const vpPortsByApplication = new Map();
 const evidenceByRole = new Map();
 const expectedEvidenceByRole = new Map();
 const persistedEvidence = new Map();
+const evidenceReceipts = new Map();
 const signerFixture = await createApplicationVpScenarioFixture(VP_FIXTURE_NONCE, {
   evidenceVerifierDid: harness.evidenceVerifier.did,
   evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
@@ -181,18 +191,12 @@ const targets = new Map([
   }],
   ["maintainer", {
     id: candidate.maintainerId,
-    prepare: (action) => {
-      const prepared = harness.prepareMaintainerDecisionAction(candidate, action);
-      return { ...prepared, authorizationId: prepared.maintainerId };
-    },
+    prepare: (action) => harness.prepareMaintainerDecisionAction(candidate, action),
     execute: (action, signers) => harness.executeMaintainerDecisionWithSignatures(candidate, action, signers),
   }],
   ["recognition", {
     id: recognition.recognitionId,
-    prepare: (action) => {
-      const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
-      return { ...prepared, authorizationId: prepared.recognitionId };
-    },
+    prepare: (action) => harness.prepareRecognitionDecisionAction(recognition, action),
     execute: (action, signers) => harness.executeRecognitionDecisionWithSignatures(recognition, action, signers),
   }],
 ]);
@@ -214,6 +218,7 @@ const proposalTargets = new Map([
       harness.executeVerifierProposalWithSignatures(
         verifier, evidence, signers, signature, expectedEvidenceByRole.get("verifier"),
       ),
+    resolve: () => harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment),
     signEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
     rejected: GovernedVerifierProposalRejectedError,
     missing: "unknown-authorization",
@@ -228,6 +233,7 @@ const proposalTargets = new Map([
       harness.executeAuditorProposalWithSignatures(
         auditor, evidence, signers, signature, expectedEvidenceByRole.get("auditor"),
       ),
+    resolve: () => harness.simulator.getAuditorProposalEvidence(auditor.authorizationIdCommitment),
     signEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
     rejected: GovernedAuditorProposalRejectedError,
     missing: "unknown-authorization",
@@ -242,6 +248,7 @@ const proposalTargets = new Map([
       harness.executeMaintainerProposalWithSignatures(
         candidate, evidence, signers, signature, expectedEvidenceByRole.get("maintainer"),
       ),
+    resolve: () => harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment),
     signEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
     rejected: GovernedMaintainerProposalRejectedError,
     missing: "unknown-maintainer",
@@ -268,10 +275,26 @@ const proposalPort = (role, target) => ({
     publishCurrentSnapshot();
     return { eventHash: asHex(eventHash) };
   },
+  async resolve(id) {
+    if (id !== target.id) throw new target.rejected(target.missing);
+    const record = target.resolve();
+    return {
+      eventHash: asHex(record.proposalGovernanceEventHash),
+      evidenceCommitment: asHex(record.evidenceCommitment),
+    };
+  },
 });
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
+  proposalAdmission: {
+    resolvePendingApplication: async (applicationId) => registeredApplications.get(applicationId) ?? null,
+    resolveAcceptedEvidence: async (applicationId) => {
+      const evidence = persistedEvidence.get(applicationId);
+      const receipt = evidenceReceipts.get(applicationId);
+      return evidence === undefined || receipt === undefined ? null : { evidence, receipt };
+    },
+  },
   applicationVp: {
     challengeStore: new InMemoryApplicationChallengeStore(),
     authorizeRequest: async (applicationId, request) => {
@@ -304,11 +327,18 @@ const server = createTrustRegistryApiServer({
       }
       pendingApplications.delete(applicationId);
       persistedEvidence.set(applicationId, evidence);
-      return {
+      const receipt = {
         receiptId: sha256Hex(`receipt:${applicationId}:${evidence.commitment}`),
         evidenceCommitment: evidence.commitment,
         acceptedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
       };
+      evidenceReceipts.set(applicationId, receipt);
+      return receipt;
+    },
+    resolveAcceptedEvidence: async (applicationId) => {
+      const evidence = persistedEvidence.get(applicationId);
+      const receipt = evidenceReceipts.get(applicationId);
+      return evidence === undefined || receipt === undefined ? null : { evidence, receipt };
     },
   },
   governedIssuerProposals: {
@@ -339,6 +369,16 @@ const server = createTrustRegistryApiServer({
       projectedRoles.add("issuer");
       publishCurrentSnapshot();
       return { eventHash: asHex(eventHash) };
+    },
+    async resolve(authorizationId) {
+      if (authorizationId !== issuer.authorizationId) {
+        throw new GovernedIssuerProposalRejectedError("unknown-authorization");
+      }
+      const record = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
+      return {
+        eventHash: asHex(record.proposalGovernanceEventHash),
+        evidenceCommitment: asHex(record.evidenceCommitment),
+      };
     },
   },
   governedVerifierProposals: proposalPort("verifier", proposalTargets.get("verifier")),
@@ -380,6 +420,9 @@ try {
       headers: requestHeaders,
       body: JSON.stringify(body),
     });
+    const getReceipt = (requestHeaders = headers) => fetch(`${endpoint}/receipt`, { headers: requestHeaders });
+    await expectHttp(await getReceipt({}), 403);
+    await expectHttp(await getReceipt(), 404);
     await expectHttp(await post("challenges", {}, {
       "content-type": "application/json",
     }), 403);
@@ -432,7 +475,9 @@ try {
       challengeHash: challenge.challengeHash,
       presentation: proof.input.submission,
     };
-    const submitted = await expectHttp(await post("submissions", submission), 202);
+    // Recovery reads the accepted record; it must not repeat VP verification.
+    assert.equal((await post("submissions", submission)).status, 202);
+    const submitted = await expectHttp(await getReceipt(), 200);
     assert.equal(submitted.receipt.evidenceCommitment, submitted.evidence.commitment);
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
@@ -451,6 +496,31 @@ try {
   assert.ok(issuerEvidence);
   assert.ok(expectedIssuerEvidence);
   const proposalEndpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
+  const proposePrepare = (endpoint, evidence) => fetch(`${endpoint}/prepare`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evidence }),
+  });
+  for (const spec of applicantSpecs) {
+    const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
+    const applicationId = createScopedIdentifier("application", spec.role, spec.id);
+    const evidence = evidenceByRole.get(spec.role);
+    const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
+    await expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), 403);
+    await expectHttp(await proposePrepare(
+      `${base}/v1/governed/${spec.role}/${createScopedIdentifier("wrong", spec.id)}/proposal`, evidence,
+    ), 403);
+    const receipt = evidenceReceipts.get(applicationId);
+    evidenceReceipts.delete(applicationId);
+    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    evidenceReceipts.set(applicationId, receipt);
+    const pending = registeredApplications.get(applicationId);
+    assert.ok(pending);
+    registeredApplications.set(applicationId, { ...pending, authorizationId: "auth:substituted:target" });
+    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    registeredApplications.set(applicationId, pending);
+  }
+  const issuerApplicationId = createScopedIdentifier("application", "issuer", issuer.authorizationId);
+  const issuerReceipt = evidenceReceipts.get(issuerApplicationId);
   const proposalPrepared = await expectHttp(await fetch(`${proposalEndpoint}/prepare`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -470,8 +540,16 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  evidenceReceipts.delete(issuerApplicationId);
+  await expectHttp(await submitProposal(proposalBody), 403);
+  evidenceReceipts.set(issuerApplicationId, issuerReceipt);
   await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
-  const issuerProposal = await expectHttp(await submitProposal(proposalBody), 202);
+  assert.equal((await submitProposal(proposalBody)).status, 202);
+  const issuerProposal = await expectHttp(await fetch(`${proposalEndpoint}/resolve`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evidence: issuerEvidence }),
+  }), 200);
+  assert.equal(issuerProposal.state, "observed");
   await expectHttp(await submitProposal(proposalBody), 409);
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
   const otherProposals = [];
@@ -494,7 +572,12 @@ try {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
     });
     await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
-    const accepted = await expectHttp(await submit(body), 202);
+    assert.equal((await submit(body)).status, 202);
+    const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ evidence }),
+    }), 200);
+    assert.equal(accepted.state, "observed");
     await expectHttp(await submit(body), 409);
     otherProposals.push({
       role,
@@ -710,6 +793,7 @@ try {
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
     governance: "2-of-3 external JubJub signatures for all decisions",
+    acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
       evidenceCommitment: issuerEvidence.commitment,
@@ -739,6 +823,8 @@ try {
     expectedRejections: [
       "vp-unauthorized:403", "vp-wrong-signed-scope:403", "vp-unbound-credential:403",
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
+      "proposal-cross-role-evidence:403", "proposal-wrong-target:403",
+      "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",

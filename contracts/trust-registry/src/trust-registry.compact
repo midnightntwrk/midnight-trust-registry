@@ -644,6 +644,21 @@ pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
   );
 }
 
+circuit assertPrimeOrderMaintainerKey(publicKey: JubjubPoint): [] {
+  assertNonIdentitySignerPoint(publicKey);
+  const subgroupCheck = ecAdd(
+    ecMul(
+      publicKey,
+      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+    ),
+    publicKey
+  );
+  assert(
+    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    "Maintainer public key must have prime order"
+  );
+}
+
 circuit assertPrimeOrderEvidenceVerifierKey(publicKey: JubjubPoint): [] {
   const x = jubjubPointX(publicKey);
   const y = jubjubPointY(publicKey);
@@ -1320,6 +1335,25 @@ export pure circuit createMaintainerMembershipPayloadHash(
   ]);
 }
 
+export pure circuit createVcAuthorityDomainCommitment(
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  registryIdCommitment: Bytes<32>,
+  registryContractAddress: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>
+): Bytes<32> {
+  return persistentHash<Vector<7, Bytes<32>>>([
+    pad(32, "tr:vc-authority-domain:v1"),
+    networkIdCommitment,
+    consumerContractAddress,
+    registryIdCommitment,
+    registryContractAddress,
+    authorityDidCommitment,
+    authorityMethodIdCommitment
+  ]);
+}
+
 export pure circuit updateIssuerAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   previousLifecycleEventHash: Bytes<32>,
@@ -1541,7 +1575,7 @@ export circuit initializeRegistry(
     bootstrapMaintainerKeyId != pad(32, ""),
     "Bootstrap maintainer key id must be set"
   );
-  assertNonIdentitySignerPoint(bootstrapMaintainerPublicKey);
+  assertPrimeOrderMaintainerKey(bootstrapMaintainerPublicKey);
   assertValidMaintainerThreshold(1, nextMaintainerThreshold);
 
   const disclosedRegistryId = disclose(nextRegistryId);
@@ -2414,6 +2448,7 @@ export circuit proposeMaintainerMembership(
   const disclosedMaintainerDidCommitment = disclose(maintainerDidCommitment);
   const disclosedCandidateKeyId = disclose(candidateKeyId);
   const disclosedCandidatePublicKey = disclose(candidatePublicKey);
+  assertPrimeOrderMaintainerKey(disclosedCandidatePublicKey);
   const disclosedPolicyId = disclose(policyId);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);

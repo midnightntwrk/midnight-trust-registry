@@ -312,7 +312,6 @@ describe("Compact-backed membership governance over HTTP", () => {
         if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
         return {
           ...prepared,
-          authorizationId: prepared.maintainerId,
           previousLifecycleEventHash: prepared.previousLifecycleEventHash,
         };
       },
@@ -359,7 +358,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         expect(preparedResponse.status).toBe(200);
         expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
         const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
-        expect(prepared.authorizationId).toBe(`0x${Buffer.from(candidate.maintainerIdCommitment).toString("hex")}`);
+        expect(prepared.targetId).toBe(`0x${Buffer.from(candidate.maintainerIdCommitment).toString("hex")}`);
         const before = harness.simulator.getLedger().governanceActionCount;
         expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
         expect((await post(action, prepared, [
@@ -401,7 +400,6 @@ describe("Compact-backed membership governance over HTTP", () => {
         if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
         return {
           ...prepared,
-          authorizationId: prepared.recognitionId,
           previousLifecycleEventHash: prepared.previousLifecycleEventHash,
         };
       },
@@ -444,7 +442,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("no-store");
         const prepared = await response.json() as PreparedGovernedMembershipAction;
-        expect(prepared.authorizationId).toBe(`0x${Buffer.from(recognition.recognitionIdCommitment).toString("hex")}`);
+        expect(prepared.targetId).toBe(`0x${Buffer.from(recognition.recognitionIdCommitment).toString("hex")}`);
         const before = harness.simulator.getLedger().governanceActionCount;
         expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
         expect((await post(action, { ...prepared, policyCommitment: `0x${"00".repeat(32)}` }, [

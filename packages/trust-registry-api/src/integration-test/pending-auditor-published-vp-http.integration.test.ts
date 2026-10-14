@@ -5,8 +5,9 @@ import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { encodeJubjubSignature, payloadToJubjubDigest, signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
-  computePendingAuditorApplicationPayloadCommitment,
+  computePendingApplicationPayloadCommitment,
   mutationIntentDigestBytes,
+  requestGovernedResourceId,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -19,7 +20,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import type { ApplicationVpHttpPort } from "../application-vp-http.js";
-import { InMemoryPendingAuditorRegistrationPort } from "../pending-auditor-registration.js";
+import { InMemoryPendingApplicationRegistrationPort } from "../pending-application-registration.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
@@ -38,6 +39,7 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
+const governedResource = { type: "requestProfile" as const, id: requestGovernedResourceId(scope) };
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -58,7 +60,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
   it("registers a DID applicant and accepts one genuinely signed, policy-scoped VP without exposing claims", async () => {
     const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
     const workspace = createOperatorWorkspace({ label: "auditor-published-vp-http" });
-    const registration = new InMemoryPendingAuditorRegistrationPort({
+    const registration = new InMemoryPendingApplicationRegistrationPort({
       workspace, applications: [], consumedNonces: [],
     }, evidenceVerifierDid, fixture.input.resolver);
     const ports = await createApplicationVpIntakePorts({
@@ -99,7 +101,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     server = createTrustRegistryApiServer({
       source: createInMemorySource(workspace.snapshot),
       clock: () => NOW,
-      pendingAuditorRegistration: registration,
+      pendingApplicationRegistration: registration,
       applicationVp,
     });
     const base = await listen(server);
@@ -113,7 +115,9 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
       target: "auditor",
       targetId: applicationId,
       scopeCommitment: computeAuthorizationScopeCommitment(scope),
-      payloadCommitment: computePendingAuditorApplicationPayloadCommitment({ applicationId, scope }),
+      payloadCommitment: computePendingApplicationPayloadCommitment({
+        applicationId, authorizationId: "auth:auditor:published-vp:v1", scope, governedResource,
+      }),
       nonce: `0x${"22".repeat(32)}`,
       expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
       expectedEpochId: workspace.snapshot.currentEpoch.epochId,
@@ -122,7 +126,9 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     };
     const signed = {
       applicationId,
+      authorizationId: "auth:auditor:published-vp:v1",
       scope,
+      governedResource,
       intent,
       signature: {
         keyId: intent.actorKeyId,
@@ -137,7 +143,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
       headers: { "content-type": "application/json", "x-applicant-did": subjectDid },
       body: JSON.stringify(body),
     });
-    const registered = await post("/v1/pending-applications/auditor", signed);
+    const registered = await post("/v1/pending-applications", signed);
     expect(registered.status).toBe(201);
     expect((await registered.json() as { binding: { scope: unknown } }).binding.scope).toEqual(scope);
     const path = `/v1/application-evidence/${applicationId}`;

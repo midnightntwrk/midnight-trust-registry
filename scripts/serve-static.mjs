@@ -29,24 +29,14 @@ function contentTypeForPath(path) {
   }
 }
 
-export function serveStaticAssets({ distDir, defaultPort, name }) {
-  const args = new Map();
-  for (let index = 2; index < process.argv.length; index += 1) {
-    const value = process.argv[index];
-    if (value?.startsWith("--")) {
-      args.set(value.slice(2), process.argv[index + 1] ?? "");
-      index += 1;
-    }
-  }
-  const host = args.get("host") || "127.0.0.1";
-  const port = Number.parseInt(args.get("port") || process.env.PORT || String(defaultPort), 10);
+export function createStaticAssetHandler({ distDir, name }) {
   let realDistDir;
   const resolvedDistDir = async () => {
     if (realDistDir === undefined) realDistDir = await realpath(distDir);
     return realDistDir;
   };
 
-  const server = createServer(async (request, response) => {
+  return async (request, response) => {
     let pathname;
     try {
       const raw = rawPathname(request.url ?? "/");
@@ -101,9 +91,24 @@ export function serveStaticAssets({ distDir, defaultPort, name }) {
         response.end("server error\n");
       }
     }).pipe(response);
-  });
+  };
+}
+
+export function serveStaticAssets({ distDir, defaultPort, name }) {
+  const args = new Map();
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const value = process.argv[index];
+    if (value?.startsWith("--")) {
+      args.set(value.slice(2), process.argv[index + 1] ?? "");
+      index += 1;
+    }
+  }
+  const host = args.get("host") || "127.0.0.1";
+  const port = Number.parseInt(args.get("port") || process.env.PORT || String(defaultPort), 10);
+  const server = createServer(createStaticAssetHandler({ distDir, name }));
 
   server.listen(port, host, () => {
     process.stdout.write(`${name} listening on http://${host}:${port.toString()}\n`);
   });
+  return server;
 }

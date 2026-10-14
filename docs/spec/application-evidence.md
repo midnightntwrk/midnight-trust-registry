@@ -193,9 +193,10 @@ submission field. The evidence validator compares challenge hashes by byte value
 so accepted hex casing does not change challenge identity or the signed envelope.
 The same byte-value comparison applies to `scopeCommitment`.
 
-An auditor applicant MAY register a pending application by signing a distinct
-`apply` mutation intent with its Midnight DID key. The intent MUST commit to
-the canonical auditor scope and application ID; a successful registration
+An issuer, verifier, auditor, or maintainer applicant MAY register a pending
+application by signing a distinct `apply` mutation intent with its Midnight
+DID key. The intent MUST commit to the canonical role scope, governed resource,
+application ID, and requested authorization ID; a successful registration
 creates only an off-ledger pending record. The server derives the binding from
 the current trusted workspace policy and verifier configuration, not from
 applicant-provided policy or binding fields. `GET
@@ -206,6 +207,41 @@ active subject/scope applications. A production host MUST persist those checks
 atomically, refresh policy and verifier authority from trusted sources, and
 recheck them when VP evidence is persisted. Neither a pending registration nor
 a VP receipt constitutes a governed Compact proposal or active membership.
+
+When one HTTP host exposes both VP intake and governed proposal routes, it MUST
+configure an accepted-application admission port. Proposal preparation and
+submission MUST resolve the signed pending record and accepted VP evidence
+separately by the evidence application ID and
+match the signed requested authorization target and role, the server-owned binding,
+the exact redacted signed evidence, and its validated receipt. Missing,
+substituted, or unreceipted evidence MUST fail before governance signing work.
+This off-ledger join does not replace the proposal circuit's current-policy,
+verifier-key, evidence-signature, quorum, and sequence rechecks. The host must
+persist the accepted record atomically with the receipt and make it available
+only after successful VP intake; the in-memory demo is not durable.
+An applicant-authorized `GET /v1/application-evidence/:applicationId/receipt`
+MAY recover the accepted redacted signed evidence and receipt after a lost
+submission response. The host MUST authorize the applicant before looking up
+the record, require the receipt's evidence commitment to match the canonical
+evidence commitment, and return no raw VP. It MUST NOT reverify the VP, consume
+another nonce, or create a second accepted record. An absent receipt means only
+that no acceptance was found in that host's accepted store; it is not proof that
+an in-flight submission failed and MUST NOT cause automatic resubmission.
+The local signed issuer/verifier/auditor/maintainer reference derives registration preflight and
+snapshots from one Compact simulator, then carries one accepted VP through
+2-of-3 maintainer proposal, decisions, and epoch publication. Issuer, verifier,
+and auditor grants reach independently verified public evidence lookup;
+maintainer enrollment is checked against the Compact membership record.
+Private file adapters persist pending records, spent nonces,
+challenge hashes, and accepted redacted evidence across store restarts, but
+the two files and Compact ledger have no shared transaction. An optional
+governed proposal resolution port can recover a lost HTTP submit receipt by
+reading the Compact proposal event and matching its evidence commitment to
+the admitted application. A `not-observed` response is ambiguous, not a
+failed-transaction proof, and MUST NOT trigger automatic resubmission.
+The local simulator observes committed actions immediately for issuer,
+verifier, auditor, and maintainer proposals; this is not a production finality
+or cross-store recovery protocol.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live

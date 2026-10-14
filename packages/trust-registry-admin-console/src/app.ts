@@ -1,7 +1,6 @@
 import type {
   GovernedMembershipAction,
   GovernedMembershipSignatureRequest,
-  PreparedGovernedIssuerProposal,
   PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -10,6 +9,8 @@ import {
   TrustRegistryAdminConsoleApiError,
   TrustRegistryAdminConsoleClient,
   normalizeApiBaseUrl,
+  type GovernedProposalRole,
+  type PreparedGovernedProposal,
 } from "./api.js";
 import {
   REVIEW_STATUSES,
@@ -40,9 +41,10 @@ type AppState = {
   governedSignersJson: string;
   loading: boolean;
   publishing: boolean;
+  proposalRole: GovernedProposalRole;
   proposalAuthorizationId: string;
   proposalEvidenceJson: string;
-  proposalPrepared: PreparedGovernedIssuerProposal | undefined;
+  proposalPrepared: PreparedGovernedProposal | undefined;
   proposalSignersJson: string;
   proposalVerifierSignature: string;
   selectedKey: string | undefined;
@@ -165,6 +167,7 @@ export const createAdminConsoleApp = (
     governedSignersJson: "",
     loading: false,
     publishing: false,
+    proposalRole: "issuer",
     proposalAuthorizationId: "",
     proposalEvidenceJson: "",
     proposalPrepared: undefined,
@@ -319,11 +322,12 @@ export const createAdminConsoleApp = (
     }
   };
 
-  const prepareIssuerProposal = async () => {
+  const prepareProposal = async () => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
     if (id.length === 0) {
-      setState({ error: "Enter the exact issuer authorization ID." });
+      setState({ error: `Enter the exact ${role} ${role === "maintainer" ? "membership" : "authorization"} ID.` });
       return;
     }
     const evidenceJson = state.proposalEvidenceJson;
@@ -335,20 +339,26 @@ export const createAdminConsoleApp = (
       setState({ error: "Application evidence must be a redacted envelope, commitment, and signature JSON object without raw VC/VP fields." });
       return;
     }
+    if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+      setState({ error: "Application evidence role must match the selected proposal role." });
+      return;
+    }
     setState({ governedBusy: true, proposalPrepared: undefined, proposalSignersJson: "",
       proposalVerifierSignature: "", error: undefined, flash: undefined });
     try {
-      const prepared = await getClient().prepareIssuerProposal(id, evidence);
+      const prepared = await getClient().prepareProposal(role, id, evidence);
       setState({ governedBusy: false, proposalPrepared:
-        state.proposalAuthorizationId.trim() === id && state.proposalEvidenceJson === evidenceJson
+        state.proposalRole === role && state.proposalAuthorizationId.trim() === id
+          && state.proposalEvidenceJson === evidenceJson
           ? prepared : undefined });
     } catch (error) {
       setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
 
-  const submitIssuerProposal = async () => {
+  const submitProposal = async () => {
     if (state.loading || state.publishing || state.governedBusy || state.proposalPrepared === undefined) return;
+    const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
     const evidenceJson = state.proposalEvidenceJson;
     const verifierSignature = state.proposalVerifierSignature;
@@ -357,6 +367,9 @@ export const createAdminConsoleApp = (
     try {
       evidence = JSON.parse(evidenceJson);
       assertRedactedEvidence(evidence);
+      if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+        throw new Error("Application evidence role must match the selected proposal role.");
+      }
       signers = parseSignerInput(state.proposalSignersJson);
       if (!/^0x[0-9a-f]+$/u.test(verifierSignature)) {
         throw new Error("Provide the registered evidence-verifier JubJub signature as hex.");
@@ -367,18 +380,18 @@ export const createAdminConsoleApp = (
     }
     const prepared = state.proposalPrepared;
     if (prepared === undefined) return;
-    if (!(await confirm(`Submit ${signers.length} maintainer signatures and evidence-verifier signature for issuer ${id}?`))) return;
-    if (state.proposalPrepared !== prepared || state.proposalAuthorizationId.trim() !== id
+    if (!(await confirm(`Submit ${signers.length} maintainer signatures and evidence-verifier signature for ${role} ${id}?`))) return;
+    if (state.proposalPrepared !== prepared || state.proposalRole !== role || state.proposalAuthorizationId.trim() !== id
       || state.proposalEvidenceJson !== evidenceJson || state.proposalVerifierSignature !== verifierSignature) return;
     setState({ governedBusy: true, error: undefined, flash: undefined });
     try {
-      const receipt = await getClient().submitIssuerProposal(id, {
+      const receipt = await getClient().submitProposal(role, id, {
         evidence,
         prepared,
         signers,
         evidenceVerifierSignature: verifierSignature,
       });
-      await refreshBoard(`Compact issuer proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      await refreshBoard(`Compact ${role} proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
       setState({ governedBusy: false, proposalAuthorizationId: "", proposalEvidenceJson: "",
         proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
     } catch (error) {
@@ -386,6 +399,37 @@ export const createAdminConsoleApp = (
         ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
           ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
           : {}) });
+    }
+  };
+
+  const resolveProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy) return;
+    const role = state.proposalRole;
+    const id = state.proposalAuthorizationId.trim();
+    if (id.length === 0) {
+      setState({ error: `Enter the exact ${role} ${role === "maintainer" ? "membership" : "authorization"} ID.` });
+      return;
+    }
+    let evidence: unknown;
+    try {
+      evidence = JSON.parse(state.proposalEvidenceJson);
+      assertRedactedEvidence(evidence);
+    } catch {
+      setState({ error: "Application evidence must be a redacted envelope, commitment, and signature JSON object without raw VC/VP fields." });
+      return;
+    }
+    if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+      setState({ error: "Application evidence role must match the selected proposal role." });
+      return;
+    }
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await getClient().resolveProposal(role, id, evidence);
+      setState({ governedBusy: false, flash: result.state === "observed"
+        ? `Compact ${role} proposal observed: ${result.eventHash}. Network finality is not implied.`
+        : "Proposal not observed. This does not prove failure; do not resubmit automatically." });
+    } catch (error) {
+      setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
 
@@ -448,6 +492,10 @@ export const createAdminConsoleApp = (
       root.querySelector("[data-proposal-submit]")?.remove();
       root.querySelector("[data-proposal-context]")?.remove();
     });
+    root.querySelector<HTMLSelectElement>("[data-proposal-role]")?.addEventListener("change", (event) => {
+      setState({ proposalRole: (event.currentTarget as HTMLSelectElement).value as GovernedProposalRole,
+        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
+    });
     root.querySelector<HTMLTextAreaElement>("[data-proposal-evidence]")?.addEventListener("input", (event) => {
       state.proposalEvidenceJson = (event.currentTarget as HTMLTextAreaElement).value;
       state.proposalPrepared = undefined;
@@ -456,7 +504,10 @@ export const createAdminConsoleApp = (
     });
     root.querySelector<HTMLFormElement>("[data-proposal-prepare]")?.addEventListener("submit", (event) => {
       event.preventDefault();
-      void prepareIssuerProposal();
+      void prepareProposal();
+    });
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")?.addEventListener("click", () => {
+      void resolveProposal();
     });
     root.querySelector<HTMLTextAreaElement>("[data-proposal-signers]")?.addEventListener("input", (event) => {
       state.proposalSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
@@ -466,7 +517,7 @@ export const createAdminConsoleApp = (
     });
     root.querySelector<HTMLFormElement>("[data-proposal-submit]")?.addEventListener("submit", (event) => {
       event.preventDefault();
-      void submitIssuerProposal();
+      void submitProposal();
     });
 
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => {
@@ -631,28 +682,35 @@ export const createAdminConsoleApp = (
         </section>
         <section class="proposal-panel governed-panel">
           <div>
-            <p class="eyebrow">Issuer application</p>
+            <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
             <p>Use a redacted, signed evidence envelope from the applicant. Maintainers and the registered evidence verifier sign outside this browser; no private keys or raw VC/VP claims belong here.</p>
           </div>
           <form data-proposal-prepare>
-            <label>Issuer authorization ID
-              <input class="input mono" data-proposal-id value="${escapeHtml(state.proposalAuthorizationId)}" placeholder="exact authorization ID" autocomplete="off" />
+            <label>Proposal role
+              <select class="input" data-proposal-role${state.governedBusy ? " disabled" : ""}>
+                ${(["issuer", "verifier", "auditor", "maintainer"] as const).map((role) =>
+                  `<option value="${role}"${state.proposalRole === role ? " selected" : ""}>${role}</option>`).join("")}
+              </select>
+            </label>
+            <label>${state.proposalRole === "maintainer" ? "Maintainer membership" : "Authorization"} ID
+              <input class="input mono" data-proposal-id value="${escapeHtml(state.proposalAuthorizationId)}" placeholder="exact ${state.proposalRole === "maintainer" ? "membership" : "authorization"} ID" autocomplete="off"${state.governedBusy ? " disabled" : ""} />
             </label>
             <label>Redacted application evidence JSON
-              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"envelope":{...},"commitment":"0x...","signature":{...}}'>${escapeHtml(state.proposalEvidenceJson)}</textarea>
+              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"envelope":{...},"commitment":"0x...","signature":{...}}'${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.proposalEvidenceJson)}</textarea>
             </label>
-            <button class="button secondary" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare issuer proposal</button>
+            <button class="button secondary" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${state.proposalRole} proposal</button>
+            <button class="button secondary" type="button" data-proposal-resolve${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Recover proposal receipt</button>
           </form>
           ${state.proposalPrepared === undefined ? "" : `
             <p>Sign this exact policy, sequence, and evidence context. If the ledger or evidence changes, prepare again.</p>
             <pre class="governed-context mono" data-proposal-context>${escapeHtml(JSON.stringify(state.proposalPrepared, null, 2))}</pre>
             <form data-proposal-submit>
               <label>External maintainer signer entries as JSON array
-                <textarea class="input mono governed-signers" data-proposal-signers spellcheck="false">${escapeHtml(state.proposalSignersJson)}</textarea>
+                <textarea class="input mono governed-signers" data-proposal-signers spellcheck="false"${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.proposalSignersJson)}</textarea>
               </label>
               <label>Registered evidence-verifier JubJub signature (hex)
-                <input class="input mono" data-proposal-verifier-signature value="${escapeHtml(state.proposalVerifierSignature)}" autocomplete="off" spellcheck="false" />
+                <input class="input mono" data-proposal-verifier-signature value="${escapeHtml(state.proposalVerifierSignature)}" autocomplete="off" spellcheck="false"${state.governedBusy ? " disabled" : ""} />
               </label>
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
             </form>

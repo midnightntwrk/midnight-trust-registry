@@ -36,6 +36,12 @@
       ],
       "outputs": []
     },
+    "integration:light": {
+      "dependsOn": [
+        "build:light"
+      ],
+      "outputs": []
+    },
     "clean": {
       "cache": false
     },

@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
-import { type ApplicationVpHttpPort } from "../application-vp-http.js";
+import { type ApplicationVpHttpPort, type ApplicationVpHttpSubmissionResult } from "../application-vp-http.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
 
@@ -58,6 +58,7 @@ describe("application VP HTTP intake", () => {
   let currentBinding: ApplicationChallengeBinding = binding;
   let currentVerifiers = [verifier];
   let port: ApplicationVpHttpPort;
+  let accepted: ApplicationVpHttpSubmissionResult | null = null;
   let base = "";
 
   const path = `/v1/application-evidence/${binding.applicationId}`;
@@ -78,6 +79,7 @@ describe("application VP HTTP intake", () => {
     nowMs = START;
     currentBinding = binding;
     currentVerifiers = [verifier];
+    accepted = null;
     port = {
       challengeStore: new InMemoryApplicationChallengeStore(),
       authorizeRequest: vi.fn(async () => {}),
@@ -102,10 +104,15 @@ describe("application VP HTTP intake", () => {
         keyId: `${binding.evidenceVerifierDid}#key-1`, algorithm: "jubjub-schnorr" as const, value: "fixture-signature",
       })),
       verifyEvidenceSignature: (_commitment, signature) => signature.value === "fixture-signature",
-      persistRedactedEvidence: vi.fn(async (_id, evidence) => ({
-        receiptId: `0x${"4".repeat(64)}`, evidenceCommitment: evidence.commitment,
-        acceptedAt: new Date(nowMs).toISOString(),
-      })),
+      persistRedactedEvidence: vi.fn(async (_id, evidence) => {
+        const receipt = {
+          receiptId: `0x${"4".repeat(64)}`, evidenceCommitment: evidence.commitment,
+          acceptedAt: new Date(nowMs).toISOString(),
+        };
+        accepted = { evidence, receipt };
+        return receipt;
+      }),
+      resolveAcceptedEvidence: vi.fn(async (id) => id === binding.applicationId ? accepted : null),
     };
   });
 
@@ -117,6 +124,7 @@ describe("application VP HTTP intake", () => {
   it("requires an injected trusted port and rejects caller-supplied binding on both routes", async () => {
     await start(false);
     expect((await fetch(`${base}${path}/binding`)).status).toBe(503);
+    expect((await fetch(`${base}${path}/receipt`)).status).toBe(503);
     const unavailable = await post("challenges", {});
     expect(unavailable.status).toBe(503);
     expect(unavailable.headers.get("access-control-allow-origin")).toBeNull();
@@ -146,6 +154,7 @@ describe("application VP HTTP intake", () => {
     const bindingResponse = await fetch(`${base}${path}/binding`);
     expect(bindingResponse.status).toBe(403);
     expect(await bindingResponse.text()).not.toMatch(/private-vp|applicant token|raw claims/iu);
+    expect((await fetch(`${base}${path}/receipt`)).status).toBe(403);
     for (const suffix of ["challenges", "submissions"]) {
       const response = await fetch(`${base}${path}/${suffix}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: '{"presentation":',
@@ -156,13 +165,14 @@ describe("application VP HTTP intake", () => {
       expect(text).toContain("application VP forbidden");
       expect(text).not.toMatch(/private-vp|applicant token|raw claims|presentation/iu);
     }
-    expect(port.authorizeRequest).toHaveBeenCalledTimes(3);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(4);
     expect(port.resolvePendingApplication).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
     expect(readLive).not.toHaveBeenCalled();
     expect(port.verifyPresentation).not.toHaveBeenCalled();
     expect(port.signEvidence).not.toHaveBeenCalled();
     expect(port.persistRedactedEvidence).not.toHaveBeenCalled();
+    expect(port.resolveAcceptedEvidence).not.toHaveBeenCalled();
   });
 
   it("verifies a submitted VP, persists only signed redacted evidence, and refuses replay", async () => {
@@ -172,6 +182,9 @@ describe("application VP HTTP intake", () => {
     expect(bindingResponse.headers.get("cache-control")).toBe("no-store");
     expect(bindingResponse.headers.get("access-control-allow-origin")).toBeNull();
     expect(await bindingResponse.json()).toEqual(binding);
+    const absent = await fetch(`${base}${path}/receipt`);
+    expect(absent.status).toBe(404);
+    expect(absent.headers.get("access-control-allow-origin")).toBeNull();
     const challengeResponse = await post("challenges", {});
     expect(challengeResponse.status).toBe(201);
     expect(challengeResponse.headers.get("cache-control")).toBe("no-store");
@@ -191,10 +204,38 @@ describe("application VP HTTP intake", () => {
     const result = JSON.parse(responseText) as { evidence: { commitment: string; envelope: { applicationId: string } }; receipt: { evidenceCommitment: string } };
     expect(result.evidence.envelope.applicationId).toBe(binding.applicationId);
     expect(result.receipt.evidenceCommitment).toBe(result.evidence.commitment);
-    expect(port.authorizeRequest).toHaveBeenCalledTimes(3);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(4);
     expect(port.persistRedactedEvidence).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(port.persistRedactedEvidence).mock.calls)).not.toContain("private-vp");
+    const recovered = await fetch(`${base}${path}/receipt`);
+    expect(recovered.status).toBe(200);
+    expect(recovered.headers.get("cache-control")).toBe("no-store");
+    expect(recovered.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await recovered.json()).toEqual(result);
+    expect(port.authorizeRequest).toHaveBeenCalledTimes(5);
+    expect(port.verifyPresentation).toHaveBeenCalledOnce();
     expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(409);
+  });
+
+  it("fails closed for unavailable or corrupted accepted evidence", async () => {
+    delete port.resolveAcceptedEvidence;
+    await start();
+    expect((await fetch(`${base}${path}/receipt`)).status).toBe(503);
+    await close(server!);
+    server = undefined;
+    port.resolveAcceptedEvidence = vi.fn(async () => accepted);
+    await start();
+    const issued = await (await post("challenges", {})).json() as { nonce: string; challengeHash: string };
+    const presentation = { nonce: issued.nonce, subjectDid: binding.subjectDid,
+      scopeCommitment: binding.scopeCommitment, secret: "private-vp" };
+    expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(202);
+    expect(accepted).not.toBeNull();
+    const saved = accepted!;
+    accepted = { ...saved, receipt: { ...saved.receipt, evidenceCommitment: `0x${"0".repeat(64)}` } };
+    const rejected = await fetch(`${base}${path}/receipt`);
+    expect(rejected.status).toBe(403);
+    expect(await rejected.text()).not.toContain("private-vp");
+    expect(port.verifyPresentation).toHaveBeenCalledOnce();
   });
 
   it("does not advertise cross-origin access to private VP routes", async () => {

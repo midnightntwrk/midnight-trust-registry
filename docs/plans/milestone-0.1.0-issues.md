@@ -225,6 +225,9 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
+      The local candidate adapter now uses trusted current-state readers and
+      checks the exact DID binding and sequence; production reader/finality
+      implementations and authority proof issuance remain required.
 - [x] Align the published Midnight DID dependency to 0.7.0 and verify the
       adapter's canonical fragment and DID-state mapping without importing
       sibling repository source.
@@ -241,13 +244,23 @@ not the older transcript-digest draft.
       service's refusal to sign a decision without a committed quorum.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
+      A simulator fixture now exercises this exact VC proof circuit through
+      an injected signer port; governed production key custody and issuance
+      remain open.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
+      The local compiled consumer pins the authority in constructor ledger
+      state and rejects wrong-domain installation; production anchor
+      deployment and the complete circuit-level negative matrix remain open.
 - [ ] In the consumer fixture, use the VC composed
       `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
+      The local consumer exercises both circuits, including positive signatures
+      and wrong-scope/forged-signature rejections. Both local descriptors now
+      derive from simulator TR decisions; production finality and governed
+      scope mappings remain open.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 

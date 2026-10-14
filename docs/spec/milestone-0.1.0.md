@@ -200,9 +200,20 @@ contract address. Issuer scope is VC `persistentHash<SchemaRef>` for the exact
 credential schema; verifier scope is a canonical commitment to the approved
 signed request profile. The richer ADR-0002 registry scope is evaluated before
 issuing this narrower VC descriptor, never silently widened by it.
+The schema-level signer proof alone MUST NOT be represented as authorization
+for a credential definition, status method, or live credential status; a full
+decision requires a separate trusted check bound to the same grant and
+credential.
 
 The TR-owned `domainCommitment` preimage MUST include Midnight network,
 consuming contract, registry ID, and authority identity. The authority proof
+domain is Compact `persistentHash<Vector<7, Bytes<32>>>` over the padded
+`tr:vc-authority-domain:v1` tag, SHA-256 commitments of network ID, registry
+ID, authority DID, and absolute authority method ID, plus the raw 32-byte
+consumer and registry contract addresses in that order. The consumer MUST
+recompute the commitment from its pinned preimage and compare the pinned
+consumer address with `kernel.self().bytes` before accepting a signer proof.
+The authority proof
 binds `persistentHash<Vector<2, Bytes<32>>>([domainCommitment,
 descriptorRoot])` using the VC `midnight:vc:signer-auth:v1` context;
 `Proof.createdAt` equals the decision sequence, not wall-clock time.

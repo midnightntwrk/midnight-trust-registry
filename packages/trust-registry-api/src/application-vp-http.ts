@@ -6,6 +6,7 @@ import {
   AuthorizedEvidenceVerifierSchema,
   HashHexSchema,
   computeApplicationChallengeBindingHash,
+  computeApplicationEvidenceCommitment,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSignature,
   type ApplicationEvidenceSignatureVerifier,
@@ -32,13 +33,13 @@ const SubmissionSchema = z.strictObject({
   challengeHash: HashHexSchema,
   presentation: z.unknown(),
 });
-const ReceiptSchema = z.strictObject({
+export const ApplicationVpReceiptSchema = z.strictObject({
   receiptId: HashHexSchema,
   evidenceCommitment: HashHexSchema,
   acceptedAt: z.string().datetime({ offset: true }),
 });
 
-export type ApplicationVpReceipt = z.infer<typeof ReceiptSchema>;
+export type ApplicationVpReceipt = z.infer<typeof ApplicationVpReceiptSchema>;
 export type ApplicationVpHttpIssueResult = IssuedApplicationChallenge & { applicationId: string };
 export type ApplicationVpHttpSubmissionResult = {
   evidence: ApplicationEvidenceSubmission;
@@ -58,6 +59,8 @@ export interface ApplicationVpHttpPort {
   signEvidence(commitment: string): Promise<ApplicationEvidenceSignature>;
   verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier;
   persistRedactedEvidence(applicationId: string, evidence: ApplicationEvidenceSubmission): Promise<ApplicationVpReceipt>;
+  /** Read trusted redacted acceptance after a lost HTTP response; never repeat VP verification or consume a nonce. */
+  resolveAcceptedEvidence?(applicationId: string): Promise<ApplicationVpHttpSubmissionResult | null>;
 }
 
 export class ApplicationVpHttpError extends Error {
@@ -105,6 +108,23 @@ function samePolicy(
 export function createApplicationVpHttpService(port: ApplicationVpHttpPort, clock: () => number) {
   const challenges = new ApplicationChallengeService(port.challengeStore, clock);
   return {
+    async accepted(applicationIdInput: string): Promise<ApplicationVpHttpSubmissionResult> {
+      const applicationId = parseApplicationId(applicationIdInput);
+      const saved = await port.resolveAcceptedEvidence?.(applicationId);
+      if (saved === undefined || saved === null) throw new ApplicationVpHttpError("not-found");
+      try {
+        const evidence = ApplicationEvidenceSubmissionSchema.parse(saved.evidence);
+        const receipt = ApplicationVpReceiptSchema.parse(saved.receipt);
+        if (evidence.envelope.applicationId !== applicationId
+          || evidence.commitment !== computeApplicationEvidenceCommitment(evidence.envelope)
+          || receipt.evidenceCommitment !== evidence.commitment) {
+          throw new ApplicationVpHttpError("rejected");
+        }
+        return { evidence, receipt };
+      } catch {
+        throw new ApplicationVpHttpError("rejected");
+      }
+    },
     async binding(applicationIdInput: string): Promise<ApplicationChallengeBinding> {
       const applicationId = parseApplicationId(applicationIdInput);
       return (await resolve(port, applicationId)).binding;
@@ -143,7 +163,7 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
           propose: async ({ evidence }) => {
             const latest = await resolve(port, applicationId);
             if (!samePolicy(current, latest)) throw new ApplicationVpHttpError("stale-policy");
-            const receipt = ReceiptSchema.parse(await port.persistRedactedEvidence(applicationId, evidence));
+            const receipt = ApplicationVpReceiptSchema.parse(await port.persistRedactedEvidence(applicationId, evidence));
             if (receipt.evidenceCommitment !== evidence.commitment) throw new ApplicationVpHttpError("rejected");
             persisted = receipt;
             signedEvidence = evidence;

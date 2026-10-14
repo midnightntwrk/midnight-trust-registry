@@ -76,6 +76,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       role: "verifier",
       scope: createVerifierAuthorizationScopeFixture(verifier),
     });
+    let proposed = false;
     const port: GovernedVerifierProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== verifier.authorizationId) {
@@ -95,10 +96,22 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           const eventHash = harness.executeVerifierProposalWithSignatures(
             verifier, submitted, signers, verifierSignature,
           );
+          proposed = true;
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
         } catch {
           throw new GovernedVerifierProposalRejectedError("invalid-signers");
         }
+      },
+      async resolve(authorizationId) {
+        if (authorizationId !== verifier.authorizationId) {
+          throw new GovernedVerifierProposalRejectedError("unknown-authorization");
+        }
+        if (!proposed) return null;
+        const record = harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment);
+        return {
+          eventHash: `0x${Buffer.from(record.proposalGovernanceEventHash).toString("hex")}`,
+          evidenceCommitment: `0x${Buffer.from(record.evidenceCommitment).toString("hex")}`,
+        };
       },
     };
     const server = createTrustRegistryApiServer({
@@ -111,9 +124,10 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const endpoint = `http://127.0.0.1:${address.port}/v1/governed/verifier/${verifier.authorizationId}/proposal`;
-      const post = (action: "prepare" | "submit", body: unknown) => fetch(`${endpoint}/${action}`, {
+      const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
+      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
       expect((await post("prepare", {
         evidence: { ...evidence, rawPresentation: "private-presentation-payload" },
       })).status).toBe(400);
@@ -141,9 +155,16 @@ describe("Compact-backed verifier proposals over HTTP", () => {
         encoded)).status).toBe(409);
       const accepted = await submit(prepared, encoded);
       expect(accepted.status).toBe(202);
-      expect((await accepted.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      const receipt = await accepted.json() as { eventHash: string };
+      expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(harness.simulator.getLedger().verifierAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
+      expect(await (await post("resolve", { evidence })).json()).toEqual({
+        state: "observed", eventHash: receipt.eventHash,
+      });
+      expect((await post("resolve", {
+        evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
+      })).status).toBe(409);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

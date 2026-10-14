@@ -13,7 +13,7 @@ export const GovernedMembershipActionSchema = z.enum(["approve", "activate"]);
 
 export const PreparedGovernedMembershipActionSchema = z.strictObject({
   registryId: Bytes32Schema,
-  authorizationId: Bytes32Schema,
+  targetId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   actionKind: Bytes32Schema,
   actionPayloadHash: Bytes32Schema,
@@ -45,7 +45,9 @@ export type GovernedMembershipActionReceipt = z.infer<typeof GovernedMembershipA
 
 export type GovernedMembershipActionContext = {
   registryId: Uint8Array;
-  authorizationId: Uint8Array;
+  authorizationId?: Uint8Array;
+  maintainerId?: Uint8Array;
+  recognitionId?: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -61,11 +63,11 @@ export type GovernedMembershipSigner = {
 };
 
 export type GovernedMembershipActionPort = {
-  prepare(role: GovernedMembershipRole, authorizationId: string, action: GovernedMembershipAction): Promise<GovernedMembershipActionContext>;
+  prepare(role: GovernedMembershipRole, targetId: string, action: GovernedMembershipAction): Promise<GovernedMembershipActionContext>;
   /** Recheck current policy, sequence, membership, quorum, and lifecycle in Compact before acceptance. */
   execute(
     role: GovernedMembershipRole,
-    authorizationId: string,
+    targetId: string,
     action: GovernedMembershipAction,
     signers: readonly GovernedMembershipSigner[],
   ): Promise<GovernedMembershipActionReceipt>;
@@ -83,11 +85,19 @@ const bytes32Hex = (value: Uint8Array): string => {
   return `0x${Buffer.from(value).toString("hex")}`;
 };
 
+const actionTargetId = (context: GovernedMembershipActionContext, role: GovernedMembershipRole): string => {
+  const value = role === "maintainer" ? context.maintainerId
+    : role === "recognition" ? context.recognitionId : context.authorizationId;
+  if (value === undefined) throw new RangeError(`Missing ${role} action target`);
+  return bytes32Hex(value);
+};
+
 export const serializeGovernedMembershipAction = (
   context: GovernedMembershipActionContext,
+  role: GovernedMembershipRole,
 ): PreparedGovernedMembershipAction => PreparedGovernedMembershipActionSchema.parse({
   registryId: bytes32Hex(context.registryId),
-  authorizationId: bytes32Hex(context.authorizationId),
+  targetId: actionTargetId(context, role),
   policyCommitment: bytes32Hex(context.policyCommitment),
   actionKind: bytes32Hex(context.actionKind),
   actionPayloadHash: bytes32Hex(context.actionPayloadHash),
@@ -101,7 +111,7 @@ export const sameGovernedMembershipAction = (
   submitted: PreparedGovernedMembershipAction,
 ): boolean => (
   current.registryId === submitted.registryId
-  && current.authorizationId === submitted.authorizationId
+  && current.targetId === submitted.targetId
   && current.policyCommitment === submitted.policyCommitment
   && current.actionKind === submitted.actionKind
   && current.actionPayloadHash === submitted.actionPayloadHash

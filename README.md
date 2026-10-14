@@ -69,7 +69,15 @@ gate also checks that unqualified compiler default, so a host-installed
 `compact` outside the Nix shell must match the pin for `./run.sh --light` to
 pass. Use the Nix shell if the host default differs.
 
-Integration scenarios currently run separately:
+For local simulator iterations, run the same integration suites and demo smoke
+journeys without generating proving keys:
+
+```bash
+./run.sh integration --light
+```
+
+Before publishing contract or demo changes, run the full integration lane.
+It generates proving keys and remains the validation gate for those artifacts:
 
 ```bash
 ./run.sh integration
@@ -152,6 +160,35 @@ Smoke-test the documented demo flow from a clean local checkout:
 ```bash
 pnpm run demo:smoke
 ```
+
+For the separate, fixture-only auditor applicant journey, run
+`pnpm run demo:auditor` and open `http://127.0.0.1:4400`. This serves the
+portal and its private API on one loopback origin. Paste the DID-signed
+application printed by the command, issue a challenge, then generate the
+matching VP in another terminal with
+`node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its JSON into
+the portal. `pnpm run demo:auditor:smoke` automates that same HTTP path and
+checks unauthorized access, wrong scope, and replay. The host uses a fixture
+identity, in-memory state, and a fixed virtual clock; it is not a public
+admission service or a production VC status verifier.
+
+`pnpm run demo:signed-issuer`, `pnpm run demo:signed-verifier`,
+`pnpm run demo:signed-auditor`, and `pnpm run demo:signed-maintainer` run the same joined local membership journey
+for each role. The harness derives
+registration preflight and API snapshots from one Compact simulator, then
+exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
+maintainer proposal/approval/activation, and epoch publication. Issuer,
+verifier, and auditor grants reach an API bundle independently verified by the
+client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
+the ledger. Pending records, consumed nonces, challenges, and accepted redacted
+receipts use private files that a second store instance can reopen. The local
+file adapter does not make challenge consumption, evidence acceptance, and
+Compact governance one atomic transaction; the demo does not establish
+production family/status verification or network finality.
+The auditor grant proves an exact request-profile mandate; it does not grant
+automatic access to a verifier's private records.
+The maintainer journey verifies activation in the Compact membership record;
+it does not claim a public issuer-style authorization bundle.
 
 Refresh published DID and VC dependencies with validation:
 

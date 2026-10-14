@@ -71,7 +71,10 @@ export function preflightMutationIntent(
   const parsed = MutationIntentSchema.safeParse(intentInput);
   if (!parsed.success) return { ok: false, reason: "invalid-intent" };
   const intent = parsed.data;
-  if (intent.target !== "epoch" && !MutableSnapshotTargetSchema.safeParse(intent.target).success) {
+  const supportedTarget = intent.action === "apply"
+    ? ["issuer", "verifier", "auditor", "maintainer"].includes(intent.target)
+    : intent.target === "epoch" || MutableSnapshotTargetSchema.safeParse(intent.target).success;
+  if (!supportedTarget) {
     return { ok: false, reason: "unsupported-target" };
   }
 

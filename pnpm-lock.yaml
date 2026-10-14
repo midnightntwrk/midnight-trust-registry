@@ -147,12 +147,12 @@ importers:
       '@midnight-ntwrk/trust-registry-cli':
         specifier: workspace:0.1.0
         version: link:../trust-registry-cli
-      '@midnight-ntwrk/trust-registry-contract':
-        specifier: workspace:0.1.0
-        version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
+      '@midnight-ntwrk/trust-registry-contract':
+        specifier: workspace:0.1.0
+        version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
@@ -249,6 +249,9 @@ importers:
       '@midnight-ntwrk/compact-runtime':
         specifier: 0.16.0
         version: 0.16.0
+      '@midnight-ntwrk/midnight-did-jubjub-schnorr':
+        specifier: 0.7.0
+        version: 0.7.0
 
 packages:
 

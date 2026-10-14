@@ -79,8 +79,8 @@ describe("private application VP exchange", () => {
     const request = { applicationId: binding.applicationId, scope: { role: "auditor" }, intent: { action: "apply" }, signature: { value: "signed" } };
     const fetchImpl = vi.fn(async () => Response.json({ binding, status: "pending" })) as typeof fetch;
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
-    expect(await client.registerPendingAuditorApplication(request)).toEqual({ binding, status: "pending" });
-    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications/auditor", {
+    expect(await client.registerPendingApplication(request)).toEqual({ binding, status: "pending" });
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -125,6 +125,21 @@ describe("private application VP exchange", () => {
       "https://registry.example/v1/application-evidence/application%3Aauditor%3Aone/binding",
       { method: "GET", credentials: "same-origin" },
     );
+  });
+
+  it("recovers accepted evidence with a read-only same-origin request", async () => {
+    const accepted = {
+      evidence: { envelope: { applicationId: "application:issuer:one" }, commitment: `0x${"3".repeat(64)}` },
+      receipt: { receiptId: `0x${"4".repeat(64)}`, evidenceCommitment: `0x${"3".repeat(64)}` },
+    };
+    const fetchImpl = vi.fn(async () => Response.json(accepted)) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    expect(await client.loadAcceptedApplicationEvidence("application:issuer:one")).toEqual(accepted);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/application-evidence/application%3Aissuer%3Aone/receipt",
+      { method: "GET", credentials: "same-origin" },
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("does not expose a rejected server body's private presentation data", async () => {

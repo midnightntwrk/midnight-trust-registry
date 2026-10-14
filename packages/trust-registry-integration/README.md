@@ -60,8 +60,9 @@ Current coverage:
   a DID Document resolved by the published Midnight DID package. It rejects a
   removed issuer assertion relationship and a later suspended grant. The
   transaction and block references are explicit simulator placeholders, not
-  independently accepted network anchors, so the test does not issue a VC
-  signer descriptor or establish production finality.
+  independently accepted network anchors. The same test now creates a VC
+  descriptor from trusted-reader results and signs a domain-bound authority
+  proof with a fixture key; neither step establishes production finality.
 - DID-backed resolution of trusted `did:midnight` subjects through official
   `midnight-did` helpers
 - VC-backed issuer-descriptor construction using the published
@@ -70,8 +71,42 @@ Current coverage:
   method verification. This is a candidate descriptor, not a live
   cross-contract trust anchor. The bundle's `referencedStatusRegistryId` is
   metadata outside the signed authorization leaf and must not be treated as
-  authenticated status-policy evidence. Policy-to-VC scope mapping, anchored
+  authenticated status-policy evidence. The VC scope is derived from the
+  verified registry scope, never supplied as a separate caller-selected hash.
+  Issuer package and schema IDs are SHA-256 of respectively
+  `tr:vc-schema-package:v1:` plus the exact family ID and
+  `tr:vc-schema-id:v1:` plus the exact schema ID. Only `major.minor.0` with
+  major 1..65535 and minor 0..65535 can map to VC `SchemaRef`. Verifier request
+  scope is the canonical 32-byte registry request-scope commitment; the signed
+  request must use that same value. Governed VC schema enrollment, anchored
   status policy, and live revocation checks remain separate work.
+- `issueVcSignerAuthorizationFromTrustedDecision` re-reads current finalized
+  registry and DID state through caller-supplied trusted readers, maps their
+  verified decision to the VC descriptor, requests a proof from an injected
+  authority signer, then validates it with VC's native
+  `assertValidSignerAuthorizationProof`. The signer port must independently
+  authorize the request; this layer never handles the authority secret.
+  The authority domain is Compact `persistentHash<Vector<7, Bytes<32>>>` of
+  `pad(32, "tr:vc-authority-domain:v1")`, SHA-256 of network ID, raw consumer
+  contract address, SHA-256 of registry ID, raw registry contract address,
+  SHA-256 of authority DID, and SHA-256 of absolute authority method ID.
+  Contract addresses are lowercase `0x`-prefixed 32-byte hex, and the method
+  is an absolute Midnight DID fragment. The consumer recomputes this domain
+  from constructor-pinned fields and checks the pinned consumer address
+  against `kernel.self().bytes` on installation. It must provide an authenticated prior
+  descriptor or explicit `null` on first install. The local test rejects
+  wrong domain, key, method, scope, sequence, DID rollback,
+  revoked-to-active replay, and cross-deployment replay. A separate Compact
+  consumer fixture pins authority in constructor-initialized ledger state,
+  installs monotonic descriptors, checks a genuinely signed issuer credential
+  at the schema-signer boundary, rejects a forged credential signature, and
+  checks a signed verifier request. Its issuer circuit does not authorize a
+  credential definition or status method. A product claiming full issuer
+  trust must separately verify those against the same governed grant and
+  credential. Both issuer and verifier descriptors derive from simulator
+  grants, epoch witnesses, and resolved DID methods. Readers and signer remain
+  local fixtures; production finality, governed external VC schema enrollment,
+  authority-key lifecycle, and durable deployed consumer state remain open.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,

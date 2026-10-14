@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-05
+Updated: 2026-10-14
 
 ## Purpose
 
@@ -11,6 +11,25 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 2026 Local Functional Stack
+
+- PR #171 and the later admission groundwork are merged to
+  `milestone-0.1.0`; local signed work continues on
+  `codex/trust-registry-role-admission` without waiting for another merge.
+- Signed pending `apply` requests cover issuer, verifier, auditor, and
+  maintainer roles. The applicant now signs the requested authorization ID as
+  well as the application ID, canonical scope, and governed resource. The
+  pending record retains that target; duplicate pending targets are rejected.
+- A server combining VP intake and governed proposal routes requires an
+  accepted-application admission port. Prepare and submit compare the role,
+  target, binding, exact redacted evidence, and receipt before Compact-backed
+  proposal work. The four-role simulator demo exercises rejected cross-role,
+  wrong-target, and missing-receipt attempts.
+- This remains a local reference boundary. The signed registration demo and
+  2-of-3 Compact governance demo still use separate state paths; durable
+  pending/evidence persistence, live verifier authorization, and one joined
+  applicant-to-epoch public journey remain milestone work.
 
 ## Current Milestone
 
@@ -196,8 +215,16 @@ Historical July 2026 validation snapshot (not the current milestone result):
 
 Operational note:
 
-- Compact compile remains the dominant cost center for both light and
-  integration lanes
+- `./run.sh integration --light` runs the simulator integration suites and
+  three demo smoke journeys against the `--skip-zk` contract build. On
+  2026-10-14 it passed 89 integration tests and all demos in 30.43 seconds
+  with a warm local Turbo cache.
+- The full integration lane spent more than 6 minutes 28 seconds in
+  `zkir compile-many` before tests began in the same worktree. That run was
+  stopped after confirming the cost; it was not a full-lane pass. The compiler
+  exposes no `compile-many` parallelism flag. Reserve the full lane for
+  contract/proving changes and publication checkpoints, never substitute the
+  light lane for proving-key or network-finality validation.
 - run `./run.sh --light` and `./run.sh integration` sequentially, not in
   parallel
 
@@ -315,3 +342,160 @@ fixtures in the light and full integration lanes. The generic relation does
 not compare holder bindings; that is intentionally left to the family layer.
 This establishes a composition
 prerequisite for #76, not VC/VP evidence verification or a live trust anchor.
+
+## Applicant and decision-evidence checkpoint (2026-10-14)
+
+PR #182 merged to `milestone-0.1.0` at `473c031` after exact-head light,
+Quality, scan, GPG/DCO, and independent review. It combines an independently
+checked TR decision-evidence reader with challenge-bound published DID/VC proof
+fixtures, redacted signed application evidence, and an authenticated loopback
+auditor applicant journey. The four-role governed demo takes VP evidence through
+quorum proposals and epoch-backed decisions, but its family and status decisions
+remain fixture-supplied. This does not complete #76, #79, #152, or the VC
+consumer descriptor/proof work in #73.
+
+The local follow-on stack now accepts externally signed pending issuer,
+verifier, auditor, and maintainer applications with exact role scope and
+governed resource. The same-origin portal handles all four roles through
+challenge and redacted VP receipt. Its in-memory registration port is a
+single-process reference, not a durable public service or active grant.
+Three GPG/DCO-signed commits are rebased onto the merged milestone; light,
+full integration (fresh 59-circuit build), demo smoke, and audit passed locally.
+The next functional boundary is to persist pending/evidence state and bind it
+to a governed proposal without promoting an applicant signature into approval.
+
+The local signed-issuer journey now exercises that binding through the HTTP
+proposal route: signed pending registration, one-use VP receipt, receipt-gated
+Compact proposal, 2-of-3 maintainer approval and activation, epoch publication,
+and client-verified public evidence lookup. It rejects proposal preparation and
+submission when the accepted receipt is unavailable, and rejects one-signature
+governance actions without advancing the ledger. Registration preflight and
+public API snapshots project one simulator state. A private file-backed
+adapter now persists pending applications, spent nonces, and accepted redacted
+evidence across store restarts. It does not atomically join challenge
+consumption, evidence acceptance, and Compact governance; this is not live VC
+status verification or network finality.
+
+The next local slice adds applicant-authorized recovery of already accepted
+redacted VP evidence and its receipt by application ID. The private GET does
+not verify the VP again or consume another challenge; an absent receipt is
+ambiguous and is not an automatic retry signal. The portal shows only escaped
+redacted evidence in page memory. The signed-issuer demo discards the VP
+submission response, recovers the accepted record, and still completes the
+governed proposal journey. This is same-host crash/response recovery, not a
+transaction across the private stores and Compact ledger.
+
+For API/UI iterations, run direct package Vitest targets first (the focused
+application VP HTTP file took about 3 seconds), then `./run.sh integration
+--light` (19 seconds warm for 89 simulator tests and three demos), and finally
+`./run.sh --light` (about 55 seconds for 20 tasks on this slice). Full
+integration compiles 59 ZK circuits and spent over six minutes in
+`zkir compile-many` before tests started in the last measured attempt; reserve
+it for contract/proving changes and prepublication validation, not each
+API-only edit. The fast lane compiles Compact with `--skip-zk` but still runs
+the same simulator integration and demo suites.
+The four-role governed demo also discards all four accepted VP response bodies,
+uses applicant-authorized receipt lookups for issuer, verifier, auditor, and
+maintainer, and still rejects a repeated one-use submission.
+
+The signed, private-file-backed membership journey now runs separately for
+issuer, verifier, auditor, and maintainer through one shared harness. Each role
+uses an externally DID-signed pending application, published-package VP proof
+fixture, recovered redacted receipt, exact admission check, 2-of-3 Compact
+proposal and lifecycle decisions, and epoch publication. Issuer, verifier,
+and auditor output independently verified public bundles; maintainer output
+checks the Compact membership record and a one-member active-count increase.
+The maintainer candidate cannot co-sign its own proposal or pre-activation
+decision. The fixture family/status decisions remain test-supplied, and the
+two private files and Compact ledger are not transactionally joined.
+
+The governed-action HTTP prepared context now exposes `targetId`, not the
+issuer-specific `authorizationId`. The serializer selects the native
+`authorizationId`, `maintainerId`, or `recognitionId` field based on role and
+rejects a missing or malformed target. This removes the old demo/test adapter
+that copied maintainer or recognition IDs into `authorizationId`; the
+repository is unreleased, so there is no compatibility alias. Focused API
+serialization/HTTP tests passed 11/11. The four-role `./run.sh integration
+--light` passed in about 25 seconds and `./run.sh --light` passed 20/20 tasks,
+including 145 API light tests, in about 51 seconds. The full proving lane
+remains a prepublication gate.
+
+The local #73 candidate bridge now calls the trusted current-registry and DID
+readers before constructing a VC `AuthorizedSignerDescriptor`. It carries the
+observed decision sequence, active state, policy root, authorization ID, and
+exact native DID method/key/relationship/state version into the published VC
+adapter. At this checkpoint it required a caller-supplied TR-to-VC scope
+mapping and rejected TR scope substitution; that unsafe mapping input is
+superseded by the corrective slice below. It did not yet issue an authority proof or provide
+a pinned Ledger 8 consumer. The old bundle-only VC test remains a candidate
+example, not an authority test. Focused typecheck/test took about 1–2 seconds,
+fast integration about 25 seconds, and `./run.sh --light` about 50 seconds.
+Self-review caught an issuer-only relationship check that would have allowed
+verifier authentication/capabilityInvocation substitution; the bridge now
+requires the exact independently observed relationship. Reserve the full
+59-circuit proving build for a prepublication checkpoint.
+
+The local #73 proof slice now uses the published VC Compact
+`signerAuthorizationDecisionRoot`, `signerAuthorizationProofChallenge`, and
+`assertValidSignerAuthorizationProof` rather than a copied transcript. An
+injected authority signer port receives the checked decision root and logical
+sequence; the local fixture uses published DID JubJub primitives to sign.
+The initial domain hash used a versioned, six-field, length-prefixed UTF-8
+preimage; the independent review below found this was not Compact-verifiable
+against the executing consumer address, so it was replaced before release.
+Consumer verification takes an independently pinned domain/key and requires
+either an authenticated previous descriptor or explicit first-install `null`;
+negative tests cover domain, key, scope, proof time, stale sequence, DID
+rollback, and revoked-to-active replay. This does not establish a governed
+authority-key lifecycle, production finality, durable consumer state, or a
+Ledger 8 consumer circuit. Retrospective: the focused proof test took about
+two seconds and the fast integration lane about 25 seconds; the full proving
+build is reserved for prepublication validation of the accumulated stack.
+
+The local Ledger 8 VC consumer fixture now compiles from the published VC
+`composable.compact` import. Its constructor writes the authority domain,
+method, and key to ledger, with no mutation circuit. Installation checks the
+VC authority proof and stores a descriptor by authorization ID; updates use
+the VC monotonic sequence, DID-version, and terminal-revocation circuit.
+The simulator-derived issuer proof installs successfully, a wrong ledger
+anchor fails, a genuinely signed credential is accepted, and the same
+metadata with a forged credential signature fails. A separately constructed
+verifier descriptor derived from a simulator TR grant, publication witness,
+and resolved DID state exercises the signed-request circuit and rejects a wrong
+request scope. This is a local compiled/simulator fixture, not a production
+deployed consumer; governed scope mapping,
+finality, key lifecycle, and durable state remain open.
+
+The independent PR #183 review found that a caller-selected nonzero VC scope
+could be signed for an unrelated verified registry grant. The local corrective
+slice removes that input: issuer VC `SchemaRef` is derived from the exact
+registry family/schema identifiers and representable `major.minor.0` version;
+verifier signed-request scope is the canonical full registry request-scope
+commitment. The bridge rejects nonrepresentable issuer versions instead of
+dropping a patch version or overflowing a VC `Uint<16>`. Tests cover changed
+family, schema, version, and verifier predicate. Governed external VC schema
+enrollment and signed-request payload construction remain follow-on work.
+The same review found that maintainer bootstrap/proposal checked nonidentity
+but not prime-order JubJub keys; the corrective contract check rejects a
+nonidentity order-two key before membership or quorum activation. A separate
+consumer-address replay question was resolved by a Compact-verifiable
+seven-field authority domain commitment. The consumer recomputes it from
+constructor-pinned fields, then checks its consumer address against
+`kernel.self().bytes` at signer installation. A second deployment with the
+same anchor now rejects a valid proof, and the local vector is fixed in tests.
+The VC issuer descriptor is intentionally schema-scoped: changing only the
+TR credential definition or status method changes the full registry scope
+commitment but not VC `issuerScopeCommitment(SchemaRef)`. The consumer fixture
+therefore names its circuit a schema-signer proof, not a complete credential
+authorization decision. Any product claiming full trust must separately
+verify definition, status method, and live status against the same grant and
+credential.
+
+Iteration timing: focused VC scope and decision tests took about three
+seconds; fast integration including four demos took about 25 seconds; a broad
+light run took about 50 seconds without contention. The exact-head full lane
+started a second 59-circuit `zkir compile-many` after a broad light lane,
+indicating the current Turbo/output sequence invalidates the proving cache.
+Do not overlap broad light and full proving runs on one laptop, and do not
+repeat full proving for a TypeScript-only edit. Reserve it for the final
+contract-bearing batch after focused and light gates.

@@ -21,12 +21,13 @@ Current route set:
 - `GET /v1/registry`
 - `GET /v1/registry/summary`
 - `GET /v1/registry/mutation-context` (workspace source only; advisory signer preimage)
-- `GET /v1/governed/:role/:authorizationId/actions/:action` (Compact signer context; optional port)
-- `POST /v1/governed/:role/:authorizationId/actions/:action` (external signatures; optional port)
+- `GET /v1/governed/:role/:targetId/actions/:action` (Compact signer context; optional port)
+- `POST /v1/governed/:role/:targetId/actions/:action` (external signatures; optional port)
 - `POST /v1/application-evidence/:applicationId/challenges` (VP challenge; optional trusted port)
 - `POST /v1/application-evidence/:applicationId/submissions` (verified VP intake; optional trusted port)
 - `GET /v1/application-evidence/:applicationId/binding` (applicant-authorized pending binding; optional trusted port)
-- `POST /v1/pending-applications/auditor` (signed pending registration; optional trusted port)
+- `GET /v1/application-evidence/:applicationId/receipt` (applicant-authorized accepted redacted evidence and receipt recovery; optional trusted port)
+- `POST /v1/pending-applications` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
 - `GET /v1/epochs/:epochId`
@@ -144,6 +145,15 @@ must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
+An embedding host may also provide a ledger-backed `resolve` method for
+`POST /v1/governed/:role/:id/proposal/resolve` with the same accepted
+`{ "evidence": ... }`. The API returns `observed` with the proposal event
+hash only when the ledger record's evidence commitment matches the admitted
+application. `not-observed` is not proof that a submitted transaction failed;
+clients must not automatically submit it again. The route returns 503 when
+the host has no role-specific resolution port. This read-only recovery path does not make
+the private admission file and ledger transactional or establish network
+finality.
 Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
 injected `governedVerifierProposals`, `governedAuditorProposals`, and
@@ -206,6 +216,19 @@ after consumption does not make a challenge reusable. The optional port owns
 the challenge store, which must provide durable atomic consumption in a
 multi-process deployment. No fixture verifier is installed by default.
 
+If the same server configures both `applicationVp` and any governed membership
+proposal port, it must also configure `proposalAdmission`; startup fails
+without it. The port resolves the original signed pending record separately
+from committed VP evidence by the same application ID. Both proposal
+`prepare` and `submit` reject unless the signed record's requested target,
+role, original binding, exact redacted signed evidence, and validated receipt
+match. This prevents a
+combined host from submitting a proposal that bypassed its VP intake. A
+proposal-only host may instead rely on its own trusted external evidence
+pipeline, but its Compact-backed proposal port must still verify all governed
+evidence and signer requirements. The accepted-record lookup is an off-ledger
+join, not an assertion that the applicant is already a member.
+
 `FileApplicationChallengeStore` is a local reference adapter for the port. It
 stores only challenge, binding, and application hashes with issuance/expiry
 instants in a versioned private (`0600`) file. A shared cross-process lock
@@ -217,12 +240,14 @@ writes, and this adapter does not provide distributed transactions, VP
 verification, applicant authentication, rate limits, or atomic pending-state
 persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
 
-The optional `POST /v1/pending-applications/auditor` accepts an externally
-signed Midnight DID `apply` intent, canonical auditor scope, and application
-ID. The host-owned registration port verifies the applicant signature and
-current workspace context and returns a pending, policy-scoped binding. This
-is not a governed Compact proposal or active membership. The exported
-`InMemoryPendingAuditorRegistrationPort` serializes registrations within one
+The optional `POST /v1/pending-applications` accepts an externally signed
+Midnight DID `apply` intent for an issuer, verifier, auditor, or maintainer,
+with the exact canonical role scope, governed resource, application ID, and
+requested authorization ID
+bound into its payload commitment. The host-owned registration port verifies
+the applicant signature and current workspace context and returns a pending,
+policy-scoped binding. This is not a governed Compact proposal or active
+membership. The exported `InMemoryPendingApplicationRegistrationPort` serializes registrations within one
 process for local tests only; it does not provide durable atomic persistence,
 live policy updates, or proof that the configured evidence-verifier DID is
 currently authorized. The packaged CLI does not install this port and returns
@@ -230,6 +255,24 @@ currently authorized. The packaged CLI does not install this port and returns
 port's applicant authorization callback and returns the current server-owned
 binding with `Cache-Control: no-store`. Neither route advertises cross-origin
 browser access, including error and preflight responses.
+The optional `nonApiGetHandler` composes static assets on the same origin
+without intercepting `/v1` API routes. The loopback-only
+`scripts/demo-auditor-admission.mjs` host uses it for a fixture applicant
+journey; it is not installed by the packaged API CLI. The host also supplies
+`authorizePendingApplicationRegistration` so its deterministic signed fixture cannot
+be submitted without the same loopback session and Origin checks as the VP routes.
+
+`FileApplicationAdmissionStore` is a private local adapter for signed pending
+registration, consumed application nonces, accepted redacted evidence, and
+receipt lookup. It uses a cross-process lock, validated versioned state,
+`0600` file permissions, atomic replacement, and file/directory sync; separate
+instances can reopen the same state and replayed registration or evidence is
+rejected. Its workspace callback must return the current simulator-derived
+policy and epoch, and the store rechecks that view before committing a signed
+application. It does not store raw VPs. The joined issuer/verifier/auditor/maintainer demos combine it with
+`FileApplicationChallengeStore` and a 2-of-3 Compact simulator. These two files
+and the Compact ledger are not one atomic transaction; stale locks require
+operator recovery, and the adapter is not configured in the packaged CLI.
 
 The exported application-challenge service and
 `consumeChallengeAndSubmitApplication` remain the implementation behind these optional routes.

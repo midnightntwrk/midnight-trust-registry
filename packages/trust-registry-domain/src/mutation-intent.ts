@@ -51,8 +51,9 @@ export const MutationIntentSchema = z.strictObject({
   if (intent.action === "submit" && ["issuer", "verifier", "auditor"].includes(intent.target) && intent.actorRole !== "applicant") {
     ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Membership applications require an applicant" });
   }
-  if (intent.action === "apply" && (intent.target !== "auditor" || intent.actorRole !== "applicant")) {
-    ctx.addIssue({ code: "custom", path: ["target"], message: "Pending auditor registration requires an applicant and auditor target" });
+  if (intent.action === "apply" && (intent.actorRole !== "applicant"
+    || !["issuer", "verifier", "auditor", "maintainer"].includes(intent.target))) {
+    ctx.addIssue({ code: "custom", path: ["target"], message: "Pending membership registration requires an applicant and membership target" });
   }
   if (intent.action !== "submit" && intent.action !== "apply" && intent.actorRole !== "maintainer") {
     ctx.addIssue({ code: "custom", path: ["actorRole"], message: "Governed actions require a maintainer" });
