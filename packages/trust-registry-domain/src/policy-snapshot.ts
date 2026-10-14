@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { canonicalizeJson } from "./canonical-json.js";
 import { HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { recognitionAccreditorAnchorCommitment } from "./recognition-accreditation.js";
 import {
   GovernanceDecisionFamilySchema,
   GovernancePolicyRecordSchema,
@@ -82,6 +83,9 @@ export function deriveGovernancePolicySnapshot(policy: GovernancePolicyRecord): 
     disputeRules: sortedUnique(parsed.disputeRules),
     retentionRules: sortedUnique(parsed.retentionRules),
     emergencyRules: sortedUnique(parsed.emergencyRules),
+    recognitionAccreditorAnchors: parsed.recognitionAccreditorAnchors
+      .map(recognitionAccreditorAnchorCommitment)
+      .sort(compareIds),
   };
   return GovernancePolicySnapshotSchema.parse({
     format: "tr-policy-snapshot-v1",

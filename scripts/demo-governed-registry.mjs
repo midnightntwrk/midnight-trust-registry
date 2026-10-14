@@ -31,9 +31,9 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
-  createMidnightDidLedgerFixture,
-  createMidnightDidResolver,
   createMidnightDid,
+  createRecognitionAccreditationVpScenarioFixture,
+  RECOGNITION_VP_FIXTURE_ANCHOR,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
@@ -45,6 +45,7 @@ import {
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   recognitionAuthorityAssertionDigest,
+  recognitionAccreditationSubmissionCommitment,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -340,25 +341,8 @@ const vcAuthorityAnchor = {
   publicKey: deriveJubjubPublicKeyFromSeed(vcAuthoritySeed),
 };
 const vcAuthorityKeyIdCommitment = bytes32Commitment("vc-authority:governed-demo");
-harness.registerVcAuthorityKey({
-  domain: vcAuthorityAnchor.domain,
-  keyIdCommitment: vcAuthorityKeyIdCommitment,
-  publicKey: vcAuthorityAnchor.publicKey,
-});
-harness.advanceEvidenceTimeBy(60_000);
 
-const recognitionMethodId = `${recognitionAuthorityDid}#assert-1`;
-const recognitionResolver = createMidnightDidResolver([
-  createMidnightDidLedgerFixture(recognitionAuthorityDid, {
-    schnorrJubjubAssertionMethods: [{
-      id: "assert-1",
-      publicKey: deriveJubjubPublicKeyFromSeed(recognitionAuthoritySeed),
-    }],
-  }),
-]);
-const recognitionChallengeService = new RecognitionAuthorityChallengeService(
-  new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
-);
+const recognitionMethodId = `${recognitionAuthorityDid}#assertion-1`;
 const recognitionChallengeBinding = {
   targetRegistryId: harness.registryId,
   recognitionId: recognition.recognitionId,
@@ -367,15 +351,52 @@ const recognitionChallengeBinding = {
   scopeResourceType: recognition.scopeResourceType,
   scopeResourceId: recognition.scopeResourceId,
 };
+const recognitionAnchor = {
+  ...RECOGNITION_VP_FIXTURE_ANCHOR,
+  targetRegistryId: harness.registryId,
+  policyId: harness.policyId,
+  policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+};
+harness.governRecognitionAccreditorAnchor(recognitionAnchor, [second]);
+harness.registerVcAuthorityKey({
+  domain: vcAuthorityAnchor.domain,
+  keyIdCommitment: vcAuthorityKeyIdCommitment,
+  publicKey: vcAuthorityAnchor.publicKey,
+});
+harness.advanceEvidenceTimeBy(60_000);
+const recognitionEvaluationMs = Math.max(
+  VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000,
+);
+const governedRecognitionAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
+  recognizedRegistryId: recognition.recognizedRegistryId,
+  scopeResourceType: recognition.scopeResourceType,
+  scopeResourceId: recognition.scopeResourceId,
+  evaluatedAtMs: recognitionEvaluationMs,
+});
+const recognitionChallengeService = new RecognitionAuthorityChallengeService(
+  new InMemoryApplicationChallengeStore(), () => recognitionEvaluationMs,
+);
 const recognitionChallenge = await recognitionChallengeService.issue(recognitionChallengeBinding);
 const recognitionChallengeHash = recognitionChallenge.challengeHash;
+const recognitionAccreditationFixture = await createRecognitionAccreditationVpScenarioFixture({
+  nonce: recognitionChallenge.nonce,
+  evaluatedAtMs: recognitionEvaluationMs,
+  authorityDid: recognitionAuthorityDid,
+  authorityAssertionSeed: recognitionAuthoritySeed,
+  anchor: governedRecognitionAnchor.anchor,
+});
 const recognitionStatement = {
   version: "tr-recognition-authority-assertion-v1",
   ...recognitionChallengeBinding,
-  accreditationEvidenceCommitment: sha256Hex("governed-demo-unverified-accreditation-reference"),
+  accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(
+    recognitionAccreditationFixture.input.submission,
+  ),
   challengeHash: recognitionChallengeHash,
-  issuedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
-  expiresAt: "2026-05-20T01:00:00.000Z",
+  issuedAt: new Date(recognitionEvaluationMs).toISOString(),
+  expiresAt: new Date(recognitionEvaluationMs + 50 * 60_000).toISOString(),
 };
 const recognitionAssertion = {
   statement: recognitionStatement,
@@ -388,11 +409,18 @@ const recognitionAssertion = {
     ))),
   },
 };
-const verifyRecognitionChallenge = (signed) => recognitionChallengeService.verifyAndConsumeDidAssertion({
+const verifyRecognitionChallenge = (signed, overrides = {}) => recognitionChallengeService.verifyAndConsumeAccreditedAssertion({
   binding: recognitionChallengeBinding,
   nonce: recognitionChallenge.nonce,
   signed,
-  resolver: recognitionResolver,
+  accreditation: recognitionAccreditationFixture.input.submission,
+  readCurrentGovernance: async () => ({
+    governancePolicy: harness.policyRecord,
+    activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+  }),
+  resolver: recognitionAccreditationFixture.input.resolver,
+  statusSource: recognitionAccreditationFixture.input.statusSource,
+  ...overrides,
 });
 const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
 await assert.rejects(verifyRecognitionChallenge({
@@ -412,13 +440,33 @@ await assert.rejects(verifyRecognitionChallenge({
     ))),
   },
 }), /signature is invalid/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  readCurrentGovernance: async () => ({
+    governancePolicy: harness.policyRecord,
+    activePolicyCommitment: sha256Hex("stale-recognition-policy"),
+  }),
+}), /active governed policy/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  statusSource: {
+    verifyPinnedStatus: async (request) => ({
+      ...await recognitionAccreditationFixture.input.statusSource.verifyPinnedStatus(request),
+      active: false,
+    }),
+  },
+}), /status is not active/u);
+await assert.rejects(verifyRecognitionChallenge(recognitionAssertion, {
+  accreditation: {
+    ...recognitionAccreditationFixture.input.submission,
+    rawCredentialBody: `${recognitionAccreditationFixture.input.submission.rawCredentialBody} `,
+  },
+}), /submitted accreditation VP/u);
 assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
-const verifiedRecognitionAssertion = await verifyRecognitionChallenge(recognitionAssertion);
+const verifiedRecognition = await verifyRecognitionChallenge(recognitionAssertion);
 await assert.rejects(verifyRecognitionChallenge(recognitionAssertion), /already consumed/u);
 const recognitionPrepared = harness.prepareRecognitionProposalAction(
-  recognition, fromHex(verifiedRecognitionAssertion.evidenceCommitment),
+  recognition, fromHex(verifiedRecognition.evidenceCommitment),
 );
-assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognitionAssertion.evidenceCommitment);
+assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognition.evidenceCommitment);
 const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
 const recognitionSigners = [
   signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared),
@@ -472,7 +520,7 @@ const recognitionProposalEventHash = harness.executeRecognitionProposalWithSigna
 );
 assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
   recognition.recognitionIdCommitment,
-).evidenceCommitment), verifiedRecognitionAssertion.evidenceCommitment);
+).evidenceCommitment), verifiedRecognition.evidenceCommitment);
 const applicantSpecs = [
   {
     role: "issuer",
@@ -1504,6 +1552,7 @@ try {
   const recognitionBundle = await expectHttp(await fetch(
     `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
   ), 200);
+  assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
     id: "recognition-not-issuer-authorization",
     invariant: "External registry recognition cannot authorize local VC issuance",
@@ -1597,6 +1646,10 @@ try {
   }, { clock: () => recognitionBundle.recognition.effectiveFrom });
   const recognized = await recognitionAdapter.queryRecognition(trqpRecognitionRequest);
   assert.equal(recognized.ok, true);
+  const recognitionTrqpEvidence = await recognitionAdapter.getRecognitionEvidence(trqpRecognitionRequest);
+  assert.equal(recognitionTrqpEvidence.ok, true);
+  assert.equal(recognitionTrqpEvidence.value.bundle.recognition.evidenceHash,
+    verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectAdapterProblem(await recognitionAdapter.queryRecognition({
     ...trqpRecognitionRequest,
     context: { ...trqpRecognitionRequest.context, recognized_registry_id: "registry:external:wrong:v1" },
@@ -2006,12 +2059,17 @@ try {
     otherProposals,
     recognitionProposal: {
       eventHash: asHex(recognitionProposalEventHash),
-      evidenceCommitment: verifiedRecognitionAssertion.evidenceCommitment,
-      authorityDidStateVersionId: verifiedRecognitionAssertion.didStateVersionId,
+      evidenceCommitment: verifiedRecognition.evidenceCommitment,
+      authorityDidStateVersionId: verifiedRecognition.authority.didStateVersionId,
+      accreditorDidStateVersionId: verifiedRecognition.accreditation.accreditorDidStateVersionId,
+      anchorCommitment: verifiedRecognition.accreditation.anchorCommitment,
+      governedPolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+      governedPolicyVersion: harness.policyRecord.version,
+      statusDecisionCommitment: verifiedRecognition.accreditation.statusDecisionCommitment,
       oneUseChallengeConsumed: true,
-      source: "Midnight DID authority statement verified; local evidence verifier is fixture-held",
-      accreditation: "referenced but not independently verified",
-      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "challenge-replay", "one-maintainer"],
+      source: "Midnight DID authority assertion and independent accreditor VC/VP verified; local evidence verifier is fixture-held",
+      accreditation: "signed VC/VP and challenge-bound status attestation with quorum-governed anchor; attestation is fixture-fetched, not live status-ledger evidence",
+      expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
     actorReport,

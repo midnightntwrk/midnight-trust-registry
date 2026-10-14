@@ -14,6 +14,13 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- The next #78 slice has an executable recognition accreditation VC/VP plan:
+  a separately governed accreditor DID/method and status source, exact
+  authority/registry/scope claims, shared proof core, atomic challenge
+  consumption after both proofs, and one redacted commitment carried through
+  Compact and public evidence. The plan explicitly forbids treating the
+  existing DID-control assertion or a self-signed Federation terminus as
+  accreditation. No implementation or public route is claimed yet.
 - #60's joined adversarial matrix now calls the Compact simulator directly
   with otherwise valid recognition signatures but a substituted external
   registry or resource commitment. Both reject without advancing governance
@@ -783,3 +790,55 @@ The issuer proposal API now has a matrix case for a correctly signed, admitted
 receipt whose evidence has expired under the virtual evidence clock. The test
 restores the original accepted fixture after asserting the exact governed
 proposal rejection, so downstream successful decisions remain unchanged.
+
+The local #78 accreditation composition branch now joins real Midnight DID
+authority assertion, independent accreditor VC signature, and authority VP
+signature under one recognition challenge. The authority signs a canonical
+commitment to the exact VP submission, which is computable before registry
+evaluation; it does not sign the later status decision. After checking the
+governed tuple, DID relationships, fixture-pinned accreditation anchor, and
+fixture status source, the registry combines both verified evidence commitments
+and consumes the challenge once. The governed demo passes this combined hash
+through the Compact recognition proposal and checks the public evidence bundle
+and TRQP evidence projection retain it. The assertion field is `accreditationSubmissionCommitment`;
+`evidenceCommitment` names the separate post-verification output. This is not
+yet public accredited-recognition intake: anchor/status provisioning is still
+fixture-only. Local `./run.sh --light`, `./run.sh integration --light`, and
+`pnpm audit --audit-level low` passed after the naming change. Run light and
+integration sequentially in one worktree because they share generated outputs;
+reserve fresh proving-key generation for a coherent publication checkpoint.
+
+The next local #78 slice binds recognition accreditor anchors into the
+canonical governance policy content preimage. The simulator obtains a 2-of-2
+maintainer quorum for a policy revision, reads the resulting Compact policy
+commitment, and resolves the exact external-registry/resource anchor only when
+the record hashes to that current commitment and both policy and anchor windows
+are active. The private composed challenge no longer accepts a raw anchor:
+it resolves the anchor from a policy record and the current ledger commitment
+before VC/VP verification. The joined demo rejects stale policy commitments,
+then binds the verified result to Compact, public API, and TRQP evidence.
+Current simulator reuse of the threshold-policy revision circuit retains the
+thresholds while changing policy content; a dedicated anchor-management
+action and production policy reader remain open. Status verification still
+uses a fixture source, so no public accredited-recognition route is mounted.
+
+The subsequent local #78 slice replaces the default unsigned fixture status
+decision with a five-minute, challenge-bound status attestation signed by the
+policy-pinned status authority's Midnight DID assertion key. The verifier
+checks registry, method, status handle, nonce hash, observation time, signature,
+and current DID state version; the signed attestation commitment is included
+in the redacted evidence. Tampered, replayed, revoked, substituted, and
+future-dated status cases fail in focused tests, and the joined demo passes.
+The fetcher is still a deterministic fixture, not a live status-registry
+ledger reader. A trustworthy production fetcher and independent status-ledger
+evidence remain necessary before public accredited-recognition intake.
+
+An opt-in private `recognition-evidence` HTTP port now exposes the joined
+challenge and signed accreditation verification to an authenticated local
+caller. The host injects the current governed policy commitment, DID resolver,
+and signed-status source; no policy or status decision is accepted from the
+request body. Challenge issuance and submission reject stale policy, proof
+failures do not spend the nonce, and successful verification returns only a
+redacted commitment and expiry. The route is disabled without a trusted port
+and is not mounted by the CLI. It does not persist a receipt or authorize a
+Compact proposal; those are separate production admission requirements.

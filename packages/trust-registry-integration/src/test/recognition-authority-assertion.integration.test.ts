@@ -26,7 +26,7 @@ const statement: RecognitionAuthorityAssertion = {
   recognizedRegistryId: fixture.recognizedRegistryId,
   scopeResourceType: fixture.scopeResourceType,
   scopeResourceId: fixture.scopeResourceId,
-  accreditationEvidenceCommitment: sha256Hex("independent-accreditation-reference"),
+  accreditationSubmissionCommitment: sha256Hex("independent-accreditation-reference"),
   challengeHash: sha256Hex("one-use-recognition-challenge"),
   issuedAt: "2026-05-20T00:00:00.000Z",
   expiresAt: "2026-05-20T01:00:00.000Z",
@@ -67,7 +67,7 @@ describe("Midnight DID recognition authority assertion", () => {
     expect(verified.didStateVersionId).toBe("1");
     expect(verified.evaluatedAtMs).toBe(evaluatedAtMs);
     expect(verified.evidenceCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
-    expect(verified.evidenceCommitment).not.toBe(statement.accreditationEvidenceCommitment);
+    expect(verified.evidenceCommitment).not.toBe(statement.accreditationSubmissionCommitment);
     const nextVersion = createMidnightDidResolver([
       createMidnightDidLedgerFixture(authorityDid, {
         version: 2n,
@@ -105,7 +105,7 @@ describe("Midnight DID recognition authority assertion", () => {
     await expect(verifyRecognitionAuthorityAssertion({
       signed: {
         ...signed,
-        statement: { ...statement, accreditationEvidenceCommitment: `0x${"00".repeat(32)}` },
+        statement: { ...statement, accreditationSubmissionCommitment: `0x${"00".repeat(32)}` },
       },
       expected,
       resolver,
@@ -119,7 +119,7 @@ describe("Midnight DID recognition authority assertion", () => {
       resolver,
     })).rejects.toThrow(/at most 24 hours/u);
     await expect(verifyRecognitionAuthorityAssertion({
-      signed: { ...signed, statement: { ...statement, accreditationEvidenceCommitment: sha256Hex("substituted") } },
+      signed: { ...signed, statement: { ...statement, accreditationSubmissionCommitment: sha256Hex("substituted") } },
       expected,
       resolver,
     })).rejects.toThrow(/signature is invalid/u);

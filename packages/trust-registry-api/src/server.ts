@@ -111,6 +111,11 @@ import {
   type ApplicationVpHttpPort,
 } from "./application-vp-http.js";
 import {
+  RecognitionAccreditationHttpError,
+  createRecognitionAccreditationHttpService,
+  type RecognitionAccreditationHttpPort,
+} from "./recognition-accreditation-http.js";
+import {
   PendingApplicationRegistrationRejectedError,
   type PendingApplicationRegistrationPort,
 } from "./pending-application-registration.js";
@@ -177,6 +182,7 @@ export type TrustRegistryApiServerOptions = {
   governedAuditorProposals?: GovernedAuditorProposalPort;
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
+  recognitionAccreditation?: RecognitionAccreditationHttpPort;
   proposalAdmission?: ProposalAdmissionPort;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
@@ -685,6 +691,11 @@ export const createTrustRegistryApiServer = (
   );
   const applicationVp = options.applicationVp === undefined ? undefined
     : createApplicationVpHttpService(options.applicationVp, () => Date.parse(options.clock?.() ?? new Date().toISOString()));
+  const recognitionAccreditation = options.recognitionAccreditation === undefined ? undefined
+    : createRecognitionAccreditationHttpService(
+      options.recognitionAccreditation,
+      () => Date.parse(options.clock?.() ?? new Date().toISOString()),
+    );
 
   const requireProposalAdmission = async (
     role: "issuer" | "verifier" | "auditor" | "maintainer",
@@ -743,6 +754,8 @@ export const createTrustRegistryApiServer = (
         (segments.length === 4 && segments[1] === "application-evidence"
           && (segments[3] === "binding" || segments[3] === "challenges"
             || segments[3] === "submissions" || segments[3] === "receipt"))
+        || (segments.length === 4 && segments[1] === "recognition-evidence"
+          && (segments[3] === "challenges" || segments[3] === "submissions"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -867,6 +880,42 @@ export const createTrustRegistryApiServer = (
           const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404
             : reason === "stale-policy" || reason === "invalid-challenge" ? 409 : 403;
           throw jsonProblem(problemBaseUri, `application-vp-${reason}`, status, `application VP ${reason}`);
+        }
+      }
+
+      if (method === "POST" && segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "recognition-evidence"
+        && (segments[3] === "challenges" || segments[3] === "submissions")) {
+        response.setHeader("cache-control", "no-store");
+        if (recognitionAccreditation === undefined || options.recognitionAccreditation === undefined) {
+          throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+            "recognition accreditation unavailable");
+        }
+        try {
+          await options.recognitionAccreditation.authorizeRequest(segments[2]!, request);
+        } catch {
+          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+            "recognition accreditation forbidden");
+        }
+        try {
+          const raw = await readRequestBody(request, problemBaseUri);
+          let body: unknown;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            throw new RecognitionAccreditationHttpError("invalid-request");
+          }
+          const result = segments[3] === "challenges"
+            ? await recognitionAccreditation.issue(segments[2]!, body)
+            : await recognitionAccreditation.submit(segments[2]!, body);
+          writeJson(response, segments[3] === "challenges" ? 201 : 200, result, false);
+          return;
+        } catch (error) {
+          if (error instanceof HttpProblem) throw error;
+          const reason = error instanceof RecognitionAccreditationHttpError ? error.reason : "rejected";
+          const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404 : 403;
+          throw jsonProblem(problemBaseUri, `recognition-accreditation-${reason}`, status,
+            `recognition accreditation ${reason}`);
         }
       }
 

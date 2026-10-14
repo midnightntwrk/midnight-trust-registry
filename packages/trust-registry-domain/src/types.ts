@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, UriSchema } from "./ids.js";
+import { RecognitionAccreditorAnchorSchema } from "./recognition-accreditation.js";
 import {
   assertAscendingTimestamps,
   LifecycleStatusSchema,
@@ -133,6 +134,7 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   disputeRules: z.array(NonEmptyStringSchema).min(1),
   retentionRules: z.array(NonEmptyStringSchema).min(1),
   emergencyRules: z.array(NonEmptyStringSchema).min(1),
+  recognitionAccreditorAnchors: z.array(RecognitionAccreditorAnchorSchema).default([]),
   effectiveFrom: TimestampSchema,
   effectiveUntil: TimestampSchema.optional(),
   supersededAt: TimestampSchema.optional(),
@@ -161,6 +163,24 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
       ["archivedAt", record.archivedAt],
     ],
   );
+
+  const anchorScopes = new Set<string>();
+  for (const [index, anchor] of record.recognitionAccreditorAnchors.entries()) {
+    if (anchor.targetRegistryId !== record.registryId
+      || anchor.policyId !== record.policyId
+      || anchor.policyVersion !== record.version) {
+      ctx.addIssue({ code: "custom", path: ["recognitionAccreditorAnchors", index],
+        message: "Recognition accreditor anchor must belong to this policy revision" });
+    }
+    const scope = JSON.stringify([
+      anchor.recognizedRegistryId, anchor.scopeResourceType, anchor.scopeResourceId,
+    ]);
+    if (anchorScopes.has(scope)) {
+      ctx.addIssue({ code: "custom", path: ["recognitionAccreditorAnchors", index],
+        message: "Recognition accreditor anchors must have distinct external registry and resource scopes" });
+    }
+    anchorScopes.add(scope);
+  }
 
   const templatesById = new Map<string, z.infer<typeof GovernancePolicyTemplateSchema>>();
   const templateFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();

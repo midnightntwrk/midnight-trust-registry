@@ -2,14 +2,22 @@ import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+import { sha256Hex, type RecognitionAccreditorAnchor, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   recognitionAuthorityAssertionDigest,
+  recognitionAccreditationSubmissionCommitment,
+  LocalTrustRegistryIntegrationHarness,
+  verifyRecognitionAccreditationVp,
 } from "@midnight-ntwrk/trust-registry-integration";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
+  verifyRecognitionAccreditationVp: vi.fn(),
+}));
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import {
@@ -41,7 +49,7 @@ const signedFor = (challengeHash: string, changes: Partial<RecognitionAuthorityA
   const statement: RecognitionAuthorityAssertion = {
     version: "tr-recognition-authority-assertion-v1",
     ...binding,
-    accreditationEvidenceCommitment: sha256Hex("referenced-accreditation"),
+    accreditationSubmissionCommitment: sha256Hex("referenced-accreditation"),
     challengeHash,
     issuedAt: new Date(issuedAtMs).toISOString(),
     expiresAt: new Date(issuedAtMs + 60 * 60_000).toISOString(),
@@ -85,7 +93,7 @@ describe("recognition authority DID challenge", () => {
       nonce: challenge.nonce,
       signed: {
         ...signed,
-        statement: { ...signed.statement, accreditationEvidenceCommitment: sha256Hex("substituted") },
+        statement: { ...signed.statement, accreditationSubmissionCommitment: sha256Hex("substituted") },
       },
       resolver,
     })).rejects.toThrow(/signature is invalid/u);
@@ -132,5 +140,124 @@ describe("recognition authority DID challenge", () => {
     await expect(service.verifyAndConsumeDidAssertion({
       binding, nonce: expired.nonce, signed: signedFor(expired.challengeHash), resolver,
     })).rejects.toThrow(/invalid or already consumed/u);
+  });
+
+  it("spends the nonce only after both proofs and the accreditation commitment match", async () => {
+    const accreditedBinding = { ...binding, scopeResourceType: "credentialfamily" };
+    const harness = new LocalTrustRegistryIntegrationHarness("recognition-challenge");
+    expect(harness.registryId).toBe(binding.targetRegistryId);
+    const anchor: RecognitionAccreditorAnchor = {
+      format: "tr-recognition-accreditor-anchor-v1",
+      targetRegistryId: binding.targetRegistryId,
+      policyId: harness.policyId,
+      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+      accreditorDid: createMidnightDid("accreditor"),
+      accreditorAssertionMethodId: `${createMidnightDid("accreditor")}#assertion-1`,
+      credentialFamilyId: "credential-family:accreditation:v1",
+      schemaId: "schema:accreditation:v1",
+      statusRegistryId: "status-registry:accreditation:v1",
+      statusAuthorityDid: createMidnightDid("status-authority"),
+      statusAuthorityMethodId: `${createMidnightDid("status-authority")}#assertion-1`,
+      recognizedRegistryId: binding.recognizedRegistryId,
+      scopeResourceType: accreditedBinding.scopeResourceType,
+      scopeResourceId: binding.scopeResourceId,
+      effectiveFrom: "2026-05-20T00:00:00.000Z",
+      effectiveUntil: "2026-05-21T00:00:00.000Z",
+    };
+    harness.governRecognitionAccreditorAnchor(anchor);
+    const evaluatedAtMs = Math.max(issuedAtMs + 1000, Date.parse(harness.policyRecord.effectiveFrom) + 1000);
+    const commitment = sha256Hex("verified-accreditation-evidence");
+    const verifiedAccreditation = {
+      evidenceCommitment: commitment,
+      governedPolicyCommitment: sha256Hex("policy"),
+      anchorCommitment: sha256Hex("anchor"),
+      claimsCommitment: sha256Hex("claims"),
+      presentationHash: sha256Hex("presentation"),
+      accreditorDidStateVersionId: "accreditor-state",
+      authorityDidStateVersionId: "authority-state",
+      statusAuthorityDidStateVersionId: "status-state",
+      statusDecisionCommitment: sha256Hex("status"),
+      evaluatedAtMs,
+      expiresAtMs: evaluatedAtMs + 60_000,
+    };
+    const verifier = vi.mocked(verifyRecognitionAccreditationVp);
+    verifier.mockReset();
+    let nowMs = evaluatedAtMs;
+    const service = new RecognitionAuthorityChallengeService(
+      new InMemoryApplicationChallengeStore(), () => nowMs,
+    );
+    const challenge = await service.issue(accreditedBinding);
+    const accreditation = {
+      rawCredentialBody: "not used by mocked verifier",
+      rawPresentationBody: "not used by mocked verifier",
+      credentialProof: {},
+      presentationProof: {},
+    };
+    const signed = signedFor(challenge.challengeHash, {
+      ...accreditedBinding,
+      accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
+      issuedAt: new Date(evaluatedAtMs).toISOString(),
+    });
+    const activePolicyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    let currentPolicy = harness.policyRecord;
+    let currentPolicyCommitment = activePolicyCommitment;
+    const request = {
+      binding: accreditedBinding,
+      nonce: challenge.nonce,
+      signed,
+      accreditation,
+      readCurrentGovernance: async () => ({ governancePolicy: currentPolicy, activePolicyCommitment: currentPolicyCommitment }),
+      resolver,
+      statusSource: { verifyPinnedStatus: vi.fn() },
+    };
+    verifier.mockRejectedValueOnce(new Error("accreditation VP is invalid"));
+    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/VP is invalid/u);
+    await expect(service.verifyAndConsumeAccreditedAssertion({
+      ...request,
+      signed: signedFor(challenge.challengeHash, {
+        ...accreditedBinding,
+        accreditationSubmissionCommitment: sha256Hex("another-submission"),
+        issuedAt: new Date(evaluatedAtMs).toISOString(),
+      }),
+    })).rejects.toThrow(/submitted accreditation VP/u);
+    verifier.mockResolvedValue(verifiedAccreditation);
+    currentPolicy = {
+      ...harness.policyRecord,
+      recognitionAccreditorAnchors: [{ ...anchor, scopeResourceId: "credential-family:other:v1" }],
+    };
+    await expect(service.verifyAndConsumeAccreditedAssertion(request)).rejects.toThrow(/active governed policy/u);
+    currentPolicy = harness.policyRecord;
+    verifier.mockImplementationOnce(async () => {
+      currentPolicyCommitment = sha256Hex("changed-governance-policy");
+      return verifiedAccreditation;
+    });
+    await expect(service.verifyAndConsumeAccreditedAssertion(request))
+      .rejects.toThrow(/active governed policy|governance changed/u);
+    currentPolicyCommitment = activePolicyCommitment;
+    verifier.mockImplementationOnce(async () => {
+      nowMs += 1000;
+      return { ...verifiedAccreditation, expiresAtMs: evaluatedAtMs + 500 };
+    });
+    await expect(service.verifyAndConsumeAccreditedAssertion(request))
+      .rejects.toThrow(/expired before challenge consumption/u);
+    const results = await Promise.allSettled([
+      service.verifyAndConsumeAccreditedAssertion(request),
+      service.verifyAndConsumeAccreditedAssertion(request),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const successful = results.find((result) => result.status === "fulfilled");
+    expect(successful?.value.evidenceCommitment).toBe(sha256Hex(JSON.stringify([
+      "tr:recognition:combined-verified-evidence:v1",
+      successful?.value.authority.evidenceCommitment,
+      verifiedAccreditation.evidenceCommitment,
+    ])));
+    expect(verifier).toHaveBeenCalledWith(expect.objectContaining({
+      nonce: challenge.nonce,
+      authorityDid,
+      targetRegistryId: binding.targetRegistryId,
+      evaluatedAtMs,
+      activePolicyCommitment,
+    }));
   });
 });
