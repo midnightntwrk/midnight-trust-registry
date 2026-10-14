@@ -525,6 +525,7 @@ try {
     }
     lifecycleResult = lifecycle;
   } else {
+    const otherResourceId = `${resourceId.slice(0, -1)}${resourceId.endsWith("0") ? "1" : "0"}`;
     const board = await adminClient.loadReviewBoard();
     assert.equal(board[profile.snapshotKey].some((entry) =>
       entry.authorization?.authorizationId === profile.id && entry.authorization.status === "active"), true);
@@ -538,11 +539,32 @@ try {
       expectedSubjectDid: participant.subjectDid,
       expectedResourceId: resourceId,
     });
+    assert.throws(() => profile.verifyBundle(client, bundle, {
+      expectedRegistryId: `${harness.registryId}:other`,
+      expectedSubjectDid: participant.subjectDid,
+      expectedResourceId: resourceId,
+    }), /registry mismatch/iu);
+    assert.throws(() => profile.verifyBundle(client, bundle, {
+      expectedRegistryId: harness.registryId,
+      expectedSubjectDid: participant.subjectDid,
+      expectedResourceId: otherResourceId,
+    }), /resource mismatch/iu);
+    assert.throws(() => profile.verifyBundle(client, bundle, {
+      expectedRegistryId: harness.registryId,
+      expectedSubjectDid: participant.subjectDid,
+      expectedResourceId: resourceId,
+      evaluationTime: new Date(Date.parse(bundle.epoch.validUntil) + 1000).toISOString(),
+    }), /Epoch is stale/iu);
     const evaluated = await expectHttp(await post("/v1/authorizations/evaluate", {
       role, subjectDid: participant.subjectDid, resourceId,
       at: bundle.authorization.activeFrom,
     }), 200);
     assert.equal(evaluated.trustedAtTime, true);
+    const wrongScope = await post("/v1/authorizations/evaluate", {
+      role, subjectDid: participant.subjectDid, resourceId: otherResourceId,
+      at: bundle.authorization.activeFrom,
+    });
+    assert.equal(wrongScope.status, 404);
     let trqpAgreement = null;
     if (role === "issuer" || role === "verifier") {
       const request = {
@@ -640,6 +662,8 @@ try {
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
       "proposal-replay:409", "lost-response-recovered:200",
       "premature-activation:403", "stale-governed-context:409",
+      ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
+        "expired-evidence:client", "out-of-scope-query:404"]),
       "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);
 } finally {
