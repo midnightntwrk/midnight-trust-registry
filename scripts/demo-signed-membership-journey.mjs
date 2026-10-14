@@ -456,10 +456,27 @@ try {
   assert.equal(proposal.eventHash, asHex(profile.getProposalEvidence().proposalGovernanceEventHash));
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 409);
 
+  const beforePremature = harness.simulator.getLedger().governanceActionCount;
+  const premature = await adminClient.prepareGovernedAction(role, profile.id, "activate");
+  const earlyActivation = await post(`/v1/governed/${role}/${profile.id}/actions/activate`, {
+    prepared: premature,
+    signers: quorumSignatures(premature),
+  });
+  assert.equal(earlyActivation.status, 403);
+  assert.match((await earlyActivation.json()).type, /governed-action-rejected$/u);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, beforePremature);
+
   for (const action of ["approve", "activate"]) {
     const actionPath = `/v1/governed/${role}/${profile.id}/actions/${action}`;
     const prepared = await adminClient.prepareGovernedAction(role, profile.id, action);
     const beforeAction = harness.simulator.getLedger().governanceActionCount;
+    const stale = await post(actionPath, {
+      prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
+      signers: quorumSignatures(prepared),
+    });
+    assert.equal(stale.status, 409);
+    assert.match((await stale.json()).type, /stale-governed-action$/u);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
     assert.equal((await post(actionPath, {
       prepared, signers: [signAction(maintainers[0], prepared)],
     })).status, 403);
@@ -579,6 +596,10 @@ try {
         `${base}/v1/authorizations/${role}/${profile.id}`,
       ), 200);
       assert.equal(entry.authorization.status, action === "suspend" ? "suspended" : "revoked");
+      const board = await adminClient.loadReviewBoard();
+      assert.equal(board[profile.snapshotKey].some((candidate) =>
+        candidate.authorization?.authorizationId === profile.id
+        && candidate.authorization.status === entry.authorization.status), true);
       const changedAt = action === "suspend"
         ? entry.authorization.suspendedAt : entry.authorization.revokedAt;
       assert.ok(changedAt);
@@ -618,6 +639,7 @@ try {
       "missing-proposal-receipt:403", "single-maintainer:403",
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
       "proposal-replay:409", "lost-response-recovered:200",
+      "premature-activation:403", "stale-governed-context:409",
       "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);
 } finally {
