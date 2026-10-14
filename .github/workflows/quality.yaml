@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - milestone-0.1.0
   pull_request:
     branches:
       - main
@@ -30,12 +31,13 @@ jobs:
   quality:
     name: Typecheck, Audit, and Packaging Baseline
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - name: Enable Corepack
         run: corepack enable
@@ -105,8 +107,33 @@ jobs:
       - name: Validate Compact workflow semantics
         run: pnpm run check:compact-version
 
-      - name: Build all workspaces
-        run: pnpm run build
+      - name: Build all workspaces without proving keys
+        run: pnpm run build:light
+
+      - name: Detect proving-input changes
+        id: proving-inputs
+        run: node scripts/proving-key-change.mjs --github-output
+
+      - name: Restore ZKIR-derived proving keys
+        if: steps.proving-inputs.outputs.required == 'true'
+        id: proving-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: contracts/trust-registry/src/managed/trust-registry/keys
+          key: tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-${{ github.sha }}
+          restore-keys: |
+            tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-
+
+      - name: Verify and complete ZKIR-derived proving keys
+        if: steps.proving-inputs.outputs.required == 'true'
+        run: node scripts/proving-key-cache.mjs
+
+      - name: Save verified proving keys
+        if: steps.proving-inputs.outputs.required == 'true' && steps.proving-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: contracts/trust-registry/src/managed/trust-registry/keys
+          key: tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-${{ github.sha }}
 
       - name: Typecheck all workspaces
         run: pnpm run typecheck:light
