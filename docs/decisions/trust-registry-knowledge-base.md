@@ -499,3 +499,46 @@ indicating the current Turbo/output sequence invalidates the proving cache.
 Do not overlap broad light and full proving runs on one laptop, and do not
 repeat full proving for a TypeScript-only edit. Reserve it for the final
 contract-bearing batch after focused and light gates.
+
+The local #73 follow-on now records VC authority keys in a role-separate
+Compact ledger map. Policy-bound maintainer signatures govern registration,
+suspension, revocation, and atomic rotation; the old key becomes retired and
+the successor current at one logical sequence, with zero registry overlap.
+Historical records and predecessor IDs remain queryable. The registry
+computes the seven-field VC authority domain from the committed registry ID
+and its actual `kernel.self().bytes`, not a caller-supplied registry address.
+Signer-side `createQuorumGatedVcAuthoritySigner` now requires an independent
+current finalized authority-key reader and compares key ID, DID/method,
+network, consumer, domain, public key, policy commitment, and effective
+sequence before key custody. The reader interface is not itself a network
+finality implementation; tests inject a fixture reader. Numeric contract
+policy versions are distinct from semantic decision labels such as `v2`, so
+the trusted reader must verify numeric current-policy currency.
+
+Local timing: a full 64-circuit proving-key build took roughly 22 minutes;
+`compact:light` generated simulator code in about one second, focused key
+tests in two to three seconds, the contract suite in about 12 seconds, and
+`./run.sh --light` in about 44 seconds. The first signing mismatch exposed a
+simulator fixture bug: it regenerated `sampleContractAddress()` after each
+circuit, making any `kernel.self()`-bound action appear to change deployment.
+The simulator now holds one address for its lifetime. Use focused tests plus
+`compact:light` for contract iteration and the full proving build only after
+freezing the contract batch. PR #183's earlier Milestone Light timeout was a
+TRQP test crossing Vitest's default five seconds under parallel CI load; a
+targeted 20-second bound passed locally and on the rerun without weakening
+assertions.
+
+The #184 final-head review exposed a missing authority-DID freshness check:
+the signer compared a governed method commitment with its pinned configuration
+but did not re-read the authority's current DID document. The local signer now
+uses the authenticated DID reader a second time, requires a live native
+JubJub assertion method with the expected controller and public key, and
+refuses key custody on removal, deactivation, relationship loss, or key
+substitution. Published DID 0.7.0 JWK encoding differs from the newer source
+checkout, so the comparison uses the installed package's public coordinate
+codec rather than a copied conversion. The review's separate claim that the
+controller comparison used two pinned values was false; the code already
+compared request and pinned addresses, and a negative regression test confirms
+it. A fresh 65-circuit proving build plus full integration passed before the
+TypeScript-only DID check; focused, light, and fast integration gates passed
+after it. Production finality and custody implementations remain open.

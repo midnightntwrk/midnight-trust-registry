@@ -14,6 +14,7 @@ import {
   type AuditorAuthorizationRecord,
   type AuditorProposalEvidenceRecord,
   type EvidenceVerifierKeyRecord,
+  type VcAuthorityKeyRecord,
   type EpochCommitmentRecord,
   type IssuerAuthorizationRecord,
   type IssuerProposalEvidenceRecord,
@@ -86,6 +87,7 @@ export const createMaintainerFixture = (
 
 export class TrustRegistrySimulator {
   readonly contract: Contract<TrustRegistryPrivateState>;
+  readonly contractAddress = sampleContractAddress();
   circuitContext: CircuitContext<TrustRegistryPrivateState>;
 
   constructor() {
@@ -96,7 +98,7 @@ export class TrustRegistrySimulator {
       createConstructorContext({}, "0".repeat(64)),
     );
     this.circuitContext = createCircuitContext(
-      sampleContractAddress(),
+      this.contractAddress,
       initialState.currentZswapLocalState,
       initialState.currentContractState,
       initialState.currentPrivateState,
@@ -166,7 +168,7 @@ export class TrustRegistrySimulator {
   ): T {
     const result = circuitFn();
     this.circuitContext = createCircuitContext(
-      sampleContractAddress(),
+      this.contractAddress,
       result.context.currentZswapLocalState,
       result.context.currentQueryContext.state,
       result.context.currentPrivateState,
@@ -432,6 +434,118 @@ export class TrustRegistrySimulator {
       this.contract.impureCircuits.getCurrentMaintainerMembership(
         this.circuitContext,
         maintainerDidCommitment,
+      ),
+    );
+  }
+
+  registerVcAuthorityKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    keyIdCommitment: Uint8Array,
+    authorityDidCommitment: Uint8Array,
+    authorityMethodIdCommitment: Uint8Array,
+    publicKey: JubjubPoint,
+    networkIdCommitment: Uint8Array,
+    consumerContractAddress: Uint8Array,
+    policyCommitment: Uint8Array,
+    policyVersion: bigint,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.registerVcAuthorityKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        keyIdCommitment,
+        authorityDidCommitment,
+        authorityMethodIdCommitment,
+        publicKey,
+        networkIdCommitment,
+        consumerContractAddress,
+        policyCommitment,
+        policyVersion,
+      ),
+    );
+  }
+
+  getVcAuthorityKey(keyIdCommitment: Uint8Array): VcAuthorityKeyRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getVcAuthorityKey(this.circuitContext, keyIdCommitment),
+    );
+  }
+
+  getCurrentVcAuthorityKey(consumerContractAddress: Uint8Array): VcAuthorityKeyRecord {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.getCurrentVcAuthorityKey(
+        this.circuitContext, consumerContractAddress,
+      ),
+    );
+  }
+
+  suspendVcAuthorityKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    keyIdCommitment: Uint8Array,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.suspendVcAuthorityKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        keyIdCommitment,
+        reasonHash,
+      ),
+    );
+  }
+
+  revokeVcAuthorityKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    keyIdCommitment: Uint8Array,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.revokeVcAuthorityKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        keyIdCommitment,
+        reasonHash,
+      ),
+    );
+  }
+
+  rotateVcAuthorityKey(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    oldKeyIdCommitment: Uint8Array,
+    newKeyIdCommitment: Uint8Array,
+    newAuthorityMethodIdCommitment: Uint8Array,
+    newPublicKey: JubjubPoint,
+    reasonHash: Uint8Array,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.rotateVcAuthorityKey(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
+        ),
+        oldKeyIdCommitment,
+        newKeyIdCommitment,
+        newAuthorityMethodIdCommitment,
+        newPublicKey,
+        reasonHash,
       ),
     );
   }

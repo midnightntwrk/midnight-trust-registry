@@ -413,6 +413,50 @@ export const computeCreateEvidenceVerifierKeyPayloadHash = (
     policyVersion,
   );
 
+export const computeCreateVcAuthorityKeyPayloadHash = (
+  keyIdCommitment: Uint8Array,
+  authorityDidCommitment: Uint8Array,
+  authorityMethodIdCommitment: Uint8Array,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Uint8Array,
+  consumerContractAddress: Uint8Array,
+  domainCommitment: Uint8Array,
+  policyCommitment: Uint8Array,
+  policyVersion: bigint,
+): Uint8Array => pureCircuits.createVcAuthorityKeyPayloadHash(
+  require32Bytes(keyIdCommitment, "VC authority key id"),
+  require32Bytes(authorityDidCommitment, "VC authority DID"),
+  require32Bytes(authorityMethodIdCommitment, "VC authority method id"),
+  publicKey,
+  require32Bytes(networkIdCommitment, "VC authority network"),
+  require32Bytes(consumerContractAddress, "VC authority consumer"),
+  require32Bytes(domainCommitment, "VC authority domain"),
+  require32Bytes(policyCommitment, "VC authority policy"),
+  policyVersion,
+);
+
+export const computeUpdateVcAuthorityKeyPayloadHash = (
+  keyIdCommitment: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array => pureCircuits.updateVcAuthorityKeyPayloadHash(
+  require32Bytes(keyIdCommitment, "VC authority key id"),
+  require32Bytes(previousLifecycleEventHash, "Previous VC authority event"),
+  require32Bytes(reasonHash, "VC authority reason"),
+);
+
+export const computeRotateVcAuthorityKeyPayloadHash = (
+  oldKeyIdCommitment: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  newCreatePayloadHash: Uint8Array,
+  reasonHash: Uint8Array,
+): Uint8Array => pureCircuits.rotateVcAuthorityKeyPayloadHash(
+  require32Bytes(oldKeyIdCommitment, "Old VC authority key id"),
+  require32Bytes(previousLifecycleEventHash, "Previous VC authority event"),
+  require32Bytes(newCreatePayloadHash, "New VC authority payload"),
+  require32Bytes(reasonHash, "VC authority rotation reason"),
+);
+
 export const computeUpdateEvidenceVerifierKeyPayloadHash = (
   authorizationId: Uint8Array,
   previousLifecycleEventHash: Uint8Array,

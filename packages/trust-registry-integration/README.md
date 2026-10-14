@@ -106,7 +106,19 @@ Current coverage:
   credential. Both issuer and verifier descriptors derive from simulator
   grants, epoch witnesses, and resolved DID methods. Readers and signer remain
   local fixtures; production finality, governed external VC schema enrollment,
-  authority-key lifecycle, and durable deployed consumer state remain open.
+  production finalized authority-key reads and durable deployed consumer
+  state remain open.
+- `createQuorumGatedVcAuthoritySigner` is a signer-side port wrapper. It uses
+  its own trusted registry/DID readers to recheck current finalized quorum and
+  method state, then requires an independent finalized current VC authority-key
+  read before invoking key custody. The key ID, authority DID/method, network,
+  consumer, domain, public key, policy commitment, and effective sequence must
+  match the configured anchor and descriptor. A suspended or substituted key,
+  stale grant, or substituted root never reaches the signing callback. The
+  reader must authenticate the exact registry contract, finality, and numeric
+  current governance-policy version; the descriptor's semantic policy label
+  is not that numeric version. Fixture readers do not establish network
+  finality or production key custody.
 - a clean-checkout Compact composition probe that imports the published
   `credential-compact` module through its npm export, derives VC and VP body
   roots, accepts matching envelope linkage, and rejects mismatched schema,
