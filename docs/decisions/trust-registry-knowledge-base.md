@@ -934,3 +934,16 @@ disablement. `./run.sh --light` passed (20/20 tasks) and `pnpm audit
 --audit-level low` reported no vulnerabilities. A production finalized-ledger
 reader and distributed admission store remain open; simulator confirmation
 must not be described as network finality.
+
+The applicant portal now wires the entire private recognition accreditation
+interaction: one-use challenge, external authority assertion plus VP submission,
+accepted-receipt recovery, and finalized-proposal lookup. The portal never
+signs for the authority. It rejects a submission with the wrong challenge
+nonce before sending, clears raw VP JSON after submit, and invalidates the
+challenge and receipt view when the recognition ID changes. All four calls use
+same-origin credentials and no-store; the UI disables them when the configured
+API is cross-origin. The server remains responsible for actual DID assertion,
+VC/VP/status, accreditor policy, and receipt verification. Focused portal
+tests and `./run.sh --light` pass (20/20), docs build passes, and audit is
+clean. The demo host still needs a real authenticated recognition port and
+finality reader before this can be presented as live-network onboarding.

@@ -266,9 +266,12 @@ and recognition proposal records. The recognition HTTP resolution route
 requires private request authorization and the exact accepted accreditation
 receipt, application binding, and evidence commitment. It may recover an
 observed event after the receipt window has passed, but cannot authorize a new
-proposal. The applicant portal exposes this recovery only through an
-authenticated same-origin host; it sends the accepted receipt ID and evidence
-commitment, not the underlying VP or a token in the URL or browser storage.
+proposal. The applicant portal exposes the authority challenge, externally
+signed assertion plus accreditation VP submission, accepted-receipt lookup,
+and proposal recovery only through an authenticated same-origin host. It
+clears the raw submission form after use and does not store the VP in browser
+storage. Recovery sends only the accepted receipt ID and evidence commitment,
+not the underlying VP or a token in the URL or browser storage.
 The caller MUST provide an independently finalized ledger view and the expected registry
 ID; the resolver checks the latter against Compact state. An unconfirmed
 transaction result is not a substitute. A `not-observed` response is

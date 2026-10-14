@@ -10,6 +10,7 @@ import type {
   ApplicationVpHttpSubmissionResult,
   ApplicationChallengeBinding,
   PendingApplicationRecord,
+  RecognitionAdmissionReceipt,
 } from "@midnight-ntwrk/trust-registry-api";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
@@ -262,6 +263,37 @@ export class TrustRegistryApplicantPortalClient {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ receiptId, evidenceCommitment }),
       },
+    );
+    return parsePrivateResponse(response);
+  }
+
+  /** Challenge and raw VP exchange are private and require an authenticated same-origin host. */
+  async issueRecognitionChallenge(recognitionId: string): Promise<{
+    recognitionId: string; nonce: string; challengeHash: string; issuedAt: string; expiresAt: string;
+  }> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/v1/recognition-evidence/${encodeURIComponent(recognitionId)}/challenges`,
+      { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "content-type": "application/json" }, body: "{}" },
+    );
+    return parsePrivateResponse(response);
+  }
+
+  async submitRecognitionAccreditation(recognitionId: string, signedSubmission: unknown): Promise<{
+    recognitionId: string; evidenceCommitment: string; receipt?: RecognitionAdmissionReceipt; expiresAt: string;
+  }> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/v1/recognition-evidence/${encodeURIComponent(recognitionId)}/submissions`,
+      { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "content-type": "application/json" }, body: JSON.stringify(signedSubmission) },
+    );
+    return parsePrivateResponse(response);
+  }
+
+  async loadAcceptedRecognitionAccreditation(recognitionId: string): Promise<RecognitionAdmissionReceipt> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/v1/recognition-evidence/${encodeURIComponent(recognitionId)}/accepted`,
+      { method: "GET", credentials: "same-origin", cache: "no-store" },
     );
     return parsePrivateResponse(response);
   }

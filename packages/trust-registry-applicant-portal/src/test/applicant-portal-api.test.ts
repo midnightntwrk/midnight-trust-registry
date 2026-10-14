@@ -74,6 +74,29 @@ describe("public auditor inspection", () => {
 });
 
 describe("private application VP exchange", () => {
+  it("uses same-origin private routes for recognition challenge, accreditation, and receipt recovery", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const receipt = { receiptId: `0x${"11".repeat(32)}`, evidenceCommitment: `0x${"22".repeat(32)}` };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init: init! });
+      if (String(input).endsWith("/challenges")) return Response.json({ recognitionId: "recognition:partner", nonce: "nonce" });
+      if (String(input).endsWith("/submissions")) return Response.json({ recognitionId: "recognition:partner", receipt });
+      return Response.json(receipt);
+    }) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    await client.issueRecognitionChallenge("recognition:partner");
+    const submission = { nonce: "nonce", signed: { proof: "external" }, accreditation: { rawPresentationBody: "raw" } };
+    await client.submitRecognitionAccreditation("recognition:partner", submission);
+    expect(await client.loadAcceptedRecognitionAccreditation("recognition:partner")).toEqual(receipt);
+    expect(calls.map(({ url }) => new URL(url).pathname)).toEqual([
+      "/v1/recognition-evidence/recognition%3Apartner/challenges",
+      "/v1/recognition-evidence/recognition%3Apartner/submissions",
+      "/v1/recognition-evidence/recognition%3Apartner/accepted",
+    ]);
+    expect(calls.every(({ init }) => init.credentials === "same-origin" && init.cache === "no-store")).toBe(true);
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual(submission);
+  });
+
   it("recovers recognition by receipt using only a same-origin authenticated session", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ state: "not-observed" })) as typeof fetch;
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
