@@ -51,6 +51,8 @@ import {
   FileApplicationAdmissionStore,
   FileApplicationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
+import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admin-console/dist/api.js";
+import { TrustRegistryApplicantPortalClient } from "../packages/trust-registry-applicant-portal/dist/api.js";
 
 const role = process.argv[2];
 if (role !== "issuer" && role !== "verifier" && role !== "auditor" && role !== "maintainer") {
@@ -345,6 +347,12 @@ try {
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
+  const authenticatedFetch = (input, init = {}) => fetch(input, {
+    ...init,
+    headers: { ...init.headers, authorization: `Bearer ${token}` },
+  });
+  const applicantClient = new TrustRegistryApplicantPortalClient(base, authenticatedFetch);
+  const adminClient = new TrustRegistryAdminConsoleClient(base, authenticatedFetch);
   const post = (path, body, withToken = true) => fetch(`${base}${path}`, {
     method: "POST",
     headers: {
@@ -362,15 +370,21 @@ try {
   assert.equal((await post("/v1/pending-applications", {
     ...application, authorizationId: `auth:${role}:substituted:v1`,
   })).status, 400);
-  const pending = await expectHttp(await post("/v1/pending-applications", application), 201);
+  const pending = await applicantClient.registerPendingApplication(application);
   assert.equal(pending.authorizationId, profile.id);
   assert.equal(pending.binding.applicationId, applicationId);
   assert.equal(pending.binding.scopeCommitment, computeAuthorizationScopeCommitment(scope));
   assert.equal((await post("/v1/pending-applications", application)).status, 409);
 
   const evidencePath = `/v1/application-evidence/${applicationId}`;
+  const binding = await applicantClient.loadPendingApplicationBinding(applicationId);
+  assert.equal(binding.applicationId, applicationId);
+  assert.equal(binding.subjectDid, participant.subjectDid);
+  assert.deepEqual(binding.scope, scope);
+  assert.equal(binding.scopeCommitment, computeAuthorizationScopeCommitment(scope));
+  assert.deepEqual(binding.governedResource, governedResource);
   assert.equal((await post(`${evidencePath}/challenges`, {}, false)).status, 403);
-  const challenge = await expectHttp(await post(`${evidencePath}/challenges`, {}), 201);
+  const challenge = await applicantClient.issueApplicationChallenge(applicationId);
   assert.equal((await getPrivate(`${evidencePath}/receipt`, false)).status, 403);
   assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
   acceptedChallengeHash = challenge.challengeHash;
@@ -381,8 +395,8 @@ try {
     presentation: currentProof.input.submission,
   };
   // The accepted VP response is intentionally lost; recover without reusing the challenge.
-  assert.equal((await post(`${evidencePath}/submissions`, submission)).status, 202);
-  const submitted = await expectHttp(await getPrivate(`${evidencePath}/receipt`), 200);
+  await applicantClient.submitApplicationPresentation(applicationId, challenge, submission.presentation);
+  const submitted = await applicantClient.loadAcceptedApplicationEvidence(applicationId);
   assert.equal(submitted.receipt.evidenceCommitment, submitted.evidence.commitment);
   assert.equal(JSON.stringify(submitted).includes(currentProof.input.submission.rawCredentialBody), false);
   const reopened = new FileApplicationAdmissionStore(
@@ -403,9 +417,7 @@ try {
   withholdAcceptedReceipt = true;
   assert.equal((await post(`${proposalPath}/prepare`, { evidence: submitted.evidence })).status, 403);
   withholdAcceptedReceipt = false;
-  const preparedProposal = await expectHttp(await post(
-    `${proposalPath}/prepare`, { evidence: submitted.evidence },
-  ), 200);
+  const preparedProposal = await adminClient.prepareProposal(role, profile.id, submitted.evidence);
   const verifierSignature = profile.signProposalEvidence(
     profile.prepareProposal(submitted.evidence, expectedEvidence()),
   );
@@ -435,20 +447,18 @@ try {
   }
   assert.equal(harness.simulator.getLedger().governanceActionCount, beforeProposal);
   // Discard the response body to exercise recovery after a client loses its submit receipt.
-  assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 202);
+  await adminClient.submitProposal(role, profile.id, proposalBody);
   withholdAcceptedReceipt = true;
   assert.equal((await post(`${proposalPath}/resolve`, { evidence: submitted.evidence })).status, 403);
   withholdAcceptedReceipt = false;
-  const proposal = await expectHttp(await post(`${proposalPath}/resolve`, {
-    evidence: submitted.evidence,
-  }), 200);
+  const proposal = await adminClient.resolveProposal(role, profile.id, submitted.evidence);
   assert.equal(proposal.state, "observed");
   assert.equal(proposal.eventHash, asHex(profile.getProposalEvidence().proposalGovernanceEventHash));
   assert.equal((await post(`${proposalPath}/submit`, proposalBody)).status, 409);
 
   for (const action of ["approve", "activate"]) {
     const actionPath = `/v1/governed/${role}/${profile.id}/actions/${action}`;
-    const prepared = await expectHttp(await fetch(`${base}${actionPath}`), 200);
+    const prepared = await adminClient.prepareGovernedAction(role, profile.id, action);
     const beforeAction = harness.simulator.getLedger().governanceActionCount;
     assert.equal((await post(actionPath, {
       prepared, signers: [signAction(maintainers[0], prepared)],
@@ -459,7 +469,9 @@ try {
       })).status, 403);
     }
     assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
-    await expectHttp(await post(actionPath, { prepared, signers: quorumSignatures(prepared) }), 202);
+    await adminClient.submitGovernedAction(role, profile.id, action, {
+      prepared, signers: quorumSignatures(prepared),
+    });
   }
 
   let trustResult;
@@ -469,6 +481,9 @@ try {
     assert.equal(harness.simulator.getLedger().activeMaintainerCount, activeMaintainersBeforeApplication + 1n);
     trustResult = { membershipActive: true, verificationSurface: "Compact membership record" };
   } else {
+    const board = await adminClient.loadReviewBoard();
+    assert.equal(board[profile.snapshotKey].some((entry) =>
+      entry.authorization?.authorizationId === profile.id && entry.authorization.status === "active"), true);
     const bundle = await expectHttp(await fetch(
       `${base}/v1/authorizations/${role}/${profile.id}/evidence`,
     ), 200);
@@ -484,7 +499,27 @@ try {
       at: bundle.authorization.activeFrom,
     }), 200);
     assert.equal(evaluated.trustedAtTime, true);
-    trustResult = { trustedAtTime: true, verificationSurface: "public API bundle and independent client" };
+    let trqpAgreement = null;
+    if (role === "issuer" || role === "verifier") {
+      const request = {
+        entity_id: participant.subjectDid,
+        authority_id: harness.registryDid,
+        action: role === "issuer" ? "issue" : "verify",
+        resource: resourceId,
+        context: { time: bundle.authorization.activeFrom },
+      };
+      const decision = await expectHttp(await post("/v1/trqp/authorizations/query", request), 200);
+      const evidence = await expectHttp(await post("/v1/trqp/authorizations/evidence", request), 200);
+      assert.equal(decision.authorized, evaluated.trustedAtTime);
+      assert.equal(evidence.authorized, evaluated.trustedAtTime);
+      assert.equal(evidence.bundle.inclusionProof.leafHash, bundle.inclusionProof.leafHash);
+      trqpAgreement = true;
+    }
+    trustResult = {
+      trustedAtTime: true,
+      trqpAgreement,
+      verificationSurface: "UI clients, public API bundle, TRQP, and independent client",
+    };
   }
   process.stdout.write(`${JSON.stringify({
     demo: `signed-${role}-journey`,
@@ -495,6 +530,7 @@ try {
     proposalEventHash: proposal.eventHash,
     evidenceCommitment: submitted.evidence.commitment,
     activeEpochId: snapshot.currentEpoch.epochId,
+    clientSurfaces: ["applicant portal", "admin console"],
     ...trustResult,
     expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",

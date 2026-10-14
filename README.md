@@ -182,6 +182,12 @@ verifier, and auditor grants reach an API bundle independently verified by the
 client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
 the ledger. Pending records, consumed nonces, challenges, and accepted redacted
 receipts use private files that a second store instance can reopen. The local
+journeys use the applicant portal client for the signed application and VP
+admission, and the admin console client for quorum proposal and lifecycle
+actions. Issuer and verifier journeys compare the public API trust decision
+and evidence leaf with TRQP at the same selected time; auditor has no TRQP
+mapping in this profile. `./run.sh integration --light` executes all four
+joined journeys as the deterministic local CI target. The local
 file adapter does not make challenge consumption, evidence acceptance, and
 Compact governance one atomic transaction; the demo does not establish
 production family/status verification or network finality.
