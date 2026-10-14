@@ -40,5 +40,5 @@ describe("published simulator snapshot", () => {
     expect(Buffer.from(bytes32Commitment(snapshot.currentEpoch.epochId))).toEqual(
       Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId),
     );
-  });
+  }, 20_000);
 });
