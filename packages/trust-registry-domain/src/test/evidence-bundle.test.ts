@@ -233,6 +233,9 @@ describe("trust registry evidence bundle", () => {
 
   it("exports a JSON schema with policy, epoch, inclusion, authorization, and recognition sections", () => {
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("policy");
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.policy.required).toContain("recognitionAccreditorAnchors");
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.policy.properties.recognitionAccreditorAnchors.items
+      .required).toContain("accreditorAssertionMethodId");
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("epoch");
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("inclusionProof");
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization).toBeDefined();

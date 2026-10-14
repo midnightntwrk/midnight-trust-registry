@@ -9,9 +9,34 @@ import {
   deriveGovernancePolicySnapshot,
   GovernancePolicyRecordSchema,
   GovernancePolicySnapshotSchema,
+  resolveGovernedRecognitionAccreditorAnchor,
 } from "../index.js";
 
 const families = ["maintainer", "member", "emergency", "archival"] as const;
+const recognitionScope = {
+  registryId: "registry:midnight:kanon",
+  recognizedRegistryId: "registry:external:partner",
+  scopeResourceType: "credentialfamily",
+  scopeResourceId: "credential-family:partner:v1",
+};
+const recognitionAnchor = {
+  format: "tr-recognition-accreditor-anchor-v1" as const,
+  targetRegistryId: recognitionScope.registryId,
+  policyId: "policy:kanon",
+  policyVersion: "v1",
+  accreditorDid: "did:midnight:undeployed:accreditor",
+  accreditorAssertionMethodId: "did:midnight:undeployed:accreditor#assertion-1",
+  credentialFamilyId: "credential-family:registry-accreditation:v1",
+  schemaId: "schema:registry-accreditation:v1",
+  statusRegistryId: "status-registry:accreditation:v1",
+  statusAuthorityDid: "did:midnight:undeployed:status",
+  statusAuthorityMethodId: "did:midnight:undeployed:status#assertion-1",
+  recognizedRegistryId: recognitionScope.recognizedRegistryId,
+  scopeResourceType: recognitionScope.scopeResourceType,
+  scopeResourceId: recognitionScope.scopeResourceId,
+  effectiveFrom: "2026-10-05T00:00:00.000Z",
+  effectiveUntil: "2026-10-06T00:00:00.000Z",
+};
 
 function policy(version = "v1", threshold = 2) {
   return GovernancePolicyRecordSchema.parse({
@@ -103,6 +128,55 @@ describe("governance policy snapshot v1", () => {
     }));
     expect(computeGovernancePolicySnapshotCommitment(higher)).not.toBe(computeGovernancePolicySnapshotCommitment(first));
     expect(computeGovernancePolicySnapshotCommitment(differentRule)).not.toBe(computeGovernancePolicySnapshotCommitment(first));
+  });
+
+  it("binds exact accreditor anchors to the active governance policy commitment", () => {
+    const record = GovernancePolicyRecordSchema.parse({
+      ...policy(), recognitionAccreditorAnchors: [recognitionAnchor],
+    });
+    const activePolicyCommitment = computeGovernancePolicySnapshotCommitment(
+      deriveGovernancePolicySnapshot(record),
+    );
+    const input = {
+      policy: record,
+      activePolicyCommitment,
+      scope: recognitionScope,
+      evaluatedAtMs: Date.parse("2026-10-05T12:00:00.000Z"),
+    };
+    const resolved = resolveGovernedRecognitionAccreditorAnchor(input);
+    expect(resolved.anchor.accreditorDid).toBe(recognitionAnchor.accreditorDid);
+    expect(resolved.commitment).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(() => resolveGovernedRecognitionAccreditorAnchor({
+      ...input, policy: GovernancePolicyRecordSchema.parse({
+        ...record, recognitionAccreditorAnchors: [{
+          ...recognitionAnchor,
+          accreditorDid: "did:midnight:undeployed:substituted",
+          accreditorAssertionMethodId: "did:midnight:undeployed:substituted#assertion-1",
+        }],
+      }),
+    })).toThrow(/active governed policy/u);
+    expect(() => resolveGovernedRecognitionAccreditorAnchor({
+      ...input, scope: { ...recognitionScope, scopeResourceId: "credential-family:other:v1" },
+    })).toThrow(/exact scope/u);
+    expect(() => resolveGovernedRecognitionAccreditorAnchor({
+      ...input, evaluatedAtMs: Date.parse(recognitionAnchor.effectiveUntil),
+    })).toThrow(/exact scope/u);
+  });
+
+  it("rejects duplicated, wrong-policy, and applicant-only recognition anchors", () => {
+    expect(() => GovernancePolicyRecordSchema.parse({
+      ...policy(), recognitionAccreditorAnchors: [recognitionAnchor, recognitionAnchor],
+    })).toThrow(/distinct external registry/u);
+    expect(() => GovernancePolicyRecordSchema.parse({
+      ...policy(), recognitionAccreditorAnchors: [{ ...recognitionAnchor, policyVersion: "v2" }],
+    })).toThrow(/this policy revision/u);
+    const record = policy();
+    expect(() => resolveGovernedRecognitionAccreditorAnchor({
+      policy: record,
+      activePolicyCommitment: computeGovernancePolicySnapshotCommitment(deriveGovernancePolicySnapshot(record)),
+      scope: recognitionScope,
+      evaluatedAtMs: Date.parse("2026-10-05T12:00:00.000Z"),
+    })).toThrow(/exact scope/u);
   });
 
   it("checks a supplied snapshot against the independently derived source policy", () => {
