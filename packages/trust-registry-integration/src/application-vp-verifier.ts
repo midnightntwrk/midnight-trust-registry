@@ -1,16 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import {
-  pureCircuits,
-  type ExplicitHolderBinding,
-  type Proof,
-  type RegistryBoundStatusBinding,
-} from "@midnight-ntwrk/credential-compact";
-import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
-import {
-  parseMidnightDIDString,
-  type MidnightDIDResolverInterface,
-} from "@midnight-ntwrk/midnight-did";
+import { type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import {
   ApplicationChallengeBindingSchema,
   ApplicationEvidenceEvaluationTimeSchema,
@@ -22,23 +12,14 @@ import {
   type AuthorizationScope,
 } from "@midnight-ntwrk/trust-registry-domain";
 
+import { verifyMidnightVcVpProofs, type MidnightVcVpProofMaterial } from "./midnight-vc-vp-proof.js";
+
 const MAX_PRESENTATION_AGE_MS = 5 * 60_000;
 const MAX_FUTURE_CLOCK_SKEW_MS = 60_000;
 const MAX_ATTESTATION_AGE_MS = 24 * 60 * 60_000;
 const NONCE_PATTERN = /^0x[0-9a-f]{64}$/u;
 
-export type ApplicationVpMaterial = {
-  issuerDid: string;
-  issuerMethodId: string;
-  subjectDid: string;
-  holderMethodId: string;
-  credentialProof: Proof;
-  presentationProof: Proof;
-  credentialBodyRoot: Uint8Array;
-  presentationBodyRoot: Uint8Array;
-  credentialHolderBinding: ExplicitHolderBinding;
-  presentationHolderBinding: ExplicitHolderBinding;
-  statusBinding: RegistryBoundStatusBinding;
+export type ApplicationVpMaterial = MidnightVcVpProofMaterial & {
   credentialExpiresAtMs: number;
 };
 
@@ -147,42 +128,11 @@ export async function verifyApplicationVp<Submission>(input: {
     },
   };
   try {
-    const [issuerMethod, holderMethod] = await Promise.all([
-      resolveMidnightDIDMethodBinding({
-        resolver: guardedResolver,
-        did: parseMidnightDIDString(material.issuerDid),
-        verificationMethodId: material.issuerMethodId,
-        relationship: "assertionMethod",
-      }),
-      resolveMidnightDIDMethodBinding({
-        resolver: guardedResolver,
-        did: parseMidnightDIDString(material.subjectDid),
-        verificationMethodId: material.holderMethodId,
-        relationship: "authentication",
-      }),
-    ]);
-    assertProofMethod(material.credentialProof, issuerMethod);
-    assertProofMethod(material.presentationProof, holderMethod);
-    requireBytes32(material.credentialBodyRoot);
-    requireBytes32(material.presentationBodyRoot);
-    pureCircuits.assertValidIssuanceContextProof(material.credentialBodyRoot, material.credentialProof);
-    pureCircuits.assertValidPresentationContextProof(material.presentationBodyRoot, material.presentationProof);
-    pureCircuits.assertMatchingExplicitHolderBindings(
-      material.credentialHolderBinding,
-      material.presentationHolderBinding,
-    );
-    pureCircuits.assertProofMatchesExplicitHolderBinding(
-      material.presentationHolderBinding,
-      material.presentationProof,
-    );
-    pureCircuits.assertValidRegistryBoundStatusBinding(material.statusBinding);
+    const verified = await verifyMidnightVcVpProofs({ material, resolver: guardedResolver });
     if (await input.family.assertCredentialBodyBinding(material) !== true) {
       throw new Error("Credential body binding failed");
     }
-    presentationHash = sha256Hex(pureCircuits.presentationProofPayloadRoot(
-      material.presentationBodyRoot,
-      material.presentationProof,
-    ));
+    presentationHash = verified.presentationHash;
   } catch (error) {
     if (error instanceof ApplicationVpDependencyUnavailableError) {
       throw new ApplicationVpVerificationError("unavailable");
@@ -256,24 +206,8 @@ export function createApplicationVpIntakeVerifier<Submission>(config: {
   };
 }
 
-function assertProofMethod(
-  proof: Proof,
-  method: Awaited<ReturnType<typeof resolveMidnightDIDMethodBinding>>,
-): void {
-  if (
-    !equalBytes(proof.signerVerificationMethodRef.controllerAddress.bytes, method.verificationMethodRef.controllerAddress.bytes) ||
-    !equalBytes(proof.signerVerificationMethodRef.methodId, method.verificationMethodRef.methodId) ||
-    proof.publicKey.x !== method.publicKey.x ||
-    proof.publicKey.y !== method.publicKey.y
-  ) throw new Error("Proof method does not match resolved DID method");
-}
-
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
-}
-
-function requireBytes32(value: Uint8Array): void {
-  if (value.length !== 32) throw new Error("Proof body root must contain 32 bytes");
 }
 
 function validTime(value: number): boolean {

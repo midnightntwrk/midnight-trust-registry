@@ -2,6 +2,13 @@
 
 Status: implementation plan for issue #78, 2026-10-14
 
+Local implementation checkpoint: the domain anchor/claims schema, reusable
+Midnight VC/VP proof verifier, and private recognition accreditation VP verifier
+have signed-fixture positive and negative tests. The status decision port is
+injected by trusted code and the test fixture is not a production status
+source. No public intake route or governed anchor lookup consumes this result
+yet; the challenge service still has a DID-only consume path.
+
 The existing recognition flow verifies a Midnight DID authority assertion,
 consumes an exact-scope challenge, and binds a local evidence-verifier signature
 and maintainer quorum into Compact. It does **not** validate the referenced
