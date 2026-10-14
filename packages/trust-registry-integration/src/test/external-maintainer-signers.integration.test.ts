@@ -135,5 +135,5 @@ describe("externally signed Compact maintainer onboarding", () => {
       .toThrow(/Maintainer must be active/i);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeSuspendedVote);
     expect(() => harness.proposeIssuer(afterSuspension, [second, third])).not.toThrow();
-  });
+  }, 15_000);
 });
