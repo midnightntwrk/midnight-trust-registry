@@ -1,0 +1,427 @@
+openapi: 3.1.0
+info:
+  title: Midnight Trust Registry local reference API
+  version: 0.1.0
+  description: >-
+    HTTP projection of a local snapshot/workspace and optional trusted governed
+    ports. A response is not independently authenticated ledger evidence.
+    Packaged CLI read routes work without trusted ports; private/governed routes
+    return 503 unless an embedding host installs the corresponding port.
+servers:
+  - url: http://127.0.0.1:4400
+    description: Local reference server only
+# There is no global HTTP authentication scheme. Governed mutations verify
+# signed request bodies through trusted ports; public query routes are anonymous.
+security:
+  - {}
+tags:
+  - name: Query
+  - name: Private intake
+  - name: Governed
+  - name: Unsafe demo
+x-parameters:
+  role: &role
+    name: role
+    in: path
+    required: true
+    schema: { type: string, enum: [issuer, verifier, auditor] }
+  governedRole: &governedRole
+    name: role
+    in: path
+    required: true
+    schema: { type: string, enum: [issuer, verifier, auditor, maintainer, recognition] }
+  id: &id
+    name: id
+    in: path
+    required: true
+    schema: { type: string, minLength: 1 }
+  action: &action
+    name: action
+    in: path
+    required: true
+    schema: { type: string, enum: [approve, activate] }
+  applicationAction: &applicationAction
+    name: action
+    in: path
+    required: true
+    schema: { type: string, enum: [approve, activate, suspend, revoke, archive] }
+x-responses:
+  query: &queryResponses
+    '200': { description: Query result; independently verify evidence before relying on it }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '404': { $ref: '#/components/responses/NotFound' }
+    '424': { $ref: '#/components/responses/MissingEvidence' }
+  governed: &governedResponses
+    '200': { description: Prepared signing context }
+    '201': { description: One-use challenge created by the trusted intake port }
+    '202': { description: Accepted by the injected port; not network finality }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '403': { $ref: '#/components/responses/Forbidden' }
+    '409': { $ref: '#/components/responses/Conflict' }
+    '503': { $ref: '#/components/responses/PortUnavailable' }
+components:
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+      additionalProperties: true
+    AuthorizationLookup:
+      type: object
+      required: [role, subjectDid, resourceId]
+      properties:
+        role: { type: string, enum: [issuer, verifier, auditor] }
+        subjectDid: { type: string, minLength: 1 }
+        resourceId:
+          type: string
+          description: tr:issuer-resource:v1 hash for issuer; tr:request-resource:v1 hash for verifier/auditor
+        resourceType: { type: string }
+        trustLevel: { type: string }
+      additionalProperties: true
+    HistoricalAuthorizationLookup:
+      allOf:
+        - $ref: '#/components/schemas/AuthorizationLookup'
+        - type: object
+          required: [at]
+          properties:
+            at: { type: string, format: date-time }
+    RecognitionLookup:
+      type: object
+      required: [recognizedAuthorityDid, scopeResourceId]
+      properties:
+        recognizedAuthorityDid: { type: string }
+        recognizedRegistryId: { type: string }
+        scopeResourceType: { type: string }
+        scopeResourceId: { type: string }
+        trustLevel: { type: string }
+        at: { type: string, format: date-time }
+      additionalProperties: false
+    VpSubmission:
+      type: object
+      required: [nonce, challengeHash, presentation]
+      properties:
+        nonce: { type: string, description: Hex nonce from the issued one-use challenge }
+        challengeHash: { type: string, description: Hex challenge commitment }
+        presentation: { type: object, description: Signed Midnight VP; private, never log or return }
+      additionalProperties: false
+    GovernedSigners:
+      type: object
+      required: [prepared, signers]
+      properties:
+        prepared: { type: object, description: Exact current prepare response }
+        signers:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            type: object
+            required: [keyId, publicKey, signature]
+            properties:
+              keyId: { type: string }
+              publicKey:
+                type: object
+                required: [x, y]
+                properties:
+                  x: { type: string }
+                  y: { type: string }
+              signature: { type: string, description: Canonical JubJub Schnorr signature }
+      additionalProperties: true
+  responses:
+    BadRequest: { description: Invalid path, query, or body }
+    NotFound: { description: Record not found }
+    Forbidden: { description: Actor, scope, or signer not authorized }
+    Conflict: { description: Stale context, replay, or workspace lock }
+    MissingEvidence: { description: Required historical bundle or epoch unavailable }
+    PortUnavailable: { description: Trusted port or resolver not installed }
+paths:
+  /health:
+    get:
+      tags: [Query]
+      summary: Read local source health and registry ID
+      responses: *queryResponses
+  /v1/registry:
+    get:
+      tags: [Query]
+      summary: Read registry record
+      responses: *queryResponses
+  /v1/registry/summary:
+    get:
+      tags: [Query]
+      summary: Read role/status counts and current epoch summary
+      responses: *queryResponses
+  /v1/registry/mutation-context:
+    get:
+      tags: [Governed]
+      summary: Read workspace revision and epoch for a DID-signed intent
+      description: Workspace source only. Context is advisory and can become stale immediately.
+      responses: *governedResponses
+  /v1/epochs/current:
+    get:
+      tags: [Query]
+      summary: Read current projected epoch
+      responses: *queryResponses
+  /v1/epochs/resolve:
+    get:
+      tags: [Query]
+      summary: Select an epoch for a timestamp
+      parameters:
+        - name: at
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses: *queryResponses
+  /v1/epochs/{id}:
+    parameters: [*id]
+    get:
+      tags: [Query]
+      summary: Read a named epoch
+      responses: *queryResponses
+  /v1/authorizations/{role}:
+    parameters: [*role]
+    get:
+      tags: [Query]
+      summary: List role grants
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses: *queryResponses
+  /v1/authorizations/{role}/{id}:
+    parameters: [*role, *id]
+    get:
+      tags: [Query]
+      summary: Read a scoped authorization record
+      responses: *queryResponses
+  /v1/authorizations/{role}/{id}/evidence:
+    parameters: [*role, *id]
+    get:
+      tags: [Query]
+      summary: Read authorization evidence bundle
+      responses: *queryResponses
+  /v1/authorizations/evaluate:
+    post:
+      tags: [Query]
+      summary: Evaluate authorization at a requested instant
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/HistoricalAuthorizationLookup' } } }
+      responses: *queryResponses
+  /v1/authorizations/resolve:
+    post:
+      tags: [Query]
+      summary: Resolve current exact-scope authorization
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorizationLookup' } } }
+      responses: *queryResponses
+  /v1/recognitions:
+    get:
+      tags: [Query]
+      summary: List scoped external recognitions
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses: *queryResponses
+  /v1/recognitions/{id}:
+    parameters: [*id]
+    get:
+      tags: [Query]
+      summary: Read a recognition record
+      responses: *queryResponses
+  /v1/recognitions/{id}/evidence:
+    parameters: [*id]
+    get:
+      tags: [Query]
+      summary: Read recognition evidence
+      responses: *queryResponses
+  /v1/recognitions/evaluate:
+    post:
+      tags: [Query]
+      summary: Evaluate recognition at a requested instant
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
+      responses: *queryResponses
+  /v1/recognitions/resolve:
+    post:
+      tags: [Query]
+      summary: Resolve current scoped recognition
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
+      responses: *queryResponses
+  /v1/trqp/metadata/{id}:
+    parameters: [*id]
+    get:
+      tags: [Query]
+      summary: Read TRQP authority metadata projection
+      responses: *queryResponses
+  /v1/trqp/authorizations/query:
+    post:
+      tags: [Query]
+      summary: Query TRQP authorizations
+      responses: *queryResponses
+  /v1/trqp/authorizations/evidence:
+    post:
+      tags: [Query]
+      summary: Retrieve TRQP authorization evidence
+      responses: *queryResponses
+  /v1/trqp/recognitions/query:
+    post:
+      tags: [Query]
+      summary: Query TRQP recognitions
+      responses: *queryResponses
+  /v1/trqp/recognitions/evidence:
+    post:
+      tags: [Query]
+      summary: Retrieve TRQP recognition evidence
+      responses: *queryResponses
+  /v1/pending-applications:
+    post:
+      tags: [Private intake]
+      summary: Register a DID-signed pending application
+      responses: *governedResponses
+  /v1/application-evidence/{id}/binding:
+    parameters: [*id]
+    get:
+      tags: [Private intake]
+      summary: Read applicant-authorized pending binding
+      responses: *governedResponses
+  /v1/application-evidence/{id}/challenges:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Issue a one-use VP challenge
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, maxProperties: 0 } } }
+      responses: *governedResponses
+  /v1/application-evidence/{id}/submissions:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Verify a private VP and persist redacted evidence
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VpSubmission' } } }
+      responses: *governedResponses
+  /v1/application-evidence/{id}/receipt:
+    parameters: [*id]
+    get:
+      tags: [Private intake]
+      summary: Recover applicant-authorized redacted receipt
+      responses: *governedResponses
+  /v1/recognition-evidence/{id}/challenges:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Issue accredited-recognition challenge
+      responses: *governedResponses
+  /v1/recognition-evidence/{id}/submissions:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Verify accreditation VP and authority assertion
+      responses: *governedResponses
+  /v1/recognition-evidence/{id}/accepted:
+    parameters: [*id]
+    get:
+      tags: [Private intake]
+      summary: Read authorized accepted recognition receipt
+      responses: *governedResponses
+  /v1/governed/{role}/{id}/proposal/prepare:
+    parameters: [*governedRole, *id]
+    post:
+      tags: [Governed]
+      summary: Prepare exact policy-bound proposal digest
+      responses: *governedResponses
+  /v1/governed/{role}/{id}/proposal/submit:
+    parameters: [*governedRole, *id]
+    post:
+      tags: [Governed]
+      summary: Submit external evidence-verifier and maintainer signatures
+      responses: *governedResponses
+  /v1/governed/{role}/{id}/proposal/resolve:
+    parameters: [*governedRole, *id]
+    post:
+      tags: [Governed]
+      summary: Observe matching proposal without resubmission
+      description: Available for issuer, verifier, auditor, and maintainer ports; not recognition.
+      responses: *governedResponses
+  /v1/governed/{role}/{id}/actions/{action}:
+    parameters: [*governedRole, *id, *action]
+    get:
+      tags: [Governed]
+      summary: Prepare current Compact action signer context
+      responses: *governedResponses
+    post:
+      tags: [Governed]
+      summary: Submit external JubJub signer bundle to Compact port
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GovernedSigners' } } }
+      responses: *governedResponses
+  /v1/governed/policy/thresholds/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare policy threshold revision under old policy
+      responses: *governedResponses
+  /v1/governed/policy/thresholds/submit:
+    post:
+      tags: [Governed]
+      summary: Submit signed threshold revision
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare key registration under new policy
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/submit:
+    post:
+      tags: [Governed]
+      summary: Submit signed evidence-verifier key registration
+      responses: *governedResponses
+  /v1/governed/epochs/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare governed epoch publication
+      responses: *governedResponses
+  /v1/governed/epochs/publish:
+    post:
+      tags: [Governed]
+      summary: Submit signed epoch publication
+      responses: *governedResponses
+  /v1/mutations:
+    post:
+      tags: [Governed]
+      summary: Submit DID-signed workspace mutation intent
+      description: Requires injected Midnight DID resolver; packaged CLI returns 503.
+      responses: *governedResponses
+  /v1/applications:
+    post:
+      tags: [Unsafe demo]
+      summary: Unsigned loopback-only workspace application replay
+      responses: *governedResponses
+  /v1/applications/{target}/{id}/{action}:
+    parameters:
+      - name: target
+        in: path
+        required: true
+        schema: { type: string, enum: [issuer, verifier, auditor, recognition] }
+      - *id
+      - *applicationAction
+    post:
+      tags: [Unsafe demo]
+      summary: Unsigned loopback-only lifecycle replay
+      responses: *governedResponses
+  /v1/epochs/publish:
+    post:
+      tags: [Unsafe demo]
+      summary: Unsigned loopback-only workspace epoch replay
+      responses: *governedResponses

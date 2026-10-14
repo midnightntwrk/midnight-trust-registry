@@ -1,0 +1,21 @@
+# Evidence, epochs, and time
+
+Evidence tells a relying party **why** a scoped grant was valid, not just that a row appeared in an index.
+
+## Application evidence
+
+The applicant controls a Midnight DID and supplies a signed VC/VP to a trusted evidence-verifier service. The service challenges the applicant, verifies proof/status/policy, and signs a canonical redacted envelope binding registry, application, applicant, role, exact scope, policy, evaluation/expiry values, and evidence commitment. The private VP and claims remain off-ledger. A one-use challenge closes the replay window. The [application-evidence protocol](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/application-evidence.md) defines the canonical envelope.
+
+## Decision evidence
+
+The proposal binds the evidence-verifier key, policy version, nonce, application commitment, and maintainer signer set. An approval and activation create separate governance events. A portable bundle links the record and event to an epoch root. Historical bundles must be retained in `evidenceArchive` before a later lifecycle change; the API returns `424` rather than attaching a later epoch to an earlier decision when that archive is missing.
+
+An external caller must verify the bundle against an **independently trusted** registry/epoch anchor, not simply trust JSON returned by the same API. Check the exact role and scope, current lifecycle, policy commitment, signer threshold, event/inclusion proof, and observation view. Client helpers support this evaluation, but the caller owns anchor selection.
+
+## What an epoch means
+
+An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).
+
+## Current versus historical
+
+An active proof at issuance time can support the statement “issuer was authorized then.” It cannot by itself say “issuer may issue now.” For a credential, verify the VC signature and status separately and apply current policy restrictions. A revocation's effect on already issued credentials is a policy decision, not inferred from the registry status alone.

@@ -6,12 +6,14 @@ on:
     branches: [develop, main, milestone-0.1.0]
     paths:
       - "**/*.md"
+      - "docs-site/**"
       - "justfile"
       - "scripts/check-docs.sh"
       - ".github/workflows/docs.yaml"
   pull_request:
     paths:
       - "**/*.md"
+      - "docs-site/**"
       - "justfile"
       - "scripts/check-docs.sh"
       - ".github/workflows/docs.yaml"

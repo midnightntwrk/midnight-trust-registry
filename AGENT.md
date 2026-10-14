@@ -76,6 +76,7 @@ Do not use this repository for:
 | `packages/trust-registry-applicant-portal` | `@midnight-ntwrk/trust-registry-applicant-portal` | Applicant-facing UI for issuer/verifier/auditor submissions. |
 | `adapters/trqp` | `@midnight-ntwrk/trust-registry-trqp-adapter` | TRQP-compatible registry and evidence projection. |
 | `adapters/openid-federation` | `@midnight-ntwrk/trust-registry-openid-federation-adapter` | OpenID Federation metadata and trust-chain projection experiments. |
+| `docs-site` | `@midnight-ntwrk/trust-registry-docs` | VitePress guide, diagrams, and OpenAPI artifact; not published to npm. |
 
 ## Current Layout
 
@@ -86,6 +87,7 @@ docs/research/      Public research-derived requirements
 docs/decisions/     Design decisions and open questions
                      plus repo-local execution knowledge
 docs/architecture/  Repo boundaries and integration diagrams
+docs-site/          Published documentation site and OpenAPI inventory
 packages/           TypeScript workspaces for registry domain and clients
 scripts/            Local validation helpers
 run.sh              Repository entrypoint for light/full validation
@@ -170,7 +172,7 @@ git commit -S -s -m "<type>: <subject>"
 Minimum validation for docs-only changes:
 
 ```bash
-./scripts/check-docs.sh
+./run.sh docs
 git diff --check
 ```
 

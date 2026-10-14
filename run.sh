@@ -36,6 +36,7 @@ case "${RUN_COMMON_TARGET}" in
     ;;
   docs)
     pnpm run docs-check
+    pnpm run docs:build
     ;;
   lint)
     pnpm run ci:lint

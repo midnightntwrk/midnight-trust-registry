@@ -26,6 +26,9 @@ This repository does not own:
 
 ## Documentation Map
 
+- [Documentation site](docs-site/index.md) explains the reference implementation,
+  actors, contract, API, flows, and limitations; the GitHub Pages workflow
+  publishes it from `develop`.
 - [0.1.0 reference profile](docs/spec/milestone-0.1.0.md) defines the actor,
   use-case, security, and release-acceptance contract for the next milestone.
 - [0.1.0 executable issue plan](docs/plans/milestone-0.1.0-issues.md) maps
@@ -54,6 +57,9 @@ Current local validation baseline:
 pnpm install --frozen-lockfile
 ./run.sh --light
 ```
+
+For documentation changes, run `./run.sh docs` to check links, validate the
+OpenAPI inventory, and build the site. Use `pnpm run docs:dev` for local preview.
 
 `.compact-version` is the single Compact compiler version pin for the Nix
 toolchain and all Compact GitHub workflows. The light gate checks every
