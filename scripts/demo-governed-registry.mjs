@@ -726,16 +726,16 @@ const proposalPort = (role, target) => ({
   },
 });
 const decisionEvidenceByGrant = new Map();
-const decisionReadersByGrant = new Map();
+const decisionContextByGrant = new Map();
 const publishDecisionEvidence = (role, authorizationId, candidate, readers) => {
-  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, candidate);
-  decisionReadersByGrant.set(`${role}:${authorizationId}`, readers);
+  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, { buildInput: candidate.buildInput });
+  decisionContextByGrant.set(`${role}:${authorizationId}`, { selection: candidate.selection, readers });
 };
 const readVerifiedDecisionEvidence = createVerifiedDecisionEvidenceSource({
   loadCandidate: async (role, authorizationId) =>
     decisionEvidenceByGrant.get(`${role}:${authorizationId}`) ?? null,
-  readersFor: async (role, authorizationId) =>
-    decisionReadersByGrant.get(`${role}:${authorizationId}`) ?? null,
+  trustedContextFor: async (role, authorizationId) =>
+    decisionContextByGrant.get(`${role}:${authorizationId}`) ?? null,
 });
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },

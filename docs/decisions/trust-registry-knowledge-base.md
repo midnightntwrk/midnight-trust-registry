@@ -1023,3 +1023,11 @@ uses this source for issuer and verifier; after either role is suspended or
 revoked, the source returns an unavailable result (HTTP 503) rather than
 serving its earlier active claim. Simulator fixtures remain the only current
 source of ledger/DID observations, not production network finality.
+
+The source now takes the expected registry, contract, DID, role, and scope
+selection from the same trusted host context as its finalized readers. An
+indexed candidate contains only builder input and cannot select a different
+trust domain for its own verification. A negative simulator case substitutes
+the trusted registry selection and fails before the claim is served. This is
+still a host-port contract: the host must independently authenticate the
+selection and reader provenance, and public consumers must verify again.

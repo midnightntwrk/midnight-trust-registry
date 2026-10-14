@@ -6,15 +6,17 @@ import { verifyDecisionEvidenceWithTrustedReaders, type TrustedDecisionEvidenceR
 type Role = "issuer" | "verifier";
 type Selection = Omit<DecisionEvidenceSelection, "evaluationTime">;
 
-export type DecisionEvidenceSourceCandidate = {
-  buildInput: DecisionEvidenceBuildInput;
+export type DecisionEvidenceSourceCandidate = { buildInput: DecisionEvidenceBuildInput };
+
+export type TrustedDecisionEvidenceSourceContext = {
   selection: Selection;
+  readers: TrustedDecisionEvidenceReaders;
 };
 
-/** The indexed bundle is untrusted; reader selection and finality must come from an independent host port. */
+/** The indexed bundle is untrusted; selection, reader choice, and finality belong to the independent host port. */
 export function createVerifiedDecisionEvidenceSource(input: {
   loadCandidate(role: Role, authorizationId: string): Promise<DecisionEvidenceSourceCandidate | null>;
-  readersFor(role: Role, authorizationId: string, selection: Selection): Promise<TrustedDecisionEvidenceReaders | null>;
+  trustedContextFor(role: Role, authorizationId: string): Promise<TrustedDecisionEvidenceSourceContext | null>;
 }): (role: Role, authorizationId: string) => Promise<DecisionEvidence | null> {
   return async (role, authorizationId) => {
     if ((role !== "issuer" && role !== "verifier")
@@ -24,13 +26,13 @@ export function createVerifiedDecisionEvidenceSource(input: {
     const candidate = await input.loadCandidate(role, authorizationId);
     if (candidate === null) return null;
     const evidence = buildDecisionEvidenceClaim(candidate.buildInput);
-    if (evidence.role !== role || evidence.grant.authorizationId !== authorizationId
-      || candidate.selection.role !== role) {
+    if (evidence.role !== role || evidence.grant.authorizationId !== authorizationId) {
       throw new Error("Decision-evidence source returned a different grant or role");
     }
-    const readers = await input.readersFor(role, authorizationId, candidate.selection);
-    if (readers === null) throw new Error("Finalized decision readers are unavailable");
-    await verifyDecisionEvidenceWithTrustedReaders(evidence, candidate.selection, readers);
+    const context = await input.trustedContextFor(role, authorizationId);
+    if (context === null) throw new Error("Finalized decision context is unavailable");
+    if (context.selection.role !== role) throw new Error("Trusted decision selection has a different role");
+    await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, context.readers);
     return evidence;
   };
 }

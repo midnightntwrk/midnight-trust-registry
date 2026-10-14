@@ -279,17 +279,33 @@ describe("simulator-backed VC decision evidence composition", () => {
     };
     const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, readers);
     const verifiedSource = createVerifiedDecisionEvidenceSource({
-      loadCandidate: async () => ({ buildInput, selection: context.selection }),
-      readersFor: async () => readers,
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => ({ selection: context.selection, readers }),
     });
     expect(await verifiedSource("issuer", issuer.authorizationId)).toEqual(evidence);
     await expect(verifiedSource("verifier", issuer.authorizationId)).rejects.toThrow(/different grant or role/u);
     await expect(verifiedSource("issuer", "auth:unrelated")).rejects.toThrow(/different grant or role/u);
     const unavailableSource = createVerifiedDecisionEvidenceSource({
-      loadCandidate: async () => ({ buildInput, selection: context.selection }),
-      readersFor: async () => null,
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => null,
     });
-    await expect(unavailableSource("issuer", issuer.authorizationId)).rejects.toThrow(/readers are unavailable/u);
+    await expect(unavailableSource("issuer", issuer.authorizationId)).rejects.toThrow(/context is unavailable/u);
+    const substitutedSelectionSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => ({
+        selection: { ...context.selection, registryId: "registry:other" },
+        readers: {
+          ...readers,
+          readCurrentFinalizedRegistryDecision: async () => ({
+            acceptedEpoch: context.acceptedEpoch,
+            publication: context.publication,
+            decisionPoint: context.decisionPoint,
+          }),
+        },
+      }),
+    });
+    await expect(substitutedSelectionSource("issuer", issuer.authorizationId))
+      .rejects.toThrow(/registry or subject mismatch/u);
     const compactSequence = harness.simulator.getLedger().governanceActionCount.toString();
     const compactEvidence = { ...evidence, decisionSequence: compactSequence };
     const compactReaders = createCompactLedgerDecisionReaders({
@@ -843,8 +859,8 @@ describe("simulator-backed VC decision evidence composition", () => {
       verifierEvidence, verifierSelection, verifierReaders,
     );
     const verifierSource = createVerifiedDecisionEvidenceSource({
-      loadCandidate: async () => ({ buildInput: verifierBuildInput, selection: verifierSelection }),
-      readersFor: async () => verifierReaders,
+      loadCandidate: async () => ({ buildInput: verifierBuildInput }),
+      trustedContextFor: async () => ({ selection: verifierSelection, readers: verifierReaders }),
     });
     expect(await verifierSource("verifier", verifier.authorizationId)).toEqual(verifierEvidence);
     const typedVerifierSnapshotReaders: TrustedDecisionEvidenceReaders = verifierReaders;

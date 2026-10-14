@@ -115,8 +115,10 @@ those production provenance requirements.
 
 `createVerifiedDecisionEvidenceSource` supplies the optional API route from an
 indexed evidence bundle without treating that index as an anchor. It builds a
-claim, requires exact role and authorization ID, obtains a separate trusted
-reader port, and runs the full client verifier before returning the claim.
+claim, requires exact role and authorization ID, obtains the expected
+registry/scope selection and finalized readers from one separate trusted host
+port, and runs the full client verifier before returning the claim. Indexed
+candidate data cannot select its own registry, contract, DID, or scope.
 The API still marks the response `client-required`; the consumer must verify
 again using its own independently authenticated readers. In the simulator
 demo, a stale issuer or verifier claim after suspension or revocation causes
