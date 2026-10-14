@@ -9,8 +9,8 @@ the case; it does not imply production-network proving or finality.
 | Requirement | Current evidence | Gap |
 | --- | --- | --- |
 | Self-approval | `maintainer-approve-candidate-self-vote`, `maintainer-activate-candidate-self-vote` reject the candidate key through the API | The candidate may fail active-signer lookup before Compact's explicit self-DID exclusion; prove that assertion separately. |
-| Duplicate signer | `compact-issuer-duplicate-signer` and role-specific `duplicate-signer` API action cases | Add proposal-level duplicate-signer checks. |
-| Insufficient quorum | `compact-issuer-insufficient-quorum`, role-specific API action and proposal cases; `compact-old-policy-signature-replay` rejects a signature after threshold revision | Add cross-role policy-transition vectors. |
+| Duplicate signer | `compact-issuer-duplicate-signer`, role-specific `*-proposal-duplicate-signer`, and role-specific `duplicate-signer` API action cases | Add Compact proposal-level duplicate-signer cases outside the issuer fixture. |
+| Insufficient quorum | `compact-issuer-insufficient-quorum`, role-specific API action and `*-proposal-insufficient-quorum` cases; `compact-old-policy-signature-replay` rejects a signature after threshold revision | Add cross-role policy-transition vectors. |
 | Key substitution | `compact-issuer-unknown-signer`, `compact-removed-maintainer-signer` | Add a changed-key DID method. |
 | Last active maintainer | `compact-last-active-maintainer`, `compact-last-active-maintainer-revocation` | Both suspend and revoke preserve the active count and governance sequence. |
 | Altered evidence commitment | `issuer-altered-evidence-commitment-api`, `issuer-altered-evidence-commitment-integration-preflight`, `compact-issuer-altered-evidence-hash` | Add a signed proposal-level evidence-hash mutation. |

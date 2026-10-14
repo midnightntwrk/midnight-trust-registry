@@ -998,6 +998,16 @@ try {
       problemType: "governed-proposal-rejected",
     },
   );
+  await adversarialMatrix.expectHttp(
+    await submitProposal({ ...proposalBody, signers: [proposalBody.signers[0], proposalBody.signers[0]] }),
+    {
+      id: "issuer-proposal-duplicate-signer",
+      invariant: "One maintainer cannot provide both signatures for an issuer proposal quorum",
+      boundary: "api",
+      status: 403,
+      problemType: "governed-proposal-rejected",
+    },
+  );
   assert.equal((await submitProposal(proposalBody)).status, 202);
   const issuerProposal = await expectHttp(await fetch(`${proposalEndpoint}/resolve`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -1075,7 +1085,16 @@ try {
     const submit = (payload) => fetch(`${endpoint}/submit`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
     });
-    await expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), 403);
+    await adversarialMatrix.expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), {
+      id: `${role}-proposal-insufficient-quorum`,
+      invariant: `A ${role} proposal requires the active maintainer quorum`,
+      boundary: "api", status: 403, problemType: "governed-proposal-rejected",
+    });
+    await adversarialMatrix.expectHttp(await submit({ ...body, signers: [body.signers[0], body.signers[0]] }), {
+      id: `${role}-proposal-duplicate-signer`,
+      invariant: `One maintainer cannot provide both signatures for a ${role} proposal quorum`,
+      boundary: "api", status: 403, problemType: "governed-proposal-rejected",
+    });
     assert.equal((await submit(body)).status, 202);
     const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {
       method: "POST", headers: { "content-type": "application/json" },
