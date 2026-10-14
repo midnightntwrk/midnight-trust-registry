@@ -14,6 +14,31 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
+  VC authority slice and is not yet published. Its governed demo now emits a
+  checked `tr-adversarial-matrix-v1` with 90 cases across API, Compact simulator,
+  integration preflight, client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
+  names the remaining #60 gaps; do not close #60 on the current report.
+- The fastest local loop for script-only adversarial work is the matrix unit
+  test plus `node scripts/demo-governed-registry.mjs` (about six seconds for the
+  demo). Run `./run.sh --light` and `./run.sh integration --light` before a
+  signed checkpoint; do not repeat the full proving-key build without a
+  contract or generated-artifact change.
+- The threshold-revision matrix has separate outcomes: old-policy applicant
+  evidence fails simulator preflight, old policy-bound signatures fail direct
+  Compact execution, historical evidence verifies at its original instant,
+  and replay at the new policy's effective instant fails. These are local
+  simulator-time claims, not wall-clock or network-finality claims.
+- Validly signed applicant evidence with a substituted policy ID or an elapsed
+  24-hour validity window is rejected before governance mutation. The matrix
+  also distinguishes exact issuer/verifier API resource lookup and TRQP
+  external-recognition tuple matching from client bundle verification.
+- The direct Compact boundary now rejects a changed issuer evidence hash and
+  both attempts to remove the last active maintainer; API actions reject
+  duplicate signer entries across all five governed roles. Candidate self-vote
+  rejection is observed, but a separate witness is still needed to prove the
+  explicit Compact self-DID exclusion rather than an earlier inactive-key gate.
+
 - PR #171 and the later admission groundwork are merged to
   `milestone-0.1.0`; local signed work continues on
   `codex/trust-registry-role-admission` without waiting for another merge.

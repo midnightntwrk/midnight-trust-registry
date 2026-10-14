@@ -13,6 +13,7 @@ import {
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
+  signIssuerProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
@@ -21,6 +22,7 @@ import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
+  computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
   sha256Hex,
@@ -51,9 +53,12 @@ import {
   GovernedMembershipActionRejectedError,
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
+import { AdversarialMatrix } from "./adversarial-matrix.mjs";
+import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
+const changeLastHexNibble = (value) => `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
 const sign = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signPolicyBoundMaintainerActionFromSeed(
@@ -70,12 +75,233 @@ const sign = (maintainer, prepared) => {
     signature: asHex(encodeJubjubSignature(signature)),
   };
 };
+const signCompact = (maintainer, prepared) => ({
+  keyId: maintainer.keyId,
+  publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
+  signature: signPolicyBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    prepared.registryId,
+    prepared.policyCommitment,
+    prepared.actionKind,
+    prepared.actionPayloadHash,
+    prepared.actionSequence,
+  ),
+});
 
 const expectHttp = async (response, status) => {
   const payload = await response.json();
   assert.equal(response.status, status, JSON.stringify(payload));
   return payload;
 };
+const adversarialMatrix = new AdversarialMatrix();
+
+const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
+const bootstrapMembership = {
+  maintainerIdCommitment: lastActiveHarness.maintainerIdCommitment,
+  maintainerId: lastActiveHarness.maintainerId,
+  subjectDidCommitment: lastActiveHarness.maintainerDidCommitment,
+  keyId: lastActiveHarness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+  seed: new Uint8Array(32),
+  subjectDid: lastActiveHarness.maintainerDid,
+  trustLevel: "bootstrap-maintainer",
+};
+const lastActiveActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => lastActiveHarness.suspendMaintainer(bootstrapMembership), {
+  id: "compact-last-active-maintainer",
+  invariant: "The final active maintainer cannot be suspended",
+  boundary: "compact",
+  messagePattern: /threshold policy/iu,
+  category: "last-active-maintainer-protected",
+});
+adversarialMatrix.expectThrown(() => lastActiveHarness.revokeMaintainer(bootstrapMembership), {
+  id: "compact-last-active-maintainer-revocation",
+  invariant: "The final active maintainer cannot be revoked",
+  boundary: "compact",
+  messagePattern: /threshold policy/iu,
+  category: "last-active-maintainer-protected",
+});
+assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
+assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
+
+const removedSignerHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
+const removedSigner = createMaintainerScenarioFixture("governed-demo-removed-signer");
+const removedSignerIssuer = createIssuerScenarioFixture("governed-demo-removed-signer-issuer");
+removedSignerHarness.authorizeMaintainer(removedSigner);
+removedSignerHarness.suspendMaintainer(removedSigner);
+removedSignerHarness.proposeIssuer(removedSignerIssuer);
+const removedSignerApproval = removedSignerHarness.prepareIssuerDecisionAction(removedSignerIssuer, "approve");
+const removedSignerActionCount = removedSignerHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionWithSignatures(
+  removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval)],
+), {
+  id: "compact-removed-maintainer-signer",
+  invariant: "A suspended maintainer key cannot approve a new issuer",
+  boundary: "compact",
+  messagePattern: /active|authorized|maintainer|signature|assert/iu,
+  category: "removed-signer-rejected",
+});
+assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
+
+const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
+const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
+const expiringIssuer = createIssuerScenarioFixture("governed-demo-expired-evidence");
+const policyIdEvidence = evidenceHarness.createApplicationEvidence({
+  applicationId: policyIdIssuer.authorizationId,
+  subjectDid: policyIdIssuer.subjectDid,
+  role: "issuer",
+  scope: createIssuerAuthorizationScopeFixture(policyIdIssuer),
+  governedResource: { type: "credentialFamily", id: policyIdIssuer.resourceId },
+});
+const wrongPolicyEnvelope = { ...policyIdEvidence.envelope, policyId: "policy:wrong:v1" };
+const wrongPolicyCommitment = computeApplicationEvidenceCommitment(wrongPolicyEnvelope);
+const wrongPolicyEvidence = {
+  envelope: wrongPolicyEnvelope,
+  commitment: wrongPolicyCommitment,
+  signature: evidenceHarness.signApplicationEvidenceCommitment(wrongPolicyCommitment),
+};
+assert.equal(evidenceHarness.verifyApplicationEvidenceSignature(
+  wrongPolicyEvidence.commitment,
+  wrongPolicyEvidence.signature,
+  evidenceHarness.evidenceVerifier,
+), true);
+const evidenceActionsBeforeRejections = evidenceHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
+  policyIdIssuer, wrongPolicyEvidence,
+), {
+  id: "issuer-signed-wrong-policy-id",
+  invariant: "Even validly signed applicant evidence cannot substitute another governance policy ID",
+  boundary: "integration",
+  messagePattern: /policyId does not match/iu,
+  category: "policy-id-mismatch",
+});
+const expiringEvidence = evidenceHarness.createApplicationEvidence({
+  applicationId: expiringIssuer.authorizationId,
+  subjectDid: expiringIssuer.subjectDid,
+  role: "issuer",
+  scope: createIssuerAuthorizationScopeFixture(expiringIssuer),
+  governedResource: { type: "credentialFamily", id: expiringIssuer.resourceId },
+});
+evidenceHarness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
+adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
+  expiringIssuer, expiringEvidence,
+), {
+  id: "issuer-expired-signed-application-evidence",
+  invariant: "A validly signed evidence receipt expires before a later governed transition",
+  boundary: "integration",
+  messagePattern: /evidence is expired/iu,
+  category: "expired-application-evidence",
+});
+assert.equal(evidenceHarness.simulator.getLedger().governanceActionCount, evidenceActionsBeforeRejections);
+
+const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-policy-replay");
+const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
+const policyThird = createMaintainerScenarioFixture("governed-demo-policy-third");
+const historicalIssuer = createIssuerScenarioFixture("governed-demo-historical-issuer");
+const pendingPolicyIssuer = createIssuerScenarioFixture("governed-demo-pending-policy-issuer");
+const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-policy-issuer");
+const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
+policyHarness.authorizeIssuer(historicalIssuer);
+const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+policyHarness.authorizeMaintainer(policySecond);
+policyHarness.authorizeMaintainer(policyThird);
+policyHarness.proposeIssuer(pendingPolicyIssuer);
+const oldPolicyAction = policyHarness.prepareIssuerDecisionAction(pendingPolicyIssuer, "approve");
+const oldPolicySignature = signCompact(policySecond, oldPolicyAction);
+const oldPolicyCoSignature = signCompact(policyThird, oldPolicyAction);
+policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const policyActionCountBeforeReplay = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
+  pendingPolicyIssuer, "approve",
+), {
+  id: "integration-old-policy-application-preflight",
+  invariant: "An application attested under the former policy cannot be approved after a revision",
+  boundary: "integration",
+  messagePattern: /policyVersion does not match/iu,
+  category: "old-policy-application-rejected",
+});
+adversarialMatrix.expectThrown(() => policyHarness.simulator.authorizeIssuerAuthorization(
+  oldPolicySignature.keyId,
+  oldPolicySignature.publicKey,
+  oldPolicySignature.signature,
+  pendingPolicyIssuer.authorizationIdCommitment,
+  oldPolicyAction.evidenceHash,
+  [oldPolicyCoSignature],
+), {
+  id: "compact-old-policy-signature-replay",
+  invariant: "A signed action from the former policy cannot satisfy the revised maintainer quorum",
+  boundary: "compact",
+  messagePattern: /signature|policy|assert|maintainer/iu,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
+policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
+policyHarness.approveIssuer(currentPolicyIssuer, [policySecond]);
+policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
+const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
+const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
+assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
+assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
+  historicalPolicyBundle, {},
+), {
+  id: "issuer-history-survives-threshold-change",
+  invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
+  currentPolicyBundle, {},
+), {
+  id: "issuer-current-policy-after-threshold-change",
+  invariant: "New issuer authorization verifies under the revised policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
+  historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
+), {
+  id: "issuer-old-policy-current-time-replay",
+  invariant: "Historical issuer evidence cannot establish trust after its policy is superseded",
+  boundary: "client",
+  messagePattern: /policy snapshot is superseded/iu,
+  category: "superseded-policy-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
+  { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
+), {
+  id: "issuer-uncommitted-policy-version",
+  invariant: "Changing the evidence policy version cannot create an uncommitted authorization",
+  boundary: "client",
+  messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
+  ...historicalPolicyBundle,
+  inclusionProof: {
+    ...historicalPolicyBundle.inclusionProof,
+    path: [changeLastHexNibble(historicalPolicyBundle.inclusionProof.path[0])],
+  },
+}, {}), {
+  id: "issuer-historical-proof-tampered-after-policy-revision",
+  invariant: "A threshold revision cannot make a tampered old-policy Merkle proof valid",
+  boundary: "client",
+  messagePattern: /event sibling/iu,
+  category: "historical-merkle-path-rejected",
+});
+const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
+assert.ok(historicalEpochSignature);
+const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
+adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
+  ...historicalPolicyBundle,
+  epoch: {
+    ...historicalPolicyBundle.epoch,
+    maintainerSignatures: [{ ...historicalEpochSignature, signature: alteredEpochSignature }],
+  },
+}, {}), {
+  id: "issuer-historical-epoch-signature-tampered",
+  invariant: "A policy revision cannot make a forged historical epoch signature valid",
+  boundary: "client",
+  messagePattern: /invalid/iu,
+  category: "historical-epoch-signature-rejected",
+});
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
@@ -455,9 +681,15 @@ try {
     const getReceipt = (requestHeaders = headers) => fetch(`${endpoint}/receipt`, { headers: requestHeaders });
     await expectHttp(await getReceipt({}), 403);
     await expectHttp(await getReceipt(), 404);
-    await expectHttp(await post("challenges", {}, {
+    await adversarialMatrix.expectHttp(await post("challenges", {}, {
       "content-type": "application/json",
-    }), 403);
+    }), {
+      id: `${spec.role}-unauthorized-vp-challenge`,
+      invariant: "Only the authenticated applicant may request an evidence challenge",
+      boundary: "api",
+      status: 403,
+      problemType: "application-vp-forbidden",
+    });
     const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
     const otherId = createScopedIdentifier("application", other.role, other.id);
     await expectHttp(await post("challenges", {}, {
@@ -466,10 +698,13 @@ try {
     }), 403);
     const challenge = await expectHttp(await post("challenges", {}), 201);
     if (spec.role === "issuer") {
-      for (const invalid of [
-        { scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" } },
-        { presentationCredentialBodyRoot: sha256Hex("unbound-credential-body") },
-        { statusDecision: { active: false } },
+      for (const [caseId, invariant, invalid] of [
+        ["issuer-wrong-signed-vp-scope", "VP credential scope must match the pending issuer application",
+          { scope: { ...spec.scope, credentialFamilyId: "credential-family:wrong" } }],
+        ["issuer-unbound-vp-credential", "VP must bind the submitted credential body",
+          { presentationCredentialBodyRoot: sha256Hex("unbound-credential-body") }],
+        ["issuer-revoked-vp-credential", "Revoked evidence credentials cannot satisfy eligibility",
+          { statusDecision: { active: false } }],
       ]) {
         const wrongProof = await createApplicationVpScenarioFixture(challenge.nonce, {
           subjectDid: spec.subjectDid,
@@ -483,11 +718,17 @@ try {
           family: wrongProof.input.family,
           signer: wrongProof.signer,
         }));
-        await expectHttp(await post("submissions", {
+        await adversarialMatrix.expectHttp(await post("submissions", {
           nonce: challenge.nonce,
           challengeHash: challenge.challengeHash,
           presentation: wrongProof.input.submission,
-        }), 403);
+        }), {
+          id: caseId,
+          invariant,
+          boundary: "api",
+          status: 403,
+          problemType: "application-vp-rejected",
+        });
         assert.equal(persistedEvidence.has(applicationId), false);
       }
     }
@@ -516,7 +757,13 @@ try {
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawPresentationBody), false);
-    await expectHttp(await post("submissions", submission), 404);
+    await adversarialMatrix.expectHttp(await post("submissions", submission), {
+      id: `${spec.role}-vp-challenge-replay`,
+      invariant: "A consumed application challenge cannot accept a second VP",
+      boundary: "api",
+      status: 404,
+      problemType: "application-vp-not-found",
+    });
     await expectHttp(await post("challenges", {}), 404);
     evidenceByRole.set(spec.role, submitted.evidence);
     expectedEvidenceByRole.set(spec.role, {
@@ -534,18 +781,56 @@ try {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ evidence }),
   });
+  const alteredIssuerEvidence = {
+    ...issuerEvidence,
+    commitment: changeLastHexNibble(issuerEvidence.commitment),
+  };
+  await adversarialMatrix.expectHttp(await proposePrepare(proposalEndpoint, alteredIssuerEvidence), {
+    id: "issuer-altered-evidence-commitment-api",
+    invariant: "A governed proposal cannot use a commitment different from the accepted VP envelope",
+    boundary: "api",
+    status: 403,
+    problemType: "unadmitted-proposal",
+  });
+  adversarialMatrix.expectThrown(() => harness.prepareIssuerProposalAction(
+    issuer, alteredIssuerEvidence, expectedIssuerEvidence,
+  ), {
+    id: "issuer-altered-evidence-commitment-integration-preflight",
+    invariant: "Simulator preflight rejects evidence whose commitment is not its envelope hash before Compact execution",
+    boundary: "integration",
+    messagePattern: /commitment|evidence/iu,
+    category: "evidence-commitment-rejected",
+  });
   for (const spec of applicantSpecs) {
     const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const evidence = evidenceByRole.get(spec.role);
     const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
-    await expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), 403);
-    await expectHttp(await proposePrepare(
+    await adversarialMatrix.expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), {
+      id: `${spec.role}-cross-role-evidence`,
+      invariant: "A proposal must use an accepted VP receipt for its own role and target",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
+    await adversarialMatrix.expectHttp(await proposePrepare(
       `${base}/v1/governed/${spec.role}/${createScopedIdentifier("wrong", spec.id)}/proposal`, evidence,
-    ), 403);
+    ), {
+      id: `${spec.role}-wrong-proposal-target`,
+      invariant: "A proposal target must match the accepted VP receipt",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
     const receipt = evidenceReceipts.get(applicationId);
     evidenceReceipts.delete(applicationId);
-    await expectHttp(await proposePrepare(endpoint, evidence), 403);
+    await adversarialMatrix.expectHttp(await proposePrepare(endpoint, evidence), {
+      id: `${spec.role}-missing-vp-receipt`,
+      invariant: "A proposal cannot bypass accepted VP evidence",
+      boundary: "api",
+      status: 403,
+      problemType: "unadmitted-proposal",
+    });
     evidenceReceipts.set(applicationId, receipt);
     const pending = registeredApplications.get(applicationId);
     assert.ok(pending);
@@ -569,6 +854,12 @@ try {
     signers: [sign(second, proposalPrepared), sign(third, proposalPrepared)],
     evidenceVerifierSignature: asHex(encodeJubjubSignature(verifierSignature)),
   };
+  const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
+    second.seed,
+    fromHex(proposalPrepared.registryId),
+    fromHex(proposalPrepared.evidenceVerifierKeyIdCommitment),
+    fromHex(proposalPrepared.actionPayloadHash),
+  );
   const submitProposal = (body) => fetch(`${proposalEndpoint}/submit`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -577,7 +868,44 @@ try {
   evidenceReceipts.delete(issuerApplicationId);
   await expectHttp(await submitProposal(proposalBody), 403);
   evidenceReceipts.set(issuerApplicationId, issuerReceipt);
-  await expectHttp(await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }), 403);
+  await adversarialMatrix.expectHttp(await submitProposal({
+    ...proposalBody,
+    evidenceVerifierSignature: asHex(encodeJubjubSignature(wrongVerifierSignature)),
+  }), {
+    id: "issuer-unauthorized-evidence-verifier-api",
+    invariant: "An unregistered evidence-verifier key cannot attest issuer eligibility",
+    boundary: "api",
+    status: 403,
+    problemType: "governed-proposal-rejected",
+  });
+  const compactIssuerProposal = harness.prepareIssuerProposalAction(
+    issuer, issuerEvidence, expectedIssuerEvidence,
+  );
+  const actionCountBeforeWrongVerifier = harness.simulator.getLedger().governanceActionCount;
+  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+    issuer,
+    issuerEvidence,
+    [signCompact(second, compactIssuerProposal), signCompact(third, compactIssuerProposal)],
+    wrongVerifierSignature,
+    expectedIssuerEvidence,
+  ), {
+    id: "issuer-unauthorized-evidence-verifier-compact",
+    invariant: "Compact rejects a proposal signed by an unregistered evidence-verifier key",
+    boundary: "compact",
+    messagePattern: /signature|verifier|assert|authorized/iu,
+    category: "unauthorized-verifier-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
+  await adversarialMatrix.expectHttp(
+    await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }),
+    {
+      id: "issuer-proposal-insufficient-quorum",
+      invariant: "Issuer proposal requires the active maintainer quorum",
+      boundary: "api",
+      status: 403,
+      problemType: "governed-proposal-rejected",
+    },
+  );
   assert.equal((await submitProposal(proposalBody)).status, 202);
   const issuerProposal = await expectHttp(await fetch(`${proposalEndpoint}/resolve`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -586,6 +914,56 @@ try {
   assert.equal(issuerProposal.state, "observed");
   await expectHttp(await submitProposal(proposalBody), 409);
   assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
+  const compactApproval = harness.prepareIssuerDecisionAction(issuer, "approve");
+  const compactSigner = signCompact(second, compactApproval);
+  const compactCoSigner = signCompact(third, compactApproval);
+  const governanceActionsBeforeRejections = harness.simulator.getLedger().governanceActionCount;
+  const alteredEvidenceHash = Uint8Array.from(compactApproval.evidenceHash);
+  alteredEvidenceHash[0] ^= 1;
+  adversarialMatrix.expectThrown(() => harness.simulator.authorizeIssuerAuthorization(
+    compactSigner.keyId,
+    compactSigner.publicKey,
+    compactSigner.signature,
+    issuer.authorizationIdCommitment,
+    alteredEvidenceHash,
+    [compactCoSigner],
+  ), {
+    id: "compact-issuer-altered-evidence-hash",
+    invariant: "A signed approval cannot swap the proposed issuer evidence hash",
+    boundary: "compact",
+    messagePattern: /evidence|match/iu,
+    category: "evidence-hash-mismatch",
+  });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner],
+  ), {
+    id: "compact-issuer-insufficient-quorum",
+    invariant: "Compact rejects issuer approval without the active maintainer quorum",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|assert|signature|maintainer/iu,
+    category: "quorum-rejected",
+  });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner, compactSigner],
+  ), {
+    id: "compact-issuer-duplicate-signer",
+    invariant: "Compact rejects duplicate maintainer signatures as one quorum vote",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|assert|signature|maintainer|duplicate/iu,
+    category: "duplicate-signer-rejected",
+  });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner, signCompact(
+      createMaintainerScenarioFixture("governed-demo-outsider"), compactApproval,
+    )],
+  ), {
+    id: "compact-issuer-unknown-signer",
+    invariant: "An unregistered JubJub key cannot substitute for an active maintainer",
+    boundary: "compact",
+    messagePattern: /assert|signature|maintainer|authorized|registered/iu,
+    category: "unknown-signer-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, governanceActionsBeforeRejections);
   const otherProposals = [];
   for (const [role, target] of proposalTargets) {
     const evidence = target.evidence();
@@ -634,9 +1012,28 @@ try {
         body: JSON.stringify({ prepared: preparedAction, signers }),
       });
       const signers = [sign(second, prepared), sign(third, prepared)];
-      await expectHttp(await submit(prepared, signers.slice(0, 1)), 403);
+      await adversarialMatrix.expectHttp(await submit(prepared, signers.slice(0, 1)), {
+        id: `${role}-${action}-insufficient-quorum`,
+        invariant: "Governed membership transition requires the active maintainer quorum",
+        boundary: "api",
+        status: 403,
+        problemType: "governed-action-rejected",
+      });
+      await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], signers[0]]), {
+        id: `${role}-${action}-duplicate-signer`,
+        invariant: "One maintainer key cannot be counted twice toward a governed decision quorum",
+        boundary: "api",
+        status: 403,
+        problemType: "governed-action-rejected",
+      });
       if (role === "maintainer") {
-        await expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), 403);
+        await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), {
+          id: `maintainer-${action}-candidate-self-vote`,
+          invariant: "A candidate maintainer cannot approve its own membership",
+          boundary: "api",
+          status: 403,
+          problemType: "governed-action-rejected",
+        });
       }
       const accepted = await expectHttp(await submit(prepared, signers), 202);
       if (action === "activate") {
@@ -717,14 +1114,50 @@ try {
   await expectHttp(await fetch(
     `${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`,
   ), 404);
-  await expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       role: "issuer", subjectDid: issuer.subjectDid,
       resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
     }),
-  }), 404);
+  }), {
+    id: "issuer-wrong-resource-api",
+    invariant: "The public lookup cannot substitute another issuer credential-family scope",
+    boundary: "api",
+    status: 404,
+    problemType: "authorization-not-found",
+  });
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "verifier", subjectDid: verifier.subjectDid,
+      resourceId: createVerifierScenarioFixture("wrong-scope").scopeResourceId,
+    }),
+  }), {
+    id: "verifier-wrong-resource-api",
+    invariant: "The public lookup cannot substitute another verifier request-profile scope",
+    boundary: "api",
+    status: 404,
+    problemType: "authorization-not-found",
+  });
+  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/recognitions/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+      recognizedRegistryId: "registry:external:wrong:v1",
+      scopeResourceType: recognition.scopeResourceType,
+      scopeResourceId: recognition.scopeResourceId,
+    }),
+  }), {
+    id: "recognition-wrong-external-registry-api",
+    invariant: "The public lookup cannot substitute a different recognized external registry",
+    boundary: "api",
+    status: 404,
+    problemType: "recognition-not-found",
+  });
   const issuerBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
@@ -743,10 +1176,32 @@ try {
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
   });
-  assert.ok(verifierVpFixture);
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+    ...issuerBundle,
+    inclusionProof: {
+      ...issuerBundle.inclusionProof,
+      path: [changeLastHexNibble(issuerBundle.inclusionProof.path[0])],
+    },
+  }, { expectedRegistryId: harness.registryId }), {
+    id: "issuer-tampered-merkle-path",
+    invariant: "A changed Merkle sibling cannot verify against the anchored epoch",
+    boundary: "client",
+    messagePattern: /event sibling/iu,
+    category: "tampered-merkle-path",
+  });
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedResourceId: "credential-family:unknown",
+  }), {
+    id: "issuer-wrong-credential-family",
+    invariant: "Issuer authorization is bound to the exact credential family",
+    boundary: "client",
+    messagePattern: /issuer authorization resource mismatch/iu,
+    category: "issuer-scope-mismatch",
+  });
   const verifierBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
   ), 200);
+  assert.ok(verifierVpFixture);
   const verifierConsumer = await verifyGovernedVerifierRequest({
     harness,
     verifier,
@@ -757,6 +1212,25 @@ try {
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
   });
+  adversarialMatrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
+    expectedResourceId: "request-profile:unknown",
+  }), {
+    id: "verifier-wrong-request-profile",
+    invariant: "Verifier authorization is bound to the exact request profile",
+    boundary: "client",
+    messagePattern: /verifier authorization resource mismatch/iu,
+    category: "verifier-scope-mismatch",
+  });
+  const recognitionBundle = await expectHttp(await fetch(
+    `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
+  ), 200);
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
+    id: "recognition-not-issuer-authorization",
+    invariant: "External registry recognition cannot authorize local VC issuance",
+    boundary: "client",
+    messagePattern: /does not contain issuer authorization/iu,
+    category: "recognition-not-authorization",
+  });
   const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -766,14 +1240,97 @@ try {
   const activeEvaluation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(activeEvaluation.trustedAtTime, true);
   assert.equal(activeEvaluation.statusAtTime, "active");
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  const trqpRequest = {
+    entity_id: issuer.subjectDid,
+    authority_id: harness.registryRecord.registryDid,
+    action: "issue",
+    resource: issuer.resourceId,
+  };
+  const trqpAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async (authorityId) => authorityId === harness.registryRecord.registryDid
+      ? harness.registryRecord : null,
+    getAuthorizationDecision: async (request) => request.resource === issuer.resourceId
+      ? { statusAtTime: "active", trustedAtTime: true } : null,
+    getRecognitionDecision: async () => null,
+  }, { clock: () => activeAt });
+  adversarialMatrix.expectAdapterProblem(await trqpAdapter.queryAuthorization({
+    ...trqpRequest,
+    resource: "credential-family:unknown",
+  }), {
+    id: "trqp-unknown-issuer-scope",
+    invariant: "TRQP cannot project an authorization for an unregistered credential family",
+    status: 404,
+    problemType: "not-found",
+  });
+  adversarialMatrix.expectAdapterProblem(await trqpAdapter.getAuthorizationEvidence(trqpRequest), {
+    id: "trqp-missing-epoch-evidence",
+    invariant: "TRQP cannot claim evidence when the source has no epoch-bound bundle",
+    status: 424,
+    problemType: "epoch-evidence-unavailable",
+  });
+  const inconsistentTrqpAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async () => harness.registryRecord,
+    getAuthorizationDecision: async () => ({ statusAtTime: "suspended", trustedAtTime: true }),
+    getRecognitionDecision: async () => null,
+  }, { clock: () => activeAt });
+  adversarialMatrix.expectAdapterProblem(await inconsistentTrqpAdapter.queryAuthorization(trqpRequest), {
+    id: "trqp-contradictory-source",
+    invariant: "TRQP must reject a source claiming suspended authorization is trusted",
+    status: 500,
+    problemType: "invalid-source-data",
+  });
+  const trqpRecognitionRequest = {
+    entity_id: recognition.recognizedAuthorityDid,
+    authority_id: harness.registryDid,
+    action: recognition.scopeResourceType,
+    resource: recognition.scopeResourceId,
+    context: {
+      time: recognitionBundle.recognition.effectiveFrom,
+      recognized_registry_id: recognition.recognizedRegistryId,
+    },
+  };
+  const recognitionAdapter = new TrustRegistryTrqpAdapter({
+    getRegistryRecord: async (authorityId) => authorityId === harness.registryDid
+      ? harness.registryRecord : null,
+    getAuthorizationDecision: async () => null,
+    getRecognitionDecision: async (request) => request.entity_id === recognition.recognizedAuthorityDid
+      && request.action === recognition.scopeResourceType
+      && request.resource === recognition.scopeResourceId
+      && request.context?.recognized_registry_id === recognition.recognizedRegistryId
+      ? { bundle: recognitionBundle, statusAtTime: "active", trustedAtTime: true }
+      : null,
+  }, { clock: () => recognitionBundle.recognition.effectiveFrom });
+  const recognized = await recognitionAdapter.queryRecognition(trqpRecognitionRequest);
+  assert.equal(recognized.ok, true);
+  adversarialMatrix.expectAdapterProblem(await recognitionAdapter.queryRecognition({
+    ...trqpRecognitionRequest,
+    context: { ...trqpRecognitionRequest.context, recognized_registry_id: "registry:external:wrong:v1" },
+  }), {
+    id: "trqp-wrong-recognized-registry",
+    invariant: "A recognition for one external registry cannot authorize a different registry",
+    status: 404,
+    problemType: "not-found",
+  });
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: "registry:wrong",
-  }), /registry mismatch/i);
+  }), {
+    id: "issuer-wrong-registry",
+    invariant: "Issuer evidence must bind the selected registry",
+    boundary: "client",
+    messagePattern: /registry mismatch/iu,
+    category: "registry-mismatch",
+  });
   const afterEpochExpiry = new Date(Date.parse(issuerBundle.epoch.validUntil) + 1).toISOString();
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: afterEpochExpiry,
-  }), /epoch|expired|valid/i);
+  }), {
+    id: "issuer-expired-epoch",
+    invariant: "An expired epoch cannot establish current issuer trust",
+    boundary: "client",
+    messagePattern: /epoch|expired|valid/iu,
+    category: "expired-epoch",
+  });
 
   const candidateCoSignedProposal = harness.proposeIssuer(
     createIssuerScenarioFixture("governed-demo-candidate-proposal"), [candidate],
@@ -789,9 +1346,15 @@ try {
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: suspendedBundle, state: "suspended", previousJourney: vcConsumer,
   });
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
-  }), /not active/i);
+  }), {
+    id: "issuer-suspended",
+    invariant: "Suspended issuer authorization cannot establish current trust",
+    boundary: "client",
+    messagePattern: /not active/iu,
+    category: "inactive-authorization",
+  });
   const suspendedEvaluation = await expectHttp(await evaluateIssuerAt(
     suspendedBundle.authorization.suspendedAt,
   ), 200);
@@ -799,6 +1362,14 @@ try {
   assert.equal(suspendedEvaluation.statusAtTime, "suspended");
   const historicalAfterSuspension = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterSuspension.trustedAtTime, true);
+  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: activeAt,
+  }), {
+    id: "issuer-historical-after-suspension",
+    invariant: "A later suspension does not erase the issuer's earlier active authorization",
+    boundary: "client",
+  });
   harness.revokeIssuer(issuer);
   snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
   const revokedBundle = await expectHttp(await fetch(
@@ -810,9 +1381,15 @@ try {
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: revokedBundle, state: "revoked", previousJourney: suspendedConsumer,
   });
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
+  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
-  }), /not active/i);
+  }), {
+    id: "issuer-revoked",
+    invariant: "Revoked issuer authorization cannot establish current trust",
+    boundary: "client",
+    messagePattern: /not active/iu,
+    category: "inactive-authorization",
+  });
   const revokedEvaluation = await expectHttp(await evaluateIssuerAt(
     revokedBundle.authorization.revokedAt,
   ), 200);
@@ -820,9 +1397,13 @@ try {
   assert.equal(revokedEvaluation.statusAtTime, "revoked");
   const historicalAfterRevocation = await expectHttp(await evaluateIssuerAt(activeAt), 200);
   assert.equal(historicalAfterRevocation.trustedAtTime, true);
-  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
+  }), {
+    id: "issuer-historical-after-revocation",
+    invariant: "A later revocation does not erase the issuer's earlier active authorization",
+    boundary: "client",
   });
 
   const temporalTargets = [
@@ -905,6 +1486,14 @@ try {
     assert.equal(suspended.trustedAtTime, false, `${target.role} must be denied while suspended`);
     const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterSuspension.trustedAtTime, true);
+    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: roleActiveAt,
+    }), {
+      id: `${target.role}-historical-after-suspension`,
+      invariant: `A later suspension does not erase ${target.role} trust at its active instant`,
+      boundary: "client",
+    });
 
     target.revoke();
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
@@ -932,7 +1521,14 @@ try {
     assert.equal(revoked.trustedAtTime, false, `${target.role} must be denied after revocation`);
     const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterRevocation.trustedAtTime, true);
-    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: roleActiveAt,
+    }), {
+      id: `${target.role}-historical-after-revocation`,
+      invariant: `A later revocation does not erase ${target.role} trust at its active instant`,
+      boundary: "client",
+    });
     temporalChecks.push({
       role: target.role,
       activeAt: roleActiveAt,
@@ -1014,6 +1610,7 @@ try {
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",
     ],
+    adversarialMatrix: adversarialMatrix.report(),
   }, null, 2)}\n`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

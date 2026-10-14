@@ -202,6 +202,35 @@ test-only issuer eligibility and status decisions; it is **not** a verifier for
 arbitrary uploaded VPs. This demo must not be exposed as a public applicant
 endpoint.
 
+The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
+Each recorded case names the violated invariant, boundary, expected category,
+and observed result. API cases assert the exact problem-type slug as well as
+HTTP status; TRQP adapter cases assert the exact problem type and status.
+Compact/integration/client cases assert a rejection pattern and report the actual thrown
+error type, not a product error category. Failed Compact approval must also
+leave the governance action count unchanged. The report is
+emitted only after those assertions pass and contains no credential or VP
+bodies. It covers four-role challenge replay and unauthorized challenge access,
+issuer VP scope/body/status failures, governed proposal and action quorum,
+self-vote, duplicate/removed Compact signer, unauthorized evidence verifier,
+last-active-maintainer protection, altered proposal commitment and signed
+Compact evidence hash, duplicate signer rejection, policy-threshold
+replay, historical evidence under old and new policy snapshots, client evidence
+checks, signed evidence expiry/policy-ID substitution, exact public scope
+queries, and TRQP unknown
+scope, unavailable epoch evidence, and contradictory source data. Issue #60
+remains open for the missing combinations documented in the
+[coverage map](../plans/adversarial-matrix-coverage.md). After building the
+light packages, generate the machine-readable report locally with:
+
+```bash
+node scripts/demo-governed-registry.mjs > /tmp/tr-governed-report.json
+```
+
+The `adversarialMatrix` member is the checked case report; the other members
+are the demo transcript. The output is deterministic in case IDs and categories,
+but local epoch identifiers and event hashes are fixture-dependent.
+
 ## Artifact Boundaries
 
 The repository currently distinguishes between two artifact classes.
