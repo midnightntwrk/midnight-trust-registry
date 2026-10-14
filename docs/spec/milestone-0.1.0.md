@@ -67,6 +67,15 @@ for an exact audit profile, purpose, and disclosure limit. The verifier decides
 what it may disclose under the mandate, holder consent, and applicable policy;
 actual audit data exchange is off-registry. A verifier MUST NOT treat an audit
 grant as blanket access to presentations or personal information.
+The relying-party mandate check MUST bind the exact auditor DID and registry to
+the complete canonical audit request scope, verify active auditor evidence
+against an independently authenticated epoch, and return only mandate
+identifiers and commitments. A verifier grant, altered purpose or disclosure
+limit, and inactive auditor grant MUST fail. The verifier MUST also check a
+current auditor record from independently trusted ledger state at its chosen
+decision time; a previously active evidence bundle alone is historical proof,
+not a current mandate. The result is permission to
+consider an audit request, never permission to release data.
 
 ## 4. Use Cases
 
@@ -252,6 +261,13 @@ method, and key in its own ledger state, then verify the proof and monotonic
 descriptor update before materializing current authorization. A relayer may
 deliver a decision but has no authority. Revocation is not synchronous: until
 the consumer accepts the newer signed decision it sees its last stored state.
+Inactive descriptor production MUST select `suspended` or `revoked` explicitly,
+verify a matching current finalized grant and policy snapshot, accepted epoch
+publication quorum and inclusion proof, and the subject DID observation before
+the governed authority signs. The active-only evidence path MUST continue to
+reject inactive grants. A consumer MUST enforce increasing decision sequence
+and terminal revocation when installing an update; a caller-supplied prior
+descriptor is not a substitute for the consumer's stored prior state.
 Historical issuance-time authorization remains a separate TR query with an
 authenticated epoch; the current VC core descriptor does not prove historical
 trust. Recognition or OpenID Federation metadata alone never pins an

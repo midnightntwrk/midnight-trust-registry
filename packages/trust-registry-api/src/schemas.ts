@@ -11,6 +11,8 @@ import {
   EpochCommitmentSchema,
   HashHexSchema,
   IssuerGovernedResourceIdSchema,
+  MutationIntentSchema,
+  MutationIntentSignatureSchema,
   RequestGovernedResourceIdSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
@@ -173,6 +175,11 @@ export const TrustRegistryApiMutationContextSchema = z.strictObject({
   expectedEpochId: EpochCommitmentSchema.shape.epochId,
   expectedWorkspaceCommitment: HashHexSchema,
 });
+export const TrustRegistryApiSignedMutationRequestSchema = z.strictObject({
+  intent: MutationIntentSchema,
+  signature: MutationIntentSignatureSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
 export const TrustRegistryApiAuthorizationResponseSchema =
   TrustRegistryAuthorizationSnapshotEntrySchema;
 export const TrustRegistryApiRecognitionResponseSchema =
@@ -264,6 +271,12 @@ export type TrustRegistryApiEpochPublishRequest = z.infer<
 >;
 export type TrustRegistryApiApplicationMutationResponse = z.infer<
   typeof TrustRegistryApiApplicationMutationResponseSchema
+>;
+export type TrustRegistryApiMutationContext = z.infer<
+  typeof TrustRegistryApiMutationContextSchema
+>;
+export type TrustRegistryApiSignedMutationRequest = z.infer<
+  typeof TrustRegistryApiSignedMutationRequestSchema
 >;
 export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
   typeof TrustRegistryApiAuthorizationEvaluationResponseSchema

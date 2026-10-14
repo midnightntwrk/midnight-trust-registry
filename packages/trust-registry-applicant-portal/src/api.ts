@@ -4,6 +4,8 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
   ApplicationVpHttpIssueResult,
   ApplicationVpHttpSubmissionResult,
   ApplicationChallengeBinding,
@@ -13,7 +15,7 @@ import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;
 
-const isCurrentlyActive = (
+export const isCurrentlyActive = (
   record: { status?: string; effectiveUntil?: string | undefined } | undefined,
   startsAt: unknown,
   nowMs: number,
@@ -154,6 +156,38 @@ export class TrustRegistryApplicantPortalClient {
         body: JSON.stringify({ target, label }),
       },
     );
+  }
+
+  async loadAuditorAuthorization(authorizationId: string): Promise<TrustRegistryApiAuthorizationListResponse["entries"][number] | null> {
+    if (authorizationId.length === 0 || authorizationId !== authorizationId.trim()) {
+      throw new Error("A valid auditor authorization ID is required.");
+    }
+    try {
+      return await this.request<TrustRegistryApiAuthorizationListResponse["entries"][number]>(
+        `/v1/authorizations/auditor/${encodeURIComponent(authorizationId)}`,
+        { cache: "no-store" },
+      );
+    } catch (error) {
+      if (error instanceof TrustRegistryApplicantPortalApiError && error.problem.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {
+    return this.request<TrustRegistryApiMutationContext>("/v1/registry/mutation-context", {
+      cache: "no-store",
+    });
+  }
+
+  /** Submit an externally signed intent; this client never receives a private key. */
+  async submitSignedMutation(
+    request: TrustRegistryApiSignedMutationRequest,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/mutations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */

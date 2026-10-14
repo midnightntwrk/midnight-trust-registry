@@ -1,6 +1,6 @@
-import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
+import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -11,11 +11,45 @@ type AppState = {
   inspection: PublicInspection | undefined;
   loading: boolean;
   submitting: boolean;
+  signedBusy: boolean;
+  signedContext: TrustRegistryApiMutationContext | undefined;
   evidenceBusy: boolean;
   evidenceError: string | undefined;
   evidenceFlash: string | undefined;
   acceptedEvidence: ApplicationVpHttpSubmissionResult | undefined;
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
+  auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
+  auditorStatusBusy: boolean;
+};
+
+type AuditorScopeInput = {
+  requestProfileId: string;
+  purpose: string;
+  credentialScopeCommitment: string;
+  allowedAttributes: string[];
+  allowedPredicates: string[];
+  disclosureLevel: string;
+};
+
+const parseScopeList = (value: string): string[] => {
+  const items = value.split("\n").map((item) => item.trim()).filter((item) => item.length > 0);
+  if (new Set(items).size !== items.length) throw new Error("Request scope lists cannot contain duplicate IDs.");
+  return items;
+};
+
+const auditorScopeMatches = (value: unknown, expected: AuditorScopeInput): boolean => {
+  if (value === null || typeof value !== "object") return false;
+  const scope = value as Record<string, unknown>;
+  const sameList = (actual: unknown, wanted: string[]) => Array.isArray(actual)
+    && actual.every((item) => typeof item === "string")
+    && JSON.stringify([...actual].sort()) === JSON.stringify([...wanted].sort());
+  return scope.version === "tr-scope-v1" && scope.role === "auditor"
+    && scope.requestProfileId === expected.requestProfileId
+    && scope.purpose === expected.purpose
+    && scope.credentialScopeCommitment === expected.credentialScopeCommitment
+    && scope.disclosureLevel === expected.disclosureLevel
+    && sameList(scope.allowedAttributes, expected.allowedAttributes)
+    && sameList(scope.allowedPredicates, expected.allowedPredicates);
 };
 
 export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
@@ -88,13 +122,19 @@ export const createApplicantPortalApp = (
     inspection: undefined,
     loading: false,
     submitting: false,
+    signedBusy: false,
+    signedContext: undefined,
     evidenceBusy: false,
     evidenceError: undefined,
     evidenceFlash: undefined,
     acceptedEvidence: undefined,
     pendingApplication: undefined,
+    auditorStatus: undefined,
+    auditorStatusBusy: false,
   };
   let evidenceRequestId = 0;
+  let signedContextRequestId = 0;
+  let auditorStatusRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -109,7 +149,7 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const registerApplication = async (rawRequest: string) => {
+  const registerApplication = async (rawRequest: string, expectedAuditorScope?: AuditorScopeInput) => {
     const requestId = ++evidenceRequestId;
     setState({
       evidenceBusy: true, pendingApplication: undefined, acceptedEvidence: undefined,
@@ -141,18 +181,27 @@ export const createApplicantPortalApp = (
         || typeof candidate.governedResource.id !== "string") {
         throw new Error("Signed application must request one matching membership role.");
       }
+      if (expectedAuditorScope !== undefined && (!auditorScopeMatches(candidate.scope, expectedAuditorScope)
+        || candidate.governedResource.type !== "requestProfile"
+        || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(candidate.governedResource.id))) {
+        throw new Error("Signed auditor application does not match the complete request scope and canonical resource.");
+      }
       const record = await client().registerPendingApplication(signedRequest);
       if (requestId !== evidenceRequestId) return;
       if (record?.status !== "pending" || record.authorizationId !== candidate.authorizationId
         || !isRenderablePendingBinding(record.binding, candidate.applicationId)
         || record.binding.role !== candidate.scope.role
         || record.binding.governedResource.type !== candidate.governedResource.type
-        || record.binding.governedResource.id !== candidate.governedResource.id) {
+        || record.binding.governedResource.id !== candidate.governedResource.id
+        || (expectedAuditorScope !== undefined && !auditorScopeMatches(record.binding.scope, expectedAuditorScope))) {
         throw new Error("Host did not return a canonical pending membership application.");
       }
       const binding = record.binding;
       setState({
         pendingApplication: { binding },
+        ...(binding.role === "auditor" ? {
+          auditorStatus: { authorizationId: record.authorizationId, status: "pending", currentTrust: false },
+        } : {}),
         evidenceFlash: `Pending ${binding.role} application ${binding.applicationId} registered. Present eligibility evidence next.`,
       });
     } catch (error) {
@@ -262,6 +311,36 @@ export const createApplicantPortalApp = (
     }
   };
 
+  const refreshAuditorStatus = async (authorizationId: string) => {
+    const requestId = ++auditorStatusRequestId;
+    const apiBase = state.apiBase;
+    setState({ auditorStatusBusy: true, error: undefined });
+    try {
+      const entry = await client().loadAuditorAuthorization(authorizationId);
+      if (requestId !== auditorStatusRequestId || apiBase !== state.apiBase) return;
+      if (entry !== null && (entry.authorization.role !== "auditor"
+        || entry.authorization.authorizationId !== authorizationId)) {
+        throw new Error("Auditor status response did not match the requested authorization.");
+      }
+      setState({ auditorStatus: entry === null
+        ? {
+            authorizationId,
+            status: state.auditorStatus?.authorizationId === authorizationId
+              && state.auditorStatus.status === "pending" ? "pending" : "not recorded",
+            currentTrust: false,
+          }
+        : {
+            authorizationId,
+            status: entry.authorization.status,
+            currentTrust: isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, Date.now()),
+          } });
+    } catch (error) {
+      if (requestId === auditorStatusRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === auditorStatusRequestId) setState({ auditorStatusBusy: false });
+    }
+  };
+
   const refreshInspection = async (flash?: string) => {
     setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
@@ -304,6 +383,62 @@ export const createApplicantPortalApp = (
     setState({ submitting: false });
   };
 
+  const loadSignedContext = async () => {
+    if (state.signedBusy) return;
+    const requestId = ++signedContextRequestId;
+    setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
+    try {
+      const signedContext = await client().loadMutationContext();
+      if (requestId === signedContextRequestId) setState({ signedContext });
+    } catch (error) {
+      if (requestId === signedContextRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === signedContextRequestId) setState({ signedBusy: false });
+    }
+  };
+
+  const submitSignedApplication = async (raw: string) => {
+    if (state.signedBusy || state.signedContext === undefined) return;
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      setState({ error: "Signed mutation envelope must be valid JSON." });
+      return;
+    }
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      setState({ error: "Paste an externally signed issuer or verifier submission envelope." });
+      return;
+    }
+    const parsed = candidate as Partial<TrustRegistryApiSignedMutationRequest>;
+    if (parsed.operation?.operation !== "submit"
+      || !["issuer", "verifier"].includes(parsed.operation.target)
+      || parsed.intent === null || typeof parsed.intent !== "object"
+      || parsed.signature === null || typeof parsed.signature !== "object") {
+      setState({ error: "Paste an externally signed issuer or verifier submission envelope." });
+      return;
+    }
+    const { intent } = parsed;
+    const context = state.signedContext;
+    if (intent.registryId !== context.registryId || intent.expectedEpochId !== context.expectedEpochId
+      || intent.expectedWorkspaceCommitment !== context.expectedWorkspaceCommitment) {
+      setState({ signedContext: undefined, error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    const apiBase = state.apiBase;
+    setState({ signedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await client().submitSignedMutation(parsed as TrustRegistryApiSignedMutationRequest);
+      if (state.apiBase !== apiBase) return;
+      state.signedContext = undefined;
+      await refreshInspection(`Signed ${result.operation.operation} accepted for ${parsed.operation.target}.`);
+    } catch (error) {
+      if (state.apiBase === apiBase) setState({ signedContext: undefined, error: formatApiError(error) });
+    } finally {
+      setState({ signedBusy: false });
+    }
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -318,12 +453,26 @@ export const createApplicantPortalApp = (
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
       evidenceRequestId += 1;
-      setState({ apiBase, pendingApplication: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      signedContextRequestId += 1;
+      auditorStatusRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
       void refreshInspection();
     });
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       void refreshInspection();
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
+      void loadSignedContext();
+    });
+    root.querySelector<HTMLFormElement>("[data-signed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = (event.currentTarget as HTMLFormElement).querySelector<HTMLTextAreaElement>("[name='signedEnvelope']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void submitSignedApplication(raw);
     });
 
     root.querySelector<HTMLFormElement>("[data-submit-form]")?.addEventListener("submit", (event) => {
@@ -367,6 +516,38 @@ export const createApplicantPortalApp = (
       void registerApplication(raw);
     });
 
+    root.querySelector<HTMLFormElement>("[data-auditor-application-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const raw = field("auditorSignedApplication");
+      form.querySelector<HTMLTextAreaElement>("[name='auditorSignedApplication']")!.value = "";
+      try {
+        const scope: AuditorScopeInput = {
+          requestProfileId: field("requestProfileId"),
+          purpose: field("purpose"),
+          credentialScopeCommitment: field("credentialScopeCommitment"),
+          allowedAttributes: parseScopeList(field("allowedAttributes")),
+          allowedPredicates: parseScopeList(field("allowedPredicates")),
+          disclosureLevel: field("disclosureLevel"),
+        };
+        if (scope.requestProfileId.length === 0 || scope.purpose.length === 0
+          || scope.disclosureLevel.length === 0
+          || !/^0x[0-9a-f]{64}$/u.test(scope.credentialScopeCommitment)) {
+          throw new Error("Auditor requests need a complete scope and 32-byte credential-scope commitment.");
+        }
+        void registerApplication(raw, scope);
+      } catch (error) {
+        setState({ evidenceError: formatApiError(error) });
+      }
+    });
+    root.querySelector<HTMLFormElement>("[data-auditor-status-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const authorizationId = form.querySelector<HTMLInputElement>("[name='auditorAuthorizationId']")?.value.trim();
+      if (authorizationId !== undefined && authorizationId.length > 0) void refreshAuditorStatus(authorizationId);
+    });
+
     root.querySelector<HTMLButtonElement>("[data-application-challenge]")?.addEventListener("click", () => {
       void issueApplicationChallenge();
     });
@@ -404,6 +585,7 @@ export const createApplicantPortalApp = (
   `;
 
   const render = () => {
+    const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -446,6 +628,18 @@ export const createApplicantPortalApp = (
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">
+          <section class="form-panel">
+            <h2>Signed issuer or verifier submission</h2>
+            <p>Load the current workspace context, sign an issuer or verifier submission outside this browser, then paste only the signed envelope. No private key belongs here. A stale context must be signed again.</p>
+            <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+            ${state.signedContext === undefined ? "" : `<pre class="mono signing-context">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+            <form data-signed-submit>
+              <label class="label">Externally signed envelope
+                <textarea class="input mono signed-envelope" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+              </label>
+              <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed intent</button>
+            </form>
+          </section>
           <form class="form-panel" data-submit-form>
             <h2>Local demo application</h2>
             <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
@@ -461,6 +655,27 @@ export const createApplicantPortalApp = (
             </label>
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
+          <section class="form-panel">
+            <h2>Auditor request</h2>
+            <p>Describe the exact request scope, sign the matching application outside the browser with the applicant Midnight DID, then submit it through the private evidence host. A request-profile ID alone is not an auditor scope.</p>
+            <form data-auditor-application-form>
+              <label class="label">Request profile ID<input class="input mono" name="requestProfileId" required /></label>
+              <label class="label">Purpose<input class="input" name="purpose" required /></label>
+              <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" pattern="0x[0-9a-f]{64}" required /></label>
+              <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"></textarea></label>
+              <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"></textarea></label>
+              <label class="label">Disclosure level<input class="input" name="disclosureLevel" required /></label>
+              <label class="label">Externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register auditor application</button>
+            </form>
+            <form data-auditor-status-form>
+              <label class="label">Auditor authorization ID
+                <input class="input mono" name="auditorAuthorizationId" value="${escapeHtml(state.auditorStatus?.authorizationId ?? "")}" required />
+              </label>
+              <button class="button secondary" type="submit"${state.auditorStatusBusy ? " disabled" : ""}>Check auditor status</button>
+            </form>
+            ${state.auditorStatus === undefined ? "" : `<p data-auditor-status>Application: ${escapeHtml(state.auditorStatus.status)}. Current trust: ${state.auditorStatus.currentTrust ? "active" : "not active"}.</p>`}
+          </section>
           <section class="form-panel">
             <h2>Pending membership evidence</h2>
             <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
@@ -524,6 +739,10 @@ export const createApplicantPortalApp = (
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
+    }
+    if (previousSignedEnvelope !== undefined) {
+      const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;
     }
     bindEvents();
   };

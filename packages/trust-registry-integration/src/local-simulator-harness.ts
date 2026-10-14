@@ -9,6 +9,7 @@ import {
   computeCreateRecognitionPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateEvidenceVerifierKeyPayloadHash,
+  computeUpdateVcAuthorityKeyPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
@@ -98,9 +99,13 @@ import {
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
 } from "./fixtures.js";
+import { prepareVcAuthorityKeyRegistration } from "./vc-authority-registration.js";
+import type { VcAuthorityDomain } from "./vc-signer-authorization.js";
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
 const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
+const REGISTER_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:register");
+const SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:suspend");
 const AUTHORIZE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:authorize");
 const ACTIVATE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:activate");
 const SUSPEND_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:suspend");
@@ -467,6 +472,67 @@ export class LocalTrustRegistryIntegrationHarness {
     this.currentEvidenceVerifierAuthorizationId = authorizationId;
     this.currentEvidenceVerifierKeyIdCommitment = keyIdCommitment;
     if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
+  }
+
+  registerVcAuthorityKey(input: {
+    domain: VcAuthorityDomain;
+    keyIdCommitment: Uint8Array;
+    publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
+  }): void {
+    const policyCommitment = this.simulator.getLedger().governancePolicyCommitment;
+    const policyVersion = this.simulator.getLedger().governancePolicyVersion;
+    const prepared = prepareVcAuthorityKeyRegistration({
+      domain: input.domain,
+      registryId: this.registryId,
+      registryContractAddress: `0x${this.simulator.contractAddress}`,
+      keyIdCommitment: input.keyIdCommitment,
+      publicKey: input.publicKey,
+      policyCommitment,
+      policyVersion,
+    });
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    this.simulator.registerVcAuthorityKey(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, prepared.payloadHash, actionSequence),
+      prepared.keyIdCommitment,
+      prepared.authorityDidCommitment,
+      prepared.authorityMethodIdCommitment,
+      prepared.publicKey,
+      prepared.networkIdCommitment,
+      prepared.consumerContractAddress,
+      prepared.policyCommitment,
+      prepared.policyVersion,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        REGISTER_VC_AUTHORITY_KEY_ACTION_KIND,
+        prepared.payloadHash,
+        actionSequence,
+      ),
+    );
+  }
+
+  suspendVcAuthorityKey(keyIdCommitment: Uint8Array, reasonHash: Uint8Array): void {
+    const previous = this.simulator.getVcAuthorityKey(keyIdCommitment);
+    const payload = computeUpdateVcAuthorityKeyPayloadHash(
+      keyIdCommitment,
+      previous.lifecycleEventHash,
+      reasonHash,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    this.simulator.suspendVcAuthorityKey(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND, payload, actionSequence),
+      keyIdCommitment,
+      reasonHash,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND,
+        payload,
+        actionSequence,
+      ),
+    );
   }
 
   createApplicationEvidence(input: {

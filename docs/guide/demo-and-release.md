@@ -80,17 +80,32 @@ pnpm run demo:signed
 
 It builds the light packages, starts an API server with a temporary operator
 workspace and fixture Midnight DID resolver, and signs applicant and maintainer
-mutation intents with separate JubJub keys. The sequence submits an issuer,
-approves and activates it, publishes an epoch, and reads the active authorization
-and associated epoch evidence. It also checks that unsigned writes, an invalid
-signature, a replayed intent, and a wrong-scope lookup are rejected. The command
-prints a compact JSON transcript and deletes its temporary workspace on exit.
+mutation intents with separate JubJub keys outside the UI clients. The applicant
+portal and admin console clients fetch non-cacheable mutation contexts and
+submit already-signed envelopes through their public API methods. The sequence
+submits an issuer, approves and activates it, publishes an epoch, then suspends
+it and publishes another epoch. Public temporal lookup and TRQP query/evidence
+must agree on the active decision and inclusion commitment at the same
+historical instant. Both query paths must deny after suspension while the
+earlier active-time decision remains true. The script also checks that unsigned
+writes, an invalid signature, replay, a stale context, an invalid transition,
+and a wrong-scope lookup are rejected with structured HTTP problems. A second
+process holds the workspace write lock during approval: the API rejects the
+conflicting signed write with 409, then accepts the same intent after unlock.
+It prints a
+compact JSON transcript and deletes its temporary workspace on exit.
 
 This is a **local fixture demonstration**, not a live-network or proving demo:
 finality is simulated, the workspace has one fixture maintainer rather than a
 2-of-3 Compact-backed approval bundle, and the script does not issue or verify
 a VC/VP or independently verify a Compact proof. The reported epoch root is
 operator-workspace evidence, not a network-finality claim.
+The cross-process check covers one shared local filesystem, not a distributed
+multi-writer deployment. The applicant and admin pages now expose this public
+client path: load a fresh signing context, paste an externally signed envelope,
+and submit without handing either page a private key. Their DOM-handler tests
+cover accepted and stale-context paths; a real-browser signed-intent smoke
+remains separate #59 work.
 
 ### Compact-Governed Registry Journey
 
@@ -130,9 +145,55 @@ verifier, auditor, and recognition each check current and historical API
 evaluations across active, suspended, and revoked states. Historical trust at
 the active instant remains verifiable after both lifecycle changes; recognition
 remains external authority recognition, not local membership.
+After those actor journeys, the simulator demo raises the ordinary decision
+threshold from 2-of-3 to 3-of-4, rejects a two-signer proposal, and accepts a
+three-signer proposal. It then suspends the new maintainer using the emergency
+threshold, rejects that maintainer's later vote, and accepts a proposal from
+the three still-active maintainers. The independent integration suite also
+rejects removal of the last active maintainer. These are local Compact
+simulator assertions, not proof of network finality.
+For the issuer, the same Midnight DID uses separate authentication and assertion
+keys: the authentication key signs the application VP, and the assertion key
+signs a subsequent VC. The demo registers a governed VC authority key, converts
+the active issuer epoch and DID assertion-method observation into decision
+evidence, installs a quorum-gated signer descriptor in the compiled Compact VC
+consumer, and verifies a credential signed by that issuer. It rejects a
+wrong-schema credential and a forged issuer signature. This proves the
+schema-level issuer trust path; credential definition and status remain separate
+checks. The descriptor readers use simulator ledger and DID fixtures, not a
+production authenticated Midnight finality source.
+The verifier follows the same governed descriptor path using its Midnight DID
+authentication key and exact approved request-profile commitment. A compiled
+consumer accepts the signed request and rejects a different profile or forged
+request signature. It also rejects independently signed requests that expand
+attributes or predicates, change purpose, or increase disclosure relative to
+the approved profile. The issuer and verifier examples use separate local
+consumer instances; they do not authorize a holder presentation on their own.
+The issuer consumer also installs newer authority-signed suspended and revoked
+descriptors from independently checked registry epoch, grant, and DID evidence.
+After each update the prior credential proof fails in the consumer. The demo
+replays the accepted descriptor history into a fresh local consumer instance;
+it does not imply that registry status changes appear synchronously in a
+deployed consumer. The authority signer rejects inactive evidence on its
+active-only path, and status updates require an explicit target state.
+The verifier consumer follows the same descriptor-update sequence; its
+previously authorized request proof fails after suspension and revocation.
+Both roles reject stale descriptor replay and a fixture-signed attempt to
+reactivate a terminally revoked descriptor. These are local consumer checks,
+not a promise that a deployed consumer has received the latest registry event.
+The auditor path verifies an exact mandate from the public HTTP evidence bundle
+against the simulator-backed epoch context. A changed audit purpose fails, and
+the mandate is denied after suspension or revocation. The scrubbed report
+contains only mandate identifiers and commitments; it does not request or
+return verifier-held information.
 `./run.sh integration` runs this scenario after the package integration
 tests. The scrubbed JSON report contains identifiers, commitments, epoch roots,
-and governance event hashes, not the VP transcript or holder secrets.
+governance event hashes, and one actor row with policy version, epoch ID,
+activation signer key IDs, and expected/observed result. Issuer, verifier,
+auditor, and recognition rows use their record-specific active evidence epoch;
+the maintainer row uses the epoch of its active membership snapshot. These
+can differ from the newest registry epoch. The report omits signatures, VP
+transcripts, claims, and holder secrets.
 Eligibility and status decisions use trusted fixture adapters; the negative
 suspension and revocation fixtures are contract-backed but are not submitted
 through the external-signature HTTP action port. Finality is simulated, not a
@@ -140,6 +201,40 @@ transaction submitted to Midnight. The fixture credential-family verifier uses
 test-only issuer eligibility and status decisions; it is **not** a verifier for
 arbitrary uploaded VPs. This demo must not be exposed as a public applicant
 endpoint.
+
+The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
+Each recorded case names the violated invariant, boundary, expected category,
+and observed result. API cases assert the exact problem-type slug as well as
+HTTP status; TRQP adapter cases assert the exact problem type and status.
+Temporal decision cases record `decision:allow` or `decision:deny`, with the
+API lifecycle status where available. Issuer public API and TRQP decisions are
+compared at activation, suspension, revocation, and the earlier active instant
+after each later transition. The report also records public historical
+decisions for verifier, auditor, and recognition.
+Compact/integration/client cases assert a rejection pattern and report the actual thrown
+error type, not a product error category. Failed Compact approval must also
+leave the governance action count unchanged. The report is
+emitted only after those assertions pass and contains no credential or VP
+bodies. It covers four-role challenge replay and unauthorized challenge access,
+issuer VP scope/body/status failures, governed proposal and action quorum,
+self-vote, duplicate/removed Compact signer, unauthorized evidence verifier,
+last-active-maintainer protection, altered proposal commitment and signed
+Compact evidence hash, duplicate signer rejection, policy-threshold
+replay, historical evidence under old and new policy snapshots, client evidence
+checks, signed evidence expiry/policy-ID substitution, exact public scope
+queries, and TRQP unknown
+scope, unavailable epoch evidence, and contradictory source data. Issue #60
+remains open for the missing combinations documented in the
+[coverage map](../plans/adversarial-matrix-coverage.md). After building the
+light packages, generate the machine-readable report locally with:
+
+```bash
+node scripts/demo-governed-registry.mjs > /tmp/tr-governed-report.json
+```
+
+The `adversarialMatrix` member is the checked case report; the other members
+are the demo transcript. The output is deterministic in case IDs and categories,
+but local epoch identifiers and event hashes are fixture-dependent.
 
 ## Artifact Boundaries
 

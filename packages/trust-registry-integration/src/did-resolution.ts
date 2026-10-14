@@ -53,6 +53,10 @@ export type MidnightDidLedgerFixtureOptions = {
     id: string;
     publicKey: { x: bigint; y: bigint };
   }>;
+  schnorrJubjubAuthenticationMethods?: ReadonlyArray<{
+    id: string;
+    publicKey: { x: bigint; y: bigint };
+  }>;
   capabilityInvocation?: boolean;
   version?: bigint;
   created?: bigint;
@@ -73,8 +77,20 @@ export const createMidnightDidLedgerFixture = (
   const contractAddress = parsedDid.id;
   const verificationMethodId = options.verificationMethodId ?? "auth-1";
   const nativeKey = options.schnorrJubjubPublicKey;
-  const nativeMethods = options.schnorrJubjubAssertionMethods
-    ?? (nativeKey === undefined ? [] : [{ id: verificationMethodId, publicKey: nativeKey }]);
+  const implicitMethods = nativeKey === undefined ? [] : [{ id: verificationMethodId, publicKey: nativeKey }];
+  const authenticationMethods = options.schnorrJubjubAuthenticationMethods
+    ?? (options.schnorrJubjubAssertionMethods === undefined ? implicitMethods : []);
+  const assertionMethods = options.schnorrJubjubAssertionMethods
+    ?? (options.schnorrJubjubAuthenticationMethods === undefined ? implicitMethods : []);
+  const nativeMethodsById = new Map<string, { x: bigint; y: bigint }>();
+  for (const { id, publicKey } of [...authenticationMethods, ...assertionMethods]) {
+    const previous = nativeMethodsById.get(id);
+    if (previous !== undefined && (previous.x !== publicKey.x || previous.y !== publicKey.y)) {
+      throw new Error("DID fixture method id cannot refer to different public keys");
+    }
+    nativeMethodsById.set(id, publicKey);
+  }
+  const nativeMethods = [...nativeMethodsById].map(([id, publicKey]) => ({ id, publicKey }));
   const serviceEndpoint =
     options.serviceEndpoint ?? `https://resolver.example/${contractAddress}`;
   const version = options.version ?? 1n;
@@ -108,10 +124,10 @@ export const createMidnightDidLedgerFixture = (
       nativeMethods.map(({ id, publicKey }) => [id, { id, publicKey }]),
     ),
     authenticationRelation: makeIterable<string>(
-      nativeMethods.length === 0 ? [verificationMethodId] : nativeMethods.map(({ id }) => id),
+      nativeMethods.length === 0 ? [verificationMethodId] : authenticationMethods.map(({ id }) => id),
     ),
     assertionMethodRelation: makeIterable<string>(
-      nativeMethods.length === 0 ? [verificationMethodId] : nativeMethods.map(({ id }) => id),
+      nativeMethods.length === 0 ? [verificationMethodId] : assertionMethods.map(({ id }) => id),
     ),
     keyAgreementRelation: makeIterable<string>([]),
     capabilityInvocationRelation: makeIterable<string>(options.capabilityInvocation ? [verificationMethodId] : []),

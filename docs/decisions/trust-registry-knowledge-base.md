@@ -14,6 +14,31 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- The local `codex/trust-registry-adversarial-matrix` branch is stacked on the
+  VC authority slice and is not yet published. Its governed demo now emits a
+  checked `tr-adversarial-matrix-v1` with 90 cases across API, Compact simulator,
+  integration preflight, client, and TRQP adapter boundaries. The [coverage map](../plans/adversarial-matrix-coverage.md)
+  names the remaining #60 gaps; do not close #60 on the current report.
+- The fastest local loop for script-only adversarial work is the matrix unit
+  test plus `node scripts/demo-governed-registry.mjs` (about six seconds for the
+  demo). Run `./run.sh --light` and `./run.sh integration --light` before a
+  signed checkpoint; do not repeat the full proving-key build without a
+  contract or generated-artifact change.
+- The threshold-revision matrix has separate outcomes: old-policy applicant
+  evidence fails simulator preflight, old policy-bound signatures fail direct
+  Compact execution, historical evidence verifies at its original instant,
+  and replay at the new policy's effective instant fails. These are local
+  simulator-time claims, not wall-clock or network-finality claims.
+- Validly signed applicant evidence with a substituted policy ID or an elapsed
+  24-hour validity window is rejected before governance mutation. The matrix
+  also distinguishes exact issuer/verifier API resource lookup and TRQP
+  external-recognition tuple matching from client bundle verification.
+- The direct Compact boundary now rejects a changed issuer evidence hash and
+  both attempts to remove the last active maintainer; API actions reject
+  duplicate signer entries across all five governed roles. Candidate self-vote
+  rejection is observed, but a separate witness is still needed to prove the
+  explicit Compact self-DID exclusion rather than an earlier inactive-key gate.
+
 - PR #171 and the later admission groundwork are merged to
   `milestone-0.1.0`; local signed work continues on
   `codex/trust-registry-role-admission` without waiting for another merge.
@@ -542,3 +567,135 @@ compared request and pinned addresses, and a negative regression test confirms
 it. A fresh 65-circuit proving build plus full integration passed before the
 TypeScript-only DID check; focused, light, and fast integration gates passed
 after it. Production finality and custody implementations remain open.
+
+The next local #73 slice replaced the hand-built VC authority-key record in
+the composed consumer test with a key registered by a 2-of-3 policy-bound
+action in the Compact simulator. The signer reads that actual record, and a
+governed suspension stops subsequent signing. Registration now uses
+`prepareVcAuthorityKeyRegistration`: it checks canonical Midnight DID,
+absolute method, network, consumer address, and exact registry ID/address
+preimages before constructing the quorum-signed Compact payload. The helper
+copies caller-owned key and commitment values so a prepared action cannot
+drift through later input mutation. Focused tests took about 3.5 seconds,
+integration-light about 25 seconds, and the broad light gate about 45 seconds,
+primarily in existing API/CLI tests. A first local GPG commit returned a bad
+verification result despite a successful signing command; it was replaced
+before publication, and both retained commits verify as good with DCO.
+Simulator ledger reads and action preparation do not establish production
+network finality, durable consumer deployment, or governed key custody.
+
+The signer reader now returns one `FinalizedVcAuthorityState` observation
+instead of a standalone key record. The gate compares the observed registry ID
+commitment and current policy commitment with the pinned registry and verified
+decision, and requires the current key's numeric policy version to equal the
+same observation's current numeric policy version. This closes the positive
+but stale-version path without treating a semantic policy label as a contract
+version. The simulator fixture supplies synchronous ledger state and negative
+tests for missing, substituted, and stale observations. A production adapter
+must still authenticate the exact contract and network finality; the typed
+observation alone is not proof.
+
+The #58 issuer-journey follow-on uses one applicant Midnight DID for both the
+application VP and subsequent issuer assertion. The fixture DID state now
+supports distinct native JubJub authentication and assertion method lists:
+`#auth-1` signs the holder presentation and `#assertion-1` is available for
+credential issuance. Cross-relationship resolution fails, and duplicate
+method IDs with conflicting keys are rejected. This prevents a demo from
+using an unrelated issuer DID or implicitly authorizing the holder key to
+issue credentials. The local governed demo now carries the accepted issuer VP
+through HTTP proposal and 2-of-3 approval to an active epoch, obtains a
+schema-scoped signer descriptor with a governed VC authority signature, and
+installs it in the compiled Compact VC consumer. That consumer accepts a VC
+signed by the same DID's assertion key and rejects wrong schema and forged
+signature. The authority and DID observations are simulator fixtures; this is
+not a network-finality adapter or an arbitrary uploaded-credential verifier.
+
+The #78 verifier follow-on reuses that decision evidence and VC authority gate
+with the applicant DID's `#auth-1` relationship. Its governed demo installs a
+verifier descriptor in a separate compiled consumer and proves an exact signed
+request profile. Wrong-profile and forged request signatures fail. The request
+decision does not replace independent holder VP or issuer trust evaluation.
+The field-specific #78 checks sign altered request commitments under the
+verifier's valid key and prove that excess attributes, predicates, changed
+purpose, and increased disclosure still fail against the approved descriptor.
+
+The issuer lifecycle follow-on adds an explicit inactive decision-evidence
+reader for `suspended` and `revoked`. The default reader remains active-only.
+The authority signer independently rechecks the selected inactive state,
+current grant lifecycle root, policy, epoch quorum and DID method before
+signing a monotonic VC descriptor update. The simulator demo installs active,
+suspended, and revoked descriptors in order and confirms that the issuer proof
+fails after the inactive updates. This proves local propagation only; a live
+consumer needs an authenticated relayer/finality adapter and can be stale
+until it receives the newer decision.
+
+The #78 verifier lifecycle path now uses the same explicit inactive evidence
+reader and authority signer, but checks `assertVerifierRequestAuthorized` after
+each update rather than the issuer VC proof. The governed demo rejects the
+previous request at suspended/revoked state, stale descriptor replay, and
+fixture-signed reactivation after revocation. The same trust limitation holds:
+these reads and relayer deliveries are simulator fixtures, not production
+network-finality observations.
+
+The UC-14 relying-party check now derives the auditor composite resource ID
+from the full canonical audit request scope and verifies the public bundle
+against a caller-authenticated epoch context. Its result contains mandate
+identifiers and commitments only. The simulator client and HTTP-governed demo
+reject changed audit purpose, cross-role evidence, and suspended/revoked
+mandates. Disclosure policy, holder consent, and data exchange remain outside
+the trust registry; an active grant is not blanket access.
+
+The #78 recognition boundary is now exercised against the actual active
+recognition evidence: the client accepts it as recognition but refuses to
+interpret it as issuer or verifier authorization. The Compact simulator also
+rejects the recognized authority DID as a local issuer and finds no local
+maintainer membership for that DID. The governed HTTP demo repeats the issuer
+and maintainer negatives. Recognition remains a scoped external-registry
+statement, not transitive local membership; these are simulator checks, not
+proof of another registry's independent accreditation process.
+
+The #78 maintainer signed-journey fixture now tests a live threshold revision
+from 2 to 3 after onboarding. Two votes fail without consuming a governance
+sequence; three active votes succeed. After emergency suspension of the new
+maintainer, its key cannot satisfy the revised quorum, while the three
+remaining active maintainers can. The governed demo exports the policy-version
+transition and event hashes; the existing last-active-maintainer test remains
+separate. This does not introduce production key custody or relayer finality.
+
+The #78 governed demo now emits an actor evidence table for issuer, verifier,
+auditor, recognition, and maintainer. Each row includes policy version, an
+epoch ID with its source, two activation signer key IDs, and the asserted
+active outcome. The four public authorization/recognition rows use the epoch
+from each verified record-specific bundle. The maintainer row uses an active
+membership observation and its then-current snapshot epoch; it must not be
+misrepresented as a public authorization bundle. No VP body, claim, private
+key, or signature bytes are exported in this table.
+
+The #59 local public-client slice exports the signed mutation envelope from
+the API schema and uses it in both applicant-portal and admin-console clients.
+Each client fetches the no-cache workspace context and forwards an externally
+signed intent without handling a private key. The existing signed-workspace
+demo now drives issuer submission, approval, activation, suspension, and two
+epoch publications through those clients, then compares public temporal trust
+with TRQP decision and inclusion evidence. Both query paths deny at the
+suspension instant while retaining the prior active-time decision. Stale
+context, invalid transition, replay, and invalid signature return structured
+problems. A second process holds the shared local workspace lock during a
+signed approval; the API returns 409 without consuming the intent, and the
+same intent succeeds after release. The static applicant and admin pages now
+load fresh signing context and accept externally signed envelopes. Their
+DOM-handler tests cover the accepted path and stale context; real-browser
+signed-intent smoke remains open acceptance work under #59. This fixture is
+not a distributed multi-writer or live-network finality test.
+
+The local #60 adversarial matrix branch was stacked on the signed-client
+journey without rewriting its seven signed commits. Its governed demo now
+records temporal API decisions for issuer, verifier, auditor, and recognition,
+plus issuer TRQP parity at activation, suspension, revocation, and historical
+active instants. The `tr-adversarial-matrix-v1` report still documents uncovered
+combinations in `docs/plans/adversarial-matrix-coverage.md`; simulator outcomes
+are not claims of network finality.
+The issuer proposal API now has a matrix case for a correctly signed, admitted
+receipt whose evidence has expired under the virtual evidence clock. The test
+restores the original accepted fixture after asserting the exact governed
+proposal rejection, so downstream successful decisions remain unchanged.

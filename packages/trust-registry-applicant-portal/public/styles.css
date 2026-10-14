@@ -123,6 +123,20 @@ select {
   background: rgba(255, 255, 255, 0.88);
 }
 
+.signing-context {
+  max-width: 100%;
+  padding: 0.9rem;
+  overflow-x: auto;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  font-size: 0.75rem;
+}
+
+.signed-envelope {
+  min-height: 10rem;
+  resize: vertical;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

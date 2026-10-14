@@ -2,8 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
-import { TrustRegistryOperatorWorkspaceOperationSchema } from "@midnight-ntwrk/trust-registry-cli";
-import { MutationIntentSchema, MutationIntentSignatureSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -118,6 +117,7 @@ import {
   TrustRegistryApiEvidenceResponseSchema,
   TrustRegistryApiHealthResponseSchema,
   TrustRegistryApiMutationContextSchema,
+  TrustRegistryApiSignedMutationRequestSchema,
   TrustRegistryApiProblemDetailsSchema,
   TrustRegistryApiRecognitionEvaluationResponseSchema,
   TrustRegistryApiRecognitionListQuerySchema,
@@ -160,12 +160,6 @@ export type TrustRegistryApiServerOptions = {
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
   nonApiGetHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 };
-
-const SignedMutationRequestSchema = z.strictObject({
-  intent: MutationIntentSchema,
-  signature: MutationIntentSignatureSchema,
-  operation: TrustRegistryOperatorWorkspaceOperationSchema,
-});
 
 const jsonProblem = (
   problemBaseUri: string,
@@ -1217,7 +1211,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "did-resolver-required", 503,
             "did resolver required", "Signed mutations need a configured Midnight DID resolver.");
         }
-        const body = await parseJsonBody(request, (value) => SignedMutationRequestSchema.parse(value), problemBaseUri);
+        const body = await parseJsonBody(request, (value) => TrustRegistryApiSignedMutationRequestSchema.parse(value), problemBaseUri);
         let result: TrustRegistryApiMutationResult;
         try {
           result = await applySignedMutationOperation(

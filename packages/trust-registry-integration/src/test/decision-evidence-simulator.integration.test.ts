@@ -16,7 +16,7 @@ import {
   resolveMidnightDIDMethodBinding,
   signMidnightDIDCredentialProof,
 } from "@midnight-ntwrk/credential-did-midnight";
-import { createCircuitContext, createConstructorContext, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+import { createCircuitContext, createConstructorContext, encodeContractAddress, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
 import {
   deriveJubjubPublicKey,
@@ -27,7 +27,6 @@ import {
 import {
   AuthorizationStatus,
   VcAuthorityKeyStatus,
-  type VcAuthorityKeyRecord,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,
@@ -97,6 +96,29 @@ describe("simulator-backed VC decision evidence composition", () => {
     const issuer = createIssuerScenarioFixture("vc-decision-issuer");
     harness.authorizeMaintainer(coMaintainer);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const networkId = issuer.subjectDid.split(":")[2]!;
+    const contractAddress = hex(encodeContractAddress(harness.simulator.contractAddress));
+    const authoritySeed = new Uint8Array(32).fill(77);
+    const consumerContractAddress = sampleContractAddress();
+    const authorityDid = createMidnightDid("vc-decision-authority");
+    const authorityAnchor = {
+      domain: {
+        networkId,
+        consumerContractAddress: `0x${consumerContractAddress}`,
+        registryId: harness.registryId,
+        registryContractAddress: contractAddress,
+        authorityDid,
+        authorityMethodId: `${authorityDid}#authority-1`,
+      },
+      publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed),
+    };
+    const authorityFields = vcAuthorityDomainFields(authorityAnchor.domain);
+    const authorityKeyIdCommitment = bytes32Commitment("vc-authority:decision-key");
+    harness.registerVcAuthorityKey({
+      domain: authorityAnchor.domain,
+      keyIdCommitment: authorityKeyIdCommitment,
+      publicKey: authorityAnchor.publicKey,
+    });
     harness.proposeIssuer(issuer, [coMaintainer]);
     harness.approveIssuer(issuer, [coMaintainer]);
     harness.activateIssuer(issuer, [coMaintainer]);
@@ -108,8 +130,6 @@ describe("simulator-backed VC decision evidence composition", () => {
     const epochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
     const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
     const ledger = harness.simulator.getLedger();
-    const networkId = issuer.subjectDid.split(":")[2]!;
-    const contractAddress = sha256Hex("simulator:vc-decision:contract");
     const epochTransaction = sha256Hex("simulator:vc-decision:epoch-transaction");
     const epochBlock = sha256Hex("simulator:vc-decision:epoch-block");
     const didTransaction = sha256Hex("simulator:vc-decision:did-transaction");
@@ -319,20 +339,6 @@ describe("simulator-backed VC decision evidence composition", () => {
       }, binding,
     )).rejects.toThrow(/registry decision is unavailable/u);
 
-    const authoritySeed = new Uint8Array(32).fill(77);
-    const consumerContractAddress = sampleContractAddress();
-    const authorityDid = createMidnightDid("vc-decision-authority");
-    const authorityAnchor = {
-      domain: {
-        networkId,
-        consumerContractAddress: `0x${consumerContractAddress}`,
-        registryId: harness.registryId,
-        registryContractAddress: contractAddress,
-        authorityDid,
-        authorityMethodId: `${authorityDid}#authority-1`,
-      },
-      publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed),
-    };
     const authorityResolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(authorityDid, {
         schnorrJubjubPublicKey: authorityAnchor.publicKey,
@@ -373,29 +379,26 @@ describe("simulator-backed VC decision evidence composition", () => {
       }),
     );
     const secret = seedBytesToJubjubSecretScalar(authoritySeed);
-    const authorityFields = vcAuthorityDomainFields(authorityAnchor.domain);
-    const authorityKeyIdCommitment = bytes32Commitment("vc-authority:decision-key");
-    const governedAuthorityKey: VcAuthorityKeyRecord = {
-      keyIdCommitment: authorityKeyIdCommitment,
-      authorityDidCommitment: authorityFields.authorityDidCommitment,
-      authorityMethodIdCommitment: authorityFields.authorityMethodIdCommitment,
-      publicKey: authorityAnchor.publicKey,
-      networkIdCommitment: authorityFields.networkIdCommitment,
-      consumerContractAddress: authorityFields.consumerContractAddress,
-      domainCommitment: vcAuthorityDomainCommitment(authorityAnchor.domain),
-      policyCommitment: converted.descriptor.policyCommitment,
-      policyVersion: 1n,
-      status: VcAuthorityKeyStatus.active,
-      registeredAtSequence: 1n,
-      retiredAtSequence: 0n,
-      lastStatusSequence: 1n,
-      predecessorKeyIdCommitment: new Uint8Array(32),
-      lifecycleEventHash: bytes32Commitment("vc-authority:event"),
+    const governedAuthorityKey = harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress);
+    expect(governedAuthorityKey.keyIdCommitment).toEqual(Uint8Array.from(authorityKeyIdCommitment));
+    expect(governedAuthorityKey.status).toBe(VcAuthorityKeyStatus.active);
+    expect(governedAuthorityKey.policyCommitment).toEqual(converted.descriptor.policyCommitment);
+    const currentAuthorityState = {
+      registryIdCommitment: harness.simulator.getLedger().registryId,
+      currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
+      currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
+      currentKey: governedAuthorityKey,
     };
     const authorityKeyReader = {
-      readCurrentFinalizedVcAuthorityKey: async (domain: typeof authorityAnchor.domain) => {
+      readCurrentFinalizedVcAuthorityState: async (domain: typeof authorityAnchor.domain) => {
         expect(domain).toEqual(authorityAnchor.domain);
-        return governedAuthorityKey;
+        const ledger = harness.simulator.getLedger();
+        return {
+          registryIdCommitment: ledger.registryId,
+          currentPolicyCommitment: ledger.governancePolicyCommitment,
+          currentPolicyVersion: ledger.governancePolicyVersion,
+          currentKey: harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress),
+        };
       },
     };
     let authoritySignCount = 0;
@@ -431,6 +434,25 @@ describe("simulator-backed VC decision evidence composition", () => {
       decisionSequence: signed.descriptor.decisionSequence,
       authority: pinnedVcAuthority(authorityAnchor),
     };
+    for (const currentState of [
+      null,
+      { ...currentAuthorityState, registryIdCommitment: bytes32Commitment("other-registry") },
+      { ...currentAuthorityState, currentPolicyCommitment: bytes32Commitment("other-current-policy") },
+      { ...currentAuthorityState, currentPolicyVersion: currentAuthorityState.currentPolicyVersion + 1n },
+      { ...currentAuthorityState, currentPolicyVersion: 0n },
+    ]) {
+      const rejectedSigner = createQuorumGatedVcAuthoritySigner({
+        evidence,
+        selection: context.selection,
+        readers: authorityReaders,
+        method: binding,
+        pinnedAnchor: authorityAnchor,
+        authorityKeyIdCommitment,
+        authorityKeyReader: { readCurrentFinalizedVcAuthorityState: async () => currentState },
+        sign: async () => { throw new Error("Stale authority policy reached key custody"); },
+      });
+      await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
+    }
     for (const currentKey of [
       null,
       { ...governedAuthorityKey, status: VcAuthorityKeyStatus.suspended },
@@ -442,6 +464,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       { ...governedAuthorityKey, domainCommitment: bytes32Commitment("other-domain") },
       { ...governedAuthorityKey, policyCommitment: bytes32Commitment("other-policy") },
       { ...governedAuthorityKey, policyVersion: 0n },
+      { ...governedAuthorityKey, policyVersion: governedAuthorityKey.policyVersion + 1n },
       { ...governedAuthorityKey, publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(78)) },
       { ...governedAuthorityKey, registeredAtSequence: signed.descriptor.decisionSequence + 1n },
       { ...governedAuthorityKey, lastStatusSequence: signed.descriptor.decisionSequence + 1n },
@@ -453,7 +476,9 @@ describe("simulator-backed VC decision evidence composition", () => {
         method: binding,
         pinnedAnchor: authorityAnchor,
         authorityKeyIdCommitment,
-        authorityKeyReader: { readCurrentFinalizedVcAuthorityKey: async () => currentKey },
+        authorityKeyReader: {
+          readCurrentFinalizedVcAuthorityState: async () => ({ ...currentAuthorityState, currentKey }),
+        },
         sign: async () => { throw new Error("Invalid authority reached key custody"); },
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
@@ -1007,5 +1032,27 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).toThrow(/current grant mismatch/u);
+
+    harness.suspendVcAuthorityKey(authorityKeyIdCommitment, bytes32Commitment("vc-authority:suspension-reason"));
+    expect(harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
+    expect(() => harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress)).toThrow();
+    const suspendedAuthoritySigner = createQuorumGatedVcAuthoritySigner({
+      evidence,
+      selection: context.selection,
+      readers: authorityReaders,
+      method: binding,
+      pinnedAnchor: authorityAnchor,
+      authorityKeyIdCommitment,
+      authorityKeyReader: {
+        readCurrentFinalizedVcAuthorityState: async () => ({
+          registryIdCommitment: harness.simulator.getLedger().registryId,
+          currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
+          currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
+          currentKey: harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment),
+        }),
+      },
+      sign: async () => { throw new Error("Suspended authority reached key custody"); },
+    });
+    await expect(suspendedAuthoritySigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
   }, 30_000);
 });

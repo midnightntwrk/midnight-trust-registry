@@ -85,6 +85,12 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
   revoked, expired, and wrong-registry issuer outcomes. Its credential decision
   MUST use the VC composed `VC<>::assertAuthorizedIssuerProof` path, not the
   metadata-only descriptor helper.
+  The local VP fixture keeps authentication and assertion keys as separate
+  relationships on one Midnight DID. The governed simulator demo now joins VP
+  intake, 2-of-3 approval, active epoch, authority-signed descriptor, and the
+  compiled `VC<>::assertAuthorizedIssuerProof` consumer path. Production
+  finalized-state adapters and separately governed credential-definition and
+  status checks remain open; this simulator result alone does not close #58.
 - #59 MUST exercise authenticated applicant and maintainer intents through the
   public API/UI, assert fail-closed stale/replayed writes, and compare the
   public query with client evidence verification.
@@ -242,6 +248,10 @@ not the older transcript-digest draft.
 - [ ] Specify `domainCommitment` preimage (network, consumer contract,
       registry, authority), governed authority key lifecycle, and the signer
       service's refusal to sign a decision without a committed quorum.
+      Local registration preparation checks canonical DID/method/network
+      preimages and the exact registry address before constructing the quorum
+      payload; the simulator reads the registered key and refuses signing after
+      a governed suspension. Finalized production reads remain open.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
       A simulator fixture now exercises this exact VC proof circuit through

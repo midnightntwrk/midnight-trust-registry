@@ -36,6 +36,13 @@ before evidence and raw
 record reads, including when the ledger changes after client construction;
 that simulator is a local reference, not a production trust source.
 
+`verifyAuditorRequestMandate` additionally requires an explicit evaluation
+time and a current auditor authorization record read from independently
+trusted ledger state. An older active bundle remains valid as historical
+evidence but cannot authorize a new audit request after suspension or
+revocation. The simulator client reads that current record itself. Production
+callers must not pass a cached record or derive it from the bundle under test.
+
 `assertDecisionEvidenceDidMethodMatchesObservation` parses a DID Document with
 the published Midnight DID package and matches the exact method, native JWK,
 controller, role relationship, block, state version, and (for ledger

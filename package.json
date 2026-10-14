@@ -29,10 +29,10 @@
     "packed-artifacts:smoke": "node scripts/smoke-packed-artifacts.mjs",
     "published-artifacts:smoke": "node scripts/smoke-published-artifacts.mjs",
     "test:artifact-workspaces": "node scripts/artifact-workspaces.test.mjs",
-    "test:demo-smoke-scripts": "node --test scripts/demo-smoke-assets.test.mjs scripts/demo-smoke-process.test.mjs scripts/serve-static.test.mjs",
+    "test:demo-smoke-scripts": "node --test scripts/adversarial-matrix.test.mjs scripts/demo-smoke-assets.test.mjs scripts/demo-smoke-process.test.mjs scripts/serve-static.test.mjs",
     "check:action-kind-parity": "node scripts/check-action-kind-parity.mjs",
-    "integration": "turbo run integration --continue && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer",
-    "integration:light": "rm -rf contracts/trust-registry/dist && turbo run integration:light --continue && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer",
+    "integration": "turbo run integration --continue && turbo run build:light --filter=@midnight-ntwrk/trust-registry-trqp-adapter && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer && node scripts/demo-signed-journey.mjs",
+    "integration:light": "rm -rf contracts/trust-registry/dist && turbo run integration:light --continue && turbo run build:light --filter=@midnight-ntwrk/trust-registry-trqp-adapter && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer && node scripts/demo-signed-journey.mjs",
     "lint": "turbo run lint --continue",
     "typecheck": "turbo run typecheck --continue",
     "typecheck:light": "turbo run typecheck --continue --only",
@@ -62,6 +62,7 @@
     "refresh:identity-dependencies": "node scripts/refresh-identity-dependencies.mjs"
   },
   "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/credential-compact": "0.2.0",
     "@midnight-ntwrk/credential-did-midnight": "0.2.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",

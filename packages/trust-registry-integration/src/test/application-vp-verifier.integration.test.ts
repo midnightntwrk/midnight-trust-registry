@@ -46,6 +46,40 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("uses distinct authentication and assertion methods on the same applicant DID", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const did = parseMidnightDIDString(scenario.input.expectedSubjectDid);
+    const holderMethod = await resolveMidnightDIDMethodBinding({
+      resolver: scenario.input.resolver,
+      did,
+      verificationMethodId: "#auth-1",
+      relationship: "authentication",
+    });
+    expect(scenario.subjectAssertion.method.verificationMethodRef).not.toEqual(
+      holderMethod.verificationMethodRef,
+    );
+    const assertionMethod = await resolveMidnightDIDMethodBinding({
+      resolver: scenario.input.resolver,
+      did,
+      verificationMethodId: "#assertion-1",
+      relationship: "assertionMethod",
+    });
+    expect(scenario.subjectAssertion.method).toEqual(assertionMethod);
+    await expect(resolveMidnightDIDMethodBinding({
+      resolver: scenario.input.resolver,
+      did,
+      verificationMethodId: "#auth-1",
+      relationship: "assertionMethod",
+    })).rejects.toThrow(/not authorized/u);
+    await expect(resolveMidnightDIDMethodBinding({
+      resolver: scenario.input.resolver,
+      did,
+      verificationMethodId: "#assertion-1",
+      relationship: "authentication",
+    })).rejects.toThrow(/not authorized/u);
+    await expect(verifyApplicationVp(scenario.input)).resolves.toMatchObject({ subjectDid: did });
+  });
+
   it("round-trips submitted proof JSON without losing cryptographic fields", async () => {
     const { input, material } = await fixture();
     const submitted = structuredClone(input.submission);

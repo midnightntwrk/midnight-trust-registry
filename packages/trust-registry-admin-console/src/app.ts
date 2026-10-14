@@ -1,4 +1,6 @@
 import type {
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
   GovernedMembershipAction,
   GovernedMembershipSignatureRequest,
   PreparedGovernedMembershipAction,
@@ -41,6 +43,8 @@ type AppState = {
   governedSignersJson: string;
   loading: boolean;
   publishing: boolean;
+  signedBusy: boolean;
+  signedContext: TrustRegistryApiMutationContext | undefined;
   proposalRole: GovernedProposalRole;
   proposalAuthorizationId: string;
   proposalEvidenceJson: string;
@@ -167,6 +171,8 @@ export const createAdminConsoleApp = (
     governedSignersJson: "",
     loading: false,
     publishing: false,
+    signedBusy: false,
+    signedContext: undefined,
     proposalRole: "issuer",
     proposalAuthorizationId: "",
     proposalEvidenceJson: "",
@@ -175,6 +181,7 @@ export const createAdminConsoleApp = (
     proposalVerifierSignature: "",
     selectedKey: undefined,
   };
+  let signedContextRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -183,6 +190,68 @@ export const createAdminConsoleApp = (
 
   const getClient = (): TrustRegistryAdminConsoleClient =>
     new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
+
+  const loadSignedContext = async () => {
+    if (state.signedBusy) return;
+    const requestId = ++signedContextRequestId;
+    setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
+    try {
+      const signedContext = await getClient().loadMutationContext();
+      if (requestId === signedContextRequestId) setState({ signedContext });
+    } catch (error) {
+      if (requestId === signedContextRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === signedContextRequestId) setState({ signedBusy: false });
+    }
+  };
+
+  const submitSignedAction = async (raw: string) => {
+    if (state.signedBusy || state.signedContext === undefined) return;
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      setState({ error: "Signed mutation envelope must be valid JSON." });
+      return;
+    }
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      setState({ error: "Paste an externally signed maintainer action envelope." });
+      return;
+    }
+    const parsed = candidate as Partial<TrustRegistryApiSignedMutationRequest>;
+    if (parsed.intent === null || typeof parsed.intent !== "object"
+      || parsed.intent?.actorRole !== "maintainer"
+      || parsed.signature === null || typeof parsed.signature !== "object"
+      || parsed.operation === null || typeof parsed.operation !== "object"
+      || parsed.operation?.operation === "submit") {
+      setState({ error: "Paste an externally signed maintainer action envelope." });
+      return;
+    }
+    const { intent } = parsed;
+    const context = state.signedContext;
+    if (intent.registryId !== context.registryId || intent.expectedEpochId !== context.expectedEpochId
+      || intent.expectedWorkspaceCommitment !== context.expectedWorkspaceCommitment) {
+      setState({ signedContext: undefined, error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    const apiBase = state.apiBase;
+    if (!await confirm(`Submit signed ${parsed.operation.operation} for ${intent.targetId}?`)) return;
+    if (state.apiBase !== apiBase || state.signedContext !== context) {
+      setState({ error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    setState({ signedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await getClient().submitSignedMutation(parsed as TrustRegistryApiSignedMutationRequest);
+      if (state.apiBase !== apiBase) return;
+      state.signedContext = undefined;
+      await refreshBoard(`Signed ${result.operation.operation} accepted. Load a new context for the next action.`);
+    } catch (error) {
+      if (state.apiBase === apiBase) setState({ signedContext: undefined, error: formatApiError(error) });
+    } finally {
+      setState({ signedBusy: false });
+    }
+  };
 
   const selectedCard = (): ReviewCard | undefined =>
     state.cards.find((card) => card.key === state.selectedKey);
@@ -446,13 +515,26 @@ export const createAdminConsoleApp = (
       }
       const apiBase = normalizeApiBaseUrl(input.value);
       storage.setItem(STORAGE_KEY, apiBase);
-      setState({ apiBase });
+      signedContextRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined });
       void refreshBoard();
     });
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       if (state.governedBusy) return;
       void refreshBoard();
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
+      void loadSignedContext();
+    });
+    root.querySelector<HTMLFormElement>("[data-signed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = (event.currentTarget as HTMLFormElement).querySelector<HTMLTextAreaElement>("[name='signedEnvelope']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void submitSignedAction(raw);
     });
 
     root.querySelector<HTMLInputElement>("[data-epoch-label]")?.addEventListener("input", (event) => {
@@ -646,6 +728,7 @@ export const createAdminConsoleApp = (
   };
 
   const render = () => {
+    const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
     const groupedCards = groupReviewCards(state.cards);
     root.innerHTML = `
       <main class="shell">
@@ -679,6 +762,21 @@ export const createAdminConsoleApp = (
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           ${state.board === undefined ? "" : renderMetrics(state.board)}
+        </section>
+        <section class="proposal-panel governed-panel">
+          <div>
+            <p class="eyebrow">Signed workspace action</p>
+            <h2>Submit an external maintainer intent</h2>
+            <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This local workspace path is separate from Compact quorum governance and never handles private keys.</p>
+          </div>
+          <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+          ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+          <form data-signed-submit>
+            <label>Externally signed envelope
+              <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+            </label>
+            <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
+          </form>
         </section>
         <section class="proposal-panel governed-panel">
           <div>
@@ -724,6 +822,10 @@ export const createAdminConsoleApp = (
         </section>
       </main>
     `;
+    if (previousSignedEnvelope !== undefined) {
+      const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;
+    }
     bindEvents();
   };
 

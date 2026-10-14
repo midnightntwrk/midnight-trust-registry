@@ -11,7 +11,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
+import { createInactiveVcSignerCandidateFromTrustedDecision, createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 import {
   pinnedVcAuthority,
   vcAuthorityDomainFields,
@@ -57,9 +57,16 @@ const assertCurrentAuthorityMethod = (
   }
 };
 
-/** The implementation must authenticate the exact registry contract, finality, and current ledger state. */
+export type FinalizedVcAuthorityState = {
+  registryIdCommitment: Uint8Array;
+  currentPolicyCommitment: Uint8Array;
+  currentPolicyVersion: bigint;
+  currentKey: VcAuthorityKeyRecord | null;
+};
+
+/** Return one authenticated ledger snapshot from the exact finalized registry contract. */
 export type TrustedVcAuthorityKeyReader = {
-  readCurrentFinalizedVcAuthorityKey(domain: VcAuthorityDomain): Promise<VcAuthorityKeyRecord | null>;
+  readCurrentFinalizedVcAuthorityState(domain: VcAuthorityDomain): Promise<FinalizedVcAuthorityState | null>;
 };
 
 /** A signer-side gate: re-read finalized quorum and DID state before invoking key custody. */
@@ -72,10 +79,15 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
   authorityKeyIdCommitment: Uint8Array;
   authorityKeyReader: TrustedVcAuthorityKeyReader;
   sign: VcAuthoritySigner;
+  inactiveState?: "suspended" | "revoked";
 }): VcAuthoritySigner => async (request) => {
-  const { candidate, descriptor } = await createVcSignerCandidateFromTrustedDecision(
-    input.evidence, input.selection, input.readers, input.method,
-  );
+  const { candidate, descriptor } = input.inactiveState === undefined
+    ? await createVcSignerCandidateFromTrustedDecision(
+      input.evidence, input.selection, input.readers, input.method,
+    )
+    : await createInactiveVcSignerCandidateFromTrustedDecision(
+      input.evidence, input.selection, input.readers, input.method, input.inactiveState,
+    );
   if (candidate.networkId !== input.pinnedAnchor.domain.networkId
     || candidate.registryId !== input.pinnedAnchor.domain.registryId
     || candidate.contractAddress !== input.pinnedAnchor.domain.registryContractAddress) {
@@ -83,10 +95,15 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
   }
   const authority = pinnedVcAuthority(input.pinnedAnchor);
   const fields = vcAuthorityDomainFields(input.pinnedAnchor.domain);
-  const governedKey = await input.authorityKeyReader.readCurrentFinalizedVcAuthorityKey(
+  const state = await input.authorityKeyReader.readCurrentFinalizedVcAuthorityState(
     input.pinnedAnchor.domain,
   );
+  const governedKey = state?.currentKey ?? null;
   if (input.authorityKeyIdCommitment.length !== 32
+    || state === null
+    || !sameBytes(state.registryIdCommitment, fields.registryIdCommitment)
+    || !sameBytes(state.currentPolicyCommitment, descriptor.policyCommitment)
+    || state.currentPolicyVersion < 1n
     || governedKey === null
     || governedKey.status !== VcAuthorityKeyStatus.active
     || !sameBytes(governedKey.keyIdCommitment, input.authorityKeyIdCommitment)
@@ -96,7 +113,7 @@ export const createQuorumGatedVcAuthoritySigner = (input: {
     || !sameBytes(governedKey.consumerContractAddress, fields.consumerContractAddress)
     || !sameBytes(governedKey.domainCommitment, authority.domainCommitment)
     || !sameBytes(governedKey.policyCommitment, descriptor.policyCommitment)
-    || governedKey.policyVersion < 1n
+    || governedKey.policyVersion !== state.currentPolicyVersion
     || governedKey.publicKey.x !== authority.publicKey.x
     || governedKey.publicKey.y !== authority.publicKey.y
     || governedKey.registeredAtSequence > descriptor.decisionSequence
