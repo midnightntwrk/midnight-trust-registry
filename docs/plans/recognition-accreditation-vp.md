@@ -9,7 +9,9 @@ injected by trusted code and the test fixture is not a production status
 source. The private challenge service can verify both the DID assertion and VP
 before one atomic consume, with service-level failure/replay tests; those tests
 mock the independently signed VP verifier, so a joined end-to-end flow remains
-to be built. No public intake route or governed anchor lookup consumes this
+to be built. A focused integration test verifies both real signatures and
+their common accreditation evidence commitment, but does not yet carry the
+result through the challenge service and Compact ledger. No public intake route or governed anchor lookup consumes this
 result yet. The DID-only consume path is still used by the pre-accreditation
 demo and must not be presented as an accredited recognition decision.
 

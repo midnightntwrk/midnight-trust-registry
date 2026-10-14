@@ -7,19 +7,22 @@ import {
   signMidnightDIDPresentationProof,
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { deriveJubjubPublicKey } from "@midnight-ntwrk/trust-registry-contract";
+import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import {
   RecognitionAccreditorAnchorSchema,
   canonicalizeJson,
   recognitionAccreditationClaimsCommitment,
   sha256Hex,
   type RecognitionAccreditationClaims,
+  type RecognitionAuthorityAssertion,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import { encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
+import { recognitionAuthorityAssertionDigest, verifyRecognitionAuthorityAssertion } from "../recognition-authority-assertion.js";
 import { verifyRecognitionAccreditationVp } from "../recognition-accreditation-vp.js";
 
 const NOW = Date.parse("2026-05-20T00:10:00.000Z");
@@ -57,6 +60,7 @@ async function fixture(options: {
   const accreditorSecret = 19n;
   const holderSecret = 23n;
   const statusSecret = 29n;
+  const authorityAssertionSeed = new Uint8Array(32).fill(31);
   const resolver = createMidnightDidResolver([
     createMidnightDidLedgerFixture(accreditorDid, {
       verificationMethodId: "assertion-1",
@@ -65,6 +69,9 @@ async function fixture(options: {
     createMidnightDidLedgerFixture(authorityDid, {
       schnorrJubjubAuthenticationMethods: [
         { id: "auth-1", publicKey: deriveJubjubPublicKey(holderSecret) },
+      ],
+      schnorrJubjubAssertionMethods: [
+        { id: "assertion-1", publicKey: deriveJubjubPublicKeyFromSeed(authorityAssertionSeed) },
       ],
     }),
     createMidnightDidLedgerFixture(statusAuthorityDid, {
@@ -157,6 +164,7 @@ async function fixture(options: {
     claims,
     statusSource,
     holderBinding: createMidnightDIDHolderBinding(holderMethod).explicitBinding,
+    authorityAssertionSeed,
   };
 }
 
@@ -172,6 +180,51 @@ describe("independently signed recognition accreditation VP", () => {
     expect(result.expiresAtMs).toBe(NOW + 15 * 60_000);
     expect(JSON.stringify(result)).not.toContain(authorityDid);
     expect(statusSource.verifyPinnedStatus).toHaveBeenCalledOnce();
+  });
+
+  it("binds a separate signed authority DID assertion to the verified accreditation evidence", async () => {
+    const { input, authorityAssertionSeed } = await fixture();
+    const accreditation = await verifyRecognitionAccreditationVp(input);
+    const challengeHash = hex(bytes32(Buffer.from(input.nonce.slice(2), "hex")));
+    const statement: RecognitionAuthorityAssertion = {
+      version: "tr-recognition-authority-assertion-v1",
+      targetRegistryId: input.targetRegistryId,
+      recognitionId: "recognition:external:example:v1",
+      authorityDid,
+      recognizedRegistryId: anchor.recognizedRegistryId,
+      scopeResourceType: anchor.scopeResourceType,
+      scopeResourceId: anchor.scopeResourceId,
+      accreditationEvidenceCommitment: accreditation.evidenceCommitment,
+      challengeHash,
+      issuedAt: new Date(NOW).toISOString(),
+      expiresAt: new Date(NOW + 60_000).toISOString(),
+    };
+    const verificationMethodId = `${authorityDid}#assertion-1`;
+    const signed = {
+      statement,
+      proof: {
+        verificationMethodId,
+        algorithm: "jubjub-schnorr" as const,
+        signature: hex(Buffer.from(encodeJubjubSignature(signJubjubDigestFromSeed(
+          authorityAssertionSeed,
+          recognitionAuthorityAssertionDigest(statement, verificationMethodId),
+        )))),
+      },
+    };
+    const verifiedAuthority = await verifyRecognitionAuthorityAssertion({
+      signed,
+      expected: { ...statement, evaluatedAtMs: NOW },
+      resolver: input.resolver,
+    });
+    expect(verifiedAuthority.statement.accreditationEvidenceCommitment).toBe(accreditation.evidenceCommitment);
+    await expect(verifyRecognitionAuthorityAssertion({
+      signed: {
+        ...signed,
+        statement: { ...statement, accreditationEvidenceCommitment: sha256Hex("substituted-accreditation") },
+      },
+      expected: { ...statement, evaluatedAtMs: NOW },
+      resolver: input.resolver,
+    })).rejects.toThrow(/signature is invalid/u);
   });
 
   it("rejects signed claims outside governed issuer, authority, registry, scope and family", async () => {
