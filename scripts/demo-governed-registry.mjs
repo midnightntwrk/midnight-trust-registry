@@ -852,6 +852,52 @@ try {
     const endpoint = `${base}/v1/governed/${spec.role}/${spec.id}/proposal`;
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const evidence = evidenceByRole.get(spec.role);
+    if (spec.role !== "issuer") {
+      const originalEvidence = persistedEvidence.get(applicationId);
+      const originalReceipt = evidenceReceipts.get(applicationId);
+      const target = proposalTargets.get(spec.role);
+      assert.ok(originalEvidence);
+      assert.ok(originalReceipt);
+      assert.ok(target);
+      const shortLivedEnvelope = {
+        ...originalEvidence.envelope,
+        expiresAt: new Date(Date.parse(originalEvidence.envelope.verifiedAt) + 1).toISOString(),
+      };
+      const commitment = computeApplicationEvidenceCommitment(shortLivedEnvelope);
+      const shortLivedEvidence = {
+        envelope: shortLivedEnvelope,
+        commitment,
+        signature: harness.signApplicationEvidenceCommitment(commitment),
+      };
+      assert.equal(harness.verifyApplicationEvidenceSignature(
+        commitment, shortLivedEvidence.signature, harness.evidenceVerifier,
+      ), true);
+      adversarialMatrix.expectThrown(() => target.prepare(shortLivedEvidence), {
+        id: `${spec.role}-expired-evidence-api-preflight`,
+        invariant: `Accepted signed evidence cannot authorize a ${spec.role} proposal after expiry`,
+        boundary: "integration",
+        messagePattern: /expired/iu,
+        category: "expired-application-evidence",
+      });
+      persistedEvidence.set(applicationId, shortLivedEvidence);
+      evidenceReceipts.set(applicationId, {
+        ...originalReceipt,
+        receiptId: sha256Hex(`receipt:${applicationId}:${commitment}`),
+        evidenceCommitment: commitment,
+      });
+      try {
+        await adversarialMatrix.expectHttp(await proposePrepare(endpoint, shortLivedEvidence), {
+          id: `${spec.role}-expired-accepted-evidence-api`,
+          invariant: `The governed API rejects admitted ${spec.role} evidence after expiry`,
+          boundary: "api",
+          status: 403,
+          problemType: "governed-proposal-rejected",
+        });
+      } finally {
+        persistedEvidence.set(applicationId, originalEvidence);
+        evidenceReceipts.set(applicationId, originalReceipt);
+      }
+    }
     const other = applicantSpecs.find((candidateSpec) => candidateSpec.role !== spec.role);
     await adversarialMatrix.expectHttp(await proposePrepare(endpoint, evidenceByRole.get(other.role)), {
       id: `${spec.role}-cross-role-evidence`,
