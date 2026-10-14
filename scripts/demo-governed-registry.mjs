@@ -1622,6 +1622,10 @@ try {
   }, { clock: () => recognitionBundle.recognition.effectiveFrom });
   const recognized = await recognitionAdapter.queryRecognition(trqpRecognitionRequest);
   assert.equal(recognized.ok, true);
+  const recognitionTrqpEvidence = await recognitionAdapter.getRecognitionEvidence(trqpRecognitionRequest);
+  assert.equal(recognitionTrqpEvidence.ok, true);
+  assert.equal(recognitionTrqpEvidence.value.bundle.recognition.evidenceHash,
+    verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectAdapterProblem(await recognitionAdapter.queryRecognition({
     ...trqpRecognitionRequest,
     context: { ...trqpRecognitionRequest.context, recognized_registry_id: "registry:external:wrong:v1" },

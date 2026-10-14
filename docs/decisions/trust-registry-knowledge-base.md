@@ -800,7 +800,7 @@ governed tuple, DID relationships, fixture-pinned accreditation anchor, and
 fixture status source, the registry combines both verified evidence commitments
 and consumes the challenge once. The governed demo passes this combined hash
 through the Compact recognition proposal and checks the public evidence bundle
-retains it. The assertion field is `accreditationSubmissionCommitment`;
+and TRQP evidence projection retain it. The assertion field is `accreditationSubmissionCommitment`;
 `evidenceCommitment` names the separate post-verification output. This is not
 yet public accredited-recognition intake: anchor/status provisioning is still
 fixture-only. Local `./run.sh --light`, `./run.sh integration --light`, and
