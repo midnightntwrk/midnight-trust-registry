@@ -136,6 +136,10 @@ describe("private recognition accreditation HTTP", () => {
       },
     };
     const body = { nonce: challenge.nonce, signed, accreditation: fixture.input.submission };
+    expect((await post(`${path}/submissions`, {
+      ...body,
+      governancePolicy: harness.policyRecord,
+    })).status).toBe(400);
     policyCommitment = sha256Hex("stale-policy");
     expect((await post(`${path}/submissions`, body)).status).toBe(403);
     policyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
