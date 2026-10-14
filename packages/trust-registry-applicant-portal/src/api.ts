@@ -15,7 +15,7 @@ import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;
 
-const isCurrentlyActive = (
+export const isCurrentlyActive = (
   record: { status?: string; effectiveUntil?: string | undefined } | undefined,
   startsAt: unknown,
   nowMs: number,
@@ -156,6 +156,21 @@ export class TrustRegistryApplicantPortalClient {
         body: JSON.stringify({ target, label }),
       },
     );
+  }
+
+  async loadAuditorAuthorization(authorizationId: string): Promise<TrustRegistryApiAuthorizationListResponse["entries"][number] | null> {
+    if (authorizationId.length === 0 || authorizationId !== authorizationId.trim()) {
+      throw new Error("A valid auditor authorization ID is required.");
+    }
+    try {
+      return await this.request<TrustRegistryApiAuthorizationListResponse["entries"][number]>(
+        `/v1/authorizations/auditor/${encodeURIComponent(authorizationId)}`,
+        { cache: "no-store" },
+      );
+    } catch (error) {
+      if (error instanceof TrustRegistryApplicantPortalApiError && error.problem.status === 404) return null;
+      throw error;
+    }
   }
 
   async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {

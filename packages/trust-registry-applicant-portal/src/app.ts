@@ -1,4 +1,4 @@
-import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, normalizeApiBaseUrl } from "./api.js";
+import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
@@ -18,6 +18,38 @@ type AppState = {
   evidenceFlash: string | undefined;
   acceptedEvidence: ApplicationVpHttpSubmissionResult | undefined;
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
+  auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
+  auditorStatusBusy: boolean;
+};
+
+type AuditorScopeInput = {
+  requestProfileId: string;
+  purpose: string;
+  credentialScopeCommitment: string;
+  allowedAttributes: string[];
+  allowedPredicates: string[];
+  disclosureLevel: string;
+};
+
+const parseScopeList = (value: string): string[] => {
+  const items = value.split("\n").map((item) => item.trim()).filter((item) => item.length > 0);
+  if (new Set(items).size !== items.length) throw new Error("Request scope lists cannot contain duplicate IDs.");
+  return items;
+};
+
+const auditorScopeMatches = (value: unknown, expected: AuditorScopeInput): boolean => {
+  if (value === null || typeof value !== "object") return false;
+  const scope = value as Record<string, unknown>;
+  const sameList = (actual: unknown, wanted: string[]) => Array.isArray(actual)
+    && actual.every((item) => typeof item === "string")
+    && JSON.stringify([...actual].sort()) === JSON.stringify([...wanted].sort());
+  return scope.version === "tr-scope-v1" && scope.role === "auditor"
+    && scope.requestProfileId === expected.requestProfileId
+    && scope.purpose === expected.purpose
+    && scope.credentialScopeCommitment === expected.credentialScopeCommitment
+    && scope.disclosureLevel === expected.disclosureLevel
+    && sameList(scope.allowedAttributes, expected.allowedAttributes)
+    && sameList(scope.allowedPredicates, expected.allowedPredicates);
 };
 
 export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
@@ -97,9 +129,12 @@ export const createApplicantPortalApp = (
     evidenceFlash: undefined,
     acceptedEvidence: undefined,
     pendingApplication: undefined,
+    auditorStatus: undefined,
+    auditorStatusBusy: false,
   };
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
+  let auditorStatusRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -114,7 +149,7 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const registerApplication = async (rawRequest: string) => {
+  const registerApplication = async (rawRequest: string, expectedAuditorScope?: AuditorScopeInput) => {
     const requestId = ++evidenceRequestId;
     setState({
       evidenceBusy: true, pendingApplication: undefined, acceptedEvidence: undefined,
@@ -146,18 +181,27 @@ export const createApplicantPortalApp = (
         || typeof candidate.governedResource.id !== "string") {
         throw new Error("Signed application must request one matching membership role.");
       }
+      if (expectedAuditorScope !== undefined && (!auditorScopeMatches(candidate.scope, expectedAuditorScope)
+        || candidate.governedResource.type !== "requestProfile"
+        || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(candidate.governedResource.id))) {
+        throw new Error("Signed auditor application does not match the complete request scope and canonical resource.");
+      }
       const record = await client().registerPendingApplication(signedRequest);
       if (requestId !== evidenceRequestId) return;
       if (record?.status !== "pending" || record.authorizationId !== candidate.authorizationId
         || !isRenderablePendingBinding(record.binding, candidate.applicationId)
         || record.binding.role !== candidate.scope.role
         || record.binding.governedResource.type !== candidate.governedResource.type
-        || record.binding.governedResource.id !== candidate.governedResource.id) {
+        || record.binding.governedResource.id !== candidate.governedResource.id
+        || (expectedAuditorScope !== undefined && !auditorScopeMatches(record.binding.scope, expectedAuditorScope))) {
         throw new Error("Host did not return a canonical pending membership application.");
       }
       const binding = record.binding;
       setState({
         pendingApplication: { binding },
+        ...(binding.role === "auditor" ? {
+          auditorStatus: { authorizationId: record.authorizationId, status: "pending", currentTrust: false },
+        } : {}),
         evidenceFlash: `Pending ${binding.role} application ${binding.applicationId} registered. Present eligibility evidence next.`,
       });
     } catch (error) {
@@ -264,6 +308,36 @@ export const createApplicantPortalApp = (
       if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
     } finally {
       if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
+  const refreshAuditorStatus = async (authorizationId: string) => {
+    const requestId = ++auditorStatusRequestId;
+    const apiBase = state.apiBase;
+    setState({ auditorStatusBusy: true, error: undefined });
+    try {
+      const entry = await client().loadAuditorAuthorization(authorizationId);
+      if (requestId !== auditorStatusRequestId || apiBase !== state.apiBase) return;
+      if (entry !== null && (entry.authorization.role !== "auditor"
+        || entry.authorization.authorizationId !== authorizationId)) {
+        throw new Error("Auditor status response did not match the requested authorization.");
+      }
+      setState({ auditorStatus: entry === null
+        ? {
+            authorizationId,
+            status: state.auditorStatus?.authorizationId === authorizationId
+              && state.auditorStatus.status === "pending" ? "pending" : "not recorded",
+            currentTrust: false,
+          }
+        : {
+            authorizationId,
+            status: entry.authorization.status,
+            currentTrust: isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, Date.now()),
+          } });
+    } catch (error) {
+      if (requestId === auditorStatusRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === auditorStatusRequestId) setState({ auditorStatusBusy: false });
     }
   };
 
@@ -380,7 +454,8 @@ export const createApplicantPortalApp = (
       storage.setItem(STORAGE_KEY, apiBase);
       evidenceRequestId += 1;
       signedContextRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      auditorStatusRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
       void refreshInspection();
     });
 
@@ -439,6 +514,38 @@ export const createApplicantPortalApp = (
       const raw = input.value;
       input.value = "";
       void registerApplication(raw);
+    });
+
+    root.querySelector<HTMLFormElement>("[data-auditor-application-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const raw = field("auditorSignedApplication");
+      form.querySelector<HTMLTextAreaElement>("[name='auditorSignedApplication']")!.value = "";
+      try {
+        const scope: AuditorScopeInput = {
+          requestProfileId: field("requestProfileId"),
+          purpose: field("purpose"),
+          credentialScopeCommitment: field("credentialScopeCommitment"),
+          allowedAttributes: parseScopeList(field("allowedAttributes")),
+          allowedPredicates: parseScopeList(field("allowedPredicates")),
+          disclosureLevel: field("disclosureLevel"),
+        };
+        if (scope.requestProfileId.length === 0 || scope.purpose.length === 0
+          || scope.disclosureLevel.length === 0
+          || !/^0x[0-9a-f]{64}$/u.test(scope.credentialScopeCommitment)) {
+          throw new Error("Auditor requests need a complete scope and 32-byte credential-scope commitment.");
+        }
+        void registerApplication(raw, scope);
+      } catch (error) {
+        setState({ evidenceError: formatApiError(error) });
+      }
+    });
+    root.querySelector<HTMLFormElement>("[data-auditor-status-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const authorizationId = form.querySelector<HTMLInputElement>("[name='auditorAuthorizationId']")?.value.trim();
+      if (authorizationId !== undefined && authorizationId.length > 0) void refreshAuditorStatus(authorizationId);
     });
 
     root.querySelector<HTMLButtonElement>("[data-application-challenge]")?.addEventListener("click", () => {
@@ -548,6 +655,27 @@ export const createApplicantPortalApp = (
             </label>
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
+          <section class="form-panel">
+            <h2>Auditor request</h2>
+            <p>Describe the exact request scope, sign the matching application outside the browser with the applicant Midnight DID, then submit it through the private evidence host. A request-profile ID alone is not an auditor scope.</p>
+            <form data-auditor-application-form>
+              <label class="label">Request profile ID<input class="input mono" name="requestProfileId" required /></label>
+              <label class="label">Purpose<input class="input" name="purpose" required /></label>
+              <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" pattern="0x[0-9a-f]{64}" required /></label>
+              <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"></textarea></label>
+              <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"></textarea></label>
+              <label class="label">Disclosure level<input class="input" name="disclosureLevel" required /></label>
+              <label class="label">Externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register auditor application</button>
+            </form>
+            <form data-auditor-status-form>
+              <label class="label">Auditor authorization ID
+                <input class="input mono" name="auditorAuthorizationId" value="${escapeHtml(state.auditorStatus?.authorizationId ?? "")}" required />
+              </label>
+              <button class="button secondary" type="submit"${state.auditorStatusBusy ? " disabled" : ""}>Check auditor status</button>
+            </form>
+            ${state.auditorStatus === undefined ? "" : `<p data-auditor-status>Application: ${escapeHtml(state.auditorStatus.status)}. Current trust: ${state.auditorStatus.currentTrust ? "active" : "not active"}.</p>`}
+          </section>
           <section class="form-panel">
             <h2>Pending membership evidence</h2>
             <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>

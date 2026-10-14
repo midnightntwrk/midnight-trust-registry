@@ -16,6 +16,14 @@ Current scope:
 - register a pending issuer, verifier, auditor, or maintainer application with
   an externally signed Midnight DID `apply` intent. The browser accepts a
   signed request, never a private key.
+- enter the complete auditor request scope (profile, purpose, credential-scope
+  commitment, attributes, predicates, and disclosure level) and submit only an
+  externally signed auditor application with matching scope fields. The host
+  verifies the canonical governed resource and DID signature; the browser's
+  comparison is an early rejection, not a substitute for host verification.
+- look up an auditor authorization by ID and distinguish pending or unrecorded
+  applications from current active grants and archived or expired records.
+  Historical activation is never displayed as current trust.
 - load a no-cache workspace mutation context and submit an externally signed
   issuer or verifier `submit` envelope. This local workspace flow is separate
   from the governed VP application and Compact quorum approval path. The
@@ -54,6 +62,13 @@ uses a single local fixture applicant, an in-memory session and evidence store,
 and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
 HTTP flow without a browser.
+
+For the auditor-specific form, copy the full request scope from the signed
+application into its fields and paste the same externally signed JSON. The
+portal rejects a different role or scope before sending it. A successful
+registration shows `pending`, not `active`; after governance acts, use the
+authorization ID lookup to inspect the public current status. The label-only
+demo form intentionally does not offer auditor submission.
 
 Run locally from the repo root:
 

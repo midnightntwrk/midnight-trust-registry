@@ -156,6 +156,9 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     const wrongScopeVp = await createApplicationVpScenarioFixture(challenge.nonce, {
       scope: { ...scope, purpose: "different-purpose" }, subjectDid, evidenceVerifierDid,
     });
+    const wrongCredentialScopeVp = await createApplicationVpScenarioFixture(challenge.nonce, {
+      scope: { ...scope, credentialScopeCommitment: `0x${"33".repeat(32)}` }, subjectDid, evidenceVerifierDid,
+    });
     const submission = (presentation: unknown) => ({
       nonce: challenge.nonce,
       challengeHash: challenge.challengeHash,
@@ -163,6 +166,14 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     });
     const wrong = await post(`${path}/submissions`, submission(wrongScopeVp.input.submission));
     expect(wrong.status).toBe(403);
+    expect((await post(`${path}/submissions`, submission(wrongCredentialScopeVp.input.submission))).status).toBe(403);
+    const assertStatusActive = fixture.family.assertStatusActive;
+    fixture.family.assertStatusActive = async () => { throw new Error("Credential status is revoked"); };
+    try {
+      expect((await post(`${path}/submissions`, submission(validVp.input.submission))).status).toBe(403);
+    } finally {
+      fixture.family.assertStatusActive = assertStatusActive;
+    }
     expect(storedEvidence).toBeUndefined();
     const accepted = await post(`${path}/submissions`, submission(validVp.input.submission));
     expect(accepted.status).toBe(202);

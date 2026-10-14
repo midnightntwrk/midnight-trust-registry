@@ -64,6 +64,7 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("option[value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-application-registration-form] button")?.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>("[data-auditor-application-form] button")?.disabled).toBe(true);
     const registrationForm = root.querySelector<HTMLFormElement>("[data-application-registration-form]")!;
     registrationForm.querySelector<HTMLTextAreaElement>("[name='signedApplication']")!.value = '{"applicationId":"application:auditor:one"}';
     registrationForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -160,6 +161,102 @@ describe("trust registry applicant portal app", () => {
       JSON.stringify({ nonce, challengeHash, presentation: { privateClaim: "never-render-me" } }),
     );
     expect(root.querySelector("[data-application-vp-form]")).toBeNull();
+  });
+
+  it("submits only an externally signed auditor request matching every scope field", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const applicationId = "application:auditor:scope-one";
+    const authorizationId = "auth:auditor:scope-one";
+    const scope = {
+      version: "tr-scope-v1", role: "auditor", requestProfileId: "audit-profile:one",
+      purpose: "compliance", credentialScopeCommitment: `0x${"a".repeat(64)}`,
+      allowedAttributes: ["age", "residency"], allowedPredicates: ["over-18"],
+      disclosureLevel: "minimal",
+    };
+    const governedResource = { type: "requestProfile", id: `tr:request-resource:v1:${"b".repeat(64)}` };
+    const signed = {
+      applicationId, authorizationId, scope, governedResource,
+      intent: { action: "apply", target: "auditor" }, signature: { value: "private-signature-marker" },
+    };
+    const binding = {
+      registryId: "registry:one", applicationId, subjectDid: "did:midnight:auditor:one",
+      evidenceVerifierDid: "did:midnight:verifier:one", role: "auditor", scope,
+      scopeCommitment: `0x${"c".repeat(64)}`, policyId: "policy:one", policyVersion: "v1",
+      governedResource,
+    };
+    let auditorEntry: { authorization: { authorizationId: string; role: string; status: string; activeFrom: string; effectiveUntil?: string } } | null = null;
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      calls.push(path);
+      if (path === "/v1/pending-applications") return Response.json({ binding, authorizationId, status: "pending" });
+      if (path === `/v1/authorizations/auditor/${encodeURIComponent(authorizationId)}`) return auditorEntry === null
+        ? Response.json({ status: 404, title: "authorization not found" }, { status: 404 })
+        : Response.json(auditorEntry);
+      if (path.startsWith("/v1/authorizations/auditor/")) {
+        return Response.json({ status: 404, title: "authorization not found" }, { status: 404 });
+      }
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:one" });
+      return Response.json({ entries: [] });
+    });
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/app?apiBase=https%3A%2F%2Fregistry.example"),
+      storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const submit = (request: unknown) => {
+      const form = root.querySelector<HTMLFormElement>("[data-auditor-application-form]")!;
+      const field = (name: string, value: string) => {
+        form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)!.value = value;
+      };
+      field("requestProfileId", scope.requestProfileId);
+      field("purpose", scope.purpose);
+      field("credentialScopeCommitment", scope.credentialScopeCommitment);
+      field("allowedAttributes", "age\nresidency");
+      field("allowedPredicates", "over-18");
+      field("disclosureLevel", scope.disclosureLevel);
+      field("auditorSignedApplication", JSON.stringify(request));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+    for (const invalid of [
+      { ...signed, scope: { ...scope, role: "verifier" }, intent: { action: "apply", target: "verifier" } },
+      { ...signed, scope: { role: "auditor", requestProfileId: scope.requestProfileId } },
+      { ...signed, scope: { ...scope, purpose: "analytics" } },
+      { ...signed, scope: { ...scope, credentialScopeCommitment: `0x${"d".repeat(64)}` } },
+    ]) {
+      submit(invalid);
+      await vi.waitFor(() => expect(root.textContent).toContain("does not match the complete request scope"));
+      expect(calls).not.toContain("/v1/pending-applications");
+    }
+    submit(signed);
+    await vi.waitFor(() => expect(root.textContent).toContain("Pending auditor application"));
+    expect(calls.filter((path) => path === "/v1/pending-applications")).toHaveLength(1);
+    expect(root.innerHTML).not.toContain("private-signature-marker");
+    expect(root.textContent).toContain(scope.purpose);
+    expect(root.querySelector("[data-auditor-status]")?.textContent).toContain("pending. Current trust: not active");
+    const checkStatus = async (status: string, currentTrust: string) => {
+      root.querySelector<HTMLFormElement>("[data-auditor-status-form]")!.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      await vi.waitFor(() => expect(root.querySelector("[data-auditor-status]")?.textContent)
+        .toContain(`${status}. Current trust: ${currentTrust}`));
+    };
+    auditorEntry = { authorization: {
+      authorizationId, role: "auditor", status: "active", activeFrom: "2020-01-01T00:00:00Z",
+      effectiveUntil: "2020-01-02T00:00:00Z",
+    } };
+    await checkStatus("active", "not active");
+    auditorEntry = { authorization: {
+      authorizationId, role: "auditor", status: "active", activeFrom: "2020-01-01T00:00:00Z",
+    } };
+    await checkStatus("active", "active");
+    auditorEntry = { authorization: {
+      authorizationId, role: "auditor", status: "archived", activeFrom: "2020-01-01T00:00:00Z",
+    } };
+    await checkStatus("archived", "not active");
+    root.querySelector<HTMLInputElement>("[name='auditorAuthorizationId']")!.value = "auth:auditor:unknown";
+    await checkStatus("not recorded", "not active");
   });
 
   it("recovers a lost acceptance response without repeating the private VP submission", async () => {
