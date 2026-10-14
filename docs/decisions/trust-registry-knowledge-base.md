@@ -14,6 +14,25 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- Local #78 recognition-evidence slice is in progress after `452627c` on
+  `codex/trust-registry-operator-applicant-e2e`. Compact now verifies a
+  registered active evidence-verifier Schnorr signature over the complete
+  scoped recognition proposal and stores a separate proof snapshot. Approval
+  and activation recheck that verifier key and policy. The simulator's
+  externally signed execution method requires the verifier signature; only
+  the fixture convenience path signs from a test seed. Contract and integration
+  tests reject bad evidence signatures, substituted registry scope, and
+  suspended-key approval. This is local attestation, not independent external
+  accreditation; the fixture evidence commitment remains synthetic.
+- Iteration retrospective: `compact:light` and contract typecheck completed in
+  about one second each, a focused contract negative test in about one second,
+  the external-recognition integration test in under two seconds, and the
+  complete `./run.sh --light` lane in about 48 seconds. A broad patch context
+  initially placed new arguments in the wrong simulator method; inspect each
+  diff before compiling and use method-specific patch contexts. Keep full
+  proving (previously about 24 minutes for 65 circuits) for a coherent
+  publication checkpoint, not each small recognition edit.
+
 - Local `codex/trust-registry-operator-applicant-e2e` now has signed/DCO commits
   `9591889` and `d85dffa` for externally signed two-action quorum revision.
   The first action changes thresholds under the old policy; the second

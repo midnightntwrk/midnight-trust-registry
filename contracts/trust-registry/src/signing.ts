@@ -190,6 +190,66 @@ export const verifyIssuerProposalEvidenceSignature = (
   }
 };
 
+export const computeRecognitionEvidenceBoundProposalPayloadHash = (
+  baseRecognitionPayloadHash: Uint8Array,
+  evidenceVerifierAuthorizationId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  activePolicyCommitment: Uint8Array,
+  activePolicyVersion: bigint,
+): Uint8Array =>
+  pureCircuits.recognitionEvidenceBoundProposalPayloadHash(
+    require32Bytes(baseRecognitionPayloadHash, "Recognition proposal payload hash"),
+    require32Bytes(evidenceVerifierAuthorizationId, "Evidence verifier authorization id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(activePolicyCommitment, "Active policy commitment"),
+    activePolicyVersion,
+  );
+
+export const recognitionProposalEvidenceSignatureDigest = (
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryActionDigest =>
+  pureCircuits.recognitionProposalEvidenceSignatureDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
+    require32Bytes(boundPayloadHash, "Bound recognition proposal payload hash"),
+  ) as TrustRegistryActionDigest;
+
+export const signRecognitionProposalEvidenceFromSeed = (
+  seed: Uint8Array,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+): TrustRegistryJubjubSignature =>
+  signJubjubDigestFromSeed(
+    require32Bytes(seed, "Evidence verifier seed"),
+    recognitionProposalEvidenceSignatureDigest(
+      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+    ),
+  );
+
+export const verifyRecognitionProposalEvidenceSignature = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  evidenceVerifierKeyIdCommitment: Uint8Array,
+  boundPayloadHash: Uint8Array,
+  signature: TrustRegistryJubjubSignature,
+): boolean => {
+  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
+  try {
+    return verifyJubjubDigest(
+      publicKey,
+      recognitionProposalEvidenceSignatureDigest(
+        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      ),
+      signature,
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const computeVerifierEvidenceBoundProposalPayloadHash = (
   baseVerifierPayloadHash: Uint8Array,
   evidenceVerifierAuthorizationId: Uint8Array,

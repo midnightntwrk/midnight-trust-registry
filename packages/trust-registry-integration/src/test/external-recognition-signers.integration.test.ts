@@ -45,17 +45,23 @@ describe("externally signed Compact authority recognition", () => {
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const proposal = harness.prepareRecognitionProposalAction(recognition);
+    const evidenceSignature = harness.signRecognitionProposalEvidence(proposal);
     const initial = harness.simulator.getLedger().governanceActionCount;
     const signers = [signPrepared(second, proposal), signPrepared(third, proposal)];
     expect(() => harness.executeRecognitionProposalWithSignatures(
-      recognition, signers.slice(0, 1),
+      recognition, signers.slice(0, 1), evidenceSignature,
     )).toThrow();
     expect(() => harness.executeRecognitionProposalWithSignatures(
-      recognition, [signers[0]!, signers[0]!],
+      recognition, [signers[0]!, signers[0]!], evidenceSignature,
     )).toThrow();
-    expect(() => harness.executeRecognitionProposalWithSignatures(substituted, signers)).toThrow();
+    expect(() => harness.executeRecognitionProposalWithSignatures(
+      substituted, signers, evidenceSignature,
+    )).toThrow();
+    expect(() => harness.executeRecognitionProposalWithSignatures(
+      recognition, signers, { ...evidenceSignature, response: 0n },
+    )).toThrow(/invalid jubjub schnorr signature/i);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(initial);
-    harness.executeRecognitionProposalWithSignatures(recognition, signers);
+    harness.executeRecognitionProposalWithSignatures(recognition, signers, evidenceSignature);
 
     const approval = harness.prepareRecognitionDecisionAction(recognition, "approve");
     expect(() => harness.prepareRecognitionDecisionAction(recognition, "unsupported" as "approve"))

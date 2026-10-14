@@ -8,6 +8,7 @@ import {
   computeCreateEpochCommitmentPayloadHash,
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
+  computeRecognitionEvidenceBoundProposalPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateEvidenceVerifierKeyPayloadHash,
   computeUpdateEvidenceVerifierKeyPayloadHash,
@@ -26,6 +27,7 @@ import {
   encodeCompactActionKind,
   signPolicyBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  signRecognitionProposalEvidenceFromSeed,
   signAuditorProposalEvidenceFromSeed,
   signMaintainerProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
@@ -244,6 +246,40 @@ const issuerProposalProof = (
   };
 };
 
+const recognitionProposalProof = (
+  registry: RegistryFixture,
+  recognition: ReturnType<typeof createRecognitionFixture>,
+  evidenceHash: Uint8Array,
+) => {
+  const verifier = registerIssuerEvidenceVerifier(registry);
+  const { simulator, registryId } = registry;
+  const baseHash = computeCreateRecognitionPayloadHash(
+    recognition.recognitionId,
+    recognition.recognizedAuthorityDidCommitment,
+    recognition.recognizedRegistryId,
+    recognition.scopeResourceType,
+    recognition.scopeResourceId,
+    recognition.policyId,
+    recognition.trustLevel,
+    evidenceHash,
+  );
+  const payloadHash = computeRecognitionEvidenceBoundProposalPayloadHash(
+    baseHash,
+    verifier.authorizationId,
+    verifier.keyId,
+    simulator.getLedger().governancePolicyCommitment,
+    simulator.getLedger().governancePolicyVersion,
+  );
+  return {
+    payloadHash,
+    verifierAuthorizationId: verifier.authorizationId,
+    verifierKeyIdCommitment: verifier.keyId,
+    evidenceSignature: signRecognitionProposalEvidenceFromSeed(
+      verifier.seed, registryId, verifier.keyId, payloadHash,
+    ),
+  };
+};
+
 const verifierProposalProof = (
   registry: RegistryFixture,
   verifierAuthorization: ReturnType<typeof createVerifierAuthorizationFixture>,
@@ -420,6 +456,7 @@ const activateRecognitionFixture = (
   recognition: ReturnType<typeof createRecognitionFixture>,
 ): Uint8Array => {
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const proof = recognitionProposalProof(registry, recognition, recognition.evidenceHash);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
     signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -432,16 +469,7 @@ const activateRecognitionFixture = (
   simulator.proposeRecognition(
     bootstrapMaintainer.keyId,
     bootstrapPublicKey,
-    sign(PROPOSE_RECOGNITION_ACTION_KIND, computeCreateRecognitionPayloadHash(
-      recognition.recognitionId,
-      recognition.recognizedAuthorityDidCommitment,
-      recognition.recognizedRegistryId,
-      recognition.scopeResourceType,
-      recognition.scopeResourceId,
-      recognition.policyId,
-      recognition.trustLevel,
-      recognition.evidenceHash,
-    )),
+    sign(PROPOSE_RECOGNITION_ACTION_KIND, proof.payloadHash),
     recognition.recognitionId,
     recognition.recognizedAuthorityDidCommitment,
     recognition.recognizedRegistryId,
@@ -450,6 +478,9 @@ const activateRecognitionFixture = (
     recognition.policyId,
     recognition.trustLevel,
     recognition.evidenceHash,
+    proof.verifierAuthorizationId,
+    proof.verifierKeyIdCommitment,
+    proof.evidenceSignature,
   );
   simulator.authorizeRecognition(
     bootstrapMaintainer.keyId,
@@ -3520,32 +3551,123 @@ describe("trust registry contract", () => {
     ).not.toThrow();
   });
 
+  it("binds recognition proposal evidence to its scope and an active verifier key", () => {
+    const registry = createInitializedRegistryFixture(44);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const recognition = createRecognitionFixture("recognition-proof");
+    const proof = recognitionProposalProof(registry, recognition, recognition.evidenceHash);
+    const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId,
+        simulator.getLedger().governancePolicyCommitment,
+        kind, payloadHash, simulator.getLedger().governanceActionCount,
+      );
+    const propose = (
+      payloadHash: Uint8Array,
+      evidenceSignature: typeof proof.evidenceSignature,
+      recognizedRegistryId = recognition.recognizedRegistryId,
+    ) => simulator.proposeRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      sign(PROPOSE_RECOGNITION_ACTION_KIND, payloadHash),
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      recognizedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+      proof.verifierAuthorizationId,
+      proof.verifierKeyIdCommitment,
+      evidenceSignature,
+    );
+
+    expect(() => propose(proof.payloadHash, {
+      ...proof.evidenceSignature,
+      response: 0n,
+    })).toThrow(/invalid jubjub schnorr signature/i);
+    const substitutedRegistryId = labelToBytes32("registry:substituted");
+    const substitutedBase = computeCreateRecognitionPayloadHash(
+      recognition.recognitionId,
+      recognition.recognizedAuthorityDidCommitment,
+      substitutedRegistryId,
+      recognition.scopeResourceType,
+      recognition.scopeResourceId,
+      recognition.policyId,
+      recognition.trustLevel,
+      recognition.evidenceHash,
+    );
+    const substitutedPayload = computeRecognitionEvidenceBoundProposalPayloadHash(
+      substitutedBase,
+      proof.verifierAuthorizationId,
+      proof.verifierKeyIdCommitment,
+      simulator.getLedger().governancePolicyCommitment,
+      simulator.getLedger().governancePolicyVersion,
+    );
+    expect(() => propose(
+      substitutedPayload, proof.evidenceSignature, substitutedRegistryId,
+    )).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().recognitionCount).toEqual(0n);
+
+    const eventHash = propose(proof.payloadHash, proof.evidenceSignature);
+    const stored = simulator.getRecognitionProposalEvidence(recognition.recognitionId);
+    expect(Buffer.from(stored.evidenceVerifierAuthorizationId)).toEqual(
+      Buffer.from(proof.verifierAuthorizationId),
+    );
+    expect(Buffer.from(stored.evidenceCommitment)).toEqual(Buffer.from(recognition.evidenceHash));
+    expect(Buffer.from(stored.proposalGovernanceEventHash)).toEqual(Buffer.from(eventHash));
+    expect(stored.verifierSignatureResponse).toEqual(proof.evidenceSignature.response);
+
+    const suspensionReason = labelToBytes32("reason:recognition-verifier-suspend");
+    simulator.suspendEvidenceVerifierKey(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      sign(SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
+        computeUpdateEvidenceVerifierKeyPayloadHash(
+          proof.verifierAuthorizationId,
+          simulator.getEvidenceVerifierKey(proof.verifierAuthorizationId).lifecycleEventHash,
+          suspensionReason,
+        )),
+      proof.verifierAuthorizationId,
+      suspensionReason,
+    );
+    expect(() => simulator.authorizeRecognition(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      sign(AUTHORIZE_RECOGNITION_ACTION_KIND,
+        computeUpdateRecognitionPayloadHash(
+          recognition.recognitionId,
+          eventHash,
+          recognition.evidenceHash,
+        )),
+      recognition.recognitionId,
+      recognition.evidenceHash,
+    )).toThrow(/evidence verifier key is not active/i);
+    expect(simulator.getRecognition(recognition.recognitionId).status).toEqual(
+      AuthorizationStatus.proposed,
+    );
+  });
+
   it("moves a recognition through proposed, authorized, and active states", () => {
+    const registry = createInitializedRegistryFixture(45);
     const {
       simulator,
       registryId,
       bootstrapMaintainer,
       bootstrapPublicKey,
-    } = createInitializedRegistryFixture(45);
+    } = registry;
     const recognition = createRecognitionFixture("gaia-x-application");
     const proposedEvidenceHash = labelToBytes32("evidence:gaia-x-application:propose");
     const replacementEvidenceHash = labelToBytes32("evidence:gaia-x-application:replacement");
+    const proof = recognitionProposalProof(registry, recognition, proposedEvidenceHash);
 
     const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_RECOGNITION_ACTION_KIND,
-      computeCreateRecognitionPayloadHash(
-        recognition.recognitionId,
-        recognition.recognizedAuthorityDidCommitment,
-        recognition.recognizedRegistryId,
-        recognition.scopeResourceType,
-        recognition.scopeResourceId,
-        recognition.policyId,
-        recognition.trustLevel,
-        proposedEvidenceHash,
-      ),
+      proof.payloadHash,
       simulator.getLedger().governanceActionCount,
     );
     simulator.proposeRecognition(
@@ -3560,6 +3682,9 @@ describe("trust registry contract", () => {
       recognition.policyId,
       recognition.trustLevel,
       proposedEvidenceHash,
+      proof.verifierAuthorizationId,
+      proof.verifierKeyIdCommitment,
+      proof.evidenceSignature,
     );
 
     const proposedRecord = simulator.getRecognition(recognition.recognitionId);
@@ -3780,6 +3905,7 @@ describe("trust registry contract", () => {
       bootstrapPublicKey,
     } = registry;
     const recognition = createRecognitionFixture("gaia-net");
+    const proof = recognitionProposalProof(registry, recognition, recognition.evidenceHash);
 
     expect(() =>
       simulator.getRecognition(labelToBytes32("recognition:missing")),
@@ -3793,16 +3919,7 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/scope is not registered/i);
 
-    const proposePayloadHash = computeCreateRecognitionPayloadHash(
-      recognition.recognitionId,
-      recognition.recognizedAuthorityDidCommitment,
-      recognition.recognizedRegistryId,
-      recognition.scopeResourceType,
-      recognition.scopeResourceId,
-      recognition.policyId,
-      recognition.trustLevel,
-      recognition.evidenceHash,
-    );
+    const proposePayloadHash = proof.payloadHash;
     const tamperedProposeSignature = {
       ...signPolicyBoundMaintainerActionFromSeed(
         bootstrapMaintainer.seed,
@@ -3826,6 +3943,9 @@ describe("trust registry contract", () => {
       recognition.policyId,
       recognition.trustLevel,
       recognition.evidenceHash,
+      proof.verifierAuthorizationId,
+      proof.verifierKeyIdCommitment,
+      proof.evidenceSignature,
     )).toThrow(/invalid jubjub schnorr signature/i);
 
     activateRecognitionFixture(registry, recognition);
@@ -3834,6 +3954,7 @@ describe("trust registry contract", () => {
       recognitionId: labelToBytes32("recognition:gaia-net:duplicate"),
       evidenceHash: labelToBytes32("evidence:gaia-net:duplicate"),
     };
+    const duplicateProof = recognitionProposalProof(registry, duplicate, duplicate.evidenceHash);
     expect(() => simulator.proposeRecognition(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
@@ -3842,16 +3963,7 @@ describe("trust registry contract", () => {
         registryId,
         simulator.getLedger().governancePolicyCommitment,
         PROPOSE_RECOGNITION_ACTION_KIND,
-        computeCreateRecognitionPayloadHash(
-          duplicate.recognitionId,
-          duplicate.recognizedAuthorityDidCommitment,
-          duplicate.recognizedRegistryId,
-          duplicate.scopeResourceType,
-          duplicate.scopeResourceId,
-          duplicate.policyId,
-          duplicate.trustLevel,
-          duplicate.evidenceHash,
-        ),
+        duplicateProof.payloadHash,
         simulator.getLedger().governanceActionCount,
       ),
       duplicate.recognitionId,
@@ -3862,6 +3974,9 @@ describe("trust registry contract", () => {
       duplicate.policyId,
       duplicate.trustLevel,
       duplicate.evidenceHash,
+      duplicateProof.verifierAuthorizationId,
+      duplicateProof.verifierKeyIdCommitment,
+      duplicateProof.evidenceSignature,
     )).toThrow(/live recognition/i);
     const createdRecord = simulator.getRecognition(recognition.recognitionId);
     const archiveEvidenceHash = labelToBytes32("evidence:gaia-net:archive");

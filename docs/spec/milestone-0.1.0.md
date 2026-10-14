@@ -167,6 +167,15 @@ Comparison is exact. No wildcard, delegated grant, implicit schema-version
 range, or transitive recognition is valid in 0.1.0. Domain, contract adapters,
 client, and API MUST share test vectors for the same canonical commitment.
 
+A recognition proposal MUST bind the exact external authority DID commitment,
+external registry ID, resource scope, local policy version, and evidence
+commitment to a signature from an active, governed evidence-verifier key.
+Maintainer quorum is separate and signs that bound proposal. This proves a
+local verifier attested the scoped evidence; it does not independently prove
+the external registry's accreditation, trust chain, or finality. The reference
+simulator's synthetic evidence commitment and fixture-held verifier key are
+test inputs, not an external authority proof.
+
 A current trust answer uses the latest accepted finalized epoch and evaluates
 the grant at the query time. A historical answer names the evaluation time and
 the epoch or ledger view that establishes it; it does not silently substitute

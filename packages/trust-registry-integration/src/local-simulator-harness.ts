@@ -7,6 +7,7 @@ import {
   computeCreateEpochCommitmentPayloadHash,
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
+  computeRecognitionEvidenceBoundProposalPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateEvidenceVerifierKeyPayloadHash,
   computeUpdateVcAuthorityKeyPayloadHash,
@@ -27,6 +28,7 @@ import {
   signAuditorProposalEvidenceFromSeed,
   signMaintainerProposalEvidenceFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  signRecognitionProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
   type TrustRegistryJubjubSignature,
@@ -200,6 +202,11 @@ export type PreparedRecognitionAction = {
   actionSequence: bigint;
   evidenceHash: Uint8Array;
   previousLifecycleEventHash?: Uint8Array;
+};
+
+export type PreparedRecognitionProposalAction = PreparedRecognitionAction & {
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
 };
 
 export type PreparedMaintainerAction = {
@@ -1910,37 +1917,58 @@ export class LocalTrustRegistryIntegrationHarness {
         this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
-    ]);
+    ], this.signRecognitionProposalEvidence(prepared));
   }
 
-  prepareRecognitionProposalAction(fixture: RecognitionScenarioFixture): PreparedRecognitionAction {
+  prepareRecognitionProposalAction(fixture: RecognitionScenarioFixture): PreparedRecognitionProposalAction {
     const proposedEvidenceHash = bytes32Commitment(
       `${fixture.recognitionId}:propose`,
     );
     const ledger = this.simulator.getLedger();
+    const baseRecognitionPayloadHash = computeCreateRecognitionPayloadHash(
+      fixture.recognitionIdCommitment,
+      fixture.recognizedAuthorityDidCommitment,
+      fixture.recognizedRegistryIdCommitment,
+      fixture.scopeResourceTypeCommitment,
+      fixture.scopeResourceIdCommitment,
+      ledger.governancePolicyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      proposedEvidenceHash,
+    );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(PROPOSE_RECOGNITION_ACTION_KIND),
-      actionPayloadHash: computeCreateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        fixture.recognizedAuthorityDidCommitment,
-        fixture.recognizedRegistryIdCommitment,
-        fixture.scopeResourceTypeCommitment,
-        fixture.scopeResourceIdCommitment,
+      actionPayloadHash: computeRecognitionEvidenceBoundProposalPayloadHash(
+        baseRecognitionPayloadHash,
+        this.currentEvidenceVerifierAuthorizationId,
+        this.currentEvidenceVerifierKeyIdCommitment,
         ledger.governancePolicyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        proposedEvidenceHash,
+        ledger.governancePolicyVersion,
       ),
       actionSequence: ledger.governanceActionCount,
       evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
     };
+  }
+
+  signRecognitionProposalEvidence(
+    prepared: PreparedRecognitionProposalAction,
+  ): TrustRegistryJubjubSignature {
+    return signRecognitionProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
   }
 
   executeRecognitionProposalWithSignatures(
     fixture: RecognitionScenarioFixture,
     signers: readonly MaintainerCoAuthorizer[],
+    evidenceSignature: TrustRegistryJubjubSignature,
   ): Uint8Array {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Recognition proposal requires a maintainer signature");
@@ -1958,6 +1986,9 @@ export class LocalTrustRegistryIntegrationHarness {
       prepared.policyCommitment,
       bytes32Commitment(fixture.trustLevel),
       prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      evidenceSignature,
       signers.slice(1),
     );
   }
