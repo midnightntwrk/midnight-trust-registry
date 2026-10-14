@@ -7,7 +7,9 @@ The PR did not change Compact inputs.
 
 Quality now runs `pnpm run build:light`, which compiles the contract and emits
 ZKIR without generating prover/verifier keys. For a Compact source, compiler-pin,
-or contract build-input change, it then runs `scripts/proving-key-cache.mjs`.
+contract build-input, or Midnight dependency override change, it then runs
+`scripts/proving-key-cache.mjs`. Adding the documentation workspace or
+non-Midnight tooling overrides does not trigger proving.
 The script matches each key pair to the SHA-256 of its ZKIR and to the pinned
 Compact and `zkir` versions. It regenerates missing, changed, or corrupt pairs;
 an empty ZKIR directory fails the job. Generated keys are copied into the
