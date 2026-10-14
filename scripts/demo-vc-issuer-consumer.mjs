@@ -119,7 +119,7 @@ async function prepareGovernedSignerAuthorization(input) {
   assert.ok(subjectResolution.didDocument[relationship]?.includes(methodId));
   const grant = bundle.authorization;
   const decisionSequence = ledger.governanceActionCount.toString();
-  const evidence = buildDecisionEvidenceClaim({
+  const buildInput = {
     bundle,
     acceptedEpoch,
     publicationSignatures: witness.signatures,
@@ -142,7 +142,8 @@ async function prepareGovernedSignerAuthorization(input) {
       policySnapshot: bundle.epoch.policyRoot,
     },
     decisionSequence,
-  });
+  };
+  const evidence = buildDecisionEvidenceClaim(buildInput);
   const readCurrentGrant = () => role === "issuer"
     ? harness.simulator.getCurrentIssuerAuthorization(
       subject.subjectDidCommitment, subject.resourceType, subject.resourceIdCommitment,
@@ -245,7 +246,7 @@ async function prepareGovernedSignerAuthorization(input) {
   if (inactiveState === undefined) {
     assert.equal(typeof input.apiBase, "string");
     assert.equal(typeof input.publishDecisionEvidence, "function");
-    input.publishDecisionEvidence(role, subject.authorizationId, evidence);
+    input.publishDecisionEvidence(role, subject.authorizationId, { buildInput, selection }, readers);
   } else {
     assert.equal(typeof input.apiBase, "string");
     await assert.rejects(

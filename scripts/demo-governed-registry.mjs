@@ -19,7 +19,7 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
+import { bytes32Commitment, createVerifiedDecisionEvidenceSource } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
@@ -726,13 +726,20 @@ const proposalPort = (role, target) => ({
   },
 });
 const decisionEvidenceByGrant = new Map();
-const publishDecisionEvidence = (role, authorizationId, evidence) => {
-  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, evidence);
+const decisionReadersByGrant = new Map();
+const publishDecisionEvidence = (role, authorizationId, candidate, readers) => {
+  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, candidate);
+  decisionReadersByGrant.set(`${role}:${authorizationId}`, readers);
 };
+const readVerifiedDecisionEvidence = createVerifiedDecisionEvidenceSource({
+  loadCandidate: async (role, authorizationId) =>
+    decisionEvidenceByGrant.get(`${role}:${authorizationId}`) ?? null,
+  readersFor: async (role, authorizationId) =>
+    decisionReadersByGrant.get(`${role}:${authorizationId}`) ?? null,
+});
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
-  readDecisionEvidence: async (role, authorizationId) =>
-    decisionEvidenceByGrant.get(`${role}:${authorizationId}`) ?? null,
+  readDecisionEvidence: readVerifiedDecisionEvidence,
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
   proposalAdmission: {
     resolvePendingApplication: async (applicationId) => registeredApplications.get(applicationId) ?? null,
@@ -1713,6 +1720,9 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(suspendedBundle.authorization.status, "suspended");
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 503);
   const suspendedConsumer = await verifyGovernedIssuerStatusUpdate({
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
@@ -1771,6 +1781,9 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(revokedBundle.authorization.status, "revoked");
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 503);
   const revokedConsumer = await verifyGovernedIssuerStatusUpdate({
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
@@ -1924,6 +1937,9 @@ try {
       ), /not active/u);
     }
     if (target.role === "verifier") {
+      await expectHttp(await fetch(
+        `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+      ), 503);
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
@@ -1976,6 +1992,9 @@ try {
       ), /not active/u);
     }
     if (target.role === "verifier") {
+      await expectHttp(await fetch(
+        `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+      ), 503);
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,

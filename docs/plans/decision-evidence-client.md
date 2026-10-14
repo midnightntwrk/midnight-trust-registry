@@ -113,6 +113,16 @@ and transaction references, historic maintainer set, off-ledger evaluation
 time, and DID-state observation. Passing a simulator ledger satisfies none of
 those production provenance requirements.
 
+`createVerifiedDecisionEvidenceSource` supplies the optional API route from an
+indexed evidence bundle without treating that index as an anchor. It builds a
+claim, requires exact role and authorization ID, obtains a separate trusted
+reader port, and runs the full client verifier before returning the claim.
+The API still marks the response `client-required`; the consumer must verify
+again using its own independently authenticated readers. In the simulator
+demo, a stale issuer or verifier claim after suspension or revocation causes
+the source to fail closed and the HTTP route to return 503. A live host must
+replace both the bundle index and reader port with genuine finalized sources.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and

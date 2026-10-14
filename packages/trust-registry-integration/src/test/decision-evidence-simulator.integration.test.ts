@@ -30,6 +30,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   buildDecisionEvidenceClaim,
+  createVerifiedDecisionEvidenceSource,
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
@@ -277,6 +278,18 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
     };
     const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, readers);
+    const verifiedSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput, selection: context.selection }),
+      readersFor: async () => readers,
+    });
+    expect(await verifiedSource("issuer", issuer.authorizationId)).toEqual(evidence);
+    await expect(verifiedSource("verifier", issuer.authorizationId)).rejects.toThrow(/different grant or role/u);
+    await expect(verifiedSource("issuer", "auth:unrelated")).rejects.toThrow(/different grant or role/u);
+    const unavailableSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput, selection: context.selection }),
+      readersFor: async () => null,
+    });
+    await expect(unavailableSource("issuer", issuer.authorizationId)).rejects.toThrow(/readers are unavailable/u);
     const compactSequence = harness.simulator.getLedger().governanceActionCount.toString();
     const compactEvidence = { ...evidence, decisionSequence: compactSequence };
     const compactReaders = createCompactLedgerDecisionReaders({
@@ -745,7 +758,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     if (verifierMethod === undefined) throw new Error("Expected a native verifier method");
     const verifierGrant = verifierBundle.authorization;
     const verifierScope = createVerifierAuthorizationScopeFixture(verifier);
-    const verifierEvidence = buildDecisionEvidenceClaim({
+    const verifierBuildInput = {
       bundle: verifierBundle,
       acceptedEpoch: acceptedVerifierEpoch,
       publicationSignatures: verifierWitness.signatures,
@@ -770,7 +783,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         policySnapshot: verifierBundle.epoch.policyRoot,
       },
       decisionSequence: verifierEpochRecord.publishedAtSequence.toString(),
-    });
+    } satisfies Parameters<typeof buildDecisionEvidenceClaim>[0];
+    const verifierEvidence = buildDecisionEvidenceClaim(verifierBuildInput);
     const currentVerifierGrant = harness.simulator.getCurrentVerifierAuthorization(
       verifier.subjectDidCommitment,
       verifier.requestResourceIdCommitment,
@@ -828,6 +842,11 @@ describe("simulator-backed VC decision evidence composition", () => {
     const verifierCandidate = await verifyDecisionEvidenceWithTrustedReaders(
       verifierEvidence, verifierSelection, verifierReaders,
     );
+    const verifierSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput: verifierBuildInput, selection: verifierSelection }),
+      readersFor: async () => verifierReaders,
+    });
+    expect(await verifierSource("verifier", verifier.authorizationId)).toEqual(verifierEvidence);
     const typedVerifierSnapshotReaders: TrustedDecisionEvidenceReaders = verifierReaders;
     const verifierSnapshot = await typedVerifierSnapshotReaders.readCurrentFinalizedRegistryDecision(
       verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,

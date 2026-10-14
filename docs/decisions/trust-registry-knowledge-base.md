@@ -1013,3 +1013,13 @@ wrong verifier resource. The governed demo uses this projection and still
 rejects four stale active API claims after suspend/revoke. This adapter does
 not authenticate finality, historic signer sets, off-ledger time, or DID state;
 the embedding network host must supply those independently.
+
+The local source slice adds `createVerifiedDecisionEvidenceSource`: the
+optional API route now has a reusable implementation that assembles a claim
+from an indexed bundle, checks exact role/authorization ID, and verifies it
+against a separately supplied reader port before serving. Consumers still
+receive `client-required` and must reverify independently. The governed demo
+uses this source for issuer and verifier; after either role is suspended or
+revoked, the source returns an unavailable result (HTTP 503) rather than
+serving its earlier active claim. Simulator fixtures remain the only current
+source of ledger/DID observations, not production network finality.

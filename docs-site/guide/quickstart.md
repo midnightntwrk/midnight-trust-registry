@@ -14,7 +14,7 @@ pnpm install --frozen-lockfile
 pnpm run demo:governed
 ```
 
-The governed demo exercises the local simulator, policy-bound maintainers, and authorization transitions. Its issuer and verifier VC journeys publish a `client-required` decision-evidence claim through the demo HTTP API, independently check it against simulator ledger and DID observations, obtain a governed VC authority proof, and install that proof in a compiled VC consumer. After suspension and revocation, a fresh simulator ledger read rejects the previously served active claim. This is a cross-surface reference flow, **not** network finality or production key custody. The packaged API does not enable this optional route without an embedding host's finalized evidence source. The additional role-specific demos exercise signed membership journeys:
+The governed demo exercises the local simulator, policy-bound maintainers, and authorization transitions. Its issuer and verifier VC journeys build and check a decision-evidence claim at the demo HTTP API, independently check the `client-required` response at the consumer, obtain a governed VC authority proof, and install that proof in a compiled VC consumer. After suspension and revocation, fresh simulator ledger reads make the API return `503` rather than serve the old active claim; the consumer also refuses it. This is a cross-surface reference flow, **not** network finality or production key custody. The packaged API does not enable this optional route without an embedding host's finalized evidence source. The additional role-specific demos exercise signed membership journeys:
 
 ```bash
 pnpm run demo:signed-issuer

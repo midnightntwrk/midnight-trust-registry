@@ -10,6 +10,7 @@ The exact request/response parsers live in [`packages/trust-registry-api/src/sch
 | `GET /v1/epochs/current`, `/v1/epochs/{epochId}`, `/v1/epochs/resolve?at=...` | Current, named, or time-selected epoch |
 | `GET /v1/authorizations/{role}` | List issuer, verifier, or auditor entries (optional status filter) |
 | `GET /v1/authorizations/{role}/{id}` and `.../evidence` | Record and separately retrievable bundle |
+| `GET /v1/decision-evidence/{role}/{id}` | Optional issuer/verifier claim for independent VC-consumer verification |
 | `POST /v1/authorizations/evaluate` | Evaluate exact DID/role/resource at a timestamp |
 | `POST /v1/authorizations/resolve` | Resolve exact DID/role/resource in current view |
 | `GET /v1/recognitions` and `/v1/recognitions/{id}` | Scoped external recognition list/record |
@@ -19,6 +20,8 @@ The exact request/response parsers live in [`packages/trust-registry-api/src/sch
 | `POST /v1/trqp/{authorizations,recognitions}/{query,evidence}` | TRQP query/evidence projection |
 
 Issuer lookup requires `tr:issuer-resource:v1:<sha256>`. Verifier and auditor lookups require `tr:request-resource:v1:<sha256>`. A bare request-profile ID is not accepted. `at` is an ISO timestamp with offset; the service clock is not a consensus clock.
+
+Decision evidence is available only when the host injects a source; otherwise it returns `503`. A successful response has `verification: "client-required"` and `evidence`, with `Cache-Control: no-store`. The reference source builder checks the indexed claim against a separately supplied finalized registry/DID reader before serving, but the HTTP response is still not a root of trust. Consumers must repeat verification with their own authenticated readers before deriving a VC signer descriptor. A missing grant returns `404`; malformed, stale, or unavailable source evidence returns `503` without falling back to a mutable snapshot.
 
 ## Private intake and governed writes
 
