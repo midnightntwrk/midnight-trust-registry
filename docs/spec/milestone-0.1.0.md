@@ -176,6 +176,21 @@ the external registry's accreditation, trust chain, or finality. The reference
 simulator's synthetic evidence commitment and fixture-held verifier key are
 test inputs, not an external authority proof.
 
+The reference Midnight DID authority-assertion profile is narrower than
+external accreditation. An authority assertion signs the target registry,
+recognition ID, authority DID, external registry ID, exact resource scope,
+referenced accreditation-evidence commitment, one-use challenge, and bounded
+validity interval with an assertion-method JubJub key. The verifier checks the
+current DID method and relationship, exact tuple, challenge, signature, and
+off-chain evaluation time, then commits the signed envelope together with the
+observed DID state version and evaluation instant. The local evidence verifier
+must separately attest that commitment to Compact. A signed authority
+statement proves key control, not the truth or status of the referenced
+accreditation. Public intake MUST independently validate the accreditation
+source and consume the challenge exactly once; the simulator fixture does
+neither. `did:web` and non-JubJub authority proofs require a separate adapter
+and trust-anchor policy before they can enter this profile.
+
 A current trust answer uses the latest accepted finalized epoch and evaluates
 the grant at the query time. A historical answer names the evaluation time and
 the epoch or ledger view that establishes it; it does not silently substitute

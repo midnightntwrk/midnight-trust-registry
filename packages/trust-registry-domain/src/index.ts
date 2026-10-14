@@ -9,6 +9,7 @@ export * from "./lifecycle.js";
 export * from "./mutation-intent.js";
 export * from "./pending-application.js";
 export * from "./policy-snapshot.js";
+export * from "./recognition-authority-assertion.js";
 export * from "./scope.js";
 export * from "./status-policy.js";
 export * from "./types.js";

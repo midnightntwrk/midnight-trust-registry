@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 
+import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
+
 import {
   computeCreateAuditorAuthorizationPayloadHash,
   computeAuditorEvidenceBoundProposalPayloadHash,
@@ -75,6 +77,7 @@ import {
   type GovernancePolicyRecord,
   type GovernedResource,
   type RecognitionRecord,
+  type SignedRecognitionAuthorityAssertion,
   type TrustRegistryEvidenceBundle,
   assertGovernancePolicyRevision,
   computeAuthorizationStatementLeafHash,
@@ -103,6 +106,10 @@ import {
 } from "./fixtures.js";
 import { prepareVcAuthorityKeyRegistration } from "./vc-authority-registration.js";
 import type { VcAuthorityDomain } from "./vc-signer-authorization.js";
+import {
+  recognitionAuthorityEvidenceBytes,
+  verifyRecognitionAuthorityAssertion,
+} from "./recognition-authority-assertion.js";
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
 const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
@@ -1920,10 +1927,12 @@ export class LocalTrustRegistryIntegrationHarness {
     ], this.signRecognitionProposalEvidence(prepared));
   }
 
-  prepareRecognitionProposalAction(fixture: RecognitionScenarioFixture): PreparedRecognitionProposalAction {
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.recognitionId}:propose`,
-    );
+  prepareRecognitionProposalAction(
+    fixture: RecognitionScenarioFixture,
+    evidenceHash?: Uint8Array,
+  ): PreparedRecognitionProposalAction {
+    const proposedEvidenceHash = evidenceHash ?? bytes32Commitment(`${fixture.recognitionId}:propose`);
+    if (proposedEvidenceHash.length !== 32) throw new Error("Recognition evidence commitment must be 32 bytes");
     const ledger = this.simulator.getLedger();
     const baseRecognitionPayloadHash = computeCreateRecognitionPayloadHash(
       fixture.recognitionIdCommitment,
@@ -1954,6 +1963,33 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
+  async prepareRecognitionProposalFromAuthorityAssertion(input: {
+    fixture: RecognitionScenarioFixture;
+    signed: SignedRecognitionAuthorityAssertion;
+    challengeHash: string;
+    evaluatedAtMs: number;
+    resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  }): Promise<PreparedRecognitionProposalAction> {
+    const { fixture } = input;
+    const verified = await verifyRecognitionAuthorityAssertion({
+      signed: input.signed,
+      expected: {
+        targetRegistryId: this.registryId,
+        recognitionId: fixture.recognitionId,
+        authorityDid: fixture.recognizedAuthorityDid,
+        recognizedRegistryId: fixture.recognizedRegistryId,
+        scopeResourceType: fixture.scopeResourceType,
+        scopeResourceId: fixture.scopeResourceId,
+        challengeHash: input.challengeHash,
+        evaluatedAtMs: input.evaluatedAtMs,
+      },
+      resolver: input.resolver,
+    });
+    return this.prepareRecognitionProposalAction(
+      fixture, recognitionAuthorityEvidenceBytes(verified),
+    );
+  }
+
   signRecognitionProposalEvidence(
     prepared: PreparedRecognitionProposalAction,
   ): TrustRegistryJubjubSignature {
@@ -1969,10 +2005,21 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: RecognitionScenarioFixture,
     signers: readonly MaintainerCoAuthorizer[],
     evidenceSignature: TrustRegistryJubjubSignature,
+    prepared = this.prepareRecognitionProposalAction(fixture),
   ): Uint8Array {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Recognition proposal requires a maintainer signature");
-    const prepared = this.prepareRecognitionProposalAction(fixture);
+    const current = this.prepareRecognitionProposalAction(fixture, prepared.evidenceHash);
+    if (prepared.actionSequence !== current.actionSequence
+      || !sameBytes(prepared.registryId, current.registryId)
+      || !sameBytes(prepared.recognitionId, current.recognitionId)
+      || !sameBytes(prepared.policyCommitment, current.policyCommitment)
+      || !sameBytes(prepared.actionKind, current.actionKind)
+      || !sameBytes(prepared.actionPayloadHash, current.actionPayloadHash)
+      || !sameBytes(prepared.evidenceVerifierAuthorizationId, current.evidenceVerifierAuthorizationId)
+      || !sameBytes(prepared.evidenceVerifierKeyIdCommitment, current.evidenceVerifierKeyIdCommitment)) {
+      throw new Error("Recognition proposal context is stale or substituted");
+    }
 
     return this.simulator.proposeRecognition(
       primary.keyId,

@@ -14,6 +14,24 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- Local #78 continuation after signed `10ebdf6`: the integration package now
+  has a bounded Midnight DID authority assertion for recognition, with exact
+  registry/authority/scope/challenge checks, assertion-method JubJub signature
+  verification, a 24-hour maximum statement lifetime, and a commitment to
+  the signed envelope plus observed DID state version and evaluation instant.
+  A distinct harness method prepares a Compact proposal from that verified
+  commitment. Focused tests cover substitution, expiry, key rotation, wrong
+  DID relationship, stale proposal context, and a positive 2-of-3 proposal.
+  It does not verify the referenced accreditation or consume a challenge, so
+  #78 remains open and public intake must not use this fixture as proof of
+  external trust.
+- Iteration retrospective: promoting the DID Schnorr package from dev to
+  runtime dependency required a lockfile update; the first typecheck read
+  stale domain output until the domain package was rebuilt. Use dependency-
+  ordered Turbo builds for the broad gate, direct package tests for the inner
+  loop. TypeScript also caught a test reaching private bootstrap keys; use
+  public maintainer onboarding and 2-of-3 signatures instead.
+
 - Local #78 recognition-evidence slice is in progress after `452627c` on
   `codex/trust-registry-operator-applicant-e2e`. Compact now verifies a
   registered active evidence-verifier Schnorr signature over the complete
