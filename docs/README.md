@@ -2,6 +2,10 @@
 
 This documentation set is the source of truth for the initial `midnight-trust-registry` implementation.
 
+The human-oriented [documentation site](../docs-site/index.md) guides new readers through
+the current local reference implementation. The specifications and ADRs below remain
+authoritative for protocol requirements and open decisions.
+
 The [0.1.0 reference profile](spec/milestone-0.1.0.md) defines the next
 release gate. The general specification below describes the longer-term v1
 system; the [0.1.0 issue plan](plans/milestone-0.1.0-issues.md) names the

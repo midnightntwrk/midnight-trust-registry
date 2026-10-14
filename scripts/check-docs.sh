@@ -67,7 +67,10 @@ for path in markdown_files:
         if not target:
             continue
         target = unquote(target)
-        resolved = (path.parent / target).resolve()
+        if "docs-site" in path.parts and target.startswith("/"):
+            resolved = (root / "docs-site" / "public" / target.lstrip("/")).resolve()
+        else:
+            resolved = (path.parent / target).resolve()
         try:
             resolved.relative_to(root)
         except ValueError:

@@ -167,9 +167,14 @@ export const workspaceCatalog = [
     artifactPackage: false,
     publishPackage: false,
   },
+  {
+    workspace: "docs-site",
+    artifactPackage: false,
+    publishPackage: false,
+  },
 ];
 
-export const expectedWorkspaces = ["contracts/*", "packages/*", "adapters/*"];
+export const expectedWorkspaces = ["contracts/*", "packages/*", "adapters/*", "docs-site"];
 
 export const artifactWorkspaces = workspaceCatalog
   .filter(({ artifactPackage }) => artifactPackage)

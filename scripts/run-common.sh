@@ -86,7 +86,7 @@ Usage:
 Targets:
   full        Run the standard repository validation lane (default)
   core        Run the repository code-validation lane
-  docs        Run documentation validation only
+  docs        Validate documentation and build the site
   integration Run integration scenarios (--light skips proving-key generation)
   lint        Run docs + lint checks
   typecheck   Run TypeScript checks
