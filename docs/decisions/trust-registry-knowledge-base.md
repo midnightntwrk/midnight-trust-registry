@@ -880,3 +880,21 @@ about 41 seconds; avoid repeatedly running full integration with fresh
 proving keys for TypeScript-only changes. The test fixture initially used an
 invalid policy without all four decision families; reuse a valid shared
 policy fixture in future tests to avoid schema-debugging iterations.
+
+An opt-in governed recognition prepare/submit HTTP port now composes this
+receipt gate with the simulator's current Compact proposal context, 2-of-3
+maintainer signatures, and independent registered evidence-verifier key.
+The private file-backed test verifies wrong receipt/evidence, raw VP fields,
+insufficient quorum, wrong verifier key, stale context, replay, and no local
+issuer grant. Both intake/proposal ports must use the same store. A second
+opinion caught two P1 gaps: the binding was initially read before the
+governance lock, and legacy workspace recognition-submit routes could create
+a proposal without accreditation. The binding is now read inside the lock and
+passed unchanged to the trusted adapter; signed and unsafe workspace submit
+routes reject recognition creation while this port is configured. The
+simulator test clock must advance beyond receipt acceptance time, because
+the file store accounts for lock elapsed time; a frozen instant passed alone
+but failed in the full integration suite. This is a test-clock issue, not a
+reason to weaken the receipt's future-acceptance guard. Production status
+ledger evidence, distributed admission/finality, and recovery after uncertain
+network submission remain open.

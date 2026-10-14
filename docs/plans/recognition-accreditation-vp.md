@@ -32,8 +32,14 @@ identity, combined evidence commitment, expiry, active policy commitment, and
 current accreditor anchor under the governance workspace write lock. Its
 callback is required to execute the Compact-backed proposal and recheck
 signatures, quorum, sequence, recognition-record status, and ledger state
-without acquiring a second copy of that lock. No public route currently wires
-this gate to proposal execution, so the admitted receipt remains non-authorizing.
+without acquiring a second copy of that lock. An opt-in recognition
+prepare/submit HTTP port now wires the gate to simulator-backed proposal
+execution. It refuses a mismatched intake/proposal admission store, raw VP
+fields, stale prepared contexts, insufficient quorum, and wrong verifier keys.
+The existing signed and unsafe workspace recognition-submit routes fail closed
+when that port is installed; otherwise they would bypass accreditation. The
+trusted binding is read under the same lock and passed to prepare/execute.
+The receipt remains non-authorizing without independent Compact signatures.
 The file lock is local reference behavior, not distributed consensus or
 Midnight transaction finality.
 

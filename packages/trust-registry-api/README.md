@@ -29,6 +29,8 @@ Current route set:
 - `GET /v1/application-evidence/:applicationId/receipt` (applicant-authorized accepted redacted evidence and receipt recovery; optional trusted port)
 - `POST /v1/recognition-evidence/:recognitionId/challenges` (private accredited-recognition challenge; optional trusted port)
 - `POST /v1/recognition-evidence/:recognitionId/submissions` (private signed VC/VP plus authority assertion verification; optional trusted port)
+- `POST /v1/governed/recognition/:recognitionId/proposal/prepare` (private-receipt-gated Compact context; optional trusted port)
+- `POST /v1/governed/recognition/:recognitionId/proposal/submit` (receipt-gated, externally signed recognition proposal; optional trusted port)
 - `POST /v1/pending-applications` (signed pending registration; optional trusted port)
 - `GET /v1/epochs/current`
 - `GET /v1/epochs/resolve?at=<timestamp>`
@@ -377,12 +379,31 @@ workspace path used by all policy writes so the final recheck holds its write
 lock. This is not a proposal-admission transaction. The service rereads
 trusted governance after asynchronous proof verification and before nonce
 consumption, and binds the current policy commitment into the evidence hash;
-the later ledger write must still revalidate policy atomically. It is disabled
-in the CLI and must not be exposed as production public intake. The local
+the later ledger write must still revalidate policy atomically. The optional
+`governedRecognitionProposals` port now exposes prepare/submit with only
+`receiptId` and `evidenceCommitment` as evidence inputs. The server obtains
+the exact binding under the governance lock and current policy from its trusted
+port, checks the receipt
+and governed anchor under the same workspace writer lock, and retains that
+lock while the port rechecks the Compact context and executes the signed
+proposal. Submit additionally requires the exact prepared context, external
+maintainer signatures, and a separate evidence-verifier signature. If intake
+and proposal ports coexist, they must share one admission store or server
+startup fails. The simulator integration rejects absent/substituted receipts,
+wrong evidence, one-of-two quorum, wrong evidence-verifier key, and stale
+sequence before accepting a valid proposal. The port MUST use the same lock
+path as policy writes and MUST perform current ledger record, quorum, key,
+and sequence checks without reacquiring the lock. No resolve/finality route
+is exposed for recognition proposals yet. Both routes are disabled in the
+CLI and must not be exposed as production public intake. The local
+workspace-backed signed and unsafe recognition submit routes reject creation
+when the governed recognition port is installed, so they cannot bypass its
+admission check. Direct CLI fixture mutation is a separate local-only path
+and must not be exposed alongside an accredited production host. The local
 signed-status fixture authenticates an authority statement, not live
 status-registry state. Production intake still needs live status evidence,
-durable admission, and atomic policy revalidation at the write boundary
-before a ledger transition. The joined governed demo exercises issue,
+durable distributed admission, and network-finality reconciliation after a
+ledger transition. The joined governed demo exercises issue,
 invalid assertion rejection, valid consumption, replay rejection, and the
 resulting Compact proposal.
 
