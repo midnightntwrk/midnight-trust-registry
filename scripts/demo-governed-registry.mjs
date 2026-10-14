@@ -1567,6 +1567,10 @@ try {
       evaluationBody: (at) => ({
         role: "verifier", subjectDid: verifier.subjectDid, resourceId: verifier.scopeResourceId, at,
       }),
+      trqpRequest: (at) => ({
+        entity_id: verifier.subjectDid, authority_id: harness.registryDid,
+        action: "verify", resource: verifier.scopeResourceId, context: { time: at },
+      }),
     },
     {
       role: "auditor",
@@ -1591,6 +1595,11 @@ try {
         scopeResourceId: recognition.scopeResourceId,
         at,
       }),
+      trqpRequest: (at) => ({
+        entity_id: recognition.recognizedAuthorityDid, authority_id: harness.registryDid,
+        action: recognition.scopeResourceType, resource: recognition.scopeResourceId,
+        context: { time: at, recognized_registry_id: recognition.recognizedRegistryId },
+      }),
     },
   ];
   const temporalChecks = [];
@@ -1604,6 +1613,22 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(target.evaluationBody(at)),
     });
+    const queryTrqpAt = target.trqpRequest === undefined ? undefined : (at) => fetch(
+      `${base}/v1/trqp/${recognitionTarget ? "recognitions" : "authorizations"}/query`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(target.trqpRequest(at)),
+      },
+    );
+    const expectTrqpDecision = async (at, suffix, trusted) => {
+      if (queryTrqpAt === undefined) return;
+      adversarialMatrix.expectDecision(await expectHttp(await queryTrqpAt(at), 200), {
+        id: `${target.role}-${suffix}-trqp`,
+        invariant: `TRQP agrees with public ${target.role} trust at ${suffix.replaceAll("-", " ")}`,
+        boundary: "adapter", trusted, recognition: recognitionTarget,
+      });
+    };
     const activeBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     const roleActiveAt = recognitionTarget
       ? activeBundle.recognition.effectiveFrom : activeBundle.authorization.activeFrom;
@@ -1615,6 +1640,7 @@ try {
       invariant: `Public lookup trusts ${target.role} at its activation instant`,
       boundary: "api", trusted: true,
     });
+    await expectTrqpDecision(roleActiveAt, "active", active.trustedAtTime);
 
     target.suspend();
     snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
@@ -1645,6 +1671,7 @@ try {
       invariant: `Public lookup denies ${target.role} at suspension`,
       boundary: "api", trusted: false,
     });
+    await expectTrqpDecision(statusRecord(suspendedBundle).suspendedAt, "suspended", suspended.trustedAtTime);
     const historicalAfterSuspension = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterSuspension.trustedAtTime, true);
     adversarialMatrix.expectDecision(historicalAfterSuspension, {
@@ -1652,6 +1679,7 @@ try {
       invariant: `Public lookup retains earlier ${target.role} trust after suspension`,
       boundary: "api", trusted: true,
     });
+    await expectTrqpDecision(roleActiveAt, "historical-after-suspension", historicalAfterSuspension.trustedAtTime);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
@@ -1690,6 +1718,7 @@ try {
       invariant: `Public lookup denies ${target.role} at revocation`,
       boundary: "api", trusted: false,
     });
+    await expectTrqpDecision(statusRecord(revokedBundle).revokedAt, "revoked", revoked.trustedAtTime);
     const historicalAfterRevocation = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(historicalAfterRevocation.trustedAtTime, true);
     adversarialMatrix.expectDecision(historicalAfterRevocation, {
@@ -1697,6 +1726,7 @@ try {
       invariant: `Public lookup retains earlier ${target.role} trust after revocation`,
       boundary: "api", trusted: true,
     });
+    await expectTrqpDecision(roleActiveAt, "historical-after-revocation", historicalAfterRevocation.trustedAtTime);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,

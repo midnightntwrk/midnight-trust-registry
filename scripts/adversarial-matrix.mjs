@@ -41,10 +41,12 @@ export class AdversarialMatrix {
     });
   }
 
-  expectDecision(decision, { id, invariant, boundary, trusted, statusAtTime }) {
+  expectDecision(decision, { id, invariant, boundary, trusted, statusAtTime, recognition = false }) {
     assert.ok(["api", "adapter"].includes(boundary));
     assert.equal(typeof trusted, "boolean");
-    const observed = boundary === "api" ? decision.trustedAtTime : decision.authorized;
+    assert.equal(recognition && boundary !== "adapter", false);
+    const observed = boundary === "api" ? decision.trustedAtTime
+      : recognition ? decision.recognized : decision.authorized;
     assert.equal(observed, trusted, `${id}: unexpected trust decision`);
     if (statusAtTime !== undefined) {
       assert.equal(boundary, "api");
