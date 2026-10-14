@@ -28,6 +28,7 @@ import {
 import {
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
+  createCompactLedgerDecisionReaders,
   createQuorumGatedVcAuthoritySigner,
   issuerSchemaRefFromRegistryScope,
   issueVcSignerAuthorizationFromApi,
@@ -164,26 +165,6 @@ async function prepareGovernedSignerAuthorization(input) {
     resourceId: role === "issuer" ? subject.resourceId : subject.scopeResourceId,
     scope,
   };
-  const readDecisionPoint = () => {
-    const current = harness.simulator.getLedger();
-    const selected = readCurrentGrant();
-    assert.ok(selected);
-    const sequence = current.governanceActionCount.toString();
-    return {
-      sequence,
-      evaluationTime: bundle.epoch.validFrom,
-      currentPolicy: {
-        root: hex(current.governancePolicyCommitment),
-        observedAtSequence: sequence,
-      },
-      currentGrant: {
-        authorizationId: grant.authorizationId,
-        lifecycleEventRoot: hex(selected.lifecycleEventHash),
-        status: AuthorizationStatus[selected.status],
-        observedAtSequence: sequence,
-      },
-    };
-  };
   const subjectDidState = {
     networkId,
     blockHash: didBlock,
@@ -207,8 +188,9 @@ async function prepareGovernedSignerAuthorization(input) {
     deactivated: false,
     didDocument: authorityResolution.didDocument,
   };
-  const readers = {
-    readCurrentFinalizedRegistryDecision: async () => ({
+  const readers = createCompactLedgerDecisionReaders({
+    readFinalizedView: async () => ({
+      ledger: harness.simulator.getLedger(),
       acceptedEpoch,
       publication: {
         registryIdCommitment: harness.registryIdCommitment,
@@ -220,12 +202,12 @@ async function prepareGovernedSignerAuthorization(input) {
           return { keyId: signer.keyId, keyIdCommitment, publicKey: maintainer.publicKey };
         }),
       },
-      decisionPoint: readDecisionPoint(),
+      evaluationTime: bundle.epoch.validFrom,
     }),
-    readCurrentFinalizedDidState: async (did) => did === subject.subjectDid
+    readFinalizedDidState: async (did) => did === subject.subjectDid
       ? subjectDidState
       : did === authorityAnchor.domain.authorityDid ? authorityDidState : null,
-  };
+  });
   const authorityKeyReader = {
     readCurrentFinalizedVcAuthorityState: async () => {
       const current = harness.simulator.getLedger();

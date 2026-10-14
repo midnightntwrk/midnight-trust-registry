@@ -50,6 +50,7 @@ import {
   createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
+import { createCompactLedgerDecisionReaders } from "../compact-decision-reader.js";
 import { createVcSignerCandidateFromApi, createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
 import { createQuorumGatedVcAuthoritySigner } from "../vc-authority-signer.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
@@ -276,6 +277,65 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
     };
     const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, readers);
+    const compactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const compactEvidence = { ...evidence, decisionSequence: compactSequence };
+    const compactReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: async (did, network, sequence) => {
+        expect([did, network, sequence]).toEqual([issuer.subjectDid, networkId, compactSequence]);
+        return context.didState;
+      },
+    });
+    const compactCandidate = await verifyDecisionEvidenceWithTrustedReaders(compactEvidence, context.selection, compactReaders);
+    expect(compactCandidate).toEqual({ ...candidate, decisionSequence: compactSequence });
+    const wrongEpochReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: { ...context.acceptedEpoch, stateRoot: sha256Hex("wrong-finalized-epoch-root") },
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongEpochReaders,
+    )).rejects.toThrow(/does not match finalized Compact ledger/u);
+    const wrongEpochIdReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: { ...context.acceptedEpoch, epochId: "epoch:unrelated" },
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongEpochIdReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
+    const changedPolicyReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: { ...harness.simulator.getLedger(), governancePolicyCommitment: bytes32Commitment("changed-policy") },
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, changedPolicyReaders,
+    )).rejects.toThrow(/current policy mismatch/u);
+    expect(await compactReaders.readCurrentFinalizedRegistryDecision(
+      context.selection, evidence.epoch.epochId, "auth:unrelated",
+    )).toBeNull();
+    expect(await compactReaders.readCurrentFinalizedRegistryDecision(
+      { ...context.selection, role: "verifier", resourceType: "request-profile" },
+      evidence.epoch.epochId, evidence.grant.authorizationId,
+    )).toBeNull();
     expect(candidate).toMatchObject({
       role: "issuer",
       authorizationId: issuer.authorizationId,
@@ -768,6 +828,31 @@ describe("simulator-backed VC decision evidence composition", () => {
     const verifierCandidate = await verifyDecisionEvidenceWithTrustedReaders(
       verifierEvidence, verifierSelection, verifierReaders,
     );
+    const typedVerifierSnapshotReaders: TrustedDecisionEvidenceReaders = verifierReaders;
+    const verifierSnapshot = await typedVerifierSnapshotReaders.readCurrentFinalizedRegistryDecision(
+      verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,
+    );
+    if (verifierSnapshot === null) throw new Error("Expected a verifier snapshot");
+    const verifierCompactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const verifierCompactEvidence = { ...verifierEvidence, decisionSequence: verifierCompactSequence };
+    const verifierCompactReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: verifierSnapshot.acceptedEpoch,
+        publication: verifierSnapshot.publication,
+        evaluationTime: verifierSnapshot.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: verifierReaders.readCurrentFinalizedDidState,
+    });
+    const verifierCompactCandidate = await verifyDecisionEvidenceWithTrustedReaders(
+      verifierCompactEvidence, verifierSelection, verifierCompactReaders,
+    );
+    expect(verifierCompactCandidate).toEqual({ ...verifierCandidate, decisionSequence: verifierCompactSequence });
+    expect(await verifierCompactReaders.readCurrentFinalizedRegistryDecision(
+      { ...verifierSelection, resourceId: "request-profile:wrong" },
+      verifierEvidence.epoch.epochId,
+      verifierEvidence.grant.authorizationId,
+    )).toBeNull();
     const verifierBinding = await resolveMidnightDIDMethodBinding({
       resolver: verifierResolver,
       did: parseMidnightDIDString(verifier.subjectDid),
@@ -989,7 +1074,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     );
     const typedVerifierReaders: TrustedDecisionEvidenceReaders = verifierReaders;
     const previousVerifierSnapshot = await typedVerifierReaders.readCurrentFinalizedRegistryDecision(
-      verifierSelection, verifierEvidence.epoch.epochId,
+      verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,
     );
     if (previousVerifierSnapshot === null) throw new Error("Expected the verifier decision snapshot");
     await expect(issueVcSignerAuthorizationFromTrustedDecision({

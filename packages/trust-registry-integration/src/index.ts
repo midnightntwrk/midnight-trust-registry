@@ -8,6 +8,7 @@ export * from "./recognition-accreditation-vp-fixtures.js";
 export * from "./vp-scenario-fixtures.js";
 export * from "./fixtures.js";
 export * from "./local-simulator-harness.js";
+export * from "./compact-decision-reader.js";
 export * from "./vc-signer-candidate.js";
 export * from "./vc-signer-authorization.js";
 export * from "./vc-scope.js";

@@ -517,7 +517,9 @@ describe("decision evidence trusted-reader candidate", () => {
         readCurrentFinalizedDidState: readDid,
       },
     );
-    expect(readRegistry).toHaveBeenCalledWith(context.selection, evidence.epoch.epochId);
+    expect(readRegistry).toHaveBeenCalledWith(
+      context.selection, evidence.epoch.epochId, evidence.grant.authorizationId,
+    );
     expect(readDid).toHaveBeenCalledWith(context.selection.subjectDid, context.selection.networkId, "11");
     expect(candidate).toMatchObject({
       role,

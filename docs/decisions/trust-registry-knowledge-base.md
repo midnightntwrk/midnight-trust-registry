@@ -1000,3 +1000,16 @@ The demo uses `buildDecisionEvidenceClaim` rather than duplicating envelope
 assembly. Its injected evidence source and reader state are simulator fixtures;
 they must not be described as a production finalized-ledger adapter. The
 focused governed demo passes locally in about 14 seconds.
+
+The next local #79/#73 slice introduces `createCompactLedgerDecisionReaders`.
+It checks accepted epoch commitments against a supplied finalized Compact
+ledger view, uses the current issuer/verifier on-chain scope index and record,
+and derives current policy/status/action sequence from that same view. The
+client reader now passes the claimed grant ID only as a lookup hint. A later
+unrelated epoch is allowed only if the claimed epoch remains within its
+sequence window and current policy and exact grant still match. Focused tests
+reject a changed epoch root, current policy, wrong role, wrong grant ID, and
+wrong verifier resource. The governed demo uses this projection and still
+rejects four stale active API claims after suspend/revoke. This adapter does
+not authenticate finality, historic signer sets, off-ledger time, or DID state;
+the embedding network host must supply those independently.

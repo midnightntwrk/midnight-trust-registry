@@ -100,6 +100,19 @@ custody. The simulator journey verifies the proof against the pinned VC
 authority and confirms a missing finalized registry decision does not invoke
 the authority signer.
 
+`createCompactLedgerDecisionReaders` projects a host-supplied finalized Compact
+ledger view into the client reader interface. It matches registry and epoch
+commitments to that ledger, selects the exact current issuer/verifier record
+through its on-chain scope index, and reads current policy, status, lifecycle
+event, and action sequence from the same view. The authorization ID is a
+lookup hint, not evidence of current membership. A newer unrelated epoch does
+not invalidate an older epoch within its sequence window when the current
+policy and exact grant are still unchanged. The host remains responsible for
+proving the ledger view's network finality and currency, accepted-epoch block
+and transaction references, historic maintainer set, off-ledger evaluation
+time, and DID-state observation. Passing a simulator ledger satisfies none of
+those production provenance requirements.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and
