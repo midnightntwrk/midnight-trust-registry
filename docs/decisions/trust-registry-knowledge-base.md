@@ -14,6 +14,13 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 2026 Local Functional Stack
 
+- The next #78 slice has an executable recognition accreditation VC/VP plan:
+  a separately governed accreditor DID/method and status source, exact
+  authority/registry/scope claims, shared proof core, atomic challenge
+  consumption after both proofs, and one redacted commitment carried through
+  Compact and public evidence. The plan explicitly forbids treating the
+  existing DID-control assertion or a self-signed Federation terminus as
+  accreditation. No implementation or public route is claimed yet.
 - #60's joined adversarial matrix now calls the Compact simulator directly
   with otherwise valid recognition signatures but a substituted external
   registry or resource commitment. Both reject without advancing governance

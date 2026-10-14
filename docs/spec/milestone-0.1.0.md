@@ -186,10 +186,18 @@ off-chain evaluation time, then commits the signed envelope together with the
 observed DID state version and evaluation instant. The local evidence verifier
 must separately attest that commitment to Compact. A signed authority
 statement proves key control, not the truth or status of the referenced
-accreditation. Public intake MUST independently validate the accreditation
-source and consume the challenge exactly once; the simulator fixture does
-neither. `did:web` and non-JubJub authority proofs require a separate adapter
-and trust-anchor policy before they can enter this profile.
+accreditation. The joined demo consumes a challenge once, but its accreditation
+reference is synthetic; the simulator convenience path does not consume a
+challenge. Public intake MUST independently validate the accreditation source
+and consume the challenge exactly once before it may be exposed. `did:web` and
+non-JubJub authority proofs require a separate adapter and trust-anchor policy
+before they can enter this profile.
+
+The default independent accreditation path is a Midnight VC/VP from a
+separately trusted accreditor, bound to a locally governed accreditor-anchor
+policy and live credential status. The implementation sequence and required
+negative cases are recorded in
+[the recognition accreditation plan](../plans/recognition-accreditation-vp.md).
 
 A current trust answer uses the latest accepted finalized epoch and evaluates
 the grant at the query time. A historical answer names the evaluation time and
