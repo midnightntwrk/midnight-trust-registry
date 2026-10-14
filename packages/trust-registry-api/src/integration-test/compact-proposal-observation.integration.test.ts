@@ -6,6 +6,7 @@ import {
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
+  createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
 } from "@midnight-ntwrk/trust-registry-integration";
@@ -13,27 +14,30 @@ import {
 import { resolveCompactProposalObservation, type ProposalRole } from "../compact-proposal-observation.js";
 
 describe("finalized Compact proposal observation", () => {
-  it.each(["issuer", "verifier", "auditor", "maintainer"] as const)(
+  it.each(["issuer", "verifier", "auditor", "maintainer", "recognition"] as const)(
     "recovers a lost %s receipt from proposal evidence, not a process-local flag",
     async (role: ProposalRole) => {
       const harness = new LocalTrustRegistryIntegrationHarness(`proposal-observation-${role}`);
       const fixture = role === "issuer" ? createIssuerScenarioFixture("observation")
         : role === "verifier" ? createVerifierScenarioFixture("observation")
           : role === "auditor" ? createAuditorScenarioFixture("observation")
-            : createMaintainerScenarioFixture("observation");
-      const id = "maintainerId" in fixture ? fixture.maintainerId : fixture.authorizationId;
+            : role === "maintainer" ? createMaintainerScenarioFixture("observation")
+              : createRecognitionScenarioFixture("observation");
+      const id = "maintainerId" in fixture ? fixture.maintainerId
+        : "recognitionId" in fixture ? fixture.recognitionId : fixture.authorizationId;
       const read = async () => harness.simulator.getLedger();
 
       expect(await resolveCompactProposalObservation(read, harness.registryId, role, id)).toBeNull();
       const eventHash = role === "issuer" ? harness.proposeIssuer(fixture as ReturnType<typeof createIssuerScenarioFixture>)
         : role === "verifier" ? harness.proposeVerifier(fixture as ReturnType<typeof createVerifierScenarioFixture>)
           : role === "auditor" ? harness.proposeAuditor(fixture as ReturnType<typeof createAuditorScenarioFixture>)
-            : harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>);
+            : role === "maintainer" ? harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>)
+              : harness.proposeRecognition(fixture as ReturnType<typeof createRecognitionScenarioFixture>);
       const observed = await resolveCompactProposalObservation(read, harness.registryId, role, id);
       expect(observed?.eventHash).toBe(`0x${Buffer.from(eventHash).toString("hex")}`);
       expect(observed?.evidenceCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(await resolveCompactProposalObservation(read, harness.registryId, role, `${id}:other`)).toBeNull();
-      for (const otherRole of ["issuer", "verifier", "auditor", "maintainer"] as const) {
+      for (const otherRole of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {
         if (otherRole !== role) {
           expect(await resolveCompactProposalObservation(read, harness.registryId, otherRole, id)).toBeNull();
         }
@@ -45,6 +49,13 @@ describe("finalized Compact proposal observation", () => {
     await expect(resolveCompactProposalObservation(async () => {
       throw new Error("finality source unavailable");
     }, "registry:test", "issuer", "candidate")).rejects.toThrow("finality source unavailable");
+  });
+
+  it("rejects an unknown runtime role rather than reading recognition records", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-invalid-role");
+    await expect(resolveCompactProposalObservation(
+      async () => harness.simulator.getLedger(), harness.registryId, "other" as ProposalRole, "candidate",
+    )).rejects.toThrow("Invalid proposal role");
   });
 
   it("waits for the supplied finalized view rather than reporting an unfinalized simulator write", async () => {

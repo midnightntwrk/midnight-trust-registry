@@ -131,6 +131,13 @@ components:
                   y: { type: string }
               signature: { type: string, description: Canonical JubJub Schnorr signature }
       additionalProperties: true
+    RecognitionProposalRecovery:
+      type: object
+      required: [receiptId, evidenceCommitment]
+      properties:
+        receiptId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        evidenceCommitment: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+      additionalProperties: false
   responses:
     BadRequest: { description: Invalid path, query, or body }
     NotFound: { description: Record not found }
@@ -352,7 +359,20 @@ paths:
     post:
       tags: [Governed]
       summary: Observe matching proposal without resubmission
-      description: Available for issuer, verifier, auditor, and maintainer ports; not recognition.
+      description: Available for issuer, verifier, auditor, and maintainer ports; recognition has a separate private recovery route.
+      responses: *governedResponses
+  /v1/governed/recognition/{id}/proposal/resolve:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Recover an admitted recognition proposal from finalized Compact evidence
+      description: >-
+        Requires host authentication, the exact accepted accreditation receipt,
+        and a trusted finalized proposal reader. A not-observed result is
+        ambiguous and must not trigger automatic resubmission.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionProposalRecovery' } } }
       responses: *governedResponses
   /v1/governed/{role}/{id}/actions/{action}:
     parameters: [*governedRole, *id, *action]

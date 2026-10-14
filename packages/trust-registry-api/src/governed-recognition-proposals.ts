@@ -13,6 +13,7 @@ import {
 } from "./governed-membership-actions.js";
 import type { RecognitionAdmissionStore } from "./file-recognition-admission.js";
 import type { RecognitionAuthorityChallengeBinding } from "./recognition-authority-challenges.js";
+import type { GovernedProposalObservation } from "./governed-proposal-observation.js";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
@@ -71,6 +72,8 @@ export type GovernedRecognitionProposalPort = {
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
     prepared: GovernedRecognitionProposalContext,
   ): Promise<GovernedMembershipActionReceipt>;
+  /** Read an independently finalized proposal record; absence is not proof of failure. */
+  resolve?(recognitionId: string): Promise<GovernedProposalObservation | null>;
 };
 
 export class GovernedRecognitionProposalRejectedError extends Error {

@@ -261,7 +261,12 @@ the two files and Compact ledger have no shared transaction. An optional
 governed proposal resolution port can recover a lost HTTP submit receipt by
 reading the Compact proposal evidence record and matching its evidence
 commitment to the admitted application. The API package exports
-`resolveCompactProposalObservation` for all four membership roles. Its caller
+`resolveCompactProposalObservation` for issuer, verifier, auditor, maintainer,
+and recognition proposal records. The recognition HTTP resolution route
+requires private request authorization and the exact accepted accreditation
+receipt, application binding, and evidence commitment. It may recover an
+observed event after the receipt window has passed, but cannot authorize a new
+proposal. The caller
 MUST provide an independently finalized ledger view and the expected registry
 ID; the resolver checks the latter against Compact state. An unconfirmed
 transaction result is not a substitute. A `not-observed` response is

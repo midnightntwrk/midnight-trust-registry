@@ -9,7 +9,7 @@ import {
 } from "./governed-proposal-observation.js";
 
 type Ledger = ReturnType<TrustRegistrySimulator["getLedger"]>;
-export type ProposalRole = "issuer" | "verifier" | "auditor" | "maintainer";
+export type ProposalRole = "issuer" | "verifier" | "auditor" | "maintainer" | "recognition";
 
 /** The caller must supply an independently finalized ledger view, not an unconfirmed transaction result. */
 export type FinalizedProposalLedgerReader = () => Promise<Ledger>;
@@ -29,6 +29,9 @@ export async function resolveCompactProposalObservation(
     || authorizationId.length === 0 || authorizationId.length > 256) {
     throw new RangeError("Invalid proposal authorization ID");
   }
+  if (!["issuer", "verifier", "auditor", "maintainer", "recognition"].includes(role)) {
+    throw new RangeError("Invalid proposal role");
+  }
   const key = Buffer.from(sha256Hex(authorizationId).slice(2), "hex");
   const ledger = await readFinalizedLedger();
   if (hex(ledger.registryId) !== sha256Hex(expectedRegistryId)) {
@@ -37,7 +40,8 @@ export async function resolveCompactProposalObservation(
   const records = role === "issuer" ? ledger.issuerProposalEvidenceRecords
     : role === "verifier" ? ledger.verifierProposalEvidenceRecords
       : role === "auditor" ? ledger.auditorProposalEvidenceRecords
-        : ledger.maintainerProposalEvidenceRecords;
+        : role === "maintainer" ? ledger.maintainerProposalEvidenceRecords
+          : ledger.recognitionProposalEvidenceRecords;
   if (!records.member(key)) return null;
   const record = records.lookup(key);
   return GovernedProposalObservationSchema.parse({
