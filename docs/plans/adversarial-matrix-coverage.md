@@ -27,3 +27,12 @@ adapter entries. The
 same invariant is **not yet** exercised at every relevant boundary, so issue
 #60 remains open. Compact simulator failures are not proof of a submitted
 Midnight transaction; the fixture uses deterministic local time and finality.
+
+The governed demo also emits `actorReport` in
+`tr-actor-evidence-report-v1` format. It records one active decision for each
+issuer, verifier, auditor, recognition, and maintainer actor, with policy
+version, observed epoch, two distinct activation signer key IDs, expected and
+observed result, and IDs of checked rule-specific rejections. The report is a
+strict projection of public decision evidence; it does not copy applications,
+VCs, VPs, or holder data. It is simulator evidence, not a finalized network
+attestation.

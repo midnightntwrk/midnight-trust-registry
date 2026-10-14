@@ -61,6 +61,7 @@ import {
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
+import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -1432,7 +1433,7 @@ try {
     expectedResult: "active",
     observedResult: AuthorizationStatus[maintainerRecord.status],
   });
-  const actorReport = [...targets.keys()].map((role) => {
+  const actorOutcomes = [...targets.keys()].map((role) => {
     const result = actorReportByRole.get(role);
     assert.ok(result);
     assert.equal(result.activationSignerKeyIds.length, 2);
@@ -2072,7 +2073,7 @@ try {
       expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
-    actorReport,
+    actorReport: buildActorEvidenceReport(actorOutcomes, adversarialMatrix.report()),
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     auditorMandate,
     vcConsumer: vcConsumer.report,
