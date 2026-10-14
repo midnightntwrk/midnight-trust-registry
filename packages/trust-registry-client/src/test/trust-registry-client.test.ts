@@ -35,8 +35,12 @@ describe("trust registry client", () => {
     harness.authorizeAuditor(auditor);
     harness.authorizeVerifier(verifier);
     const scope = createAuditorAuthorizationScopeFixture(auditor);
-    const options = { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid };
     const bundle = harness.evaluateCurrentAuditorDecision(auditor);
+    const options = {
+      expectedRegistryId: harness.registryId,
+      expectedSubjectDid: auditor.subjectDid,
+      evaluationTime: bundle.generatedAt,
+    };
     const mandate = client.verifyAuditorRequestMandate(bundle, scope, options);
     expect(mandate).toEqual({
       authorizationId: auditor.authorizationId,
@@ -66,13 +70,22 @@ describe("trust registry client", () => {
     expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
       ...options, expectedSubjectDid: undefined as unknown as string,
     })).toThrow(/requires expected registry/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, evaluationTime: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
     expect(() => client.verifyAuditorRequestMandate(
       harness.evaluateCurrentVerifierDecision(verifier), scope, options,
     )).toThrow();
     harness.suspendAuditor(auditor);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, options))
+      .toThrow(/not active in current ledger state/u);
+    const suspendedBundle = harness.buildAuditorHistoricalEvidence(auditor);
     expect(() => client.verifyAuditorRequestMandate(
-      harness.buildAuditorHistoricalEvidence(auditor), scope, options,
+      suspendedBundle, scope, { ...options, evaluationTime: suspendedBundle.generatedAt },
     )).toThrow(/not active/u);
+    harness.revokeAuditor(auditor);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, options))
+      .toThrow(/not active in current ledger state/u);
   });
 
   it("keeps simulator helpers out of the production root", () => {

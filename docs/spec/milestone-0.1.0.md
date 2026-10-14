@@ -71,7 +71,10 @@ The relying-party mandate check MUST bind the exact auditor DID and registry to
 the complete canonical audit request scope, verify active auditor evidence
 against an independently authenticated epoch, and return only mandate
 identifiers and commitments. A verifier grant, altered purpose or disclosure
-limit, and inactive auditor grant MUST fail. The result is permission to
+limit, and inactive auditor grant MUST fail. The verifier MUST also check a
+current auditor record from independently trusted ledger state at its chosen
+decision time; a previously active evidence bundle alone is historical proof,
+not a current mandate. The result is permission to
 consider an audit request, never permission to release data.
 
 ## 4. Use Cases

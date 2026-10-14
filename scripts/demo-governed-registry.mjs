@@ -1184,7 +1184,11 @@ try {
       if (role === "auditor") {
         client.verifyAuditorAuthorizationBundle(bundle, {});
         const scope = createAuditorAuthorizationScopeFixture(auditor);
-        const options = { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid };
+        const options = {
+          expectedRegistryId: harness.registryId,
+          expectedSubjectDid: auditor.subjectDid,
+          evaluationTime: bundle.generatedAt,
+        };
         auditorMandate = client.verifyAuditorRequestMandate(bundle, scope, options);
         assert.throws(() => client.verifyAuditorRequestMandate(
           bundle, { ...scope, purpose: "unapproved-audit-purpose" }, options,
@@ -1668,7 +1672,11 @@ try {
     if (target.role === "auditor") {
       assert.throws(() => client.verifyAuditorRequestMandate(
         suspendedBundle, createAuditorAuthorizationScopeFixture(auditor),
-        { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid },
+        {
+          expectedRegistryId: harness.registryId,
+          expectedSubjectDid: auditor.subjectDid,
+          evaluationTime: suspendedBundle.generatedAt,
+        },
       ), /not active/u);
     }
     if (target.role === "verifier") {
@@ -1715,7 +1723,11 @@ try {
     if (target.role === "auditor") {
       assert.throws(() => client.verifyAuditorRequestMandate(
         revokedBundle, createAuditorAuthorizationScopeFixture(auditor),
-        { expectedRegistryId: harness.registryId, expectedSubjectDid: auditor.subjectDid },
+        {
+          expectedRegistryId: harness.registryId,
+          expectedSubjectDid: auditor.subjectDid,
+          evaluationTime: revokedBundle.generatedAt,
+        },
       ), /not active/u);
     }
     if (target.role === "verifier") {

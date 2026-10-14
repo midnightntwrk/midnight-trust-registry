@@ -5,15 +5,23 @@ import {
   type AuthorizationScope,
   type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  AuthorizationStatus,
+  type AuditorAuthorizationRecord,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import { verifyAuditorAuthorizationBundle, type BundleVerificationOptions } from "./evidence.js";
+import { bytes32Commitment, hashHexToBytes32, sameBytes32 } from "./utils.js";
 
 export type AuditorMandateOptions = Omit<
   BundleVerificationOptions,
-  "expectedRegistryId" | "expectedSubjectDid" | "expectedResourceId" | "expectedRole" | "requireActive"
+  "expectedRegistryId" | "expectedSubjectDid" | "expectedResourceId" | "expectedRole" | "requireActive" | "evaluationTime"
 > & {
   expectedRegistryId: string;
   expectedSubjectDid: string;
+  evaluationTime: string;
+  /** Resolve from an independently trusted current ledger state, not from the bundle. */
+  currentAuthorizationRecord: AuditorAuthorizationRecord;
 };
 
 export type AuditorMandate = {
@@ -24,7 +32,7 @@ export type AuditorMandate = {
   epochId: string;
 };
 
-/** Verifies only the mandate to ask; disclosure and holder consent are outside the registry. */
+/** Verifies only the current mandate to ask; disclosure and holder consent are outside the registry. */
 export const verifyAuditorRequestMandate = (
   bundle: TrustRegistryEvidenceBundle,
   requestedScope: Extract<AuthorizationScope, { role: "auditor" }>,
@@ -32,8 +40,11 @@ export const verifyAuditorRequestMandate = (
 ): AuditorMandate => {
   if (options === null || typeof options !== "object"
     || typeof options.expectedRegistryId !== "string" || options.expectedRegistryId.length === 0
-    || typeof options.expectedSubjectDid !== "string" || options.expectedSubjectDid.length === 0) {
-    throw new Error("Auditor mandate requires expected registry and subject DID");
+    || typeof options.expectedSubjectDid !== "string" || options.expectedSubjectDid.length === 0
+    || typeof options.evaluationTime !== "string" || options.evaluationTime.length === 0
+    || options.currentAuthorizationRecord === undefined
+    || options.currentAuthorizationRecord === null) {
+    throw new Error("Auditor mandate requires expected registry, subject DID, evaluation time, and current ledger record");
   }
   const scope = AuditorScopeSchema.parse(requestedScope);
   const requestResourceId = requestGovernedResourceId(scope);
@@ -47,6 +58,16 @@ export const verifyAuditorRequestMandate = (
   });
   const authorization = verified.authorization;
   if (authorization === undefined) throw new Error("Auditor mandate is unavailable");
+  const current = options.currentAuthorizationRecord;
+  if (current.status !== AuthorizationStatus.active) throw new Error("Auditor mandate is not active in current ledger state");
+  for (const [field, actual, expected] of [
+    ["authorization ID", current.authorizationId, bytes32Commitment(authorization.authorizationId)],
+    ["subject DID", current.subjectDidCommitment, bytes32Commitment(authorization.subjectDid)],
+    ["request resource", current.requestResourceId, bytes32Commitment(requestResourceId)],
+    ["evidence hash", current.evidenceHash, hashHexToBytes32(authorization.evidenceHash)],
+  ] as const) {
+    if (!sameBytes32(actual, expected)) throw new Error(`Auditor mandate current ${field} mismatch`);
+  }
   return {
     authorizationId: authorization.authorizationId,
     auditorDid: authorization.subjectDid,
