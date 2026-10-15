@@ -81,7 +81,7 @@ consider an audit request, never permission to release data.
 
 | ID | Actor and goal | Preconditions / success evidence | Required rejection |
 | --- | --- | --- | --- |
-| UC-01 | Governor bootstraps a registry | Registry ID/DID, first maintainer key, policy commitment, and threshold recorded once | Duplicate initialization or missing bootstrap key |
+| UC-01 | Governor bootstraps a registry | Constructor records registry ID/DID, first maintainer key, policy commitment, and threshold before any external call | Invalid deployment inputs or a public first-call initializer |
 | UC-02 | Authority publishes policy revision | Immutable version and effective window are anchored; prior versions remain resolvable | Reinterpretation of old decisions by a new version |
 | UC-03 | Maintainer joins or leaves | Non-bootstrap proposal, independent quorum, activation/revocation event | Self-approval, duplicate signer, insufficient quorum, or removal below threshold |
 | UC-04 | Evidence verifier becomes authorized or rotates key | Governed DID, assertion method, public key, suite, policy scope, and validity history | Unknown key, inactive verifier, or signature after key retirement |

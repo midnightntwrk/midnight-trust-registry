@@ -38,7 +38,6 @@ const proposal = (label = "first") => ({
 });
 
 const setup = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = labelToBytes32("registry:verifier-proposal-evidence");
   const registryDidCommitment = labelToBytes32("did:midnight:verifier-proposal-registry");
   const policy = labelToBytes32("policy:verifier-evidence:first");
@@ -52,10 +51,16 @@ const setup = () => {
     publicKey: deriveJubjubPublicKeyFromSeed(verifierSeed),
     suite: labelToBytes32("jubjub-schnorr"),
   };
-  simulator.initializeRegistry(
-    registryId, registryDidCommitment, policy, maintainer.maintainerId,
-    maintainer.didCommitment, maintainer.keyId, maintainerPublicKey, 1n,
-  );
+  const simulator = new TrustRegistrySimulator({
+    registryId,
+    registryDidCommitment,
+    governancePolicyCommitment: policy,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
+    maintainerPublicKey,
+    maintainerThreshold: 1n,
+  });
   const sign = (kind: string, payloadHash: Uint8Array) => signPolicyBoundMaintainerActionFromSeed(
     maintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
     encodeCompactActionKind(kind), payloadHash, simulator.getLedger().governanceActionCount,

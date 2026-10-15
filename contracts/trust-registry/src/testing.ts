@@ -76,6 +76,17 @@ export type MaintainerCoAuthorizer = {
   signature: { announcement: JubjubPoint; response: bigint };
 };
 
+export type TrustRegistryBootstrapConfig = {
+  registryId: Uint8Array;
+  registryDidCommitment: Uint8Array;
+  governancePolicyCommitment: Uint8Array;
+  maintainerId: Uint8Array;
+  maintainerDidCommitment: Uint8Array;
+  maintainerKeyId: Uint8Array;
+  maintainerPublicKey: JubjubPoint;
+  maintainerThreshold: bigint;
+};
+
 export const createMaintainerFixture = (
   label: string,
   seedByte: number,
@@ -91,12 +102,20 @@ export class TrustRegistrySimulator {
   readonly contractAddress = sampleContractAddress();
   circuitContext: CircuitContext<TrustRegistryPrivateState>;
 
-  constructor() {
+  constructor(bootstrap: TrustRegistryBootstrapConfig) {
     this.contract = new Contract<TrustRegistryPrivateState>(
       trustRegistryWitnesses,
     );
     const initialState = this.contract.initialState(
       createConstructorContext({}, "0".repeat(64)),
+      bootstrap.registryId,
+      bootstrap.registryDidCommitment,
+      bootstrap.governancePolicyCommitment,
+      bootstrap.maintainerId,
+      bootstrap.maintainerDidCommitment,
+      bootstrap.maintainerKeyId,
+      bootstrap.maintainerPublicKey,
+      bootstrap.maintainerThreshold,
     );
     this.circuitContext = createCircuitContext(
       this.contractAddress,
@@ -175,31 +194,6 @@ export class TrustRegistrySimulator {
       result.context.currentPrivateState,
     );
     return result.result;
-  }
-
-  initializeRegistry(
-    registryId: Uint8Array,
-    registryDidCommitment: Uint8Array,
-    governancePolicyCommitment: Uint8Array,
-    maintainerId: Uint8Array,
-    maintainerDidCommitment: Uint8Array,
-    maintainerKeyId: Uint8Array,
-    maintainerPublicKey: JubjubPoint,
-    maintainerThreshold: bigint,
-  ): void {
-    this.executeCircuit(() =>
-      this.contract.impureCircuits.initializeRegistry(
-        this.circuitContext,
-        registryId,
-        registryDidCommitment,
-        governancePolicyCommitment,
-        maintainerId,
-        maintainerDidCommitment,
-        maintainerKeyId,
-        maintainerPublicKey,
-        maintainerThreshold,
-      ),
-    );
   }
 
   authorizeMaintainerAuditEvent(

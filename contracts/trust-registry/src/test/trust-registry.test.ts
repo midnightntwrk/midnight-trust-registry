@@ -133,7 +133,6 @@ it("pins every governed action kind to a Compact literal", () => {
 });
 
 const createInitializedRegistryFixture = (seedByte: number) => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = labelToBytes32("registry:kanon");
   const registryDidCommitment = labelToBytes32("did:midnight:registry");
   const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
@@ -142,16 +141,16 @@ const createInitializedRegistryFixture = (seedByte: number) => {
     bootstrapMaintainer.seed,
   );
 
-  simulator.initializeRegistry(
+  const simulator = new TrustRegistrySimulator({
     registryId,
     registryDidCommitment,
     governancePolicyCommitment,
-    bootstrapMaintainer.maintainerId,
-    bootstrapMaintainer.didCommitment,
-    bootstrapMaintainer.keyId,
-    bootstrapPublicKey,
-    1n,
-  );
+    maintainerId: bootstrapMaintainer.maintainerId,
+    maintainerDidCommitment: bootstrapMaintainer.didCommitment,
+    maintainerKeyId: bootstrapMaintainer.keyId,
+    maintainerPublicKey: bootstrapPublicKey,
+    maintainerThreshold: 1n,
+  });
 
   return {
     simulator,
@@ -769,7 +768,6 @@ describe("trust registry contract", () => {
   });
 
   it("initializes the registry with a bootstrap maintainer and records the initial governance event", () => {
-    const simulator = new TrustRegistrySimulator();
     const registryId = labelToBytes32("registry:kanon");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
     const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
@@ -778,16 +776,16 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
     );
 
-    simulator.initializeRegistry(
+    const simulator = new TrustRegistrySimulator({
       registryId,
       registryDidCommitment,
       governancePolicyCommitment,
-      bootstrapMaintainer.maintainerId,
-      bootstrapMaintainer.didCommitment,
-      bootstrapMaintainer.keyId,
-      bootstrapPublicKey,
-      1n,
-    );
+      maintainerId: bootstrapMaintainer.maintainerId,
+      maintainerDidCommitment: bootstrapMaintainer.didCommitment,
+      maintainerKeyId: bootstrapMaintainer.keyId,
+      maintainerPublicKey: bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
 
     const state = simulator.getLedger();
     const maintainer = state.maintainerRecords.lookup(bootstrapMaintainer.keyId);
@@ -815,92 +813,53 @@ describe("trust registry contract", () => {
     );
   });
 
-  it("rejects invalid initialization payloads and repeated initialization", () => {
-    const simulator = new TrustRegistrySimulator();
+  it("rejects invalid deployment bootstrap inputs and exposes no first-call initializer", () => {
     const bootstrapMaintainer = createMaintainerFixture("bootstrap", 9);
     const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
       bootstrapMaintainer.seed,
     );
+    const bootstrap = {
+      registryId: labelToBytes32("registry:kanon"),
+      registryDidCommitment: labelToBytes32("did:midnight:registry"),
+      governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
+      maintainerId: bootstrapMaintainer.maintainerId,
+      maintainerDidCommitment: bootstrapMaintainer.didCommitment,
+      maintainerKeyId: bootstrapMaintainer.keyId,
+      maintainerPublicKey: bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    };
 
     expect(() =>
-      simulator.initializeRegistry(
-        new Uint8Array(32),
-        labelToBytes32("did:midnight:registry"),
-        labelToBytes32("policy:kanon:v1"),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        1n,
-      ),
+      new TrustRegistrySimulator({ ...bootstrap, registryId: new Uint8Array(32) }),
     ).toThrow(/Registry id must be set/);
 
     expect(() =>
-      simulator.initializeRegistry(
-        labelToBytes32("registry:kanon"),
-        labelToBytes32("did:midnight:registry"),
-        new Uint8Array(32),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        1n,
-      ),
+      new TrustRegistrySimulator({ ...bootstrap, governancePolicyCommitment: new Uint8Array(32) }),
     ).toThrow(/Governance policy commitment must be set/);
 
     expect(() =>
-      simulator.initializeRegistry(
-        labelToBytes32("registry:kanon"),
-        labelToBytes32("did:midnight:registry"),
-        labelToBytes32("policy:kanon:v1"),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        0n,
-      ),
+      new TrustRegistrySimulator({ ...bootstrap, maintainerThreshold: 0n }),
     ).toThrow(/threshold must be at least 1/i);
 
     expect(() =>
-      simulator.initializeRegistry(
-        labelToBytes32("registry:kanon"),
-        labelToBytes32("did:midnight:registry"),
-        labelToBytes32("policy:kanon:v1"),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        2n,
-      ),
+      new TrustRegistrySimulator({ ...bootstrap, maintainerThreshold: 2n }),
     ).toThrow(/may not exceed active maintainer count/i);
 
     expect(() =>
-      simulator.initializeRegistry(
-        labelToBytes32("registry:kanon"),
-        labelToBytes32("did:midnight:registry"),
-        labelToBytes32("policy:kanon:v1"),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        { x: 0n, y: 1n },
-        1n,
-      ),
+      new TrustRegistrySimulator({
+        ...bootstrap,
+        maintainerPublicKey: { x: 0n, y: 1n },
+      }),
     ).toThrow(/signer point must not be identity/i);
 
     const lowOrderKey = {
       x: 0n,
       y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
     };
-    expect(() => simulator.initializeRegistry(
-      labelToBytes32("registry:kanon"),
-      labelToBytes32("did:midnight:registry"),
-      labelToBytes32("policy:kanon:v1"),
-      bootstrapMaintainer.maintainerId,
-      bootstrapMaintainer.didCommitment,
-      bootstrapMaintainer.keyId,
-      lowOrderKey,
-      1n,
-    )).toThrow();
+    expect(() => new TrustRegistrySimulator({
+      ...bootstrap,
+      maintainerPublicKey: lowOrderKey,
+    })).toThrow();
 
     expect(() => pureCircuits.createMaintainerMembershipPayloadHash(
       bootstrapMaintainer.maintainerId,
@@ -912,29 +871,37 @@ describe("trust registry contract", () => {
       labelToBytes32("evidence:hash"),
     )).toThrow(/signer point must not be identity/i);
 
-    simulator.initializeRegistry(
-      labelToBytes32("registry:kanon"),
-      labelToBytes32("did:midnight:registry"),
-      labelToBytes32("policy:kanon:v1"),
-      bootstrapMaintainer.maintainerId,
-      bootstrapMaintainer.didCommitment,
-      bootstrapMaintainer.keyId,
-      bootstrapPublicKey,
-      1n,
+    const simulator = new TrustRegistrySimulator(bootstrap);
+    expect(simulator.getLedger().initialized).toBe(true);
+    expect(simulator.contract.impureCircuits).not.toHaveProperty("initializeRegistry");
+  });
+
+  it("does not let an unauthorized first caller replace constructor bootstrap state", () => {
+    const registry = createInitializedRegistryFixture(10);
+    const { simulator, registryId, bootstrapMaintainer } = registry;
+    const original = simulator.getLedger();
+    const attacker = createMaintainerFixture("first-caller-attacker", 11);
+    const payloadHash = labelToBytes32("attacker:first-action");
+    const attackerSignature = signPolicyBoundMaintainerActionFromSeed(
+      attacker.seed,
+      registryId,
+      original.governancePolicyCommitment,
+      GENERIC_AUDIT_ACTION_KIND,
+      payloadHash,
+      original.governanceActionCount,
     );
 
-    expect(() =>
-      simulator.initializeRegistry(
-        labelToBytes32("registry:kanon:second"),
-        labelToBytes32("did:midnight:registry:second"),
-        labelToBytes32("policy:kanon:v2"),
-        bootstrapMaintainer.maintainerId,
-        bootstrapMaintainer.didCommitment,
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        1n,
-      ),
-    ).toThrow(/already been initialized/i);
+    expect(() => simulator.authorizeMaintainerAuditEvent(
+      attacker.keyId,
+      deriveJubjubPublicKeyFromSeed(attacker.seed),
+      attackerSignature,
+      payloadHash,
+    )).toThrow(/not registered/i);
+    const after = simulator.getLedger();
+    expect(after.governanceActionCount).toBe(1n);
+    expect(after.registryId).toEqual(registryId);
+    expect(after.lastAuthorizedMaintainerKeyId).toEqual(bootstrapMaintainer.keyId);
+    expect(simulator.contract.impureCircuits).not.toHaveProperty("initializeRegistry");
   });
 
   it("governs maintainer membership through proposal, approval, activation, suspension, revocation, and archival", () => {
@@ -1346,7 +1313,6 @@ describe("trust registry contract", () => {
   });
 
   it("records a signed generic audit event without a lifecycle transition", () => {
-    const simulator = new TrustRegistrySimulator();
     const registryId = labelToBytes32("registry:kanon");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
     const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
@@ -1355,16 +1321,16 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
     );
 
-    simulator.initializeRegistry(
+    const simulator = new TrustRegistrySimulator({
       registryId,
       registryDidCommitment,
       governancePolicyCommitment,
-      bootstrapMaintainer.maintainerId,
-      bootstrapMaintainer.didCommitment,
-      bootstrapMaintainer.keyId,
-      bootstrapPublicKey,
-      1n,
-    );
+      maintainerId: bootstrapMaintainer.maintainerId,
+      maintainerDidCommitment: bootstrapMaintainer.didCommitment,
+      maintainerKeyId: bootstrapMaintainer.keyId,
+      maintainerPublicKey: bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
 
     const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
@@ -2050,8 +2016,7 @@ describe("trust registry contract", () => {
     ).toThrow(/must not contain duplicates/i);
   });
 
-  it("rejects maintainer actions before initialization and rejects tampered authorization", () => {
-    const simulator = new TrustRegistrySimulator();
+  it("bootstraps before any maintainer action and rejects tampered authorization", () => {
     const registryId = labelToBytes32("registry:kanon");
     const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
@@ -2059,34 +2024,17 @@ describe("trust registry contract", () => {
     const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
       bootstrapMaintainer.seed,
     );
-    const signatureBeforeInit = signPolicyBoundMaintainerActionFromSeed(
-      bootstrapMaintainer.seed,
+    const simulator = new TrustRegistrySimulator({
       registryId,
-      labelToBytes32("policy:kanon:v1"),
-      actionKind,
-      actionPayloadHash,
-      0n,
-    );
-
-    expect(() =>
-      simulator.authorizeMaintainerAuditEvent(
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        signatureBeforeInit,
-        actionPayloadHash,
-      ),
-    ).toThrow(/not initialized/i);
-
-    simulator.initializeRegistry(
-      registryId,
-      labelToBytes32("did:midnight:registry"),
-      labelToBytes32("policy:kanon:v1"),
-      bootstrapMaintainer.maintainerId,
-      bootstrapMaintainer.didCommitment,
-      bootstrapMaintainer.keyId,
-      bootstrapPublicKey,
-      1n,
-    );
+      registryDidCommitment: labelToBytes32("did:midnight:registry"),
+      governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
+      maintainerId: bootstrapMaintainer.maintainerId,
+      maintainerDidCommitment: bootstrapMaintainer.didCommitment,
+      maintainerKeyId: bootstrapMaintainer.keyId,
+      maintainerPublicKey: bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
+    expect(simulator.getLedger().initialized).toBe(true);
 
     const actionSequence = simulator.getLedger().governanceActionCount;
     const validSignature = signPolicyBoundMaintainerActionFromSeed(

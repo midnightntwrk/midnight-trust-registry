@@ -23,21 +23,20 @@ const REVOKE = encodeCompactActionKind("tr:evidence-verifier:revoke");
 const ROTATE = encodeCompactActionKind("tr:evidence-verifier:rotate");
 
 const fixture = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = labelToBytes32("registry:evidence-test");
   const policyCommitment = labelToBytes32("policy:evidence-test");
   const maintainer = createMaintainerFixture("evidence-test", 11);
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  simulator.initializeRegistry(
+  const simulator = new TrustRegistrySimulator({
     registryId,
-    labelToBytes32("did:midnight:evidence-registry"),
-    policyCommitment,
-    maintainer.maintainerId,
-    maintainer.didCommitment,
-    maintainer.keyId,
+    registryDidCommitment: labelToBytes32("did:midnight:evidence-registry"),
+    governancePolicyCommitment: policyCommitment,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
     maintainerPublicKey,
-    1n,
-  );
+    maintainerThreshold: 1n,
+  });
   const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
     signPolicyBoundMaintainerActionFromSeed(
       maintainer.seed,

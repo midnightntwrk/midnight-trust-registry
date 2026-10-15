@@ -412,7 +412,6 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   constructor(label = "kanon") {
-    this.simulator = new TrustRegistrySimulator();
     this.registryId = createScopedIdentifier("registry", label, "trusted");
     this.registryDid = createMidnightDid(`registry:${label}`);
     this.registryIdCommitment = bytes32Commitment(this.registryId);
@@ -469,16 +468,16 @@ export class LocalTrustRegistryIntegrationHarness {
       trustLevel: "bootstrap-maintainer",
     });
 
-    this.simulator.initializeRegistry(
-      this.registryIdCommitment,
-      this.registryDidCommitment,
-      this.governancePolicyCommitment,
-      this.maintainerIdCommitment,
-      this.maintainerDidCommitment,
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      1n,
-    );
+    this.simulator = new TrustRegistrySimulator({
+      registryId: this.registryIdCommitment,
+      registryDidCommitment: this.registryDidCommitment,
+      governancePolicyCommitment: this.governancePolicyCommitment,
+      maintainerId: this.maintainerIdCommitment,
+      maintainerDidCommitment: this.maintainerDidCommitment,
+      maintainerKeyId: this.bootstrapMaintainer.keyId,
+      maintainerPublicKey: this.bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
     this.authorizeEvidenceVerifierForCurrentPolicy();
   }
 

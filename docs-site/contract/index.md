@@ -18,7 +18,7 @@ Raw credentials, presentations, holder identifiers, and private claims do not be
 
 ## Circuit families
 
-- `initializeRegistry` performs the one-time bootstrap and records policy/maintainer commitments.
+- The constructor validates and installs the registry ID/DID, first maintainer, policy, thresholds, and initial governance event atomically at deployment. No public first-call initializer exists.
 - `propose*`, `authorize*`, `activate*`, `suspend*`, `revoke*`, and `archive*` circuits implement role-specific lifecycle boundaries. Issuer, verifier, auditor, maintainer, and recognition records remain distinct.
 - `updateMaintainerThresholdPolicy`, evidence-verifier key governance, and VC authority key governance have separate controlled transitions.
 - `policyBoundActionPayloadHash`, `policyBoundMaintainerActionDigest`, and Schnorr verification bind signatures to current policy/action/sequence; quorum is checked inside Compact.
@@ -28,6 +28,12 @@ Raw credentials, presentations, holder identifiers, and private claims do not be
 ## Signature boundary
 
 Contract-facing governance uses JubJub Schnorr keys associated with Midnight DIDs. The API's prepare result is only a signing preimage; Compact independently verifies the supplied signatures, registered keys, membership status, and threshold. A hash or an off-chain `isTrusted` callback is not authorization. External DID methods and Ed25519/secp256k1/P-256 proof suites require an explicit future adapter and governance rule; they are not native Compact verification paths here.
+
+Constructor bootstrap removes first-caller root substitution, but the active
+governance signature transcript does not yet bind the deployed address or
+network. The pure deployment-bound digest is a local implementation seam, not
+the active verifier; [#200](https://github.com/midnightntwrk/midnight-trust-registry/issues/200)
+remains a public-network release blocker.
 
 ## Test strategy
 

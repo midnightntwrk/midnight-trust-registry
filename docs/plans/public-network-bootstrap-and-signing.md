@@ -11,6 +11,12 @@ network commitment or contract address. These helpers are not yet called by
 `performAuthorizedMaintainerAction`; the old signing path is still active.
 They must not be published alone or described as a replay fix.
 
+Constructor bootstrap is implemented locally: the former `initializeRegistry`
+body runs during construction, the public circuit is removed, and simulator
+fixtures pass deployment inputs to `initialState`. A hostile-first-caller test
+checks that an unregistered caller cannot replace the constructor state. This
+still needs cross-package and real-network qualification before #200 is done.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract

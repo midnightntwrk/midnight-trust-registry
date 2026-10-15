@@ -369,7 +369,16 @@ export ledger epochCommitmentIds: Set<Bytes<32>>;
 export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
-constructor() {
+constructor(
+  nextRegistryId: Bytes<32>,
+  nextRegistryDidCommitment: Bytes<32>,
+  nextGovernancePolicyCommitment: Bytes<32>,
+  bootstrapMaintainerId: Bytes<32>,
+  bootstrapMaintainerDidCommitment: Bytes<32>,
+  bootstrapMaintainerKeyId: Bytes<32>,
+  bootstrapMaintainerPublicKey: JubjubPoint,
+  nextMaintainerThreshold: Uint<64>
+) {
   contractVersion = 1;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
@@ -391,6 +400,16 @@ constructor() {
   lastAuthorizedPolicyCommitment = pad(32, "midnight:tr:unset");
   lastAuthorizedMaintainerKeyId = pad(32, "midnight:tr:none");
   lastAuthorizedSignerSetHash = pad(32, "midnight:tr:none");
+  initializeRegistry(
+    nextRegistryId,
+    nextRegistryDidCommitment,
+    nextGovernancePolicyCommitment,
+    bootstrapMaintainerId,
+    bootstrapMaintainerDidCommitment,
+    bootstrapMaintainerKeyId,
+    bootstrapMaintainerPublicKey,
+    nextMaintainerThreshold
+  );
 }
 
 export pure circuit assertValidMaintainerThreshold(
@@ -1728,7 +1747,7 @@ export pure circuit governanceEventHash(
   ]);
 }
 
-export circuit initializeRegistry(
+circuit initializeRegistry(
   nextRegistryId: Bytes<32>,
   nextRegistryDidCommitment: Bytes<32>,
   nextGovernancePolicyCommitment: Bytes<32>,

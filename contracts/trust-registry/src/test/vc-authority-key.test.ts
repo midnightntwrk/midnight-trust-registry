@@ -22,21 +22,20 @@ const ROTATE = encodeCompactActionKind("tr:vc-authority:key:rotate");
 const committed = (value: string): Uint8Array => new Uint8Array(createHash("sha256").update(value).digest());
 
 const fixture = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = committed("registry:vc-authority-test");
   const policyCommitment = labelToBytes32("policy:vc-authority-test");
   const maintainer = createMaintainerFixture("vc-authority-test", 31);
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  simulator.initializeRegistry(
+  const simulator = new TrustRegistrySimulator({
     registryId,
-    labelToBytes32("did:midnight:vc-authority-registry"),
-    policyCommitment,
-    maintainer.maintainerId,
-    maintainer.didCommitment,
-    maintainer.keyId,
+    registryDidCommitment: labelToBytes32("did:midnight:vc-authority-registry"),
+    governancePolicyCommitment: policyCommitment,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
     maintainerPublicKey,
-    1n,
-  );
+    maintainerThreshold: 1n,
+  });
   return { simulator, registryId, policyCommitment, maintainer, maintainerPublicKey };
 };
 
