@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import {
   computeCreateAuditorAuthorizationPayloadHash,
@@ -21,17 +22,16 @@ import {
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
-  computePolicyBoundActionPayloadHash,
-  computePolicyBoundMaintainerActionDigest,
+  computeDeploymentBoundMaintainerActionDigest,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
   signRecognitionProposalEvidenceFromSeed,
   signAuditorProposalEvidenceFromSeed,
   signMaintainerProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
 } from "../signing.js";
 import {
   createMaintainerFixture,
@@ -47,6 +47,25 @@ import {
 } from "../managed/trust-registry/contract/index.js";
 
 import { describe, expect, it } from "vitest";
+
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
+const signFixtureDeploymentBoundActionFromSeed = (
+  simulator: TrustRegistrySimulator,
+  seed: Uint8Array, registryId: Uint8Array, policyCommitment: Uint8Array,
+  actionKind: Uint8Array, payloadHash: Uint8Array, sequence: bigint,
+) => signDeploymentBoundMaintainerActionFromSeed(
+  seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+  policyCommitment, actionKind, payloadHash, sequence,
+);
+const verifyFixtureDeploymentBoundAction = (
+  simulator: TrustRegistrySimulator,
+  publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>, registryId: Uint8Array,
+  policyCommitment: Uint8Array, actionKind: Uint8Array, payloadHash: Uint8Array,
+  sequence: bigint, signature: ReturnType<typeof signDeploymentBoundMaintainerActionFromSeed>,
+) => verifyDeploymentBoundMaintainerAction(
+  publicKey, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+  policyCommitment, actionKind, payloadHash, sequence, signature,
+);
 
 it("encodes Compact action kinds exactly and rejects overlong values", () => {
   expect(encodeCompactActionKind("tr:epoch:publish")).toEqual(labelToBytes32("tr:epoch:publish"));
@@ -143,7 +162,7 @@ const createInitializedRegistryFixture = (seedByte: number) => {
 
   const simulator = new TrustRegistrySimulator({
     registryId,
-    networkIdCommitment: labelToBytes32("network:undeployed"),
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
     registryDidCommitment,
     governancePolicyCommitment,
     maintainerId: bootstrapMaintainer.maintainerId,
@@ -205,7 +224,7 @@ const registerIssuerEvidenceVerifier = (
   const sequence = simulator.getLedger().governanceActionCount;
   simulator.registerEvidenceVerifierKey(
     bootstrapMaintainer.keyId, bootstrapPublicKey,
-    signPolicyBoundMaintainerActionFromSeed(
+    signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, policyCommitment,
       REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, sequence,
     ),
@@ -321,7 +340,7 @@ const activateIssuerAuthorizationFixture = (
     registry, authorization, registerIssuerEvidenceVerifier(registry),
   );
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -402,7 +421,7 @@ const activateVerifierAuthorizationFixture = (
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
   const proof = verifierProposalProof(registry, authorization);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -458,7 +477,7 @@ const activateRecognitionFixture = (
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
   const proof = recognitionProposalProof(registry, recognition, recognition.evidenceHash);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -551,7 +570,7 @@ const activateAuditorAuthorizationFixture = (
   const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
   const proof = auditorProposalProof(registry, authorization);
   const sign = (actionKind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -649,7 +668,7 @@ const createMaintainerCoAuthorizer = (
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: maintainer.publicKey,
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
     simulator.getLedger().governancePolicyCommitment,
@@ -663,10 +682,10 @@ const expectSignedEvidenceMismatch = (
   registry: ReturnType<typeof createInitializedRegistryFixture>,
   actionKind: Uint8Array,
   payloadHash: Uint8Array,
-  invoke: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) => void,
+  invoke: (signature: ReturnType<typeof signFixtureDeploymentBoundActionFromSeed>) => void,
   diagnostic: RegExp,
 ): void => {
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signFixtureDeploymentBoundActionFromSeed(registry.simulator,
     registry.bootstrapMaintainer.seed,
     registry.registryId,
     registry.simulator.getLedger().governancePolicyCommitment,
@@ -700,28 +719,43 @@ describe("trust registry contract", () => {
     expect(() => labelToBytes32("short\0")).toThrow(/NUL bytes/);
   });
 
-  it("binds action payload hashes to a nonempty policy commitment", () => {
+  it("binds action payload hashes to deployment and policy commitments", () => {
     const policyV1 = labelToBytes32("policy:snapshot:v1");
     const policyV2 = labelToBytes32("policy:snapshot:v2");
+    const address = new Uint8Array(32).fill(9);
     const payload = labelToBytes32("action:payload");
-    const bound = computePolicyBoundActionPayloadHash(policyV1, payload);
+    const bound = pureCircuits.deploymentBoundActionPayloadHash(
+      FIXTURE_NETWORK_ID_COMMITMENT, address, policyV1, payload,
+    );
 
-    expect(bound).toEqual(pureCircuits.policyBoundActionPayloadHash(policyV1, payload));
     expect(Buffer.from(bound).toString("hex")).not.toBe(
-      Buffer.from(computePolicyBoundActionPayloadHash(policyV2, payload)).toString("hex"),
+      Buffer.from(pureCircuits.deploymentBoundActionPayloadHash(
+        FIXTURE_NETWORK_ID_COMMITMENT, address, policyV2, payload,
+      )).toString("hex"),
     );
     expect(Buffer.from(bound).toString("hex")).not.toBe(
-      Buffer.from(computePolicyBoundActionPayloadHash(policyV1, labelToBytes32("other"))).toString("hex"),
+      Buffer.from(pureCircuits.deploymentBoundActionPayloadHash(
+        FIXTURE_NETWORK_ID_COMMITMENT, address, policyV1, labelToBytes32("other"),
+      )).toString("hex"),
     );
-    expect(() => computePolicyBoundActionPayloadHash(new Uint8Array(32), payload)).toThrow(
+    expect(Buffer.from(bound).toString("hex")).not.toBe(
+      Buffer.from(pureCircuits.deploymentBoundActionPayloadHash(
+        FIXTURE_NETWORK_ID_COMMITMENT, new Uint8Array(32).fill(10), policyV1, payload,
+      )).toString("hex"),
+    );
+    expect(() => pureCircuits.deploymentBoundActionPayloadHash(
+      FIXTURE_NETWORK_ID_COMMITMENT, address, new Uint8Array(32), payload,
+    )).toThrow(
       /policy commitment must be set/i,
     );
-    expect(() => computePolicyBoundActionPayloadHash(policyV1, payload.subarray(1))).toThrow(
-      /action payload hash must be 32 bytes/i,
+    expect(() => pureCircuits.deploymentBoundActionPayloadHash(
+      new Uint8Array(32), address, policyV1, payload,
+    )).toThrow(
+      /network id commitment must be set/i,
     );
   });
 
-  it("signs the four-field action digest under one explicit policy snapshot", () => {
+  it("signs a deployment-bound action digest under one explicit policy snapshot", () => {
     const maintainer = createMaintainerFixture("policy-bound", 19);
     const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
     const registryId = labelToBytes32("registry:policy-bound");
@@ -729,23 +763,29 @@ describe("trust registry contract", () => {
     const policyV2 = labelToBytes32("policy:snapshot:v2");
     const actionKind = encodeCompactActionKind("tr:issuer:propose");
     const payload = labelToBytes32("issuer:proposal:payload");
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const contractAddress = new Uint8Array(32).fill(9);
+    const signature = signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       registryId,
+      FIXTURE_NETWORK_ID_COMMITMENT,
+      contractAddress,
       policyV1,
       actionKind,
       payload,
       3n,
     );
 
-    expect(computePolicyBoundMaintainerActionDigest(
-      registryId, policyV1, actionKind, payload, 3n,
+    expect(computeDeploymentBoundMaintainerActionDigest(
+      registryId, FIXTURE_NETWORK_ID_COMMITMENT, contractAddress,
+      policyV1, actionKind, payload, 3n,
     )).toHaveLength(4);
-    expect(verifyPolicyBoundMaintainerAction(
-      publicKey, registryId, policyV1, actionKind, payload, 3n, signature,
+    expect(verifyDeploymentBoundMaintainerAction(
+      publicKey, registryId, FIXTURE_NETWORK_ID_COMMITMENT, contractAddress,
+      policyV1, actionKind, payload, 3n, signature,
     )).toBe(true);
-    expect(verifyPolicyBoundMaintainerAction(
-      publicKey, registryId, policyV2, actionKind, payload, 3n, signature,
+    expect(verifyDeploymentBoundMaintainerAction(
+      publicKey, registryId, FIXTURE_NETWORK_ID_COMMITMENT, contractAddress,
+      policyV2, actionKind, payload, 3n, signature,
     )).toBe(false);
   });
 
@@ -779,7 +819,7 @@ describe("trust registry contract", () => {
 
     const simulator = new TrustRegistrySimulator({
       registryId,
-      networkIdCommitment: labelToBytes32("network:undeployed"),
+      networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment,
       governancePolicyCommitment,
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -822,7 +862,7 @@ describe("trust registry contract", () => {
     );
     const bootstrap = {
       registryId: labelToBytes32("registry:kanon"),
-      networkIdCommitment: labelToBytes32("network:undeployed"),
+      networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
       governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -890,7 +930,7 @@ describe("trust registry contract", () => {
     const original = simulator.getLedger();
     const attacker = createMaintainerFixture("first-caller-attacker", 11);
     const payloadHash = labelToBytes32("attacker:first-action");
-    const attackerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const attackerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       attacker.seed,
       registryId,
       original.governancePolicyCommitment,
@@ -924,7 +964,7 @@ describe("trust registry contract", () => {
     const proposalProof = maintainerProposalProof(registry, candidate);
 
     const proposeActionSequence = simulator.getLedger().governanceActionCount;
-    const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -975,7 +1015,7 @@ describe("trust registry contract", () => {
 
     const authorizeEvidenceHash = candidate.evidenceHash;
     const authorizeActionSequence = simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1022,7 +1062,7 @@ describe("trust registry contract", () => {
 
     const activateEvidenceHash = candidate.evidenceHash;
     const activateActionSequence = simulator.getLedger().governanceActionCount;
-    const activateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1055,7 +1095,7 @@ describe("trust registry contract", () => {
 
     const suspendEvidenceHash = labelToBytes32("evidence:governed:suspend");
     const suspendActionSequence = simulator.getLedger().governanceActionCount;
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1084,7 +1124,7 @@ describe("trust registry contract", () => {
 
     const revokeEvidenceHash = labelToBytes32("evidence:governed:revoke");
     const revokeActionSequence = simulator.getLedger().governanceActionCount;
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1115,7 +1155,7 @@ describe("trust registry contract", () => {
 
     const archiveEvidenceHash = labelToBytes32("evidence:governed:archive");
     const archiveActionSequence = simulator.getLedger().governanceActionCount;
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1150,7 +1190,7 @@ describe("trust registry contract", () => {
     const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
     const candidate = createMaintainerMembershipFixture("signed-candidate", 63);
     const proof = maintainerProposalProof(registry, candidate);
-    const sign = () => signPolicyBoundMaintainerActionFromSeed(
+    const sign = () => signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
     );
@@ -1190,7 +1230,7 @@ describe("trust registry contract", () => {
       y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
     };
     const proof = maintainerProposalProof(registry, candidate);
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
       PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
     );
@@ -1211,7 +1251,7 @@ describe("trust registry contract", () => {
     const proof = maintainerProposalProof(registry, candidate);
     simulator.proposeMaintainerMembership(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
         PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
       ),
@@ -1229,7 +1269,7 @@ describe("trust registry contract", () => {
     );
     simulator.updateMaintainerThresholdPolicy(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId, oldPolicy,
         UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyHash,
         simulator.getLedger().governanceActionCount,
@@ -1242,7 +1282,7 @@ describe("trust registry contract", () => {
     );
     expect(() => simulator.authorizeMaintainerMembership(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId, newPolicy, AUTHORIZE_MAINTAINER_ACTION_KIND,
         approvalHash, simulator.getLedger().governanceActionCount,
       ),
@@ -1266,7 +1306,7 @@ describe("trust registry contract", () => {
     const proposalProof = maintainerProposalProof(registry, selfCandidate);
 
     const proposeActionSequence = simulator.getLedger().governanceActionCount;
-    const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1295,7 +1335,7 @@ describe("trust registry contract", () => {
 
     const suspendEvidenceHash = labelToBytes32("evidence:bootstrap:suspend");
     const suspendActionSequence = simulator.getLedger().governanceActionCount;
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1331,7 +1371,7 @@ describe("trust registry contract", () => {
 
     const simulator = new TrustRegistrySimulator({
       registryId,
-      networkIdCommitment: labelToBytes32("network:undeployed"),
+      networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment,
       governancePolicyCommitment,
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -1344,7 +1384,7 @@ describe("trust registry contract", () => {
     const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
     const actionSequence = simulator.getLedger().governanceActionCount;
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1354,7 +1394,7 @@ describe("trust registry contract", () => {
     );
 
     expect(
-      verifyPolicyBoundMaintainerAction(
+      verifyFixtureDeploymentBoundAction(simulator,
         bootstrapPublicKey,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -1365,7 +1405,7 @@ describe("trust registry contract", () => {
       ),
     ).toBe(true);
 
-    const lifecycleSignature = signPolicyBoundMaintainerActionFromSeed(
+    const lifecycleSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1392,6 +1432,8 @@ describe("trust registry contract", () => {
     expect(Buffer.from(eventHash)).toEqual(Buffer.from(state.lastGovernanceEventHash));
     expect(Buffer.from(eventHash)).toEqual(Buffer.from(pureCircuits.governanceEventHash(
       registryId,
+      FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress),
       governancePolicyCommitment,
       state.lastAuthorizedSignerSetHash,
       actionKind,
@@ -1426,7 +1468,7 @@ describe("trust registry contract", () => {
     const proposalProof = maintainerProposalProof(registry, secondMaintainer);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const proposeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1452,7 +1494,7 @@ describe("trust registry contract", () => {
 
     const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const authorizeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1475,7 +1517,7 @@ describe("trust registry contract", () => {
 
     const activateMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const activateMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1497,7 +1539,7 @@ describe("trust registry contract", () => {
     );
 
     const invalidThresholdPolicySequence = simulator.getLedger().governanceActionCount;
-    const invalidThresholdPolicySignature = signPolicyBoundMaintainerActionFromSeed(
+    const invalidThresholdPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1534,7 +1576,7 @@ describe("trust registry contract", () => {
       1n,
       2n,
     );
-    const thresholdPolicySignature = signPolicyBoundMaintainerActionFromSeed(
+    const thresholdPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1631,7 +1673,7 @@ describe("trust registry contract", () => {
     const proposeIssuerPayloadHash = issuerProof.payloadHash;
 
     const singleSignerSequence = simulator.getLedger().governanceActionCount;
-    const singleSignerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const singleSignerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1659,7 +1701,7 @@ describe("trust registry contract", () => {
     ).toThrow(/must satisfy the action threshold/i);
 
     const proposeIssuerSequence = simulator.getLedger().governanceActionCount;
-    const proposeIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1675,7 +1717,7 @@ describe("trust registry contract", () => {
       proposeIssuerPayloadHash,
       proposeIssuerSequence,
     );
-    const stalePolicySignature = signPolicyBoundMaintainerActionFromSeed(
+    const stalePolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       labelToBytes32("policy:kanon:v1"),
@@ -1730,7 +1772,7 @@ describe("trust registry contract", () => {
       authorizeIssuerEvidenceHash,
     );
     const authorizeIssuerSequence = simulator.getLedger().governanceActionCount;
-    const authorizeIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1762,7 +1804,7 @@ describe("trust registry contract", () => {
       activateIssuerEvidenceHash,
     );
     const activateIssuerSequence = simulator.getLedger().governanceActionCount;
-    const activateIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1791,7 +1833,7 @@ describe("trust registry contract", () => {
       "evidence:quorum:issuer:suspend",
     );
     const suspendIssuerSequence = simulator.getLedger().governanceActionCount;
-    const suspendIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1824,7 +1866,7 @@ describe("trust registry contract", () => {
       archivedIssuerEvidenceHash,
     );
     const archiveIssuerSequence = simulator.getLedger().governanceActionCount;
-    const archiveIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1876,7 +1918,7 @@ describe("trust registry contract", () => {
     const proposalProof = maintainerProposalProof(registry, secondMaintainer);
 
     const proposeMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const proposeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1902,7 +1944,7 @@ describe("trust registry contract", () => {
 
     const authorizeMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const authorizeMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const authorizeMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1925,7 +1967,7 @@ describe("trust registry contract", () => {
 
     const activateMaintainerEvidenceHash = secondMaintainer.evidenceHash;
     const activateMaintainerSequence = simulator.getLedger().governanceActionCount;
-    const activateMaintainerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateMaintainerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1947,7 +1989,7 @@ describe("trust registry contract", () => {
     );
 
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
-    const thresholdPolicySignature = signPolicyBoundMaintainerActionFromSeed(
+    const thresholdPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1983,7 +2025,7 @@ describe("trust registry contract", () => {
     );
     const proposeIssuerPayloadHash = issuerProof.payloadHash;
     const proposeIssuerSequence = simulator.getLedger().governanceActionCount;
-    const proposeIssuerSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeIssuerSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -1994,7 +2036,7 @@ describe("trust registry contract", () => {
     const duplicateBootstrapAuthorizer: MaintainerCoAuthorizer = {
       keyId: bootstrapMaintainer.keyId,
       publicKey: bootstrapPublicKey,
-      signature: signPolicyBoundMaintainerActionFromSeed(
+      signature: signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -2035,7 +2077,7 @@ describe("trust registry contract", () => {
     );
     const simulator = new TrustRegistrySimulator({
       registryId,
-      networkIdCommitment: labelToBytes32("network:undeployed"),
+      networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
       governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -2047,7 +2089,7 @@ describe("trust registry contract", () => {
     expect(simulator.getLedger().initialized).toBe(true);
 
     const actionSequence = simulator.getLedger().governanceActionCount;
-    const validSignature = signPolicyBoundMaintainerActionFromSeed(
+    const validSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2133,7 +2175,7 @@ describe("trust registry contract", () => {
     const issuer = createIssuerAuthorizationFixture("evidence-bound");
     const verifier = registerIssuerEvidenceVerifier(registry);
     const proof = issuerProposalProof(registry, issuer, verifier);
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId,
       simulator.getLedger().governancePolicyCommitment,
       PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash,
@@ -2171,7 +2213,7 @@ describe("trust registry contract", () => {
     );
     simulator.suspendEvidenceVerifierKey(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId,
         simulator.getLedger().governancePolicyCommitment,
         SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND, suspendPayload,
@@ -2192,7 +2234,7 @@ describe("trust registry contract", () => {
       const verifier = registerIssuerEvidenceVerifier(registry);
       const proof = issuerProposalProof(registry, issuer, verifier);
       const signAction = (kind: Uint8Array, payloadHash: Uint8Array) =>
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed, registryId,
           simulator.getLedger().governancePolicyCommitment,
           kind, payloadHash, simulator.getLedger().governanceActionCount,
@@ -2289,7 +2331,7 @@ describe("trust registry contract", () => {
       registry, { ...issuerAuthorization, evidenceHash: proposalEvidenceHash },
       registerIssuerEvidenceVerifier(registry),
     );
-    const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2396,7 +2438,7 @@ describe("trust registry contract", () => {
     ).toThrow(/not active/i);
 
     const mismatchedEvidenceHash = labelToBytes32("evidence:application:mismatched");
-    const mismatchedAuthorizationSignature = signPolicyBoundMaintainerActionFromSeed(
+    const mismatchedAuthorizationSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2419,7 +2461,7 @@ describe("trust registry contract", () => {
     ).toThrow(/must match the proposed application/i);
 
     const authorizationEvidenceHash = proposalEvidenceHash;
-    const authorizationSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizationSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2482,7 +2524,7 @@ describe("trust registry contract", () => {
     );
 
     const activationEvidenceHash = proposalEvidenceHash;
-    const activationSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activationSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2540,7 +2582,7 @@ describe("trust registry contract", () => {
     const verifier = registerIssuerEvidenceVerifier(registry);
     const archivedProof = issuerProposalProof(registry, archivedProposal, verifier);
 
-    const archivedProposalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archivedProposalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2568,7 +2610,7 @@ describe("trust registry contract", () => {
       archivedProposal.authorizationId,
     );
     const archiveEvidenceHash = labelToBytes32("evidence:archivable:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2592,7 +2634,7 @@ describe("trust registry contract", () => {
     ).toEqual(AuthorizationStatus.archived);
 
     const revocableProof = issuerProposalProof(registry, revocableAuthorization, verifier);
-    const revocableProposalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revocableProposalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2620,7 +2662,7 @@ describe("trust registry contract", () => {
       revocableAuthorization.authorizationId,
     );
     const authorizeEvidenceHash = revocableAuthorization.evidenceHash;
-    const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2643,7 +2685,7 @@ describe("trust registry contract", () => {
       revocableAuthorization.authorizationId,
     );
     const revokeEvidenceHash = labelToBytes32("evidence:revocable:revoke");
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2680,7 +2722,7 @@ describe("trust registry contract", () => {
       issuerAuthorization.authorizationId,
     );
     const suspendEvidenceHash = labelToBytes32("evidence:degree:suspend");
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2716,7 +2758,7 @@ describe("trust registry contract", () => {
     ).toThrow(/not active/i);
 
     const revokeEvidenceHash = labelToBytes32("evidence:degree:revoke");
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2742,7 +2784,7 @@ describe("trust registry contract", () => {
     expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
 
     const archiveEvidenceHash = labelToBytes32("evidence:degree:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2791,7 +2833,7 @@ describe("trust registry contract", () => {
     const proof = issuerProposalProof(registry, issuerAuthorization, verifier);
     const proposalPayloadHash = proof.payloadHash;
     const tamperedProposalSignature = {
-      ...signPolicyBoundMaintainerActionFromSeed(
+      ...signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -2828,7 +2870,7 @@ describe("trust registry contract", () => {
       { ...issuerAuthorization, authorizationId: proposalAuthorizationId, evidenceHash: proposalEvidenceHash },
       verifier,
     );
-    const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2863,7 +2905,7 @@ describe("trust registry contract", () => {
       simulator.proposeIssuerAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -2889,7 +2931,7 @@ describe("trust registry contract", () => {
       simulator.activateIssuerAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -2919,7 +2961,7 @@ describe("trust registry contract", () => {
       simulator.proposeIssuerAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -2945,7 +2987,7 @@ describe("trust registry contract", () => {
       simulator.authorizeIssuerAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -2968,7 +3010,7 @@ describe("trust registry contract", () => {
       activeIssuerAuthorization.authorizationId,
     );
     const archiveEvidenceHash = labelToBytes32("evidence:license:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -2992,7 +3034,7 @@ describe("trust registry contract", () => {
       simulator.revokeIssuerAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -3101,7 +3143,7 @@ describe("trust registry contract", () => {
     const proposed = { ...verifierAuthorization, evidenceHash: proposalEvidenceHash };
     const proposalProof = verifierProposalProof(registry, proposed);
 
-    const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3152,7 +3194,7 @@ describe("trust registry contract", () => {
       /verifier authorization evidence must match the proposed application/i,
     );
 
-    const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3197,7 +3239,7 @@ describe("trust registry contract", () => {
       /verifier activation evidence must match the proposed application/i,
     );
 
-    const activateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3243,7 +3285,7 @@ describe("trust registry contract", () => {
       verifierAuthorization.authorizationId,
     );
     const suspendEvidenceHash = labelToBytes32("evidence:university:suspend");
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3283,7 +3325,7 @@ describe("trust registry contract", () => {
     ).toThrow(/not active/i);
 
     const revokeEvidenceHash = labelToBytes32("evidence:university:revoke");
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3309,7 +3351,7 @@ describe("trust registry contract", () => {
     expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
 
     const archiveEvidenceHash = labelToBytes32("evidence:university:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3365,7 +3407,7 @@ describe("trust registry contract", () => {
 
     const proposalProof = verifierProposalProof(registry, verifierAuthorization);
     const tamperedProposeSignature = {
-      ...signPolicyBoundMaintainerActionFromSeed(
+      ...signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -3403,7 +3445,7 @@ describe("trust registry contract", () => {
     expect(() => simulator.proposeVerifierAuthorization(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -3428,7 +3470,7 @@ describe("trust registry contract", () => {
       verifierAuthorization.authorizationId,
     );
     const archiveEvidenceHash = labelToBytes32("evidence:passport:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3452,7 +3494,7 @@ describe("trust registry contract", () => {
       simulator.revokeVerifierAuthorization(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -3515,7 +3557,7 @@ describe("trust registry contract", () => {
     const recognition = createRecognitionFixture("recognition-proof");
     const proof = recognitionProposalProof(registry, recognition, recognition.evidenceHash);
     const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId,
         simulator.getLedger().governancePolicyCommitment,
         kind, payloadHash, simulator.getLedger().governanceActionCount,
@@ -3620,7 +3662,7 @@ describe("trust registry contract", () => {
     const replacementEvidenceHash = labelToBytes32("evidence:gaia-x-application:replacement");
     const proof = recognitionProposalProof(registry, recognition, proposedEvidenceHash);
 
-    const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3649,7 +3691,7 @@ describe("trust registry contract", () => {
     expect(proposedRecord.status).toEqual(AuthorizationStatus.proposed);
     expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
 
-    const replacementAuthorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const replacementAuthorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3672,7 +3714,7 @@ describe("trust registry contract", () => {
       AuthorizationStatus.proposed,
     );
 
-    const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3696,7 +3738,7 @@ describe("trust registry contract", () => {
     expect(authorizedRecord.status).toEqual(AuthorizationStatus.authorized);
     expect(simulator.getLedger().activeRecognitionCount).toEqual(0n);
 
-    const replacementActivateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const replacementActivateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3719,7 +3761,7 @@ describe("trust registry contract", () => {
       AuthorizationStatus.authorized,
     );
 
-    const activateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3762,7 +3804,7 @@ describe("trust registry contract", () => {
 
     const createdRecord = simulator.getRecognition(recognition.recognitionId);
     const suspendEvidenceHash = labelToBytes32("evidence:eidas:suspend");
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
+    const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3800,7 +3842,7 @@ describe("trust registry contract", () => {
     ).toThrow(/not active/i);
 
     const revokeEvidenceHash = labelToBytes32("evidence:eidas:revoke");
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3824,7 +3866,7 @@ describe("trust registry contract", () => {
     expect(revokedRecord.status).toEqual(AuthorizationStatus.revoked);
 
     const archiveEvidenceHash = labelToBytes32("evidence:eidas:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3879,7 +3921,7 @@ describe("trust registry contract", () => {
 
     const proposePayloadHash = proof.payloadHash;
     const tamperedProposeSignature = {
-      ...signPolicyBoundMaintainerActionFromSeed(
+      ...signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -3916,7 +3958,7 @@ describe("trust registry contract", () => {
     expect(() => simulator.proposeRecognition(
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -3938,7 +3980,7 @@ describe("trust registry contract", () => {
     )).toThrow(/live recognition/i);
     const createdRecord = simulator.getRecognition(recognition.recognitionId);
     const archiveEvidenceHash = labelToBytes32("evidence:gaia-net:archive");
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -3962,7 +4004,7 @@ describe("trust registry contract", () => {
       simulator.revokeRecognition(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -4011,7 +4053,7 @@ describe("trust registry contract", () => {
     const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
     const auditor = createAuditorAuthorizationFixture("signed-mandate");
     const proof = auditorProposalProof(registry, auditor);
-    const sign = () => signPolicyBoundMaintainerActionFromSeed(
+    const sign = () => signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
       PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
     );
@@ -4045,7 +4087,7 @@ describe("trust registry contract", () => {
     const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
     const auditor = createAuditorAuthorizationFixture("stale-mandate");
     const proof = auditorProposalProof(registry, auditor);
-    const proposalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
       PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash, simulator.getLedger().governanceActionCount,
     );
@@ -4065,7 +4107,7 @@ describe("trust registry contract", () => {
     );
     simulator.updateMaintainerThresholdPolicy(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId, oldPolicy,
         UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyHash,
         simulator.getLedger().governanceActionCount,
@@ -4078,7 +4120,7 @@ describe("trust registry contract", () => {
     );
     expect(() => simulator.authorizeAuditorAuthorization(
       bootstrapMaintainer.keyId, bootstrapPublicKey,
-      signPolicyBoundMaintainerActionFromSeed(
+      signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed, registryId, newPolicy, AUTHORIZE_AUDITOR_ACTION_KIND,
         approvalHash, simulator.getLedger().governanceActionCount,
       ),
@@ -4102,7 +4144,7 @@ describe("trust registry contract", () => {
     const proposalProof = auditorProposalProof(registry,
       { ...auditorAuthorization, evidenceHash: proposalEvidenceHash });
 
-    const proposeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const proposeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4152,7 +4194,7 @@ describe("trust registry contract", () => {
       /auditor authorization evidence must match the proposed application/i,
     );
 
-    const authorizeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const authorizeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4196,7 +4238,7 @@ describe("trust registry contract", () => {
       /auditor activation evidence must match the proposed application/i,
     );
 
-    const activateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const activateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4235,7 +4277,7 @@ describe("trust registry contract", () => {
       ),
     ).not.toThrow();
 
-    const revokeSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revokeSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4259,7 +4301,7 @@ describe("trust registry contract", () => {
     const revokedRecord = simulator.getAuditorAuthorization(
       auditorAuthorization.authorizationId,
     );
-    const archiveSignature = signPolicyBoundMaintainerActionFromSeed(
+    const archiveSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4295,7 +4337,7 @@ describe("trust registry contract", () => {
       simulator.getLedger().governancePolicyCommitment,
     );
     const actionSequence = simulator.getLedger().governanceActionCount;
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4387,7 +4429,7 @@ describe("trust registry contract", () => {
       epoch.validUntilSequence,
     );
     const tamperedSignature = {
-      ...signPolicyBoundMaintainerActionFromSeed(
+      ...signFixtureDeploymentBoundActionFromSeed(simulator,
         bootstrapMaintainer.seed,
         registryId,
         simulator.getLedger().governancePolicyCommitment,
@@ -4413,7 +4455,7 @@ describe("trust registry contract", () => {
     ).toThrow(/invalid jubjub schnorr signature/i);
 
     const uncommittedPolicyRoot = labelToBytes32("policy-root:uncommitted");
-    const uncommittedSignature = signPolicyBoundMaintainerActionFromSeed(
+    const uncommittedSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4443,7 +4485,7 @@ describe("trust registry contract", () => {
     ).toThrow(/committed governance policy/i);
 
     const futureFrom = simulator.getLedger().governanceActionCount + 1n;
-    const futureSignature = signPolicyBoundMaintainerActionFromSeed(
+    const futureSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4472,7 +4514,7 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/cannot start after its publication action/i);
 
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4496,7 +4538,7 @@ describe("trust registry contract", () => {
       simulator.publishEpochCommitment(
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
-        signPolicyBoundMaintainerActionFromSeed(
+        signFixtureDeploymentBoundActionFromSeed(simulator,
           bootstrapMaintainer.seed,
           registryId,
           simulator.getLedger().governancePolicyCommitment,
@@ -4522,7 +4564,7 @@ describe("trust registry contract", () => {
 
     const revisionSequence = simulator.getLedger().governanceActionCount;
     const revisedPolicyRoot = labelToBytes32("policy:kanon:v2");
-    const revisionSignature = signPolicyBoundMaintainerActionFromSeed(
+    const revisionSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4553,6 +4595,8 @@ describe("trust registry contract", () => {
     const revisionEventHash = simulator.getLedger().lastGovernanceEventHash;
     expect(Buffer.from(revisionEventHash)).toEqual(Buffer.from(pureCircuits.governanceEventHash(
       registryId,
+      FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress),
       epoch.policyRoot,
       simulator.getLedger().lastAuthorizedSignerSetHash,
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
@@ -4570,7 +4614,7 @@ describe("trust registry contract", () => {
     const historicalEpochId = labelToBytes32("epoch:historical-old-policy");
     const historicalFrom = epoch.validFromSequence;
     const historicalUntil = epoch.validUntilSequence;
-    const historicalSignature = signPolicyBoundMaintainerActionFromSeed(
+    const historicalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,
@@ -4608,7 +4652,7 @@ describe("trust registry contract", () => {
 
     const lateSequence = simulator.getLedger().governanceActionCount;
     const lateEpochId = labelToBytes32("epoch:late-old-policy");
-    const lateSignature = signPolicyBoundMaintainerActionFromSeed(
+    const lateSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
       simulator.getLedger().governancePolicyCommitment,

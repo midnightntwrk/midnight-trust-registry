@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +9,7 @@ import {
   computeUpdateEvidenceVerifierKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../signing.js";
 import {
   createMaintainerFixture,
@@ -21,6 +22,7 @@ const REGISTER = encodeCompactActionKind("tr:evidence-verifier:register");
 const SUSPEND = encodeCompactActionKind("tr:evidence-verifier:suspend");
 const REVOKE = encodeCompactActionKind("tr:evidence-verifier:revoke");
 const ROTATE = encodeCompactActionKind("tr:evidence-verifier:rotate");
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
 
 const fixture = () => {
   const registryId = labelToBytes32("registry:evidence-test");
@@ -29,7 +31,7 @@ const fixture = () => {
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const simulator = new TrustRegistrySimulator({
     registryId,
-    networkIdCommitment: labelToBytes32("network:undeployed"),
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
     registryDidCommitment: labelToBytes32("did:midnight:evidence-registry"),
     governancePolicyCommitment: policyCommitment,
     maintainerId: maintainer.maintainerId,
@@ -39,9 +41,11 @@ const fixture = () => {
     maintainerThreshold: 1n,
   });
   const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       registryId,
+      FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress),
       simulator.getLedger().governancePolicyCommitment,
       kind,
       payloadHash,

@@ -9,10 +9,13 @@ describe("trust registry contract package surfaces", () => {
     expect(PackageSurface.pureCircuits).toBeDefined();
     expect(PackageSurface.TrustRegistryContract).toBeDefined();
     expect(PackageSurface).not.toHaveProperty("TrustRegistrySimulator");
-    expect(PackageSurface.signPolicyBoundMaintainerActionFromSeed).toBeDefined();
+    expect(PackageSurface.signDeploymentBoundMaintainerActionFromSeed).toBeDefined();
   });
 
   it("does not expose pre-release direct-create or unbound action APIs", () => {
+    expect(PackageSurface).not.toHaveProperty("signPolicyBoundMaintainerActionFromSeed");
+    expect(PackageSurface).not.toHaveProperty("verifyPolicyBoundMaintainerAction");
+    expect(PackageSurface).not.toHaveProperty("computePolicyBoundMaintainerActionDigest");
     expect(PackageSurface).not.toHaveProperty("signMaintainerActionDigest");
     expect(PackageSurface).not.toHaveProperty("signMaintainerActionDigestFromSeed");
     expect(PackageSurface).not.toHaveProperty("verifyMaintainerActionDigest");

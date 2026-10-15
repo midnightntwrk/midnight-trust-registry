@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createCircuitContext, sampleContractAddress, type CircuitResults } from "@midnight-ntwrk/compact-runtime";
+import { createCircuitContext, encodeContractAddress, type CircuitResults } from "@midnight-ntwrk/compact-runtime";
 import { signJubjubDigestFromSeed, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +12,7 @@ import {
   computeUpdateVerifierAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../signing.js";
 import { createMaintainerFixture, labelToBytes32, TrustRegistrySimulator } from "../testing.js";
 import {
@@ -24,6 +24,7 @@ import { type TrustRegistryPrivateState } from "../witnesses.js";
 
 const bytesEqual = (actual: Uint8Array, expected: Uint8Array) =>
   expect(Buffer.from(actual)).toEqual(Buffer.from(expected));
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
 
 const proposal = (label = "first") => ({
   authorizationId: labelToBytes32(`verifier-authorization:${label}`),
@@ -53,7 +54,7 @@ const setup = () => {
   };
   const simulator = new TrustRegistrySimulator({
     registryId,
-    networkIdCommitment: labelToBytes32("network:undeployed"),
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
     registryDidCommitment,
     governancePolicyCommitment: policy,
     maintainerId: maintainer.maintainerId,
@@ -62,8 +63,9 @@ const setup = () => {
     maintainerPublicKey,
     maintainerThreshold: 1n,
   });
-  const sign = (kind: string, payloadHash: Uint8Array) => signPolicyBoundMaintainerActionFromSeed(
-    maintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+  const sign = (kind: string, payloadHash: Uint8Array) => signDeploymentBoundMaintainerActionFromSeed(
+    maintainer.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+    simulator.getLedger().governancePolicyCommitment,
     encodeCompactActionKind(kind), payloadHash, simulator.getLedger().governanceActionCount,
   );
   const keyPayload = computeCreateEvidenceVerifierKeyPayloadHash(
@@ -91,7 +93,7 @@ const setup = () => {
   };
   const commit = <T>(result: CircuitResults<TrustRegistryPrivateState, T>): T => {
     simulator.circuitContext = createCircuitContext(
-      sampleContractAddress(),
+      simulator.contractAddress,
       result.context.currentZswapLocalState,
       result.context.currentQueryContext.state,
       result.context.currentPrivateState,
