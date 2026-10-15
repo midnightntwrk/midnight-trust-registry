@@ -139,6 +139,16 @@ Current coverage:
   local fixtures; production finality, governed external VC schema enrollment,
   production finalized authority-key reads and durable deployed consumer
   state remain open.
+- `resolveCompactHistoricalEpochAnchor` projects an epoch record, committed
+  policy version, and publication signer from a caller-authenticated finalized
+  Compact ledger view. The caller supplies the registry and epoch IDs, policy
+  version, and an authenticated sequence-to-time mapping; wrong format,
+  registry, epoch, policy root, or signer record fails closed. The native
+  historical HTTP verifier then checks the API claim against this context.
+  This adapter does not fetch network state, establish finality, prove a
+  canonical per-statement epoch selection, or derive wall-clock time from
+  Midnight counters. Simulator demos exercise the projection with local
+  ledger state only.
 - `createQuorumGatedVcAuthoritySigner` is a signer-side port wrapper. It uses
   its own trusted registry/DID readers to recheck current finalized quorum and
   method state, then requires an independent finalized current VC authority-key

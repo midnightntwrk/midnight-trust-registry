@@ -22,6 +22,8 @@ import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/
 import {
   bytes32Commitment,
   createVerifiedDecisionEvidenceSource,
+  defaultSequenceToTimestamp,
+  verifyHistoricalRecognitionEvidenceFromApi,
   verifyHistoricalRecognitionEvidenceResponse,
 } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
@@ -49,6 +51,7 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  resolveCompactHistoricalEpochAnchor,
   recognitionAuthorityAssertionDigest,
   recognitionAccreditationSubmissionCommitment,
   VP_FIXTURE_NONCE,
@@ -1666,6 +1669,12 @@ try {
   const recognitionBundle = await expectHttp(await fetch(
     `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
   ), 200);
+  const locallyVerifiedRecognition = harness.evaluateCurrentRecognitionDecision(recognition);
+  const trustedRecognitionEpoch = {
+    epochId: locallyVerifiedRecognition.epoch.epochId,
+    policyVersion: locallyVerifiedRecognition.policy.version,
+  };
+  assert.equal(recognitionBundle.epoch.epochId, trustedRecognitionEpoch.epochId);
   assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
     id: "recognition-not-issuer-authorization",
@@ -1984,14 +1993,14 @@ try {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(selection),
       }), 200);
-      const epochRecord = client.getEpochCommitmentById(response.bundle.epoch.epochId);
-      const maintainer = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
-      const anchor = {
-        epochRecord,
-        maintainerPublicKey: maintainer.publicKey,
-        registryIdCommitment: bytes32Commitment(harness.registryId),
-      };
+      const anchor = resolveCompactHistoricalEpochAnchor({
+        ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        ...trustedRecognitionEpoch,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
+      });
+      const { epochRecord } = anchor;
       assert.equal(verifyHistoricalRecognitionEvidenceResponse(response, selection, anchor).trustedAtTime, true);
+      assert.equal((await verifyHistoricalRecognitionEvidenceFromApi(base, selection, anchor)).trustedAtTime, true);
       assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, {
         ...selection, recognizedRegistryId: `${selection.recognizedRegistryId}:other`,
       }, anchor), /scope mismatch/iu);

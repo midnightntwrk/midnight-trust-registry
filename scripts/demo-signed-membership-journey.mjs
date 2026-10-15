@@ -18,7 +18,11 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { verifyHistoricalAuthorizationEvidenceResponse } from "../packages/trust-registry-client/dist/index.js";
+import {
+  defaultSequenceToTimestamp,
+  verifyHistoricalAuthorizationEvidenceFromApi,
+  verifyHistoricalAuthorizationEvidenceResponse,
+} from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "../packages/trust-registry-cli/dist/index.js";
 import {
   computeAuthorizationScopeCommitment,
@@ -40,6 +44,7 @@ import {
   createVerifierScenarioFixture,
   bytes32Commitment,
   LocalTrustRegistryIntegrationHarness,
+  resolveCompactHistoricalEpochAnchor,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -86,6 +91,7 @@ const profiles = {
       executeProposal: (evidence, signers, signature, expected) =>
         harness.executeIssuerProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment),
+      getStatusRecord: () => harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment),
       signProposalEvidence: (prepared) => harness.signIssuerProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareIssuerDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeIssuerDecisionWithSignatures(fixture, action, signers),
@@ -103,6 +109,7 @@ const profiles = {
       executeProposal: (evidence, signers, signature, expected) =>
         harness.executeVerifierProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment),
+      getStatusRecord: () => harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment),
       signProposalEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareVerifierDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeVerifierDecisionWithSignatures(fixture, action, signers),
@@ -120,6 +127,7 @@ const profiles = {
       executeProposal: (evidence, signers, signature, expected) =>
         harness.executeAuditorProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment),
+      getStatusRecord: () => harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment),
       signProposalEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareAuditorDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeAuditorDecisionWithSignatures(fixture, action, signers),
@@ -373,9 +381,13 @@ try {
   const applicantClient = new TrustRegistryApplicantPortalClient(base, authenticatedFetch);
   const adminClient = new TrustRegistryAdminConsoleClient(base, authenticatedFetch);
   const publishedEpochIds = [];
+  const trustedEpochsByPhase = new Map();
   const publishGovernedEpoch = async (phase) => {
     const epochLabel = `${role}-${phase}`;
+    const locallyPrepared = harness.prepareRegistryEpochPublicationAction(epochLabel);
+    const policyVersion = `v${harness.simulator.getLedger().governancePolicyVersion.toString()}`;
     const prepared = await adminClient.prepareGovernedEpoch(epochLabel);
+    assert.equal(prepared.epochId, locallyPrepared.epochId);
     const before = harness.simulator.getLedger().governanceActionCount;
     const publishPath = "/v1/governed/epochs/publish";
     assert.equal((await post(publishPath, {
@@ -404,6 +416,13 @@ try {
     ), 200);
     assert.equal(published.epochId, receipt.epoch.epochId);
     publishedEpochIds.push(receipt.epoch.epochId);
+    if (profile.getStatusRecord !== undefined) {
+      const { lastStatusSequence } = profile.getStatusRecord();
+      trustedEpochsByPhase.set(phase, {
+        epochId: createScopedIdentifier("epoch", harness.registryId, `seq-${lastStatusSequence.toString()}`),
+        policyVersion,
+      });
+    }
   };
   const post = (path, body, withToken = true) => fetch(`${base}${path}`, {
     method: "POST",
@@ -665,17 +684,18 @@ try {
     const historicalSelection = (at) => ({
       role, subjectDid: participant.subjectDid, resourceId, at,
     });
-    const queryVerifiedEvidence = async (at) => {
+    const queryVerifiedEvidence = async (at, trustedEpoch) => {
       const selection = historicalSelection(at);
       const response = await expectHttp(await post("/v1/authorizations/evaluate/evidence", selection), 200);
-      const epochRecord = client.getEpochCommitmentById(response.bundle.epoch.epochId);
-      const maintainer = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
-      const anchor = {
-        epochRecord,
-        maintainerPublicKey: maintainer.publicKey,
-        registryIdCommitment: bytes32Commitment(harness.registryId),
-      };
+      const anchor = resolveCompactHistoricalEpochAnchor({
+        ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        ...trustedEpoch,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
+      });
+      const { epochRecord } = anchor;
       const decision = verifyHistoricalAuthorizationEvidenceResponse(response, selection, anchor);
+      const fromApi = await verifyHistoricalAuthorizationEvidenceFromApi(base, selection, anchor);
+      assert.equal(fromApi.trustedAtTime, decision.trustedAtTime);
       assert.throws(() => verifyHistoricalAuthorizationEvidenceResponse(response, {
         ...selection, resourceId: otherResourceId,
       }, anchor), /scope mismatch/iu);
@@ -724,8 +744,8 @@ try {
       const historicalDecision = await expectHttp(await queryDecision(activeAt), 200);
       assert.equal(currentDecision.trustedAtTime, false);
       assert.equal(historicalDecision.trustedAtTime, true);
-      assert.equal((await queryVerifiedEvidence(changedAt)).trustedAtTime, false);
-      assert.equal((await queryVerifiedEvidence(activeAt)).trustedAtTime, true);
+      assert.equal((await queryVerifiedEvidence(changedAt, trustedEpochsByPhase.get(action))).trustedAtTime, false);
+      assert.equal((await queryVerifiedEvidence(activeAt, trustedEpochsByPhase.get("activate"))).trustedAtTime, true);
       if (role === "issuer" || role === "verifier") {
         const trqp = await expectHttp(await post(
           "/v1/trqp/authorizations/query", trqpRequest(changedAt),

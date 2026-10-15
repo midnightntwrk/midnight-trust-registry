@@ -21,6 +21,18 @@ proof verify. They do **not** authenticate the supplied anchor or decide which
 epoch was canonical at that time. A `404`/`424` is an error, not an
 authorization denial; remote HTTP is rejected in favor of HTTPS.
 
+The integration package's `resolveCompactHistoricalEpochAnchor` can extract
+that verifier context from a **host-authenticated finalized Compact ledger
+view**. It checks the registry, accepted epoch record, committed policy
+version, and publication signer before the client evaluates the HTTP claim.
+The embedding host still must authenticate the deployment and finalized
+ledger view, select the appropriate historical epoch, and supply a trusted
+counter-to-time mapping. Midnight counters are not network timestamps.
+In the local demos, the expected per-statement epoch is derived from the
+Compact status sequence before the API response is verified; the HTTP server
+does not choose its own anchor. This fixture-specific selection does not
+establish canonical network history for a production deployment.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).

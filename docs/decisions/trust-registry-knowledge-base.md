@@ -1217,3 +1217,16 @@ commitment; the HTTP response is never allowed to supply its own anchor.
 Remote fetch requires HTTPS, loopback HTTP is local-only, redirects are
 rejected, and `404`/`424` remain errors rather than negative decisions.
 Canonical historical epoch selection and network finality remain external.
+The integration package now projects historical verification context from a
+host-authenticated Compact ledger view rather than requiring demo callers to
+manually combine epoch and signer map reads. It rejects wrong contract format,
+registry commitment, missing epoch, uncommitted policy root/version, and
+inconsistent publication signer. Signed issuer/verifier/auditor and governed
+recognition demos now use this projection and the native HTTP fetch-plus-proof
+client. The simulator supplies the ledger and deterministic counter-to-time
+mapping; a production host must supply an authenticated finalized view and
+its own historical epoch-selection/time provenance.
+The signed journeys derive expected statement epochs from Compact status
+sequences, and the recognition demo captures its expected epoch from the local
+simulator before accepting API evidence. Neither demo lets the API select its
+own anchor. This is a local fixture boundary, not a network-finality proof.
