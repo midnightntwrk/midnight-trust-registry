@@ -72,5 +72,5 @@ test("full integration preserves full contract artifacts and checks package cont
   const scripts = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).scripts;
   assert.match(scripts.integration, /turbo run build --filter=@midnight-ntwrk\/trust-registry-trqp-adapter/);
   assert.doesNotMatch(scripts.integration, /build:light/);
-  assert.match(scripts.integration, /&& pnpm run packages:check-contents$/);
+  assert.match(scripts.integration, /&& pnpm run contract:check-full-artifacts$/);
 });
