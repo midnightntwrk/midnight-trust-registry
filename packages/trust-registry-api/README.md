@@ -217,6 +217,10 @@ the packaged CLI does not configure it or a network-finality reader. It
 stores neither raw VC/VP nor maintainer or verifier signatures. See
 `docs/plans/governed-proposal-submission-handoff.md` for the state model and
 remaining production requirements.
+The local adapter has an explicit 10,000-attempt capacity. At capacity it
+returns 503 `proposal-submission-capacity` before calling the Compact port;
+operators must preserve and reconcile the journal before a controlled
+rotation. It never silently evicts unresolved attempts.
 
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with

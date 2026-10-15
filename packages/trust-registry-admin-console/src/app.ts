@@ -590,8 +590,8 @@ export const createAdminConsoleApp = (
       if (!isCurrentHost(host)) return;
       await refreshBoard(`Compact ${role} proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
       if (!isCurrentHost(host)) return;
-      setState({ governedBusy: false, proposalAuthorizationId: "", proposalEvidenceJson: "",
-        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
+      setState({ governedBusy: false, proposalPrepared: undefined,
+        proposalSignersJson: "", proposalVerifierSignature: "" });
     } catch (error) {
       if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error),

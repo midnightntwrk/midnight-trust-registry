@@ -59,6 +59,13 @@ export class ProposalSubmissionConflictError extends Error {
   }
 }
 
+export class ProposalSubmissionCapacityError extends Error {
+  constructor() {
+    super("Proposal submission journal capacity is exhausted; operator rotation is required");
+    this.name = "ProposalSubmissionCapacityError";
+  }
+}
+
 /** Reservation survives a lost Compact response; only an independently finalized reader can confirm observation. */
 export interface ProposalSubmissionJournal {
   executeOnce(
@@ -98,6 +105,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         if (existing.evidenceCommitment !== key.evidenceCommitment) throw new ProposalSubmissionConflictError();
         throw new ProposalSubmissionAlreadyPendingError(existing.state);
       }
+      if (state.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
       await this.writeState(StateSchema.parse({
         ...state, attempts: [...state.attempts, { ...key, state: "reserved", eventHash: null }],
       }));

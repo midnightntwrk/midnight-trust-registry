@@ -145,6 +145,7 @@ import {
 } from "./proposal-admission.js";
 import {
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
@@ -775,6 +776,11 @@ export const createTrustRegistryApiServer = (
     if (error instanceof ProposalSubmissionConflictError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-conflict", 409,
         "proposal submission conflicts with recorded evidence or event");
+    }
+    if (error instanceof ProposalSubmissionCapacityError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-capacity", 503,
+        "proposal submission journal capacity exhausted",
+        "Operator rotation is required; no new proposal was submitted.");
     }
     throw error;
   };

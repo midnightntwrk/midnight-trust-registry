@@ -420,6 +420,13 @@ describe("admin console browser handlers", () => {
     expect(window.localStorage.getItem("trust-registry.admin.api-base")).toBeNull();
     expect(window.localStorage.length).toBe(0);
     expect(root.querySelector("[data-proposal-submit]")).toBeNull();
+    expect(root.querySelector<HTMLInputElement>("[data-proposal-id]")?.value).toBe("issuer:alice");
+    expect(root.querySelector<HTMLTextAreaElement>("[data-proposal-evidence]")?.value).toBe(JSON.stringify(changedEvidence));
+    expect(root.querySelector("[data-proposal-signers]")).toBeNull();
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")!.click();
+    await vi.waitFor(() => expect(posted.at(-1)?.path).toBe("/v1/governed/issuer/issuer%3Aalice/proposal/resolve"));
+    expect(posted.at(-1)?.body).toEqual({ evidence: changedEvidence });
+    await vi.waitFor(() => expect(root.textContent).toContain("Proposal not observed"));
 
     const selectRole = (role: string) => {
       const selector = root.querySelector<HTMLSelectElement>("[data-proposal-role]")!;

@@ -8,6 +8,7 @@ import {
   FileProposalSubmissionJournal,
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   type GovernedProposalSubmissionRole,
 } from "../proposal-submission-journal.js";
@@ -139,5 +140,19 @@ describe("private governed proposal submission journal", () => {
     await writeFile(path, JSON.stringify({ version: 1, attempts: [{ role: "issuer", authorizationId,
       evidenceCommitment, state: "observed", eventHash: null }] }), { mode: 0o600 });
     await expect(journal.read("issuer", authorizationId)).rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+  });
+
+  it("reports the explicit capacity limit without crossing the submission boundary", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await writeFile(path, JSON.stringify({ version: 1, attempts: Array.from({ length: 10_000 }, (_, index) => ({
+      role: "issuer", authorizationId: `existing:${index}`, evidenceCommitment,
+      state: "observed", eventHash,
+    })) }), { mode: 0o600 });
+    let executed = false;
+    await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
+      executed = true;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+    expect(executed).toBe(false);
   });
 });
