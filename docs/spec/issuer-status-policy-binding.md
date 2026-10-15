@@ -1,7 +1,8 @@
 # Issuer Status Policy Binding V1
 
 Status: governed issuer-authorization commitment and authenticated evidence
-preimage; **not yet a supported VC status decision**. Tracks #90 and #76.
+preimage, plus a reference DID-signed status-attestation verifier;
+**not yet a network-backed VC non-revocation decision**. Tracks #90 and #76.
 
 An issuer authorization that permits credential issuance needs an accepted
 status registry and authority. The old evidence-bundle
@@ -40,6 +41,16 @@ This authenticates the accepted registry and authority *identifier*, not a
 credential's live status. A verifier must still resolve the status-authority
 DID method at the relevant decision state and validate the status proof,
 freshness, and non-revocation against an authenticated status-registry state.
-The current VC status-registry package documents prototype authority and
-root-verification limitations, so this binding alone does not enable a
-supported non-revocation decision or restore a federation status claim.
+The reference application-VP adapter accepts a signed status assertion only
+when the caller supplies this binding from an already verified governed issuer
+authorization. The signed statement binds the status registry, assertion
+method, status handle, credential body root, application challenge hash,
+active flag, and a maximum five-minute observation window. The verifier
+resolves the authority's current Midnight DID assertion key, checks its
+verification-method reference against the credential status binding, and
+verifies the domain-separated JubJub signature. A revoked, stale, substituted,
+or unsigned assertion fails closed. This is an authority attestation, not an
+independently verified non-revocation proof. The deterministic reference
+fetcher does not authenticate a live status-registry root or network finality;
+production federation status claims remain unsupported until that boundary is
+implemented.

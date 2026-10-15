@@ -1073,3 +1073,13 @@ application IDs and consumed nonces, disables the old pending VP binding,
 and accepts a new DID-signed application plus authorization ID for the same
 scope. The host must authenticate Compact finality; the packaged CLI still
 does not wire a production registration or governed-action port.
+
+The local application VP fixture now uses a DID-signed status attestation by
+default rather than an unsigned boolean decision. Its verifier pins the
+fixture status registry and authority method, binds credential root, status
+handle, and one-use challenge, then checks assertion-key signature, DID state,
+active flag, and five-minute freshness. The `statusDecision` fixture override
+remains only for adversarial tests. This improves #76 intake evidence but does
+not verify a live status-registry root or network finality; no public
+non-revocation claim follows from the fixture. Focused integration tests cover
+re-signed substitutions and unsigned tampering.

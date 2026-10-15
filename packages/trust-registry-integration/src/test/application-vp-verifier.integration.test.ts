@@ -188,7 +188,7 @@ describe("published VC proof and DID application verifier port", () => {
     const context = { nonce: NONCE, binding, evaluatedAt: new Date(NOW).toISOString() };
     const verified = await ports.verifyPresentation(input.submission, context);
     expect(verified.subjectDid).toBe(input.expectedSubjectDid);
-    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
+    expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());
     expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
     const commitment = sha256Hex("application-evidence-test");
     const signature = await ports.signEvidence(commitment);
@@ -312,7 +312,7 @@ describe("published VC proof and DID application verifier port", () => {
     expect(verified.scopeCommitment).toBe(computeAuthorizationScopeCommitment(input.scope));
     expect(verified.presentationHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(verified.presentationHash).not.toBe(sha256Hex(bytes32("presentation-body")));
-    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
+    expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());
     expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
     expect(family.assertIssuerEligible).toHaveBeenCalledOnce();
     expect(family.assertCredentialBodyBinding).toHaveBeenCalledOnce();

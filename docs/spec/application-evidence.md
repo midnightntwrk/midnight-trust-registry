@@ -319,11 +319,19 @@ bytes, checks their published VC/VP signatures against Midnight DID keys, and
 derives role scope from the signed fixture credential body. The signed fixture
 presentation body names that credential body root and holder DID; a separately
 valid presentation for a different credential is rejected before eligibility.
-Its test-family status decision must match the signed registry, handle, and
-authority method and remain active and fresh. It still uses
-test-only issuer eligibility and status answers, accepts only its fixture
-credential-body format, and MUST NOT be mounted as a public verifier or treated
-as production accreditation/non-revocation evidence.
+By default, its family verifies a five-minute, nonce- and credential-root-bound
+status attestation against a pinned status registry and assertion method. The
+fixture pins these from its signed credential body; production MUST derive the
+anchor from a verified governed issuer status-policy binding instead. The
+authority's current Midnight DID
+assertion key verifies a domain-separated JubJub signature. The registry,
+method, handle, credential root, nonce hash, active flag, observation window,
+and DID state version are all checked before returning an expiry bound.
+Explicit `statusDecision` overrides exist only for negative test cases. The
+fixture still uses test-only issuer eligibility and a deterministic attestation
+fetcher, accepts only its fixture credential-body format, and MUST NOT be
+mounted as a public verifier. A signed authority assertion is not an
+independent status-registry root or non-revocation proof.
 
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store

@@ -7,7 +7,8 @@ import {
   signMidnightDIDPresentationProof,
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, signApplicationEvidenceCommitmentFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signApplicationEvidenceCommitmentFromSeed } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationScopeSchema,
   computeAuthorizationScopeCommitment,
@@ -16,6 +17,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
+import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource } from "./application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
 import { createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture, createMidnightDid } from "./fixtures.js";
@@ -108,7 +110,7 @@ type FixtureStatusDecision = {
   validUntilMs: number;
 };
 
-/** Local proof fixture with real published VC signatures but policy assertions supplied by a test family. */
+/** Local proof fixture with published VC signatures and a DID-signed status attestation by default. */
 export async function createApplicationVpScenarioFixture(
   nonce = VP_FIXTURE_NONCE,
   options: {
@@ -241,6 +243,36 @@ export async function createApplicationVpScenarioFixture(
     validUntilMs: VP_FIXTURE_TIME_MS + 15 * 60_000,
     ...options.statusDecision,
   };
+  const statusStatement = {
+    version: "tr-application-status-attestation-v1" as const,
+    statusRegistryId: credentialBody.statusRegistryId,
+    statusAuthorityMethodId: credentialBody.statusAuthorityMethod,
+    statusHandleCommitment: credentialBody.statusHandleCommitment,
+    credentialBodyRoot: hex(credentialBodyRoot),
+    challengeHash: sha256Hex(Buffer.from(nonce.slice(2), "hex")),
+    active: true,
+    observedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
+    expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString(),
+  };
+  const signedStatusAttestation = {
+    statement: statusStatement,
+    proof: {
+      verificationMethodId: credentialBody.statusAuthorityMethod,
+      algorithm: "jubjub-schnorr" as const,
+      signature: hex(encodeJubjubSignature(signJubjubDigest(
+        issuerSecret,
+        applicationStatusAttestationDigest(statusStatement),
+      ))),
+    },
+  };
+  const attestedStatus = createAttestedApplicationStatusSource({
+    binding: {
+      statusRegistryId: credentialBody.statusRegistryId,
+      statusAuthorityVerificationMethod: credentialBody.statusAuthorityMethod,
+    },
+    resolver,
+    fetchAttestation: async () => signedStatusAttestation,
+  });
   const family: ApplicationVpFamilyAdapter<typeof submission> = {
     prepare: async (submitted) => {
       if (
@@ -299,13 +331,16 @@ export async function createApplicationVpScenarioFixture(
     },
     assertStatusActive: async (prepared) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
-      if (
-        !body || !statusDecision.active
-        || statusDecision.registryId !== body.statusRegistryId
-        || statusDecision.authorityMethod !== body.statusAuthorityMethod
-        || statusDecision.statusHandleCommitment !== body.statusHandleCommitment
-      ) throw new TypeError("Application VP fixture status is not active under the signed binding");
-      return { validUntilMs: statusDecision.validUntilMs };
+      if (!body) throw new TypeError("Application VP fixture credential is missing");
+      if (options.statusDecision) {
+        if (!statusDecision.active
+          || statusDecision.registryId !== body.statusRegistryId
+          || statusDecision.authorityMethod !== body.statusAuthorityMethod
+          || statusDecision.statusHandleCommitment !== body.statusHandleCommitment
+        ) throw new TypeError("Application VP fixture status is not active under the signed binding");
+        return { validUntilMs: statusDecision.validUntilMs };
+      }
+      return attestedStatus({ material: prepared, nonce, evaluatedAtMs: VP_FIXTURE_TIME_MS });
     },
     assertRoleClaims: async (prepared) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
@@ -339,6 +374,7 @@ export async function createApplicationVpScenarioFixture(
     signer,
     subjectAuthentication: { method: holderMethod, secretScalar: holderSecret },
     subjectAssertion: { method: subjectAssertionMethod, secretScalar: subjectAssertionSecret },
+    signedStatusAttestation,
   };
 }
 
