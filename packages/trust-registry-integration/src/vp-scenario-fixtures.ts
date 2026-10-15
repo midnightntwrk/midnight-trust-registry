@@ -115,6 +115,10 @@ type FixtureStatusDecision = {
 export async function createApplicationVpScenarioFixture(
   nonce = VP_FIXTURE_NONCE,
   options: {
+    issuerDid?: string;
+    issuerSecret?: bigint;
+    issuerDidVersion?: bigint;
+    statusPolicyBinding?: IssuerStatusPolicyBinding;
     subjectDid?: string;
     evidenceVerifierDid?: string;
     evidenceVerifierMethodId?: string;
@@ -123,17 +127,27 @@ export async function createApplicationVpScenarioFixture(
     presentationCredentialBodyRoot?: string;
   } = {},
 ) {
-  const issuerDid = createMidnightDid("vp-issuer");
+  const issuerDid = options.issuerDid ?? createMidnightDid("vp-issuer");
   const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
   const evidenceVerifierDid = options.evidenceVerifierDid ?? createMidnightDid("vp-evidence-verifier");
   const evidenceVerifierMethodId = options.evidenceVerifierMethodId ?? "assertion-1";
-  const issuerSecret = 19n;
+  const issuerSecret = options.issuerSecret ?? 19n;
+  const statusAuthorityMethod = options.statusPolicyBinding?.statusAuthorityVerificationMethod
+    ?? `${issuerDid}#assertion-1`;
+  if (!statusAuthorityMethod.startsWith(`${issuerDid}#`)) {
+    throw new Error("VP fixture status authority method must belong to its issuer DID");
+  }
+  const statusMethodId = statusAuthorityMethod.slice(issuerDid.length + 1);
+  const statusRegistryId = options.statusPolicyBinding?.statusRegistryId ?? hex(bytes32("status-registry"));
   const holderSecret = 23n;
   const subjectAssertionSecret = 29n;
   const resolver = createMidnightDidResolver([
     createMidnightDidLedgerFixture(issuerDid, {
-      verificationMethodId: "assertion-1",
-      schnorrJubjubPublicKey: deriveJubjubPublicKey(issuerSecret),
+      schnorrJubjubAssertionMethods: [
+        { id: "assertion-1", publicKey: deriveJubjubPublicKey(issuerSecret) },
+        ...(statusMethodId === "assertion-1" ? [] : [{ id: statusMethodId, publicKey: deriveJubjubPublicKey(issuerSecret) }]),
+      ],
+      ...(options.issuerDidVersion === undefined ? {} : { version: options.issuerDidVersion }),
     }),
     createMidnightDidLedgerFixture(subjectDid, {
       schnorrJubjubAuthenticationMethods: [
@@ -152,6 +166,12 @@ export async function createApplicationVpScenarioFixture(
     resolver,
     did: parseMidnightDIDString(issuerDid),
     verificationMethodId: "#assertion-1",
+    relationship: "assertionMethod",
+  });
+  const statusMethod = await resolveMidnightDIDMethodBinding({
+    resolver,
+    did: parseMidnightDIDString(issuerDid),
+    verificationMethodId: statusAuthorityMethod,
     relationship: "assertionMethod",
   });
   const holderMethod = await resolveMidnightDIDMethodBinding({
@@ -177,8 +197,8 @@ export async function createApplicationVpScenarioFixture(
     holderMethodId: "#auth-1",
     scope,
     claimsCommitment: sha256Hex(`accepted-${scope.role}-claims`),
-    statusRegistryId: hex(bytes32("status-registry")),
-    statusAuthorityMethod: `${issuerDid}#assertion-1`,
+    statusRegistryId,
+    statusAuthorityMethod,
     statusHandleCommitment: hex(bytes32("credential-status-handle")),
     credentialExpiresAtMs: VP_FIXTURE_TIME_MS + 60 * 60_000,
   };
@@ -219,8 +239,8 @@ export async function createApplicationVpScenarioFixture(
     presentationHolderBinding: holderBinding,
     statusBinding: {
       registryRef: {
-        registryId: bytes32("status-registry"),
-        authorityVerificationMethodRef: issuerMethod.verificationMethodRef,
+        registryId: Buffer.from(statusRegistryId.slice(2), "hex"),
+        authorityVerificationMethodRef: statusMethod.verificationMethodRef,
       },
       statusHandleCommitment: bytes32("credential-status-handle"),
     },
@@ -266,7 +286,7 @@ export async function createApplicationVpScenarioFixture(
       ))),
     },
   };
-  const fixtureStatusPolicyBinding: IssuerStatusPolicyBinding = {
+  const fixtureStatusPolicyBinding: IssuerStatusPolicyBinding = options.statusPolicyBinding ?? {
     version: "tr-issuer-status-policy-v1",
     trustRegistryId: "registry:vp-fixture",
     issuerAuthorizationId: "auth:issuer:vp-fixture",
@@ -340,10 +360,10 @@ export async function createApplicationVpScenarioFixture(
         || body.subjectDid !== prepared.subjectDid || body.holderMethodId !== prepared.holderMethodId
         || body.credentialExpiresAtMs !== prepared.credentialExpiresAtMs
         || body.statusRegistryId !== hex(prepared.statusBinding.registryRef.registryId)
-        || body.statusAuthorityMethod !== `${issuerDid}#assertion-1`
+        || body.statusAuthorityMethod !== statusAuthorityMethod
         || !equalMethodRef(
           prepared.statusBinding.registryRef.authorityVerificationMethodRef,
-          issuerMethod.verificationMethodRef,
+          statusMethod.verificationMethodRef,
         )
         || body.statusHandleCommitment !== hex(prepared.statusBinding.statusHandleCommitment)
       ) throw new TypeError("Application VP fixture credential binding is invalid");

@@ -52,6 +52,7 @@ import {
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createCompactLedgerDecisionReaders } from "../compact-decision-reader.js";
+import { verifyApplicationVp } from "../application-vp-verifier.js";
 import { createGovernedApplicationIssuerEligibility } from "../governed-application-issuer.js";
 import { createApplicationVpScenarioFixture } from "../vp-scenario-fixtures.js";
 import { createVcSignerCandidateFromApi, createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
@@ -163,8 +164,10 @@ describe("simulator-backed VC decision evidence composition", () => {
     const subjectKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(49));
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(issuer.subjectDid, {
-        schnorrJubjubPublicKey: subjectKey,
-        verificationMethodId: "assertion-1",
+        schnorrJubjubAssertionMethods: [
+          { id: "assertion-1", publicKey: subjectKey },
+          { id: "status-1", publicKey: subjectKey },
+        ],
         version: 3n,
       }),
     ]);
@@ -376,34 +379,49 @@ describe("simulator-backed VC decision evidence composition", () => {
       publicationEventHash: witness.eventHash,
     });
     if (candidate.role !== "issuer") throw new Error("Expected governed issuer decision");
-    const vpScenario = await createApplicationVpScenarioFixture();
-    const vpMaterial = {
-      ...vpScenario.material,
+    const vpScenario = await createApplicationVpScenarioFixture(undefined, {
       issuerDid: issuer.subjectDid,
-      issuerMethodId: "#assertion-1",
-      credentialProof: { ...vpScenario.material.credentialProof, publicKey: subjectKey },
-      statusBinding: {
-        ...vpScenario.material.statusBinding,
-        registryRef: {
-          ...vpScenario.material.statusBinding.registryRef,
-          registryId: Buffer.from(candidate.statusPolicyBinding.statusRegistryId.slice(2), "hex"),
-        },
-      },
-    };
+      issuerSecret: seedBytesToJubjubSecretScalar(new Uint8Array(32).fill(49)),
+      issuerDidVersion: 3n,
+      statusPolicyBinding: candidate.statusPolicyBinding,
+    });
+    const vpMaterial = vpScenario.material;
     const eligible = createGovernedApplicationIssuerEligibility({
       selection: context.selection,
       readers,
       loadEvidence: async () => evidence,
       allowedApplicationRoles: ["issuer", "verifier", "auditor", "maintainer"],
     });
+    await expect(verifyApplicationVp({
+      ...vpScenario.input,
+      family: { ...vpScenario.family, assertIssuerEligible: eligible },
+    })).resolves.toMatchObject({
+      subjectDid: vpScenario.input.expectedSubjectDid,
+      expiresAt: new Date(vpScenario.input.evaluatedAtMs + 5 * 60_000).toISOString(),
+    });
     await expect(eligible(vpMaterial, vpScenario.input.scope)).resolves.toEqual(candidate.statusPolicyBinding);
-    await expect(eligible({ ...vpMaterial, issuerDid: vpScenario.material.issuerDid }, vpScenario.input.scope))
+    await expect(eligible({ ...vpMaterial, issuerDid: createMidnightDid("other-vp-issuer") }, vpScenario.input.scope))
       .rejects.toThrow(/not selected/u);
     await expect(eligible({ ...vpMaterial, issuerMethodId: "#other" }, vpScenario.input.scope))
       .rejects.toThrow(/issuer key/u);
-    await expect(eligible({ ...vpMaterial, credentialProof: vpScenario.material.credentialProof }, vpScenario.input.scope))
+    await expect(eligible({
+      ...vpMaterial,
+      credentialProof: {
+        ...vpMaterial.credentialProof,
+        publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(51)),
+      },
+    }, vpScenario.input.scope))
       .rejects.toThrow(/issuer key/u);
-    await expect(eligible({ ...vpMaterial, statusBinding: vpScenario.material.statusBinding }, vpScenario.input.scope))
+    await expect(eligible({
+      ...vpMaterial,
+      statusBinding: {
+        ...vpMaterial.statusBinding,
+        registryRef: {
+          ...vpMaterial.statusBinding.registryRef,
+          registryId: bytes32Commitment("substituted-status-registry"),
+        },
+      },
+    }, vpScenario.input.scope))
       .rejects.toThrow(/status registry/u);
     const unavailableGrant = createGovernedApplicationIssuerEligibility({
       selection: context.selection,
@@ -412,6 +430,26 @@ describe("simulator-backed VC decision evidence composition", () => {
       allowedApplicationRoles: ["issuer"],
     });
     await expect(unavailableGrant(vpMaterial, vpScenario.input.scope)).rejects.toThrow(/unavailable/u);
+    const inactiveGrant = createGovernedApplicationIssuerEligibility({
+      selection: context.selection,
+      readers: {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          acceptedEpoch: context.acceptedEpoch,
+          publication: context.publication,
+          decisionPoint: {
+            ...context.decisionPoint,
+            currentGrant: { ...context.decisionPoint.currentGrant, status: "suspended" },
+          },
+        }),
+      },
+      loadEvidence: async () => evidence,
+      allowedApplicationRoles: ["issuer"],
+    });
+    await expect(verifyApplicationVp({
+      ...vpScenario.input,
+      family: { ...vpScenario.family, assertIssuerEligible: inactiveGrant },
+    })).rejects.toMatchObject({ category: "ineligible" });
 
     const binding = await resolveMidnightDIDMethodBinding({
       resolver,

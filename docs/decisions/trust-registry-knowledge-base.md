@@ -1100,3 +1100,11 @@ Vitest's default five-second case limit under the repository integration
 runner; the integration package now uses a 15-second per-case limit without
 changing product timeouts. Full `./run.sh integration --light` passed after
 both adjustments.
+The #76/#79 composition now verifies a signed fixture credential and
+presentation against the same Midnight DID assertion key as an active
+simulator issuer decision. The status adapter consumes that decision's exact
+policy binding and a challenge-specific status signature; a suspended current
+grant fails before evidence issuance. The fixture supports a separate status
+method under the issuer DID and a chosen DID state version solely for this
+cross-surface local test. Production finality and status-registry root
+verification remain open.

@@ -12,6 +12,9 @@ Current coverage:
   uses a deterministic non-governed grant and attestation fetcher; network
   finality and an independent live status-registry proof are still required
   for production non-revocation claims.
+  A simulator composition test now signs a fixture VC/VP with the same issuer
+  key as a verified active grant, uses that grant's status-policy preimage for
+  challenge-bound status verification, and rejects a suspended current grant.
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
 - `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and

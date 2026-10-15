@@ -344,6 +344,10 @@ assertion method public key, and status-registry ID. The host selects the
 permitted issuer resource and applicant roles; the credential does not select
 its own trust anchor. The reader and attestation fetcher still need production
 implementations, and the deterministic fixture's issuer grant is not governed.
+The simulator composition test additionally binds a signed fixture VC/VP to
+an independently verified active issuer decision and a challenge-bound status
+attestation; it rejects a current grant reported as suspended. This proves the
+reference wiring locally, not production finality or live revocation.
 
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store
