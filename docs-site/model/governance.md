@@ -10,6 +10,11 @@ The 0.1.0 reference fixture uses three maintainer DIDs and 2-of-3 for ordinary, 
 
 The contract verifies a JubJub Schnorr signature over a domain-separated, policy-bound digest containing action kind, exact payload commitment, sequence, and predecessor event. Policy commitment is included in the signed payload; rotating policy invalidates stale prepared contexts. The contract also checks current membership and quorum rather than trusting a caller-supplied `approved` flag. The [Compact reference](../contract/index.md) maps these checks to ledger fields and circuits.
 
+This simulator transcript does not yet bind the deployment's contract address or
+network identity. It must not be reused as a public-network signature format;
+cross-deployment replay resistance is a
+[0.1.0 release blocker](https://github.com/midnightntwrk/midnight-trust-registry/issues/200).
+
 ## Evidence verifier versus maintainer
 
 The evidence verifier checks an applicant's private VC/VP and signs a canonical **redacted** result. A governed active verifier key is required for proposal evidence. Maintainers independently decide whether that exact application is admitted. Neither role substitutes for the other. The VC/VP is not stored in public ledger state.
