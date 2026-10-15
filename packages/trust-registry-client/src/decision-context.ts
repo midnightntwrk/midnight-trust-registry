@@ -16,6 +16,8 @@ export type DecisionEvidenceSuppliedContext = {
   acceptedEpoch: AcceptedDecisionEpoch;
   publication: {
     registryIdCommitment: Uint8Array;
+    networkIdCommitment: Uint8Array;
+    contractAddress: Uint8Array;
     epochIdCommitment: Uint8Array;
     firstSignerKeyIdCommitment: Uint8Array;
     activeMaintainersAtPublication: readonly ActivePublicationMaintainer[];
