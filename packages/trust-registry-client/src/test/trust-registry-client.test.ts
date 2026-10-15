@@ -21,6 +21,7 @@ import {
   verifyTrustRegistryEvidenceBundle,
 } from "../index.js";
 import { TrustRegistrySimulatorClient } from "../simulator-client.js";
+import { defaultSequenceToTimestamp } from "../utils.js";
 import * as ClientRoot from "../index.js";
 
 const changeLastHexNibble = (hash: string): string =>
@@ -481,6 +482,60 @@ describe("trust registry client", () => {
       recognition: { ...recognitionBundle.recognition!, registryId: "registry:evil" },
     }, {})).toThrow(/Recognition registry mismatch/);
   });
+
+  it("uses the supplied sequence clock for policy supersession across every simulator verifier", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("policy-clock");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const issuer = createIssuerScenarioFixture("policy-clock");
+    const verifier = createVerifierScenarioFixture("policy-clock");
+    const auditor = createAuditorScenarioFixture("policy-clock");
+    const recognition = createRecognitionScenarioFixture("policy-clock");
+    harness.authorizeIssuer(issuer);
+    const issuerBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    harness.authorizeVerifier(verifier);
+    const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
+    harness.authorizeAuditor(auditor);
+    const auditorBundle = harness.evaluateCurrentAuditorDecision(auditor);
+    harness.authorizeRecognition(recognition);
+    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    harness.updateMaintainerThresholdPolicy(1n, 1n, 1n);
+
+    const effectiveSequence = harness.simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n);
+    const defaultCutoffMs = Date.parse(defaultSequenceToTimestamp(effectiveSequence));
+    const beforeDefaultCutoff = new Date(defaultCutoffMs - 60_000).toISOString();
+    const afterDefaultCutoff = new Date(defaultCutoffMs + 60_000).toISOString();
+    const earlyCutoff = new Date(defaultCutoffMs - 2 * 60_000).toISOString();
+    const lateCutoff = new Date(defaultCutoffMs + 2 * 60_000).toISOString();
+    const clockWithCutoff = (cutoff: string) => (sequence: bigint) =>
+      sequence === effectiveSequence ? cutoff : defaultSequenceToTimestamp(sequence);
+    const optionsFor = (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) => ({
+      evaluationTime,
+      ...(sequenceToTimestamp === undefined ? {} : { sequenceToTimestamp }),
+    });
+    const verify = [
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyIssuerAuthorizationBundle(issuerBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyVerifierAuthorizationBundle(verifierBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyAuditorAuthorizationBundle(auditorBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyRecognitionBundle(recognitionBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyAuditorRequestMandate(auditorBundle, createAuditorAuthorizationScopeFixture(auditor), {
+          expectedRegistryId: harness.registryId,
+          expectedSubjectDid: auditor.subjectDid,
+          ...optionsFor(evaluationTime, sequenceToTimestamp),
+        }),
+    ];
+    for (const check of verify) {
+      expect(() => check(beforeDefaultCutoff)).not.toThrow();
+      expect(() => check(afterDefaultCutoff)).toThrow(/Policy snapshot is superseded/u);
+      expect(() => check(afterDefaultCutoff, clockWithCutoff(lateCutoff))).not.toThrow();
+      expect(() => check(beforeDefaultCutoff, clockWithCutoff(earlyCutoff)))
+        .toThrow(/Policy snapshot is superseded/u);
+    }
+  }, 30_000);
 
   it("rejects stale epochs and tampered maintainer signatures deterministically", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
