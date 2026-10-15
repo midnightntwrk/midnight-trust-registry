@@ -1175,3 +1175,9 @@ consistency. Native recognition lookups accept an optional exact `scopeContext`
 map; the consumer verifier treats an omitted context as an expectation of no
 context. An independently authenticated canonical historical epoch selection
 remains a host responsibility, not a guarantee of the API or bundle.
+The applicant portal now exposes the native historical authorization export
+for issuer, verifier, and auditor records. It preserves exact query inputs,
+does not cache the POST response, rejects a different role/DID/resource/epoch,
+and prominently labels the result as unverified. It deliberately does not
+perform browser-side proof verification without an independently authenticated
+historical ledger reader.

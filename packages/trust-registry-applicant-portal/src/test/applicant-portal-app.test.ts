@@ -4,6 +4,60 @@ import { describe, expect, it, vi } from "vitest";
 import { canUsePrivateEvidenceHost, createApplicantPortalApp, escapeHtml } from "../app.js";
 
 describe("trust registry applicant portal app", () => {
+  it("exports a historical claim without presenting the API flag as verified trust", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const subjectDid = "did:midnight:testnet:historical-issuer";
+    const resourceId = `tr:issuer-resource:v1:${"a".repeat(64)}`;
+    const at = "2026-10-15T00:00:00Z";
+    let substituteSubject = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/v1/registry/summary") {
+        return Response.json({ registryLabel: "local", currentEpochId: "epoch:current" });
+      }
+      if (path === "/v1/authorizations/evaluate/evidence") {
+        return Response.json({
+          evaluatedAt: at, statusAtTime: "active", trustedAtTime: true,
+          epoch: { epochId: "epoch:issuer" },
+          bundle: {
+            epoch: { epochId: "epoch:issuer" },
+            policy: { policyId: "policy:issuer" },
+            authorization: { role: "issuer", subjectDid: substituteSubject ? "did:midnight:testnet:other" : subjectDid, resourceId },
+          },
+        });
+      }
+      return Response.json({ entries: [] });
+    });
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() } as unknown as Storage;
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/app?apiBase=https%3A%2F%2Fregistry.example"),
+      storage, fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain("Historical authorization evidence"));
+
+    const submit = () => {
+      const form = root.querySelector<HTMLFormElement>("[data-historical-authorization]")!;
+      form.querySelector<HTMLSelectElement>("[name='role']")!.value = "issuer";
+      form.querySelector<HTMLInputElement>("[name='subjectDid']")!.value = subjectDid;
+      form.querySelector<HTMLInputElement>("[name='resourceId']")!.value = resourceId;
+      form.querySelector<HTMLInputElement>("[name='at']")!.value = at;
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+    submit();
+    await vi.waitFor(() => expect(root.querySelector("[data-historical-result]")).not.toBeNull());
+    expect(root.textContent).toContain("Unverified API claim");
+    expect(root.textContent).toContain("epoch:issuer");
+    const call = fetchImpl.mock.calls.find(([input]) => new URL(String(input)).pathname === "/v1/authorizations/evaluate/evidence");
+    expect(call?.[1]).toMatchObject({ method: "POST", cache: "no-store" });
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ role: "issuer", subjectDid, resourceId, at });
+
+    substituteSubject = true;
+    submit();
+    await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested record and epoch"));
+    expect(root.querySelector("[data-historical-result]")).toBeNull();
+  });
+
   it("permits private evidence only on the same secure or loopback origin", () => {
     expect(canUsePrivateEvidenceHost("https://registry.example", new URL("https://registry.example/app"))).toBe(true);
     expect(canUsePrivateEvidenceHost("http://127.0.0.1:4400", new URL("http://127.0.0.1:4400/app"))).toBe(true);
@@ -61,7 +115,7 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).not.toContain("wrong-role");
     expect(root.textContent).not.toContain("archived-auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
-    expect(root.querySelector("option[value='auditor']")).toBeNull();
+    expect(root.querySelector("[data-submit-form] option[value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-application-registration-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-auditor-application-form] button")?.disabled).toBe(true);

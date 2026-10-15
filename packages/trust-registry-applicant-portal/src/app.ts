@@ -1,6 +1,6 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -20,6 +20,10 @@ type AppState = {
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
   auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
   auditorStatusBusy: boolean;
+  historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
+  historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
+  historicalBusy: boolean;
+  historicalError: string | undefined;
   recognitionRecoveryBusy: boolean;
   recognitionRecoveryMessage: string | undefined;
   recognitionId: string;
@@ -136,6 +140,10 @@ export const createApplicantPortalApp = (
     pendingApplication: undefined,
     auditorStatus: undefined,
     auditorStatusBusy: false,
+    historicalQuery: undefined,
+    historicalResult: undefined,
+    historicalBusy: false,
+    historicalError: undefined,
     recognitionRecoveryBusy: false,
     recognitionRecoveryMessage: undefined,
     recognitionId: "",
@@ -145,6 +153,7 @@ export const createApplicantPortalApp = (
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
+  let historicalRequestId = 0;
   let recognitionRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
@@ -470,6 +479,38 @@ export const createApplicantPortalApp = (
     }
   };
 
+  const loadHistoricalEvidence = async (query: TrustRegistryApiEvaluateAuthorizationRequest) => {
+    if (state.historicalBusy) return;
+    const requestId = ++historicalRequestId;
+    const apiBase = state.apiBase;
+    setState({ historicalQuery: query, historicalBusy: true, historicalResult: undefined, historicalError: undefined });
+    try {
+      const result = await client().loadHistoricalAuthorizationEvidence(query);
+      if (requestId !== historicalRequestId || apiBase !== state.apiBase) return;
+      if (result.evaluatedAt !== query.at
+        || (result.statusAtTime !== null && typeof result.statusAtTime !== "string")
+        || typeof result.trustedAtTime !== "boolean"
+        || typeof result.epoch?.epochId !== "string"
+        || typeof result.bundle?.epoch?.epochId !== "string"
+        || typeof result.bundle?.policy?.policyId !== "string"
+        || result.epoch.epochId !== result.bundle.epoch.epochId
+        || result.bundle?.authorization?.role !== query.role
+        || result.bundle.authorization.subjectDid !== query.subjectDid
+        || result.bundle.authorization.resourceId !== query.resourceId) {
+        throw new Error("Historical evidence response does not match the requested record and epoch.");
+      }
+      setState({ historicalResult: result });
+    } catch (error) {
+      if (requestId === historicalRequestId && apiBase === state.apiBase) {
+        setState({ historicalError: formatApiError(error) });
+      }
+    } finally {
+      if (requestId === historicalRequestId && apiBase === state.apiBase) {
+        setState({ historicalBusy: false });
+      }
+    }
+  };
+
   const submitApplication = async (
     target: PortalSubmissionTarget,
     label: string,
@@ -565,8 +606,9 @@ export const createApplicantPortalApp = (
       evidenceRequestId += 1;
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
+      historicalRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -574,6 +616,15 @@ export const createApplicantPortalApp = (
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       void refreshInspection();
+    });
+
+    root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
+      if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
+      void loadHistoricalEvidence({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") });
     });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
@@ -778,6 +829,25 @@ export const createApplicantPortalApp = (
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">
+          <section class="form-panel">
+            <h2>Historical authorization evidence</h2>
+            <p>Look up the exact DID, role, governed resource, and timestamp. The API response is a historical claim, not proof of current trust. Verify its bundle against independent finalized registry history before relying on it.</p>
+            <form data-historical-authorization>
+              <label class="label">Role<select class="select" name="role">
+                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.historicalQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+              </select></label>
+              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalQuery?.subjectDid ?? "")}" required /></label>
+              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalQuery?.resourceId ?? "")}" required /></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalQuery?.at ?? "")}" required /></label>
+              <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Export evidence</button>
+            </form>
+            ${state.historicalError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalError)}</div>`}
+            ${state.historicalResult === undefined ? "" : `<div class="panel" data-historical-result>
+              <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalResult.evaluatedAt)}; trusted-at-time flag ${state.historicalResult.trustedAtTime ? "true" : "false"}.</p>
+              <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalResult.bundle.policy.policyId)}</span>.</p>
+              <details><summary>Inspect raw proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalResult.bundle, null, 2))}</pre></details>
+            </div>`}
+          </section>
           <section class="form-panel">
             <h2>Signed issuer or verifier submission</h2>
             <p>Load the current workspace context, sign an issuer or verifier submission outside this browser, then paste only the signed envelope. No private key belongs here. A stale context must be signed again.</p>

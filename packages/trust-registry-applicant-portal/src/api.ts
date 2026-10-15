@@ -1,6 +1,8 @@
 import type {
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiAuthorizationEvidenceEvaluationResponse,
+  TrustRegistryApiEvaluateAuthorizationRequest,
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
@@ -111,6 +113,20 @@ export class TrustRegistryApplicantPortalClient {
     private readonly fetchImpl: FetchLike = fetch,
   ) {
     this.baseUrl = normalizeApiBaseUrl(baseUrl);
+  }
+
+  async loadHistoricalAuthorizationEvidence(
+    request: TrustRegistryApiEvaluateAuthorizationRequest,
+  ): Promise<TrustRegistryApiAuthorizationEvidenceEvaluationResponse> {
+    return this.request<TrustRegistryApiAuthorizationEvidenceEvaluationResponse>(
+      "/v1/authorizations/evaluate/evidence",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+        cache: "no-store",
+      },
+    );
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
