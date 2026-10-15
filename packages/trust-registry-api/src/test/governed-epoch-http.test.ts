@@ -70,14 +70,14 @@ describe("governed epoch HTTP boundary", () => {
       const prepared = await preparedResponse.json() as PreparedGovernedEpochPublication;
       expect(prepared.networkIdCommitment).toBe(hex(harness.simulator.getLedger().deploymentNetworkIdCommitment));
       expect(prepared.contractAddress).toBe(`0x${harness.simulator.contractAddress}`);
-      const vote = (networkIdCommitment: string) => ({
+      const vote = (networkIdCommitment: string, contractAddress = prepared.contractAddress) => ({
         keyId: hex(maintainer.keyId),
         publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
         signature: hex(encodeJubjubSignature(signDeploymentBoundMaintainerActionFromSeed(
           maintainer.seed,
           bytes(prepared.registryId),
           bytes(networkIdCommitment),
-          bytes(prepared.contractAddress),
+          bytes(contractAddress),
           bytes(prepared.policyCommitment),
           bytes(prepared.actionKind),
           bytes(prepared.actionPayloadHash),
@@ -87,6 +87,9 @@ describe("governed epoch HTTP boundary", () => {
       const before = harness.simulator.getLedger().governanceActionCount;
       expect((await post("publish", { label: "current", prepared, signers: [
         vote(hex(bytes32Commitment("wrong-network"))),
+      ] })).status).toBe(403);
+      expect((await post("publish", { label: "current", prepared, signers: [
+        vote(prepared.networkIdCommitment, hex(bytes32Commitment("wrong-address"))),
       ] })).status).toBe(403);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
       const published = await post("publish", { label: "current", prepared, signers: [

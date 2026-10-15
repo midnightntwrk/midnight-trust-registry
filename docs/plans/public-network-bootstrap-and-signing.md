@@ -16,7 +16,7 @@ Constructor bootstrap is implemented locally: the former `initializeRegistry`
 body runs during construction, the public circuit is removed, and simulator
 fixtures pass deployment inputs to `initialState`. A hostile-first-caller test
 checks that an unregistered caller cannot replace the constructor state. This
-still needs cross-package and real-network qualification before #200 is done.
+still needs real-network qualification before #200 is done.
 
 The constructor also requires a nonzero `deploymentNetworkIdCommitment` and
 stores it as sealed ledger state. The integration simulator pins the `undeployed`

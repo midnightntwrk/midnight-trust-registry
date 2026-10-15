@@ -136,6 +136,9 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await submitRevision(revision, [secondVote, signPrepared(third, {
         ...revision, networkIdCommitment: hex(bytes32Commitment("wrong-network")),
       })])).status).toBe(403);
+      expect((await submitRevision(revision, [secondVote, signPrepared(third, {
+        ...revision, contractAddress: hex(bytes32Commitment("wrong-address")),
+      })])).status).toBe(403);
       expect((await submitRevision(revision, [
         { ...secondVote, signature: "0x01" }, thirdVote,
       ])).status).toBe(400);
