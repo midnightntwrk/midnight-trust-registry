@@ -73,9 +73,10 @@ Notes:
   sequence, evidence, verifier identity, and quorum at submission
 - a `not-observed` proposal is not proof that submission failed. The console
   does not retry automatically; a host must determine finality before any
-  further action. After a 202 the console retains the target ID and redacted
-  evidence in memory so the operator can use `Recover proposal receipt`, while
-  clearing pasted signatures and prepared context. It does not persist those
+  further action. After a 202, uncertain API response, or transport failure,
+  the console retains the target ID and redacted evidence in memory so the
+  operator can use `Recover proposal receipt`, while clearing pasted signatures
+  and prepared context. It does not persist those
   fields across reload or host changes. Simulator observation is not network
   finality
 - `--unsafe-demo-mutations` enables the old fixture controls only on loopback;

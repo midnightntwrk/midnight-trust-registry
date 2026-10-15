@@ -594,8 +594,13 @@ export const createAdminConsoleApp = (
         proposalSignersJson: "", proposalVerifierSignature: "" });
     } catch (error) {
       if (!isCurrentHost(host)) return;
-      setState({ governedBusy: false, error: formatApiError(error),
-        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+      const outcomeUnknown = !(error instanceof TrustRegistryAdminConsoleApiError)
+        || error.problem.status === 409 || error.problem.status === 503;
+      const detail = formatApiError(error);
+      setState({ governedBusy: false,
+        error: error instanceof TrustRegistryAdminConsoleApiError
+          ? detail : `${detail} Submission outcome is unknown. Recover the proposal receipt; do not resubmit automatically.`,
+        ...(outcomeUnknown
           ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
           : {}) });
     }

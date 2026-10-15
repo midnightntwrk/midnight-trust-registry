@@ -326,6 +326,8 @@ describe("admin console browser handlers", () => {
     const posted: { path: string; body: unknown }[] = [];
     let available = false;
     let observed = false;
+    let uncertain = false;
+    let transportFailure = false;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (path.endsWith("/proposal/prepare")) {
@@ -336,6 +338,12 @@ describe("admin console browser handlers", () => {
       }
       if (path.endsWith("/proposal/submit")) {
         posted.push({ path, body: JSON.parse(String(init?.body)) });
+        if (transportFailure) throw new Error("connection dropped");
+        if (uncertain) return Response.json({
+          type: "https://example.test/problems/proposal-submission-uncertain",
+          status: 503,
+          detail: "The proposal may have reached Compact. Resolve before retrying.",
+        }, { status: 503 });
         return Response.json({ eventHash: `0x${"0b".repeat(32)}` }, { status: 202 });
       }
       if (path.endsWith("/proposal/resolve")) {
@@ -466,5 +474,34 @@ describe("admin console browser handlers", () => {
     );
     await vi.waitFor(() => expect(posted.at(-1)?.path).toBe("/v1/governed/verifier/verifier%3Abob/proposal/submit"));
     await vi.waitFor(() => expect(root.textContent).toContain("Compact verifier proposal accepted"));
+
+    uncertain = true;
+    observed = false;
+    prepare();
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
+    setInput("[data-proposal-signers]", JSON.stringify(signers));
+    setInput("[data-proposal-verifier-signature]", verifierSignature);
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("Resolve before retrying"));
+    expect(root.querySelector("[data-proposal-submit]")).toBeNull();
+    expect(root.querySelector<HTMLInputElement>("[data-proposal-id]")?.value).toBe("verifier:bob");
+    expect(root.querySelector<HTMLTextAreaElement>("[data-proposal-evidence]")?.value).toBe(JSON.stringify(verifierEvidence));
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain("Proposal not observed"));
+    expect(posted.at(-1)?.body).toEqual({ evidence: verifierEvidence });
+
+    uncertain = false;
+    transportFailure = true;
+    prepare();
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
+    setInput("[data-proposal-signers]", JSON.stringify(signers));
+    setInput("[data-proposal-verifier-signature]", verifierSignature);
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("Submission outcome is unknown"));
+    expect(root.querySelector("[data-proposal-submit]")).toBeNull();
   });
 });
