@@ -33,12 +33,12 @@ Decision evidence is available only when the host injects a source; otherwise it
 | `POST /v1/recognition-evidence/{id}/challenges`, `/submissions` | Private accreditation and authority assertion intake |
 | `GET /v1/recognition-evidence/{id}/accepted` | Authorized accepted recognition receipt |
 | `POST /v1/governed/{role}/{id}/proposal/prepare`, `/submit`, `/resolve` | Compact-backed role proposal, external signatures, read-only recovery; role-specific port required |
-| `GET`, `POST /v1/governed/{role}/{id}/actions/{action}` | Prepare then submit externally signed approve/activate actions |
+| `GET`, `POST /v1/governed/{role}/{id}/actions/{action}` | Prepare then submit externally signed lifecycle actions |
 | `POST /v1/governed/policy/{thresholds,evidence-verifier}/{prepare,submit}` | Two distinct policy/key actions, each with fresh context |
 | `POST /v1/governed/epochs/prepare`, `/publish` | Governed epoch signing/publication port |
 | `GET /v1/registry/mutation-context`, `POST /v1/mutations` | Workspace revision and DID-signed intent; resolver required for writes |
 
-The `governed` proposal roles are `issuer`, `verifier`, `auditor`, `maintainer`, and `recognition`; recognition has a receipt-gated prepare/submit route. The action route supports approve/activate only under the injected governed port. Any absent port yields `503` rather than a workspace mutation. Proposals bind the evidence-verifier key and policy; action signatures bind the current sequence and predecessor event.
+The `governed` proposal roles are `issuer`, `verifier`, `auditor`, `maintainer`, and `recognition`; recognition has a receipt-gated prepare/submit route. The action route supports `approve`, `activate`, `suspend`, `revoke`, and `archive` under the injected governed port. Archiving a proposed record is a quorum-signed denial that retains its history without inventing approval or activation timestamps. Any absent port yields `503` rather than a workspace mutation. Proposals bind the evidence-verifier key and policy; action signatures bind the current sequence and predecessor event.
 
 ## Unsafe demo only
 

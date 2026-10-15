@@ -22,11 +22,11 @@ const context = (
 });
 
 describe("governed membership action target", () => {
-  it("admits only the four signed lifecycle actions", () => {
-    for (const action of ["approve", "activate", "suspend", "revoke"]) {
+  it("admits only the five signed lifecycle actions", () => {
+    for (const action of ["approve", "activate", "suspend", "revoke", "archive"]) {
       expect(GovernedMembershipActionSchema.parse(action)).toBe(action);
     }
-    expect(() => GovernedMembershipActionSchema.parse("archive")).toThrow();
+    expect(() => GovernedMembershipActionSchema.parse("delete")).toThrow();
   });
 
   for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {

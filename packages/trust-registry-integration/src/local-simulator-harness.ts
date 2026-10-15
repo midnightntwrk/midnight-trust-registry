@@ -160,7 +160,7 @@ export type SimulatorApplicationEvidenceExpectation = {
   governedResource: GovernedResource;
 };
 
-export type IssuerDecisionAction = "approve" | "activate" | "suspend" | "revoke";
+export type IssuerDecisionAction = "approve" | "activate" | "suspend" | "revoke" | "archive";
 
 export type PreparedIssuerDecisionAction = {
   registryId: Uint8Array;
@@ -1292,7 +1292,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: MaintainerScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedMaintainerAction {
-    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported maintainer decision action");
     }
     const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
@@ -1304,6 +1304,7 @@ export class LocalTrustRegistryIntegrationHarness {
       activate: ACTIVATE_MAINTAINER_ACTION_KIND,
       suspend: SUSPEND_MAINTAINER_ACTION_KIND,
       revoke: REVOKE_MAINTAINER_ACTION_KIND,
+      archive: ARCHIVE_MAINTAINER_ACTION_KIND,
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
@@ -1335,7 +1336,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
     const circuit = action === "activate" ? this.simulator.activateMaintainerMembership.bind(this.simulator)
       : action === "suspend" ? this.simulator.suspendMaintainerMembership.bind(this.simulator)
-        : this.simulator.revokeMaintainerMembership.bind(this.simulator);
+        : action === "revoke" ? this.simulator.revokeMaintainerMembership.bind(this.simulator)
+          : this.simulator.archiveMaintainerMembership.bind(this.simulator);
     const result = circuit(primary.keyId, primary.publicKey, primary.signature,
       fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1));
     if (action === "activate") this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
@@ -1576,7 +1578,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported issuer decision action");
     }
     if (action === "approve" || action === "activate") this.recheckIssuerApplicationEvidence(fixture);
@@ -1589,6 +1591,7 @@ export class LocalTrustRegistryIntegrationHarness {
       activate: ACTIVATE_ISSUER_ACTION_KIND,
       suspend: SUSPEND_ISSUER_ACTION_KIND,
       revoke: REVOKE_ISSUER_ACTION_KIND,
+      archive: ARCHIVE_ISSUER_ACTION_KIND,
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
@@ -1627,7 +1630,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
     const circuit = action === "activate" ? this.simulator.activateIssuerAuthorization.bind(this.simulator)
       : action === "suspend" ? this.simulator.suspendIssuerAuthorization.bind(this.simulator)
-        : this.simulator.revokeIssuerAuthorization.bind(this.simulator);
+        : action === "revoke" ? this.simulator.revokeIssuerAuthorization.bind(this.simulator)
+          : this.simulator.archiveIssuerAuthorization.bind(this.simulator);
     return circuit(primary.keyId, primary.publicKey, primary.signature,
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
@@ -1880,7 +1884,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: VerifierScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported verifier decision action");
     }
     const current = this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
@@ -1892,6 +1896,7 @@ export class LocalTrustRegistryIntegrationHarness {
       activate: ACTIVATE_VERIFIER_ACTION_KIND,
       suspend: SUSPEND_VERIFIER_ACTION_KIND,
       revoke: REVOKE_VERIFIER_ACTION_KIND,
+      archive: ARCHIVE_VERIFIER_ACTION_KIND,
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
@@ -1923,7 +1928,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
     const circuit = action === "activate" ? this.simulator.activateVerifierAuthorization.bind(this.simulator)
       : action === "suspend" ? this.simulator.suspendVerifierAuthorization.bind(this.simulator)
-        : this.simulator.revokeVerifierAuthorization.bind(this.simulator);
+        : action === "revoke" ? this.simulator.revokeVerifierAuthorization.bind(this.simulator)
+          : this.simulator.archiveVerifierAuthorization.bind(this.simulator);
     return circuit(primary.keyId, primary.publicKey, primary.signature,
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
@@ -2119,22 +2125,31 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: RecognitionScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedRecognitionAction {
-    if (action !== "approve" && action !== "activate") {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported recognition decision action");
     }
     const current = this.simulator.getRecognition(fixture.recognitionIdCommitment);
     const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.recognitionId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_RECOGNITION_ACTION_KIND,
+      activate: ACTIVATE_RECOGNITION_ACTION_KIND,
+      suspend: SUSPEND_RECOGNITION_ACTION_KIND,
+      revoke: REVOKE_RECOGNITION_ACTION_KIND,
+      archive: ARCHIVE_RECOGNITION_ACTION_KIND,
+    };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
-      actionKind: Uint8Array.from(action === "approve" ? AUTHORIZE_RECOGNITION_ACTION_KIND : ACTIVATE_RECOGNITION_ACTION_KIND),
+      actionKind: Uint8Array.from(actionKinds[action]),
       actionPayloadHash: computeUpdateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment, current.lifecycleEventHash, current.evidenceHash,
+        fixture.recognitionIdCommitment, current.lifecycleEventHash, evidenceHash,
       ),
       actionSequence: ledger.governanceActionCount,
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash: Uint8Array.from(current.evidenceHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
     };
   }
 
@@ -2152,10 +2167,12 @@ export class LocalTrustRegistryIntegrationHarness {
         fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1),
       );
     }
-    return this.simulator.activateRecognition(
-      primary.keyId, primary.publicKey, primary.signature,
-      fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1),
-    );
+    const circuit = action === "activate" ? this.simulator.activateRecognition.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendRecognition.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeRecognition.bind(this.simulator)
+          : this.simulator.archiveRecognition.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
   private fixtureRecognitionDecision(fixture: RecognitionScenarioFixture, action: IssuerDecisionAction): Uint8Array {
@@ -2332,7 +2349,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: AuditorScenarioFixture,
     action: IssuerDecisionAction,
   ): PreparedIssuerDecisionAction {
-    if (!["approve", "activate", "suspend", "revoke"].includes(action)) {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported auditor decision action");
     }
     const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
@@ -2344,6 +2361,7 @@ export class LocalTrustRegistryIntegrationHarness {
       activate: ACTIVATE_AUDITOR_ACTION_KIND,
       suspend: SUSPEND_AUDITOR_ACTION_KIND,
       revoke: REVOKE_AUDITOR_ACTION_KIND,
+      archive: ARCHIVE_AUDITOR_ACTION_KIND,
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
@@ -2375,7 +2393,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
     const circuit = action === "activate" ? this.simulator.activateAuditorAuthorization.bind(this.simulator)
       : action === "suspend" ? this.simulator.suspendAuditorAuthorization.bind(this.simulator)
-        : this.simulator.revokeAuditorAuthorization.bind(this.simulator);
+        : action === "revoke" ? this.simulator.revokeAuditorAuthorization.bind(this.simulator)
+          : this.simulator.archiveAuditorAuthorization.bind(this.simulator);
     return circuit(primary.keyId, primary.publicKey, primary.signature,
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }

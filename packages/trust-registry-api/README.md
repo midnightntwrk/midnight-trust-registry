@@ -121,7 +121,8 @@ This API is a local reference gateway, not a claim that its fixture replay
 passes external maintainer signatures into a live Compact contract.
 
 The separate governed-action route accepts `issuer`, `verifier`, `auditor`,
-`maintainer`, and `recognition` targets with `approve` and `activate` actions
+`maintainer`, and `recognition` targets with `approve`, `activate`, `suspend`,
+`revoke`, and `archive` actions
 only when the server is constructed with `governedMembershipActions`. Without the port it
 returns 503 and never falls back to workspace replay. `GET` returns the
 current registry, authorization, policy, action, sequence, predecessor event,
@@ -138,6 +139,8 @@ For `recognition`, the path's `authorizationId` is the recognition ID; an
 active recognition is not a local issuer, verifier, auditor, or maintainer
 authorization. The recognition port must preserve the recognized authority,
 external registry, and exact scope bound by the prepared Compact digest.
+Archiving a proposed target is a quorum-signed denial. The archived record
+remains in history and has neither an approval nor an activation timestamp.
 A stale context returns 409, invalid
 signer bundle 403, malformed signature 400, and accepted transition 202 with
 the Compact event hash. A 202 is not network finality; a network-backed port

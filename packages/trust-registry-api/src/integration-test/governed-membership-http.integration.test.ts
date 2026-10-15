@@ -183,6 +183,73 @@ describe("Compact-backed membership governance over HTTP", () => {
     }
   });
 
+  it("archives a pending issuer through a fresh externally signed HTTP action", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("governed-http-denial");
+    const second = createMaintainerScenarioFixture("denial-http-second");
+    const third = createMaintainerScenarioFixture("denial-http-third");
+    const issuer = createIssuerScenarioFixture("denial-http-issuer");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    harness.proposeIssuer(issuer, [second]);
+    const fixtures = { label: "governed-http-denial", issuers: [{ label: "issuer", fixture: issuer }] };
+    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    const port: GovernedMembershipActionPort = {
+      async prepare(role, id, action) {
+        if (role !== "issuer" || id !== issuer.authorizationId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        return harness.prepareIssuerDecisionAction(issuer, action);
+      },
+      async execute(role, id, action, signers) {
+        if (role !== "issuer" || id !== issuer.authorizationId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        let eventHash: Uint8Array;
+        try {
+          eventHash = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
+        } catch {
+          throw new GovernedMembershipActionRejectedError("invalid-signers");
+        }
+        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => snapshot },
+      governedMembershipActions: port,
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const url = `${base}/v1/governed/issuer/${issuer.authorizationId}/actions/archive`;
+      const preparedResponse = await fetch(url);
+      expect(preparedResponse.status).toBe(200);
+      const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
+      const post = (body: unknown) => fetch(url, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const first = signPrepared(second, prepared);
+      const thirdSigner = signPrepared(third, prepared);
+      const before = harness.simulator.getLedger().governanceActionCount;
+      expect((await post({ prepared, signers: [first] })).status).toBe(403);
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await post({ prepared: { ...prepared, actionKind: `0x${"00".repeat(32)}` },
+        signers: [first, thirdSigner] })).status).toBe(409);
+      const accepted = await post({ prepared, signers: [first, thirdSigner] });
+      expect(accepted.status, await accepted.text()).toBe(202);
+      expect((await post({ prepared, signers: [first, thirdSigner] })).status).toBe(409);
+      const record = harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment);
+      expect(record.status).toBe(AuthorizationStatus.archived);
+      expect(record.archivedAtSequence).toBe(before);
+      expect(snapshot.evidenceArchive.some((entry) => entry.authorization?.status === "proposed")).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it("keeps verifier and auditor decision routes role-disjoint under one 2-of-3 policy", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("governed-request-roles");
     const second = createMaintainerScenarioFixture("request-role-second");

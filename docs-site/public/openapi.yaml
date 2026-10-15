@@ -402,6 +402,10 @@ paths:
       responses: *governedResponses
   /v1/governed/{role}/{id}/actions/{action}:
     parameters: [*governedRole, *id, *action]
+    description: >-
+      Externally signed lifecycle action. Archiving a proposed target is a
+      quorum-governed denial that preserves the proposal in history without
+      approval or activation timestamps.
     get:
       tags: [Governed]
       summary: Prepare current Compact action signer context

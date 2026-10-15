@@ -340,7 +340,10 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
       path: ["statusPolicyBindingCommitment"],
     });
   }
-  if (record.status !== "proposed" && record.authorizedAt === undefined) {
+  if ((record.status !== "proposed" && record.status !== "archived"
+    || record.activeFrom !== undefined || record.issuedAt !== undefined
+    || record.suspendedAt !== undefined || record.revokedAt !== undefined
+    || record.supersededAt !== undefined) && record.authorizedAt === undefined) {
     ctx.addIssue({
       code: "custom",
       message: "authorizedAt is required once an authorization leaves proposed state",
@@ -348,7 +351,9 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
     });
   }
   if (
-    ["active", "suspended", "revoked", "superseded", "archived"].includes(record.status) &&
+    (["active", "suspended", "revoked", "superseded"].includes(record.status)
+      || record.status === "archived" && (record.suspendedAt !== undefined
+        || record.revokedAt !== undefined || record.supersededAt !== undefined)) &&
     record.activeFrom === undefined
   ) {
     ctx.addIssue({
@@ -404,7 +409,10 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
   supersededAt: TimestampSchema.optional(),
   archivedAt: TimestampSchema.optional(),
 }).superRefine((record, ctx) => {
-  if (record.status !== "proposed" && record.authorizedAt === undefined) {
+  if ((record.status !== "proposed" && record.status !== "archived"
+    || record.effectiveFrom !== undefined || record.suspendedAt !== undefined
+    || record.revokedAt !== undefined || record.supersededAt !== undefined)
+    && record.authorizedAt === undefined) {
     ctx.addIssue({
       code: "custom",
       message: "authorizedAt is required once a recognition leaves proposed state",
@@ -412,7 +420,9 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
     });
   }
   if (
-    ["active", "suspended", "revoked", "superseded", "archived"].includes(record.status)
+    (["active", "suspended", "revoked", "superseded"].includes(record.status)
+      || record.status === "archived" && (record.suspendedAt !== undefined
+        || record.revokedAt !== undefined || record.supersededAt !== undefined))
     && record.effectiveFrom === undefined
   ) {
     ctx.addIssue({

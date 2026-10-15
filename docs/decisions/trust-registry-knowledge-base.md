@@ -1040,3 +1040,12 @@ archived. A separate two-maintainer case proves one signer cannot archive a
 pending issuer once the ordinary threshold is two. This resolves the spec's
 earlier ambiguity without inventing an unreleased `rejected` status. Archival
 does not record an off-chain denial reason.
+
+The local governed-action API and admin console now expose `archive` alongside
+the other externally signed lifecycle decisions. The simulator harness routes
+the same prepared signer context to the role-specific Compact archive circuit
+for all five roles; an HTTP issuer denial and a recognition denial both reject
+insufficient signatures or replay. The domain parser accepts an archived
+proposal without invented approval or activation timestamps, while retaining
+timestamp requirements for records that progressed further. OpenAPI and the
+endpoint guide describe this as a signed terminal denial, not a trust grant.
