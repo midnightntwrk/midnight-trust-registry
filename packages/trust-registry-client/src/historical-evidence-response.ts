@@ -103,7 +103,6 @@ export const verifyHistoricalAuthorizationEvidenceResponse = (
     || currentRecord.resourceId !== authorization.resourceId
     || currentRecord.policyId !== authorization.policyId
     || currentRecord.trustLevel !== authorization.trustLevel
-    || currentRecord.evidenceHash !== authorization.evidenceHash
     || currentRecord.statusPolicyBindingCommitment !== authorization.statusPolicyBindingCommitment) {
     throw new Error("Historical authorization entry mismatch");
   }
@@ -154,8 +153,7 @@ export const verifyHistoricalRecognitionEvidenceResponse = (
     || currentRecord.recognizedRegistryId !== recognition.recognizedRegistryId
     || canonicalizeJson(currentRecord.scope) !== canonicalizeJson(recognition.scope)
     || currentRecord.policyId !== recognition.policyId
-    || currentRecord.trustLevel !== recognition.trustLevel
-    || currentRecord.evidenceHash !== recognition.evidenceHash) {
+    || currentRecord.trustLevel !== recognition.trustLevel) {
     throw new Error("Historical recognition entry mismatch");
   }
   assertResponseEpoch(response, bundle, selection.at);

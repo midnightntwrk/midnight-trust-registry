@@ -18,6 +18,7 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
+import { verifyHistoricalAuthorizationEvidenceResponse } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "../packages/trust-registry-cli/dist/index.js";
 import {
   computeAuthorizationScopeCommitment,
@@ -655,12 +656,35 @@ try {
       trustedAtActivation: true,
       currentTrustedAfterRevocation: false,
       trqpAgreement,
-      verificationSurface: "UI clients, public API bundle, TRQP, and independent client",
+      verificationSurface: "UI clients, API/TRQP, and independently verified historical evidence",
     };
     const activeAt = bundle.authorization.activeFrom;
     const queryDecision = (at) => post("/v1/authorizations/evaluate", {
       role, subjectDid: participant.subjectDid, resourceId, at,
     });
+    const historicalSelection = (at) => ({
+      role, subjectDid: participant.subjectDid, resourceId, at,
+    });
+    const queryVerifiedEvidence = async (at) => {
+      const selection = historicalSelection(at);
+      const response = await expectHttp(await post("/v1/authorizations/evaluate/evidence", selection), 200);
+      const epochRecord = client.getEpochCommitmentById(response.bundle.epoch.epochId);
+      const maintainer = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+      const anchor = {
+        epochRecord,
+        maintainerPublicKey: maintainer.publicKey,
+        registryIdCommitment: bytes32Commitment(harness.registryId),
+      };
+      const decision = verifyHistoricalAuthorizationEvidenceResponse(response, selection, anchor);
+      assert.throws(() => verifyHistoricalAuthorizationEvidenceResponse(response, {
+        ...selection, resourceId: otherResourceId,
+      }, anchor), /scope mismatch/iu);
+      assert.throws(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection, {
+        ...anchor,
+        epochRecord: { ...epochRecord, stateRoot: new Uint8Array(32) },
+      }), /state root mismatch/iu);
+      return decision;
+    };
     const trqpRequest = (at) => ({
       entity_id: participant.subjectDid,
       authority_id: harness.registryDid,
@@ -700,6 +724,8 @@ try {
       const historicalDecision = await expectHttp(await queryDecision(activeAt), 200);
       assert.equal(currentDecision.trustedAtTime, false);
       assert.equal(historicalDecision.trustedAtTime, true);
+      assert.equal((await queryVerifiedEvidence(changedAt)).trustedAtTime, false);
+      assert.equal((await queryVerifiedEvidence(activeAt)).trustedAtTime, true);
       if (role === "issuer" || role === "verifier") {
         const trqp = await expectHttp(await post(
           "/v1/trqp/authorizations/query", trqpRequest(changedAt),

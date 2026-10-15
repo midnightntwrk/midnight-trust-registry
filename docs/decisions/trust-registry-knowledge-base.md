@@ -1195,3 +1195,13 @@ could masquerade as a string map in the portal's context comparison; the
 response shape is now validated before comparison. The portal additionally
 requires registry ID and resource type so its result cannot hide wildcard
 selection of those scope dimensions.
+The signed issuer, verifier, and auditor simulator demos now use the live
+timestamped evidence API after lifecycle changes and verify each response
+against separately read epoch and maintainer records. A substituted scope or
+epoch root fails. This caught an overly strict response consistency check:
+the current record's `evidenceHash` changes for suspension/revocation while
+the archived statement keeps its original evidence commitment. Compare the
+stable identity, scope, policy, and status-binding fields across those records,
+but authenticate the historical `evidenceHash` through its signed epoch and
+Merkle inclusion proof instead. Production epoch finality remains a separate
+host responsibility.

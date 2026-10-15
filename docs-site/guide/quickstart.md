@@ -23,6 +23,15 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
+The issuer, verifier, and auditor demos also query the native timestamped
+evidence API after suspension and revocation. Each response is checked against
+the simulator's separately read epoch record and maintainer key; a substituted
+resource or epoch root is rejected. An old active decision stays provable at
+its original instant, but does not imply current authorization. Lifecycle
+actions can replace the current record's `evidenceHash`, while an archived
+bundle retains its original evidence commitment. The simulator anchor in this
+demo is not a production finalized-ledger reader.
+
 For the cross-surface local API and UI smoke, use `pnpm run demo:smoke`. The repository's [demo guide](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/demo-and-release.md) explains its fixture and process model. `pnpm run integration` runs the broader simulator and API integration suite. The demos may take longer than `--light` because Compact artifacts and proving material can be generated.
 
 ## Local API and applications

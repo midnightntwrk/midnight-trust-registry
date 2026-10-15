@@ -54,7 +54,15 @@ describe("historical native evidence responses", () => {
     expect(() => verifyHistoricalAuthorizationEvidenceResponse({
       ...response,
       entry: { authorization: { ...authorization, evidenceHash: `0x${"0".repeat(64)}` } },
+    }, selection, anchor)).not.toThrow();
+    expect(() => verifyHistoricalAuthorizationEvidenceResponse({
+      ...response,
+      entry: { authorization: { ...authorization, policyId: "policy:substituted" } },
     }, selection, anchor)).toThrow(/entry mismatch/u);
+    expect(() => verifyHistoricalAuthorizationEvidenceResponse({
+      ...response,
+      bundle: { ...bundle, authorization: { ...authorization, evidenceHash: `0x${"0".repeat(64)}` } },
+    }, selection, anchor)).toThrow();
     expect(() => verifyHistoricalAuthorizationEvidenceResponse({
       ...response,
       epoch: { ...bundle.epoch, maintainerSignatures: [{
@@ -112,6 +120,18 @@ describe("historical native evidence responses", () => {
     };
 
     expect(verifyHistoricalRecognitionEvidenceResponse(response, selection, anchor).trustedAtTime).toBe(true);
+    expect(() => verifyHistoricalRecognitionEvidenceResponse({
+      ...response,
+      entry: { recognition: { ...record, evidenceHash: `0x${"0".repeat(64)}` } },
+    }, selection, anchor)).not.toThrow();
+    expect(() => verifyHistoricalRecognitionEvidenceResponse({
+      ...response,
+      entry: { recognition: { ...record, policyId: "policy:substituted" } },
+    }, selection, anchor)).toThrow(/entry mismatch/u);
+    expect(() => verifyHistoricalRecognitionEvidenceResponse({
+      ...response,
+      bundle: { ...bundle, recognition: { ...record, evidenceHash: `0x${"0".repeat(64)}` } },
+    }, selection, anchor)).toThrow();
     expect(() => verifyHistoricalRecognitionEvidenceResponse(response, {
       ...selection, recognizedRegistryId: "registry:substituted",
     }, anchor)).toThrow(/scope mismatch/u);
