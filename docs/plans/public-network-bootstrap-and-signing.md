@@ -6,11 +6,11 @@ pass. This slice is independent of PR #203 and must be rebased after it lands.
 
 Local progress: the pure Compact `deploymentBoundMaintainerActionDigest` and
 strict TypeScript sign/verify helpers use a versioned network-and-address-bound
-payload. The active governed-action verifier now uses that digest; production
-signers, evidence readers, and test fixtures are being migrated together. A
-focused negative test rejects the same signature on a different network
-commitment or contract address. This branch must not be published or described
-as a replay fix until all callers and full validation are green.
+payload. The active governed-action verifier, API prechecks, signers, evidence
+readers, demos, and test fixtures use that digest. Replay tests reject the same
+signature at another address or network while accepting it at the source.
+The remaining release gates are an approved non-conflicted recovery rule and
+qualification against a finalized public-network deployment.
 
 Constructor bootstrap is implemented locally: the former `initializeRegistry`
 body runs during construction, the public circuit is removed, and simulator

@@ -16,6 +16,8 @@ export const GovernedEpochPrepareRequestSchema = z.strictObject({ label: LabelSc
 export const PreparedGovernedEpochPublicationSchema = z.strictObject({
   epochId: z.string().min(1),
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   epochIdCommitment: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   actionKind: Bytes32Schema,
@@ -46,6 +48,8 @@ export type GovernedEpochPublicationReceipt = { eventHash: string; epoch: EpochC
 export type GovernedEpochPublicationContext = {
   epochId: string;
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   epochIdCommitment: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -80,6 +84,8 @@ export const serializeGovernedEpochPublication = (
 ): PreparedGovernedEpochPublication => PreparedGovernedEpochPublicationSchema.parse({
   epochId: context.epochId,
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   epochIdCommitment: bytes32Hex(context.epochIdCommitment),
   policyCommitment: bytes32Hex(context.policyCommitment),
   actionKind: bytes32Hex(context.actionKind),

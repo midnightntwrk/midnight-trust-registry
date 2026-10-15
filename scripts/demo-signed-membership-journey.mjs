@@ -213,13 +213,12 @@ const admission = {
 };
 const signAction = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const ledger = harness.simulator.getLedger();
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
-    ledger.registryId,
-    ledger.deploymentNetworkIdCommitment,
-    Buffer.from(harness.simulator.contractAddress, "hex"),
-    ledger.governancePolicyCommitment,
+    fromHex(prepared.registryId),
+    fromHex(prepared.networkIdCommitment),
+    fromHex(prepared.contractAddress),
+    fromHex(prepared.policyCommitment),
     fromHex(prepared.actionKind),
     fromHex(prepared.actionPayloadHash),
     BigInt(prepared.actionSequence),

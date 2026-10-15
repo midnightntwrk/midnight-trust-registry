@@ -1520,11 +1520,13 @@ export const createTrustRegistryApiServer = (
           ? (preparing ? GovernedThresholdPrepareRequestSchema
             : GovernedThresholdSubmitRequestSchema).parse(body).thresholds
           : undefined;
+        let signerContext;
         let current;
         try {
-          current = serializeGovernedPolicyAction(thresholds === undefined
+          signerContext = thresholds === undefined
             ? await port.prepareEvidenceVerifier()
-            : await port.prepareThresholds(thresholds));
+            : await port.prepareThresholds(thresholds);
+          current = serializeGovernedPolicyAction(signerContext);
         } catch (error) {
           return mapGovernedPolicyError(error, problemBaseUri);
         }
@@ -1547,6 +1549,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedPolicyActionReceiptSchema.parse(thresholds === undefined
             ? await port.executeEvidenceVerifier(signers)
@@ -1581,9 +1584,11 @@ export const createTrustRegistryApiServer = (
         }
         const body = await parseJsonBody(request,
           (value) => GovernedEpochPublishRequestSchema.parse(value), problemBaseUri);
+        let signerContext;
         let current;
         try {
-          current = serializeGovernedEpochPublication(await port.prepare(body.label));
+          signerContext = await port.prepare(body.label);
+          current = serializeGovernedEpochPublication(signerContext);
         } catch (error) {
           return mapGovernedEpochError(error, problemBaseUri);
         }
@@ -1598,6 +1603,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedEpochPublicationReceiptSchema.parse(
             await port.execute(body.label, signers),

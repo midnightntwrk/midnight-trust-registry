@@ -331,6 +331,40 @@ For a full release build, run `pnpm run build` and then
 
 ## Release Workflow
 
+### Public-network security gate
+
+The simulator demos and package smoke tests below do **not** qualify a public
+Midnight deployment. Before promoting 0.1.0 as public-network ready, the release
+owner must record evidence for all of the following:
+
+- Deploy with the registry identity, initial policy, bootstrap maintainer key,
+  threshold, and nonzero network commitment in the constructor. There must be
+  no externally callable first-run initializer; test that a hostile first
+  caller cannot replace the constructor state.
+- Authenticate the target network and deployed contract address through the
+  deployment provider independently of a caller-supplied label or evidence
+  bundle. Verify the constructor's declared network commitment against that
+  network, and read finalized ledger state before distributing the signing
+  domain to maintainers. The Compact contract does not attest to chain identity.
+- Provision maintainer signing clients with that pinned network commitment and
+  contract address. Confirm a quorum action succeeds on the target deployment
+  and fails at the same sequence on another address and another network. Never
+  use the constructor initialization event alone as proof of the deployed
+  address; only post-deployment governed events bind it.
+- Qualify a non-conflicted emergency and archival recovery path, including
+  2-of-2 and 3-of-3 policy proposals, subject exclusion, and maintainer
+  suspension, revocation, and archival. Do not approve a policy that strands
+  removal without a separately authorized, tested recovery mechanism.
+- Run `./run.sh --light`, full `./run.sh integration`, documentation checks,
+  and the published-artifact smoke tests at the exact release candidate. Retain
+  finality evidence, deployment parameters, validation logs, and independent
+  review alongside the release decision.
+
+Issue [#200](https://github.com/midnightntwrk/midnight-trust-registry/issues/200)
+tracks the remaining public-network qualification and recovery model. Until its
+criteria are met, this repository's 0.1.0 result is a simulator-validated
+reference implementation, not a public-network security claim.
+
 The repo currently exposes two manual GitHub Actions workflows:
 
 - `Publish Packages`

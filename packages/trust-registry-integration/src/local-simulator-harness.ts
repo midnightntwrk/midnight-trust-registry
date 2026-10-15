@@ -247,6 +247,8 @@ export type PreparedMaintainerProposalAction = PreparedMaintainerAction & {
 export type PreparedRegistryEpochPublicationAction = {
   epochId: string;
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   epochIdCommitment: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -261,6 +263,8 @@ export type PreparedRegistryEpochPublicationAction = {
 
 export type PreparedThresholdPolicyRevisionAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -271,6 +275,8 @@ export type PreparedThresholdPolicyRevisionAction = {
 
 export type PreparedEvidenceVerifierRegistrationAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -528,6 +534,8 @@ export class LocalTrustRegistryIntegrationHarness {
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
       actionKind: Uint8Array.from(REGISTER_EVIDENCE_VERIFIER_ACTION_KIND),
       actionPayloadHash,
@@ -1107,6 +1115,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
       actionKind: Uint8Array.from(UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND),
       actionPayloadHash,
@@ -3261,6 +3271,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return {
       epochId,
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       epochIdCommitment,
       policyCommitment: Uint8Array.from(this.simulator.getLedger().governancePolicyCommitment),
       actionKind: Uint8Array.from(CREATE_EPOCH_ACTION_KIND),

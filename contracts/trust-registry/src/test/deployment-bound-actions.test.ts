@@ -74,10 +74,15 @@ describe("deployment-bound governed actions", () => {
     const payload = labelToBytes32("audit:network-replay-test");
     const signature = signAudit(source, payload);
     const targetActionCount = target.simulator.getLedger().governanceActionCount;
+    const sourceActionCount = source.simulator.getLedger().governanceActionCount;
 
     expect(() => target.simulator.authorizeMaintainerAuditEvent(
       target.maintainer.keyId, target.publicKey, signature, payload,
     )).toThrow();
     expect(target.simulator.getLedger().governanceActionCount).toBe(targetActionCount);
+    expect(source.simulator.authorizeMaintainerAuditEvent(
+      source.maintainer.keyId, source.publicKey, signature, payload,
+    )).toHaveLength(32);
+    expect(source.simulator.getLedger().governanceActionCount).toBe(sourceActionCount + 1n);
   });
 });
