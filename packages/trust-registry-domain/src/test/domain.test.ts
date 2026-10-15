@@ -151,6 +151,12 @@ describe("lifecycle transitions", () => {
     expect(() => assertLifecycleTransition("active", "authorized")).toThrow(
       /Invalid lifecycle transition/,
     );
+    expect(() => assertLifecycleTransition("suspended", "active")).toThrow(
+      /Invalid lifecycle transition/,
+    );
+    expect(() => assertLifecycleTransition("active", "superseded")).toThrow(
+      /Invalid lifecycle transition/,
+    );
   });
 });
 
