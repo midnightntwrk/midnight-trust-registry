@@ -46,7 +46,7 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
-const applicationDraft = {
+export const applicationDraft = {
   applicationId,
   authorizationId: "auth:auditor:local-demo:v1",
   actorDid: subjectDid,
@@ -59,7 +59,7 @@ const applicationDraft = {
   disclosureLevel: scope.disclosureLevel,
 };
 
-function signDigest(digest) {
+export function signDigest(digest) {
   if (typeof digest !== "string" || !/^0x[0-9a-f]{64}$/u.test(digest)) {
     throw new Error("Pass the canonical 0x-prefixed 32-byte digest after sign-digest");
   }
@@ -78,7 +78,7 @@ function signedApplication(workspace) {
   return signPreparedAuditorApplication(prepared, signDigest(prepared.digest));
 }
 
-async function startHost(port) {
+export async function startHost(port, staticDir = fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url))) {
   const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
   const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
   const registration = new InMemoryPendingApplicationRegistrationPort({
@@ -94,7 +94,7 @@ async function startHost(port) {
   const cookie = `${cookieName}=${session.toString("hex")}`;
   const receipts = new Map();
   const staticHandler = createStaticAssetHandler({
-    distDir: resolve(fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url))),
+    distDir: resolve(staticDir),
     name: "auditor-admission-demo",
   });
   let server;
@@ -268,31 +268,36 @@ async function smoke() {
   }
 }
 
-if (command === "application") {
-  process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
-} else if (command === "sign-digest") {
-  process.stdout.write(`${signDigest(process.argv[3])}\n`);
-} else if (command === "vp") {
-  const nonce = process.argv[3];
+export async function presentationForNonce(nonce) {
   if (nonce === undefined || !/^0x[0-9a-f]{64}$/u.test(nonce)) {
     throw new Error("Pass the canonical challenge nonce after vp");
   }
   const fixture = await createApplicationVpScenarioFixture(nonce, { scope, subjectDid, evidenceVerifierDid });
-  process.stdout.write(`${JSON.stringify(fixture.input.submission)}\n`);
-} else if (command === "smoke") {
-  await smoke();
-} else if (command === "serve") {
-  const rawPort = process.argv[3] ?? "4400";
-  const port = Number(rawPort);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
-  const host = await startHost(port);
-  process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
-  process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
-  process.stdout.write(`${JSON.stringify(host.application)}\n`);
-  process.stdout.write("Or use the auditor form with this fixture draft, prepare its digest, then run `node scripts/demo-auditor-admission.mjs sign-digest <digest>` and paste the signature:\n");
-  process.stdout.write(`${JSON.stringify(applicationDraft)}\n`);
-  process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
-  process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
-} else {
-  throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|sign-digest <digest>|vp <nonce>|smoke]");
+  return fixture.input.submission;
+}
+
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  if (command === "application") {
+    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
+  } else if (command === "sign-digest") {
+    process.stdout.write(`${signDigest(process.argv[3])}\n`);
+  } else if (command === "vp") {
+    process.stdout.write(`${JSON.stringify(await presentationForNonce(process.argv[3]))}\n`);
+  } else if (command === "smoke") {
+    await smoke();
+  } else if (command === "serve") {
+    const rawPort = process.argv[3] ?? "4400";
+    const port = Number(rawPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
+    const host = await startHost(port);
+    process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
+    process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
+    process.stdout.write(`${JSON.stringify(host.application)}\n`);
+    process.stdout.write("Or use the auditor form with this fixture draft, prepare its digest, then run `node scripts/demo-auditor-admission.mjs sign-digest <digest>` and paste the signature:\n");
+    process.stdout.write(`${JSON.stringify(applicationDraft)}\n`);
+    process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
+    process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
+  } else {
+    throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|sign-digest <digest>|vp <nonce>|smoke]");
+  }
 }

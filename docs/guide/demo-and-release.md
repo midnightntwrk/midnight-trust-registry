@@ -121,7 +121,10 @@ The fixed-key signer and virtual clock are **fixture-only**; never use them for
 real applications. `pnpm run demo:auditor:smoke` sends an envelope prepared by
 the same form code through the HTTP registration and VP intake, including
 rejections for unauthorized registration, changed payload, wrong scope, and
-replayed VP. Successful evidence intake does not activate membership.
+replayed VP. The portal's DOM-driven live-host test also exercises forged
+signature rejection and recovery through its form handlers. Neither test uses
+a browser engine or demonstrates Midnight-network finality. Successful
+evidence intake does not activate membership.
 
 ### Compact-Governed Registry Journey
 

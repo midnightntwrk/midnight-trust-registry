@@ -1289,3 +1289,13 @@ signatures are randomized, so compare the canonical intent/scope rather than
 signature bytes across preparations. The fixed key, virtual clock, and local
 session remain strictly demo-only; acceptance is pending and does not confer
 auditor membership.
+
+The portal test harness now mounts the real auditor form against the loopback
+demo host's HTTP routes rather than returning mocked application responses.
+Its adapter carries the fixture session over Node HTTP because Happy DOM's
+default window origin differs from the ephemeral loopback port. It proves a
+forged signature is rejected without consuming the application, then signs
+the displayed digest, registers the pending application, issues a VP
+challenge, and verifies redacted evidence acceptance through the DOM.
+This covers form-handler-to-API conformance, not an actual browser engine or
+Midnight network submission.

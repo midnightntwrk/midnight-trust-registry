@@ -76,8 +76,11 @@ this same form preparation code and registers the result through the HTTP API.
 After registration, issue a challenge, run
 `node scripts/demo-auditor-admission.mjs vp <nonce>`, and paste the fixture VP.
 The `sign-digest` command uses a fixed fixture key and must never sign a real
-application. This reference host
-uses a single local fixture applicant, an in-memory session and evidence store,
+application. A DOM-driven integration test also runs the form against the
+loopback HTTP host: it rejects a forged signature, accepts a valid one, issues
+a challenge, and submits the one-use VP. This is not a browser-engine or
+live-network test. This reference host uses a single local fixture applicant,
+an in-memory session and evidence store,
 and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
 HTTP flow without a browser.
