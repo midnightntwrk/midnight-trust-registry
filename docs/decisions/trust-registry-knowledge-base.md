@@ -1155,3 +1155,23 @@ record and selects its bundle from one snapshot, returns 404 for no matching
 statement, and returns 424 when the statement exists without epoch-bound
 evidence at that instant. The returned bundle remains a claim until independently
 verified against an accepted epoch.
+
+The native evidence response must report the *selected bundle's* epoch, not
+the generic temporal query's latest epoch: an unrelated later publication can
+overlap the same timestamp. The client now checks exact authorization or
+recognition scope, independently anchored epoch/root/signature/inclusion,
+and recomputed status at the requested instant. These helpers do not establish
+that the supplied epoch was canonical in ledger history or that its signer
+was authoritative; the caller must authenticate those inputs independently.
+Simulator-backed negative tests cover root, signature, scope, and server status
+substitution. Keep client tests that use the integration harness in the
+integration package to avoid a client-to-integration dependency cycle.
+Independent review of the native historical verifier found that recognition
+`scope.context` was not selected, the statement `policyId` was not tied to the
+proved bundle policy, and response entry/signer fields could contradict the
+verified bundle. The client now rejects context substitution, enforces the
+policy-ID link in the shared bundle verifier, and checks response fields for
+consistency. Native recognition lookups accept an optional exact `scopeContext`
+map; the consumer verifier treats an omitted context as an expectation of no
+context. An independently authenticated canonical historical epoch selection
+remains a host responsibility, not a guarantee of the API or bundle.

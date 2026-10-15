@@ -613,7 +613,7 @@ describe("trust registry client", () => {
         },
         {},
       ),
-    ).toThrow(/policy root/i);
+    ).toThrow(/statement policy ID does not match/i);
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(

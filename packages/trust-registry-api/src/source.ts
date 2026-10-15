@@ -33,6 +33,7 @@ import {
   evaluateRecognitionRecordAtTime,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
+  canonicalizeJson,
   compareRfc3339Instants,
   type EpochCommitment,
   type RegistryRecord,
@@ -410,10 +411,9 @@ export const evaluateAuthorizationEvidenceAtTimestamp = async (
 ): Promise<(SnapshotTemporalAuthorizationInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
   const snapshot = await source.loadSnapshot();
   const inspection = evaluateAuthorizationInSnapshot(snapshot, request, evaluatedAt);
-  return inspection === null ? null : {
-    ...inspection,
-    bundle: authorizationEvidenceAtTime(snapshot, inspection, evaluatedAt),
-  };
+  if (inspection === null) return null;
+  const bundle = authorizationEvidenceAtTime(snapshot, inspection, evaluatedAt);
+  return { ...inspection, epoch: bundle?.epoch ?? inspection.epoch, bundle };
 };
 
 export const listRecognitionEntries = async (
@@ -448,6 +448,8 @@ const resolveRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
+      && (request.scopeContext === undefined
+        || canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext))
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -482,6 +484,8 @@ const evaluateRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
+      && (request.scopeContext === undefined
+        || canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext))
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -510,10 +514,9 @@ export const evaluateRecognitionEvidenceAtTimestamp = async (
 ): Promise<(SnapshotTemporalRecognitionInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
   const snapshot = await source.loadSnapshot();
   const inspection = evaluateRecognitionInSnapshot(snapshot, request, evaluatedAt);
-  return inspection === null ? null : {
-    ...inspection,
-    bundle: recognitionEvidenceAtTime(snapshot, inspection, evaluatedAt),
-  };
+  if (inspection === null) return null;
+  const bundle = recognitionEvidenceAtTime(snapshot, inspection, evaluatedAt);
+  return { ...inspection, epoch: bundle?.epoch ?? inspection.epoch, bundle };
 };
 
 const bundleMatchesEpoch = (

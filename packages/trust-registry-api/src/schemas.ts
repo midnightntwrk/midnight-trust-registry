@@ -142,6 +142,7 @@ export const TrustRegistryApiResolveRecognitionRequestSchema = z.object({
   recognizedRegistryId: NonEmptyStringSchema.optional(),
   scopeResourceType: RecognitionRecordSchema.shape.scope.shape.resourceType.optional(),
   scopeResourceId: NonEmptyStringSchema,
+  scopeContext: RecognitionRecordSchema.shape.scope.shape.context.optional(),
   trustLevel: NonEmptyStringSchema.optional(),
 });
 

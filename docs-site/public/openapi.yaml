@@ -115,6 +115,7 @@ components:
         recognizedRegistryId: { type: string }
         scopeResourceType: { type: string }
         scopeResourceId: { type: string }
+        scopeContext: { type: object, additionalProperties: { type: string } }
         trustLevel: { type: string }
         at: { type: string, format: date-time }
       additionalProperties: false

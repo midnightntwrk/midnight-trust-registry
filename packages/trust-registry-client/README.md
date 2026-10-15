@@ -36,6 +36,17 @@ before evidence and raw
 record reads, including when the ledger changes after client construction;
 that simulator is a local reference, not a production trust source.
 
+`verifyHistoricalAuthorizationEvidenceResponse` and
+`verifyHistoricalRecognitionEvidenceResponse` check the native API's
+timestamped response against an exact caller-selected scope and a
+caller-authenticated epoch record, publication key, and registry commitment.
+They recompute the status at the requested instant from the proved statement
+instead of accepting the server's `trustedAtTime` flag. The API response itself
+is not an epoch anchor: callers must establish finality, publication-key
+authority, and which epoch was canonical at that historical point from an
+independent ledger history source. The helpers return historical evidence, not
+permission to perform a new action now.
+
 `verifyAuditorRequestMandate` additionally requires an explicit evaluation
 time and a current auditor authorization record read from independently
 trusted ledger state. An older active bundle remains valid as historical

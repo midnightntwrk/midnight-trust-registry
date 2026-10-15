@@ -202,6 +202,10 @@ const assertPolicyAnchor = (
   bundle: TrustRegistryEvidenceBundle,
   options: BundleVerificationOptions,
 ): void => {
+  const statementPolicyId = bundle.authorization?.policyId ?? bundle.recognition?.policyId;
+  if (statementPolicyId !== bundle.policy.policyId) {
+    throw new Error("Statement policy ID does not match the bundle policy");
+  }
   const snapshot = deriveGovernancePolicySnapshot(bundle.policy);
   const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(snapshot);
   if (bundle.epoch.policyRoot !== expectedPolicyRoot) {

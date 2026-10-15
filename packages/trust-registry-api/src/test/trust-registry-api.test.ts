@@ -748,6 +748,44 @@ describe("trust registry api", () => {
     }
   });
 
+  it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
+    const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1_000).toISOString();
+    const unrelatedEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:unrelated`,
+      validFrom: at,
+    };
+    const server = await startServer(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, unrelatedEpoch],
+    }));
+    try {
+      const request = {
+        role: "issuer",
+        subjectDid: entry.authorization.subjectDid,
+        resourceId: entry.authorization.resourceId,
+        at,
+      };
+      const plain = await fetch(`${server.url}/v1/authorizations/evaluate`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      const evidence = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(plain.status).toBe(200);
+      expect(evidence.status).toBe(200);
+      expect((await plain.json()).epoch.epochId).toBe(unrelatedEpoch.epochId);
+      const result = await evidence.json();
+      expect(result.epoch).toEqual(result.bundle.epoch);
+      expect(result.epoch.epochId).toBe(entry.evidence.epoch.epochId);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves archived issuer evidence for its epoch after a later revocation", async () => {
     let workspace = createOperatorWorkspace({ label: "trqp-issuer-archive" });
     const submitted = applyOperation(workspace, {
@@ -803,6 +841,7 @@ describe("trust registry api", () => {
       expect(nativeResult.trustedAtTime).toBe(true);
       expect(nativeResult.bundle.authorization.status).toBe("active");
       expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
       const wrongScope = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -903,6 +942,20 @@ describe("trust registry api", () => {
       expect(nativeResult.trustedAtTime).toBe(true);
       expect(nativeResult.bundle.recognition.status).toBe("active");
       expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
+      const wrongContext = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          scopeContext: { purpose: "different" },
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(wrongContext.status).toBe(404);
     } finally {
       await server.close();
     }
