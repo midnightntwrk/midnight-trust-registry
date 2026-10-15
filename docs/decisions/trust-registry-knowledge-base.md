@@ -1137,3 +1137,14 @@ real epoch publication signatures and a current-grant read; it rejects
 publisher substitution, unrelated evidence, and a suspended current grant.
 The embedding host must still establish federation-key provenance and network
 finality for both registry and DID readers.
+
+PR #191 review questioned whether an older issuer epoch could remain current
+after a newer one was published. The first global-latest guard failed the
+governed demo because simulator epochs are single-statement commitments: a
+newer unrelated epoch does not supersede an unchanged issuer grant. The
+Compact reader instead compares the selected epoch event root with the
+current grant lifecycle root. A two-epoch regression accepts the unchanged
+grant while its window is open and rejects the same epoch after that grant is
+suspended. Production implementations still need an authenticated latest
+applicable epoch index if policy requires rejecting duplicate publications
+of an unchanged statement.

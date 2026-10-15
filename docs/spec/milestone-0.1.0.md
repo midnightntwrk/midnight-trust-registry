@@ -214,8 +214,13 @@ policy and live credential status. The implementation sequence and required
 negative cases are recorded in
 [the recognition accreditation plan](../plans/recognition-accreditation-vp.md).
 
-A current trust answer uses the latest accepted finalized epoch and evaluates
-the grant at the query time. A historical answer names the evaluation time and
+A current trust answer uses an accepted finalized epoch for the selected
+statement, checks its event root against the current grant lifecycle and its
+policy root against current policy, and evaluates the grant at the query time.
+An unrelated statement's later epoch does not by itself supersede an unchanged
+grant. Requiring the latest publication of an otherwise unchanged statement
+needs an authenticated per-statement epoch index, not the ledger's global
+latest-epoch ID. A historical answer names the evaluation time and
 the epoch or ledger view that establishes it; it does not silently substitute
 today's policy or keys. For a credential issued at time T, an issuance-time
 issuer grant is necessary but insufficient: the verifier also checks the VC

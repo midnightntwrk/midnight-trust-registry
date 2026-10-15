@@ -116,6 +116,9 @@ export function createCompactLedgerDecisionReaders(input: {
       }
       const currentGrant = readCurrentGrant(ledger, selection, authorizationIdHint);
       if (currentGrant === null) return null;
+      if (hex(epoch.eventRoot) !== currentGrant.lifecycleEventRoot) {
+        throw new Error("Accepted epoch is stale for the current grant");
+      }
       const sequence = ledger.governanceActionCount.toString();
       return {
         acceptedEpoch,

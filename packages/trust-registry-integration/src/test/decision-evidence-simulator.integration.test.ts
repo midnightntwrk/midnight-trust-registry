@@ -1259,4 +1259,72 @@ describe("simulator-backed VC decision evidence composition", () => {
     });
     await expect(suspendedAuthoritySigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
   }, 30_000);
+
+  it("keeps an unchanged grant current across unrelated epochs but rejects a changed grant", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("superseded-current-epoch");
+    const issuer = createIssuerScenarioFixture("superseded-current-epoch");
+    harness.authorizeIssuer(issuer);
+    const oldBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    if (oldBundle.authorization?.role !== "issuer") throw new Error("Expected issuer authorization");
+    const oldRecord = harness.simulator.getEpochCommitment(bytes32Commitment(oldBundle.epoch.epochId));
+    const oldWitness = harness.getEpochPublicationWitness(oldBundle.epoch.epochId);
+    const newer = harness.publishRegistryEpoch("newer-current-epoch");
+    const ledger = harness.simulator.getLedger();
+    expect(newer.epochId).not.toBe(oldBundle.epoch.epochId);
+    expect(ledger.governanceActionCount <= oldRecord.validUntilSequence).toBe(true);
+    const networkId = issuer.subjectDid.split(":")[2]!;
+    const contractAddress = hex(encodeContractAddress(harness.simulator.contractAddress));
+    const acceptedEpoch = {
+      registryId: harness.registryId,
+      registryDid: harness.registryDid,
+      networkId,
+      contractAddress,
+      transactionHash: sha256Hex("superseded:epoch-transaction"),
+      blockHash: sha256Hex("superseded:epoch-block"),
+      epochId: oldBundle.epoch.epochId,
+      stateRoot: hex(oldRecord.stateRoot),
+      eventRoot: hex(oldRecord.eventRoot),
+      policyRoot: hex(oldRecord.policyRoot),
+      publicationPolicyCommitment: hex(oldRecord.publicationPolicyCommitment),
+      publicationSequence: oldRecord.publishedAtSequence.toString(),
+      validFromSequence: oldRecord.validFromSequence.toString(),
+      validUntilSequence: oldRecord.validUntilSequence.toString(),
+      publicationEventHash: oldWitness.eventHash,
+      validFrom: oldBundle.epoch.validFrom,
+      validUntil: oldBundle.epoch.validUntil,
+      requiredSignatures: Number(ledger.maintainerThreshold),
+    };
+    const readers = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: AcceptedDecisionEpochSchema.parse(acceptedEpoch),
+        publication: {
+          registryIdCommitment: harness.registryIdCommitment,
+          epochIdCommitment: bytes32Commitment(oldBundle.epoch.epochId),
+          firstSignerKeyIdCommitment: oldRecord.maintainerKeyId,
+          activeMaintainersAtPublication: [],
+        },
+        evaluationTime: oldBundle.epoch.validFrom,
+      }),
+      readFinalizedDidState: async () => { throw new Error("Stale epoch must fail before DID lookup"); },
+    });
+    const selection = {
+      registryId: harness.registryId,
+      networkId,
+      contractAddress,
+      subjectDid: issuer.subjectDid,
+      role: "issuer" as const,
+      resourceType: oldBundle.authorization.resourceType,
+      resourceId: issuer.resourceId,
+      scope: issuer.authorizationScope,
+    };
+    const current = await readers.readCurrentFinalizedRegistryDecision(
+      selection, oldBundle.epoch.epochId, issuer.authorizationId,
+    );
+    expect(current?.decisionPoint.currentGrant.status).toBe("active");
+    harness.suspendIssuer(issuer);
+    await expect(readers.readCurrentFinalizedRegistryDecision(
+      selection, oldBundle.epoch.epochId, issuer.authorizationId,
+    )).rejects.toThrow(/stale for the current grant/u);
+  }, 30_000);
 });
