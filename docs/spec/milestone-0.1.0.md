@@ -141,9 +141,11 @@ steps separately and does not imply atomic execution or network finality.
 
 Application states are `proposed -> authorized -> active`, followed by
 `suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
-lifecycle validators. A rejected proposal MUST be terminal or represented by
-an explicit rejection event before its scope can be reused; 0.1.0 issues
-must settle this currently missing transition. A superseding application gets
+lifecycle validators. A denied proposal is archived by a quorum-governed
+action before its exact scope can be reused. The original ID and proposal
+evidence remain in the ledger; a new application MUST use a new ID. Archival
+records the terminal decision but does not encode an off-chain denial reason.
+A superseding application gets
 a new ID and explicit predecessor reference. No status change is inferred from
 a changed API response alone.
 

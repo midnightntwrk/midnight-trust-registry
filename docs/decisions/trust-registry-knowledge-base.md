@@ -1031,3 +1031,12 @@ trust domain for its own verification. A negative simulator case substitutes
 the trusted registry selection and fails before the claim is served. This is
 still a host-port contract: the host must independently authenticate the
 selection and reader provenance, and public consumers must verify again.
+
+The simulator proves a pending proposal can be denied using the existing
+quorum-governed archive circuit for issuer, verifier, auditor, recognition,
+and maintainer membership. A live proposal blocks a duplicate scope or DID;
+after archival a fresh ID can reuse it while the original ledger record stays
+archived. A separate two-maintainer case proves one signer cannot archive a
+pending issuer once the ordinary threshold is two. This resolves the spec's
+earlier ambiguity without inventing an unreleased `rejected` status. Archival
+does not record an off-chain denial reason.
