@@ -207,6 +207,10 @@ describe("admin console browser handlers", () => {
       await vi.waitFor(() => expect(posted.at(-1)?.path).toBe(
         `/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/${action}`,
       ));
+      if (action === "activate") {
+        await vi.waitFor(() => expect(root.querySelector('[data-governed-prepare="archive"]'))
+          .not.toBeNull());
+      }
       if (nextAction === null) {
         await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).toBeNull());
       } else {

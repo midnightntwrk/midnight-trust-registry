@@ -259,6 +259,7 @@ describe("trust registry admin console model", () => {
   it("derives conservative maintainer actions from lifecycle state", () => {
     expect(getReviewActions("proposed")).toEqual(["approve", "archive"]);
     expect(getReviewActions("authorized")).toEqual(["activate", "revoke", "archive"]);
+    expect(getReviewActions("active")).toEqual(["suspend", "revoke", "archive"]);
     expect(getReviewActions("suspended")).toEqual(["revoke", "archive"]);
     expect(getReviewActions("archived")).toEqual([]);
   });

@@ -1049,3 +1049,8 @@ insufficient signatures or replay. The domain parser accepts an archived
 proposal without invented approval or activation timestamps, while retaining
 timestamp requirements for records that progressed further. OpenAPI and the
 endpoint guide describe this as a signed terminal denial, not a trust grant.
+The follow-on conformance test exercises external quorum archival for proposed
+issuer, verifier, auditor, and maintainer records, including one-signer and
+replay rejection. Recognition has its own externally signed denial test.
+The admin console also exposes the Compact-permitted archive action for an
+already active record rather than requiring an artificial revoke first.
