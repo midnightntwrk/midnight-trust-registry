@@ -52,8 +52,14 @@ verifies the domain-separated JubJub signature. A revoked, stale, substituted,
 or unsigned assertion fails closed. This is an authority attestation, not an
 independently verified non-revocation proof. The deterministic reference
 fetcher does not authenticate a live status-registry root or network finality;
-production federation status claims remain unsupported until that boundary is
-implemented.
+production non-revocation federation claims remain unsupported until that
+boundary is implemented. The experimental OpenID Federation authorization
+statement may carry this exact binding, its authorization-leaf commitment,
+and the TR evidence bundle as a publisher claim. It must discard the old
+unanchored hints and reject a substituted binding before signing. A relying
+party must still validate the bundled authorization against an independently
+accepted epoch and current grant; the federation signature does not supply
+that trust anchor or prove live credential status.
 
 `createGovernedApplicationIssuerEligibility` is the reference connection from
 current decision evidence to VP intake. The deployment supplies a fixed issuer

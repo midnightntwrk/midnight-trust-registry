@@ -1125,3 +1125,9 @@ obtained issuer status-policy binding and historical DID resolver. The demo
 now retains the actual fetched fixture witness for each challenge; a prebuilt
 copy of the same status statement was not sufficient because its Schnorr
 signature bytes can differ. The public receipt still contains only hashes.
+
+OpenID Federation authorization subordinate statements now carry the issuer
+status-policy binding and its leaf commitment with the TR evidence bundle.
+The adapter rejects a substituted binding and strips legacy unanchored status
+hints. This is a publisher claim, not a trust decision: the relying party must
+verify the bundle against an independent accepted epoch and current grant.

@@ -21,6 +21,7 @@ import {
 import {
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
+  createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
 } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -116,6 +117,12 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(verified.metadata?.midnight_trust_registry).not.toHaveProperty(
       "referenced_status_registry_id",
     );
+    const metadata = verified.metadata?.midnight_trust_registry;
+    if (metadata?.statement_kind !== "authorization") throw new Error("Expected authorization metadata");
+    expect(metadata.status_policy_binding).toEqual(bundle.statusPolicyBinding);
+    expect(metadata.status_policy_binding_commitment).toBe(bundle.authorization?.statusPolicyBindingCommitment);
+    expect(metadata.authorization_bundle.statusPolicyBinding).toEqual(bundle.statusPolicyBinding);
+    expect(metadata.authorization_bundle).not.toHaveProperty("referencedStatusRegistryId");
   });
 
   it("rejects a substituted status-policy preimage before federation publication", () => {
@@ -137,6 +144,68 @@ describe("trust registry OpenID Federation adapter", () => {
       policyVersion: harness.policyRecord.version,
       bundle: substituted,
     })).toThrow(/status policy binding does not match governed authorization/i);
+    expect(() => buildAuthorizationSubordinateStatementPayload({
+      issuerEntityId: harness.registryRecord.serviceEndpoint,
+      sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
+      subjectPublicJwks: { keys: [{ kty: "OKP", crv: "Ed25519", x: "AA" }] },
+      bundle: substituted,
+    })).toThrow(/status policy binding does not match governed authorization/i);
+    expect(() => buildAuthorizationSubordinateStatementPayload({
+      issuerEntityId: harness.registryRecord.serviceEndpoint,
+      sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
+      subjectPublicJwks: { keys: [{ kty: "OKP", crv: "Ed25519", x: "AA" }] },
+      bundle: { ...bundle, statusPolicyBinding: undefined },
+    })).toThrow(/status policy binding preimage is missing/i);
+  });
+
+  it("rejects signed authorization metadata that disagrees with its evidence bundle", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("degree-status-metadata-tamper");
+    const keys = await createSigningFixture("registry-key-metadata-tamper");
+    harness.authorizeIssuer(issuer);
+    const payload = buildAuthorizationSubordinateStatementPayload({
+      issuerEntityId: harness.registryRecord.serviceEndpoint,
+      sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
+      subjectPublicJwks: keys.publicJwks,
+      bundle: harness.evaluateCurrentIssuerDecision(issuer),
+    });
+    const metadata = payload.metadata?.midnight_trust_registry;
+    if (metadata?.statement_kind !== "authorization") throw new Error("Expected authorization metadata");
+    const tampered = {
+      ...payload,
+      metadata: {
+        ...payload.metadata,
+        midnight_trust_registry: {
+          ...metadata,
+          status_policy_binding_commitment: `0x${"f".repeat(64)}`,
+        },
+      },
+    };
+    const jwt = await new SignJWT(tampered as JWTPayload)
+      .setProtectedHeader({ typ: "entity-statement+jwt", alg: keys.alg, kid: keys.kid })
+      .sign(keys.privateKey);
+
+    await expect(verifyEntityStatement({ jwt, jwks: keys.publicJwks }))
+      .rejects.toThrow(/authorization metadata does not match its governed evidence bundle/i);
+  });
+
+  it("does not turn verifier authorization into an issuer status-policy claim", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const verifier = createVerifierScenarioFixture("verifier-no-status-claim");
+    harness.authorizeVerifier(verifier);
+    const bundle = harness.evaluateCurrentVerifierDecision(verifier);
+    const payload = buildAuthorizationSubordinateStatementPayload({
+      issuerEntityId: harness.registryRecord.serviceEndpoint,
+      sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
+      subjectPublicJwks: { keys: [{ kty: "OKP", crv: "Ed25519", x: "AA" }] },
+      bundle,
+    });
+    const metadata = payload.metadata?.midnight_trust_registry;
+    if (metadata?.statement_kind !== "authorization") throw new Error("Expected authorization metadata");
+    expect(metadata.role).toBe("verifier");
+    expect(metadata).not.toHaveProperty("status_policy_binding");
+    expect(metadata).not.toHaveProperty("status_policy_binding_commitment");
+    expect(metadata.authorization_bundle.authorization?.role).toBe("verifier");
   });
 
   it("builds a signed trust chain for the registry with an embedded authorization bundle", async () => {
