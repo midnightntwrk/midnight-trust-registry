@@ -1234,3 +1234,20 @@ TRQP evidence verification is now exercised against those same live API
 journeys: issuer/verifier and recognition proof responses must match exact
 requests, ledger-selected epoch anchors, and independently recomputed temporal
 decisions. Recognition remains a distinct result, not a local authorization.
+
+The UC-14 auditor mandate check now requires the independently read current
+active ledger record to match the verified grant's ID, DID, exact request
+resource, governed policy commitment, trust level, evidence hash, and lifecycle
+event. A substituted active record therefore cannot revive a stale audit
+mandate. Compact's `AuditorAuthorizationRecord.policyId` holds the governed
+policy commitment, so compare it to the verified statement epoch's policy
+root rather than hashing the human-readable policy ID. Focused client tests,
+`./run.sh --light`, `./run.sh integration --light`, and the dependency audit
+passed. This remains simulator-backed evidence, not Midnight network finality.
+
+The sibling VC repository's status-registry package remains a private
+prototype and explicitly lacks authenticated mutation and in-circuit live-root
+proof. Do not copy or import it as a production solution for #76/#90. The
+published VC core provides status-reference shape and commitment checks; a
+governed status authority plus authenticated current-state adapter is still a
+separate functional deliverable.
