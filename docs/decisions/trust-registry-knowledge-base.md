@@ -37,6 +37,14 @@ shorter-lived and more action-oriented than the normative specification.
   then reconcile from a later simulator ledger view. Each first rejects a
   forged maintainer vote without reserving the journal or executing Compact.
   This exercises the local integration boundary, not Midnight network finality.
+- At local signed head `b4b40f7`, `./run.sh --light` passed 20/20 tasks,
+  `./run.sh integration` passed the 66-circuit build plus API/simulator suites
+  and actor demos, `pnpm audit --audit-level low` found no vulnerabilities,
+  and the full Playwright suite passed 9/9 once proof compilation had ended.
+  The full run spent about 23 minutes primarily in `zkir compile-many` key
+  generation; the 8.5 MiB ZKIR directory yielded more than 1.5 GiB of keys.
+  Focused API/DOM/Chrome checks and cached light builds remain the practical
+  inner loop; keep one full proving run per coherent publication batch.
 
 ## October 2026 Local Functional Stack
 
