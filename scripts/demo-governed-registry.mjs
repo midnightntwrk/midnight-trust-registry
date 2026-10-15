@@ -19,7 +19,11 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { bytes32Commitment, createVerifiedDecisionEvidenceSource } from "../packages/trust-registry-client/dist/index.js";
+import {
+  bytes32Commitment,
+  createVerifiedDecisionEvidenceSource,
+  verifyHistoricalRecognitionEvidenceResponse,
+} from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
@@ -1972,6 +1976,29 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(target.evaluationBody(at)),
     });
+    const verifyNativeRecognitionAt = async (at) => {
+      if (!recognitionTarget) return;
+      const selection = target.evaluationBody(at);
+      const response = await expectHttp(await fetch(`${base}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(selection),
+      }), 200);
+      const epochRecord = client.getEpochCommitmentById(response.bundle.epoch.epochId);
+      const maintainer = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+      const anchor = {
+        epochRecord,
+        maintainerPublicKey: maintainer.publicKey,
+        registryIdCommitment: bytes32Commitment(harness.registryId),
+      };
+      assert.equal(verifyHistoricalRecognitionEvidenceResponse(response, selection, anchor).trustedAtTime, true);
+      assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, {
+        ...selection, recognizedRegistryId: `${selection.recognizedRegistryId}:other`,
+      }, anchor), /scope mismatch/iu);
+      assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, selection, {
+        ...anchor, epochRecord: { ...epochRecord, stateRoot: new Uint8Array(32) },
+      }), /state root mismatch/iu);
+    };
     const queryTrqpAt = target.trqpRequest === undefined ? undefined : (at) => fetch(
       `${base}/v1/trqp/${recognitionTarget ? "recognitions" : "authorizations"}/query`,
       {
@@ -2047,6 +2074,7 @@ try {
       boundary: "api", trusted: true,
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-suspension", historicalAfterSuspension.trustedAtTime);
+    await verifyNativeRecognitionAt(roleActiveAt);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
@@ -2102,6 +2130,7 @@ try {
       boundary: "api", trusted: true,
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-revocation", historicalAfterRevocation.trustedAtTime);
+    await verifyNativeRecognitionAt(roleActiveAt);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,

@@ -31,6 +31,9 @@ its original instant, but does not imply current authorization. Lifecycle
 actions can replace the current record's `evidenceHash`, while an archived
 bundle retains its original evidence commitment. The simulator anchor in this
 demo is not a production finalized-ledger reader.
+The governed demo performs the analogous historical proof check for external
+recognition after suspension and revocation, including wrong-registry and
+wrong-root rejection. Recognition still does not confer local issuer trust.
 
 For the cross-surface local API and UI smoke, use `pnpm run demo:smoke`. The repository's [demo guide](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/demo-and-release.md) explains its fixture and process model. `pnpm run integration` runs the broader simulator and API integration suite. The demos may take longer than `--light` because Compact artifacts and proving material can be generated.
 

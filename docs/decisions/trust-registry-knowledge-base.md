@@ -1205,3 +1205,8 @@ stable identity, scope, policy, and status-binding fields across those records,
 but authenticate the historical `evidenceHash` through its signed epoch and
 Merkle inclusion proof instead. Production epoch finality remains a separate
 host responsibility.
+The governed simulator demo now queries native historical recognition evidence
+after suspension and revocation, verifies the original active statement
+against a separate simulator epoch/signer read, and rejects substituted
+recognized-registry and epoch-root inputs. It is reference conformance, not a
+network-finality claim or transitive issuer authorization.
