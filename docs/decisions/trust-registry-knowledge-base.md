@@ -50,7 +50,10 @@ shorter-lived and more action-oriented than the normative specification.
   snapshot. Governed epoch publication projects the Compact result into the
   workspace file while holding its cross-process lock. A second process
   holding that lock causes 409 before Compact advances. Unsafe fixture
-  mutation routes stay disabled. This closes one local-host gap but does not
+  mutation routes stay disabled. A separate read-only process then reopens
+  the workspace and recovers the final epoch and the historical active/current
+  revoked decisions for issuer, verifier, and auditor. This closes one
+  local-host gap but does not
   make admission plus governance atomic or establish network finality.
 
 ## October 2026 Local Functional Stack
