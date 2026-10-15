@@ -90,6 +90,14 @@ and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
 HTTP flow without a browser.
 
+The portal build bundles its browser entry point; raw TypeScript ESM output
+cannot resolve workspace package imports in a browser. With Google Chrome
+installed, `pnpm run test:browser` builds the local workspace and runs a
+separate Playwright suite against the same loopback admission host. It covers
+issuer, verifier, auditor, and maintainer form signing, forged-signature
+rejection, pending registration, one-use VP evidence, and redacted UI output.
+This optional browser gate is not a network-finality or production-key test.
+
 For the auditor-specific form, fill the exact scope and applicant DID fields,
 select **Prepare signing digest**, sign the displayed digest bytes using the
 applicant DID authentication key outside the browser, and paste the returned

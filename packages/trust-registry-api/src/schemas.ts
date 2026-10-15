@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import {
+  TrustRegistryApiResolveRecognitionRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
+} from "./browser-schemas.js";
+export { TrustRegistryApiResolveRecognitionRequestSchema, TrustRegistryApiEvaluateRecognitionRequestSchema };
+
+import {
   MutableSnapshotTargetSchema,
   TrustRegistryOperatorWorkspaceOperationSchema,
   TrustRegistryAuthorizationSnapshotEntrySchema,
@@ -136,20 +142,6 @@ export const TrustRegistryApiRecognitionListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
   entries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
 });
-
-export const TrustRegistryApiResolveRecognitionRequestSchema = z.object({
-  recognizedAuthorityDid: NonEmptyStringSchema,
-  recognizedRegistryId: NonEmptyStringSchema.optional(),
-  scopeResourceType: RecognitionRecordSchema.shape.scope.shape.resourceType.optional(),
-  scopeResourceId: NonEmptyStringSchema,
-  scopeContext: RecognitionRecordSchema.shape.scope.shape.context.optional(),
-  trustLevel: NonEmptyStringSchema.optional(),
-});
-
-export const TrustRegistryApiEvaluateRecognitionRequestSchema =
-  TrustRegistryApiResolveRecognitionRequestSchema.extend({
-    at: TimestampSchema,
-  });
 
 const TrustRegistryApiTemporalEvaluationBaseSchema = z.object({
   evaluatedAt: TimestampSchema,

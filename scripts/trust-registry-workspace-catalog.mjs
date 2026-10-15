@@ -58,9 +58,9 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-domain",
       files: ["dist/**", "README.md"],
-      exports: ["."],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-domain"],
+      exports: [".", "./browser"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/browser.js"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-domain", "@midnight-ntwrk/trust-registry-domain/browser"],
     },
   },
   {
@@ -128,7 +128,7 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-api",
       files: ["bin/trust-registry-api.mjs", "dist/**", "README.md"],
-      exports: [".", "./cli", "./server"],
+      exports: [".", "./cli", "./server", "./browser-schemas"],
       bin: ["trust-registry-api"],
       requiredPackedPaths: [
         "README.md",
@@ -137,11 +137,13 @@ export const workspaceCatalog = [
         "dist/index.js",
         "dist/cli.js",
         "dist/server.js",
+        "dist/browser-schemas.js",
       ],
       smokeImports: [
         "@midnight-ntwrk/trust-registry-api",
         "@midnight-ntwrk/trust-registry-api/cli",
         "@midnight-ntwrk/trust-registry-api/server",
+        "@midnight-ntwrk/trust-registry-api/browser-schemas",
       ],
     },
   },

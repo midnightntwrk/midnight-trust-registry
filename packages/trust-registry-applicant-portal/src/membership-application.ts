@@ -16,7 +16,7 @@ import {
   type PendingApplicationPayload,
   type MutationIntent,
   type SignedPendingApplication,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnight-ntwrk/trust-registry-domain/browser";
 
 export type MembershipApplicationIdentity = {
   applicationId: string;

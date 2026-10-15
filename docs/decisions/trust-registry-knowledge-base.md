@@ -1333,3 +1333,14 @@ custody. The sibling VC status-registry package is still private and lacks
 an independently authenticated current-root proof, so the DID-signed status
 attestation remains a narrower authority statement rather than a general
 non-revocation proof.
+
+Real Chrome exposed that the applicant portal served unresolved workspace
+package specifiers from TypeScript ESM output; Happy DOM tests had imported
+the same modules through Node and missed the deployment failure. The normal
+portal build now bundles the browser entry point with esbuild. A narrow
+browser-safe domain export and API recognition-query schema entry avoid
+pulling server-only Node modules and Midnight on-chain WASM into that bundle.
+An optional Playwright suite drives all four role forms against the loopback
+HTTP admission host, rejects forged signatures, then completes pending
+registration and one-use VP evidence. This is real-browser validation of a
+fixture host, not production authentication or finalized-network evidence.

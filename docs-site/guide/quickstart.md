@@ -61,6 +61,13 @@ are local fixtures, not production trust or Midnight finality.
 The maintainer form derives its exact registry scope from the API's current
 context rather than an applicant-entered registry ID.
 
+With Google Chrome installed, `pnpm run test:browser` builds and exercises
+the issuer, verifier, auditor, and maintainer forms in a real browser against
+the authenticated loopback admission host. The browser test rejects a forged
+applicant signature, accepts the valid fixture signature, and submits a
+challenge-bound VP without rendering raw presentation data. It does not
+establish production identity, status-root finality, or network settlement.
+
 ## Read a decision
 
 With the local API running, `GET /health`, `GET /v1/registry`, and `GET /v1/epochs/current` show the loaded snapshot. A scoped authorization query must use a canonical composite resource ID; a bare profile name is not enough. Query output is only informational until the caller verifies the registry anchor, policy, signatures, epoch, and inclusion evidence independently.

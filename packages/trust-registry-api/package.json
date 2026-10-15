@@ -31,6 +31,10 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./browser-schemas": {
+      "types": "./dist/browser-schemas.d.ts",
+      "import": "./dist/browser-schemas.js"
     }
   },
   "files": [

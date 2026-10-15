@@ -63,7 +63,7 @@ const verifierScope = {
   allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"],
   disclosureLevel: "minimal",
 };
-const demoRegistryId = createOperatorWorkspace({ label: "auditor-admission-demo" }).snapshot.registry.registryId;
+export const demoRegistryId = createOperatorWorkspace({ label: "auditor-admission-demo" }).snapshot.registry.registryId;
 const maintainerScope = { version: "tr-scope-v1", role: "maintainer", registryId: demoRegistryId };
 const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope, maintainer: maintainerScope };
 export const applicationDraft = {

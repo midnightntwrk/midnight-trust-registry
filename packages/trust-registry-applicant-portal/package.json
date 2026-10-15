@@ -13,7 +13,7 @@
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs",
+    "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs && node ./scripts/bundle-browser.mjs",
     "test": "vitest run",
     "integration": "pnpm run test",
     "integration:light": "pnpm run test",
