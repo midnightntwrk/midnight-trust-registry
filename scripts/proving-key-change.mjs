@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
@@ -25,20 +26,28 @@ export const provingInputsChanged = (paths, eventName, workspaceRelevant = true)
   || paths.some((path) => provingInputs.has(path))
   || (workspaceRelevant && paths.includes("pnpm-workspace.yaml"));
 
-const workspaceChangeIsRelevant = () => {
+export const workspaceChangeIsRelevant = (base, cwd = process.cwd()) => {
   try {
-    const before = yaml.load(execFileSync("git", ["show", "HEAD^1:pnpm-workspace.yaml"], { encoding: "utf8" }));
-    const after = yaml.load(readFileSync("pnpm-workspace.yaml", "utf8"));
+    const before = yaml.load(execFileSync("git", ["show", `${base}:pnpm-workspace.yaml`], { encoding: "utf8", cwd }));
+    const after = yaml.load(readFileSync(path.join(cwd, "pnpm-workspace.yaml"), "utf8"));
     return workspaceConfigAffectsProving(before, after);
   } catch {
     return true;
   }
 };
 
-export const changedPaths = () => {
+export const comparisonBase = (eventName, before) => {
+  if (eventName !== "push") return "HEAD^1";
+  return /^[0-9a-f]{40}$/i.test(before ?? "") && !/^0{40}$/.test(before) ? before : null;
+};
+
+export const changedPaths = (base, cwd) => {
+  if (!base) return [".compact-version"];
   try {
-    return execFileSync("git", ["diff", "--name-only", "HEAD^1", "HEAD"], {
+    return execFileSync("git", ["diff", "--name-only", base, "HEAD"], {
       encoding: "utf8",
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim().split("\n").filter(Boolean);
   } catch {
     // An unavailable parent must not silently disable proving validation.
@@ -47,9 +56,11 @@ export const changedPaths = () => {
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const paths = changedPaths();
-  const workspaceRelevant = paths.includes("pnpm-workspace.yaml") && workspaceChangeIsRelevant();
-  const required = provingInputsChanged(paths, process.env.GITHUB_EVENT_NAME ?? "workflow_dispatch", workspaceRelevant);
+  const eventName = process.env.GITHUB_EVENT_NAME ?? "workflow_dispatch";
+  const base = comparisonBase(eventName, process.env.TR_PROVING_BASE);
+  const paths = changedPaths(base);
+  const workspaceRelevant = paths.includes("pnpm-workspace.yaml") && workspaceChangeIsRelevant(base);
+  const required = provingInputsChanged(paths, eventName, workspaceRelevant);
   const value = required ? "true" : "false";
   if (process.argv.includes("--github-output")) {
     if (!process.env.GITHUB_OUTPUT) throw new Error("GITHUB_OUTPUT is required");

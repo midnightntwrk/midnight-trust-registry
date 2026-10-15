@@ -110,9 +110,17 @@ jobs:
       - name: Build all workspaces without proving keys
         run: pnpm run build:light
 
+      - name: Fetch push comparison base
+        if: github.event_name == 'push'
+        env:
+          TR_PROVING_BASE: ${{ github.event.before }}
+        run: git fetch --no-tags --depth=1 origin "$TR_PROVING_BASE" || echo 'Push base unavailable; proving validation will fail closed'
+
       - name: Detect proving-input changes
         id: proving-inputs
         run: node scripts/proving-key-change.mjs --github-output
+        env:
+          TR_PROVING_BASE: ${{ github.event.before }}
 
       - name: Restore ZKIR-derived proving keys
         if: steps.proving-inputs.outputs.required == 'true'

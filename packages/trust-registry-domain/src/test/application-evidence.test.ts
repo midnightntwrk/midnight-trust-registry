@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ApplicationEvidenceEnvelopeSchema,
+  ApplicationEvidenceSubmissionSchema,
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
   issuerGovernedResourceIdFromScopeCommitment,
@@ -65,6 +67,29 @@ const authorizedVerifier = {
 };
 
 describe("application evidence", () => {
+  it.each(["issuer", "verifier", "auditor"] as const)("returns a parse failure for malformed %s scope hashes", (role) => {
+    const envelope = createSubmission().envelope;
+    const scopedEnvelope = role === "issuer" ? envelope : {
+      ...envelope,
+      role,
+      governedResource: {
+        type: "requestProfile" as const,
+        id: requestGovernedResourceIdFromScopeCommitment(HASH_A),
+      },
+    };
+    const malformed = { ...scopedEnvelope, scopeCommitment: "not-a-hash" };
+    expect(() => ApplicationEvidenceEnvelopeSchema.safeParse(malformed)).not.toThrow();
+    expect(ApplicationEvidenceEnvelopeSchema.safeParse(malformed).success).toBe(false);
+    expect(() => ApplicationEvidenceSubmissionSchema.safeParse({
+      ...createSubmission(),
+      envelope: malformed,
+    })).not.toThrow();
+    expect(ApplicationEvidenceSubmissionSchema.safeParse({
+      ...createSubmission(),
+      envelope: malformed,
+    }).success).toBe(false);
+  });
+
   it("rejects bare issuer resource IDs before signing an envelope", () => {
     const envelope = createSubmission().envelope;
     expect(() => computeApplicationEvidenceCommitment({
