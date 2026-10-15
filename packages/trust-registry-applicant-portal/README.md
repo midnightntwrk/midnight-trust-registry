@@ -67,9 +67,16 @@ exposing this flow.
 
 To demonstrate the private panel without a production host, run
 `pnpm run demo:auditor` from the repository root and open its loopback URL.
-Paste the signed fixture application printed in the terminal. After the panel
-issues a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>`
-in another terminal and paste the generated fixture VP. This reference host
+The terminal prints a signed fixture application for the advanced JSON field
+and the same fixture's values for the auditor form. To use the form, enter the
+printed draft values, select **Prepare signing digest**, run
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>` in another
+terminal, and paste its signature. The demo smoke test signs the digest from
+this same form preparation code and registers the result through the HTTP API.
+After registration, issue a challenge, run
+`node scripts/demo-auditor-admission.mjs vp <nonce>`, and paste the fixture VP.
+The `sign-digest` command uses a fixed fixture key and must never sign a real
+application. This reference host
 uses a single local fixture applicant, an in-memory session and evidence store,
 and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same

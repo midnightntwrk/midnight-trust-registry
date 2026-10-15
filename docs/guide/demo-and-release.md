@@ -107,6 +107,22 @@ and submit without handing either page a private key. Their DOM-handler tests
 cover accepted and stale-context paths; a real-browser signed-intent smoke
 remains separate #59 work.
 
+### Auditor Applicant Form
+
+Run `pnpm run demo:auditor` and open the loopback URL. The terminal prints
+the fixture draft values for the structured auditor form. Enter those values,
+prepare the signing digest, sign it with
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>`, and paste the
+signature into the form. Then issue a challenge and generate its VP with
+`node scripts/demo-auditor-admission.mjs vp <nonce>`. The form binds the exact
+auditor request profile, purpose, predicates, disclosure level, registry
+workspace commitment, epoch, and one-use nonce before requesting a signature.
+The fixed-key signer and virtual clock are **fixture-only**; never use them for
+real applications. `pnpm run demo:auditor:smoke` sends an envelope prepared by
+the same form code through the HTTP registration and VP intake, including
+rejections for unauthorized registration, changed payload, wrong scope, and
+replayed VP. Successful evidence intake does not activate membership.
+
 ### Compact-Governed Registry Journey
 
 Run the separate quorum-backed reference demo:

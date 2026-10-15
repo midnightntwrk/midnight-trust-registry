@@ -12,13 +12,11 @@ import {
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
+import { sha256Hex } from "../packages/trust-registry-domain/dist/index.js";
 import {
-  computeAuthorizationScopeCommitment,
-  computePendingApplicationPayloadCommitment,
-  mutationIntentDigestBytes,
-  requestGovernedResourceId,
-  sha256Hex,
-} from "../packages/trust-registry-domain/dist/index.js";
+  prepareAuditorApplication,
+  signPreparedAuditorApplication,
+} from "../packages/trust-registry-applicant-portal/dist/auditor-application.js";
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
@@ -29,7 +27,6 @@ import {
   InMemoryApplicationChallengeStore,
   InMemoryPendingApplicationRegistrationPort,
   computeOperatorWorkspaceCommitment,
-  createInMemorySource,
   createTrustRegistryApiServer,
 } from "../packages/trust-registry-api/dist/index.js";
 import { createStaticAssetHandler } from "./serve-static.mjs";
@@ -49,42 +46,36 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
-const governedResource = { type: "requestProfile", id: requestGovernedResourceId(scope) };
+const applicationDraft = {
+  applicationId,
+  authorizationId: "auth:auditor:local-demo:v1",
+  actorDid: subjectDid,
+  actorKeyId: `${subjectDid}#auth-1`,
+  requestProfileId: scope.requestProfileId,
+  purpose: scope.purpose,
+  credentialScopeCommitment: scope.credentialScopeCommitment,
+  allowedAttributes: scope.allowedAttributes,
+  allowedPredicates: scope.allowedPredicates,
+  disclosureLevel: scope.disclosureLevel,
+};
+
+function signDigest(digest) {
+  if (typeof digest !== "string" || !/^0x[0-9a-f]{64}$/u.test(digest)) {
+    throw new Error("Pass the canonical 0x-prefixed 32-byte digest after sign-digest");
+  }
+  return `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+    23n, payloadToJubjubDigest(Buffer.from(digest.slice(2), "hex")),
+  ))).toString("hex")}`;
+}
 
 function signedApplication(workspace) {
-  const intent = {
-    version: "tr-mutation-intent-v1",
+  const prepared = prepareAuditorApplication(applicationDraft, {
     registryId: workspace.snapshot.registry.registryId,
-    actorDid: subjectDid,
-    actorKeyId: `${subjectDid}#auth-1`,
-    actorRole: "applicant",
-    action: "apply",
-    target: "auditor",
-    targetId: applicationId,
-    scopeCommitment: computeAuthorizationScopeCommitment(scope),
-    payloadCommitment: computePendingApplicationPayloadCommitment({
-      applicationId, authorizationId: "auth:auditor:local-demo:v1", scope, governedResource,
-    }),
-    nonce: `0x${"22".repeat(32)}`,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
     expectedEpochId: workspace.snapshot.currentEpoch.epochId,
-    issuedAt: new Date(VP_FIXTURE_TIME_MS - 60_000).toISOString(),
-    expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
-  };
-  return {
-    applicationId,
-    authorizationId: "auth:auditor:local-demo:v1",
-    scope,
-    governedResource,
-    intent,
-    signature: {
-      keyId: intent.actorKeyId,
-      algorithm: "jubjub-schnorr",
-      value: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
-        23n, payloadToJubjubDigest(mutationIntentDigestBytes(intent)),
-      ))).toString("hex")}`,
-    },
-  };
+    evaluatedAt: NOW,
+  }, `0x${"22".repeat(32)}`);
+  return signPreparedAuditorApplication(prepared, signDigest(prepared.digest));
 }
 
 async function startHost(port) {
@@ -129,7 +120,13 @@ async function startHost(port) {
     }
   };
   server = createTrustRegistryApiServer({
-    source: createInMemorySource(workspace.snapshot),
+    source: {
+      mode: "workspace",
+      loadSnapshot: async () => workspace.snapshot,
+      loadWorkspace: async () => workspace,
+      writeWorkspace: async () => { throw new Error("Demo governance mutations are disabled"); },
+      withExclusiveWrite: async () => { throw new Error("Demo governance mutations are disabled"); },
+    },
     clock: () => NOW,
     pendingApplicationRegistration: registration,
     authorizePendingApplicationRegistration: async (request) => {
@@ -222,10 +219,18 @@ async function smoke() {
       request.end(JSON.stringify(host.application));
     });
     assert.equal(spoofedRegistrationStatus, 403);
+    const contextResponse = await fetch(`${host.base}/v1/registry/mutation-context`);
+    assert.equal(contextResponse.status, 200);
+    const context = await contextResponse.json();
+    assert.equal(context.evaluatedAt, NOW);
+    const prepared = prepareAuditorApplication(applicationDraft, context, host.application.intent.nonce);
+    const formApplication = signPreparedAuditorApplication(prepared, signDigest(prepared.digest));
+    assert.deepEqual(formApplication.intent, host.application.intent);
+    assert.deepEqual(formApplication.scope, host.application.scope);
     assert.equal((await post(registrationPath, {
       ...host.application, authorizationId: "auth:auditor:substituted:v1",
     })).status, 400);
-    const registered = await post(registrationPath, host.application);
+    const registered = await post(registrationPath, formApplication);
     assert.equal(registered.status, 201);
     assert.equal((await registered.json()).authorizationId, host.application.authorizationId);
     const path = `/v1/application-evidence/${applicationId}`;
@@ -265,6 +270,8 @@ async function smoke() {
 
 if (command === "application") {
   process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
+} else if (command === "sign-digest") {
+  process.stdout.write(`${signDigest(process.argv[3])}\n`);
 } else if (command === "vp") {
   const nonce = process.argv[3];
   if (nonce === undefined || !/^0x[0-9a-f]{64}$/u.test(nonce)) {
@@ -282,8 +289,10 @@ if (command === "application") {
   process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
   process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
   process.stdout.write(`${JSON.stringify(host.application)}\n`);
+  process.stdout.write("Or use the auditor form with this fixture draft, prepare its digest, then run `node scripts/demo-auditor-admission.mjs sign-digest <digest>` and paste the signature:\n");
+  process.stdout.write(`${JSON.stringify(applicationDraft)}\n`);
   process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
   process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
 } else {
-  throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|vp <nonce>|smoke]");
+  throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|sign-digest <digest>|vp <nonce>|smoke]");
 }

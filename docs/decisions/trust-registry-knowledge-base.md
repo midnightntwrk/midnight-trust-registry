@@ -1277,3 +1277,15 @@ is not a Midnight consensus timestamp. Focused browser/domain/API tests,
 `./run.sh --light`, `./run.sh integration --light`, docs build, and audit pass.
 Keep #152 open until publication, exact-head CI, independent security review,
 and the remaining production authentication/availability boundaries are met.
+
+The loopback auditor-admission demo now uses that same portal preparation
+helper for its signed application instead of hand-building a parallel intent.
+Its API source exposes the read-only workspace context needed by the form but
+rejects governance writes. A fixture-only CLI command signs the displayed
+32-byte digest with the demo DID key; the HTTP smoke prepares a fresh
+signature from the form helper, registers it through the real admission route,
+and then verifies the one-use VP evidence path and negative cases. Schnorr
+signatures are randomized, so compare the canonical intent/scope rather than
+signature bytes across preparations. The fixed key, virtual clock, and local
+session remain strictly demo-only; acceptance is pending and does not confer
+auditor membership.
