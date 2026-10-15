@@ -14,6 +14,7 @@ import {
   computeAuthorizationScopeCommitment,
   sha256Hex,
   type AuthorizationScope,
+  type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
@@ -265,13 +266,36 @@ export async function createApplicationVpScenarioFixture(
       ))),
     },
   };
+  const fixtureStatusPolicyBinding: IssuerStatusPolicyBinding = {
+    version: "tr-issuer-status-policy-v1",
+    trustRegistryId: "registry:vp-fixture",
+    issuerAuthorizationId: "auth:issuer:vp-fixture",
+    statusRegistryId: credentialBody.statusRegistryId,
+    statusAuthorityVerificationMethod: credentialBody.statusAuthorityMethod,
+    statusPolicyId: "policy:vp-fixture-status",
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: sha256Hex("vp-fixture-status-policy"),
+  };
   const attestedStatus = createAttestedApplicationStatusSource({
-    binding: {
-      statusRegistryId: credentialBody.statusRegistryId,
-      statusAuthorityVerificationMethod: credentialBody.statusAuthorityMethod,
-    },
     resolver,
-    fetchAttestation: async () => signedStatusAttestation,
+    fetchAttestation: async (request) => {
+      if (request.statusRegistryId !== credentialBody.statusRegistryId
+        || request.statusHandleCommitment !== credentialBody.statusHandleCommitment
+        || request.credentialBodyRoot !== hex(credentialBodyRoot)) {
+        throw new Error("Fixture status authority refuses an unknown credential binding");
+      }
+      const statement = { ...statusStatement, challengeHash: request.challengeHash };
+      return {
+        statement,
+        proof: {
+          ...signedStatusAttestation.proof,
+          signature: hex(encodeJubjubSignature(signJubjubDigest(
+            issuerSecret,
+            applicationStatusAttestationDigest(statement),
+          ))),
+        },
+      };
+    },
   });
   const family: ApplicationVpFamilyAdapter<typeof submission> = {
     prepare: async (submitted) => {
@@ -327,9 +351,9 @@ export async function createApplicationVpScenarioFixture(
     },
     assertIssuerEligible: async (prepared) => {
       if (prepared.issuerDid !== issuerDid) throw new TypeError("Application VP fixture issuer is ineligible");
-      return true as const;
+      return fixtureStatusPolicyBinding;
     },
-    assertStatusActive: async (prepared) => {
+    assertStatusActive: async (prepared, binding, context) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
       if (!body) throw new TypeError("Application VP fixture credential is missing");
       if (options.statusDecision) {
@@ -340,7 +364,7 @@ export async function createApplicationVpScenarioFixture(
         ) throw new TypeError("Application VP fixture status is not active under the signed binding");
         return { validUntilMs: statusDecision.validUntilMs };
       }
-      return attestedStatus({ material: prepared, nonce, evaluatedAtMs: VP_FIXTURE_TIME_MS });
+      return attestedStatus({ material: prepared, binding, ...context });
     },
     assertRoleClaims: async (prepared) => {
       const body = submittedBodies.get(hex(prepared.credentialBodyRoot));
@@ -375,6 +399,7 @@ export async function createApplicationVpScenarioFixture(
     subjectAuthentication: { method: holderMethod, secretScalar: holderSecret },
     subjectAssertion: { method: subjectAssertionMethod, secretScalar: subjectAssertionSecret },
     signedStatusAttestation,
+    fixtureStatusPolicyBinding,
   };
 }
 

@@ -49,7 +49,6 @@ export function applicationStatusAttestationDigest(statement: ApplicationStatusS
 
 /** The caller must obtain this binding from a verified governed issuer authorization. */
 export function createAttestedApplicationStatusSource(input: {
-  binding: Pick<IssuerStatusPolicyBinding, "statusRegistryId" | "statusAuthorityVerificationMethod">;
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
   fetchAttestation: (request: {
     statusRegistryId: string;
@@ -59,15 +58,16 @@ export function createAttestedApplicationStatusSource(input: {
   }) => Promise<unknown>;
 }): (request: {
   material: ApplicationVpMaterial;
+  binding: Pick<IssuerStatusPolicyBinding, "statusRegistryId" | "statusAuthorityVerificationMethod">;
   nonce: string;
   evaluatedAtMs: number;
 }) => Promise<{ validUntilMs: number }> {
-  return async ({ material, nonce, evaluatedAtMs }) => {
+  return async ({ material, binding, nonce, evaluatedAtMs }) => {
     if (!/^0x[0-9a-f]{64}$/u.test(nonce) || !Number.isSafeInteger(evaluatedAtMs) || evaluatedAtMs < 0) {
       throw new Error("Application status context is invalid");
     }
-    const registryId = input.binding.statusRegistryId;
-    const methodId = input.binding.statusAuthorityVerificationMethod;
+    const registryId = binding.statusRegistryId;
+    const methodId = binding.statusAuthorityVerificationMethod;
     if (!Hash.safeParse(registryId).success || !Statement.shape.statusAuthorityMethodId.safeParse(methodId).success) {
       throw new Error("Application status anchor is invalid");
     }

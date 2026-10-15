@@ -333,6 +333,18 @@ fetcher, accepts only its fixture credential-body format, and MUST NOT be
 mounted as a public verifier. A signed authority assertion is not an
 independent status-registry root or non-revocation proof.
 
+The application VP family interface MUST return the full governed issuer
+status-policy binding from issuer eligibility; it MUST NOT return a bare
+boolean. The verifier compares that binding's status registry with the signed
+credential binding before consulting status, then passes the exact binding,
+nonce, and evaluation instant to the status source. A reference eligibility
+adapter verifies current active issuer decision evidence through caller-owned
+finality-aware registry and DID readers, then matches the presented issuer DID,
+assertion method public key, and status-registry ID. The host selects the
+permitted issuer resource and applicant roles; the credential does not select
+its own trust anchor. The reader and attestation fetcher still need production
+implementations, and the deterministic fixture's issuer grant is not governed.
+
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store
 caps live entries and schedules expiry cleanup; the file-backed store uses

@@ -6,10 +6,12 @@ import {
   ApplicationEvidenceEvaluationTimeSchema,
   AuthorizationScopeSchema,
   HashHexSchema,
+  IssuerStatusPolicyBindingSchema,
   computeAuthorizationScopeCommitment,
   sha256Hex,
   type ApplicationChallengeBinding,
   type AuthorizationScope,
+  type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { verifyMidnightVcVpProofs, type MidnightVcVpProofMaterial } from "./midnight-vc-vp-proof.js";
@@ -38,8 +40,13 @@ export type ApplicationVpFamilyAdapter<Submission> = {
   prepare(submission: Submission): Promise<ApplicationVpMaterial>;
   /** Verify family claims, holder, status, and expiry against the signed credential body root. */
   assertCredentialBodyBinding(material: ApplicationVpMaterial): Promise<true>;
-  assertIssuerEligible(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<true>;
-  assertStatusActive(material: ApplicationVpMaterial): Promise<{ validUntilMs: number }>;
+  /** Return the binding from a verified active issuer grant, never from the credential alone. */
+  assertIssuerEligible(material: ApplicationVpMaterial, scope: AuthorizationScope): Promise<IssuerStatusPolicyBinding>;
+  assertStatusActive(
+    material: ApplicationVpMaterial,
+    binding: IssuerStatusPolicyBinding,
+    context: { nonce: string; evaluatedAtMs: number },
+  ): Promise<{ validUntilMs: number }>;
   /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
   assertRoleClaims(material: ApplicationVpMaterial): Promise<{
     claimsCommitment: string;
@@ -143,10 +150,16 @@ export async function verifyApplicationVp<Submission>(input: {
   let status: { validUntilMs: number };
   let claimsCommitment: string;
   try {
-    if (await input.family.assertIssuerEligible(material, scope.data) !== true) {
-      throw new Error("Issuer is not eligible");
+    const binding = IssuerStatusPolicyBindingSchema.parse(
+      await input.family.assertIssuerEligible(material, scope.data),
+    );
+    if (`0x${Buffer.from(material.statusBinding.registryRef.registryId).toString("hex")}` !== binding.statusRegistryId) {
+      throw new Error("Credential status registry differs from governed issuer policy");
     }
-    status = await input.family.assertStatusActive(material);
+    status = await input.family.assertStatusActive(material, binding, {
+      nonce: input.nonce,
+      evaluatedAtMs: input.evaluatedAtMs,
+    });
     if (!validTime(status.validUntilMs) || status.validUntilMs <= input.evaluatedAtMs) {
       throw new ApplicationVpVerificationError("expired");
     }

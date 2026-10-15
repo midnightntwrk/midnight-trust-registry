@@ -1083,3 +1083,20 @@ remains only for adversarial tests. This improves #76 intake evidence but does
 not verify a live status-registry root or network finality; no public
 non-revocation claim follows from the fixture. Focused integration tests cover
 re-signed substitutions and unsigned tampering.
+
+The next #76 boundary now requires issuer eligibility to return a full
+status-policy binding rather than a boolean. `verifyApplicationVp` checks the
+credential registry against that binding before status lookup and forwards the
+same binding and challenge context. A reference adapter obtains it from
+`verifyDecisionEvidenceWithTrustedReaders`, checking the active issuer DID,
+assertion key, and registry. The host must still provide authenticated
+finality-aware readers; the VP fixture remains deliberately non-governed.
+The HTTP fixture exposed a live-nonce integration boundary: the local status
+authority must sign the actual one-use challenge for the pinned credential
+root, registry, and handle rather than reusing an attestation signed when the
+fixture was constructed. Its deterministic fetcher now does that, and the
+auditor apply -> VP HTTP test passes. Parallel Compact signer tests exceeded
+Vitest's default five-second case limit under the repository integration
+runner; the integration package now uses a 15-second per-case limit without
+changing product timeouts. Full `./run.sh integration --light` passed after
+both adjustments.

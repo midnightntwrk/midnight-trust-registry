@@ -41,6 +41,7 @@ async function fixture() {
   return {
     input: { ...scenario.input, scope: scenario.input.scope, family },
     material: scenario.material,
+    issuerBinding: scenario.fixtureStatusPolicyBinding,
     family,
   };
 }
@@ -507,20 +508,36 @@ describe("published VC proof and DID application verifier port", () => {
   });
 
   it("redacts issuer and status adapter denials before returning any attestation", async () => {
-    const { input, family } = await fixture();
-    family.assertIssuerEligible = vi.fn(async () => false as unknown as true);
+    const { input, family, issuerBinding } = await fixture();
+    family.assertIssuerEligible = vi.fn(async () => false as unknown as typeof issuerBinding);
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({
       category: "ineligible",
       message: "Application VP ineligible",
     });
     expect(family.assertStatusActive).not.toHaveBeenCalled();
 
-    family.assertIssuerEligible = vi.fn(async () => true as const);
+    family.assertIssuerEligible = vi.fn(async () => issuerBinding);
     family.assertStatusActive = vi.fn(async () => { throw new Error("private status witness details"); });
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({
       category: "ineligible",
       message: "Application VP ineligible",
     });
     expect(family.assertRoleClaims).not.toHaveBeenCalled();
+  });
+
+  it("passes only the eligible issuer's governed status binding and challenge context to status verification", async () => {
+    const { input, family, issuerBinding } = await fixture();
+    await verifyApplicationVp(input);
+    expect(family.assertStatusActive).toHaveBeenCalledWith(
+      expect.any(Object), issuerBinding, { nonce: NONCE, evaluatedAtMs: NOW },
+    );
+
+    family.assertStatusActive.mockClear();
+    family.assertIssuerEligible = vi.fn(async () => ({
+      ...issuerBinding,
+      statusRegistryId: sha256Hex("substituted-governed-registry"),
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+    expect(family.assertStatusActive).not.toHaveBeenCalled();
   });
 });

@@ -54,3 +54,14 @@ independently verified non-revocation proof. The deterministic reference
 fetcher does not authenticate a live status-registry root or network finality;
 production federation status claims remain unsupported until that boundary is
 implemented.
+
+`createGovernedApplicationIssuerEligibility` is the reference connection from
+current decision evidence to VP intake. The deployment supplies a fixed issuer
+selection, permitted application roles, an evidence loader, and trusted readers
+that authenticate current finalized registry and DID state. The adapter
+requires the presented issuer DID, assertion method and JubJub key, and VC
+status-registry ID to match the verified active issuer candidate. It returns
+that candidate's governed binding to the VP verifier, which passes it to
+`createAttestedApplicationStatusSource` with the exact application challenge
+and evaluation instant. A historical or inactive grant cannot authorize new
+intake. Fixture-only issuer decisions are not a substitute for trusted readers.

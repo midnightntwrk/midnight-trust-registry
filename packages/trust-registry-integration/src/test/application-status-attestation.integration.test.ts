@@ -18,15 +18,12 @@ async function fixture() {
   const scenario = await createApplicationVpScenarioFixture();
   let signed: SignedApplicationStatusStatement = structuredClone(scenario.signedStatusAttestation);
   const source = createAttestedApplicationStatusSource({
-    binding: {
-      statusRegistryId: hex(scenario.material.statusBinding.registryRef.registryId),
-      statusAuthorityVerificationMethod: signed.statement.statusAuthorityMethodId,
-    },
     resolver: scenario.input.resolver,
     fetchAttestation: async () => signed,
   });
   const request = {
     material: scenario.material,
+    binding: scenario.fixtureStatusPolicyBinding,
     nonce: VP_FIXTURE_NONCE,
     evaluatedAtMs: VP_FIXTURE_TIME_MS,
   };
@@ -83,5 +80,16 @@ describe("DID-signed application status attestation", () => {
   it("rejects a different intake nonce even for a valid attestation", async () => {
     const { source, request } = await fixture();
     await expect(source({ ...request, nonce: `0x${"22".repeat(32)}` })).rejects.toThrow();
+  });
+
+  it("rejects a credential-selected authority when the governed binding names another method", async () => {
+    const { source, request } = await fixture();
+    await expect(source({
+      ...request,
+      binding: {
+        ...request.binding,
+        statusAuthorityVerificationMethod: `${request.material.issuerDid}#other-method`,
+      },
+    })).rejects.toThrow();
   });
 });
