@@ -1299,3 +1299,23 @@ the displayed digest, registers the pending application, issues a VP
 challenge, and verifies redacted evidence acceptance through the DOM.
 This covers form-handler-to-API conformance, not an actual browser engine or
 Midnight network submission.
+
+Issuer and verifier applicant forms now construct the same canonical pending
+application intent as auditor, with role-specific scopes and governed resource
+IDs. Issuer includes schema semantic version, definition, status method, and
+selected resource type; verifier includes full request purpose and disclosure
+scope. The portal retains no signing key and rejects a host pending binding
+whose complete canonical scope, commitment, or subject DID differs from the
+prepared request. Domain and DOM tests cover field substitution; role-specific
+DOM-to-live-HTTP tests verify fixture DID signatures and one-use VP intake.
+These flows stop at pending admission and do not grant membership or prove
+Midnight finality.
+An independent read-only review found the response check initially omitted
+registry ID. The portal now requires the pending binding registry to equal
+the signed intent registry, and DOM tests reject both scope and registry
+substitution before reporting `pending`.
+The loopback demo now selects issuer, verifier, or auditor fixtures for its
+serve/application/VP commands, so each structured applicant form can be
+demonstrated with a matching externally signed fixture application and
+challenge-bound presentation. The default remains auditor for existing smoke
+calls. The role selector never changes production authorization rules.

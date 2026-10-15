@@ -2,7 +2,9 @@ import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClien
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 import { TrustRegistryApiEvaluateRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api";
 import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
+import { prepareIssuerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -25,6 +27,9 @@ type AppState = {
   auditorDraft: AuditorApplicationDraft | undefined;
   auditorPreparationBusy: boolean;
   preparedAuditor: PreparedAuditorApplication | undefined;
+  memberDraft: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft } | undefined;
+  memberPreparationBusy: boolean;
+  preparedMember: PreparedMembershipApplication | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
@@ -62,6 +67,37 @@ const readAuditorDraft = (form: HTMLFormElement): AuditorApplicationDraft => {
     authorizationId: field("authorizationId"),
     actorDid: field("actorDid"),
     actorKeyId: field("actorKeyId"),
+    requestProfileId: field("requestProfileId"),
+    purpose: field("purpose"),
+    credentialScopeCommitment: field("credentialScopeCommitment"),
+    allowedAttributes: parseScopeList(field("allowedAttributes")),
+    allowedPredicates: parseScopeList(field("allowedPredicates")),
+    disclosureLevel: field("disclosureLevel"),
+  };
+};
+
+const readMemberIdentity = (form: HTMLFormElement) => {
+  const field = (name: string) => form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)?.value.trim() ?? "";
+  return { field, applicationId: field("applicationId"), authorizationId: field("authorizationId"), actorDid: field("actorDid"), actorKeyId: field("actorKeyId") };
+};
+
+const readIssuerDraft = (form: HTMLFormElement): IssuerApplicationDraft => {
+  const { field, ...identity } = readMemberIdentity(form);
+  return {
+    ...identity,
+    credentialFamilyId: field("credentialFamilyId"),
+    schemaId: field("schemaId"),
+    schemaVersion: field("schemaVersion"),
+    credentialDefinitionId: field("credentialDefinitionId"),
+    statusMethod: field("statusMethod"),
+    governedResourceType: field("governedResourceType") as IssuerApplicationDraft["governedResourceType"],
+  };
+};
+
+const readVerifierDraft = (form: HTMLFormElement): VerifierApplicationDraft => {
+  const { field, ...identity } = readMemberIdentity(form);
+  return {
+    ...identity,
     requestProfileId: field("requestProfileId"),
     purpose: field("purpose"),
     credentialScopeCommitment: field("credentialScopeCommitment"),
@@ -188,6 +224,9 @@ export const createApplicantPortalApp = (
     auditorDraft: undefined,
     auditorPreparationBusy: false,
     preparedAuditor: undefined,
+    memberDraft: undefined,
+    memberPreparationBusy: false,
+    preparedMember: undefined,
     historicalQuery: undefined,
     historicalResult: undefined,
     historicalBusy: false,
@@ -206,6 +245,7 @@ export const createApplicantPortalApp = (
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
   let auditorPreparationRequestId = 0;
+  let memberPreparationRequestId = 0;
   let historicalRequestId = 0;
   let historicalRecognitionRequestId = 0;
   let recognitionRequestId = 0;
@@ -322,7 +362,7 @@ export const createApplicantPortalApp = (
     }
   };
 
-  const registerApplication = async (rawRequest: string, expectedAuditorScope?: AuditorScopeInput) => {
+  const registerApplication = async (rawRequest: string, expectedAuditorScope?: AuditorScopeInput, expectedPayload?: PendingApplicationPayload) => {
     const requestId = ++evidenceRequestId;
     setState({
       evidenceBusy: true, pendingApplication: undefined, acceptedEvidence: undefined,
@@ -344,7 +384,7 @@ export const createApplicantPortalApp = (
         authorizationId?: unknown;
         scope?: { role?: unknown };
         governedResource?: { type?: unknown; id?: unknown };
-        intent?: { target?: unknown };
+        intent?: { target?: unknown; actorDid?: unknown; registryId?: unknown };
       };
       if (typeof candidate.applicationId !== "string" || typeof candidate.authorizationId !== "string"
         || candidate.authorizationId.length === 0 || typeof candidate.scope?.role !== "string"
@@ -359,6 +399,14 @@ export const createApplicantPortalApp = (
         || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(candidate.governedResource.id))) {
         throw new Error("Signed auditor application does not match the complete request scope and canonical resource.");
       }
+      if (expectedPayload !== undefined && (candidate.applicationId !== expectedPayload.applicationId
+        || candidate.authorizationId !== expectedPayload.authorizationId
+        || canonicalizeAuthorizationScope(candidate.scope as PendingApplicationPayload["scope"])
+          !== canonicalizeAuthorizationScope(expectedPayload.scope)
+        || candidate.governedResource.type !== expectedPayload.governedResource.type
+        || candidate.governedResource.id !== expectedPayload.governedResource.id)) {
+        throw new Error("Signed application does not match the prepared scope and resource.");
+      }
       const record = await client().registerPendingApplication(signedRequest);
       if (requestId !== evidenceRequestId) return;
       if (record?.status !== "pending" || record.authorizationId !== candidate.authorizationId
@@ -370,10 +418,18 @@ export const createApplicantPortalApp = (
         throw new Error("Host did not return a canonical pending membership application.");
       }
       const binding = record.binding;
+      if (expectedPayload !== undefined && (binding.registryId !== candidate.intent?.registryId
+        || binding.subjectDid !== candidate.intent?.actorDid
+        || binding.scopeCommitment !== computeAuthorizationScopeCommitment(expectedPayload.scope)
+        || canonicalizeAuthorizationScope(binding.scope) !== canonicalizeAuthorizationScope(expectedPayload.scope))) {
+        throw new Error("Host returned a different pending membership registry, scope, or applicant.");
+      }
       setState({
         pendingApplication: { binding },
         preparedAuditor: undefined,
         auditorDraft: undefined,
+        preparedMember: undefined,
+        memberDraft: undefined,
         ...(binding.role === "auditor" ? {
           auditorStatus: { authorizationId: record.authorizationId, status: "pending", currentTrust: false },
         } : {}),
@@ -400,6 +456,28 @@ export const createApplicantPortalApp = (
     } catch (error) {
       if (requestId === auditorPreparationRequestId && apiBase === state.apiBase) {
         setState({ auditorPreparationBusy: false, evidenceError: formatApiError(error) });
+      }
+    }
+  };
+
+  const prepareMember = async (
+    member: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft },
+  ) => {
+    const requestId = ++memberPreparationRequestId;
+    const apiBase = state.apiBase;
+    setState({ memberDraft: member, memberPreparationBusy: true, preparedMember: undefined, evidenceError: undefined });
+    try {
+      requirePrivateHost();
+      const context = await client().loadMutationContext();
+      if (requestId !== memberPreparationRequestId || apiBase !== state.apiBase) return;
+      const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      const preparedMember = member.role === "issuer"
+        ? prepareIssuerApplication(member.draft, context, nonce)
+        : prepareVerifierApplication(member.draft, context, nonce);
+      setState({ preparedMember, memberPreparationBusy: false });
+    } catch (error) {
+      if (requestId === memberPreparationRequestId && apiBase === state.apiBase) {
+        setState({ memberPreparationBusy: false, evidenceError: formatApiError(error) });
       }
     }
   };
@@ -717,10 +795,11 @@ export const createApplicantPortalApp = (
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
       auditorPreparationRequestId += 1;
+      memberPreparationRequestId += 1;
       historicalRequestId += 1;
       historicalRecognitionRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -899,6 +978,41 @@ export const createApplicantPortalApp = (
         setState({ evidenceError: formatApiError(error) });
       }
     });
+    root.querySelector<HTMLButtonElement>("[data-prepare-issuer]")?.addEventListener("click", (event) => {
+      const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
+      if (form !== null) void prepareMember({ role: "issuer", draft: readIssuerDraft(form) });
+    });
+    root.querySelector<HTMLButtonElement>("[data-prepare-verifier]")?.addEventListener("click", (event) => {
+      const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
+      if (form === null) return;
+      try {
+        void prepareMember({ role: "verifier", draft: readVerifierDraft(form) });
+      } catch (error) {
+        setState({ evidenceError: formatApiError(error) });
+      }
+    });
+    root.querySelector<HTMLButtonElement>("[data-reset-member]")?.addEventListener("click", () => {
+      memberPreparationRequestId += 1;
+      setState({ memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, evidenceError: undefined });
+    });
+    for (const role of ["issuer", "verifier"] as const) {
+      root.querySelector<HTMLFormElement>(`[data-${role}-application-form]`)?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const prepared = state.preparedMember;
+        if (prepared?.payload.scope.role !== role) return;
+        const form = event.currentTarget as HTMLFormElement;
+        const signature = form.querySelector<HTMLInputElement>("[name='memberSignature']");
+        if (signature === null) return;
+        try {
+          const signed = signPreparedMembershipApplication(prepared, signature.value.trim());
+          signature.value = "";
+          void registerApplication(JSON.stringify(signed), undefined, prepared.payload);
+        } catch (error) {
+          signature.value = "";
+          setState({ evidenceError: formatApiError(error) });
+        }
+      });
+    }
     root.querySelector<HTMLFormElement>("[data-auditor-status-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
@@ -957,6 +1071,12 @@ export const createApplicantPortalApp = (
     const auditorDraft = state.auditorDraft;
     const preparedAuditor = state.preparedAuditor;
     const auditorLocked = preparedAuditor === undefined ? "" : " disabled";
+    const issuerDraft = state.memberDraft?.role === "issuer" ? state.memberDraft.draft : undefined;
+    const verifierDraft = state.memberDraft?.role === "verifier" ? state.memberDraft.draft : undefined;
+    const preparedIssuer = state.preparedMember?.payload.scope.role === "issuer" ? state.preparedMember : undefined;
+    const preparedVerifier = state.preparedMember?.payload.scope.role === "verifier" ? state.preparedMember : undefined;
+    const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
+    const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
 
     root.innerHTML = `
       <main class="shell">
@@ -1054,6 +1174,58 @@ export const createApplicantPortalApp = (
             </label>
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
+          <section class="form-panel">
+            <h2>Issuer membership request</h2>
+            <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
+            <form data-issuer-application-form>
+              <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(issuerDraft?.applicationId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(issuerDraft?.authorizationId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(issuerDraft?.actorDid ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(issuerDraft?.actorKeyId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Credential family ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Schema ID<input class="input mono" name="schemaId" value="${escapeHtml(issuerDraft?.schemaId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Schema version<input class="input mono" name="schemaVersion" value="${escapeHtml(issuerDraft?.schemaVersion ?? "")}" pattern="[0-9]+[.][0-9]+[.][0-9]+"${issuerLocked} required /></label>
+              <label class="label">Credential definition ID<input class="input mono" name="credentialDefinitionId" value="${escapeHtml(issuerDraft?.credentialDefinitionId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Status method<input class="input mono" name="statusMethod" value="${escapeHtml(issuerDraft?.statusMethod ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Governed resource type<select class="select" name="governedResourceType"${issuerLocked}>
+                ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${type}</option>`).join("")}
+              </select></label>
+              <button class="button secondary" type="button" data-prepare-issuer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              ${preparedIssuer === undefined ? "" : `
+                <p data-issuer-resource class="mono">Governed resource: ${escapeHtml(preparedIssuer.payload.governedResource.id)}</p>
+                <p data-issuer-digest class="mono">Sign digest bytes: ${escapeHtml(preparedIssuer.digest)}</p>
+                <pre class="mono signing-context">${escapeHtml(JSON.stringify({ ...preparedIssuer.payload, intent: preparedIssuer.intent }, null, 2))}</pre>
+                <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
+                <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
+              `}
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer === undefined ? " disabled" : ""}>Register issuer application</button>
+            </form>
+          </section>
+          <section class="form-panel">
+            <h2>Verifier membership request</h2>
+            <p>Bind the full presentation-request purpose, credential scope, allowed claims and predicates, and disclosure level before signing.</p>
+            <form data-verifier-application-form>
+              <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(verifierDraft?.applicationId ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(verifierDraft?.authorizationId ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(verifierDraft?.actorDid ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(verifierDraft?.actorKeyId ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(verifierDraft?.requestProfileId ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(verifierDraft?.purpose ?? "")}"${verifierLocked} required /></label>
+              <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(verifierDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${verifierLocked} required /></label>
+              <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
+              <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
+              <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(verifierDraft?.disclosureLevel ?? "")}"${verifierLocked} required /></label>
+              <button class="button secondary" type="button" data-prepare-verifier${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              ${preparedVerifier === undefined ? "" : `
+                <p data-verifier-resource class="mono">Governed resource: ${escapeHtml(preparedVerifier.payload.governedResource.id)}</p>
+                <p data-verifier-digest class="mono">Sign digest bytes: ${escapeHtml(preparedVerifier.digest)}</p>
+                <pre class="mono signing-context">${escapeHtml(JSON.stringify({ ...preparedVerifier.payload, intent: preparedVerifier.intent }, null, 2))}</pre>
+                <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
+                <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
+              `}
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
+            </form>
+          </section>
           <section class="form-panel">
             <h2>Auditor request</h2>
             <p>Describe the complete audit scope and applicant DID. Prepare its canonical resource and signing digest, sign that digest outside this browser, then submit only the signature. A request-profile ID alone is not an auditor scope.</p>

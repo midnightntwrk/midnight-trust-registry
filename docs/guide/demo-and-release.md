@@ -126,6 +126,24 @@ signature rejection and recovery through its form handlers. Neither test uses
 a browser engine or demonstrates Midnight-network finality. Successful
 evidence intake does not activate membership.
 
+The applicant portal also has structured issuer and verifier forms. Issuer
+preparation binds the credential family, schema/version, definition, status
+method, and selected issuer resource type; verifier preparation binds the
+complete request profile, purpose, credential-scope commitment, allowed
+attributes and predicates, and disclosure level. Both use a fresh host context
+and an externally signed Midnight DID digest. Their DOM-to-HTTP integration
+tests register each role with the fixture DID key and complete VP evidence
+intake through the live loopback API. These are pending records only, not
+governance approval or Midnight network finality.
+
+To demonstrate one of those forms interactively, start
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer` or replace `issuer`
+with `verifier`. Enter the printed draft, sign the displayed digest with
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>`, then generate
+the challenge-bound presentation with
+`node scripts/demo-auditor-admission.mjs vp <nonce> <role>`. The demo key and
+role-scoped VP generator are fixtures only.
+
 ### Compact-Governed Registry Journey
 
 Run the separate quorum-backed reference demo:

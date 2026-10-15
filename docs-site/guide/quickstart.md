@@ -50,6 +50,15 @@ pnpm run demo:serve:applicant-portal
 
 `demo:serve:api` deliberately passes `--unsafe-demo-mutations`. That switch is accepted only on loopback and makes unsigned workspace replay available for UI demonstrations. **Never use it for real trust decisions.** The packaged CLI does not inject production DID resolution or Compact-backed governed-action ports; those routes return `503` unless an embedding host supplies them. See [API safety](../api/index.md).
 
+For a signed applicant walkthrough, use the isolated fixture host instead:
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer`, replacing `issuer`
+with `verifier` or `auditor` as needed. The applicant portal shows structured
+role-specific fields and a digest to sign outside the browser. The terminal
+prints the matching fixture draft and one-use VP command. A successful run
+registers a pending application and redacted eligibility evidence; it does
+not approve or activate membership. The signer, clock, DID resolver, and VP
+are local fixtures, not production trust or Midnight finality.
+
 ## Read a decision
 
 With the local API running, `GET /health`, `GET /v1/registry`, and `GET /v1/epochs/current` show the loaded snapshot. A scoped authorization query must use a canonical composite resource ID; a bare profile name is not enough. Query output is only informational until the caller verifies the registry anchor, policy, signatures, epoch, and inclusion evidence independently.

@@ -18,6 +18,11 @@ import {
   signPreparedAuditorApplication,
 } from "../packages/trust-registry-applicant-portal/dist/auditor-application.js";
 import {
+  prepareIssuerApplication,
+  prepareVerifierApplication,
+  signPreparedMembershipApplication,
+} from "../packages/trust-registry-applicant-portal/dist/membership-application.js";
+import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   createMidnightDid,
@@ -46,6 +51,18 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
+const issuerScope = {
+  version: "tr-scope-v1", role: "issuer", credentialFamilyId: "family:degree:v1",
+  schemaId: "schema:degree", schemaVersion: "1.0.0",
+  credentialDefinitionId: "definition:degree:v1", statusMethod: "status:registry:v1",
+};
+const verifierScope = {
+  version: "tr-scope-v1", role: "verifier", requestProfileId: "profile:age-gate:v1",
+  purpose: "age-gate", credentialScopeCommitment: `0x${"aa".repeat(32)}`,
+  allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"],
+  disclosureLevel: "minimal",
+};
+const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope };
 export const applicationDraft = {
   applicationId,
   authorizationId: "auth:auditor:local-demo:v1",
@@ -58,6 +75,27 @@ export const applicationDraft = {
   allowedPredicates: scope.allowedPredicates,
   disclosureLevel: scope.disclosureLevel,
 };
+const issuerDraft = {
+  applicationId: "application:issuer:local-demo:v1", authorizationId: "auth:issuer:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+  credentialFamilyId: issuerScope.credentialFamilyId, schemaId: issuerScope.schemaId,
+  schemaVersion: issuerScope.schemaVersion, credentialDefinitionId: issuerScope.credentialDefinitionId,
+  statusMethod: issuerScope.statusMethod, governedResourceType: "credentialFamily",
+};
+const verifierDraft = {
+  applicationId: "application:verifier:local-demo:v1", authorizationId: "auth:verifier:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+  requestProfileId: verifierScope.requestProfileId, purpose: verifierScope.purpose,
+  credentialScopeCommitment: verifierScope.credentialScopeCommitment,
+  allowedAttributes: verifierScope.allowedAttributes, allowedPredicates: verifierScope.allowedPredicates,
+  disclosureLevel: verifierScope.disclosureLevel,
+};
+const drafts = { auditor: applicationDraft, issuer: issuerDraft, verifier: verifierDraft };
+
+function requestedRole(raw) {
+  if (!Object.hasOwn(scopes, raw)) throw new Error("Demo role must be issuer, verifier, or auditor");
+  return raw;
+}
 
 export function signDigest(digest) {
   if (typeof digest !== "string" || !/^0x[0-9a-f]{64}$/u.test(digest)) {
@@ -68,18 +106,26 @@ export function signDigest(digest) {
   ))).toString("hex")}`;
 }
 
-function signedApplication(workspace) {
-  const prepared = prepareAuditorApplication(applicationDraft, {
+function signedApplication(workspace, role = "auditor") {
+  const context = {
     registryId: workspace.snapshot.registry.registryId,
     expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
     expectedEpochId: workspace.snapshot.currentEpoch.epochId,
     evaluatedAt: NOW,
-  }, `0x${"22".repeat(32)}`);
-  return signPreparedAuditorApplication(prepared, signDigest(prepared.digest));
+  };
+  const nonce = `0x${"22".repeat(32)}`;
+  const prepared = role === "issuer"
+    ? prepareIssuerApplication(issuerDraft, context, nonce)
+    : role === "verifier"
+      ? prepareVerifierApplication(verifierDraft, context, nonce)
+      : prepareAuditorApplication(applicationDraft, context, nonce);
+  return role === "auditor"
+    ? signPreparedAuditorApplication(prepared, signDigest(prepared.digest))
+    : signPreparedMembershipApplication(prepared, signDigest(prepared.digest));
 }
 
-export async function startHost(port, staticDir = fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url))) {
-  const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
+export async function startHost(port, staticDir = fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url)), applicationScope = scope) {
+  const fixture = await createApplicationVpScenarioFixture(undefined, { scope: applicationScope, subjectDid, evidenceVerifierDid });
   const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
   const registration = new InMemoryPendingApplicationRegistrationPort({
     workspace, applications: [], consumedNonces: [],
@@ -172,7 +218,7 @@ export async function startHost(port, staticDir = fileURLToPath(new URL("../pack
     },
   });
   await new Promise((resolveListen) => server.listen(port, "127.0.0.1", resolveListen));
-  return { server, base: `http://${expectedHost()}`, cookie, application: signedApplication(workspace), receipts };
+  return { server, base: `http://${expectedHost()}`, cookie, application: signedApplication(workspace, applicationScope.role), receipts };
 }
 
 async function smoke() {
@@ -268,36 +314,39 @@ async function smoke() {
   }
 }
 
-export async function presentationForNonce(nonce) {
+export async function presentationForNonce(nonce, applicationScope = scope) {
   if (nonce === undefined || !/^0x[0-9a-f]{64}$/u.test(nonce)) {
     throw new Error("Pass the canonical challenge nonce after vp");
   }
-  const fixture = await createApplicationVpScenarioFixture(nonce, { scope, subjectDid, evidenceVerifierDid });
+  const fixture = await createApplicationVpScenarioFixture(nonce, { scope: applicationScope, subjectDid, evidenceVerifierDid });
   return fixture.input.submission;
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   if (command === "application") {
-    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
+    const role = requestedRole(process.argv[3] ?? "auditor");
+    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
   } else if (command === "sign-digest") {
     process.stdout.write(`${signDigest(process.argv[3])}\n`);
   } else if (command === "vp") {
-    process.stdout.write(`${JSON.stringify(await presentationForNonce(process.argv[3]))}\n`);
+    const role = requestedRole(process.argv[4] ?? "auditor");
+    process.stdout.write(`${JSON.stringify(await presentationForNonce(process.argv[3], scopes[role]))}\n`);
   } else if (command === "smoke") {
     await smoke();
   } else if (command === "serve") {
     const rawPort = process.argv[3] ?? "4400";
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
-    const host = await startHost(port);
-    process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
+    const role = requestedRole(process.argv[4] ?? "auditor");
+    const host = await startHost(port, undefined, scopes[role]);
+    process.stdout.write(`Fixture-only ${role} portal: ${host.base}\n`);
     process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
     process.stdout.write(`${JSON.stringify(host.application)}\n`);
-    process.stdout.write("Or use the auditor form with this fixture draft, prepare its digest, then run `node scripts/demo-auditor-admission.mjs sign-digest <digest>` and paste the signature:\n");
-    process.stdout.write(`${JSON.stringify(applicationDraft)}\n`);
-    process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
+    process.stdout.write(`Or use the ${role} form with this fixture draft, prepare its digest, then run \`node scripts/demo-auditor-admission.mjs sign-digest <digest>\` and paste the signature:\n`);
+    process.stdout.write(`${JSON.stringify(drafts[role])}\n`);
+    process.stdout.write(`After issuing a challenge, run \`node scripts/demo-auditor-admission.mjs vp <nonce> ${role}\` and paste its VP JSON.\n`);
     process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
   } else {
-    throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|sign-digest <digest>|vp <nonce>|smoke]");
+    throw new Error("Usage: demo-auditor-admission.mjs [serve [port] [issuer|verifier|auditor]|application [role]|sign-digest <digest>|vp <nonce> [role]|smoke]");
   }
 }

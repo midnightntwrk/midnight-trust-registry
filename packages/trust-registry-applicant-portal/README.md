@@ -97,6 +97,22 @@ demo form intentionally does not offer auditor submission. The reference
 `demo:auditor` host uses a fixed virtual clock; the prepared intent uses that
 host's evaluation time, not the browser clock or Midnight epoch counter.
 
+The issuer and verifier forms follow the same external-signature flow. An
+issuer must name the exact credential family, schema and semantic version,
+credential definition, status method, and the resource type it seeks to
+govern. A verifier must name the complete request profile, purpose,
+credential-scope commitment, allowed attributes and predicates, and disclosure
+level. The portal derives role-specific governed resource IDs and includes the
+whole scope, selected resource, registry context, and nonce in the signed
+digest. A changed host binding is rejected before the page reports `pending`.
+The signer still owns the DID key outside the browser; registering and
+presenting eligibility evidence does not activate the issuer or verifier.
+For a loopback walkthrough, run
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer` or substitute
+`verifier`, then use its printed draft and the fixture-only `sign-digest` and
+`vp <nonce> <role>` commands. The demo does not make an issuance or
+presentation decision on the network.
+
 Run locally from the repo root:
 
 ```bash
