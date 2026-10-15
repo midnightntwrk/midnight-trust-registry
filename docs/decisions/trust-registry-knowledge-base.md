@@ -1230,3 +1230,7 @@ The signed journeys derive expected statement epochs from Compact status
 sequences, and the recognition demo captures its expected epoch from the local
 simulator before accepting API evidence. Neither demo lets the API select its
 own anchor. This is a local fixture boundary, not a network-finality proof.
+TRQP evidence verification is now exercised against those same live API
+journeys: issuer/verifier and recognition proof responses must match exact
+requests, ledger-selected epoch anchors, and independently recomputed temporal
+decisions. Recognition remains a distinct result, not a local authorization.

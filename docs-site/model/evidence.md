@@ -38,7 +38,9 @@ verifiers. They require explicit request time, a trusted authority DID, and a
 caller-supplied epoch anchor; they reject a response whose tuple, proof, or
 allow/deny result disagrees with the request and proved lifecycle. Recognition
 requires the exact external registry and scope context and does not authorize
-local issuance.
+local issuance. The signed issuer/verifier and governed recognition demos call
+the live TRQP evidence routes and run these verifiers against simulator-ledger
+anchors, including archived decisions after later lifecycle changes.
 
 ## What an epoch means
 
