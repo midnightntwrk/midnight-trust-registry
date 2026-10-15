@@ -1251,3 +1251,15 @@ proof. Do not copy or import it as a production solution for #76/#90. The
 published VC core provides status-reference shape and commitment checks; a
 governed status authority plus authenticated current-state adapter is still a
 separate functional deliverable.
+
+The #90 reference integration now has an HTTP source for its DID-signed
+application status attestation. It POSTs only registry/handle/body-root and
+challenge commitments to an operator-configured HTTPS endpoint and passes the
+untrusted response through the existing governed issuer binding, DID method,
+signature, active-status, and freshness verifier. A full VC/VP application
+test accepts the active response, returns only a redacted decision commitment,
+and rejects a re-signed revoked response; focused transport tests reject
+substitution, stale answers, insecure endpoints, and outages. This is not a
+general VC status registry, an independent live-root proof, or network
+finality. `./run.sh --light`, `./run.sh integration --light`, `./run.sh docs`,
+and `pnpm audit --audit-level low` passed on the local stack.
