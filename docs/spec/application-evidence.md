@@ -69,14 +69,26 @@ following fields are required before canonical serialization:
   "expiresAt": "2026-07-28T00:00:00Z",
   "challengeHash": "0x...32-byte-hex...",
   "presentationHash": "0x...32-byte-hex...",
-  "claimsCommitment": "0x...32-byte-hex..."
+  "claimsCommitment": "0x...32-byte-hex...",
+  "statusDecisionCommitment": "0x...32-byte-hex..."
 }
 ```
 
-`presentationHash` and `claimsCommitment` are privacy-preserving commitments,
+`presentationHash`, `claimsCommitment`, and `statusDecisionCommitment` are
+privacy-preserving commitments,
 not the VP or claim values. `scopeCommitment` binds the role-specific issuer,
 verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 `Z` suffix. Hex values are lowercase and encode exactly 32 bytes.
+For the Midnight VC/VP reference path, `statusDecisionCommitment` is SHA-256
+over canonical JSON of the domain tag
+`tr:application:verified-status-decision:v1`, the verified signed status
+statement (including its proof), and the status authority DID state version ID.
+The verifier computes it only after checking the governed status registry and
+authority key, credential binding, challenge, active flag, freshness, and
+JubJub signature. It binds the decision used at intake but is not a public
+non-revocation proof: independent later audit requires access to the private
+signed statement and authenticated historical DID state. The registry does
+not store the statement or VP.
 The governed resource type and ID are signed separately because one issuer
 scope can authorize several resource kinds. Proposal intake MUST compare both
 fields against the proposed resource, not only the scope commitment.

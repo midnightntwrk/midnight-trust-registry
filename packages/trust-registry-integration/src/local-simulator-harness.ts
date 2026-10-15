@@ -649,6 +649,7 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${input.applicationId}`),
       presentationHash: sha256Hex(`presentation:${input.applicationId}`),
       claimsCommitment: sha256Hex(`claims:${input.applicationId}`),
+      statusDecisionCommitment: sha256Hex(`status-decision:${input.applicationId}`),
     };
     const commitment = computeApplicationEvidenceCommitment(envelope);
     return {

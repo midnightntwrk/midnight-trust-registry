@@ -23,6 +23,7 @@ export type VerifiedApplicationPresentation = {
   scopeCommitment: string;
   presentationHash: string;
   claimsCommitment: string;
+  statusDecisionCommitment: string;
   verifiedAt: string;
   expiresAt: string;
 };
@@ -106,6 +107,7 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     challengeHash,
     presentationHash: verified.presentationHash,
     claimsCommitment: verified.claimsCommitment,
+    statusDecisionCommitment: verified.statusDecisionCommitment,
   });
   const verifiedAtMs = Date.parse(envelope.verifiedAt);
   const expiresAtMs = Date.parse(envelope.expiresAt);

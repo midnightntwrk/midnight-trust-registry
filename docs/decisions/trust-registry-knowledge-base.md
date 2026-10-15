@@ -1108,3 +1108,13 @@ grant fails before evidence issuance. The fixture supports a separate status
 method under the issuer DID and a chosen DID state version solely for this
 cross-surface local test. Production finality and status-registry root
 verification remain open.
+
+The redacted application evidence envelope now requires a
+`statusDecisionCommitment` computed from the verified signed status statement
+and observed authority DID state version. This binds the status decision to
+the evidence-verifier signature without publishing the private witness. The
+admin console's strict envelope allowlist must be updated whenever a required
+redacted field is added. The commitment is not an independently verifiable
+non-revocation proof: a later auditor needs the retained signed statement,
+authenticated historical DID state, and an appropriate status-registry trust
+anchor. The local fixture has none of the latter network-finality guarantees.

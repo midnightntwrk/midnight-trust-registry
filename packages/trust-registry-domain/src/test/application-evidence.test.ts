@@ -12,6 +12,7 @@ const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const HASH_E = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "credentialFamily");
 
 const createSubmission = (): ApplicationEvidenceSubmission => {
@@ -31,6 +32,7 @@ const createSubmission = (): ApplicationEvidenceSubmission => {
     challengeHash: HASH_B,
     presentationHash: HASH_C,
     claimsCommitment: HASH_D,
+    statusDecisionCommitment: HASH_E,
   };
   return {
     envelope,
@@ -121,6 +123,21 @@ describe("application evidence", () => {
         () => true,
       ),
     ).not.toThrow();
+  });
+
+  it("commits to the exact verified status decision", () => {
+    const accepted = createSubmission();
+    const substituted = {
+      ...accepted,
+      envelope: { ...accepted.envelope, statusDecisionCommitment: HASH_A },
+    };
+    expect(() => assertValidApplicationEvidence(
+      substituted, expectation, [authorizedVerifier], () => true,
+    )).toThrow(/commitment does not match/u);
+    expect(() => computeApplicationEvidenceCommitment({
+      ...accepted.envelope,
+      statusDecisionCommitment: undefined as unknown as string,
+    })).toThrow();
   });
 
   it("compares hash fields by bytes without changing the signed envelope", () => {

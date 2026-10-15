@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applicationStatusAttestationDigest,
+  applicationStatusDecisionCommitment,
   createAttestedApplicationStatusSource,
   type SignedApplicationStatusStatement,
 } from "../application-status-attestation.js";
@@ -38,13 +39,27 @@ async function fixture() {
       },
     };
   };
-  return { source, request, replace, statement: signed.statement };
+  return { source, request, replace, signed, statement: signed.statement };
 }
 
 describe("DID-signed application status attestation", () => {
+  it("binds the signed witness and resolved DID state version into the decision commitment", async () => {
+    const { signed, statement } = await fixture();
+    const original = applicationStatusDecisionCommitment(signed, "did-state-1");
+    expect(applicationStatusDecisionCommitment(signed, "did-state-2")).not.toBe(original);
+    expect(applicationStatusDecisionCommitment({
+      ...signed,
+      statement: { ...statement, observedAt: new Date(VP_FIXTURE_TIME_MS + 1000).toISOString() },
+    }, "did-state-1")).not.toBe(original);
+    expect(original).toMatch(/^0x[0-9a-f]{64}$/u);
+  });
+
   it("accepts an active, fresh attestation pinned to the governed status anchor and credential", async () => {
     const { source, request } = await fixture();
-    await expect(source(request)).resolves.toEqual({ validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000 });
+    await expect(source(request)).resolves.toMatchObject({
+      validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000,
+      statusDecisionCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+    });
   });
 
   it.each([

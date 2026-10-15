@@ -106,7 +106,7 @@ const assertRedactedEvidence = (value: unknown): void => {
   assertExactFields(submission.envelope, [
     "version", "registryId", "applicationId", "subjectDid", "role", "policyId", "policyVersion",
     "scopeCommitment", "governedResource", "evidenceVerifierDid", "verifiedAt", "expiresAt",
-    "challengeHash", "presentationHash", "claimsCommitment",
+    "challengeHash", "presentationHash", "claimsCommitment", "statusDecisionCommitment",
   ], "Application evidence envelope");
   const envelope = submission.envelope as Record<string, unknown>;
   for (const [key, field] of Object.entries(envelope)) {

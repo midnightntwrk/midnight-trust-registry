@@ -231,6 +231,7 @@ describe("pending application registration over private HTTP", () => {
           scopeCommitment: proof.scopeCommitment,
           presentationHash: `0x${"55".repeat(32)}`,
           claimsCommitment: `0x${"66".repeat(32)}`,
+          statusDecisionCommitment: `0x${"77".repeat(32)}`,
           verifiedAt: NOW,
           expiresAt: "2026-10-13T00:02:00.000Z",
         };
@@ -336,6 +337,7 @@ describe("pending application registration over private HTTP", () => {
           scopeCommitment: proof.scopeCommitment,
           presentationHash: `0x${"55".repeat(32)}`,
           claimsCommitment: `0x${"66".repeat(32)}`,
+          statusDecisionCommitment: `0x${"77".repeat(32)}`,
           verifiedAt: NOW,
           expiresAt: "2026-10-13T00:02:00.000Z",
         };

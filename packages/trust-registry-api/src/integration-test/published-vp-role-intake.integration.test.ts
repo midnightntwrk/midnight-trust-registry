@@ -207,11 +207,14 @@ describe("published VP proof for non-issuer application roles", () => {
     for (const family of [
       {
         ...proof.input.family,
-        assertStatusActive: async () => ({ validUntilMs: VP_FIXTURE_TIME_MS }),
+        assertStatusActive: async () => ({
+          validUntilMs: VP_FIXTURE_TIME_MS,
+          statusDecisionCommitment: sha256Hex("expired-status-decision"),
+        }),
       },
       {
         ...proof.input.family,
-        assertStatusActive: async (): Promise<{ validUntilMs: number }> => {
+        assertStatusActive: async (): Promise<{ validUntilMs: number; statusDecisionCommitment: string }> => {
           throw new ApplicationVpVerificationError("ineligible");
         },
       },

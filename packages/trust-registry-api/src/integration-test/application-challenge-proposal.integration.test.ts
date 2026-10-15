@@ -119,6 +119,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       scopeCommitment: context.binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: VERIFIED_AT,
       expiresAt: EXPIRES_AT,
     }));
@@ -319,6 +320,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         scopeCommitment: context.binding.scopeCommitment,
         presentationHash: `0x${"2".repeat(64)}`,
         claimsCommitment: `0x${"3".repeat(64)}`,
+        statusDecisionCommitment: `0x${"4".repeat(64)}`,
         verifiedAt: VERIFIED_AT,
         expiresAt: EXPIRES_AT,
       }),

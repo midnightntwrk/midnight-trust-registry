@@ -316,6 +316,7 @@ describe("admin console browser handlers", () => {
         evidenceVerifierDid: "did:midnight:testnet:verifier", verifiedAt: "2026-10-13T00:00:00Z",
         expiresAt: "2026-10-13T01:00:00Z", challengeHash: `0x${"bb".repeat(32)}`,
         presentationHash: `0x${"cc".repeat(32)}`, claimsCommitment: `0x${"dd".repeat(32)}`,
+        statusDecisionCommitment: `0x${"ee".repeat(32)}`,
       },
       commitment: `0x${"ee".repeat(32)}`,
       signature: { keyId: "did:midnight:testnet:verifier#assertion-1", algorithm: "jubjub-schnorr", value: "0x0102" },

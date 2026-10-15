@@ -31,6 +31,7 @@ export type ApplicationVpVerifierResult = {
   scopeCommitment: string;
   presentationHash: string;
   claimsCommitment: string;
+  statusDecisionCommitment: string;
   verifiedAt: string;
   expiresAt: string;
 };
@@ -46,7 +47,7 @@ export type ApplicationVpFamilyAdapter<Submission> = {
     material: ApplicationVpMaterial,
     binding: IssuerStatusPolicyBinding,
     context: { nonce: string; evaluatedAtMs: number },
-  ): Promise<{ validUntilMs: number }>;
+  ): Promise<{ validUntilMs: number; statusDecisionCommitment: string }>;
   /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
   assertRoleClaims(material: ApplicationVpMaterial): Promise<{
     claimsCommitment: string;
@@ -147,7 +148,8 @@ export async function verifyApplicationVp<Submission>(input: {
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
 
-  let status: { validUntilMs: number };
+  let status: { validUntilMs: number; statusDecisionCommitment: string };
+  let statusDecisionCommitment: string;
   let claimsCommitment: string;
   try {
     const binding = IssuerStatusPolicyBindingSchema.parse(
@@ -163,6 +165,7 @@ export async function verifyApplicationVp<Submission>(input: {
     if (!validTime(status.validUntilMs) || status.validUntilMs <= input.evaluatedAtMs) {
       throw new ApplicationVpVerificationError("expired");
     }
+    statusDecisionCommitment = HashHexSchema.parse(status.statusDecisionCommitment).toLowerCase();
     const claims = await input.family.assertRoleClaims(material);
     claimsCommitment = HashHexSchema.parse(claims.claimsCommitment).toLowerCase();
     if (HashHexSchema.parse(claims.scopeCommitment).toLowerCase() !== computeAuthorizationScopeCommitment(scope.data)) {
@@ -186,6 +189,7 @@ export async function verifyApplicationVp<Submission>(input: {
     scopeCommitment: computeAuthorizationScopeCommitment(scope.data),
     presentationHash,
     claimsCommitment,
+    statusDecisionCommitment,
     verifiedAt: new Date(input.evaluatedAtMs).toISOString(),
     expiresAt: new Date(expiresAtMs).toISOString(),
   };

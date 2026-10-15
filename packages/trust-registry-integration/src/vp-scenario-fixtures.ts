@@ -382,7 +382,10 @@ export async function createApplicationVpScenarioFixture(
           || statusDecision.authorityMethod !== body.statusAuthorityMethod
           || statusDecision.statusHandleCommitment !== body.statusHandleCommitment
         ) throw new TypeError("Application VP fixture status is not active under the signed binding");
-        return { validUntilMs: statusDecision.validUntilMs };
+        return {
+          validUntilMs: statusDecision.validUntilMs,
+          statusDecisionCommitment: sha256Hex(JSON.stringify(["tr:fixture:status-decision:v1", statusDecision])),
+        };
       }
       return attestedStatus({ material: prepared, binding, ...context });
     },

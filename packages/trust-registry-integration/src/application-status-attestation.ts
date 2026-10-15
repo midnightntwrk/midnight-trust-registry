@@ -34,6 +34,18 @@ const SignedStatement = z.strictObject({
 export type ApplicationStatusStatement = z.infer<typeof Statement>;
 export type SignedApplicationStatusStatement = z.infer<typeof SignedStatement>;
 
+export function applicationStatusDecisionCommitment(
+  signed: SignedApplicationStatusStatement,
+  didStateVersionId: string,
+): string {
+  if (didStateVersionId.length === 0) throw new Error("Status authority DID state version is required");
+  return sha256Hex(canonicalizeJson([
+    "tr:application:verified-status-decision:v1",
+    SignedStatement.parse(signed),
+    didStateVersionId,
+  ]));
+}
+
 const field = (value: string): bigint => BigInt(`0x${sha256Hex(value).slice(2, 64)}`);
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
@@ -61,7 +73,7 @@ export function createAttestedApplicationStatusSource(input: {
   binding: Pick<IssuerStatusPolicyBinding, "statusRegistryId" | "statusAuthorityVerificationMethod">;
   nonce: string;
   evaluatedAtMs: number;
-}) => Promise<{ validUntilMs: number }> {
+}) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }> {
   return async ({ material, binding, nonce, evaluatedAtMs }) => {
     if (!/^0x[0-9a-f]{64}$/u.test(nonce) || !Number.isSafeInteger(evaluatedAtMs) || evaluatedAtMs < 0) {
       throw new Error("Application status context is invalid");
@@ -127,6 +139,9 @@ export function createAttestedApplicationStatusSource(input: {
       )) {
       throw new Error("Application status attestation signature or DID binding is invalid");
     }
-    return { validUntilMs: expiresAtMs };
+    return {
+      validUntilMs: expiresAtMs,
+      statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId),
+    };
   };
 }

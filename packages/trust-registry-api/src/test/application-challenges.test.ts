@@ -351,6 +351,7 @@ describe("application challenge lifecycle", () => {
       challengeHash: issued.challengeHash,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
     };
     const submission = {
       envelope,
@@ -407,6 +408,7 @@ describe("application challenge lifecycle", () => {
       expiresAt: "2026-10-07T00:00:00Z",
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
     };
     const keyId = `${webBinding.evidenceVerifierDid}#assertion-1`;
     expect(() => assertValidApplicationEvidence(

@@ -430,7 +430,10 @@ describe("published VC proof and DID application verifier port", () => {
     const { input, material, family } = await fixture();
     family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: NOW + 48 * 60 * 60_000 }));
     family.assertCredentialBodyBinding = vi.fn(async () => true as const);
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 48 * 60 * 60_000 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 48 * 60 * 60_000,
+      statusDecisionCommitment: sha256Hex("test-status-long-lived"),
+    }));
     await expect(verifyApplicationVp(input)).resolves.toMatchObject({
       expiresAt: new Date(NOW + 24 * 60 * 60_000).toISOString(),
     });
@@ -498,11 +501,17 @@ describe("published VC proof and DID application verifier port", () => {
     family.prepare = vi.fn(async () => material);
     await expect(verifyApplicationVp({ ...input, evaluatedAtMs: NOW + 6 * 60_000 })).rejects.toMatchObject({ category: "expired" });
 
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW - 1 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW - 1,
+      statusDecisionCommitment: sha256Hex("test-status-expired"),
+    }));
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "expired" });
     expect(family.assertRoleClaims).not.toHaveBeenCalled();
 
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 15 * 60_000 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 15 * 60_000,
+      statusDecisionCommitment: sha256Hex("test-status-claims"),
+    }));
     family.assertRoleClaims = vi.fn(async () => { throw new Error("private claim mismatch"); });
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
   });
@@ -539,5 +548,20 @@ describe("published VC proof and DID application verifier port", () => {
     }));
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
     expect(family.assertStatusActive).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing or malformed status-decision commitments before issuing evidence", async () => {
+    const { input, family } = await fixture();
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 60_000,
+      statusDecisionCommitment: undefined as unknown as string,
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+    expect(family.assertRoleClaims).not.toHaveBeenCalled();
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 60_000,
+      statusDecisionCommitment: "not-a-commitment",
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
   });
 });
