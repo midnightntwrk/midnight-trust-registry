@@ -23,6 +23,11 @@ Current scope:
 - register a pending issuer, verifier, auditor, or maintainer application with
   an externally signed Midnight DID `apply` intent. The browser accepts a
   signed request, never a private key.
+- prepare canonical issuer, verifier, and maintainer requests from structured
+  fields. The maintainer scope and governed resource both use the registry ID
+  returned by the host's current mutation context; an applicant cannot select
+  a different registry in the form. External signing and governance approval
+  remain separate steps.
 - enter the complete auditor request scope (profile, purpose, credential-scope
   commitment, attributes, predicates, and disclosure level), application IDs,
   and applicant Midnight DID authentication method. The portal fetches the
@@ -97,7 +102,7 @@ demo form intentionally does not offer auditor submission. The reference
 `demo:auditor` host uses a fixed virtual clock; the prepared intent uses that
 host's evaluation time, not the browser clock or Midnight epoch counter.
 
-The issuer and verifier forms follow the same external-signature flow. An
+The issuer, verifier, and maintainer forms follow the same external-signature flow. An
 issuer must name the exact credential family, schema and semantic version,
 credential definition, status method, and the resource type it seeks to
 govern. A verifier must name the complete request profile, purpose,
@@ -105,11 +110,12 @@ credential-scope commitment, allowed attributes and predicates, and disclosure
 level. The portal derives role-specific governed resource IDs and includes the
 whole scope, selected resource, registry context, and nonce in the signed
 digest. A changed host binding is rejected before the page reports `pending`.
-The signer still owns the DID key outside the browser; registering and
-presenting eligibility evidence does not activate the issuer or verifier.
+For a maintainer, the host registry ID is the scope and resource; it is not
+editable in the form. The signer still owns the DID key outside the browser;
+registering and presenting eligibility evidence does not activate membership.
 For a loopback walkthrough, run
 `node scripts/demo-auditor-admission.mjs serve 4400 issuer` or substitute
-`verifier`, then use its printed draft and the fixture-only `sign-digest` and
+`verifier` or `maintainer`, then use its printed draft and the fixture-only `sign-digest` and
 `vp <nonce> <role>` commands. The demo does not make an issuance or
 presentation decision on the network.
 

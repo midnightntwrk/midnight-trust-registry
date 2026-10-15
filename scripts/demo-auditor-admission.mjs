@@ -19,6 +19,7 @@ import {
 } from "../packages/trust-registry-applicant-portal/dist/auditor-application.js";
 import {
   prepareIssuerApplication,
+  prepareMaintainerApplication,
   prepareVerifierApplication,
   signPreparedMembershipApplication,
 } from "../packages/trust-registry-applicant-portal/dist/membership-application.js";
@@ -62,7 +63,9 @@ const verifierScope = {
   allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"],
   disclosureLevel: "minimal",
 };
-const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope };
+const demoRegistryId = createOperatorWorkspace({ label: "auditor-admission-demo" }).snapshot.registry.registryId;
+const maintainerScope = { version: "tr-scope-v1", role: "maintainer", registryId: demoRegistryId };
+const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope, maintainer: maintainerScope };
 export const applicationDraft = {
   applicationId,
   authorizationId: "auth:auditor:local-demo:v1",
@@ -90,10 +93,14 @@ const verifierDraft = {
   allowedAttributes: verifierScope.allowedAttributes, allowedPredicates: verifierScope.allowedPredicates,
   disclosureLevel: verifierScope.disclosureLevel,
 };
-const drafts = { auditor: applicationDraft, issuer: issuerDraft, verifier: verifierDraft };
+const maintainerDraft = {
+  applicationId: "application:maintainer:local-demo:v1", authorizationId: "auth:maintainer:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+};
+const drafts = { auditor: applicationDraft, issuer: issuerDraft, verifier: verifierDraft, maintainer: maintainerDraft };
 
 function requestedRole(raw) {
-  if (!Object.hasOwn(scopes, raw)) throw new Error("Demo role must be issuer, verifier, or auditor");
+  if (!Object.hasOwn(scopes, raw)) throw new Error("Demo role must be issuer, verifier, auditor, or maintainer");
   return raw;
 }
 
@@ -118,7 +125,9 @@ function signedApplication(workspace, role = "auditor") {
     ? prepareIssuerApplication(issuerDraft, context, nonce)
     : role === "verifier"
       ? prepareVerifierApplication(verifierDraft, context, nonce)
-      : prepareAuditorApplication(applicationDraft, context, nonce);
+      : role === "maintainer"
+        ? prepareMaintainerApplication(maintainerDraft, context, nonce)
+        : prepareAuditorApplication(applicationDraft, context, nonce);
   return role === "auditor"
     ? signPreparedAuditorApplication(prepared, signDigest(prepared.digest))
     : signPreparedMembershipApplication(prepared, signDigest(prepared.digest));
@@ -347,6 +356,6 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(
     process.stdout.write(`After issuing a challenge, run \`node scripts/demo-auditor-admission.mjs vp <nonce> ${role}\` and paste its VP JSON.\n`);
     process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
   } else {
-    throw new Error("Usage: demo-auditor-admission.mjs [serve [port] [issuer|verifier|auditor]|application [role]|sign-digest <digest>|vp <nonce> [role]|smoke]");
+    throw new Error("Usage: demo-auditor-admission.mjs [serve [port] [issuer|verifier|auditor|maintainer]|application [role]|sign-digest <digest>|vp <nonce> [role]|smoke]");
   }
 }

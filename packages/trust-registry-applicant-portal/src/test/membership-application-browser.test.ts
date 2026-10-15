@@ -32,9 +32,16 @@ const cases = [
       allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"], disclosureLevel: "minimal",
     },
   },
+  {
+    role: "maintainer",
+    draft: {
+      applicationId: "application:maintainer:one:v1", authorizationId: "auth:maintainer:one:v1",
+      actorDid: did, actorKeyId: `${did}#authentication-1`,
+    },
+  },
 ] as const;
 
-describe("structured issuer and verifier forms", () => {
+describe("structured membership forms", () => {
   for (const { role, draft } of cases) {
     it(`${role} prepares a signed request and refuses a substituted host scope`, async () => {
       const root = document.createElement("div");
@@ -56,7 +63,9 @@ describe("structured issuer and verifier forms", () => {
               subjectDid: signed.intent.actorDid,
               evidenceVerifierDid: did,
               role,
-              scope: substitution === "scope" ? { ...signed.scope, ...(role === "issuer" ? { schemaId: "schema:substituted" } : { purpose: "substituted" }) } : signed.scope,
+              scope: substitution === "scope" ? { ...signed.scope, ...(role === "issuer"
+                ? { schemaId: "schema:substituted" }
+                : role === "verifier" ? { purpose: "substituted" } : { registryId: "registry:other:trusted" }) } : signed.scope,
               scopeCommitment: computeAuthorizationScopeCommitment(signed.scope as Parameters<typeof computeAuthorizationScopeCommitment>[0]),
               policyId: "policy:one", policyVersion: "v1",
               governedResource: signed.governedResource,
@@ -77,6 +86,11 @@ describe("structured issuer and verifier forms", () => {
         input.value = typeof value === "string" ? value : value.join("\n");
       }
       form.querySelector<HTMLButtonElement>(`[data-prepare-${role}]`)!.click();
+      await vi.waitFor(() => expect(root.querySelector(`[data-${role}-digest]`)?.textContent)
+        .toMatch(/^Sign digest bytes: 0x[0-9a-f]{64}$/u));
+      root.querySelector<HTMLButtonElement>(`[data-${role}-application-form] [data-reset-member]`)!.click();
+      expect(root.querySelector(`[data-${role}-digest]`)).toBeNull();
+      root.querySelector<HTMLButtonElement>(`[data-${role}-application-form] [data-prepare-${role}]`)!.click();
       await vi.waitFor(() => expect(root.querySelector(`[data-${role}-digest]`)?.textContent)
         .toMatch(/^Sign digest bytes: 0x[0-9a-f]{64}$/u));
       const signature = `0x${"d".repeat(192)}`;
@@ -105,7 +119,8 @@ describe("structured issuer and verifier forms", () => {
       const scope = submitted[2]!.scope as Parameters<typeof computeAuthorizationScopeCommitment>[0];
       expect(submitted[2]!.governedResource.id).toBe(role === "issuer"
         ? issuerGovernedResourceId(scope as Extract<typeof scope, { role: "issuer" }>, "credentialFamily")
-        : requestGovernedResourceId(scope as Extract<typeof scope, { role: "verifier" }>));
+        : role === "verifier" ? requestGovernedResourceId(scope as Extract<typeof scope, { role: "verifier" }>)
+          : context.registryId);
     });
   }
 });

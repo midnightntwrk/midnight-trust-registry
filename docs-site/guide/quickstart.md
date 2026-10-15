@@ -52,12 +52,14 @@ pnpm run demo:serve:applicant-portal
 
 For a signed applicant walkthrough, use the isolated fixture host instead:
 `node scripts/demo-auditor-admission.mjs serve 4400 issuer`, replacing `issuer`
-with `verifier` or `auditor` as needed. The applicant portal shows structured
+with `verifier`, `auditor`, or `maintainer` as needed. The applicant portal shows structured
 role-specific fields and a digest to sign outside the browser. The terminal
 prints the matching fixture draft and one-use VP command. A successful run
 registers a pending application and redacted eligibility evidence; it does
 not approve or activate membership. The signer, clock, DID resolver, and VP
 are local fixtures, not production trust or Midnight finality.
+The maintainer form derives its exact registry scope from the API's current
+context rather than an applicant-entered registry ID.
 
 ## Read a decision
 

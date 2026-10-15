@@ -4,7 +4,7 @@ import { TrustRegistryApiEvaluateRecognitionRequestSchema } from "@midnight-ntwr
 import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
-import { prepareIssuerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
+import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -27,7 +27,7 @@ type AppState = {
   auditorDraft: AuditorApplicationDraft | undefined;
   auditorPreparationBusy: boolean;
   preparedAuditor: PreparedAuditorApplication | undefined;
-  memberDraft: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft } | undefined;
+  memberDraft: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft } | { role: "maintainer"; draft: MaintainerApplicationDraft } | undefined;
   memberPreparationBusy: boolean;
   preparedMember: PreparedMembershipApplication | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
@@ -104,6 +104,16 @@ const readVerifierDraft = (form: HTMLFormElement): VerifierApplicationDraft => {
     allowedAttributes: parseScopeList(field("allowedAttributes")),
     allowedPredicates: parseScopeList(field("allowedPredicates")),
     disclosureLevel: field("disclosureLevel"),
+  };
+};
+
+const readMaintainerDraft = (form: HTMLFormElement): MaintainerApplicationDraft => {
+  const identity = readMemberIdentity(form);
+  return {
+    applicationId: identity.applicationId,
+    authorizationId: identity.authorizationId,
+    actorDid: identity.actorDid,
+    actorKeyId: identity.actorKeyId,
   };
 };
 
@@ -461,7 +471,7 @@ export const createApplicantPortalApp = (
   };
 
   const prepareMember = async (
-    member: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft },
+    member: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft } | { role: "maintainer"; draft: MaintainerApplicationDraft },
   ) => {
     const requestId = ++memberPreparationRequestId;
     const apiBase = state.apiBase;
@@ -473,7 +483,9 @@ export const createApplicantPortalApp = (
       const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
       const preparedMember = member.role === "issuer"
         ? prepareIssuerApplication(member.draft, context, nonce)
-        : prepareVerifierApplication(member.draft, context, nonce);
+        : member.role === "verifier"
+          ? prepareVerifierApplication(member.draft, context, nonce)
+          : prepareMaintainerApplication(member.draft, context, nonce);
       setState({ preparedMember, memberPreparationBusy: false });
     } catch (error) {
       if (requestId === memberPreparationRequestId && apiBase === state.apiBase) {
@@ -991,11 +1003,17 @@ export const createApplicantPortalApp = (
         setState({ evidenceError: formatApiError(error) });
       }
     });
-    root.querySelector<HTMLButtonElement>("[data-reset-member]")?.addEventListener("click", () => {
-      memberPreparationRequestId += 1;
-      setState({ memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, evidenceError: undefined });
+    root.querySelector<HTMLButtonElement>("[data-prepare-maintainer]")?.addEventListener("click", (event) => {
+      const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
+      if (form !== null) void prepareMember({ role: "maintainer", draft: readMaintainerDraft(form) });
     });
-    for (const role of ["issuer", "verifier"] as const) {
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-reset-member]")) {
+      button.addEventListener("click", () => {
+        memberPreparationRequestId += 1;
+        setState({ preparedMember: undefined, memberPreparationBusy: false, evidenceError: undefined });
+      });
+    }
+    for (const role of ["issuer", "verifier", "maintainer"] as const) {
       root.querySelector<HTMLFormElement>(`[data-${role}-application-form]`)?.addEventListener("submit", (event) => {
         event.preventDefault();
         const prepared = state.preparedMember;
@@ -1073,10 +1091,13 @@ export const createApplicantPortalApp = (
     const auditorLocked = preparedAuditor === undefined ? "" : " disabled";
     const issuerDraft = state.memberDraft?.role === "issuer" ? state.memberDraft.draft : undefined;
     const verifierDraft = state.memberDraft?.role === "verifier" ? state.memberDraft.draft : undefined;
+    const maintainerDraft = state.memberDraft?.role === "maintainer" ? state.memberDraft.draft : undefined;
     const preparedIssuer = state.preparedMember?.payload.scope.role === "issuer" ? state.preparedMember : undefined;
     const preparedVerifier = state.preparedMember?.payload.scope.role === "verifier" ? state.preparedMember : undefined;
+    const preparedMaintainer = state.preparedMember?.payload.scope.role === "maintainer" ? state.preparedMember : undefined;
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
+    const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
 
     root.innerHTML = `
       <main class="shell">
@@ -1224,6 +1245,25 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
+            </form>
+          </section>
+          <section class="form-panel">
+            <h2>Maintainer membership request</h2>
+            <p>The current API registry defines the exact maintainer scope. Sign the prepared digest with the applicant DID authentication key; approval by existing maintainers is still required.</p>
+            <form data-maintainer-application-form>
+              <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(maintainerDraft?.applicationId ?? "")}"${maintainerLocked} required /></label>
+              <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(maintainerDraft?.authorizationId ?? "")}"${maintainerLocked} required /></label>
+              <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(maintainerDraft?.actorDid ?? "")}"${maintainerLocked} required /></label>
+              <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(maintainerDraft?.actorKeyId ?? "")}"${maintainerLocked} required /></label>
+              <button class="button secondary" type="button" data-prepare-maintainer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              ${preparedMaintainer === undefined ? "" : `
+                <p data-maintainer-resource class="mono">Governed registry: ${escapeHtml(preparedMaintainer.payload.governedResource.id)}</p>
+                <p data-maintainer-digest class="mono">Sign digest bytes: ${escapeHtml(preparedMaintainer.digest)}</p>
+                <pre class="mono signing-context">${escapeHtml(JSON.stringify({ ...preparedMaintainer.payload, intent: preparedMaintainer.intent }, null, 2))}</pre>
+                <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
+                <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
+              `}
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer === undefined ? " disabled" : ""}>Register maintainer application</button>
             </form>
           </section>
           <section class="form-panel">

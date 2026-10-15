@@ -37,9 +37,17 @@ const cases = [
       disclosureLevel: "minimal",
     },
   },
+  {
+    role: "maintainer",
+    applicationId: "application:maintainer:local-form:v1",
+    authorizationId: "auth:maintainer:local-form:v1",
+    scope: {
+      version: "tr-scope-v1", role: "maintainer", registryId: "registry:auditor-admission-demo:trusted",
+    },
+  },
 ] as const;
 
-describe("issuer and verifier forms with the live admission host", () => {
+describe("membership forms with the live admission host", () => {
   for (const applicant of cases) {
     it(`${applicant.role} registers and presents evidence using real HTTP signature verification`, async () => {
       const demoPath = pathToFileURL(resolve(process.cwd(), "../../scripts/demo-auditor-admission.mjs"));
@@ -92,7 +100,7 @@ describe("issuer and verifier forms with the live admission host", () => {
           ...applicant.scope, ...("governedResourceType" in applicant ? { governedResourceType: applicant.governedResourceType } : {}),
         };
         for (const [name, value] of Object.entries(fields)) {
-          if (name === "version" || name === "role") continue;
+          if (name === "version" || name === "role" || name === "registryId") continue;
           form.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[name='${name}']`)!.value =
             typeof value === "string" ? value : value.join("\n");
         }
@@ -118,8 +126,10 @@ describe("issuer and verifier forms with the live admission host", () => {
         const bindingForm = root.querySelector<HTMLFormElement>("[data-application-binding-form]")!;
         bindingForm.querySelector<HTMLInputElement>("[name='applicationId']")!.value = applicant.applicationId;
         bindingForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-        await vi.waitFor(() => expect(root.textContent).toContain(applicant.scope.role === "issuer"
-          ? applicant.scope.credentialFamilyId : applicant.scope.requestProfileId), { timeout: 5000 });
+        await vi.waitFor(() => expect(root.querySelector("[data-application-challenge]")).not.toBeNull(), { timeout: 5000 });
+        expect(root.textContent).toContain(applicant.scope.role === "issuer"
+          ? applicant.scope.credentialFamilyId : applicant.scope.role === "maintainer"
+            ? applicant.scope.registryId : applicant.scope.requestProfileId);
         root.querySelector<HTMLButtonElement>("[data-application-challenge]")!.click();
         await vi.waitFor(() => expect(challengeNonce).toMatch(/^0x[0-9a-f]{64}$/u), { timeout: 5000 });
         const presentation = await demo.presentationForNonce(challengeNonce!, applicant.scope);

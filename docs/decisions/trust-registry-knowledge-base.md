@@ -1319,3 +1319,17 @@ serve/application/VP commands, so each structured applicant form can be
 demonstrated with a matching externally signed fixture application and
 challenge-bound presentation. The default remains auditor for existing smoke
 calls. The role selector never changes production authorization rules.
+
+The maintainer applicant form now uses the same externally signed pending
+application path. Its `tr-scope-v1` registry ID and governed resource are
+both derived from the host's current mutation context, not an editable form
+field. The portal checks the returned canonical scope and registry against
+the signed intent. Domain, DOM substitution, and DOM-to-live-HTTP tests cover
+forged signature rejection, pending registration, and one-use VP evidence.
+The loopback demo accepts `maintainer` for matching fixture application/VP
+commands. This is pending admission only; existing maintainers still govern
+approval, and the reference host has no network finality or production key
+custody. The sibling VC status-registry package is still private and lacks
+an independently authenticated current-root proof, so the DID-signed status
+attestation remains a narrower authority statement rather than a general
+non-revocation proof.

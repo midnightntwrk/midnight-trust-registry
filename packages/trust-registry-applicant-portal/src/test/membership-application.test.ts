@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   prepareIssuerApplication,
+  prepareMaintainerApplication,
   prepareMembershipApplication,
   prepareVerifierApplication,
   signPreparedMembershipApplication,
@@ -100,6 +101,21 @@ describe("issuer and verifier application preparation", () => {
       expect(other.digest).not.toBe(prepared.digest);
       expect(other.payload.governedResource.id).not.toBe(prepared.payload.governedResource.id);
     }
+  });
+
+  it("derives maintainer scope and resource from the authenticated host context", () => {
+    const draft = { ...identity, applicationId: "application:maintainer:one", authorizationId: "auth:maintainer:one" };
+    const prepared = prepareMaintainerApplication(draft, context, nonce);
+    expect(prepared.payload.scope).toEqual({ version: "tr-scope-v1", role: "maintainer", registryId: context.registryId });
+    expect(prepared.payload.governedResource).toEqual({ type: "registry", id: context.registryId });
+    expect(prepared.intent).toMatchObject({
+      target: "maintainer", registryId: context.registryId,
+      scopeCommitment: computeAuthorizationScopeCommitment(prepared.payload.scope),
+      payloadCommitment: computePendingApplicationPayloadCommitment(prepared.payload),
+    });
+    expect(prepareMaintainerApplication(draft, { ...context, registryId: "registry:other:trusted" }, nonce).digest)
+      .not.toBe(prepared.digest);
+    expect(() => prepareMaintainerApplication(draft, { ...context, registryId: "*" }, nonce)).toThrow();
   });
 
   it("rejects malformed or wildcard scope, stale context shape, and bad signatures", () => {

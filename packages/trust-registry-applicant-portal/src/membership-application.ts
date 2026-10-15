@@ -3,6 +3,7 @@ import {
   IssuerGovernedResourceTypeSchema,
   IssuerScopeSchema,
   MAX_MUTATION_INTENT_LIFETIME_MS,
+  MaintainerScopeSchema,
   MutationIntentSchema,
   SignedPendingApplicationSchema,
   VerifierScopeSchema,
@@ -41,6 +42,8 @@ export type VerifierApplicationDraft = MembershipApplicationIdentity & {
   allowedPredicates: string[];
   disclosureLevel: string;
 };
+
+export type MaintainerApplicationDraft = MembershipApplicationIdentity;
 
 export type PreparedMembershipApplication = {
   payload: PendingApplicationPayload;
@@ -120,6 +123,22 @@ export function prepareVerifierApplication(
     authorizationId: draft.authorizationId,
     scope,
     governedResource: { type: "requestProfile", id: requestGovernedResourceId(scope) },
+  }, context, nonce);
+}
+
+export function prepareMaintainerApplication(
+  draft: MaintainerApplicationDraft,
+  context: TrustRegistryApiMutationContext,
+  nonce: string,
+): PreparedMembershipApplication {
+  const scope = MaintainerScopeSchema.parse({
+    version: "tr-scope-v1", role: "maintainer", registryId: context.registryId,
+  });
+  return prepareMembershipApplication(draft, {
+    applicationId: draft.applicationId,
+    authorizationId: draft.authorizationId,
+    scope,
+    governedResource: { type: "registry", id: scope.registryId },
   }, context, nonce);
 }
 
