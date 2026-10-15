@@ -139,6 +139,24 @@ as authorized under the new policy. A local simulator may perform both steps
 with fixture keys for demonstrations; the external-signing path exposes both
 steps separately and does not imply atomic execution or network finality.
 
+Every governed-action signature MUST cover the versioned
+`tr:deployment:action:v1` payload hash of the pinned network commitment,
+executing contract address (`kernel.self().bytes`), current policy commitment,
+and exact action payload hash. The four-field JubJub Schnorr message then
+commits registry ID, action kind, that bound payload hash, and current action
+sequence. The contract MUST derive network and address from its own sealed
+ledger field and execution context, not from action arguments. The prepare
+API MUST expose the same domain, but its submit path MUST re-read it from the
+trusted Compact-backed port before prechecking signatures. Historical epoch
+signatures and post-deployment governance event hashes use the same deployment
+identity; a consumer MUST obtain that identity from an authenticated finalized
+ledger selection rather than an untrusted evidence bundle. The constructor
+executes under a dummy address, so its separately domain-separated initial
+event commits the declared network but cannot prove the eventual address.
+Signers MUST authenticate that the declared network matches the actual target
+deployment. The current Compact runtime does not prove that correspondence
+on-chain; public-network qualification remains an open release gate.
+
 Application states are `proposed -> authorized -> active`, followed by
 `suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
 lifecycle validators. A denied proposal is archived by a quorum-governed

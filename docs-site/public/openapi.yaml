@@ -415,7 +415,7 @@ paths:
     parameters: [*governedRole, *id]
     post:
       tags: [Governed]
-      summary: Prepare exact policy-bound proposal digest
+      summary: Prepare exact deployment- and policy-bound proposal digest
       responses: *governedResponses
   /v1/governed/{role}/{id}/proposal/submit:
     parameters: [*governedRole, *id]

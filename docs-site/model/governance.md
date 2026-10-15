@@ -8,7 +8,7 @@ The 0.1.0 reference fixture uses three maintainer DIDs and 2-of-3 for ordinary, 
 
 ## Signed action transcript
 
-The contract verifies a JubJub Schnorr signature over a domain-separated, policy-bound digest containing action kind, exact payload commitment, sequence, and predecessor event. Policy commitment is included in the signed payload; rotating policy invalidates stale prepared contexts. The contract also checks current membership and quorum rather than trusting a caller-supplied `approved` flag. The [Compact reference](../contract/index.md) maps these checks to ledger fields and circuits.
+The contract verifies a JubJub Schnorr signature over a domain-separated digest containing registry ID, action kind, exact payload commitment, and sequence. The payload also binds the pinned network commitment, executing contract address, and current policy commitment; rotating policy or changing deployment invalidates a prepared vote. The contract checks current membership and quorum rather than trusting a caller-supplied `approved` flag. The [Compact reference](../contract/index.md) maps these checks to ledger fields and circuits.
 
 ## Evidence verifier versus maintainer
 
