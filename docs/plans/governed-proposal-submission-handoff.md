@@ -35,8 +35,10 @@ proposal role keys, and absence of raw presentation/signatures in the file.
 Recognition proposals use a separate accreditation/admission workflow and
 are not covered by this journal. The adapter is not wired into the packaged
 CLI, which has no network-finality source.
+
 The file adapter is capped at 10,000 attempts and 4 MiB. Capacity exhaustion
 returns a typed 503 before submission, including when the eventual event hash
-would exceed the byte limit. A future production host must define
-an audited rotation/export procedure that preserves unresolved reservations
-and observed history; this reference implementation does not auto-evict them.
+of any outstanding reservation would exceed the byte limit. A future
+production host must define an audited rotation/export procedure that
+preserves unresolved reservations and observed history; this reference
+implementation does not auto-evict them. Follow-up #193 tracks that work.

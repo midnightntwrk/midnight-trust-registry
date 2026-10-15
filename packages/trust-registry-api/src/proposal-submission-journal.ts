@@ -114,9 +114,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       }
       if (state.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
       const attempts = [...state.attempts, { ...key, state: "reserved" as const, eventHash: null }];
+      const projectedAttempts = state.attempts.map((attempt) => attempt.state === "reserved"
+        ? { ...attempt, state: "submitted", eventHash: `0x${"0".repeat(64)}` }
+        : attempt);
       const submittedSize = Buffer.byteLength(JSON.stringify({
         version: 1,
-        attempts: [...state.attempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
+        attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
       }), "utf8");
       if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
       await this.writeState(StateSchema.parse({

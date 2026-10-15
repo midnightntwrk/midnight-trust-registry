@@ -174,4 +174,23 @@ describe("private governed proposal submission journal", () => {
     expect(executed).toBe(false);
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
+
+  it("budgets eventual receipt hashes for other outstanding reservations", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    const attempts = Array.from({ length: 9_500 }, (_, index) => ({
+      role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
+      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
+      eventHash: index === 0 ? null : eventHash,
+    }));
+    const serialized = JSON.stringify({ version: 1, attempts });
+    expect(Buffer.byteLength(serialized)).toBeLessThan(4 * 1024 * 1024);
+    await writeFile(path, serialized, { mode: 0o600 });
+    let executed = false;
+    await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
+      executed = true;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+    expect(executed).toBe(false);
+    expect(await journal.read("verifier", authorizationId)).toBeNull();
+  });
 });
