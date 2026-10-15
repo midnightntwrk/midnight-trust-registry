@@ -1263,3 +1263,17 @@ substitution, stale answers, insecure endpoints, and outages. This is not a
 general VC status registry, an independent live-root proof, or network
 finality. `./run.sh --light`, `./run.sh integration --light`, `./run.sh docs`,
 and `pnpm audit --audit-level low` passed on the local stack.
+
+The #152 auditor applicant portal now prepares a canonical `apply` intent from
+structured IDs, DID authentication method, and the complete audit request
+scope. It derives the composite governed resource, asks the current API for
+workspace/epoch and host evaluation time, generates a fresh nonce, and shows
+the digest bytes to sign outside the browser. It posts only the returned
+canonical JubJub signature with the prepared envelope; the host still checks
+the DID method, revision, nonce, exact scope, and later one-use VP evidence.
+The API mutation context now exposes `evaluatedAt` from its configured host
+clock so the fixed-time simulator demo and applicant preparation agree. This
+is not a Midnight consensus timestamp. Focused browser/domain/API tests,
+`./run.sh --light`, `./run.sh integration --light`, docs build, and audit pass.
+Keep #152 open until publication, exact-head CI, independent security review,
+and the remaining production authentication/availability boundaries are met.

@@ -24,10 +24,15 @@ Current scope:
   an externally signed Midnight DID `apply` intent. The browser accepts a
   signed request, never a private key.
 - enter the complete auditor request scope (profile, purpose, credential-scope
-  commitment, attributes, predicates, and disclosure level) and submit only an
-  externally signed auditor application with matching scope fields. The host
-  verifies the canonical governed resource and DID signature; the browser's
-  comparison is an early rejection, not a substitute for host verification.
+  commitment, attributes, predicates, and disclosure level), application IDs,
+  and applicant Midnight DID authentication method. The portal fetches the
+  current workspace/epoch and host evaluation time, generates a fresh nonce,
+  and displays the exact canonical resource, `tr-mutation-intent-v1` JSON, and
+  SHA-256 digest bytes for an external JubJub signer. Paste only the resulting
+  canonical 96-byte signature; the browser constructs the signed request and
+  never receives a private key. The host rechecks the DID signature, current
+  context, nonce, and complete scope. If signing context expires or the
+  workspace changes, refresh and sign the newly prepared digest.
 - look up an auditor authorization by ID and distinguish pending or unrecorded
   applications from current active grants and archived or expired records.
   Historical activation is never displayed as current trust.
@@ -70,12 +75,17 @@ and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
 HTTP flow without a browser.
 
-For the auditor-specific form, copy the full request scope from the signed
-application into its fields and paste the same externally signed JSON. The
+For the auditor-specific form, fill the exact scope and applicant DID fields,
+select **Prepare signing digest**, sign the displayed digest bytes using the
+applicant DID authentication key outside the browser, and paste the returned
+`0x`-prefixed 96-byte JubJub signature. The advanced full-JSON field remains
+available for an external signer that constructs the complete envelope. The
 portal rejects a different role or scope before sending it. A successful
 registration shows `pending`, not `active`; after governance acts, use the
 authorization ID lookup to inspect the public current status. The label-only
-demo form intentionally does not offer auditor submission.
+demo form intentionally does not offer auditor submission. The reference
+`demo:auditor` host uses a fixed virtual clock; the prepared intent uses that
+host's evaluation time, not the browser clock or Midnight epoch counter.
 
 Run locally from the repo root:
 

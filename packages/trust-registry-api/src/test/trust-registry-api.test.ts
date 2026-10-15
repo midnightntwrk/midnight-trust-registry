@@ -128,7 +128,8 @@ describe("trust registry api", () => {
     const workspacePath = join(tempDir, "mutation-context.json");
     const workspace = createOperatorWorkspace({ label: "mutation-context" });
     await writeWorkspaceToFile(workspacePath, workspace);
-    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    const evaluatedAt = "2026-10-15T05:00:00.000Z";
+    const server = await startServer(createWorkspaceFileSource(workspacePath), () => evaluatedAt);
     try {
       const first = await fetch(`${server.url}/v1/registry/mutation-context`);
       expect(first.status).toBe(200);
@@ -138,6 +139,7 @@ describe("trust registry api", () => {
         registryId: workspace.snapshot.registry.registryId,
         expectedEpochId: workspace.snapshot.currentEpoch.epochId,
         expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+        evaluatedAt,
       });
       expect(JSON.stringify(firstContext)).not.toContain("operations");
 
@@ -149,6 +151,7 @@ describe("trust registry api", () => {
         registryId: next.snapshot.registry.registryId,
         expectedEpochId: next.snapshot.currentEpoch.epochId,
         expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(next),
+        evaluatedAt,
       });
       expect(computeOperatorWorkspaceCommitment(next)).not.toBe(firstContext.expectedWorkspaceCommitment);
     } finally {

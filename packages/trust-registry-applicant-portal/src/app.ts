@@ -2,6 +2,7 @@ import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClien
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 import { TrustRegistryApiEvaluateRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api";
 import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -21,6 +22,9 @@ type AppState = {
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
   auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
   auditorStatusBusy: boolean;
+  auditorDraft: AuditorApplicationDraft | undefined;
+  auditorPreparationBusy: boolean;
+  preparedAuditor: PreparedAuditorApplication | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
@@ -49,6 +53,22 @@ const parseScopeList = (value: string): string[] => {
   const items = value.split("\n").map((item) => item.trim()).filter((item) => item.length > 0);
   if (new Set(items).size !== items.length) throw new Error("Request scope lists cannot contain duplicate IDs.");
   return items;
+};
+
+const readAuditorDraft = (form: HTMLFormElement): AuditorApplicationDraft => {
+  const field = (name: string) => form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)?.value.trim() ?? "";
+  return {
+    applicationId: field("applicationId"),
+    authorizationId: field("authorizationId"),
+    actorDid: field("actorDid"),
+    actorKeyId: field("actorKeyId"),
+    requestProfileId: field("requestProfileId"),
+    purpose: field("purpose"),
+    credentialScopeCommitment: field("credentialScopeCommitment"),
+    allowedAttributes: parseScopeList(field("allowedAttributes")),
+    allowedPredicates: parseScopeList(field("allowedPredicates")),
+    disclosureLevel: field("disclosureLevel"),
+  };
 };
 
 const parseRecognitionContext = (raw: string): Record<string, string> | undefined => {
@@ -165,6 +185,9 @@ export const createApplicantPortalApp = (
     pendingApplication: undefined,
     auditorStatus: undefined,
     auditorStatusBusy: false,
+    auditorDraft: undefined,
+    auditorPreparationBusy: false,
+    preparedAuditor: undefined,
     historicalQuery: undefined,
     historicalResult: undefined,
     historicalBusy: false,
@@ -182,6 +205,7 @@ export const createApplicantPortalApp = (
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
+  let auditorPreparationRequestId = 0;
   let historicalRequestId = 0;
   let historicalRecognitionRequestId = 0;
   let recognitionRequestId = 0;
@@ -348,6 +372,8 @@ export const createApplicantPortalApp = (
       const binding = record.binding;
       setState({
         pendingApplication: { binding },
+        preparedAuditor: undefined,
+        auditorDraft: undefined,
         ...(binding.role === "auditor" ? {
           auditorStatus: { authorizationId: record.authorizationId, status: "pending", currentTrust: false },
         } : {}),
@@ -357,6 +383,24 @@ export const createApplicantPortalApp = (
       if (requestId === evidenceRequestId) setState({ evidenceError: formatApiError(error) });
     } finally {
       if (requestId === evidenceRequestId) setState({ evidenceBusy: false });
+    }
+  };
+
+  const prepareAuditor = async (draft: AuditorApplicationDraft) => {
+    const requestId = ++auditorPreparationRequestId;
+    const apiBase = state.apiBase;
+    setState({ auditorDraft: draft, auditorPreparationBusy: true, preparedAuditor: undefined, evidenceError: undefined });
+    try {
+      requirePrivateHost();
+      const context = await client().loadMutationContext();
+      if (requestId !== auditorPreparationRequestId || apiBase !== state.apiBase) return;
+      const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      const preparedAuditor = prepareAuditorApplication(draft, context, nonce);
+      setState({ preparedAuditor, auditorPreparationBusy: false });
+    } catch (error) {
+      if (requestId === auditorPreparationRequestId && apiBase === state.apiBase) {
+        setState({ auditorPreparationBusy: false, evidenceError: formatApiError(error) });
+      }
     }
   };
 
@@ -672,10 +716,11 @@ export const createApplicantPortalApp = (
       evidenceRequestId += 1;
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
+      auditorPreparationRequestId += 1;
       historicalRequestId += 1;
       historicalRecognitionRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -811,13 +856,31 @@ export const createApplicantPortalApp = (
       void registerApplication(raw);
     });
 
+    root.querySelector<HTMLButtonElement>("[data-prepare-auditor]")?.addEventListener("click", (event) => {
+      const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
+      if (form === null) return;
+      try {
+        void prepareAuditor(readAuditorDraft(form));
+      } catch (error) {
+        setState({ evidenceError: formatApiError(error) });
+      }
+    });
+    root.querySelector<HTMLButtonElement>("[data-reset-auditor]")?.addEventListener("click", () => {
+      auditorPreparationRequestId += 1;
+      setState({ auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, evidenceError: undefined });
+    });
     root.querySelector<HTMLFormElement>("[data-auditor-application-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const field = (name: string) => form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name='${name}']`)?.value.trim() ?? "";
-      const raw = field("auditorSignedApplication");
-      form.querySelector<HTMLTextAreaElement>("[name='auditorSignedApplication']")!.value = "";
       try {
+        const prepared = state.preparedAuditor;
+        const raw = prepared === undefined
+          ? field("auditorSignedApplication")
+          : JSON.stringify(signPreparedAuditorApplication(prepared, field("auditorSignature")));
+        form.querySelector<HTMLTextAreaElement>("[name='auditorSignedApplication']")!.value = "";
+        const signatureInput = form.querySelector<HTMLInputElement>("[name='auditorSignature']");
+        if (signatureInput !== null) signatureInput.value = "";
         const scope: AuditorScopeInput = {
           requestProfileId: field("requestProfileId"),
           purpose: field("purpose"),
@@ -891,6 +954,9 @@ export const createApplicantPortalApp = (
     const recognitionCards = cards.filter((card) => card.target === "recognition");
     const privateHost = canUsePrivateEvidenceHost(state.apiBase, initialUrl);
     const pending = state.pendingApplication;
+    const auditorDraft = state.auditorDraft;
+    const preparedAuditor = state.preparedAuditor;
+    const auditorLocked = preparedAuditor === undefined ? "" : " disabled";
 
     root.innerHTML = `
       <main class="shell">
@@ -990,16 +1056,30 @@ export const createApplicantPortalApp = (
           </form>
           <section class="form-panel">
             <h2>Auditor request</h2>
-            <p>Describe the exact request scope, sign the matching application outside the browser with the applicant Midnight DID, then submit it through the private evidence host. A request-profile ID alone is not an auditor scope.</p>
+            <p>Describe the complete audit scope and applicant DID. Prepare its canonical resource and signing digest, sign that digest outside this browser, then submit only the signature. A request-profile ID alone is not an auditor scope.</p>
             <form data-auditor-application-form>
-              <label class="label">Request profile ID<input class="input mono" name="requestProfileId" required /></label>
-              <label class="label">Purpose<input class="input" name="purpose" required /></label>
-              <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" pattern="0x[0-9a-f]{64}" required /></label>
-              <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"></textarea></label>
-              <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"></textarea></label>
-              <label class="label">Disclosure level<input class="input" name="disclosureLevel" required /></label>
-              <label class="label">Externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>
-              <button class="button" type="submit"${!privateHost || state.evidenceBusy ? " disabled" : ""}>Register auditor application</button>
+              <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(auditorDraft?.applicationId ?? "")}"${auditorLocked} /></label>
+              <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(auditorDraft?.authorizationId ?? "")}"${auditorLocked} /></label>
+              <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(auditorDraft?.actorDid ?? "")}"${auditorLocked} /></label>
+              <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(auditorDraft?.actorKeyId ?? "")}"${auditorLocked} /></label>
+              <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(auditorDraft?.requestProfileId ?? "")}"${auditorLocked} required /></label>
+              <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(auditorDraft?.purpose ?? "")}"${auditorLocked} required /></label>
+              <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(auditorDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${auditorLocked} required /></label>
+              <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
+              <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
+              <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(auditorDraft?.disclosureLevel ?? "")}"${auditorLocked} required /></label>
+              <button class="button secondary" type="button" data-prepare-auditor${!privateHost || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
+              ${preparedAuditor === undefined ? "" : `
+                <p data-auditor-resource class="mono">Governed resource: ${escapeHtml(preparedAuditor.payload.governedResource.id)}</p>
+                <p data-auditor-digest class="mono">Sign digest bytes: ${escapeHtml(preparedAuditor.digest)}</p>
+                <pre data-auditor-signing-context class="mono signing-context">${escapeHtml(JSON.stringify({ ...preparedAuditor.payload, intent: preparedAuditor.intent }, null, 2))}</pre>
+                <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="auditorSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
+                <button class="button secondary" type="button" data-reset-auditor>Change request or refresh context</button>
+              `}
+              ${preparedAuditor === undefined
+                ? `<label class="label">Advanced: externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>`
+                : `<textarea name="auditorSignedApplication" hidden></textarea>`}
+              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.auditorPreparationBusy ? " disabled" : ""}>Register auditor application</button>
             </form>
             <form data-auditor-status-form>
               <label class="label">Auditor authorization ID

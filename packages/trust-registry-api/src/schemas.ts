@@ -185,6 +185,7 @@ export const TrustRegistryApiMutationContextSchema = z.strictObject({
   registryId: RegistryRecordSchema.shape.registryId,
   expectedEpochId: EpochCommitmentSchema.shape.epochId,
   expectedWorkspaceCommitment: HashHexSchema,
+  evaluatedAt: z.string().datetime({ offset: true }),
 });
 export const TrustRegistryApiSignedMutationRequestSchema = z.strictObject({
   intent: MutationIntentSchema,

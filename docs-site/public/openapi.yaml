@@ -191,8 +191,8 @@ paths:
   /v1/registry/mutation-context:
     get:
       tags: [Governed]
-      summary: Read workspace revision and epoch for a DID-signed intent
-      description: Workspace source only. Context is advisory and can become stale immediately.
+      summary: Read workspace revision, epoch, and host evaluation time for a DID-signed intent
+      description: Workspace source only. Context is advisory and can become stale immediately; evaluatedAt is the host clock, not Midnight consensus time.
       responses: *governedResponses
   /v1/epochs/current:
     get:

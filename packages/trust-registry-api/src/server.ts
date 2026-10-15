@@ -873,6 +873,7 @@ export const createTrustRegistryApiServer = (
           registryId: workspace.snapshot.registry.registryId,
           expectedEpochId: workspace.snapshot.currentEpoch.epochId,
           expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+          evaluatedAt: options.clock?.() ?? new Date().toISOString(),
         }));
         return;
       }
