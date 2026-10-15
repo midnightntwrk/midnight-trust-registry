@@ -130,3 +130,6 @@ jobs:
 
       - name: Smoke test documented demo flow
         run: pnpm run demo:smoke
+
+      - name: Smoke test signed membership journeys
+        run: pnpm run demo:membership:smoke

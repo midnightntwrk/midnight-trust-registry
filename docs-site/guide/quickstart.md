@@ -23,6 +23,9 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
+Quality CI runs the four journeys together with `pnpm run demo:membership:smoke`
+after the package build; it does not regenerate proving keys for this step.
+
 Each signed journey starts a fresh private operator-workspace file and serves
 its API reads from that file. Governed Compact epoch publication persists the
 new simulator projection; unsigned fixture mutation routes remain disabled.

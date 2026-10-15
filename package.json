@@ -55,6 +55,7 @@
     "demo:signed-verifier": "pnpm run build:light && node scripts/demo-signed-membership-journey.mjs verifier",
     "demo:signed-auditor": "pnpm run build:light && node scripts/demo-signed-membership-journey.mjs auditor",
     "demo:signed-maintainer": "pnpm run build:light && node scripts/demo-signed-membership-journey.mjs maintainer",
+    "demo:membership:smoke": "node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer",
     "demo:governed": "pnpm run build:light && node scripts/demo-governed-registry.mjs",
     "demo:auditor": "pnpm run build:light && node scripts/demo-auditor-admission.mjs serve",
     "demo:auditor:smoke": "pnpm run build:light && node scripts/demo-auditor-admission.mjs smoke",
