@@ -31,6 +31,7 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  verifyApplicationStatusDecisionWitness,
   createMidnightDid,
   createRecognitionAccreditationVpScenarioFixture,
   RECOGNITION_VP_FIXTURE_ANCHOR,
@@ -948,6 +949,7 @@ try {
   const client = new TrustRegistrySimulatorClient(harness.simulator);
   let issuerVpFixture;
   let verifierVpFixture;
+  const statusWitnessAuditedRoles = [];
   for (const spec of applicantSpecs) {
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const endpoint = `${base}/v1/application-evidence/${applicationId}`;
@@ -1039,6 +1041,28 @@ try {
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawPresentationBody), false);
+    const statusWitness = proof.readStatusWitness(challenge.challengeHash);
+    assert.ok(statusWitness);
+    const audit = {
+      signed: statusWitness,
+      expectedCommitment: submitted.evidence.envelope.statusDecisionCommitment,
+      material: proof.material,
+      binding: proof.fixtureStatusPolicyBinding,
+      nonce: challenge.nonce,
+      evaluatedAtMs: VP_FIXTURE_TIME_MS,
+      resolver: proof.input.resolver,
+    };
+    assert.equal(await verifyApplicationStatusDecisionWitness(audit), true);
+    statusWitnessAuditedRoles.push(spec.role);
+    if (spec.role === "issuer") {
+      await assert.rejects(verifyApplicationStatusDecisionWitness({
+        ...audit,
+        binding: {
+          ...audit.binding,
+          statusPolicyContentCommitment: sha256Hex("substituted-governed-status-policy"),
+        },
+      }), /does not match/u);
+    }
     await adversarialMatrix.expectHttp(await post("submissions", submission), {
       id: `${spec.role}-vp-challenge-replay`,
       invariant: "A consumed application challenge cannot accept a second VP",
@@ -2153,6 +2177,11 @@ try {
     registryId: harness.registryId,
     governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
+    statusWitnessAudit: {
+      roles: statusWitnessAuditedRoles,
+      substitutedIssuerPolicyRejected: true,
+      mode: "private fixture witness and DID resolver; not network finality",
+    },
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
       evidenceCommitment: issuerEvidence.commitment,

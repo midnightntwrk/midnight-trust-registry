@@ -18,7 +18,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
-import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource } from "./application-status-attestation.js";
+import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource, type SignedApplicationStatusStatement } from "./application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
 import { createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture, createMidnightDid } from "./fixtures.js";
@@ -296,6 +296,7 @@ export async function createApplicationVpScenarioFixture(
     statusPolicyVersion: "v1",
     statusPolicyContentCommitment: sha256Hex("vp-fixture-status-policy"),
   };
+  const statusWitnesses = new Map<string, SignedApplicationStatusStatement>();
   const attestedStatus = createAttestedApplicationStatusSource({
     resolver,
     fetchAttestation: async (request) => {
@@ -305,7 +306,7 @@ export async function createApplicationVpScenarioFixture(
         throw new Error("Fixture status authority refuses an unknown credential binding");
       }
       const statement = { ...statusStatement, challengeHash: request.challengeHash };
-      return {
+      const witness = {
         statement,
         proof: {
           ...signedStatusAttestation.proof,
@@ -315,6 +316,8 @@ export async function createApplicationVpScenarioFixture(
           ))),
         },
       };
+      statusWitnesses.set(request.challengeHash, witness);
+      return witness;
     },
   });
   const family: ApplicationVpFamilyAdapter<typeof submission> = {
@@ -422,6 +425,10 @@ export async function createApplicationVpScenarioFixture(
     subjectAuthentication: { method: holderMethod, secretScalar: holderSecret },
     subjectAssertion: { method: subjectAssertionMethod, secretScalar: subjectAssertionSecret },
     signedStatusAttestation,
+    readStatusWitness: (challengeHash: string): SignedApplicationStatusStatement | null => {
+      const witness = statusWitnesses.get(challengeHash);
+      return witness === undefined ? null : structuredClone(witness);
+    },
     fixtureStatusPolicyBinding,
   };
 }

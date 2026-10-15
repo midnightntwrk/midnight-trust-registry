@@ -82,13 +82,21 @@ verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 For the Midnight VC/VP reference path, `statusDecisionCommitment` is SHA-256
 over canonical JSON of the domain tag
 `tr:application:verified-status-decision:v1`, the verified signed status
-statement (including its proof), and the status authority DID state version ID.
+statement (including its proof), the status authority DID state version ID,
+and the complete verified issuer status-policy binding from the governed grant.
 The verifier computes it only after checking the governed status registry and
 authority key, credential binding, challenge, active flag, freshness, and
 JubJub signature. It binds the decision used at intake but is not a public
 non-revocation proof: independent later audit requires access to the private
 signed statement and authenticated historical DID state. The registry does
 not store the statement or VP.
+An auditor with the private signed statement, the pinned credential body and
+status binding, original challenge, evaluation instant, and authenticated
+historical DID state MAY recompute this value using the integration package's
+`verifyApplicationStatusDecisionWitness` helper. A public envelope alone is
+not enough to reproduce the status decision. The historical DID resolver and
+governed issuer binding must be independently authenticated, not supplied by
+the same unauthenticated response being audited.
 The governed resource type and ID are signed separately because one issuer
 scope can authorize several resource kinds. Proposal intake MUST compare both
 fields against the proposed resource, not only the scope commitment.

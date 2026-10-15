@@ -1110,11 +1110,18 @@ cross-surface local test. Production finality and status-registry root
 verification remain open.
 
 The redacted application evidence envelope now requires a
-`statusDecisionCommitment` computed from the verified signed status statement
-and observed authority DID state version. This binds the status decision to
+`statusDecisionCommitment` computed from the verified signed status statement,
+observed authority DID state version, and full governed issuer status-policy
+binding. This binds the status decision to
 the evidence-verifier signature without publishing the private witness. The
 admin console's strict envelope allowlist must be updated whenever a required
 redacted field is added. The commitment is not an independently verifiable
 non-revocation proof: a later auditor needs the retained signed statement,
 authenticated historical DID state, and an appropriate status-registry trust
 anchor. The local fixture has none of the latter network-finality guarantees.
+The `verifyApplicationStatusDecisionWitness` helper revalidates the exact
+private signed witness against the redacted commitment and an independently
+obtained issuer status-policy binding and historical DID resolver. The demo
+now retains the actual fetched fixture witness for each challenge; a prebuilt
+copy of the same status statement was not sufficient because its Schnorr
+signature bytes can differ. The public receipt still contains only hashes.

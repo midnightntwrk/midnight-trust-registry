@@ -9,6 +9,7 @@ import {
   applicationStatusAttestationDigest,
   applicationStatusDecisionCommitment,
   createAttestedApplicationStatusSource,
+  verifyApplicationStatusDecisionWitness,
   type SignedApplicationStatusStatement,
 } from "../application-status-attestation.js";
 import { createApplicationVpScenarioFixture, VP_FIXTURE_NONCE, VP_FIXTURE_TIME_MS } from "../vp-scenario-fixtures.js";
@@ -39,26 +40,53 @@ async function fixture() {
       },
     };
   };
-  return { source, request, replace, signed, statement: signed.statement };
+  return { source, request, replace, resolver: scenario.input.resolver, signed, statement: signed.statement };
 }
 
 describe("DID-signed application status attestation", () => {
   it("binds the signed witness and resolved DID state version into the decision commitment", async () => {
-    const { signed, statement } = await fixture();
-    const original = applicationStatusDecisionCommitment(signed, "did-state-1");
-    expect(applicationStatusDecisionCommitment(signed, "did-state-2")).not.toBe(original);
+    const { signed, statement, request } = await fixture();
+    const original = applicationStatusDecisionCommitment(signed, "did-state-1", request.binding);
+    expect(applicationStatusDecisionCommitment(signed, "did-state-2", request.binding)).not.toBe(original);
     expect(applicationStatusDecisionCommitment({
       ...signed,
       statement: { ...statement, observedAt: new Date(VP_FIXTURE_TIME_MS + 1000).toISOString() },
-    }, "did-state-1")).not.toBe(original);
+    }, "did-state-1", request.binding)).not.toBe(original);
+    expect(applicationStatusDecisionCommitment(signed, "did-state-1", {
+      ...request.binding,
+      statusPolicyContentCommitment: sha256Hex("different-governed-status-policy"),
+    })).not.toBe(original);
     expect(original).toMatch(/^0x[0-9a-f]{64}$/u);
   });
 
+  it("audits a private status witness against redacted evidence without accepting policy substitution", async () => {
+    const { source, request, resolver, signed } = await fixture();
+    const expectedCommitment = (await source(request)).statusDecisionCommitment;
+    const audit = { ...request, resolver, signed, expectedCommitment };
+    await expect(verifyApplicationStatusDecisionWitness(audit)).resolves.toBe(true);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...audit,
+      binding: { ...request.binding, statusPolicyContentCommitment: sha256Hex("substituted-policy") },
+    })).rejects.toThrow(/does not match/u);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...audit,
+      expectedCommitment: sha256Hex("other-status-decision"),
+    })).rejects.toThrow(/does not match/u);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...audit,
+      signed: { ...signed, proof: { ...signed.proof, signature: "0x0102" } },
+    })).rejects.toThrow();
+  });
+
   it("accepts an active, fresh attestation pinned to the governed status anchor and credential", async () => {
-    const { source, request } = await fixture();
+    const { source, request, resolver, signed } = await fixture();
+    const authorityDid = request.binding.statusAuthorityVerificationMethod.split("#")[0]!;
+    const didResult = await resolver.resolveResult(authorityDid);
+    const didStateVersionId = didResult?.didDocumentMetadata.versionId;
+    expect(typeof didStateVersionId).toBe("string");
     await expect(source(request)).resolves.toMatchObject({
       validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000,
-      statusDecisionCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId!, request.binding),
     });
   });
 

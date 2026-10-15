@@ -4,7 +4,7 @@ import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import { verifyJubjubDigest, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { decodeCanonicalJubjubSignatureHex } from "@midnight-ntwrk/trust-registry-contract";
-import { canonicalizeJson, sha256Hex, type IssuerStatusPolicyBinding } from "@midnight-ntwrk/trust-registry-domain";
+import { canonicalizeJson, IssuerStatusPolicyBindingSchema, sha256Hex, type IssuerStatusPolicyBinding } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";
@@ -37,12 +37,14 @@ export type SignedApplicationStatusStatement = z.infer<typeof SignedStatement>;
 export function applicationStatusDecisionCommitment(
   signed: SignedApplicationStatusStatement,
   didStateVersionId: string,
+  binding: IssuerStatusPolicyBinding,
 ): string {
   if (didStateVersionId.length === 0) throw new Error("Status authority DID state version is required");
   return sha256Hex(canonicalizeJson([
     "tr:application:verified-status-decision:v1",
     SignedStatement.parse(signed),
     didStateVersionId,
+    IssuerStatusPolicyBindingSchema.parse(binding),
   ]));
 }
 
@@ -70,7 +72,7 @@ export function createAttestedApplicationStatusSource(input: {
   }) => Promise<unknown>;
 }): (request: {
   material: ApplicationVpMaterial;
-  binding: Pick<IssuerStatusPolicyBinding, "statusRegistryId" | "statusAuthorityVerificationMethod">;
+  binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;
 }) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }> {
@@ -78,8 +80,9 @@ export function createAttestedApplicationStatusSource(input: {
     if (!/^0x[0-9a-f]{64}$/u.test(nonce) || !Number.isSafeInteger(evaluatedAtMs) || evaluatedAtMs < 0) {
       throw new Error("Application status context is invalid");
     }
-    const registryId = binding.statusRegistryId;
-    const methodId = binding.statusAuthorityVerificationMethod;
+    const governedBinding = IssuerStatusPolicyBindingSchema.parse(binding);
+    const registryId = governedBinding.statusRegistryId;
+    const methodId = governedBinding.statusAuthorityVerificationMethod;
     if (!Hash.safeParse(registryId).success || !Statement.shape.statusAuthorityMethodId.safeParse(methodId).success) {
       throw new Error("Application status anchor is invalid");
     }
@@ -141,7 +144,29 @@ export function createAttestedApplicationStatusSource(input: {
     }
     return {
       validUntilMs: expiresAtMs,
-      statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId),
+      statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId, governedBinding),
     };
   };
+}
+
+/** Audits a private witness against redacted evidence; the resolver must serve authenticated historical DID state. */
+export async function verifyApplicationStatusDecisionWitness(input: {
+  signed: unknown;
+  expectedCommitment: string;
+  material: ApplicationVpMaterial;
+  binding: IssuerStatusPolicyBinding;
+  nonce: string;
+  evaluatedAtMs: number;
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+}): Promise<true> {
+  const expectedCommitment = Hash.parse(input.expectedCommitment);
+  const source = createAttestedApplicationStatusSource({
+    resolver: input.resolver,
+    fetchAttestation: async () => input.signed,
+  });
+  const result = await source(input);
+  if (result.statusDecisionCommitment !== expectedCommitment) {
+    throw new Error("Application status decision commitment does not match the private witness");
+  }
+  return true;
 }

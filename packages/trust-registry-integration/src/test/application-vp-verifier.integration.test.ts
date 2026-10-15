@@ -18,6 +18,7 @@ import {
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
 } from "../application-vp-verifier.js";
+import { verifyApplicationStatusDecisionWitness } from "../application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
@@ -47,6 +48,24 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("retains the exact private status witness used to create redacted VP evidence", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const result = await verifyApplicationVp(scenario.input);
+    const challengeHash = sha256Hex(Buffer.from(scenario.input.nonce.slice(2), "hex"));
+    const signed = scenario.readStatusWitness(challengeHash);
+    expect(signed).not.toBeNull();
+    expect(scenario.readStatusWitness(sha256Hex("other-challenge"))).toBeNull();
+    await expect(verifyApplicationStatusDecisionWitness({
+      signed,
+      expectedCommitment: result.statusDecisionCommitment,
+      material: scenario.material,
+      binding: scenario.fixtureStatusPolicyBinding,
+      nonce: scenario.input.nonce,
+      evaluatedAtMs: scenario.input.evaluatedAtMs,
+      resolver: scenario.input.resolver,
+    })).resolves.toBe(true);
+  });
+
   it("uses distinct authentication and assertion methods on the same applicant DID", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     const did = parseMidnightDIDString(scenario.input.expectedSubjectDid);
