@@ -1401,3 +1401,20 @@ the original host revision. A Chrome test holds a registry-A epoch publication
 response while connecting to registry B, then confirms the A receipt cannot
 replace B's board. The A transaction may still have executed; changing a
 browser connection is not a cancellation or a finality observation.
+
+Local follow-on stack after the workspace-backed #59 journey: the signed issuer
+demo now submits four invalid VPs over one live challenge (forged credential
+signature, another credential-family scope, revoked fixture status, and expired
+fixture status). Each receives a redacted 403 without an acceptance receipt;
+the original valid VP then succeeds using that same challenge. This is a
+functional #58 intake/retry slice, not production status or network finality.
+The simulator client now uses the caller's `sequenceToTimestamp` mapper for
+both epoch windows and policy supersession. A real Compact-simulator test
+covers default and shifted supersession cutoffs across issuer, verifier,
+auditor, recognition, and auditor-mandate verification. The published OpenAPI
+governed-action enum now includes suspension, revocation, and archival, with
+source parity checked by the ordinary light docs gate. These are two of the
+five #196 findings; the issue remains open. Focused tests, `./run.sh --light`,
+integration-light, and the VitePress build passed locally. No push or PR was
+created. Forge #195 remains untouched because artifact/key compatibility with
+the pinned Trust Registry toolchain has not been established.
