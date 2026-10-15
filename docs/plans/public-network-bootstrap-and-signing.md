@@ -1,0 +1,89 @@
+# Public-network bootstrap and governance signing (#200)
+
+Status: implementation plan, not a release claim. The 0.1.0 simulator fixture
+remains the supported baseline until the tests and network qualification below
+pass. This slice is independent of PR #203 and must be rebased after it lands.
+
+## Threats and invariants
+
+1. A third party must not be able to call an uninitialized deployed contract
+   first and choose its registry identity, policy, or bootstrap maintainer.
+2. A governed action signed for one deployed contract must fail against a
+   different contract, even if its registry ID, policy, keys, and sequence match.
+3. A governed action signed for one named Midnight network must fail against
+   another named network. The contract must not treat a caller-provided network
+   label as an independently authenticated chain identity.
+4. An accepted threshold policy must leave a non-conflicted quorum for each
+   action it purports to authorize. A policy allowing an all-member emergency
+   or archival threshold while excluding the target from its own removal can
+   strand the registry; the recovery rule needs explicit governance approval.
+5. Every signer, simulator, operator surface, event consumer, and published
+   evidence format must use the same versioned transcript. No contract-only
+   digest change is acceptable.
+
+## Supported toolchain findings
+
+- Compact 0.31.1 supports constructor arguments and constructor-set ledger
+  state. Constructor initialization can remove the public first-call window.
+- `kernel.self().bytes` is used elsewhere in this repository to bind a VC
+  authority domain to the deployed contract address. The simulator must hold a
+  stable address for its lifetime.
+- No contract-observable network or genesis identifier has yet been found in
+  the supported Compact API. A constructor-pinned `networkIdCommitment` can
+  separate honest deployments only if deployment tooling and signers verify
+  that the pinned value matches the actual target network. It must not be
+  described as an on-chain proof of chain identity.
+- The VC status-registry ADR-0011 independently prohibits unauthenticated
+  first-caller initialization and requires network/deployment-bound mutation
+  authority. Its topology and issuer ownership rules do not transfer directly
+  to the Trust Registry.
+
+References:
+
+- [Midnight private contract guide](https://docs.midnight.network/guides/build-a-private-smart-contract)
+- [Midnight deployment guide](https://docs.midnight.network/guides/deploy-and-operate)
+- `midnight-verifiable-credentials/docs/decisions/0011-status-registry-namespace-and-authority.md`
+- `docs/decisions/trust-registry-knowledge-base.md` (VC authority domain and
+  stable simulator address findings)
+
+## Bounded implementation order
+
+1. Specify a versioned deployment domain: explicit network identifier,
+   `kernel.self().bytes`, registry ID, and a deployment-unique value if address
+   uniqueness across networks cannot be guaranteed by the target ledger.
+   Define the exact byte encoding, domain separator, and how a signer obtains
+   authenticated deployment/network facts. Reject unknown networks and zero
+   or placeholder domains.
+2. Move registry identity, policy, and bootstrap maintainer installation into
+   the constructor or an equivalently authenticated atomic deployment path.
+   Remove the public `initializeRegistry` circuit. Preserve one canonical
+   initialization event and sequence zero. Update generated bindings and
+   simulator fixtures together.
+3. Bind all governed action digests to the pinned deployment domain. Update
+   the Compact verifier and TypeScript signing helpers atomically, then the
+   simulator, CLI, API action preparation, demos, epoch evidence, TRQP exports,
+   and historical event verification. Do not leave a permissive old digest or
+   compatibility fallback in this unreleased repository.
+4. Add cross-deployment, wrong-network, stale-policy, stale-sequence, and
+   forged-bootstrap negative tests. Include a case where a hostile caller
+   invokes every exported circuit before the authorized deployer; none may
+   install a different root. Prove accepted actions still require distinct,
+   active registered signers.
+5. Decide the non-conflicted recovery policy explicitly. Either reject a
+   threshold revision that strands removal or define a separate recovery
+   authorization with a tested trust boundary. Test 2-of-2 and 3-of-3 cases,
+   including subject exclusion and emergency/archival action families.
+6. Run light, full Compact, integration, and demo validations. Qualify the
+   actual supported network deployment path with finalized state reads before
+   closing #200 or calling 0.1.0 public-network ready. Update the spec, ADR,
+   operator deployment/key-management guide, and release checklist.
+
+## Stop conditions
+
+- If the 0.31.1 runtime cannot bind the actual contract address during proof
+  verification, stop rather than accepting a caller-supplied address.
+- If the target network cannot provide an authenticated network identity to
+  the signer/deployer, document the remaining cross-network assumption and
+  keep the public-network release gate closed.
+- If network tests use only a simulator or unchecked provider response, do not
+  mark the network qualification complete.
