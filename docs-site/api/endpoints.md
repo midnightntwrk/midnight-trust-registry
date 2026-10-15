@@ -21,11 +21,16 @@ The exact request/response parsers live in [`packages/trust-registry-api/src/sch
 | `GET /v1/trqp/metadata/{authorityId}` | TRQP metadata projection |
 | `POST /v1/trqp/{authorizations,recognitions}/{query,evidence}` | TRQP query/evidence projection |
 
+The TRQP recognition request uses `context.scope_context` for its exact
+string-valued recognition context map. If omitted, only context-free
+recognitions match. This is a Trust Registry extension to the TRQP context,
+not a claim that the response itself is cryptographic proof.
+
 Issuer lookup requires `tr:issuer-resource:v1:<sha256>`. Verifier and auditor lookups require `tr:request-resource:v1:<sha256>`. A bare request-profile ID is not accepted. `at` is an ISO timestamp with offset; the service clock is not a consensus clock.
 
 Decision evidence is available only when the host injects a source; otherwise it returns `503`. A successful response has `verification: "client-required"` and `evidence`, with `Cache-Control: no-store`. The reference source builder checks the indexed claim against a separately supplied finalized registry/DID reader before serving, but the HTTP response is still not a root of trust. Consumers must repeat verification with their own authenticated readers before deriving a VC signer descriptor. A missing grant returns `404`; malformed, stale, or unavailable source evidence returns `503` without falling back to a mutable snapshot.
 
-Timestamped evidence export uses the same selector and snapshot as the temporal query. Recognition callers can pass `scopeContext` to select its exact string-valued context map; the consumer verifier treats omitted context as an expectation of no context. It returns `404` if no statement matches and `424` if that statement has no matching epoch-bound bundle for the requested instant. Its response epoch is the selected bundle's epoch, even if an unrelated newer epoch also covers the timestamp. The response is not a current trust assertion. The client package's `verifyHistoricalAuthorizationEvidenceResponse` and `verifyHistoricalRecognitionEvidenceResponse` helpers check it against independently authenticated epoch, publication-key, and registry-commitment inputs; callers must establish which epoch was canonical at the historical point.
+Timestamped evidence export uses the same selector and snapshot as the temporal query. Recognition callers can pass `scopeContext` to select its exact string-valued context map; omitting it selects only records without context. It returns `404` if no statement matches and `424` if that statement has no matching epoch-bound bundle for the requested instant. Its response epoch is the selected bundle's epoch, even if an unrelated newer epoch also covers the timestamp. The response is not a current trust assertion. The client package's `verifyHistoricalAuthorizationEvidenceResponse` and `verifyHistoricalRecognitionEvidenceResponse` helpers check it against independently authenticated epoch, publication-key, and registry-commitment inputs; callers must establish which epoch was canonical at the historical point.
 
 ## Private intake and governed writes
 

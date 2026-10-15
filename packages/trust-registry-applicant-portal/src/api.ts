@@ -3,8 +3,10 @@ import type {
   TrustRegistryApiAuthorizationListResponse,
   TrustRegistryApiAuthorizationEvidenceEvaluationResponse,
   TrustRegistryApiEvaluateAuthorizationRequest,
+  TrustRegistryApiEvaluateRecognitionRequest,
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
+  TrustRegistryApiRecognitionEvidenceEvaluationResponse,
   TrustRegistryApiSummary,
   TrustRegistryApiMutationContext,
   TrustRegistryApiSignedMutationRequest,
@@ -120,6 +122,20 @@ export class TrustRegistryApplicantPortalClient {
   ): Promise<TrustRegistryApiAuthorizationEvidenceEvaluationResponse> {
     return this.request<TrustRegistryApiAuthorizationEvidenceEvaluationResponse>(
       "/v1/authorizations/evaluate/evidence",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+        cache: "no-store",
+      },
+    );
+  }
+
+  async loadHistoricalRecognitionEvidence(
+    request: TrustRegistryApiEvaluateRecognitionRequest,
+  ): Promise<TrustRegistryApiRecognitionEvidenceEvaluationResponse> {
+    return this.request<TrustRegistryApiRecognitionEvidenceEvaluationResponse>(
+      "/v1/recognitions/evaluate/evidence",
       {
         method: "POST",
         headers: { "content-type": "application/json" },

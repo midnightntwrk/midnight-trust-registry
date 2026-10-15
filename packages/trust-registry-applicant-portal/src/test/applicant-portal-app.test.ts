@@ -58,6 +58,97 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("[data-historical-result]")).toBeNull();
   });
 
+  it("exports exact-context recognition evidence without turning recognition into membership", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const recognizedAuthorityDid = "did:web:authority.example";
+    const recognizedRegistryId = "registry:external:one";
+    const scopeResourceId = "credential-family:degree:v1";
+    const at = "2026-10-15T00:00:00Z";
+    let substituteContext = false;
+    let omitContext = false;
+    let malformedContext = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/v1/registry/summary") {
+        return Response.json({ registryLabel: "local", currentEpochId: "epoch:current" });
+      }
+      if (path === "/v1/recognitions/evaluate/evidence") {
+        return Response.json({
+          evaluatedAt: at, statusAtTime: "active", trustedAtTime: true,
+          epoch: { epochId: "epoch:recognition" },
+          bundle: {
+            epoch: { epochId: "epoch:recognition" },
+            policy: { policyId: "policy:recognition" },
+            recognition: {
+              recognizedAuthorityDid, recognizedRegistryId,
+              scope: { resourceType: "recognized-scope", resourceId: scopeResourceId,
+                ...(omitContext ? {} : { context: malformedContext ? ["assurance"]
+                  : { purpose: substituteContext ? "other" : "assurance" } }) },
+            },
+          },
+        });
+      }
+      return Response.json({ entries: [] });
+    });
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() } as unknown as Storage;
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/app?apiBase=https%3A%2F%2Fregistry.example"),
+      storage, fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain("Historical recognition evidence"));
+    const submit = () => {
+      const form = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
+      const set = (name: string, value: string) => { form.querySelector<HTMLInputElement>(`[name='${name}']`)!.value = value; };
+      set("recognizedAuthorityDid", recognizedAuthorityDid);
+      set("recognizedRegistryId", recognizedRegistryId);
+      set("scopeResourceType", "recognized-scope");
+      set("scopeResourceId", scopeResourceId);
+      set("at", at);
+      form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = '{"purpose":"assurance"}';
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+    submit();
+    await vi.waitFor(() => expect(root.querySelector("[data-historical-recognition-result]")).not.toBeNull());
+    expect(root.textContent).toContain("Unverified API claim");
+    expect(root.textContent).toContain("recognition never grants local issuer");
+    const call = fetchImpl.mock.calls.find(([input]) => new URL(String(input)).pathname === "/v1/recognitions/evaluate/evidence");
+    expect(call?.[1]).toMatchObject({ method: "POST", cache: "no-store" });
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      recognizedAuthorityDid, recognizedRegistryId, scopeResourceType: "recognized-scope",
+      scopeResourceId, scopeContext: { purpose: "assurance" }, at,
+    });
+
+    substituteContext = true;
+    submit();
+    await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope and epoch"));
+    expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
+    omitContext = true;
+    const contextForm = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
+    contextForm.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = "{}";
+    contextForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(fetchImpl.mock.calls.filter(([input]) =>
+      new URL(String(input)).pathname === "/v1/recognitions/evaluate/evidence").length).toBe(3));
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>(
+      "[data-historical-recognition] button",
+    )?.disabled).toBe(false));
+    expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
+    omitContext = false;
+    malformedContext = true;
+    const malformedForm = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
+    malformedForm.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = '{"0":"assurance"}';
+    malformedForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(fetchImpl.mock.calls.filter(([input]) =>
+      new URL(String(input)).pathname === "/v1/recognitions/evaluate/evidence").length).toBe(4));
+    expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
+    const callsBeforeInvalid = fetchImpl.mock.calls.length;
+    const form = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
+    form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = "[]";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(root.textContent).toContain("Recognition scope context must be a JSON object");
+    expect(fetchImpl.mock.calls.length).toBe(callsBeforeInvalid);
+  });
+
   it("permits private evidence only on the same secure or loopback origin", () => {
     expect(canUsePrivateEvidenceHost("https://registry.example", new URL("https://registry.example/app"))).toBe(true);
     expect(canUsePrivateEvidenceHost("http://127.0.0.1:4400", new URL("http://127.0.0.1:4400/app"))).toBe(true);

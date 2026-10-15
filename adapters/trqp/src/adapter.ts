@@ -1,6 +1,7 @@
 import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  canonicalizeJson,
   compareRfc3339Instants,
   type AuthorizationRecord,
   type RecognitionRecord,
@@ -444,6 +445,8 @@ export class TrustRegistryTrqpAdapter {
         || recognition.recognizedAuthorityDid !== request.entity_id
         || recognition.scope.resourceType !== request.action
         || recognition.scope.resourceId !== request.resource
+        || canonicalizeJson(recognition.scope.context ?? null)
+          !== canonicalizeJson(request.context?.scope_context ?? null)
         || (request.context?.recognized_registry_id !== undefined
           && recognition.recognizedRegistryId !== request.context.recognized_registry_id)) {
         return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,

@@ -448,8 +448,7 @@ const resolveRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
-      && (request.scopeContext === undefined
-        || canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext))
+      && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -484,8 +483,7 @@ const evaluateRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
-      && (request.scopeContext === undefined
-        || canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext))
+      && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -637,6 +635,7 @@ export const createTrqpSourceFromStateSource = (
       recognizedAuthorityDid: request.entity_id,
       recognizedRegistryId,
       scopeResourceId: request.resource,
+      ...(request.context?.scope_context === undefined ? {} : { scopeContext: request.context.scope_context }),
       ...(request.action.length === 0 ? {} : {
         scopeResourceType: request.action as NonNullable<
           TrustRegistryApiResolveRecognitionRequest["scopeResourceType"]

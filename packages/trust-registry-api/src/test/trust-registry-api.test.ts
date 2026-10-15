@@ -748,6 +748,63 @@ describe("trust registry api", () => {
     }
   });
 
+  it("requires exact recognition context rather than treating omission as a wildcard", async () => {
+    const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
+    const original = snapshot.recognitionEntries[0];
+    if (original === undefined) throw new Error("expected recognition fixture");
+    if (original.evidence.recognition === undefined) throw new Error("expected recognition evidence");
+    const evidenceRecognition = original.evidence.recognition;
+    const context = { purpose: "assurance" };
+    const source = createInMemorySource({
+      ...snapshot,
+      recognitionEntries: [{
+        ...original,
+        recognition: { ...original.recognition, scope: { ...original.recognition.scope, context } },
+        evidence: {
+          ...original.evidence,
+          recognition: {
+            ...evidenceRecognition,
+            scope: { ...evidenceRecognition.scope, context },
+          },
+        },
+      }],
+    });
+    const server = await startServer(source);
+    try {
+      const request = {
+        recognizedAuthorityDid: original.recognition.recognizedAuthorityDid,
+        recognizedRegistryId: original.recognition.recognizedRegistryId,
+        scopeResourceType: original.recognition.scope.resourceType,
+        scopeResourceId: original.recognition.scope.resourceId,
+      };
+      const query = async (body: object) => fetch(`${server.url}/v1/recognitions/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await query(request)).status).toBe(404);
+      expect((await query({ ...request, scopeContext: { purpose: "other" } })).status).toBe(404);
+      expect((await query({ ...request, scopeContext: context })).status).toBe(200);
+      const trqpRequest = {
+        entity_id: request.recognizedAuthorityDid,
+        authority_id: snapshot.registry.registryDid,
+        action: request.scopeResourceType,
+        resource: request.scopeResourceId,
+        context: {
+          time: original.evidence.epoch.validFrom,
+          recognized_registry_id: request.recognizedRegistryId,
+        },
+      };
+      const trqpQuery = async (body: object) => fetch(`${server.url}/v1/trqp/recognitions/query`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await trqpQuery(trqpRequest)).status).toBe(404);
+      expect((await trqpQuery({ ...trqpRequest, context: {
+        ...trqpRequest.context, scope_context: context,
+      } })).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
     const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");

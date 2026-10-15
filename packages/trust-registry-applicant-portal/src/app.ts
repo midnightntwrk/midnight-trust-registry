@@ -1,6 +1,7 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import { TrustRegistryApiEvaluateRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -24,6 +25,10 @@ type AppState = {
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
   historicalError: string | undefined;
+  historicalRecognitionQuery: TrustRegistryApiEvaluateRecognitionRequest | undefined;
+  historicalRecognitionResult: TrustRegistryApiRecognitionEvidenceEvaluationResponse | undefined;
+  historicalRecognitionBusy: boolean;
+  historicalRecognitionError: string | undefined;
   recognitionRecoveryBusy: boolean;
   recognitionRecoveryMessage: string | undefined;
   recognitionId: string;
@@ -44,6 +49,26 @@ const parseScopeList = (value: string): string[] => {
   const items = value.split("\n").map((item) => item.trim()).filter((item) => item.length > 0);
   if (new Set(items).size !== items.length) throw new Error("Request scope lists cannot contain duplicate IDs.");
   return items;
+};
+
+const parseRecognitionContext = (raw: string): Record<string, string> | undefined => {
+  if (raw.trim() === "") return undefined;
+  const parsed: unknown = JSON.parse(raw);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+    || Object.values(parsed).some((value) => typeof value !== "string")) {
+    throw new Error("Recognition scope context must be a JSON object of string values.");
+  }
+  return parsed as Record<string, string>;
+};
+
+const sameRecognitionContext = (
+  left: unknown,
+  right: Record<string, string> | undefined,
+): boolean => {
+  if (left === undefined || right === undefined) return left === undefined && right === undefined;
+  if (left === null || typeof left !== "object" || Array.isArray(left)
+    || Object.values(left).some((value) => typeof value !== "string")) return false;
+  return JSON.stringify(Object.entries(left).sort()) === JSON.stringify(Object.entries(right).sort());
 };
 
 const auditorScopeMatches = (value: unknown, expected: AuditorScopeInput): boolean => {
@@ -144,6 +169,10 @@ export const createApplicantPortalApp = (
     historicalResult: undefined,
     historicalBusy: false,
     historicalError: undefined,
+    historicalRecognitionQuery: undefined,
+    historicalRecognitionResult: undefined,
+    historicalRecognitionBusy: false,
+    historicalRecognitionError: undefined,
     recognitionRecoveryBusy: false,
     recognitionRecoveryMessage: undefined,
     recognitionId: "",
@@ -154,6 +183,7 @@ export const createApplicantPortalApp = (
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
   let historicalRequestId = 0;
+  let historicalRecognitionRequestId = 0;
   let recognitionRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
@@ -511,6 +541,42 @@ export const createApplicantPortalApp = (
     }
   };
 
+  const loadHistoricalRecognition = async (query: TrustRegistryApiEvaluateRecognitionRequest) => {
+    if (state.historicalRecognitionBusy) return;
+    const requestId = ++historicalRecognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ historicalRecognitionQuery: query, historicalRecognitionBusy: true,
+      historicalRecognitionResult: undefined, historicalRecognitionError: undefined });
+    try {
+      const result = await client().loadHistoricalRecognitionEvidence(query);
+      if (requestId !== historicalRecognitionRequestId || apiBase !== state.apiBase) return;
+      const recognition = result.bundle?.recognition;
+      if (result.evaluatedAt !== query.at
+        || (result.statusAtTime !== null && typeof result.statusAtTime !== "string")
+        || typeof result.trustedAtTime !== "boolean"
+        || typeof result.epoch?.epochId !== "string"
+        || typeof result.bundle?.epoch?.epochId !== "string"
+        || typeof result.bundle?.policy?.policyId !== "string"
+        || result.epoch.epochId !== result.bundle.epoch.epochId
+        || recognition?.recognizedAuthorityDid !== query.recognizedAuthorityDid
+        || recognition?.scope?.resourceId !== query.scopeResourceId
+        || recognition?.recognizedRegistryId !== query.recognizedRegistryId
+        || recognition?.scope?.resourceType !== query.scopeResourceType
+        || !sameRecognitionContext(recognition?.scope?.context, query.scopeContext)) {
+        throw new Error("Historical recognition response does not match the requested scope and epoch.");
+      }
+      setState({ historicalRecognitionResult: result });
+    } catch (error) {
+      if (requestId === historicalRecognitionRequestId && apiBase === state.apiBase) {
+        setState({ historicalRecognitionError: formatApiError(error) });
+      }
+    } finally {
+      if (requestId === historicalRecognitionRequestId && apiBase === state.apiBase) {
+        setState({ historicalRecognitionBusy: false });
+      }
+    }
+  };
+
   const submitApplication = async (
     target: PortalSubmissionTarget,
     label: string,
@@ -607,8 +673,9 @@ export const createApplicantPortalApp = (
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
       historicalRequestId += 1;
+      historicalRecognitionRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -625,6 +692,33 @@ export const createApplicantPortalApp = (
       const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
       if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
       void loadHistoricalEvidence({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") });
+    });
+
+    root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      try {
+        const scopeContext = parseRecognitionContext(
+          form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
+        );
+        const recognizedRegistryId = field("recognizedRegistryId");
+        const scopeResourceType = field("scopeResourceType");
+        if (recognizedRegistryId === "" || scopeResourceType === "") {
+          throw new Error("Recognition lookup requires registry ID and scope resource type.");
+        }
+        const query = TrustRegistryApiEvaluateRecognitionRequestSchema.parse({
+          recognizedAuthorityDid: field("recognizedAuthorityDid"),
+          scopeResourceId: field("scopeResourceId"),
+          at: field("at"),
+          recognizedRegistryId,
+          scopeResourceType,
+          ...(scopeContext === undefined ? {} : { scopeContext }),
+        });
+        void loadHistoricalRecognition(query);
+      } catch (error) {
+        setState({ historicalRecognitionResult: undefined, historicalRecognitionError: formatApiError(error) });
+      }
     });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
@@ -846,6 +940,25 @@ export const createApplicantPortalApp = (
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalResult.evaluatedAt)}; trusted-at-time flag ${state.historicalResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalResult.bundle.policy.policyId)}</span>.</p>
               <details><summary>Inspect raw proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalResult.bundle, null, 2))}</pre></details>
+            </div>`}
+          </section>
+          <section class="form-panel">
+            <h2>Historical recognition evidence</h2>
+            <p>Query an external authority's exact recognized scope at a timestamp. An omitted context matches only a recognition without context. This panel exports an unverified API claim; recognition never grants local issuer, verifier, or maintainer membership.</p>
+            <form data-historical-recognition>
+              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2))}</textarea></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionQuery?.at ?? "")}" required /></label>
+              <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Export recognition evidence</button>
+            </form>
+            ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalRecognitionError)}</div>`}
+            ${state.historicalRecognitionResult === undefined ? "" : `<div class="panel" data-historical-recognition-result>
+              <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalRecognitionResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalRecognitionResult.evaluatedAt)}; recognized-at-time flag ${state.historicalRecognitionResult.trustedAtTime ? "true" : "false"}.</p>
+              <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.policy.policyId)}</span>.</p>
+              <details><summary>Inspect raw recognition proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalRecognitionResult.bundle, null, 2))}</pre></details>
             </div>`}
           </section>
           <section class="form-panel">

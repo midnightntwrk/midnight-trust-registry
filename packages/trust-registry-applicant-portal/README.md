@@ -10,6 +10,9 @@ Current scope:
   RFC3339 timestamp. The portal labels its status and bundle as an unverified
   API claim; a relying party must use an independently authenticated historical
   ledger anchor and the client verifier before accepting it as evidence.
+- export an external recognition claim by authority DID, registry, scope
+  resource, optional exact context map, and timestamp. Omitted context selects
+  only context-free records. Recognition never grants local membership.
 - show an authenticated, server-owned canonical scope for a pending membership
   application, issue a one-use VP challenge, and submit the presentation to
   receive redacted signed evidence and a receipt. The VP is never placed in

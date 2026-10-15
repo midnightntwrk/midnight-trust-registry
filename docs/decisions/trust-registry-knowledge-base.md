@@ -1181,3 +1181,17 @@ does not cache the POST response, rejects a different role/DID/resource/epoch,
 and prominently labels the result as unverified. It deliberately does not
 perform browser-side proof verification without an independently authenticated
 historical ledger reader.
+Native recognition lookup now compares the context map unconditionally:
+omitted context selects only context-free records, never a context-bound
+record by accident. The applicant portal has a parallel recognition evidence
+panel, validates the request through the API schema, and labels its result as
+unverified. This keeps API and UI exact-scope semantics aligned while
+production historical epoch authentication remains outside the browser.
+Independent review of this slice found that TRQP could no longer select a
+context-qualified recognition once native selection became exact. The named
+TRQP `context.scope_context` extension now reaches the same selector, and the
+adapter checks it against attached evidence. Review also found that an array
+could masquerade as a string map in the portal's context comparison; the
+response shape is now validated before comparison. The portal additionally
+requires registry ID and resource type so its result cannot hide wildcard
+selection of those scope dimensions.
