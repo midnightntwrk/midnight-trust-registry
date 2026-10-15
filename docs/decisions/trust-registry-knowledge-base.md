@@ -31,9 +31,11 @@ shorter-lived and more action-oriented than the normative specification.
   the three planned review rounds.
 - The admin console clears prepared context and pasted signatures after an
   ambiguous submit while retaining the redacted evidence and target needed
-  for manual receipt recovery. A Playwright test uses the real admin bundle,
-  API, journal, and Compact simulator to observe a successful proposal whose
-  HTTP response was lost, then reconciles from a later simulator ledger view.
+  for manual receipt recovery. Four Playwright journeys use the real admin
+  bundle, API, journal, and Compact simulator to observe successful issuer,
+  verifier, auditor, and maintainer proposals whose HTTP responses were lost,
+  then reconcile from a later simulator ledger view. Each first rejects a
+  forged maintainer vote without reserving the journal or executing Compact.
   This exercises the local integration boundary, not Midnight network finality.
 
 ## October 2026 Local Functional Stack
