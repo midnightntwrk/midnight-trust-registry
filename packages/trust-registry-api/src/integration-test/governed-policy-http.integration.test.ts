@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -27,6 +27,7 @@ import { createTrustRegistryApiServer } from "../server.js";
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: Pick<MaintainerScenarioFixture, "keyId" | "seed">,
   prepared: PreparedGovernedPolicyAction,
 ) => {
@@ -34,9 +35,11 @@ const signPrepared = (
   return {
     keyId: hex(maintainer.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
-    signature: hex(encodeJubjubSignature(signPolicyBoundMaintainerActionFromSeed(
+    signature: hex(encodeJubjubSignature(signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       bytes(prepared.registryId),
+      harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      Buffer.from(harness.simulator.contractAddress, "hex"),
       bytes(prepared.policyCommitment),
       bytes(prepared.actionKind),
       bytes(prepared.actionPayloadHash),
@@ -121,14 +124,14 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const revision = await preparedResponse.json() as PreparedGovernedPolicyAction;
-      const secondVote = signPrepared(second, revision);
-      const thirdVote = signPrepared(third, revision);
+      const secondVote = signPrepared(harness, second, revision);
+      const thirdVote = signPrepared(harness, third, revision);
       const submitRevision = (prepared: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post("thresholds/submit", { thresholds, prepared, signers });
       const before = harness.simulator.getLedger().governanceActionCount;
       expect((await submitRevision(revision, [secondVote])).status).toBe(403);
       expect((await submitRevision(revision, [secondVote, secondVote])).status).toBe(403);
-      expect((await submitRevision(revision, [secondVote, signPrepared(outsider, revision)])).status).toBe(403);
+      expect((await submitRevision(revision, [secondVote, signPrepared(harness, outsider, revision)])).status).toBe(403);
       expect((await submitRevision(revision, [
         { ...secondVote, signature: "0x01" }, thirdVote,
       ])).status).toBe(400);
@@ -149,16 +152,16 @@ describe("Compact-backed policy revision over HTTP", () => {
       const registration = await registrationResponse.json() as PreparedGovernedPolicyAction;
       const bootstrap = createMaintainerFixture("bootstrap", 17);
       bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
-      const bootstrapVote = signPrepared(bootstrap, registration);
-      const secondRegistrationVote = signPrepared(second, registration);
-      const thirdRegistrationVote = signPrepared(third, registration);
+      const bootstrapVote = signPrepared(harness, bootstrap, registration);
+      const secondRegistrationVote = signPrepared(harness, second, registration);
+      const thirdRegistrationVote = signPrepared(harness, third, registration);
       const submitRegistration = (prepared: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post("evidence-verifier/submit", { prepared, signers });
       expect((await submitRegistration(registration, [bootstrapVote, secondRegistrationVote])).status).toBe(403);
       expect((await submitRegistration(registration,
         [bootstrapVote, secondRegistrationVote, secondRegistrationVote])).status).toBe(403);
       expect((await submitRegistration(registration,
-        [bootstrapVote, secondRegistrationVote, signPrepared(outsider, registration)])).status).toBe(403);
+        [bootstrapVote, secondRegistrationVote, signPrepared(harness, outsider, registration)])).status).toBe(403);
       expect((await submitRegistration({ ...registration, actionSequence: revision.actionSequence },
         [bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).status).toBe(409);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);

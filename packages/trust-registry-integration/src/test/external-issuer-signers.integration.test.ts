@@ -1,10 +1,12 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
 import {
   computeUpdateIssuerAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   signIssuerProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
@@ -23,15 +25,18 @@ import {
 } from "../local-simulator-harness.js";
 
 const signPreparedAction = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: Pick<PreparedIssuerDecisionAction,
     "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
     prepared.actionPayloadHash,
@@ -64,7 +69,7 @@ describe("externally signed Compact issuer governance", () => {
       proposal.evidenceVerifierKeyIdCommitment,
       proposal.actionPayloadHash,
     );
-    const proposalSigners = [signPreparedAction(second, proposal), signPreparedAction(third, proposal)];
+    const proposalSigners = [signPreparedAction(harness, second, proposal), signPreparedAction(harness, third, proposal)];
     const beforeProposal = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeIssuerProposalWithSignatures(
       issuer, evidence, [proposalSigners[0]!], verifierSignature,
@@ -88,8 +93,8 @@ describe("externally signed Compact issuer governance", () => {
       approval.previousLifecycleEventHash,
       approval.evidenceHash,
     ));
-    const firstSignature = signPreparedAction(second, approval);
-    const secondSignature = signPreparedAction(third, approval);
+    const firstSignature = signPreparedAction(harness, second, approval);
+    const secondSignature = signPreparedAction(harness, third, approval);
     const beforeApproval = harness.simulator.getLedger().governanceActionCount;
 
     expect(() => harness.executeIssuerDecisionWithSignatures(
@@ -101,7 +106,7 @@ describe("externally signed Compact issuer governance", () => {
     expect(() => harness.executeIssuerDecisionWithSignatures(
       issuer, "approve", [
         firstSignature,
-        signPreparedAction(createMaintainerScenarioFixture("unknown-signer"), approval),
+        signPreparedAction(harness, createMaintainerScenarioFixture("unknown-signer"), approval),
       ],
     )).toThrow();
     expect(() => harness.prepareIssuerDecisionAction(issuer, "unknown" as "approve")).toThrow(
@@ -118,8 +123,8 @@ describe("externally signed Compact issuer governance", () => {
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
 
     harness.executeIssuerDecisionWithSignatures(issuer, "activate", [
-      signPreparedAction(second, activation),
-      signPreparedAction(third, activation),
+      signPreparedAction(harness, second, activation),
+      signPreparedAction(harness, third, activation),
     ]);
     expect(harness.evaluateCurrentIssuerDecision(issuer).authorization?.status).toBe("active");
   });
@@ -138,8 +143,8 @@ describe("externally signed Compact issuer governance", () => {
     const altered = { ...prepared, policyCommitment: new Uint8Array(32) };
     const before = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeIssuerDecisionWithSignatures(issuer, "approve", [
-      signPreparedAction(second, altered),
-      signPreparedAction(third, prepared),
+      signPreparedAction(harness, second, altered),
+      signPreparedAction(harness, third, prepared),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
   });

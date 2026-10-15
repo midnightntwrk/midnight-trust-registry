@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -35,15 +35,18 @@ import { GovernedMembershipActionRejectedError, type PreparedGovernedMembershipA
 import { createTrustRegistryApiServer } from "../server.js";
 
 const signHttpAction = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: Pick<PreparedGovernedMembershipAction,
     "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ) => {
   const fromHex = (value: string) => Buffer.from(value.slice(2), "hex");
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     fromHex(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     fromHex(prepared.policyCommitment),
     fromHex(prepared.actionKind),
     fromHex(prepared.actionPayloadHash),
@@ -238,7 +241,7 @@ describe("published VP proof to governed issuer decision", () => {
         body: JSON.stringify({
           evidence: submitted,
           prepared: proposalPrepared,
-          signers: [signHttpAction(second, proposalPrepared), signHttpAction(third, proposalPrepared)],
+          signers: [signHttpAction(harness, second, proposalPrepared), signHttpAction(harness, third, proposalPrepared)],
           evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}`,
         }),
       });
@@ -258,7 +261,7 @@ describe("published VP proof to governed issuer decision", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             prepared,
-            signers: [signHttpAction(second, prepared), signHttpAction(third, prepared)],
+            signers: [signHttpAction(harness, second, prepared), signHttpAction(harness, third, prepared)],
           }),
         });
         expect(accepted.status).toBe(202);

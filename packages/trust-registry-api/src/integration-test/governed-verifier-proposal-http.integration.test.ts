@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   signVerifierProposalEvidenceFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -27,11 +27,17 @@ import { resolveCompactProposalObservation } from "../compact-proposal-observati
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedGovernedVerifierProposal) => {
+const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedVerifierProposal,
+) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
     bytes(prepared.actionPayloadHash),
@@ -132,8 +138,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       const prepared = await preparedResponse.json() as PreparedGovernedVerifierProposal;
       expect(prepared.evidenceHash).toBe(evidence.commitment);
       const signature = harness.signVerifierProposalEvidence(harness.prepareVerifierProposalAction(verifier, evidence));
-      const first = signPrepared(second, prepared);
-      const other = signPrepared(third, prepared);
+      const first = signPrepared(harness, second, prepared);
+      const other = signPrepared(harness, third, prepared);
       const submit = (context: PreparedGovernedVerifierProposal, evidenceVerifierSignature: string,
         signers = [first, other]) => post("submit", { evidence, prepared: context, signers, evidenceVerifierSignature });
       const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -37,6 +37,7 @@ import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
 const roles = ["verifier", "auditor", "maintainer"] as const;
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: {
     registryId: Uint8Array;
@@ -48,9 +49,11 @@ const signPrepared = (
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
     prepared.actionPayloadHash,
@@ -148,7 +151,7 @@ describe("published VP proof for non-issuer application roles", () => {
           evidence,
           eventHash: harness.executeVerifierProposalWithSignatures(
             applicant.fixture, evidence,
-            [signPrepared(second, prepared), signPrepared(third, prepared)],
+            [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
             harness.signVerifierProposalEvidence(prepared), expectedEvidence,
           ),
         };
@@ -159,7 +162,7 @@ describe("published VP proof for non-issuer application roles", () => {
           evidence,
           eventHash: harness.executeAuditorProposalWithSignatures(
             applicant.fixture, evidence,
-            [signPrepared(second, prepared), signPrepared(third, prepared)],
+            [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
             harness.signAuditorProposalEvidence(prepared), expectedEvidence,
           ),
         };
@@ -169,7 +172,7 @@ describe("published VP proof for non-issuer application roles", () => {
         evidence,
         eventHash: harness.executeMaintainerProposalWithSignatures(
           applicant.fixture, evidence,
-          [signPrepared(second, prepared), signPrepared(third, prepared)],
+          [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
           harness.signMaintainerProposalEvidence(prepared), expectedEvidence,
         ),
       };
@@ -255,7 +258,7 @@ describe("published VP proof for non-issuer application roles", () => {
       for (const action of ["approve", "activate"] as const) {
         const prepared = harness.prepareVerifierDecisionAction(applicant.fixture, action);
         harness.executeVerifierDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ]);
       }
       const bundle = harness.evaluateCurrentVerifierDecision(applicant.fixture, {
@@ -270,7 +273,7 @@ describe("published VP proof for non-issuer application roles", () => {
       for (const action of ["approve", "activate"] as const) {
         const prepared = harness.prepareAuditorDecisionAction(applicant.fixture, action);
         harness.executeAuditorDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ]);
       }
       const bundle = harness.evaluateCurrentAuditorDecision(applicant.fixture, {
@@ -285,7 +288,7 @@ describe("published VP proof for non-issuer application roles", () => {
       for (const action of ["approve", "activate"] as const) {
         const prepared = harness.prepareMaintainerDecisionAction(applicant.fixture, action);
         harness.executeMaintainerDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ]);
       }
       expect(harness.simulator.getMaintainerMembership(applicant.fixture.maintainerIdCommitment).status)

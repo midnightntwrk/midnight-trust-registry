@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
@@ -30,11 +30,17 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedGovernedMembershipAction) => {
+const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedMembershipAction,
+) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
     bytes(prepared.actionPayloadHash),
@@ -126,8 +132,8 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const approval = await preparedResponse.json() as PreparedGovernedMembershipAction;
-      const first = signPrepared(second, approval);
-      const next = signPrepared(third, approval);
+      const first = signPrepared(harness, second, approval);
+      const next = signPrepared(harness, third, approval);
       const before = harness.simulator.getLedger().governanceActionCount;
 
       expect((await post("approve", approval, [first])).status).toBe(403);
@@ -152,7 +158,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       const activation = await activationResponse.json() as PreparedGovernedMembershipAction;
       expect(activation.actionSequence).not.toBe(approval.actionSequence);
       expect((await post("activate", activation, [
-        signPrepared(second, activation), signPrepared(third, activation),
+        signPrepared(harness, second, activation), signPrepared(harness, third, activation),
       ])).status).toBe(202);
 
       const evidenceResponse = await fetch(
@@ -231,8 +237,8 @@ describe("Compact-backed membership governance over HTTP", () => {
       const post = (body: unknown) => fetch(url, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
-      const first = signPrepared(second, prepared);
-      const thirdSigner = signPrepared(third, prepared);
+      const first = signPrepared(harness, second, prepared);
+      const thirdSigner = signPrepared(harness, third, prepared);
       const before = harness.simulator.getLedger().governanceActionCount;
       expect((await post({ prepared, signers: [first] })).status).toBe(403);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
@@ -367,7 +373,7 @@ describe("Compact-backed membership governance over HTTP", () => {
           const insufficient = await fetch(endpoint, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ prepared, signers: [signPrepared(second, prepared)] }),
+            body: JSON.stringify({ prepared, signers: [signPrepared(harness, second, prepared)] }),
           });
           expect(insufficient.status).toBe(403);
           expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
@@ -376,7 +382,7 @@ describe("Compact-backed membership governance over HTTP", () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               prepared,
-              signers: [signPrepared(second, prepared), signPrepared(third, prepared)],
+              signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
             }),
           });
           expect(accepted.status).toBe(202);
@@ -473,16 +479,16 @@ describe("Compact-backed membership governance over HTTP", () => {
         const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
         expect(prepared.targetId).toBe(`0x${Buffer.from(candidate.maintainerIdCommitment).toString("hex")}`);
         const before = harness.simulator.getLedger().governanceActionCount;
-        expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
+        expect((await post(action, prepared, [signPrepared(harness, second, prepared)])).status).toBe(403);
         expect((await post(action, prepared, [
-          signPrepared(second, prepared), signPrepared(candidate, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, candidate, prepared),
         ])).status).toBe(403);
         expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
         expect((await post(action, prepared, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ])).status).toBe(202);
         expect((await post(action, prepared, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ])).status).toBe(409);
       }
       expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
@@ -557,16 +563,16 @@ describe("Compact-backed membership governance over HTTP", () => {
         const prepared = await response.json() as PreparedGovernedMembershipAction;
         expect(prepared.targetId).toBe(`0x${Buffer.from(recognition.recognitionIdCommitment).toString("hex")}`);
         const before = harness.simulator.getLedger().governanceActionCount;
-        expect((await post(action, prepared, [signPrepared(second, prepared)])).status).toBe(403);
+        expect((await post(action, prepared, [signPrepared(harness, second, prepared)])).status).toBe(403);
         expect((await post(action, { ...prepared, policyCommitment: `0x${"00".repeat(32)}` }, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ])).status).toBe(409);
         expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
         expect((await post(action, prepared, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ])).status).toBe(202);
         expect((await post(action, prepared, [
-          signPrepared(second, prepared), signPrepared(third, prepared),
+          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
         ])).status).toBe(409);
       }
       const evidenceResponse = await fetch(`${base}/v1/recognitions/${recognition.recognitionId}/evidence`);
@@ -637,7 +643,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared, signers }),
       });
-      const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
       expect((await post(signers.slice(0, 1))).status).toBe(403);
       expect((await post(signers)).status).toBe(202);
       expect((await post(signers)).status).toBe(409);

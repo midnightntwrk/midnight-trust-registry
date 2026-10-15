@@ -6,7 +6,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signAuditorProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -27,10 +27,18 @@ import { resolveCompactProposalObservation } from "../compact-proposal-observati
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedGovernedAuditorProposal) => {
+const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedAuditorProposal,
+) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
-    maintainer.seed, bytes(prepared.registryId), bytes(prepared.policyCommitment),
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
+    maintainer.seed,
+    bytes(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
+    bytes(prepared.policyCommitment),
     bytes(prepared.actionKind), bytes(prepared.actionPayloadHash), BigInt(prepared.actionSequence),
   );
   return {
@@ -118,7 +126,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       expect(prepared.evidenceHash).toBe(evidence.commitment);
       const signature = harness.signAuditorProposalEvidence(harness.prepareAuditorProposalAction(auditor, evidence));
       const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
-      const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
       const submit = (context: PreparedGovernedAuditorProposal, proof: string, votes = signers) =>
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
       expect((await submit(prepared, encoded, [signers[0]!])).status).toBe(403);

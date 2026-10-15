@@ -9,7 +9,7 @@ import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   sha256Hex,
@@ -285,9 +285,11 @@ describe("private recognition accreditation HTTP", () => {
     expect(preparedResponse.status, await preparedResponse.clone().text()).toBe(200);
     const prepared = await preparedResponse.json() as PreparedGovernedRecognitionProposal;
     expect(prepared.evidenceHash).toBe(result.evidenceCommitment);
-    const signature = signPolicyBoundMaintainerActionFromSeed(
+    const signature = signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       Buffer.from(prepared.registryId.slice(2), "hex"),
+      harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      Buffer.from(harness.simulator.contractAddress, "hex"),
       Buffer.from(prepared.policyCommitment.slice(2), "hex"),
       Buffer.from(prepared.actionKind.slice(2), "hex"),
       Buffer.from(prepared.actionPayloadHash.slice(2), "hex"),

@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   signRecognitionProposalEvidenceFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -45,11 +47,17 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const sign = (maintainer: MaintainerScenarioFixture, prepared: PreparedGovernedRecognitionProposal) => {
+const sign = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedRecognitionProposal,
+) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
     bytes(prepared.actionPayloadHash),
@@ -253,8 +261,8 @@ describe("governed recognition proposal HTTP", () => {
           ...request, prepared: signed, signers,
           evidenceVerifierSignature: hex(encodeJubjubSignature(signature)),
         });
-      const first = sign(second, prepared);
-      const other = sign(third, prepared);
+      const first = sign(harness, second, prepared);
+      const other = sign(harness, third, prepared);
       expect((await submit(prepared, [first])).status).toBe(403);
       const wrongVerifier = signRecognitionProposalEvidenceFromSeed(
         second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),

@@ -1,9 +1,11 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
   signMaintainerProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
 import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
@@ -20,15 +22,18 @@ import {
 } from "../local-simulator-harness.js";
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedMaintainerAction,
     "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
     action.actionPayloadHash,
@@ -60,23 +65,23 @@ describe("externally signed Compact maintainer onboarding", () => {
       governedResource: { type: "registry", id: "another-registry" },
     })).toThrow(/scope does not match/u);
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
-      signPrepared(second, proposal),
+      signPrepared(harness, second, proposal),
     ], verifierSignature)).toThrow();
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
-      signPrepared(second, proposal), signPrepared(second, proposal),
+      signPrepared(harness, second, proposal), signPrepared(harness, second, proposal),
     ], verifierSignature)).toThrow();
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
-      signPrepared(second, proposal), signPrepared(candidate, proposal),
+      signPrepared(harness, second, proposal), signPrepared(harness, candidate, proposal),
     ], verifierSignature)).toThrow();
     expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
-      signPrepared(second, proposal), signPrepared(third, proposal),
+      signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], signMaintainerProposalEvidenceFromSeed(
       candidate.seed, proposal.registryId,
       proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
     ))).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
     harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
-      signPrepared(second, proposal), signPrepared(third, proposal),
+      signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], verifierSignature);
     const proposalEvidence = harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment);
     expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
@@ -87,28 +92,28 @@ describe("externally signed Compact maintainer onboarding", () => {
       .toThrow(/Unsupported maintainer decision action/u);
     const beforeApproval = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
-      signPrepared(second, approval), signPrepared(candidate, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, candidate, approval),
     ])).toThrow();
     expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
-      signPrepared(second, { ...approval, policyCommitment: new Uint8Array(32) }),
-      signPrepared(third, approval),
+      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+      signPrepared(harness, third, approval),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
     harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
     const activation = harness.prepareMaintainerDecisionAction(candidate, "activate");
     const beforeActivation = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ])).toThrow();
     expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
-      signPrepared(second, activation), signPrepared(candidate, activation),
+      signPrepared(harness, second, activation), signPrepared(harness, candidate, activation),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
     harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
-      signPrepared(second, activation), signPrepared(third, activation),
+      signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
     expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
       .toBe(AuthorizationStatus.active);
