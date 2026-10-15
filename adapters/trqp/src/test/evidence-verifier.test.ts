@@ -44,6 +44,7 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(response, request, harness.registryDid, anchor))
@@ -106,6 +107,7 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: suspended.epoch.epochId, policyVersion: suspended.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(deniedResponse, deniedRequest,
@@ -131,6 +133,7 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(response, request,
@@ -165,6 +168,7 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpRecognitionEvidenceResponse(response, request,

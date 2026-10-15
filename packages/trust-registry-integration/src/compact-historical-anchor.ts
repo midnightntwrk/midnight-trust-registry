@@ -21,7 +21,8 @@ export function resolveCompactHistoricalEpochAnchor(input: {
   registryId: string;
   epochId: string;
   policyVersion: string;
-  /** Resolve from the authenticated deployment selection, never from the evidence bundle. */
+  /** Both values come from the authenticated deployment selection, never from the evidence bundle. */
+  expectedNetworkId: string;
   contractAddress: Uint8Array;
   sequenceToTimestamp: SequenceToTimestamp;
 }): EpochAnchorVerificationContext {
@@ -34,6 +35,11 @@ export function resolveCompactHistoricalEpochAnchor(input: {
     if (!(value instanceof Uint8Array) || value.length !== 32 || value.every((byte) => byte === 0)) {
       throw new Error(`${name} is missing or malformed`);
     }
+  }
+  if (typeof input.expectedNetworkId !== "string"
+    || !/^[a-z][a-z0-9-]*$/u.test(input.expectedNetworkId)
+    || !same(ledger.deploymentNetworkIdCommitment, bytes32Commitment(input.expectedNetworkId))) {
+    throw new Error("Historical network ID does not match finalized Compact ledger");
   }
   const registryIdCommitment = bytes32Commitment(input.registryId);
   if (!same(ledger.registryId, registryIdCommitment)) {

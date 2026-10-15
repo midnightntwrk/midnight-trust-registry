@@ -2003,6 +2003,7 @@ try {
       }), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
         ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        expectedNetworkId: harness.registryDid.split(":")[2],
         contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedRecognitionEpoch,
         sequenceToTimestamp: defaultSequenceToTimestamp,

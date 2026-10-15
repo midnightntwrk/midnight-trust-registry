@@ -27,6 +27,7 @@ describe("historical native evidence responses", () => {
     const input = {
       ledger, registryId: harness.registryId, epochId: bundle.epoch.epochId,
       policyVersion: bundle.policy.version, sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     };
     expect(() => resolveCompactHistoricalEpochAnchor({
@@ -41,6 +42,9 @@ describe("historical native evidence responses", () => {
     expect(() => resolveCompactHistoricalEpochAnchor({
       ...input, ledger: { ...ledger, deploymentNetworkIdCommitment: new Uint8Array(32) } as Ledger,
     })).toThrow(/Deployment network ID commitment is missing or malformed/u);
+    expect(() => resolveCompactHistoricalEpochAnchor({
+      ...input, expectedNetworkId: "preview",
+    })).toThrow(/Historical network ID does not match/u);
     expect(() => resolveCompactHistoricalEpochAnchor({
       ...input, ledger: { ...ledger, contractVersion: 2n } as Ledger,
     })).toThrow(/Unsupported trust registry format/u);
@@ -83,6 +87,7 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     };
     const anchor = resolveCompactHistoricalEpochAnchor(anchorInput);
@@ -122,6 +127,7 @@ describe("historical native evidence responses", () => {
     expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection,
       resolveCompactHistoricalEpochAnchor({
         ...anchorInput,
+        expectedNetworkId: "different-network",
         ledger: {
           ...anchorInput.ledger,
           deploymentNetworkIdCommitment: bytes32Commitment("different-network"),
@@ -157,6 +163,7 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: laterBundle.epoch.epochId, policyVersion: laterBundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection, laterAnchor))
@@ -225,6 +232,7 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
       contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     const selection = {

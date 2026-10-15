@@ -760,6 +760,7 @@ try {
       const response = await expectHttp(await post("/v1/authorizations/evaluate/evidence", selection), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
         ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        expectedNetworkId: harness.registryDid.split(":")[2],
         contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedEpoch,
         sequenceToTimestamp: defaultSequenceToTimestamp,
