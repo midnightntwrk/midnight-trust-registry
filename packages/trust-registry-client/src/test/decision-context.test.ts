@@ -7,7 +7,7 @@ import {
   encodeCompactActionKind,
   encodeJubjubSignature,
   pureCircuits,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationRecordSchema,
@@ -127,6 +127,8 @@ function fixture(
   const stateRoot = computeMerkleRootFromProof(leafHash, [B], 0n);
   const policyRoot = computeGovernancePolicySnapshotCommitment(policy);
   const registryIdCommitment = bytes32Commitment(REGISTRY);
+  const networkIdCommitment = bytes32Commitment("devnet");
+  const contractAddress = hashHexToBytes32(A);
   const epochIdCommitment = bytes32Commitment(EPOCH);
   const keys = MAINTAINER_DIDS.map((did, index) => ({
     keyId: `${did}#key-1`,
@@ -148,9 +150,11 @@ function fixture(
   const signatures = keys.map(({ keyId, seed }) => ({
     keyId,
     algorithm: "jubjub-schnorr" as const,
-    signature: `0x${Buffer.from(encodeJubjubSignature(signPolicyBoundMaintainerActionFromSeed(
+    signature: `0x${Buffer.from(encodeJubjubSignature(signDeploymentBoundMaintainerActionFromSeed(
       seed,
       registryIdCommitment,
+      networkIdCommitment,
+      contractAddress,
       hashHexToBytes32(E),
       encodeCompactActionKind("tr:epoch:publish"),
       payload,
@@ -165,6 +169,8 @@ function fixture(
   );
   const publicationEventHash = bytes32Hex(pureCircuits.governanceEventHash(
     registryIdCommitment,
+    bytes32Commitment("devnet"),
+    hashHexToBytes32(A),
     hashHexToBytes32(E),
     signerSetHash,
     encodeCompactActionKind("tr:epoch:publish"),
@@ -241,6 +247,8 @@ function fixture(
     },
     publication: {
       registryIdCommitment,
+      networkIdCommitment,
+      contractAddress,
       epochIdCommitment,
       firstSignerKeyIdCommitment: activeMaintainersAtPublication[0]!.keyIdCommitment,
       activeMaintainersAtPublication,
