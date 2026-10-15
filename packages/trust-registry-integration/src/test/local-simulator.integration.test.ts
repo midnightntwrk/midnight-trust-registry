@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it, vi } from "vitest";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import {
   decodeJubjubSignature,
@@ -553,6 +554,7 @@ describe("trust registry local simulator integration", () => {
     const epochId = bundle.epoch.epochId;
     const record = harness.simulator.getEpochCommitment(bytes32Commitment(epochId));
     const witness = harness.getEpochPublicationWitness(epochId);
+    const contractAddress = encodeContractAddress(harness.simulator.contractAddress);
     expect(witness.signatures).toHaveLength(2);
     expect(witness.eventHash).toBe(`0x${Buffer.from(record.publicationEventHash).toString("hex")}`);
     expect(bytes32Commitment(witness.signatures[0]!.keyId)).toEqual(Buffer.from(record.maintainerKeyId));
@@ -561,7 +563,7 @@ describe("trust registry local simulator integration", () => {
       registryId: harness.registryId,
       registryDid: harness.registryDid,
       networkId: harness.registryDid.split(":")[2],
-      contractAddress: sha256Hex("simulator-contract"),
+      contractAddress: `0x${Buffer.from(contractAddress).toString("hex")}`,
       transactionHash: sha256Hex("simulator-epoch-transaction"),
       blockHash: sha256Hex("simulator-epoch-block"),
       epochId,
@@ -593,6 +595,8 @@ describe("trust registry local simulator integration", () => {
     });
     const context = {
       registryIdCommitment: harness.registryIdCommitment,
+      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      contractAddress,
       epochIdCommitment: bytes32Commitment(epochId),
       firstSignerKeyIdCommitment: record.maintainerKeyId,
       activeMaintainersAtPublication: witness.signatures.map((signer) => {
