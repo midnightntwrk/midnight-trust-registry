@@ -52,8 +52,13 @@ shorter-lived and more action-oriented than the normative specification.
   holding that lock causes 409 before Compact advances. Unsafe fixture
   mutation routes stay disabled. A separate read-only process then reopens
   the workspace and recovers the final epoch and the historical active/current
-  revoked decisions for issuer, verifier, and auditor. This closes one
-  local-host gap but does not
+  revoked decisions for issuer, verifier, and auditor. A regression test found
+  that projecting a missing per-grant historical epoch after an externally
+  signed epoch could move Compact's latest pointer backward. The fixture now
+  materializes grant evidence before preparing the signed epoch; the CLI
+  projector preflights the required grant epochs and rejects a missing one
+  before it can mutate the ledger after a signed publication. This
+  closes one local-host gap but does not
   make admission plus governance atomic or establish network finality.
 
 ## October 2026 Local Functional Stack

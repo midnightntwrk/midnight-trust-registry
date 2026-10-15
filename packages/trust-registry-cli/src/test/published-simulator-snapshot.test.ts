@@ -27,15 +27,33 @@ describe("published simulator snapshot", () => {
     })).toThrow(/another registry/u);
   }, 60_000);
 
-  it("selects the Compact current epoch after per-grant projection publishes a later record", () => {
+  it("rejects projection that replaces the latest signed epoch with an older grant epoch", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("current-epoch-projection");
     const issuer = createIssuerScenarioFixture("current-epoch-issuer");
     harness.authorizeIssuer(issuer);
     const registryEpoch = harness.publishRegistryEpoch("externally-published-registry");
-    const snapshot = publishSimulatorSnapshot(harness, {
+    const before = harness.simulator.getLedger().governanceActionCount;
+    expect(() => publishSimulatorSnapshot(harness, {
       label: "current-epoch-projection",
       issuers: [{ label: "issuer", fixture: issuer }],
+    }, undefined, registryEpoch)).toThrow(/requires grant evidence before the signed registry epoch/u);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    expect(Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId)).toEqual(
+      Buffer.from(bytes32Commitment(registryEpoch.epochId)),
+    );
+  }, 60_000);
+
+  it("retains the signed registry epoch when grant evidence exists before signing", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("current-epoch-prepared-projection");
+    const issuer = createIssuerScenarioFixture("prepared-projection-issuer");
+    harness.authorizeIssuer(issuer);
+    harness.buildIssuerHistoricalEvidence(issuer);
+    const registryEpoch = harness.publishRegistryEpoch("externally-published-registry");
+    const snapshot = publishSimulatorSnapshot(harness, {
+      label: "current-epoch-prepared-projection",
+      issuers: [{ label: "issuer", fixture: issuer }],
     }, undefined, registryEpoch);
+    expect(snapshot.currentEpoch).toEqual(registryEpoch);
     expect(snapshot.epochs).toContainEqual(registryEpoch);
     expect(Buffer.from(bytes32Commitment(snapshot.currentEpoch.epochId))).toEqual(
       Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId),

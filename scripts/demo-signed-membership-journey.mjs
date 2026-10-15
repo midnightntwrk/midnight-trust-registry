@@ -98,6 +98,7 @@ const profiles = {
         harness.executeIssuerProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildIssuerHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signIssuerProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareIssuerDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeIssuerDecisionWithSignatures(fixture, action, signers),
@@ -116,6 +117,7 @@ const profiles = {
         harness.executeVerifierProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildVerifierHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareVerifierDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeVerifierDecisionWithSignatures(fixture, action, signers),
@@ -134,6 +136,7 @@ const profiles = {
         harness.executeAuditorProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildAuditorHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareAuditorDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeAuditorDecisionWithSignatures(fixture, action, signers),
@@ -151,6 +154,7 @@ const profiles = {
       executeProposal: (evidence, signers, signature, expected) =>
         harness.executeMaintainerProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getMaintainerProposalEvidence(fixture.maintainerIdCommitment),
+      materializeStatusEvidence: () => {},
       signProposalEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareMaintainerDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeMaintainerDecisionWithSignatures(fixture, action, signers),
@@ -381,6 +385,13 @@ const expectHttp = async (response, status) => {
   assert.equal(response.status, status, JSON.stringify(payload));
   return payload;
 };
+const expectProblem = async (response, status, typeSlug) => {
+  const problem = await expectHttp(response, status);
+  assert.equal(problem.status, status);
+  assert.equal(problem.type, `https://midnight.network/problems/trust-registry-api/${typeSlug}`);
+  assert.equal(typeof problem.title, "string");
+  return problem;
+};
 
 try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -397,6 +408,7 @@ try {
   const trustedEpochsByPhase = new Map();
   const publishGovernedEpoch = async (phase) => {
     const epochLabel = `${role}-${phase}`;
+    profile.materializeStatusEvidence();
     const locallyPrepared = harness.prepareRegistryEpochPublicationAction(epochLabel);
     const policyVersion = `v${harness.simulator.getLedger().governancePolicyVersion.toString()}`;
     const prepared = await adminClient.prepareGovernedEpoch(epochLabel);
@@ -411,22 +423,21 @@ try {
       prepared,
       signers: [signAction(maintainers[0], prepared), signAction(maintainers[0], prepared)],
     })).status, 403);
-    assert.equal((await post(publishPath, {
+    await expectProblem(await post(publishPath, {
       label: `${epochLabel}-other`, prepared, signers: quorumSignatures(prepared),
-    })).status, 409);
-    assert.equal((await post(publishPath, {
+    }), 409, "stale-governed-epoch");
+    await expectProblem(await post(publishPath, {
       label: epochLabel,
       prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
       signers: quorumSignatures(prepared),
-    })).status, 409);
+    }), 409, "stale-governed-epoch");
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     if (phase === "activate") {
       await withOtherProcessHoldingWorkspace(workspacePath, async () => {
         const locked = await post(publishPath, {
           label: epochLabel, prepared, signers: quorumSignatures(prepared),
         });
-        assert.equal(locked.status, 409);
-        assert.match((await locked.json()).type, /governance-write-locked$/u);
+        await expectProblem(locked, 409, "governance-write-locked");
       });
       assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     }
@@ -434,6 +445,7 @@ try {
       label: epochLabel, prepared, signers: quorumSignatures(prepared),
     });
     assert.equal(receipt.epoch.epochId, prepared.epochId);
+    assert.equal(snapshot.currentEpoch.epochId, receipt.epoch.epochId);
     const published = await expectHttp(await fetch(
       `${base}/v1/epochs/${encodeURIComponent(receipt.epoch.epochId)}`,
     ), 200);
@@ -559,8 +571,7 @@ try {
     prepared: premature,
     signers: quorumSignatures(premature),
   });
-  assert.equal(earlyActivation.status, 403);
-  assert.match((await earlyActivation.json()).type, /governed-action-rejected$/u);
+  await expectProblem(earlyActivation, 403, "governed-action-rejected");
   assert.equal(harness.simulator.getLedger().governanceActionCount, beforePremature);
 
   for (const action of ["approve", "activate"]) {
@@ -571,8 +582,7 @@ try {
       prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
       signers: quorumSignatures(prepared),
     });
-    assert.equal(stale.status, 409);
-    assert.match((await stale.json()).type, /stale-governed-action$/u);
+    await expectProblem(stale, 409, "stale-governed-action");
     assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
     assert.equal((await post(actionPath, {
       prepared, signers: [signAction(maintainers[0], prepared)],
@@ -696,6 +706,8 @@ try {
       assert.equal(decision.authorized, evaluated.trustedAtTime);
       assert.equal(evidence.authorized, evaluated.trustedAtTime);
       assert.equal(evidence.bundle.inclusionProof.leafHash, bundle.inclusionProof.leafHash);
+      assert.equal(evidence.bundle.authorization.evidenceHash, submitted.receipt.evidenceCommitment);
+      assert.equal(evidence.bundle.authorization.evidenceHash, bundle.authorization.evidenceHash);
       trqpAgreement = true;
     }
     trustResult = {
