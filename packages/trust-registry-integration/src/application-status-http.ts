@@ -41,7 +41,13 @@ export function createHttpApplicationStatusSource(input: {
         throw new ApplicationVpDependencyUnavailableError();
       }
       if (!response.ok) throw new Error(`Status attestation rejected (${response.status})`);
-      return response.json() as Promise<unknown>;
+      let body: string;
+      try {
+        body = await response.text();
+      } catch {
+        throw new ApplicationVpDependencyUnavailableError();
+      }
+      return JSON.parse(body) as unknown;
     },
   });
 }

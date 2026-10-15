@@ -138,5 +138,14 @@ describe("HTTP application status authority adapter", () => {
       fetchImpl: async () => { throw new TypeError("network down"); },
     });
     await expect(source(request)).rejects.toBeInstanceOf(ApplicationVpDependencyUnavailableError);
+
+    const droppedBody = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => new Response(new ReadableStream({
+        start(controller) { controller.error(new Error("body stream dropped")); },
+      }), { status: 200 }),
+    });
+    await expect(droppedBody(request)).rejects.toBeInstanceOf(ApplicationVpDependencyUnavailableError);
   });
 });
