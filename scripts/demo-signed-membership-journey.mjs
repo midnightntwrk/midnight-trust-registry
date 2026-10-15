@@ -503,6 +503,35 @@ try {
     challengeHash: challenge.challengeHash,
     presentation: currentProof.input.submission,
   };
+  if (role === "issuer") {
+    const validProof = currentProof;
+    const submitRejectedPresentation = async (proof, presentation) => {
+      currentProof = proof;
+      await expectProblem(await post(`${evidencePath}/submissions`, {
+        ...submission, presentation,
+      }), 403, "application-vp-rejected");
+      assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
+    };
+    const invalidSignature = structuredClone(submission.presentation);
+    invalidSignature.credentialProof.signature.s = (
+      BigInt(invalidSignature.credentialProof.signature.s) + 1n
+    ).toString();
+    await submitRejectedPresentation(currentProof, invalidSignature);
+    const wrongScopeProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions,
+      scope: { ...scope, credentialFamilyId: `${scope.credentialFamilyId}:other` },
+    });
+    await submitRejectedPresentation(wrongScopeProof, wrongScopeProof.input.submission);
+    const revokedStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions, statusDecision: { active: false },
+    });
+    await submitRejectedPresentation(revokedStatusProof, revokedStatusProof.input.submission);
+    const expiredStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions, statusDecision: { validUntilMs: VP_FIXTURE_TIME_MS - 1 },
+    });
+    await submitRejectedPresentation(expiredStatusProof, expiredStatusProof.input.submission);
+    currentProof = validProof;
+  }
   // The accepted VP response is intentionally lost; recover without reusing the challenge.
   await applicantClient.submitApplicationPresentation(applicationId, challenge, submission.presentation);
   const submitted = await applicantClient.loadAcceptedApplicationEvidence(applicationId);
@@ -843,6 +872,8 @@ try {
       "wrong-epoch-label:409", "stale-epoch-context:409",
       ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
         "expired-evidence:client", "out-of-scope-query:404"]),
+      ...(role === "issuer" ? ["invalid-vc-signature:403", "wrong-vc-scope:403",
+        "revoked-vc-status:403", "expired-vc-status:403", "same-challenge-retry:202"] : []),
       ...(role === "verifier" || role === "auditor" ? ["expanded-request-permissions:404"] : []),
       "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);
