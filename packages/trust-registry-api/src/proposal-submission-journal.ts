@@ -66,6 +66,13 @@ export class ProposalSubmissionCapacityError extends Error {
   }
 }
 
+export class ProposalSubmissionOutcomeUnknownError extends Error {
+  constructor(cause: unknown) {
+    super("Proposal may have reached Compact; reconcile before any further action", { cause });
+    this.name = "ProposalSubmissionOutcomeUnknownError";
+  }
+}
+
 /** Reservation survives a lost Compact response; only an independently finalized reader can confirm observation. */
 export interface ProposalSubmissionJournal {
   executeOnce(
@@ -106,26 +113,36 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         throw new ProposalSubmissionAlreadyPendingError(existing.state);
       }
       if (state.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
+      const attempts = [...state.attempts, { ...key, state: "reserved" as const, eventHash: null }];
+      const submittedSize = Buffer.byteLength(JSON.stringify({
+        version: 1,
+        attempts: [...state.attempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
+      }), "utf8");
+      if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
       await this.writeState(StateSchema.parse({
-        ...state, attempts: [...state.attempts, { ...key, state: "reserved", eventHash: null }],
+        ...state, attempts,
       }));
     });
 
-    // The callback may have submitted even if it throws or its response is lost.
-    const receipt = GovernedMembershipActionReceiptSchema.parse(await execute());
-    await this.withWrite(async () => {
-      const state = await this.readState();
-      const attempt = state.attempts.find((entry) => entry.role === key.role
-        && entry.authorizationId === key.authorizationId);
-      if (attempt === undefined || attempt.evidenceCommitment !== key.evidenceCommitment
-        || (attempt.eventHash !== null && attempt.eventHash !== receipt.eventHash)) {
-        throw new ProposalSubmissionConflictError();
-      }
-      if (attempt.state !== "observed") attempt.state = "submitted";
-      attempt.eventHash = receipt.eventHash;
-      await this.writeState(state);
-    });
-    return receipt;
+    // Any failure after reservation may follow a successful submission.
+    try {
+      const receipt = GovernedMembershipActionReceiptSchema.parse(await execute());
+      await this.withWrite(async () => {
+        const state = await this.readState();
+        const attempt = state.attempts.find((entry) => entry.role === key.role
+          && entry.authorizationId === key.authorizationId);
+        if (attempt === undefined || attempt.evidenceCommitment !== key.evidenceCommitment
+          || (attempt.eventHash !== null && attempt.eventHash !== receipt.eventHash)) {
+          throw new ProposalSubmissionConflictError();
+        }
+        if (attempt.state !== "observed") attempt.state = "submitted";
+        attempt.eventHash = receipt.eventHash;
+        await this.writeState(state);
+      });
+      return receipt;
+    } catch (error) {
+      throw new ProposalSubmissionOutcomeUnknownError(error);
+    }
   }
 
   async read(role: GovernedProposalSubmissionRole, authorizationId: string): Promise<ProposalSubmissionAttempt | null> {

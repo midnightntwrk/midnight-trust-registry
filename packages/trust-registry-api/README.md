@@ -206,6 +206,9 @@ submission. The private file adapter reserves the role, authorization ID,
 and accepted evidence commitment before calling the Compact-backed port.
 Duplicate attempts return 409 `proposal-submission-uncertain`, including
 after process restart. A returned event hash means `submitted`, not finalized.
+Any failure after the reservation returns 503 `proposal-submission-uncertain`,
+even if the underlying Compact port reported a validation error; the HTTP
+response cannot establish that no submission occurred.
 `/proposal/resolve` can mark an attempt `observed` only after the host's
 role-specific resolution port supplies a matching finalized record. A
 `not-observed` response is not permission to submit again. A thrown Compact
@@ -220,7 +223,8 @@ remaining production requirements.
 The local adapter has an explicit 10,000-attempt capacity. At capacity it
 returns 503 `proposal-submission-capacity` before calling the Compact port;
 operators must preserve and reconcile the journal before a controlled
-rotation. It never silently evicts unresolved attempts.
+rotation. The same pre-submission check reserves room for a future event hash
+under the 4 MiB file limit. It never silently evicts unresolved attempts.
 
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with

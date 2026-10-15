@@ -16,7 +16,9 @@ port it reserves the exact `(role, authorization ID, evidence commitment)`
 under a cross-process file lock. A second attempt is rejected even if the
 first result is unknown. A returned event hash advances the journal to
 `submitted`, which still does not establish network finality. A thrown error
-leaves `reserved`; the host must not infer that nothing was submitted.
+leaves `reserved` and returns an explicit 503 uncertain-outcome problem; the
+host must not infer that nothing was submitted, even when the underlying port
+reported a validation error.
 
 Recovery uses a separately supplied reader that authenticates the finalized
 ledger view and returns the role/ID's proposal record. A matching evidence
@@ -34,6 +36,7 @@ Recognition proposals use a separate accreditation/admission workflow and
 are not covered by this journal. The adapter is not wired into the packaged
 CLI, which has no network-finality source.
 The file adapter is capped at 10,000 attempts and 4 MiB. Capacity exhaustion
-returns a typed 503 before submission. A future production host must define
+returns a typed 503 before submission, including when the eventual event hash
+would exceed the byte limit. A future production host must define
 an audited rotation/export procedure that preserves unresolved reservations
 and observed history; this reference implementation does not auto-evict them.

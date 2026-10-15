@@ -147,6 +147,7 @@ import {
   ProposalSubmissionAlreadyPendingError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
+  ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
 } from "./proposal-submission-journal.js";
@@ -772,6 +773,11 @@ export const createTrustRegistryApiServer = (
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
         "proposal submission requires reconciliation",
         "An earlier submission may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionOutcomeUnknownError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 503,
+        "proposal submission outcome unknown",
+        "The proposal may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
     }
     if (error instanceof ProposalSubmissionConflictError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-conflict", 409,

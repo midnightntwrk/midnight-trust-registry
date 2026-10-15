@@ -50,7 +50,7 @@ const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedG
 };
 
 describe("Compact-backed issuer proposals over HTTP", () => {
-  it("journals admitted submission before execution and reconciles a finalized observation", async () => {
+  it("does not resubmit after a lost Compact response and reconciles a finalized observation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
     const issuer = createIssuerScenarioFixture("issuer-journal-candidate");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
@@ -96,7 +96,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
         execute: async () => {
           executions += 1;
-          return { eventHash };
+          throw new Error("response lost after Compact submission");
         },
         resolve: async () => observation,
       },
@@ -116,8 +116,10 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
       const request = { evidence, prepared, signers: [signPrepared(maintainer, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
-      expect((await post("submit", request)).status).toBe(202);
-      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "submitted", eventHash });
+      const uncertain = await post("submit", request);
+      expect(uncertain.status).toBe(503);
+      expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);
+      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);
       expect((await duplicate.json()).type).toMatch(/proposal-submission-uncertain$/u);
