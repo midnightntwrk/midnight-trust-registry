@@ -32,10 +32,10 @@ import {
   signIssuerProposalEvidenceFromSeed,
   signRecognitionProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   type TrustRegistryJubjubSignature,
   verifyApplicationEvidenceCommitmentSignature,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
@@ -478,7 +478,8 @@ export class LocalTrustRegistryIntegrationHarness {
 
     this.simulator = new TrustRegistrySimulator({
       registryId: this.registryIdCommitment,
-      networkIdCommitment: bytes32Commitment("network:undeployed"),
+      networkIdCommitment: bytes32Commitment("undeployed"),
+      contractAddress: sha256Hex(`trust-registry:simulator:${this.registryId}`).slice(2),
       registryDidCommitment: this.registryDidCommitment,
       governancePolicyCommitment: this.governancePolicyCommitment,
       maintainerId: this.maintainerIdCommitment,
@@ -913,9 +914,11 @@ export class LocalTrustRegistryIntegrationHarness {
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
   ) {
-    return signPolicyBoundMaintainerActionFromSeed(
+    return signDeploymentBoundMaintainerActionFromSeed(
       seed,
       registryId,
+      this.simulator.getLedger().deploymentNetworkIdCommitment,
+      Buffer.from(this.simulator.contractAddress, "hex"),
       this.simulator.getLedger().governancePolicyCommitment,
       actionKind,
       actionPayloadHash,
@@ -2742,9 +2745,11 @@ export class LocalTrustRegistryIntegrationHarness {
     let verified = false;
     let verificationFault: unknown;
     try {
-      verified = verifyPolicyBoundMaintainerAction(
+      verified = verifyDeploymentBoundMaintainerAction(
         maintainerRecord.publicKey,
         this.registryIdCommitment,
+        this.simulator.getLedger().deploymentNetworkIdCommitment,
+        Buffer.from(this.simulator.contractAddress, "hex"),
         epochRecord.publicationPolicyCommitment,
         CREATE_EPOCH_ACTION_KIND,
         payloadHash,

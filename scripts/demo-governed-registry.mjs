@@ -1453,10 +1453,10 @@ try {
       });
       await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], signers[0]]), {
         id: `${role}-${action}-duplicate-signer`,
-        invariant: "One maintainer key cannot be counted twice toward a governed decision quorum",
+        invariant: "The API rejects a duplicate maintainer key before governed execution",
         boundary: "api",
         status: 403,
-        problemType: "governed-action-rejected",
+        problemType: "invalid-governed-signature",
       });
       if (role === "maintainer") {
         await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), {
@@ -2003,6 +2003,7 @@ try {
       }), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
         ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedRecognitionEpoch,
         sequenceToTimestamp: defaultSequenceToTimestamp,
       });

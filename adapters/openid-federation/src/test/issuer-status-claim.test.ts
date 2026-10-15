@@ -32,7 +32,7 @@ const setup = async () => {
   const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
   const ledger = harness.simulator.getLedger();
   const networkId = issuer.subjectDid.split(":")[2]!;
-  const contractAddress = block("contract-address");
+  const contractAddress = `0x${harness.simulator.contractAddress}`;
   const acceptedEpoch = AcceptedDecisionEpochSchema.parse({
     registryId: harness.registryId,
     registryDid: harness.registryDid,
@@ -98,6 +98,8 @@ const setup = async () => {
       acceptedEpoch,
       publication: {
         registryIdCommitment: harness.registryIdCommitment,
+        networkIdCommitment: ledger.deploymentNetworkIdCommitment,
+        contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         epochIdCommitment: bytes32Commitment(bundle.epoch.epochId),
         firstSignerKeyIdCommitment: epoch.maintainerKeyId,
         activeMaintainersAtPublication: witness.signatures.map(({ keyId }) => ({

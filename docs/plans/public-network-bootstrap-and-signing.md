@@ -6,10 +6,11 @@ pass. This slice is independent of PR #203 and must be rebased after it lands.
 
 Local progress: the pure Compact `deploymentBoundMaintainerActionDigest` and
 strict TypeScript sign/verify helpers use a versioned network-and-address-bound
-payload. A focused negative test rejects the same signature on a different
-network commitment or contract address. These helpers are not yet called by
-`performAuthorizedMaintainerAction`; the old signing path is still active.
-They must not be published alone or described as a replay fix.
+payload. The active governed-action verifier now uses that digest; production
+signers, evidence readers, and test fixtures are being migrated together. A
+focused negative test rejects the same signature on a different network
+commitment or contract address. This branch must not be published or described
+as a replay fix until all callers and full validation are green.
 
 Constructor bootstrap is implemented locally: the former `initializeRegistry`
 body runs during construction, the public circuit is removed, and simulator
@@ -18,10 +19,16 @@ checks that an unregistered caller cannot replace the constructor state. This
 still needs cross-package and real-network qualification before #200 is done.
 
 The constructor also requires a nonzero `deploymentNetworkIdCommitment` and
-stores it as sealed ledger state. Simulator fixtures use an explicit
-`network:undeployed` commitment. The active action verifier does not consume
-this field yet; even after it does, deployment tooling must independently
+stores it as sealed ledger state. The integration simulator pins the `undeployed`
+identifier used by its DID and epoch fixtures; this does not attest to a deployed
+network. Deployment tooling must independently
 authenticate the actual network before signers rely on the declared value.
+The generated Compact constructor runs under a dummy contract address. Its
+initialization event is therefore separately domain-separated and bound to
+the pinned network, but **not** to the eventual contract address. Only
+post-deployment governed event hashes and action signatures bind
+`kernel.self().bytes`. An initialization event alone must never be accepted
+as proof of a specific deployment address.
 
 ## Threats and invariants
 
@@ -46,7 +53,9 @@ authenticate the actual network before signers rely on the declared value.
   state. Constructor initialization can remove the public first-call window.
 - `kernel.self().bytes` is used elsewhere in this repository to bind a VC
   authority domain to the deployed contract address. The simulator must hold a
-  stable address for its lifetime.
+  stable address for its lifetime. The Compact runtime uses
+  `dummyContractAddress()` while executing the constructor, so constructor
+  evidence cannot claim address binding.
 - No contract-observable network or genesis identifier has yet been found in
   the supported Compact API. A constructor-pinned `networkIdCommitment` can
   separate honest deployments only if deployment tooling and signers verify

@@ -1201,6 +1201,7 @@ export const createTrustRegistryApiServer = (
                 throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
                   "invalid governed signature");
               }
+              requireValidProposalSigners(current, signers);
               return GovernedMembershipActionReceiptSchema.parse(await port.execute(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
               ));

@@ -195,6 +195,8 @@ async function prepareGovernedSignerAuthorization(input) {
       acceptedEpoch,
       publication: {
         registryIdCommitment: harness.registryIdCommitment,
+        networkIdCommitment: ledger.deploymentNetworkIdCommitment,
+        contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         epochIdCommitment: bytes32Commitment(bundle.epoch.epochId),
         firstSignerKeyIdCommitment: epochRecord.maintainerKeyId,
         activeMaintainersAtPublication: witness.signatures.map((signer) => {
