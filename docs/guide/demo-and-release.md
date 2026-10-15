@@ -199,7 +199,8 @@ threshold from 2-of-3 to 3-of-4, rejects a two-signer proposal, and accepts a
 three-signer proposal. It then suspends the new maintainer using the emergency
 threshold, rejects that maintainer's later vote, and accepts a proposal from
 the three still-active maintainers. The independent integration suite also
-rejects removal of the last active maintainer. These are local Compact
+rejects self-voted removal and non-self removal that would leave fewer active
+maintainers than the configured threshold. These are local Compact
 simulator assertions, not proof of network finality.
 For the issuer, the same Midnight DID uses separate authentication and assertion
 keys: the authentication key signs the application VP, and the assertion key

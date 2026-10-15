@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   decodeJubjubSignature,
+  deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
+  signPolicyBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
@@ -1054,6 +1056,34 @@ describe("trust registry local simulator integration", () => {
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
       /own DID/i,
     );
+  });
+
+  it("rejects non-self maintainer removal that would break a live threshold", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("removal-threshold");
+    const second = createMaintainerScenarioFixture("removal-threshold-second");
+    harness.authorizeMaintainer(second);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+    const bootstrapMembership = {
+      maintainerIdCommitment: harness.maintainerIdCommitment,
+      maintainerId: harness.maintainerId,
+      subjectDidCommitment: harness.maintainerDidCommitment,
+      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      seed: new Uint8Array(32),
+      subjectDid: harness.maintainerDid,
+      trustLevel: "bootstrap-maintainer",
+    };
+    const prepared = harness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.executeMaintainerDecisionWithSignatures(bootstrapMembership, "suspend", [{
+      keyId: second.keyId,
+      publicKey: deriveJubjubPublicKeyFromSeed(second.seed),
+      signature: signPolicyBoundMaintainerActionFromSeed(
+        second.seed, prepared.registryId, prepared.policyCommitment,
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    }])).toThrow(/threshold policy/i);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
   });
 
   it("rejects evidence from an incompatible contract format at both verification boundaries", () => {

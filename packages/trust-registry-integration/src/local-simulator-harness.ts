@@ -759,6 +759,7 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:maintainer:propose",
             "tr:maintainer:authorize",
             "tr:maintainer:activate",
+            "tr:policy:thresholds:update",
           ],
           evidenceRules: ["governance evidence hash", "maintainer quorum signatures"],
         },

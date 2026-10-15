@@ -53,11 +53,11 @@ it("encodes Compact action kinds exactly and rejects overlong values", () => {
   expect(() => encodeCompactActionKind(`tr:${"x".repeat(30)}`)).toThrow(/exceeds Compact Bytes<32>/);
 });
 
-it("requires the strongest current quorum to change threshold policy", () => {
+it("uses the default meta-governance quorum for threshold policy revisions", () => {
   const updateKind = encodeCompactActionKind("tr:policy:thresholds:update");
-  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 2n, 3n)).toBe(3n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 2n, 3n)).toBe(1n);
   expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 3n, 2n, 1n)).toBe(3n);
-  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 3n, 2n)).toBe(3n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 3n, 2n)).toBe(1n);
   expect(pureCircuits.actionScopedMaintainerThreshold(
     encodeCompactActionKind("tr:issuer:authorize"), 1n, 2n, 3n,
   )).toBe(1n);

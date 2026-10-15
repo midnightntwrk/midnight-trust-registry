@@ -173,8 +173,8 @@ shorter-lived and more action-oriented than the normative specification.
   24-hour validity window is rejected before governance mutation. The matrix
   also distinguishes exact issuer/verifier API resource lookup and TRQP
   external-recognition tuple matching from client bundle verification.
-- The direct Compact boundary now rejects a changed issuer evidence hash and
-  both attempts to remove the last active maintainer; API actions reject
+- The direct Compact boundary now rejects a changed issuer evidence hash,
+  self-voted removal, and non-self removal below the configured threshold; API actions reject
   duplicate signer entries across all five governed roles. Candidate self-vote
   rejection is observed, but a separate witness is still needed to prove the
   explicit Compact self-DID exclusion rather than an earlier inactive-key gate.

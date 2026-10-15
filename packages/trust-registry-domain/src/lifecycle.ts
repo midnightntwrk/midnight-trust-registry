@@ -18,7 +18,7 @@ const lifecycleTransitionMap: Record<LifecycleStatus, LifecycleStatus[]> = {
   active: ["suspended", "revoked", "archived"],
   suspended: ["revoked", "archived"],
   revoked: ["archived"],
-  superseded: ["archived"],
+  superseded: [],
   archived: [],
 };
 
