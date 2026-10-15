@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   type CircuitContext,
   type CircuitResults,
+  type ContractAddress,
   createCircuitContext,
   createConstructorContext,
   sampleContractAddress,
@@ -79,6 +80,7 @@ export type MaintainerCoAuthorizer = {
 export type TrustRegistryBootstrapConfig = {
   registryId: Uint8Array;
   networkIdCommitment: Uint8Array;
+  contractAddress?: ContractAddress;
   registryDidCommitment: Uint8Array;
   governancePolicyCommitment: Uint8Array;
   maintainerId: Uint8Array;
@@ -100,10 +102,16 @@ export const createMaintainerFixture = (
 
 export class TrustRegistrySimulator {
   readonly contract: Contract<TrustRegistryPrivateState>;
-  readonly contractAddress = sampleContractAddress();
+  readonly contractAddress: ContractAddress;
   circuitContext: CircuitContext<TrustRegistryPrivateState>;
 
   constructor(bootstrap: TrustRegistryBootstrapConfig) {
+    if (bootstrap.contractAddress !== undefined
+      && (!/^[0-9a-f]{64}$/u.test(bootstrap.contractAddress)
+        || /^0{64}$/u.test(bootstrap.contractAddress))) {
+      throw new RangeError("Simulator contract address must be a nonzero 32-byte hex value");
+    }
+    this.contractAddress = bootstrap.contractAddress ?? sampleContractAddress();
     this.contract = new Contract<TrustRegistryPrivateState>(
       trustRegistryWitnesses,
     );

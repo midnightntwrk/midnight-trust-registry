@@ -808,7 +808,7 @@ describe("trust registry contract", () => {
     ).toThrow(/requires threshold 1/i);
   });
 
-  it("initializes the registry with a bootstrap maintainer and records the initial governance event", () => {
+  it("records a network-bound initialization event before a contract address exists", () => {
     const registryId = labelToBytes32("registry:kanon");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
     const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
@@ -817,7 +817,7 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
     );
 
-    const simulator = new TrustRegistrySimulator({
+    const bootstrap = {
       registryId,
       networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment,
@@ -827,7 +827,8 @@ describe("trust registry contract", () => {
       maintainerKeyId: bootstrapMaintainer.keyId,
       maintainerPublicKey: bootstrapPublicKey,
       maintainerThreshold: 1n,
-    });
+    };
+    const simulator = new TrustRegistrySimulator(bootstrap);
 
     const state = simulator.getLedger();
     const maintainer = state.maintainerRecords.lookup(bootstrapMaintainer.keyId);
@@ -849,6 +850,16 @@ describe("trust registry contract", () => {
     expect(state.governanceEventHashes.member(state.lastGovernanceEventHash)).toBe(
       true,
     );
+    const sameNetwork = new TrustRegistrySimulator(bootstrap);
+    const otherNetwork = new TrustRegistrySimulator({
+      ...bootstrap,
+      networkIdCommitment: labelToBytes32("network:other"),
+    });
+    expect(encodeContractAddress(sameNetwork.contractAddress)).not.toEqual(
+      encodeContractAddress(simulator.contractAddress),
+    );
+    expect(sameNetwork.getLedger().lastGovernanceEventHash).toEqual(state.lastGovernanceEventHash);
+    expect(otherNetwork.getLedger().lastGovernanceEventHash).not.toEqual(state.lastGovernanceEventHash);
     expect(maintainer.status).toEqual(MaintainerStatus.active);
     expect(Buffer.from(maintainer.keyId)).toEqual(
       Buffer.from(bootstrapMaintainer.keyId),

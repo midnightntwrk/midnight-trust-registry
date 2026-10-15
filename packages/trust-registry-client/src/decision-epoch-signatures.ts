@@ -151,6 +151,8 @@ export const assertDecisionEpochPublicationSignatures = (
   );
   const computedEventHash = pureCircuits.governanceEventHash(
     context.registryIdCommitment,
+    context.networkIdCommitment,
+    context.contractAddress,
     policyCommitment,
     signerSetHash,
     PUBLISH,
