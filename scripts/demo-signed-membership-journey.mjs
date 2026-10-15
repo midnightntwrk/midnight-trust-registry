@@ -16,7 +16,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature as encodeGovernanceSignature,
   AuthorizationStatus,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
@@ -213,10 +213,13 @@ const admission = {
 };
 const signAction = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const ledger = harness.simulator.getLedger();
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
-    fromHex(prepared.registryId),
-    fromHex(prepared.policyCommitment),
+    ledger.registryId,
+    ledger.deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
+    ledger.governancePolicyCommitment,
     fromHex(prepared.actionKind),
     fromHex(prepared.actionPayloadHash),
     BigInt(prepared.actionSequence),
