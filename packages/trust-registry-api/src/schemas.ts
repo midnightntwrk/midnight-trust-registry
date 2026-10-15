@@ -168,6 +168,16 @@ export const TrustRegistryApiRecognitionEvaluationResponseSchema =
     entry: TrustRegistryRecognitionSnapshotEntrySchema,
   });
 
+export const TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema =
+  TrustRegistryApiAuthorizationEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
+export const TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema =
+  TrustRegistryApiRecognitionEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
 export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
 export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
 export const TrustRegistryApiMutationContextSchema = z.strictObject({
@@ -283,4 +293,10 @@ export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
 >;
 export type TrustRegistryApiRecognitionEvaluationResponse = z.infer<
   typeof TrustRegistryApiRecognitionEvaluationResponseSchema
+>;
+export type TrustRegistryApiAuthorizationEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema
 >;

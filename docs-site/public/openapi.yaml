@@ -95,6 +95,18 @@ components:
           required: [at]
           properties:
             at: { type: string, format: date-time }
+    TimestampedEvidenceResponse:
+      type: object
+      required: [evaluatedAt, trustedAtTime, statusAtTime, epoch, entry, bundle]
+      properties:
+        evaluatedAt: { type: string, format: date-time }
+        trustedAtTime: { type: boolean }
+        statusAtTime: { type: [string, 'null'] }
+        epoch: { type: [object, 'null'] }
+        entry: { type: object }
+        bundle:
+          type: object
+          description: Trust Registry evidence bundle requiring independent epoch and proof verification.
     RecognitionLookup:
       type: object
       required: [recognizedAuthorityDid, scopeResourceId]
@@ -244,6 +256,21 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/HistoricalAuthorizationLookup' } } }
       responses: *queryResponses
+  /v1/authorizations/evaluate/evidence:
+    post:
+      tags: [Query]
+      summary: Export timestamp-selected authorization evidence
+      description: The response is a historical claim, not proof of current trust. Returns 404 for no matching statement and 424 when epoch-bound evidence is unavailable.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/HistoricalAuthorizationLookup' } } }
+      responses:
+        '200':
+          description: Exact-scope temporal evaluation and selected evidence bundle
+          content: { application/json: { schema: { $ref: '#/components/schemas/TimestampedEvidenceResponse' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '424': { $ref: '#/components/responses/MissingEvidence' }
   /v1/authorizations/resolve:
     post:
       tags: [Query]
@@ -281,6 +308,21 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
       responses: *queryResponses
+  /v1/recognitions/evaluate/evidence:
+    post:
+      tags: [Query]
+      summary: Export timestamp-selected recognition evidence
+      description: The response is a historical claim, not proof of current trust. Returns 404 for no matching statement and 424 when epoch-bound evidence is unavailable.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
+      responses:
+        '200':
+          description: Exact-scope temporal evaluation and selected evidence bundle
+          content: { application/json: { schema: { $ref: '#/components/schemas/TimestampedEvidenceResponse' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '424': { $ref: '#/components/responses/MissingEvidence' }
   /v1/recognitions/resolve:
     post:
       tags: [Query]

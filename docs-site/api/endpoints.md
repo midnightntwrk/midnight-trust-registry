@@ -12,16 +12,20 @@ The exact request/response parsers live in [`packages/trust-registry-api/src/sch
 | `GET /v1/authorizations/{role}/{id}` and `.../evidence` | Record and separately retrievable bundle |
 | `GET /v1/decision-evidence/{role}/{id}` | Optional issuer/verifier claim for independent VC-consumer verification |
 | `POST /v1/authorizations/evaluate` | Evaluate exact DID/role/resource at a timestamp |
+| `POST /v1/authorizations/evaluate/evidence` | Export the epoch-bound bundle for that exact timestamp and scope |
 | `POST /v1/authorizations/resolve` | Resolve exact DID/role/resource in current view |
 | `GET /v1/recognitions` and `/v1/recognitions/{id}` | Scoped external recognition list/record |
 | `GET /v1/recognitions/{id}/evidence` | Recognition evidence bundle |
 | `POST /v1/recognitions/evaluate`, `/resolve` | Historical/current exact-scope recognition query |
+| `POST /v1/recognitions/evaluate/evidence` | Export timestamp-selected recognition evidence |
 | `GET /v1/trqp/metadata/{authorityId}` | TRQP metadata projection |
 | `POST /v1/trqp/{authorizations,recognitions}/{query,evidence}` | TRQP query/evidence projection |
 
 Issuer lookup requires `tr:issuer-resource:v1:<sha256>`. Verifier and auditor lookups require `tr:request-resource:v1:<sha256>`. A bare request-profile ID is not accepted. `at` is an ISO timestamp with offset; the service clock is not a consensus clock.
 
 Decision evidence is available only when the host injects a source; otherwise it returns `503`. A successful response has `verification: "client-required"` and `evidence`, with `Cache-Control: no-store`. The reference source builder checks the indexed claim against a separately supplied finalized registry/DID reader before serving, but the HTTP response is still not a root of trust. Consumers must repeat verification with their own authenticated readers before deriving a VC signer descriptor. A missing grant returns `404`; malformed, stale, or unavailable source evidence returns `503` without falling back to a mutable snapshot.
+
+Timestamped evidence export uses the same selector and snapshot as the temporal query. It returns `404` if no statement matches and `424` if that statement has no matching epoch-bound bundle for the requested instant. The response includes the selected evaluation and bundle, not a current trust assertion. Consumers still authenticate the epoch and proof independently.
 
 ## Private intake and governed writes
 

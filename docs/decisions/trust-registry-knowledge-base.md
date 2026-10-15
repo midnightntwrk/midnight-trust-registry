@@ -1148,3 +1148,10 @@ grant while its window is open and rejects the same epoch after that grant is
 suspended. Production implementations still need an authenticated latest
 applicable epoch index if policy requires rejecting duplicate publications
 of an unchanged statement.
+
+The native HTTP API now offers timestamped evidence export for authorization
+and recognition, matching TRQP's archived-bundle selection. It evaluates the
+record and selects its bundle from one snapshot, returns 404 for no matching
+statement, and returns 424 when the statement exists without epoch-bound
+evidence at that instant. The returned bundle remains a claim until independently
+verified against an accepted epoch.

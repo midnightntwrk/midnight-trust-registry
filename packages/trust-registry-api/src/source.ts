@@ -403,6 +403,19 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
 ): Promise<SnapshotTemporalAuthorizationInspection | null> =>
   evaluateAuthorizationInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
 
+export const evaluateAuthorizationEvidenceAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): Promise<(SnapshotTemporalAuthorizationInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
+  const snapshot = await source.loadSnapshot();
+  const inspection = evaluateAuthorizationInSnapshot(snapshot, request, evaluatedAt);
+  return inspection === null ? null : {
+    ...inspection,
+    bundle: authorizationEvidenceAtTime(snapshot, inspection, evaluatedAt),
+  };
+};
+
 export const listRecognitionEntries = async (
   source: TrustRegistryApiStateSource,
   query: TrustRegistryApiRecognitionListQuery = {},
@@ -489,6 +502,19 @@ export const evaluateRecognitionEntryAtTimestamp = async (
   evaluatedAt: string,
 ): Promise<SnapshotTemporalRecognitionInspection | null> =>
   evaluateRecognitionInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
+
+export const evaluateRecognitionEvidenceAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveRecognitionRequest,
+  evaluatedAt: string,
+): Promise<(SnapshotTemporalRecognitionInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
+  const snapshot = await source.loadSnapshot();
+  const inspection = evaluateRecognitionInSnapshot(snapshot, request, evaluatedAt);
+  return inspection === null ? null : {
+    ...inspection,
+    bundle: recognitionEvidenceAtTime(snapshot, inspection, evaluatedAt),
+  };
+};
 
 const bundleMatchesEpoch = (
   bundle: TrustRegistryEvidenceBundle,

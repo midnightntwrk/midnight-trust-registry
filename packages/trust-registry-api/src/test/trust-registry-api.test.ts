@@ -787,8 +787,51 @@ describe("trust registry api", () => {
       expect(result.authorized).toBe(true);
       expect(result.bundle.authorization.status).toBe("active");
       expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const nativeRequest = {
+        role: "issuer",
+        subjectDid: activeBundle.authorization.subjectDid,
+        resourceId: activeBundle.authorization.resourceId,
+        at: activeBundle.epoch.validFrom,
+      };
+      const native = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(nativeRequest),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.authorization.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const wrongScope = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...nativeRequest,
+          resourceId: `${nativeRequest.resourceId.slice(0, -1)}${nativeRequest.resourceId.endsWith("a") ? "b" : "a"}`,
+        }),
+      });
+      expect(wrongScope.status).toBe(404);
     } finally {
       await server.close();
+    }
+
+    const missingArchive = await startServer(createInMemorySource({ ...snapshot, evidenceArchive: [] }));
+    try {
+      const response = await fetch(`${missingArchive.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer",
+          subjectDid: activeBundle.authorization.subjectDid,
+          resourceId: activeBundle.authorization.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(response.status).toBe(424);
+      expect((await response.json()).type).toMatch(/epoch-evidence-unavailable$/u);
+    } finally {
+      await missingArchive.close();
     }
 
     expect(TrustRegistryOperatorSnapshotSchema.safeParse({
@@ -844,6 +887,22 @@ describe("trust registry api", () => {
       expect(result.recognized).toBe(true);
       expect(result.bundle.recognition.status).toBe("active");
       expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const native = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.recognition.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
     } finally {
       await server.close();
     }
@@ -880,6 +939,18 @@ describe("trust registry api", () => {
         }),
       });
       expect(response.status).toBe(424);
+      const native = await fetch(`${poisonedServer.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(424);
     } finally {
       await poisonedServer.close();
     }

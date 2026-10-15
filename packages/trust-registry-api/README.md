@@ -39,11 +39,13 @@ Current route set:
 - `GET /v1/authorizations/:role/:authorizationId`
 - `GET /v1/authorizations/:role/:authorizationId/evidence`
 - `POST /v1/authorizations/evaluate`
+- `POST /v1/authorizations/evaluate/evidence`
 - `POST /v1/authorizations/resolve`
 - `GET /v1/recognitions`
 - `GET /v1/recognitions/:recognitionId`
 - `GET /v1/recognitions/:recognitionId/evidence`
 - `POST /v1/recognitions/evaluate`
+- `POST /v1/recognitions/evaluate/evidence`
 - `POST /v1/recognitions/resolve`
 - `GET /v1/trqp/metadata/:authorityId`
 - `POST /v1/trqp/authorizations/query`

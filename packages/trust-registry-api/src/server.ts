@@ -14,7 +14,9 @@ import {
   applyMutationOperation,
   applySignedMutationOperation,
   evaluateAuthorizationEntryAtTimestamp,
+  evaluateAuthorizationEvidenceAtTimestamp,
   evaluateRecognitionEntryAtTimestamp,
+  evaluateRecognitionEvidenceAtTimestamp,
   createTrqpSourceFromStateSource,
   getAuthorizationEntryById,
   getRecognitionEntryById,
@@ -149,6 +151,7 @@ import {
   TrustRegistryApiApplicationSubmitRequestSchema,
   TrustRegistryApiApplicationTargetSchema,
   TrustRegistryApiAuthorizationEvaluationResponseSchema,
+  TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema,
   TrustRegistryApiAuthorizationListQuerySchema,
   TrustRegistryApiAuthorizationListResponseSchema,
   TrustRegistryApiAuthorizationResponseSchema,
@@ -162,6 +165,7 @@ import {
   TrustRegistryApiSignedMutationRequestSchema,
   TrustRegistryApiProblemDetailsSchema,
   TrustRegistryApiRecognitionEvaluationResponseSchema,
+  TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema,
   TrustRegistryApiRecognitionListQuerySchema,
   TrustRegistryApiRecognitionListResponseSchema,
   TrustRegistryApiRecognitionResponseSchema,
@@ -1755,6 +1759,29 @@ export const createTrustRegistryApiServer = (
 
       if (
         method === "POST"
+        && segments.length === 4
+        && segments[0] === "v1"
+        && segments[1] === "authorizations"
+        && segments[2] === "evaluate"
+        && segments[3] === "evidence"
+      ) {
+        const body = await parseJsonBody(request,
+          (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value), problemBaseUri);
+        const evaluation = await evaluateAuthorizationEvidenceAtTimestamp(options.source, body, body.at);
+        if (evaluation === null) {
+          throw jsonProblem(problemBaseUri, "authorization-not-found", 404,
+            "authorization not found", "No authorization matches the requested scope and timestamp.");
+        }
+        if (evaluation.bundle === null) {
+          throw jsonProblem(problemBaseUri, "epoch-evidence-unavailable", 424,
+            "epoch evidence unavailable", "No matching epoch-bound authorization evidence exists at the requested instant.");
+        }
+        writeJson(response, 200, TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema.parse(evaluation));
+        return;
+      }
+
+      if (
+        method === "POST"
         && segments.length === 3
         && segments[0] === "v1"
         && segments[1] === "authorizations"
@@ -1873,6 +1900,29 @@ export const createTrustRegistryApiServer = (
           200,
           TrustRegistryApiEvidenceResponseSchema.parse(entry.evidence),
         );
+        return;
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 4
+        && segments[0] === "v1"
+        && segments[1] === "recognitions"
+        && segments[2] === "evaluate"
+        && segments[3] === "evidence"
+      ) {
+        const body = await parseJsonBody(request,
+          (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value), problemBaseUri);
+        const evaluation = await evaluateRecognitionEvidenceAtTimestamp(options.source, body, body.at);
+        if (evaluation === null) {
+          throw jsonProblem(problemBaseUri, "recognition-not-found", 404,
+            "recognition not found", "No recognition matches the requested scope and timestamp.");
+        }
+        if (evaluation.bundle === null) {
+          throw jsonProblem(problemBaseUri, "epoch-evidence-unavailable", 424,
+            "epoch evidence unavailable", "No matching epoch-bound recognition evidence exists at the requested instant.");
+        }
+        writeJson(response, 200, TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema.parse(evaluation));
         return;
       }
 
