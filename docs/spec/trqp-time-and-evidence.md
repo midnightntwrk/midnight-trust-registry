@@ -47,6 +47,15 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   verification of the epoch anchor, signatures, and inclusion proof.
 - Epoch window and bundle equality checks compare RFC3339 instants
   semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
+- An independently verified TRQP evidence decision requires an explicit
+  `context.time`, a caller-trusted authority DID, and an epoch anchor selected
+  from authenticated ledger history rather than the response. The verifier
+  MUST match the response tuple and evaluation instant, check the signed
+  epoch and statement inclusion, then recompute `authorized` or `recognized`
+  from the proved lifecycle. For recognition, the verifier requires the exact
+  `recognized_registry_id` and `scope_context`; it MUST NOT treat recognition
+  as a local issuer grant. Ledger finality, canonical historical selection,
+  and trustworthy sequence-to-time mapping remain host obligations.
 
 ## Multiple records for one scope
 

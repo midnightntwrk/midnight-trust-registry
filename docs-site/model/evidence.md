@@ -33,6 +33,13 @@ Compact status sequence before the API response is verified; the HTTP server
 does not choose its own anchor. This fixture-specific selection does not
 establish canonical network history for a production deployment.
 
+The TRQP adapter also exports issuer/verifier and recognition evidence
+verifiers. They require explicit request time, a trusted authority DID, and a
+caller-supplied epoch anchor; they reject a response whose tuple, proof, or
+allow/deny result disagrees with the request and proved lifecycle. Recognition
+requires the exact external registry and scope context and does not authorize
+local issuance.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).
