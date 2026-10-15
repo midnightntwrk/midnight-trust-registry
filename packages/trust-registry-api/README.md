@@ -204,6 +204,11 @@ An embedding host may inject `proposalSubmissionJournal` alongside
 `proposalAdmission` for issuer, verifier, auditor, and maintainer proposal
 submission. The private file adapter reserves the role, authorization ID,
 and accepted evidence commitment before calling the Compact-backed port.
+Before reservation the API verifies that every supplied maintainer signature
+signs the current prepared action digest and rejects duplicate key IDs.
+This preflight cannot establish active maintainer membership, quorum, or the
+registered evidence-verifier key; Compact remains authoritative for those
+rules. A later rejection remains an uncertain submission and needs recovery.
 Duplicate attempts return 409 `proposal-submission-uncertain`, including
 after process restart. A returned event hash means `submitted`, not finalized.
 Any failure after the reservation returns 503 `proposal-submission-uncertain`,

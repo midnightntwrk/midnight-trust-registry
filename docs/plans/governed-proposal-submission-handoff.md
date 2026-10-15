@@ -11,7 +11,11 @@ raw VC/VP, nonce, holder data, maintainer signatures, or verifier signature.
 
 For issuer, verifier, auditor, and maintainer proposals the API first checks
 the accepted application receipt, recomputes the current Compact action, and
-parses supplied signatures. Immediately before invoking the Compact-backed
+parses supplied signatures. It verifies each maintainer vote over the exact
+prepared action and rejects duplicate key IDs before reservation. This
+cryptographic preflight does not prove active membership, quorum, or the
+evidence-verifier's registered key; Compact still makes those decisions.
+Immediately before invoking the Compact-backed
 port it reserves the exact `(role, authorization ID, evidence commitment)`
 under a cross-process file lock. A second attempt is rejected even if the
 first result is unknown. A returned event hash advances the journal to

@@ -52,6 +52,11 @@ const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedG
 describe("Compact-backed issuer proposals over HTTP", () => {
   it("does not resubmit after a lost Compact response and reconciles a finalized observation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
+    const second = createMaintainerScenarioFixture("issuer-journal-second");
+    const third = createMaintainerScenarioFixture("issuer-journal-third");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const issuer = createIssuerScenarioFixture("issuer-journal-candidate");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
     const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
@@ -76,8 +81,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     };
     const directory = await mkdtemp(join(tmpdir(), "tr-issuer-journal-http-"));
     const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
-    const eventHash = `0x${"a1".repeat(32)}`;
-    let observation: { eventHash: string; evidenceCommitment: string } | null = null;
+    let finalizedLedger = harness.simulator.getLedger();
+    let eventHash: string | undefined;
     let executions = 0;
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "journal" }) },
@@ -94,11 +99,16 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       proposalSubmissionJournal: journal,
       governedIssuerProposals: {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
-        execute: async () => {
+        execute: async (_, submitted, signers, verifierSignature) => {
           executions += 1;
+          eventHash = `0x${Buffer.from(harness.executeIssuerProposalWithSignatures(
+            issuer, submitted, signers, verifierSignature,
+          )).toString("hex")}`;
           throw new Error("response lost after Compact submission");
         },
-        resolve: async () => observation,
+        resolve: async (authorizationId) => resolveCompactProposalObservation(
+          async () => finalizedLedger, harness.registryId, "issuer", authorizationId,
+        ),
       },
     });
     try {
@@ -112,20 +122,29 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const preparedResponse = await post("prepare", { evidence });
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
-      const maintainer = createMaintainerScenarioFixture("issuer-journal-signer");
       const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
-      const request = { evidence, prepared, signers: [signPrepared(maintainer, prepared)],
+      const request = { evidence, prepared, signers: [signPrepared(second, prepared), signPrepared(third, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
+      const wrongSequence = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
+      const forged = await post("submit", { ...request, signers: [signPrepared(second, wrongSequence), request.signers[1]] });
+      expect(forged.status).toBe(403);
+      expect((await forged.json()).type).toMatch(/invalid-governed-signature$/u);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      expect(executions).toBe(0);
+      const duplicateVotes = await post("submit", { ...request, signers: [request.signers[0], request.signers[0]] });
+      expect(duplicateVotes.status).toBe(403);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       const uncertain = await post("submit", request);
       expect(uncertain.status).toBe(503);
       expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);
       expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+      expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);
-      expect((await duplicate.json()).type).toMatch(/proposal-submission-uncertain$/u);
       expect(executions).toBe(1);
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
-      observation = { eventHash, evidenceCommitment: evidence.commitment };
+      finalizedLedger = harness.simulator.getLedger();
+      expect(eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "observed", eventHash });
       expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
     } finally {

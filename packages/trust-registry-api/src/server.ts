@@ -37,6 +37,7 @@ import {
 import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 import {
   decodeGovernedMembershipSigners,
+  hasValidProposalSignerBundle,
   GovernedMembershipActionReceiptSchema,
   GovernedMembershipActionRejectedError,
   GovernedMembershipActionSchema,
@@ -807,6 +808,16 @@ export const createTrustRegistryApiServer = (
     }
   };
 
+  const requireValidProposalSigners = (
+    prepared: Parameters<typeof hasValidProposalSignerBundle>[0],
+    signers: Parameters<typeof hasValidProposalSignerBundle>[1],
+  ): void => {
+    if (!hasValidProposalSignerBundle(prepared, signers)) {
+      throw jsonProblem(problemBaseUri, "invalid-governed-signature", 403,
+        "invalid governed signature", "A maintainer vote does not sign the prepared proposal action.");
+    }
+  };
+
   const resolveProposal = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -1256,6 +1267,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("issuer", authorizationId, body.evidence.commitment,
@@ -1324,6 +1336,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("verifier", authorizationId, body.evidence.commitment,
@@ -1392,6 +1405,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("auditor", authorizationId, body.evidence.commitment,
@@ -1460,6 +1474,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("maintainer", maintainerId, body.evidence.commitment,
