@@ -38,68 +38,70 @@ import {
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("trust registry local simulator integration", () => {
-  it("archives denied proposals without erasing history or trapping their scopes", () => {
-    const harness = new LocalTrustRegistryIntegrationHarness("proposal-denial");
-    const issuer = createIssuerScenarioFixture("denied-issuer");
-    const verifier = createVerifierScenarioFixture("denied-verifier");
-    const auditor = createAuditorScenarioFixture("denied-auditor");
-    const recognition = createRecognitionScenarioFixture("denied-recognition");
-    const maintainer = createMaintainerScenarioFixture("denied-maintainer");
+  it.each(["issuer", "verifier", "auditor", "recognition", "maintainer"] as const)(
+    "archives denied %s proposals without erasing history or trapping their scopes",
+    (role) => {
+      const harness = new LocalTrustRegistryIntegrationHarness("proposal-denial");
+      const issuer = createIssuerScenarioFixture("denied-issuer");
+      const verifier = createVerifierScenarioFixture("denied-verifier");
+      const auditor = createAuditorScenarioFixture("denied-auditor");
+      const recognition = createRecognitionScenarioFixture("denied-recognition");
+      const maintainer = createMaintainerScenarioFixture("denied-maintainer");
 
-    const cases = [
-      {
-        propose: () => harness.proposeIssuer(issuer),
-        archive: () => harness.archiveIssuer(issuer),
-        readStatus: () => harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status,
-        proposeReplacement: () => harness.proposeIssuer({
-          ...issuer,
-          authorizationId: `${issuer.authorizationId}:replacement`,
-          authorizationIdCommitment: bytes32Commitment(`${issuer.authorizationId}:replacement`),
-        }),
-      },
-      {
-        propose: () => harness.proposeVerifier(verifier),
-        archive: () => harness.archiveVerifier(verifier),
-        readStatus: () => harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment).status,
-        proposeReplacement: () => harness.proposeVerifier({
-          ...verifier,
-          authorizationId: `${verifier.authorizationId}:replacement`,
-          authorizationIdCommitment: bytes32Commitment(`${verifier.authorizationId}:replacement`),
-        }),
-      },
-      {
-        propose: () => harness.proposeAuditor(auditor),
-        archive: () => harness.archiveAuditor(auditor),
-        readStatus: () => harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment).status,
-        proposeReplacement: () => harness.proposeAuditor({
-          ...auditor,
-          authorizationId: `${auditor.authorizationId}:replacement`,
-          authorizationIdCommitment: bytes32Commitment(`${auditor.authorizationId}:replacement`),
-        }),
-      },
-      {
-        propose: () => harness.proposeRecognition(recognition),
-        archive: () => harness.archiveRecognition(recognition),
-        readStatus: () => harness.simulator.getRecognition(recognition.recognitionIdCommitment).status,
-        proposeReplacement: () => harness.proposeRecognition({
-          ...recognition,
-          recognitionId: `${recognition.recognitionId}:replacement`,
-          recognitionIdCommitment: bytes32Commitment(`${recognition.recognitionId}:replacement`),
-        }),
-      },
-      {
-        propose: () => harness.proposeMaintainer(maintainer),
-        archive: () => harness.archiveMaintainer(maintainer),
-        readStatus: () => harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment).status,
-        proposeReplacement: () => harness.proposeMaintainer({
-          ...maintainer,
-          maintainerId: `${maintainer.maintainerId}:replacement`,
-          maintainerIdCommitment: bytes32Commitment(`${maintainer.maintainerId}:replacement`),
-        }),
-      },
-    ];
+      const cases = {
+        issuer: {
+          propose: () => harness.proposeIssuer(issuer),
+          archive: () => harness.archiveIssuer(issuer),
+          readStatus: () => harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status,
+          proposeReplacement: () => harness.proposeIssuer({
+            ...issuer,
+            authorizationId: `${issuer.authorizationId}:replacement`,
+            authorizationIdCommitment: bytes32Commitment(`${issuer.authorizationId}:replacement`),
+          }),
+        },
+        verifier: {
+          propose: () => harness.proposeVerifier(verifier),
+          archive: () => harness.archiveVerifier(verifier),
+          readStatus: () => harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment).status,
+          proposeReplacement: () => harness.proposeVerifier({
+            ...verifier,
+            authorizationId: `${verifier.authorizationId}:replacement`,
+            authorizationIdCommitment: bytes32Commitment(`${verifier.authorizationId}:replacement`),
+          }),
+        },
+        auditor: {
+          propose: () => harness.proposeAuditor(auditor),
+          archive: () => harness.archiveAuditor(auditor),
+          readStatus: () => harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment).status,
+          proposeReplacement: () => harness.proposeAuditor({
+            ...auditor,
+            authorizationId: `${auditor.authorizationId}:replacement`,
+            authorizationIdCommitment: bytes32Commitment(`${auditor.authorizationId}:replacement`),
+          }),
+        },
+        recognition: {
+          propose: () => harness.proposeRecognition(recognition),
+          archive: () => harness.archiveRecognition(recognition),
+          readStatus: () => harness.simulator.getRecognition(recognition.recognitionIdCommitment).status,
+          proposeReplacement: () => harness.proposeRecognition({
+            ...recognition,
+            recognitionId: `${recognition.recognitionId}:replacement`,
+            recognitionIdCommitment: bytes32Commitment(`${recognition.recognitionId}:replacement`),
+          }),
+        },
+        maintainer: {
+          propose: () => harness.proposeMaintainer(maintainer),
+          archive: () => harness.archiveMaintainer(maintainer),
+          readStatus: () => harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment).status,
+          proposeReplacement: () => harness.proposeMaintainer({
+            ...maintainer,
+            maintainerId: `${maintainer.maintainerId}:replacement`,
+            maintainerIdCommitment: bytes32Commitment(`${maintainer.maintainerId}:replacement`),
+          }),
+        },
+      };
 
-    for (const entry of cases) {
+      const entry = cases[role];
       entry.propose();
       expect(entry.readStatus()).toBe(ContractAuthorizationStatus.proposed);
       expect(entry.proposeReplacement).toThrow(/live authorization|live recognition|live membership/u);
@@ -109,8 +111,8 @@ describe("trust registry local simulator integration", () => {
       expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeArchive + 1n);
       expect(entry.proposeReplacement).not.toThrow();
       expect(entry.readStatus()).toBe(ContractAuthorizationStatus.archived);
-    }
-  });
+    },
+  );
 
   it("requires the current maintainer quorum to deny a pending issuer proposal", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("proposal-denial-quorum");
