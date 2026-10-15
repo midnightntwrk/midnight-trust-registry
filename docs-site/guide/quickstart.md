@@ -26,6 +26,8 @@ pnpm run demo:signed-maintainer
 Each signed journey starts a fresh private operator-workspace file and serves
 its API reads from that file. Governed Compact epoch publication persists the
 new simulator projection; unsigned fixture mutation routes remain disabled.
+The demo acquires the workspace lock before the Compact epoch action and
+checks that another process receives 409 without advancing that action.
 The file adapter provides local durability and locking, not network finality
 or atomic admission-plus-governance execution.
 

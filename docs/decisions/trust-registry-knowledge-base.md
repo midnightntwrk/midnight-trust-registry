@@ -45,6 +45,13 @@ shorter-lived and more action-oriented than the normative specification.
   generation; the 8.5 MiB ZKIR directory yielded more than 1.5 GiB of keys.
   Focused API/DOM/Chrome checks and cached light builds remain the practical
   inner loop; keep one full proving run per coherent publication batch.
+- The stacked local #59 journey now serves all four signed membership demos
+  from a fresh private file-backed operator workspace, not a memory API
+  snapshot. Governed epoch publication projects the Compact result into the
+  workspace file while holding its cross-process lock. A second process
+  holding that lock causes 409 before Compact advances. Unsafe fixture
+  mutation routes stay disabled. This closes one local-host gap but does not
+  make admission plus governance atomic or establish network finality.
 
 ## October 2026 Local Functional Stack
 

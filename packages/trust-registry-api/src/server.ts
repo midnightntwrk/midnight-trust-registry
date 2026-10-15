@@ -644,6 +644,10 @@ const mapGovernedEpochError = (error: unknown, problemBaseUri: string): never =>
     throw jsonProblem(problemBaseUri, "governed-epoch-rejected", 403,
       "governed epoch publication rejected");
   }
+  if (error instanceof WorkspaceMutationLockedError) {
+    throw jsonProblem(problemBaseUri, "governance-write-locked", 409,
+      "governance write locked");
+  }
   throw error;
 };
 

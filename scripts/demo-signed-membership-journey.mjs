@@ -64,6 +64,7 @@ import {
 import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admin-console/dist/api.js";
 import { TrustRegistryApplicantPortalClient } from "../packages/trust-registry-applicant-portal/dist/api.js";
 import { verifyTrqpAuthorizationEvidenceFromApi } from "../adapters/trqp/dist/index.js";
+import { withOtherProcessHoldingWorkspace } from "./workspace-lock-fixture.mjs";
 
 const role = process.argv[2];
 if (role !== "issuer" && role !== "verifier" && role !== "auditor" && role !== "maintainer") {
@@ -183,7 +184,8 @@ const signingPorts = await createApplicationVpIntakePorts({
   signer: resolverFixture.signer,
 });
 const stateDirectory = await mkdtemp(join(tmpdir(), `tr-signed-${role}-`));
-const workspaceSource = createWorkspaceFileSource(join(stateDirectory, "workspace.json"));
+const workspacePath = join(stateDirectory, "workspace.json");
+const workspaceSource = createWorkspaceFileSource(workspacePath);
 await workspaceSource.writeWorkspace(workspaceForSnapshot());
 const admissionPath = join(stateDirectory, "admission.json");
 const registration = new FileApplicationAdmissionStore(
@@ -281,23 +283,25 @@ const server = createTrustRegistryApiServer({
       return harness.prepareRegistryEpochPublicationAction(epochLabel);
     },
     async execute(epochLabel, signers) {
-      let epoch;
-      try {
-        epoch = harness.executeRegistryEpochPublicationWithSignatures(epochLabel, signers);
-      } catch {
-        throw new GovernedEpochPublicationRejectedError();
-      }
-      snapshot = publishSimulatorSnapshot(harness, {
-        label,
-        ...(profile.snapshotKey !== null ? {
-          [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
-        } : {}),
-      }, snapshot, epoch);
-      await workspaceSource.withExclusiveWrite(() => workspaceSource.writeWorkspace(workspaceForSnapshot()));
-      assert.equal((await workspaceSource.loadSnapshot()).currentEpoch.epochId, snapshot.currentEpoch.epochId);
-      assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
-        asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
-      return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
+      return workspaceSource.withExclusiveWrite(async () => {
+        let epoch;
+        try {
+          epoch = harness.executeRegistryEpochPublicationWithSignatures(epochLabel, signers);
+        } catch {
+          throw new GovernedEpochPublicationRejectedError();
+        }
+        snapshot = publishSimulatorSnapshot(harness, {
+          label,
+          ...(profile.snapshotKey !== null ? {
+            [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
+          } : {}),
+        }, snapshot, epoch);
+        await workspaceSource.writeWorkspace(workspaceForSnapshot());
+        assert.equal((await workspaceSource.loadSnapshot()).currentEpoch.epochId, snapshot.currentEpoch.epochId);
+        assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
+          asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
+        return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
+      });
     },
   },
   authorizePendingApplicationRegistration: async (request) => {
@@ -413,6 +417,16 @@ try {
       signers: quorumSignatures(prepared),
     })).status, 409);
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    if (phase === "activate") {
+      await withOtherProcessHoldingWorkspace(workspacePath, async () => {
+        const locked = await post(publishPath, {
+          label: epochLabel, prepared, signers: quorumSignatures(prepared),
+        });
+        assert.equal(locked.status, 409);
+        assert.match((await locked.json()).type, /governance-write-locked$/u);
+      });
+      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    }
     const receipt = await adminClient.submitGovernedEpoch({
       label: epochLabel, prepared, signers: quorumSignatures(prepared),
     });
@@ -797,7 +811,7 @@ try {
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
       "proposal-replay:409", "lost-response-recovered:200",
       "premature-activation:403", "stale-governed-context:409",
-      "single-epoch-signer:403", "duplicate-epoch-signer:403",
+      "single-epoch-signer:403", "duplicate-epoch-signer:403", "cross-process-epoch-lock:409",
       "wrong-epoch-label:409", "stale-epoch-context:409",
       ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
         "expired-evidence:client", "out-of-scope-query:404"]),

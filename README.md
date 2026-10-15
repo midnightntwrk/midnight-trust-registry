@@ -184,7 +184,9 @@ for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
 serves public queries from a fresh private file-backed operator workspace.
 Only the host's governed epoch-publication port updates that workspace from
-the simulator projection; unsafe fixture mutation routes remain disabled. It
+the simulator projection. It acquires the local workspace lock before Compact
+execution, so a competing process gets 409 without advancing governance.
+Unsafe fixture mutation routes remain disabled. It
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
 maintainer proposal/approval/activation, and externally signed registry epoch
 publication through the admin console API client. The publish route rejects
