@@ -69,14 +69,34 @@ following fields are required before canonical serialization:
   "expiresAt": "2026-07-28T00:00:00Z",
   "challengeHash": "0x...32-byte-hex...",
   "presentationHash": "0x...32-byte-hex...",
-  "claimsCommitment": "0x...32-byte-hex..."
+  "claimsCommitment": "0x...32-byte-hex...",
+  "statusDecisionCommitment": "0x...32-byte-hex..."
 }
 ```
 
-`presentationHash` and `claimsCommitment` are privacy-preserving commitments,
+`presentationHash`, `claimsCommitment`, and `statusDecisionCommitment` are
+privacy-preserving commitments,
 not the VP or claim values. `scopeCommitment` binds the role-specific issuer,
 verifier, auditor, or maintainer scope. All timestamps use RFC 3339 UTC with a
 `Z` suffix. Hex values are lowercase and encode exactly 32 bytes.
+For the Midnight VC/VP reference path, `statusDecisionCommitment` is SHA-256
+over canonical JSON of the domain tag
+`tr:application:verified-status-decision:v1`, the verified signed status
+statement (including its proof), the status authority DID state version ID,
+and the complete verified issuer status-policy binding from the governed grant.
+The verifier computes it only after checking the governed status registry and
+authority key, credential binding, challenge, active flag, freshness, and
+JubJub signature. It binds the decision used at intake but is not a public
+non-revocation proof: independent later audit requires access to the private
+signed statement and authenticated historical DID state. The registry does
+not store the statement or VP.
+An auditor with the private signed statement, the pinned credential body and
+status binding, original challenge, evaluation instant, and authenticated
+historical DID state MAY recompute this value using the integration package's
+`verifyApplicationStatusDecisionWitness` helper. A public envelope alone is
+not enough to reproduce the status decision. The historical DID resolver and
+governed issuer binding must be independently authenticated, not supplied by
+the same unauthenticated response being audited.
 The governed resource type and ID are signed separately because one issuer
 scope can authorize several resource kinds. Proposal intake MUST compare both
 fields against the proposed resource, not only the scope commitment.
@@ -259,12 +279,26 @@ Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional
 governed proposal resolution port can recover a lost HTTP submit receipt by
-reading the Compact proposal event and matching its evidence commitment to
-the admitted application. A `not-observed` response is ambiguous, not a
-failed-transaction proof, and MUST NOT trigger automatic resubmission.
-The local simulator observes committed actions immediately for issuer,
-verifier, auditor, and maintainer proposals; this is not a production finality
-or cross-store recovery protocol.
+reading the Compact proposal evidence record and matching its evidence
+commitment to the admitted application. The API package exports
+`resolveCompactProposalObservation` for issuer, verifier, auditor, maintainer,
+and recognition proposal records. The recognition HTTP resolution route
+requires private request authorization and the exact accepted accreditation
+receipt, application binding, and evidence commitment. It may recover an
+observed event after the receipt window has passed, but cannot authorize a new
+proposal. The applicant portal exposes the authority challenge, externally
+signed assertion plus accreditation VP submission, accepted-receipt lookup,
+and proposal recovery only through an authenticated same-origin host. It
+clears the raw submission form after use and does not store the VP in browser
+storage. Recovery sends only the accepted receipt ID and evidence commitment,
+not the underlying VP or a token in the URL or browser storage.
+The caller MUST provide an independently finalized ledger view and the expected registry
+ID; the resolver checks the latter against Compact state. An unconfirmed
+transaction result is not a substitute. A `not-observed` response is
+ambiguous, not a failed-transaction proof, and MUST NOT trigger automatic
+resubmission. Simulator tests show that an unfinalized write remains
+unobserved until the supplied finalized view advances. A production finality
+reader, authoritative host, and cross-store recovery protocol remain open.
 
 The API package has a reference challenge-to-proposal intake seam. It checks
 the complete canonical governed binding and performs a non-consuming live
@@ -305,11 +339,35 @@ bytes, checks their published VC/VP signatures against Midnight DID keys, and
 derives role scope from the signed fixture credential body. The signed fixture
 presentation body names that credential body root and holder DID; a separately
 valid presentation for a different credential is rejected before eligibility.
-Its test-family status decision must match the signed registry, handle, and
-authority method and remain active and fresh. It still uses
-test-only issuer eligibility and status answers, accepts only its fixture
-credential-body format, and MUST NOT be mounted as a public verifier or treated
-as production accreditation/non-revocation evidence.
+By default, its family verifies a five-minute, nonce- and credential-root-bound
+status attestation against a pinned status registry and assertion method. The
+fixture pins these from its signed credential body; production MUST derive the
+anchor from a verified governed issuer status-policy binding instead. The
+authority's current Midnight DID
+assertion key verifies a domain-separated JubJub signature. The registry,
+method, handle, credential root, nonce hash, active flag, observation window,
+and DID state version are all checked before returning an expiry bound.
+Explicit `statusDecision` overrides exist only for negative test cases. The
+fixture still uses test-only issuer eligibility and a deterministic attestation
+fetcher, accepts only its fixture credential-body format, and MUST NOT be
+mounted as a public verifier. A signed authority assertion is not an
+independent status-registry root or non-revocation proof.
+
+The application VP family interface MUST return the full governed issuer
+status-policy binding from issuer eligibility; it MUST NOT return a bare
+boolean. The verifier compares that binding's status registry with the signed
+credential binding before consulting status, then passes the exact binding,
+nonce, and evaluation instant to the status source. A reference eligibility
+adapter verifies current active issuer decision evidence through caller-owned
+finality-aware registry and DID readers, then matches the presented issuer DID,
+assertion method public key, and status-registry ID. The host selects the
+permitted issuer resource and applicant roles; the credential does not select
+its own trust anchor. The reader and attestation fetcher still need production
+implementations, and the deterministic fixture's issuer grant is not governed.
+The simulator composition test additionally binds a signed fixture VC/VP to
+an independently verified active issuer decision and a challenge-bound status
+attestation; it rejects a current grant reported as suspended. This proves the
+reference wiring locally, not production finality or live revocation.
 
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store

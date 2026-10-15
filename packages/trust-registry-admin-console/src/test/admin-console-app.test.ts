@@ -125,7 +125,7 @@ describe("admin console browser handlers", () => {
       signature: "0x0102",
     }];
     const posted: { path: string; body: string | undefined }[] = [];
-    let status: "proposed" | "authorized" | "active" | "suspended" | "revoked" = "proposed";
+    let status: "proposed" | "authorized" | "active" | "suspended" | "revoked" | "archived" = "proposed";
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (path.startsWith("/v1/governed/")) {
@@ -133,7 +133,8 @@ describe("admin console browser handlers", () => {
           posted.push({ path, body: init.body?.toString() });
           status = path.endsWith("/approve") ? "authorized"
             : path.endsWith("/activate") ? "active"
-              : path.endsWith("/suspend") ? "suspended" : "revoked";
+              : path.endsWith("/suspend") ? "suspended"
+                : path.endsWith("/archive") ? "archived" : "revoked";
           return Response.json({ eventHash: `0x${"09".repeat(32)}` }, { status: 202 });
         }
         return Response.json(prepared);
@@ -193,7 +194,7 @@ describe("admin console browser handlers", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("Compact approve accepted"));
     expect(root.querySelector("[data-governed-prepare]")?.textContent).toContain("activate");
     for (const [action, nextAction] of [
-      ["activate", "suspend"], ["suspend", "revoke"], ["revoke", null],
+      ["activate", "suspend"], ["suspend", "revoke"], ["revoke", "archive"], ["archive", null],
     ] as const) {
       root.querySelector<HTMLButtonElement>("[data-governed-prepare]")!.click();
       await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
@@ -206,6 +207,10 @@ describe("admin console browser handlers", () => {
       await vi.waitFor(() => expect(posted.at(-1)?.path).toBe(
         `/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/${action}`,
       ));
+      if (action === "activate") {
+        await vi.waitFor(() => expect(root.querySelector('[data-governed-prepare="archive"]'))
+          .not.toBeNull());
+      }
       if (nextAction === null) {
         await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).toBeNull());
       } else {
@@ -214,6 +219,76 @@ describe("admin console browser handlers", () => {
       }
     }
     expect(posted.every((request) => !request.path.startsWith("/v1/applications/"))).toBe(true);
+  });
+
+  it("lets an operator archive a proposed auditor with a separately prepared signed action", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const requested: string[] = [];
+    const posted: string[] = [];
+    let status: "proposed" | "archived" = "proposed";
+    const prepared = {
+      registryId: `0x${"01".repeat(32)}`,
+      targetId: `0x${"02".repeat(32)}`,
+      policyCommitment: `0x${"03".repeat(32)}`,
+      actionKind: `0x${"04".repeat(32)}`,
+      actionPayloadHash: `0x${"05".repeat(32)}`,
+      actionSequence: "7",
+      previousLifecycleEventHash: `0x${"06".repeat(32)}`,
+      evidenceHash: `0x${"07".repeat(32)}`,
+    };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path.startsWith("/v1/governed/")) {
+        if (init?.method === "POST") {
+          posted.push(path);
+          status = "archived";
+          return Response.json({ eventHash: `0x${"08".repeat(32)}` }, { status: 202 });
+        }
+        requested.push(path);
+        return Response.json(prepared);
+      }
+      if (path === "/v1/registry/summary") {
+        return Response.json({
+          issuerCounts: counts(), verifierCounts: counts(),
+          auditorCounts: { ...counts(), [status]: 1 }, recognitionCounts: counts(),
+          currentEpochId: "epoch:1", registryLabel: "local", registryId: "registry:local",
+          registryDid: "did:midnight:testnet:registry", policyId: "policy:local", epochCount: 1,
+        });
+      }
+      return Response.json({ entries: path === "/v1/authorizations/auditor"
+        ? [{ ...auditor, authorization: { ...auditor.authorization, status } }] : [] });
+    });
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      storage: window.localStorage,
+      fetchImpl: fetchImpl as typeof fetch,
+      confirm: () => true,
+    });
+
+    await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare='archive']")).not.toBeNull());
+    root.querySelector<HTMLButtonElement>("[data-governed-prepare='approve']")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
+    root.querySelector<HTMLButtonElement>("[data-governed-prepare='archive']")!.click();
+    await vi.waitFor(() => expect(requested.at(-1)).toBe(
+      "/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/archive",
+    ));
+    await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
+    const signerInput = root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")!;
+    signerInput.value = JSON.stringify([{
+      keyId: `0x${"09".repeat(32)}`,
+      publicKey: { x: "1", y: "2" },
+      signature: "0x0102",
+    }]);
+    signerInput.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(posted).toEqual([
+      "/v1/governed/auditor/auth%3Aauditor%3Acompliance/actions/archive",
+    ]));
+    await vi.waitFor(() => expect(root.textContent).toContain("Archived"));
+    expect(root.querySelector("[data-governed-prepare='approve']")).toBeNull();
   });
 
   it("prepares a redacted issuer proposal and invalidates stale evidence before external signing", async () => {
@@ -241,6 +316,7 @@ describe("admin console browser handlers", () => {
         evidenceVerifierDid: "did:midnight:testnet:verifier", verifiedAt: "2026-10-13T00:00:00Z",
         expiresAt: "2026-10-13T01:00:00Z", challengeHash: `0x${"bb".repeat(32)}`,
         presentationHash: `0x${"cc".repeat(32)}`, claimsCommitment: `0x${"dd".repeat(32)}`,
+        statusDecisionCommitment: `0x${"ee".repeat(32)}`,
       },
       commitment: `0x${"ee".repeat(32)}`,
       signature: { keyId: "did:midnight:testnet:verifier#assertion-1", algorithm: "jubjub-schnorr", value: "0x0102" },

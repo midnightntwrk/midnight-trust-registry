@@ -121,7 +121,8 @@ This API is a local reference gateway, not a claim that its fixture replay
 passes external maintainer signatures into a live Compact contract.
 
 The separate governed-action route accepts `issuer`, `verifier`, `auditor`,
-`maintainer`, and `recognition` targets with `approve` and `activate` actions
+`maintainer`, and `recognition` targets with `approve`, `activate`, `suspend`,
+`revoke`, and `archive` actions
 only when the server is constructed with `governedMembershipActions`. Without the port it
 returns 503 and never falls back to workspace replay. `GET` returns the
 current registry, authorization, policy, action, sequence, predecessor event,
@@ -138,6 +139,12 @@ For `recognition`, the path's `authorizationId` is the recognition ID; an
 active recognition is not a local issuer, verifier, auditor, or maintainer
 authorization. The recognition port must preserve the recognized authority,
 external registry, and exact scope bound by the prepared Compact digest.
+Archiving a proposed target is a quorum-signed denial. The archived record
+remains in history and has neither an approval nor an activation timestamp.
+The authorization and recognition evidence routes may return that archived
+record for audit, but a relying party must reject it as a current active
+grant. Timestamped evaluation reports `trustedAtTime: false` for both its
+proposed and archived states.
 A stale context returns 409, invalid
 signer bundle 403, malformed signature 400, and accepted transition 202 with
 the Compact event hash. A 202 is not network finality; a network-backed port
@@ -277,6 +284,17 @@ currently authorized. The packaged CLI does not install this port and returns
 port's applicant authorization callback and returns the current server-owned
 binding with `Cache-Control: no-store`. Neither route advertises cross-origin
 browser access, including error and preflight responses.
+An archived Compact proposal does not automatically clear its private
+registration reservation. The embedding host must call `recordArchived` with
+an observation matching the original application ID, authorization ID,
+registry, applicant DID, role, scope commitment, and governed resource. Its
+verifier callback must independently authenticate the archived Compact event
+and finality and return its authenticated lifecycle event hash. The transition
+requires that hash to match the observation. There is no public HTTP route for this
+transition. The original application and nonce remain recorded, its pending
+VP binding is no longer served, and a new application **and** authorization ID
+may then reuse the scope. A missing or failed verifier leaves the reservation
+pending and fails closed.
 The optional `nonApiGetHandler` composes static assets on the same origin
 without intercepting `/v1` API routes. The loopback-only
 `scripts/demo-auditor-admission.mjs` host uses it for a fixture applicant
@@ -291,7 +309,9 @@ receipt lookup. It uses a cross-process lock, validated versioned state,
 instances can reopen the same state and replayed registration or evidence is
 rejected. Its workspace callback must return the current simulator-derived
 policy and epoch, and the store rechecks that view before committing a signed
-application. It does not store raw VPs. The joined issuer/verifier/auditor/maintainer demos combine it with
+application. Its `recordArchived` transition persists the same host-verified
+terminal observation under the file lock; it does not infer archival from an
+HTTP request or from a mutable workspace flag. It does not store raw VPs. The joined issuer/verifier/auditor/maintainer demos combine it with
 `FileApplicationChallengeStore` and a 2-of-3 Compact simulator. These two files
 and the Compact ledger are not one atomic transaction; stale locks require
 operator recovery, and the adapter is not configured in the packaged CLI.

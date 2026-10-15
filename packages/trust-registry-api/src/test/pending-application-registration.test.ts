@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryPendingApplicationRegistrationPort,
+  reconcileArchivedPendingApplication,
   transitionPendingApplicationRegistration,
   type PendingApplicationRegistrationState,
 } from "../pending-application-registration.js";
@@ -164,6 +165,49 @@ describe("pending application registration transition", () => {
     }
     expect(accepted.applications).toHaveLength(1);
     expect(accepted.consumedNonces).toHaveLength(1);
+  });
+
+  it("releases only a verified archived scope while retaining old IDs and nonces", async () => {
+    const initial = initialState();
+    const first = requestFor(initial);
+    const pending = await transitionPendingApplicationRegistration(initial, first, evidenceVerifierDid, now, resolver);
+    const record = pending.applications[0]!;
+    const observation = {
+      authorizationId: record.authorizationId,
+      binding: record.binding,
+      status: "archived" as const,
+      archiveEventHash: `0x${"ab".repeat(32)}`,
+    };
+    const replacement = requestFor(pending, {
+      applicationId: "application:auditor:company:v2",
+      authorizationId: "auth:auditor:company:v2",
+      nonceByte: "23",
+    });
+    await expect(transitionPendingApplicationRegistration(pending, replacement, evidenceVerifierDid, now, resolver))
+      .rejects.toMatchObject({ reason: "duplicate-scope" });
+    await expect(reconcileArchivedPendingApplication(pending, observation, async () => null))
+      .rejects.toMatchObject({ reason: "unverified-archive" });
+    await expect(reconcileArchivedPendingApplication(pending, {
+      ...observation, authorizationId: "auth:auditor:substituted",
+    }, async () => observation.archiveEventHash)).rejects.toMatchObject({ reason: "archive-mismatch" });
+    await expect(reconcileArchivedPendingApplication(pending, observation, async () => `0x${"cd".repeat(32)}`))
+      .rejects.toMatchObject({ reason: "unverified-archive" });
+    expect(pending.applications[0]?.status).toBe("pending");
+
+    const archived = await reconcileArchivedPendingApplication(pending, observation, async () => observation.archiveEventHash);
+    expect(archived.applications[0]).toMatchObject({ status: "archived", archiveEventHash: observation.archiveEventHash });
+    expect(archived.consumedNonces).toEqual(pending.consumedNonces);
+    const accepted = await transitionPendingApplicationRegistration(archived, replacement, evidenceVerifierDid, now, resolver);
+    expect(accepted.applications.map((entry) => entry.status)).toEqual(["archived", "pending"]);
+    await expect(transitionPendingApplicationRegistration(archived, requestFor(archived, {
+      applicationId: "application:auditor:company:v3", nonceByte: "24",
+    }), evidenceVerifierDid, now, resolver)).rejects.toMatchObject({ reason: "duplicate-authorization" });
+    await expect(transitionPendingApplicationRegistration(archived, requestFor(archived, {
+      applicationId: first.applicationId, authorizationId: "auth:auditor:company:v3", nonceByte: "25",
+    }), evidenceVerifierDid, now, resolver)).rejects.toMatchObject({ reason: "duplicate-application" });
+    await expect(reconcileArchivedPendingApplication(archived, {
+      ...observation, archiveEventHash: `0x${"cd".repeat(32)}`,
+    }, async () => observation.archiveEventHash)).rejects.toMatchObject({ reason: "archive-mismatch" });
   });
 
   it("rejects expired, stale, and substituted application contexts", async () => {

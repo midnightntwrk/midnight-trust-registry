@@ -1,6 +1,6 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiMutationContext, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -20,6 +20,11 @@ type AppState = {
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
   auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
   auditorStatusBusy: boolean;
+  recognitionRecoveryBusy: boolean;
+  recognitionRecoveryMessage: string | undefined;
+  recognitionId: string;
+  recognitionChallenge: { recognitionId: string; nonce: string; challengeHash: string; expiresAt: string } | undefined;
+  recognitionAdmission: RecognitionAdmissionReceipt | undefined;
 };
 
 type AuditorScopeInput = {
@@ -131,10 +136,16 @@ export const createApplicantPortalApp = (
     pendingApplication: undefined,
     auditorStatus: undefined,
     auditorStatusBusy: false,
+    recognitionRecoveryBusy: false,
+    recognitionRecoveryMessage: undefined,
+    recognitionId: "",
+    recognitionChallenge: undefined,
+    recognitionAdmission: undefined,
   };
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
   let auditorStatusRequestId = 0;
+  let recognitionRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -142,6 +153,105 @@ export const createApplicantPortalApp = (
   };
 
   const client = () => new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl);
+
+  const issueRecognitionChallenge = async (recognitionId: string) => {
+    if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    if (recognitionId.length === 0) {
+      setState({ recognitionRecoveryMessage: "Enter the exact recognition ID." });
+      return;
+    }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId,
+      recognitionChallenge: undefined, recognitionAdmission: undefined });
+    try {
+      const challenge = await client().issueRecognitionChallenge(recognitionId);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      if (challenge.recognitionId !== recognitionId) throw new Error("Recognition challenge ID mismatch.");
+      setState({ recognitionRecoveryBusy: false, recognitionChallenge: challenge });
+    } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
+    }
+  };
+
+  const submitRecognitionAccreditation = async (recognitionId: string, raw: string) => {
+    if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    if (state.recognitionChallenge?.recognitionId !== recognitionId) {
+      setState({ recognitionRecoveryMessage: "Issue a challenge for this exact recognition before submitting." });
+      return;
+    }
+    let submission: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid accreditation submission.");
+      submission = parsed as Record<string, unknown>;
+      if (submission.nonce !== state.recognitionChallenge.nonce) throw new Error("Accreditation nonce does not match this challenge.");
+    } catch {
+      setState({ recognitionRecoveryMessage: "Accreditation submission must be JSON with the current challenge nonce." });
+      return;
+    }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
+    try {
+      const accepted = await client().submitRecognitionAccreditation(recognitionId, submission);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      if (accepted.recognitionId !== recognitionId || accepted.receipt?.evidenceCommitment !== accepted.evidenceCommitment) {
+        throw new Error("Accepted recognition receipt does not match the submission.");
+      }
+      setState({ recognitionRecoveryBusy: false, recognitionChallenge: undefined,
+        recognitionAdmission: accepted.receipt,
+        recognitionRecoveryMessage: `Recognition accreditation accepted. Governance approval is still required.` });
+    } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      setState({ recognitionRecoveryBusy: false, recognitionChallenge: undefined,
+        recognitionRecoveryMessage: formatApiError(error) });
+    }
+  };
+
+  const loadAcceptedRecognitionAccreditation = async (recognitionId: string) => {
+    if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    if (recognitionId.length === 0) {
+      setState({ recognitionRecoveryMessage: "Enter the exact recognition ID." });
+      return;
+    }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
+    try {
+      const receipt = await client().loadAcceptedRecognitionAccreditation(recognitionId);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      if (receipt.recognitionId !== recognitionId) throw new Error("Accepted recognition receipt ID mismatch.");
+      setState({ recognitionRecoveryBusy: false, recognitionAdmission: receipt,
+        recognitionRecoveryMessage: "Accepted accreditation receipt recovered. Governance approval is still required." });
+    } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
+    }
+  };
+
+  const recoverRecognitionProposal = async (recognitionId: string, receiptId: string, evidenceCommitment: string) => {
+    if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    if (recognitionId.length === 0 || !/^0x[0-9a-f]{64}$/u.test(receiptId)
+      || !/^0x[0-9a-f]{64}$/u.test(evidenceCommitment)) {
+      setState({ recognitionRecoveryMessage: "Enter the exact recognition ID and 32-byte receipt and evidence commitments." });
+      return;
+    }
+    const requestId = ++recognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ recognitionRecoveryBusy: true, recognitionRecoveryMessage: undefined, recognitionId });
+    try {
+      const result = await client().resolveRecognitionProposal(recognitionId, receiptId, evidenceCommitment);
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: result.state === "observed"
+        ? `Compact recognition proposal observed: ${result.eventHash}. Network finality is not implied.`
+        : "Recognition proposal not observed. This does not prove failure; do not resubmit automatically." });
+    } catch (error) {
+      if (requestId !== recognitionRequestId || apiBase !== state.apiBase) return;
+      setState({ recognitionRecoveryBusy: false, recognitionRecoveryMessage: formatApiError(error) });
+    }
+  };
 
   const requirePrivateHost = () => {
     if (!canUsePrivateEvidenceHost(state.apiBase, initialUrl)) {
@@ -455,7 +565,10 @@ export const createApplicantPortalApp = (
       evidenceRequestId += 1;
       signedContextRequestId += 1;
       auditorStatusRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined });
+      recognitionRequestId += 1;
+      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+        recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
+        recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
     });
 
@@ -504,6 +617,43 @@ export const createApplicantPortalApp = (
       const form = (event.currentTarget as HTMLButtonElement).closest<HTMLFormElement>("form");
       const applicationId = form?.querySelector<HTMLInputElement>("[name='applicationId']")?.value.trim();
       if (applicationId !== undefined && applicationId.length > 0) void recoverAcceptedEvidence(applicationId);
+    });
+    root.querySelector<HTMLButtonElement>("[data-recognition-challenge]")?.addEventListener("click", () => {
+      const recognitionId = root.querySelector<HTMLInputElement>("[data-recognition-recovery-form] [name='recognitionId']")
+        ?.value.trim() ?? "";
+      void issueRecognitionChallenge(recognitionId);
+    });
+    root.querySelector<HTMLButtonElement>("[data-recognition-accepted]")?.addEventListener("click", () => {
+      const recognitionId = root.querySelector<HTMLInputElement>("[data-recognition-recovery-form] [name='recognitionId']")
+        ?.value.trim() ?? "";
+      void loadAcceptedRecognitionAccreditation(recognitionId);
+    });
+    root.querySelector<HTMLFormElement>("[data-recognition-accreditation-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const raw = form.querySelector<HTMLTextAreaElement>("[name='signedAccreditation']")?.value ?? "";
+      form.reset();
+      void submitRecognitionAccreditation(state.recognitionId, raw);
+    });
+    root.querySelector<HTMLInputElement>("[data-recognition-recovery-form] [name='recognitionId']")
+      ?.addEventListener("input", (event) => {
+        const nextId = (event.currentTarget as HTMLInputElement).value.trim();
+        if (nextId === state.recognitionId) return;
+        state.recognitionId = nextId;
+        state.recognitionChallenge = undefined;
+        state.recognitionAdmission = undefined;
+        root.querySelector("[data-recognition-challenge-context]")?.remove();
+        root.querySelector("[data-recognition-admission]")?.remove();
+      });
+    root.querySelector<HTMLFormElement>("[data-recognition-recovery-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const value = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const recognitionId = value("recognitionId");
+      const receiptId = value("receiptId");
+      const evidenceCommitment = value("evidenceCommitment");
+      form.reset();
+      void recoverRecognitionProposal(recognitionId, receiptId, evidenceCommitment);
     });
 
     root.querySelector<HTMLFormElement>("[data-application-registration-form]")?.addEventListener("submit", (event) => {
@@ -725,6 +875,35 @@ export const createApplicantPortalApp = (
                   </form>
                 </div>
               `}
+            `}
+          </section>
+          <section class="form-panel">
+            <h2>Recover external recognition</h2>
+            <p>Accredited authorities can request a one-use challenge, sign the authority assertion outside this browser, submit the signed assertion with the accreditation VP, recover the accepted receipt, and check the finalized Compact proposal. Only an authenticated same-origin session can access these private steps. A missing observation never triggers a retry.</p>
+            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
+            <form data-recognition-recovery-form autocomplete="off">
+              <label class="label">Recognition ID <input class="input mono" name="recognitionId" value="${escapeHtml(state.recognitionId)}" required autocomplete="off" /></label>
+              <button class="button secondary" type="button" data-recognition-challenge${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Issue authority challenge</button>
+              <button class="button secondary" type="button" data-recognition-accepted${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Recover accepted accreditation</button>
+              <label class="label">Admission receipt ID <input class="input mono" name="receiptId" value="${escapeHtml(state.recognitionAdmission?.receiptId ?? "")}" required autocomplete="off" spellcheck="false" /></label>
+              <label class="label">Evidence commitment <input class="input mono" name="evidenceCommitment" value="${escapeHtml(state.recognitionAdmission?.evidenceCommitment ?? "")}" required autocomplete="off" spellcheck="false" /></label>
+              <button class="button secondary" type="submit"${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Check finalized proposal</button>
+            </form>
+            ${state.recognitionChallenge === undefined ? "" : `
+              <div class="panel" data-recognition-challenge-context>
+                <p>Challenge expires: ${escapeHtml(state.recognitionChallenge.expiresAt)}</p>
+                <p>Nonce: <span class="mono">${escapeHtml(state.recognitionChallenge.nonce)}</span></p>
+                <p>Challenge hash: <span class="mono">${escapeHtml(state.recognitionChallenge.challengeHash)}</span></p>
+                <form data-recognition-accreditation-form autocomplete="off">
+                  <label class="label">Externally signed assertion and accreditation VP JSON
+                    <textarea class="input mono" name="signedAccreditation" rows="6" required spellcheck="false"></textarea>
+                  </label>
+                  <button class="button" type="submit"${state.recognitionRecoveryBusy ? " disabled" : ""}>Submit accredited authority evidence</button>
+                </form>
+              </div>
+            `}
+            ${state.recognitionAdmission === undefined ? "" : `
+              <p data-recognition-admission>Accepted receipt: <span class="mono">${escapeHtml(state.recognitionAdmission.receiptId)}</span>. Evidence commitment: <span class="mono">${escapeHtml(state.recognitionAdmission.evidenceCommitment)}</span>.</p>
             `}
           </section>
           <div class="lanes">

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
-import { SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -83,6 +83,13 @@ import {
   type GovernedRecognitionProposalPort,
 } from "./governed-recognition-proposals.js";
 import { withRecognitionProposalAdmission } from "./recognition-proposal-admission.js";
+import { RecognitionAdmissionReceiptSchema, type RecognitionAdmissionReceipt } from "./file-recognition-admission.js";
+import {
+  recognitionAuthorityChallengeBindingHash,
+  recognitionAuthorityChallengeIdentityHash,
+  RecognitionAuthorityChallengeBindingSchema,
+  type RecognitionAuthorityChallengeBinding,
+} from "./recognition-authority-challenges.js";
 import {
   GovernedProposalObservationSchema,
   GovernedProposalResolveRequestSchema,
@@ -194,6 +201,8 @@ export type TrustRegistryApiServerOptions = {
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
   recognitionAccreditation?: RecognitionAccreditationHttpPort;
+  /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
+  readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   proposalAdmission?: ProposalAdmissionPort;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
@@ -786,6 +795,8 @@ export const createTrustRegistryApiServer = (
             || segments[3] === "submissions" || segments[3] === "receipt"))
         || (segments.length === 4 && segments[1] === "recognition-evidence"
           && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "accepted"))
+        || (segments.length === 6 && segments[1] === "governed" && segments[2] === "recognition"
+          && segments[4] === "proposal" && segments[5] === "resolve")
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -817,6 +828,36 @@ export const createTrustRegistryApiServer = (
             await loadRegistryRecord(options.source),
           ),
         );
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "v1"
+        && segments[1] === "decision-evidence" && (segments[2] === "issuer" || segments[2] === "verifier")) {
+        response.setHeader("cache-control", "no-store");
+        const authorizationId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        if (authorizationId.length > 256) {
+          throw jsonProblem(problemBaseUri, "invalid-path-parameter", 400, "invalid path parameter");
+        }
+        if (options.readDecisionEvidence === undefined) {
+          throw jsonProblem(problemBaseUri, "decision-evidence-unavailable", 503, "decision evidence unavailable");
+        }
+        let evidence;
+        try {
+          const result = await options.readDecisionEvidence(segments[2], authorizationId);
+          if (result === null) {
+            throw jsonProblem(problemBaseUri, "decision-evidence-not-found", 404, "decision evidence not found");
+          }
+          evidence = DecisionEvidenceSchema.parse(result);
+          const registry = await loadRegistryRecord(options.source);
+          if (evidence.role !== segments[2] || evidence.grant.authorizationId !== authorizationId
+            || evidence.registry.registryId !== registry.registryId) {
+            throw new Error("Decision evidence source returned a different grant or registry");
+          }
+        } catch (error) {
+          if (error instanceof HttpProblem) throw error;
+          throw jsonProblem(problemBaseUri, "decision-evidence-unavailable", 503, "decision evidence unavailable");
+        }
+        writeJson(response, 200, { verification: "client-required", evidence });
         return;
       }
 
@@ -971,6 +1012,63 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, `recognition-accreditation-${reason}`, status,
             `recognition accreditation ${reason}`);
         }
+      }
+
+      if (method === "POST" && segments.length === 6 && segments[0] === "v1"
+        && segments[1] === "governed" && segments[2] === "recognition"
+        && segments[4] === "proposal" && segments[5] === "resolve") {
+        response.setHeader("cache-control", "no-store");
+        const recognitionId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
+        const port = options.governedRecognitionProposals;
+        if (port?.resolve === undefined || options.recognitionAccreditation === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+            "governed proposal resolution unavailable");
+        }
+        try {
+          await options.recognitionAccreditation.authorizeRequest(recognitionId, request);
+        } catch {
+          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+            "recognition accreditation forbidden");
+        }
+        const body = await parseJsonBody(request,
+          (value) => GovernedRecognitionProposalPrepareRequestSchema.parse(value), problemBaseUri);
+        let binding: RecognitionAuthorityChallengeBinding;
+        let receipt: RecognitionAdmissionReceipt | null;
+        try {
+          binding = RecognitionAuthorityChallengeBindingSchema.parse(await port.readBinding(recognitionId));
+          receipt = await port.admissionStore.readAccepted(recognitionId);
+        } catch {
+          throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+            "governed proposal resolution unavailable");
+        }
+        const accepted = receipt === null ? null : RecognitionAdmissionReceiptSchema.safeParse(receipt);
+        if (binding.recognitionId !== recognitionId || accepted === null || !accepted.success
+          || accepted.data.receiptId !== body.receiptId
+          || accepted.data.recognitionId !== recognitionId
+          || accepted.data.applicationHash !== recognitionAuthorityChallengeIdentityHash(binding)
+          || accepted.data.bindingHash !== recognitionAuthorityChallengeBindingHash(binding)
+          || accepted.data.evidenceCommitment !== body.evidenceCommitment) {
+          throw jsonProblem(problemBaseUri, "unadmitted-proposal", 403,
+            "unadmitted proposal", "The proposal has no matching accepted accreditation receipt.");
+        }
+        let observed;
+        try {
+          observed = await port.resolve(recognitionId);
+        } catch {
+          throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+            "governed proposal resolution unavailable");
+        }
+        if (observed === null) {
+          writeJson(response, 200, { state: "not-observed" }, false);
+          return;
+        }
+        const record = GovernedProposalObservationSchema.parse(observed);
+        if (record.evidenceCommitment !== body.evidenceCommitment) {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
+            "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
+        }
+        writeJson(response, 200, { state: "observed", eventHash: record.eventHash }, false);
+        return;
       }
 
       if (

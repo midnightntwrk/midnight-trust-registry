@@ -46,9 +46,11 @@ export type FinalizedRegistryDecisionSnapshot = Pick<
 
 /** Implementations must authenticate both reads, including finality and latest-state currency. */
 export type TrustedDecisionEvidenceReaders = {
+  /** The epoch and grant IDs are untrusted lookup hints; authenticate the returned snapshot independently. */
   readCurrentFinalizedRegistryDecision(
     selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
     epochIdHint: string,
+    authorizationIdHint: string,
   ): Promise<FinalizedRegistryDecisionSnapshot | null>;
   readCurrentFinalizedDidState(
     did: string,
@@ -157,7 +159,9 @@ const verifyDecisionEvidenceForExpectedState = async (
   expectedState: "active" | "suspended" | "revoked",
 ): Promise<DecisionEvidenceCandidate> => {
   const evidence = DecisionEvidenceSchema.parse(input);
-  const snapshot = await readers.readCurrentFinalizedRegistryDecision(selection, evidence.epoch.epochId);
+  const snapshot = await readers.readCurrentFinalizedRegistryDecision(
+    selection, evidence.epoch.epochId, evidence.grant.authorizationId,
+  );
   if (snapshot === null) {
     throw new Error("Current finalized registry decision is unavailable");
   }

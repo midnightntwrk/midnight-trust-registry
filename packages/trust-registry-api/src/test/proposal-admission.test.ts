@@ -55,6 +55,7 @@ const envelope = {
   challengeHash: `0x${"1".repeat(64)}`,
   presentationHash: `0x${"2".repeat(64)}`,
   claimsCommitment: `0x${"3".repeat(64)}`,
+  statusDecisionCommitment: `0x${"4".repeat(64)}`,
 } as const;
 const evidence: ApplicationEvidenceSubmission = {
   envelope,

@@ -73,6 +73,7 @@ function intakeInput(binding: ApplicationChallengeBinding, service: ApplicationC
       scopeCommitment: context.binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: "2026-10-06T00:00:00.000Z",
       expiresAt: "2026-10-06T01:00:00.000Z",
     })),
@@ -88,7 +89,7 @@ function intakeInput(binding: ApplicationChallengeBinding, service: ApplicationC
     }],
     verifyEvidenceSignature: (_commitment: string, signature: { value: string }) => signature.value === "test-signature",
     evaluatedAt: "2026-10-06T00:00:00.000Z",
-    propose: vi.fn(async (proposal: { evidence: { commitment: string; envelope: { challengeHash: string; scopeCommitment: string } } }) => proposal),
+    propose: vi.fn(async (proposal: { evidence: { commitment: string; envelope: { challengeHash: string; scopeCommitment: string; statusDecisionCommitment: string } } }) => proposal),
   };
 }
 
@@ -110,6 +111,7 @@ describe("challenge-backed application intake", () => {
     expect(input.propose).toHaveBeenCalledOnce();
     expect(proposal.evidence.envelope.challengeHash).toBe(issued.challengeHash);
     expect(proposal.evidence.envelope.scopeCommitment).toBe(binding.scopeCommitment);
+    expect(proposal.evidence.envelope.statusDecisionCommitment).toBe(`0x${"4".repeat(64)}`);
     expect(JSON.stringify(proposal)).not.toContain("private-holder-presentation");
     expect(JSON.stringify(proposal)).not.toContain(issued.nonce);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
@@ -135,6 +137,7 @@ describe("challenge-backed application intake", () => {
     const verified = await input.verifyPresentation(input.presentation, { binding });
     for (const [override, error] of [
       [{ scopeCommitment: "malformed" }, /Presentation does not match/],
+      [{ statusDecisionCommitment: "malformed" }, /statusDecisionCommitment/],
       [{ verifiedAt: "2026-10-06T00:00:00.500Z" }, /not yet valid/],
       [{ verifiedAt: "2026-10-05T23:59:59.000Z", expiresAt: input.evaluatedAt }, /outside the challenge window/],
     ] as const) {
@@ -170,6 +173,7 @@ describe("challenge-backed application intake", () => {
       scopeCommitment: `0x${"f".repeat(64)}`,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: input.evaluatedAt,
       expiresAt: "2026-10-06T01:00:00.000Z",
     });
@@ -194,6 +198,7 @@ describe("challenge-backed application intake", () => {
       scopeCommitment: binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: new Date(START + verifiedOffsetMs).toISOString(),
       expiresAt: new Date(START + verifiedOffsetMs + lifetimeMs).toISOString(),
     });
@@ -214,6 +219,7 @@ describe("challenge-backed application intake", () => {
       scopeCommitment: binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: new Date(START).toISOString(),
       expiresAt: new Date(START + 24 * 60 * 60_000).toISOString(),
     });
@@ -242,6 +248,7 @@ describe("challenge-backed application intake", () => {
       scopeCommitment: binding.scopeCommitment,
       presentationHash: `0x${"2".repeat(64)}`,
       claimsCommitment: `0x${"3".repeat(64)}`,
+      statusDecisionCommitment: `0x${"4".repeat(64)}`,
       verifiedAt: new Date(START).toISOString(),
       expiresAt: new Date(START + 1).toISOString(),
     });

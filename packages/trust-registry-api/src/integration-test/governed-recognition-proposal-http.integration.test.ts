@@ -24,6 +24,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js";
+import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 import {
   GovernedRecognitionProposalRejectedError,
   type GovernedRecognitionProposalPort,
@@ -119,6 +120,7 @@ describe("governed recognition proposal HTTP", () => {
     const governanceWorkspacePath = join(directory, "governance.json");
     const admissionStore = new FileRecognitionAdmissionStore(join(directory, "admission.json"), governanceWorkspacePath);
     const evidenceCommitment = sha256Hex("verified-combined-recognition-evidence");
+    let finalizedLedger = harness.simulator.getLedger();
     const challengeHash = sha256Hex("recognition-proposal-challenge");
     await admissionStore.insert({
       challengeHash,
@@ -128,6 +130,7 @@ describe("governed recognition proposal HTTP", () => {
       expiresAtMs: now + 60_000,
     }, now - 60_000, () => now - 60_000);
 
+    let recoveryAuthorized = true;
     const port: GovernedRecognitionProposalPort = {
       governanceWorkspacePath,
       admissionStore,
@@ -166,6 +169,9 @@ describe("governed recognition proposal HTTP", () => {
           throw new GovernedRecognitionProposalRejectedError("invalid-signers");
         }
       },
+      resolve: (recognitionId) => resolveCompactProposalObservation(
+        async () => finalizedLedger, harness.registryId, "recognition", recognitionId,
+      ),
     };
     const separateStore = new FileRecognitionAdmissionStore(join(directory, "other-admission.json"), governanceWorkspacePath);
     expect(() => createTrustRegistryApiServer({
@@ -183,6 +189,14 @@ describe("governed recognition proposal HTTP", () => {
         label: "recognition-proposal-http", recognitions: [{ label: "partner", fixture: recognition }],
       }) },
       governedRecognitionProposals: port,
+      recognitionAccreditation: {
+        challengeStore: admissionStore,
+        admissionStore,
+        authorizeRequest: async () => {
+          if (!recoveryAuthorized) throw new Error("private recovery denied");
+        },
+        resolveCurrentContext: async () => null,
+      },
       clock: () => new Date(now + 1000).toISOString(),
     });
     try {
@@ -193,8 +207,15 @@ describe("governed recognition proposal HTTP", () => {
       const post = (action: "prepare" | "submit", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
+      const resolve = (body: unknown) => fetch(`${endpoint}/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      recoveryAuthorized = false;
+      expect((await resolve({ rawPresentation: "secret" })).status).toBe(403);
+      recoveryAuthorized = true;
       const missing = { receiptId: sha256Hex("not-admitted"), evidenceCommitment };
       expect((await post("prepare", missing)).status).toBe(403);
+      expect((await resolve(missing)).status).toBe(403);
       const admitted = await admissionStore.accept({
         targetRegistryId: binding.targetRegistryId,
         recognitionId: binding.recognitionId,
@@ -214,6 +235,9 @@ describe("governed recognition proposal HTTP", () => {
       });
       if (admitted === null) throw new Error("Test admission failed");
       const request = { receiptId: admitted.receiptId, evidenceCommitment };
+      expect((await resolve({ ...request, receiptId: sha256Hex("wrong-receipt") })).status).toBe(403);
+      expect((await resolve({ ...request, evidenceCommitment: sha256Hex("wrong-evidence") })).status).toBe(403);
+      expect(await (await resolve(request)).json()).toEqual({ state: "not-observed" });
       expect((await post("prepare", { ...request, rawPresentation: "secret" })).status).toBe(400);
       expect((await post("prepare", { ...request, evidenceCommitment: sha256Hex("other") })).status).toBe(403);
       const preparedResponse = await post("prepare", request);
@@ -245,6 +269,19 @@ describe("governed recognition proposal HTTP", () => {
       expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
       expect((await submit(prepared, [first, other])).status).toBe(409);
+      expect(await (await resolve(request)).json()).toEqual({ state: "not-observed" });
+      finalizedLedger = harness.simulator.getLedger();
+      const recovered = await resolve(request);
+      expect(recovered.status).toBe(200);
+      expect(recovered.headers.get("cache-control")).toBe("no-store");
+      expect(await recovered.json()).toEqual({ state: "observed", eventHash: hex(
+        finalizedLedger.recognitionProposalEvidenceRecords.lookup(recognition.recognitionIdCommitment)
+          .proposalGovernanceEventHash,
+      ) });
+      port.resolve = async () => ({ eventHash: sha256Hex("unrelated-event"), evidenceCommitment: sha256Hex("unrelated-evidence") });
+      expect((await resolve(request)).status).toBe(409);
+      port.resolve = async () => { throw new Error("finality source unavailable"); };
+      expect((await resolve(request)).status).toBe(503);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

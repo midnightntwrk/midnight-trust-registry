@@ -12,7 +12,11 @@ import { pureCircuits as registryPureCircuits } from "@midnight-ntwrk/trust-regi
 import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
 import { sha256Hex, type DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createInactiveVcSignerCandidateFromTrustedDecision, createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
+import {
+  createInactiveVcSignerCandidateFromTrustedDecision,
+  createVcSignerCandidateFromApi,
+  createVcSignerCandidateFromTrustedDecision,
+} from "./vc-signer-candidate.js";
 
 export type VcAuthorityDomain = {
   networkId: string;
@@ -99,18 +103,45 @@ export const issueVcSignerAuthorizationFromTrustedDecision = async (input: {
   anchor: PinnedVcAuthority;
   signer: VcAuthoritySigner;
 }): Promise<{ descriptor: AuthorizedSignerDescriptor; proof: Proof }> => {
-  const { candidate, descriptor } = await createVcSignerCandidateFromTrustedDecision(
+  const verified = await createVcSignerCandidateFromTrustedDecision(
     input.evidence, input.selection, input.readers, input.method,
   );
+  return signVerifiedVcSignerCandidate(verified, input.anchor, input.signer);
+};
+
+/** API evidence remains untrusted until independently checked before the authority signer is called. */
+export const issueVcSignerAuthorizationFromApi = async (input: {
+  apiBase: string;
+  authorizationId: string;
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">;
+  readers: TrustedDecisionEvidenceReaders;
+  method: MidnightDIDMethodBinding;
+  anchor: PinnedVcAuthority;
+  signer: VcAuthoritySigner;
+  fetchImpl?: typeof fetch;
+}): Promise<{ descriptor: AuthorizedSignerDescriptor; proof: Proof }> => {
+  const verified = await createVcSignerCandidateFromApi(
+    input.apiBase, input.authorizationId, input.selection, input.readers, input.method,
+    input.fetchImpl,
+  );
+  return signVerifiedVcSignerCandidate(verified, input.anchor, input.signer);
+};
+
+const signVerifiedVcSignerCandidate = async (
+  verified: Awaited<ReturnType<typeof createVcSignerCandidateFromTrustedDecision>>,
+  anchor: PinnedVcAuthority,
+  signer: VcAuthoritySigner,
+): Promise<{ descriptor: AuthorizedSignerDescriptor; proof: Proof }> => {
+  const { candidate, descriptor } = verified;
   if (
-    input.anchor.domain.networkId !== candidate.networkId
-    || input.anchor.domain.registryId !== candidate.registryId
-    || input.anchor.domain.registryContractAddress !== candidate.contractAddress
+    anchor.domain.networkId !== candidate.networkId
+    || anchor.domain.registryId !== candidate.registryId
+    || anchor.domain.registryContractAddress !== candidate.contractAddress
   ) {
     throw new Error("VC authority domain does not bind the trusted registry decision");
   }
-  const authority = pinnedVcAuthority(input.anchor);
-  const proof = await input.signer({
+  const authority = pinnedVcAuthority(anchor);
+  const proof = await signer({
     decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(descriptor, authority.domainCommitment),
     decisionSequence: descriptor.decisionSequence,
     authority,

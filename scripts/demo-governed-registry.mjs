@@ -19,7 +19,7 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
+import { bytes32Commitment, createVerifiedDecisionEvidenceSource } from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
@@ -31,6 +31,7 @@ import {
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
+  verifyApplicationStatusDecisionWitness,
   createMidnightDid,
   createRecognitionAccreditationVpScenarioFixture,
   RECOGNITION_VP_FIXTURE_ANCHOR,
@@ -61,6 +62,7 @@ import {
   GovernedVerifierProposalRejectedError,
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
+import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -148,6 +150,61 @@ adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionW
   category: "removed-signer-rejected",
 });
 assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
+
+const denialHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-denial");
+const denialSecond = createMaintainerScenarioFixture("governed-demo-denial-second");
+const denialThird = createMaintainerScenarioFixture("governed-demo-denial-third");
+const deniedIssuer = createIssuerScenarioFixture("governed-demo-denied-issuer");
+const replacementIssuer = {
+  ...deniedIssuer,
+  authorizationId: `${deniedIssuer.authorizationId}:replacement`,
+  authorizationIdCommitment: bytes32Commitment(`${deniedIssuer.authorizationId}:replacement`),
+};
+denialHarness.authorizeMaintainer(denialSecond);
+denialHarness.authorizeMaintainer(denialThird);
+denialHarness.proposeIssuer(deniedIssuer);
+adversarialMatrix.expectThrown(() => denialHarness.proposeIssuer(replacementIssuer), {
+  id: "denied-proposal-blocks-live-scope-reuse",
+  invariant: "A second application cannot claim the same scope while a proposal remains live",
+  boundary: "compact",
+  messagePattern: /live authorization/iu,
+  category: "duplicate-live-scope-rejected",
+});
+denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const denialPrepared = denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
+const denialActionCount = denialHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSignatures(
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared)],
+), {
+  id: "denied-proposal-requires-quorum",
+  invariant: "Archiving a pending issuer proposal requires the current maintainer quorum",
+  boundary: "compact",
+  messagePattern: /threshold|quorum|signer|authorization/iu,
+  category: "insufficient-archive-quorum",
+});
+assert.equal(denialHarness.simulator.getLedger().governanceActionCount, denialActionCount);
+const denialEventHash = denialHarness.executeIssuerDecisionWithSignatures(
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared), signCompact(denialThird, denialPrepared)],
+);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.archived);
+const deniedBundle = denialHarness.buildIssuerHistoricalEvidence(deniedIssuer);
+assert.equal(deniedBundle.authorization?.status, "archived");
+assert.equal(deniedBundle.authorization?.authorizedAt, undefined);
+assert.equal(deniedBundle.authorization?.activeFrom, undefined);
+adversarialMatrix.expectThrown(() => new TrustRegistrySimulatorClient(denialHarness.simulator)
+  .verifyIssuerAuthorizationBundle(deniedBundle, {}), {
+  id: "denied-proposal-is-not-trust",
+  invariant: "Historical evidence for an archived proposal cannot authorize a current issuer",
+  boundary: "client",
+  messagePattern: /not active/iu,
+  category: "archived-issuer-not-active",
+});
+const replacementProposalEventHash = denialHarness.proposeIssuer(replacementIssuer, [denialSecond]);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(replacementIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.proposed);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.archived);
 
 const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
 const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
@@ -724,8 +781,21 @@ const proposalPort = (role, target) => ({
     };
   },
 });
+const decisionEvidenceByGrant = new Map();
+const decisionContextByGrant = new Map();
+const publishDecisionEvidence = (role, authorizationId, candidate, readers) => {
+  decisionEvidenceByGrant.set(`${role}:${authorizationId}`, { buildInput: candidate.buildInput });
+  decisionContextByGrant.set(`${role}:${authorizationId}`, { selection: candidate.selection, readers });
+};
+const readVerifiedDecisionEvidence = createVerifiedDecisionEvidenceSource({
+  loadCandidate: async (role, authorizationId) =>
+    decisionEvidenceByGrant.get(`${role}:${authorizationId}`) ?? null,
+  trustedContextFor: async (role, authorizationId) =>
+    decisionContextByGrant.get(`${role}:${authorizationId}`) ?? null,
+});
 const server = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => snapshot },
+  readDecisionEvidence: readVerifiedDecisionEvidence,
   clock: () => new Date(VP_FIXTURE_TIME_MS).toISOString(),
   proposalAdmission: {
     resolvePendingApplication: async (applicationId) => registeredApplications.get(applicationId) ?? null,
@@ -879,6 +949,7 @@ try {
   const client = new TrustRegistrySimulatorClient(harness.simulator);
   let issuerVpFixture;
   let verifierVpFixture;
+  const statusWitnessAuditedRoles = [];
   for (const spec of applicantSpecs) {
     const applicationId = createScopedIdentifier("application", spec.role, spec.id);
     const endpoint = `${base}/v1/application-evidence/${applicationId}`;
@@ -970,6 +1041,28 @@ try {
     assert.deepEqual(persistedEvidence.get(applicationId), submitted.evidence);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawCredentialBody), false);
     assert.equal(JSON.stringify(submitted).includes(proof.input.submission.rawPresentationBody), false);
+    const statusWitness = proof.readStatusWitness(challenge.challengeHash);
+    assert.ok(statusWitness);
+    const audit = {
+      signed: statusWitness,
+      expectedCommitment: submitted.evidence.envelope.statusDecisionCommitment,
+      material: proof.material,
+      binding: proof.fixtureStatusPolicyBinding,
+      nonce: challenge.nonce,
+      evaluatedAtMs: VP_FIXTURE_TIME_MS,
+      resolver: proof.input.resolver,
+    };
+    assert.equal(await verifyApplicationStatusDecisionWitness(audit), true);
+    statusWitnessAuditedRoles.push(spec.role);
+    if (spec.role === "issuer") {
+      await assert.rejects(verifyApplicationStatusDecisionWitness({
+        ...audit,
+        binding: {
+          ...audit.binding,
+          statusPolicyContentCommitment: sha256Hex("substituted-governed-status-policy"),
+        },
+      }), /does not match/u);
+    }
     await adversarialMatrix.expectHttp(await post("submissions", submission), {
       id: `${spec.role}-vp-challenge-replay`,
       invariant: "A consumed application challenge cannot accept a second VP",
@@ -1432,7 +1525,7 @@ try {
     expectedResult: "active",
     observedResult: AuthorizationStatus[maintainerRecord.status],
   });
-  const actorReport = [...targets.keys()].map((role) => {
+  const actorOutcomes = [...targets.keys()].map((role) => {
     const result = actorReportByRole.get(role);
     assert.ok(result);
     assert.equal(result.activationSignerKeyIds.length, 2);
@@ -1503,7 +1596,17 @@ try {
     authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBase: base,
+    publishDecisionEvidence,
   });
+  const issuerDecision = await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 200);
+  assert.equal(issuerDecision.verification, "client-required");
+  assert.equal(issuerDecision.evidence.grant.authorizationId, issuer.authorizationId);
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 404);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
     ...issuerBundle,
     inclusionProof: {
@@ -1539,7 +1642,14 @@ try {
     authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed,
     authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
+    apiBase: base,
+    publishDecisionEvidence,
   });
+  const verifierDecision = await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+  ), 200);
+  assert.equal(verifierDecision.verification, "client-required");
+  assert.equal(verifierDecision.evidence.grant.authorizationId, verifier.authorizationId);
   adversarialMatrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
     expectedResourceId: "request-profile:unknown",
   }), {
@@ -1689,10 +1799,14 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(suspendedBundle.authorization.status, "suspended");
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 503);
   const suspendedConsumer = await verifyGovernedIssuerStatusUpdate({
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: suspendedBundle, state: "suspended", previousJourney: vcConsumer,
+    apiBase: base,
   });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
@@ -1746,10 +1860,14 @@ try {
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
   assert.equal(revokedBundle.authorization.status, "revoked");
+  await expectHttp(await fetch(
+    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
+  ), 503);
   const revokedConsumer = await verifyGovernedIssuerStatusUpdate({
     harness, issuer, applicantVp: issuerVpFixture, authorityAnchor: vcAuthorityAnchor,
     authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
     apiBundle: revokedBundle, state: "revoked", previousJourney: suspendedConsumer,
+    apiBase: base,
   });
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
@@ -1898,11 +2016,15 @@ try {
       ), /not active/u);
     }
     if (target.role === "verifier") {
+      await expectHttp(await fetch(
+        `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+      ), 503);
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
         authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
         apiBundle: suspendedBundle, state: "suspended", previousJourney: verifierJourney,
+        apiBase: base,
       });
       verifierLifecycle.push(verifierJourney.report);
     }
@@ -1949,11 +2071,15 @@ try {
       ), /not active/u);
     }
     if (target.role === "verifier") {
+      await expectHttp(await fetch(
+        `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
+      ), 503);
       verifierJourney = await verifyGovernedVerifierStatusUpdate({
         harness, verifier, scope: createVerifierAuthorizationScopeFixture(verifier),
         applicantVp: verifierVpFixture, authorityAnchor: vcAuthorityAnchor,
         authoritySeed: vcAuthoritySeed, authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
         apiBundle: revokedBundle, state: "revoked", previousJourney: verifierJourney,
+        apiBase: base,
       });
       verifierLifecycle.push(verifierJourney.report);
     }
@@ -2051,10 +2177,25 @@ try {
     registryId: harness.registryId,
     governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
+    statusWitnessAudit: {
+      roles: statusWitnessAuditedRoles,
+      substitutedIssuerPolicyRejected: true,
+      mode: "private fixture witness and DID resolver; not network finality",
+    },
     issuerProposal: {
       eventHash: issuerProposal.eventHash,
       evidenceCommitment: issuerEvidence.commitment,
       source: "authenticated VP HTTP intake and governed HTTP proposal",
+    },
+    proposalDenial: {
+      deniedAuthorizationId: deniedIssuer.authorizationId,
+      denialEventHash: asHex(denialEventHash),
+      historicalStatus: deniedBundle.authorization.status,
+      currentTrust: false,
+      replacementAuthorizationId: replacementIssuer.authorizationId,
+      replacementProposalEventHash: asHex(replacementProposalEventHash),
+      replacementStatus: "proposed",
+      source: "quorum-signed Compact archival; local simulator, not network finality",
     },
     otherProposals,
     recognitionProposal: {
@@ -2072,7 +2213,7 @@ try {
       expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
-    actorReport,
+    actorReport: buildActorEvidenceReport(actorOutcomes, adversarialMatrix.report()),
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     auditorMandate,
     vcConsumer: vcConsumer.report,
@@ -2110,6 +2251,8 @@ try {
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
       "proposal-cross-role-evidence:403", "proposal-wrong-target:403",
       "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
+      "denied-proposal-blocks-live-scope-reuse:compact", "denied-proposal-requires-quorum:compact",
+      "denied-proposal-is-not-trust:client",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "recognition-is-not-local-issuer-or-maintainer:client",

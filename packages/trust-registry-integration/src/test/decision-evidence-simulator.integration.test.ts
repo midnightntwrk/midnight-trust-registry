@@ -29,6 +29,8 @@ import {
   VcAuthorityKeyStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
+  buildDecisionEvidenceClaim,
+  createVerifiedDecisionEvidenceSource,
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
@@ -36,8 +38,6 @@ import {
 } from "@midnight-ntwrk/trust-registry-client";
 import {
   AcceptedDecisionEpochSchema,
-  DecisionEvidenceSchema,
-  deriveGovernancePolicySnapshot,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -51,10 +51,15 @@ import {
   createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
-import { createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
+import { createCompactLedgerDecisionReaders } from "../compact-decision-reader.js";
+import { verifyApplicationVp } from "../application-vp-verifier.js";
+import { createGovernedApplicationIssuerEligibility } from "../governed-application-issuer.js";
+import { createApplicationVpScenarioFixture } from "../vp-scenario-fixtures.js";
+import { createVcSignerCandidateFromApi, createVcSignerCandidateFromTrustedDecision } from "../vc-signer-candidate.js";
 import { createQuorumGatedVcAuthoritySigner } from "../vc-authority-signer.js";
 import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 import {
+  issueVcSignerAuthorizationFromApi,
   issueVcSignerAuthorizationFromTrustedDecision,
   pinnedVcAuthority,
   vcAuthorityDomainCommitment,
@@ -159,8 +164,10 @@ describe("simulator-backed VC decision evidence composition", () => {
     const subjectKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(49));
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(issuer.subjectDid, {
-        schnorrJubjubPublicKey: subjectKey,
-        verificationMethodId: "assertion-1",
+        schnorrJubjubAssertionMethods: [
+          { id: "assertion-1", publicKey: subjectKey },
+          { id: "status-1", publicKey: subjectKey },
+        ],
         version: 3n,
       }),
     ]);
@@ -175,31 +182,12 @@ describe("simulator-backed VC decision evidence composition", () => {
     expect(didDocument.assertionMethod).toContain(methodId);
 
     const grant = bundle.authorization;
-    const evidence = DecisionEvidenceSchema.parse({
-      format: "tr-decision-evidence-v1",
-      role: "issuer",
-      registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
-      anchorReferences: {
-        registryEpoch: { networkId, contractAddress, transactionHash: epochTransaction, blockHash: epochBlock },
-        didState: { networkId, blockHash: didBlock },
-      },
-      epoch: {
-        epochId: bundle.epoch.epochId,
-        registryId: bundle.epoch.registryId,
-        stateRoot: bundle.epoch.stateRoot,
-        eventRoot: bundle.epoch.eventRoot,
-        policyRoot: bundle.epoch.policyRoot,
-        publicationPolicyCommitment: acceptedEpoch.publicationPolicyCommitment,
-        publicationSequence: acceptedEpoch.publicationSequence,
-        validFromSequence: acceptedEpoch.validFromSequence,
-        validUntilSequence: acceptedEpoch.validUntilSequence,
-        validFrom: bundle.epoch.validFrom,
-        validUntil: bundle.epoch.validUntil,
-        quorum: { requiredSignatures: acceptedEpoch.requiredSignatures, signatures: witness.signatures },
-      },
-      grant,
+    const buildInput = {
+      bundle,
+      acceptedEpoch,
+      publicationSignatures: witness.signatures,
+      didStateBlockHash: didBlock,
       scope: issuer.authorizationScope,
-      statusPolicyBinding: bundle.statusPolicyBinding,
       didMethod: {
         did: issuer.subjectDid,
         methodId,
@@ -210,8 +198,6 @@ describe("simulator-backed VC decision evidence composition", () => {
         stateVersion,
         stateEvidence: { evidenceType: "ledger-observation", blockHash: didBlock, transactionHash: didTransaction },
       },
-      policy: deriveGovernancePolicySnapshot(bundle.policy),
-      inclusionProof: { ...bundle.inclusionProof, leafIndex: String(bundle.inclusionProof.leafIndex) },
       governanceEvents: {
         grantTransition: grant.lifecycleEventRoot,
         quorumApproval: sha256Hex("simulator:vc-decision:approval-lookup"),
@@ -219,7 +205,15 @@ describe("simulator-backed VC decision evidence composition", () => {
         policySnapshot: bundle.epoch.policyRoot,
       },
       decisionSequence: epochRecord.publishedAtSequence.toString(),
-    });
+    } satisfies Parameters<typeof buildDecisionEvidenceClaim>[0];
+    const evidence = buildDecisionEvidenceClaim(buildInput);
+    expect(() => buildDecisionEvidenceClaim({ ...buildInput,
+      acceptedEpoch: { ...acceptedEpoch, stateRoot: sha256Hex("different-accepted-root") },
+    })).toThrow(/accepted epoch root mismatch/u);
+    expect(() => buildDecisionEvidenceClaim({ ...buildInput,
+      bundle: { ...bundle, inclusionProof: { ...bundle.inclusionProof,
+        leafHash: sha256Hex("different-grant-leaf") } },
+    })).toThrow(/grant leaf hash mismatch/u);
     const currentGrant = harness.simulator.getCurrentIssuerAuthorization(
       issuer.subjectDidCommitment,
       issuer.resourceType,
@@ -289,6 +283,93 @@ describe("simulator-backed VC decision evidence composition", () => {
       },
     };
     const candidate = await verifyDecisionEvidenceWithTrustedReaders(evidence, context.selection, readers);
+    const verifiedSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => ({ selection: context.selection, readers }),
+    });
+    expect(await verifiedSource("issuer", issuer.authorizationId)).toEqual(evidence);
+    await expect(verifiedSource("verifier", issuer.authorizationId)).rejects.toThrow(/different grant or role/u);
+    await expect(verifiedSource("issuer", "auth:unrelated")).rejects.toThrow(/different grant or role/u);
+    const unavailableSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => null,
+    });
+    await expect(unavailableSource("issuer", issuer.authorizationId)).rejects.toThrow(/context is unavailable/u);
+    const substitutedSelectionSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput }),
+      trustedContextFor: async () => ({
+        selection: { ...context.selection, registryId: "registry:other" },
+        readers: {
+          ...readers,
+          readCurrentFinalizedRegistryDecision: async () => ({
+            acceptedEpoch: context.acceptedEpoch,
+            publication: context.publication,
+            decisionPoint: context.decisionPoint,
+          }),
+        },
+      }),
+    });
+    await expect(substitutedSelectionSource("issuer", issuer.authorizationId))
+      .rejects.toThrow(/registry or subject mismatch/u);
+    const compactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const compactEvidence = { ...evidence, decisionSequence: compactSequence };
+    const compactReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: async (did, network, sequence) => {
+        expect([did, network, sequence]).toEqual([issuer.subjectDid, networkId, compactSequence]);
+        return context.didState;
+      },
+    });
+    const compactCandidate = await verifyDecisionEvidenceWithTrustedReaders(compactEvidence, context.selection, compactReaders);
+    expect(compactCandidate).toEqual({ ...candidate, decisionSequence: compactSequence });
+    const wrongEpochReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: { ...context.acceptedEpoch, stateRoot: sha256Hex("wrong-finalized-epoch-root") },
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongEpochReaders,
+    )).rejects.toThrow(/does not match finalized Compact ledger/u);
+    const wrongEpochIdReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: { ...context.acceptedEpoch, epochId: "epoch:unrelated" },
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongEpochIdReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
+    const changedPolicyReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: { ...harness.simulator.getLedger(), governancePolicyCommitment: bytes32Commitment("changed-policy") },
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, changedPolicyReaders,
+    )).rejects.toThrow(/current policy mismatch/u);
+    expect(await compactReaders.readCurrentFinalizedRegistryDecision(
+      context.selection, evidence.epoch.epochId, "auth:unrelated",
+    )).toBeNull();
+    expect(await compactReaders.readCurrentFinalizedRegistryDecision(
+      { ...context.selection, role: "verifier", resourceType: "request-profile" },
+      evidence.epoch.epochId, evidence.grant.authorizationId,
+    )).toBeNull();
     expect(candidate).toMatchObject({
       role: "issuer",
       authorizationId: issuer.authorizationId,
@@ -297,6 +378,78 @@ describe("simulator-backed VC decision evidence composition", () => {
       didStateVersion: stateVersion,
       publicationEventHash: witness.eventHash,
     });
+    if (candidate.role !== "issuer") throw new Error("Expected governed issuer decision");
+    const vpScenario = await createApplicationVpScenarioFixture(undefined, {
+      issuerDid: issuer.subjectDid,
+      issuerSecret: seedBytesToJubjubSecretScalar(new Uint8Array(32).fill(49)),
+      issuerDidVersion: 3n,
+      statusPolicyBinding: candidate.statusPolicyBinding,
+    });
+    const vpMaterial = vpScenario.material;
+    const eligible = createGovernedApplicationIssuerEligibility({
+      selection: context.selection,
+      readers,
+      loadEvidence: async () => evidence,
+      allowedApplicationRoles: ["issuer", "verifier", "auditor", "maintainer"],
+    });
+    await expect(verifyApplicationVp({
+      ...vpScenario.input,
+      family: { ...vpScenario.family, assertIssuerEligible: eligible },
+    })).resolves.toMatchObject({
+      subjectDid: vpScenario.input.expectedSubjectDid,
+      expiresAt: new Date(vpScenario.input.evaluatedAtMs + 5 * 60_000).toISOString(),
+    });
+    await expect(eligible(vpMaterial, vpScenario.input.scope)).resolves.toEqual(candidate.statusPolicyBinding);
+    await expect(eligible({ ...vpMaterial, issuerDid: createMidnightDid("other-vp-issuer") }, vpScenario.input.scope))
+      .rejects.toThrow(/not selected/u);
+    await expect(eligible({ ...vpMaterial, issuerMethodId: "#other" }, vpScenario.input.scope))
+      .rejects.toThrow(/issuer key/u);
+    await expect(eligible({
+      ...vpMaterial,
+      credentialProof: {
+        ...vpMaterial.credentialProof,
+        publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(51)),
+      },
+    }, vpScenario.input.scope))
+      .rejects.toThrow(/issuer key/u);
+    await expect(eligible({
+      ...vpMaterial,
+      statusBinding: {
+        ...vpMaterial.statusBinding,
+        registryRef: {
+          ...vpMaterial.statusBinding.registryRef,
+          registryId: bytes32Commitment("substituted-status-registry"),
+        },
+      },
+    }, vpScenario.input.scope))
+      .rejects.toThrow(/status registry/u);
+    const unavailableGrant = createGovernedApplicationIssuerEligibility({
+      selection: context.selection,
+      readers: { ...readers, readCurrentFinalizedRegistryDecision: async () => null },
+      loadEvidence: async () => evidence,
+      allowedApplicationRoles: ["issuer"],
+    });
+    await expect(unavailableGrant(vpMaterial, vpScenario.input.scope)).rejects.toThrow(/unavailable/u);
+    const inactiveGrant = createGovernedApplicationIssuerEligibility({
+      selection: context.selection,
+      readers: {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          acceptedEpoch: context.acceptedEpoch,
+          publication: context.publication,
+          decisionPoint: {
+            ...context.decisionPoint,
+            currentGrant: { ...context.decisionPoint.currentGrant, status: "suspended" },
+          },
+        }),
+      },
+      loadEvidence: async () => evidence,
+      allowedApplicationRoles: ["issuer"],
+    });
+    await expect(verifyApplicationVp({
+      ...vpScenario.input,
+      family: { ...vpScenario.family, assertIssuerEligible: inactiveGrant },
+    })).rejects.toMatchObject({ category: "ineligible" });
 
     const binding = await resolveMidnightDIDMethodBinding({
       resolver,
@@ -313,6 +466,22 @@ describe("simulator-backed VC decision evidence composition", () => {
     expect(converted.descriptor.didStateVersion).toBe(3n);
     expect(converted.descriptor.scopeCommitment).toEqual(pureCircuits.issuerScopeCommitment(vcSchema));
     expect(converted.descriptor.policyCommitment).toEqual(Uint8Array.from(Buffer.from(candidate.policyRoot.slice(2), "hex")));
+    const apiFetch: typeof fetch = async (url) => {
+      expect(String(url)).toBe(`http://localhost:3000/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`);
+      return new Response(JSON.stringify({ verification: "client-required", evidence }), { status: 200 });
+    };
+    const fromApi = await createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection, readers, binding, apiFetch,
+    );
+    expect(fromApi.descriptor).toEqual(converted.descriptor);
+    await expect(createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection, readers, binding,
+      async () => new Response(JSON.stringify({ verification: "server-verified", evidence }), { status: 200 }),
+    )).rejects.toThrow(/must require client verification/u);
+    await expect(createVcSignerCandidateFromApi(
+      "http://localhost:3000", issuer.authorizationId, context.selection,
+      { ...readers, readCurrentFinalizedRegistryDecision: async () => null }, binding, apiFetch,
+    )).rejects.toThrow(/registry decision is unavailable/u);
     await expect(createVcSignerCandidateFromTrustedDecision(
       evidence, context.selection, readers,
       { ...binding, didStateVersion: 2n },
@@ -427,6 +596,32 @@ describe("simulator-backed VC decision evidence composition", () => {
       signer: gatedSigner,
     });
     expect(authoritySignCount).toBe(1);
+    const signedFromApi = await issueVcSignerAuthorizationFromApi({
+      apiBase: "http://localhost:3000",
+      authorizationId: issuer.authorizationId,
+      selection: context.selection,
+      readers,
+      method: binding,
+      anchor: authorityAnchor,
+      signer: gatedSigner,
+      fetchImpl: apiFetch,
+    });
+    expect(signedFromApi.descriptor).toEqual(signed.descriptor);
+    expect(() => verifyVcSignerAuthorizationForConsumer(
+      signedFromApi.descriptor, signedFromApi.proof, authorityAnchor, null,
+    )).not.toThrow();
+    expect(authoritySignCount).toBe(2);
+    await expect(issueVcSignerAuthorizationFromApi({
+      apiBase: "http://localhost:3000",
+      authorizationId: issuer.authorizationId,
+      selection: context.selection,
+      readers: { ...readers, readCurrentFinalizedRegistryDecision: async () => null },
+      method: binding,
+      anchor: authorityAnchor,
+      signer: gatedSigner,
+      fetchImpl: apiFetch,
+    })).rejects.toThrow(/registry decision is unavailable/u);
+    expect(authoritySignCount).toBe(2);
     const validSignerRequest = {
       decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
         signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
@@ -483,7 +678,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
     }
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     for (const currentAuthorityDidState of [
       null,
       { ...authorityDidState, deactivated: true },
@@ -514,7 +709,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       });
       await expect(rejectedSigner(validSignerRequest)).rejects.toThrow(/authority DID/u);
     }
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     await expect(gatedSigner({
       decisionRoot: bytes32Commitment("substituted-decision-root"),
       decisionSequence: signed.descriptor.decisionSequence,
@@ -530,7 +725,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).rejects.toThrow(/does not match finalized descriptor/u);
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     await expect(gatedSigner({
       decisionRoot: pureCircuits.signerAuthorizationDecisionRoot(
         signed.descriptor, pinnedVcAuthority(authorityAnchor).domainCommitment,
@@ -569,7 +764,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       anchor: authorityAnchor,
       signer: staleSigner,
     })).rejects.toThrow(/current grant mismatch/u);
-    expect(authoritySignCount).toBe(1);
+    expect(authoritySignCount).toBe(2);
     expect(() => verifyVcSignerAuthorizationForConsumer(
       signed.descriptor, signed.proof, authorityAnchor, null,
     )).not.toThrow();
@@ -656,31 +851,11 @@ describe("simulator-backed VC decision evidence composition", () => {
     if (verifierMethod === undefined) throw new Error("Expected a native verifier method");
     const verifierGrant = verifierBundle.authorization;
     const verifierScope = createVerifierAuthorizationScopeFixture(verifier);
-    const verifierEvidence = DecisionEvidenceSchema.parse({
-      format: "tr-decision-evidence-v1",
-      role: "verifier",
-      registry: { registryId: harness.registryId, registryDid: harness.registryDid, networkId, contractAddress },
-      anchorReferences: {
-        registryEpoch: {
-          networkId, contractAddress, transactionHash: verifierEpochTransaction, blockHash: verifierEpochBlock,
-        },
-        didState: { networkId, blockHash: verifierDidBlock },
-      },
-      epoch: {
-        epochId: verifierBundle.epoch.epochId,
-        registryId: verifierBundle.epoch.registryId,
-        stateRoot: verifierBundle.epoch.stateRoot,
-        eventRoot: verifierBundle.epoch.eventRoot,
-        policyRoot: verifierBundle.epoch.policyRoot,
-        publicationPolicyCommitment: acceptedVerifierEpoch.publicationPolicyCommitment,
-        publicationSequence: acceptedVerifierEpoch.publicationSequence,
-        validFromSequence: acceptedVerifierEpoch.validFromSequence,
-        validUntilSequence: acceptedVerifierEpoch.validUntilSequence,
-        validFrom: verifierBundle.epoch.validFrom,
-        validUntil: verifierBundle.epoch.validUntil,
-        quorum: { requiredSignatures: acceptedVerifierEpoch.requiredSignatures, signatures: verifierWitness.signatures },
-      },
-      grant: verifierGrant,
+    const verifierBuildInput = {
+      bundle: verifierBundle,
+      acceptedEpoch: acceptedVerifierEpoch,
+      publicationSignatures: verifierWitness.signatures,
+      didStateBlockHash: verifierDidBlock,
       scope: verifierScope,
       didMethod: {
         did: verifier.subjectDid,
@@ -694,8 +869,6 @@ describe("simulator-backed VC decision evidence composition", () => {
           evidenceType: "ledger-observation", blockHash: verifierDidBlock, transactionHash: verifierDidTransaction,
         },
       },
-      policy: deriveGovernancePolicySnapshot(verifierBundle.policy),
-      inclusionProof: { ...verifierBundle.inclusionProof, leafIndex: String(verifierBundle.inclusionProof.leafIndex) },
       governanceEvents: {
         grantTransition: verifierGrant.lifecycleEventRoot,
         quorumApproval: sha256Hex("simulator:vc-verifier:approval-lookup"),
@@ -703,7 +876,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         policySnapshot: verifierBundle.epoch.policyRoot,
       },
       decisionSequence: verifierEpochRecord.publishedAtSequence.toString(),
-    });
+    } satisfies Parameters<typeof buildDecisionEvidenceClaim>[0];
+    const verifierEvidence = buildDecisionEvidenceClaim(verifierBuildInput);
     const currentVerifierGrant = harness.simulator.getCurrentVerifierAuthorization(
       verifier.subjectDidCommitment,
       verifier.requestResourceIdCommitment,
@@ -761,6 +935,36 @@ describe("simulator-backed VC decision evidence composition", () => {
     const verifierCandidate = await verifyDecisionEvidenceWithTrustedReaders(
       verifierEvidence, verifierSelection, verifierReaders,
     );
+    const verifierSource = createVerifiedDecisionEvidenceSource({
+      loadCandidate: async () => ({ buildInput: verifierBuildInput }),
+      trustedContextFor: async () => ({ selection: verifierSelection, readers: verifierReaders }),
+    });
+    expect(await verifierSource("verifier", verifier.authorizationId)).toEqual(verifierEvidence);
+    const typedVerifierSnapshotReaders: TrustedDecisionEvidenceReaders = verifierReaders;
+    const verifierSnapshot = await typedVerifierSnapshotReaders.readCurrentFinalizedRegistryDecision(
+      verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,
+    );
+    if (verifierSnapshot === null) throw new Error("Expected a verifier snapshot");
+    const verifierCompactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const verifierCompactEvidence = { ...verifierEvidence, decisionSequence: verifierCompactSequence };
+    const verifierCompactReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: verifierSnapshot.acceptedEpoch,
+        publication: verifierSnapshot.publication,
+        evaluationTime: verifierSnapshot.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: verifierReaders.readCurrentFinalizedDidState,
+    });
+    const verifierCompactCandidate = await verifyDecisionEvidenceWithTrustedReaders(
+      verifierCompactEvidence, verifierSelection, verifierCompactReaders,
+    );
+    expect(verifierCompactCandidate).toEqual({ ...verifierCandidate, decisionSequence: verifierCompactSequence });
+    expect(await verifierCompactReaders.readCurrentFinalizedRegistryDecision(
+      { ...verifierSelection, resourceId: "request-profile:wrong" },
+      verifierEvidence.epoch.epochId,
+      verifierEvidence.grant.authorizationId,
+    )).toBeNull();
     const verifierBinding = await resolveMidnightDIDMethodBinding({
       resolver: verifierResolver,
       did: parseMidnightDIDString(verifier.subjectDid),
@@ -982,7 +1186,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     );
     const typedVerifierReaders: TrustedDecisionEvidenceReaders = verifierReaders;
     const previousVerifierSnapshot = await typedVerifierReaders.readCurrentFinalizedRegistryDecision(
-      verifierSelection, verifierEvidence.epoch.epochId,
+      verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,
     );
     if (previousVerifierSnapshot === null) throw new Error("Expected the verifier decision snapshot");
     await expect(issueVcSignerAuthorizationFromTrustedDecision({
@@ -1054,5 +1258,73 @@ describe("simulator-backed VC decision evidence composition", () => {
       sign: async () => { throw new Error("Suspended authority reached key custody"); },
     });
     await expect(suspendedAuthoritySigner(validSignerRequest)).rejects.toThrow(/Current finalized VC authority key/u);
+  }, 30_000);
+
+  it("keeps an unchanged grant current across unrelated epochs but rejects a changed grant", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("superseded-current-epoch");
+    const issuer = createIssuerScenarioFixture("superseded-current-epoch");
+    harness.authorizeIssuer(issuer);
+    const oldBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    if (oldBundle.authorization?.role !== "issuer") throw new Error("Expected issuer authorization");
+    const oldRecord = harness.simulator.getEpochCommitment(bytes32Commitment(oldBundle.epoch.epochId));
+    const oldWitness = harness.getEpochPublicationWitness(oldBundle.epoch.epochId);
+    const newer = harness.publishRegistryEpoch("newer-current-epoch");
+    const ledger = harness.simulator.getLedger();
+    expect(newer.epochId).not.toBe(oldBundle.epoch.epochId);
+    expect(ledger.governanceActionCount <= oldRecord.validUntilSequence).toBe(true);
+    const networkId = issuer.subjectDid.split(":")[2]!;
+    const contractAddress = hex(encodeContractAddress(harness.simulator.contractAddress));
+    const acceptedEpoch = {
+      registryId: harness.registryId,
+      registryDid: harness.registryDid,
+      networkId,
+      contractAddress,
+      transactionHash: sha256Hex("superseded:epoch-transaction"),
+      blockHash: sha256Hex("superseded:epoch-block"),
+      epochId: oldBundle.epoch.epochId,
+      stateRoot: hex(oldRecord.stateRoot),
+      eventRoot: hex(oldRecord.eventRoot),
+      policyRoot: hex(oldRecord.policyRoot),
+      publicationPolicyCommitment: hex(oldRecord.publicationPolicyCommitment),
+      publicationSequence: oldRecord.publishedAtSequence.toString(),
+      validFromSequence: oldRecord.validFromSequence.toString(),
+      validUntilSequence: oldRecord.validUntilSequence.toString(),
+      publicationEventHash: oldWitness.eventHash,
+      validFrom: oldBundle.epoch.validFrom,
+      validUntil: oldBundle.epoch.validUntil,
+      requiredSignatures: Number(ledger.maintainerThreshold),
+    };
+    const readers = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: AcceptedDecisionEpochSchema.parse(acceptedEpoch),
+        publication: {
+          registryIdCommitment: harness.registryIdCommitment,
+          epochIdCommitment: bytes32Commitment(oldBundle.epoch.epochId),
+          firstSignerKeyIdCommitment: oldRecord.maintainerKeyId,
+          activeMaintainersAtPublication: [],
+        },
+        evaluationTime: oldBundle.epoch.validFrom,
+      }),
+      readFinalizedDidState: async () => { throw new Error("Stale epoch must fail before DID lookup"); },
+    });
+    const selection = {
+      registryId: harness.registryId,
+      networkId,
+      contractAddress,
+      subjectDid: issuer.subjectDid,
+      role: "issuer" as const,
+      resourceType: oldBundle.authorization.resourceType,
+      resourceId: issuer.resourceId,
+      scope: issuer.authorizationScope,
+    };
+    const current = await readers.readCurrentFinalizedRegistryDecision(
+      selection, oldBundle.epoch.epochId, issuer.authorizationId,
+    );
+    expect(current?.decisionPoint.currentGrant.status).toBe("active");
+    harness.suspendIssuer(issuer);
+    await expect(readers.readCurrentFinalizedRegistryDecision(
+      selection, oldBundle.epoch.epochId, issuer.authorizationId,
+    )).rejects.toThrow(/stale for the current grant/u);
   }, 30_000);
 });

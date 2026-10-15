@@ -3,6 +3,7 @@ import type { JWK } from "jose";
 
 import {
   AuthorizationRecordSchema,
+  IssuerStatusPolicyBindingSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
@@ -79,6 +80,32 @@ export const MidnightTrustRegistryMetadataSchema = z.discriminatedUnion(
       role: AuthorizationRecordSchema.shape.role,
       resource_type: AuthorizationRecordSchema.shape.resourceType,
       resource_id: NonEmptyStringSchema,
+      status_policy_binding: IssuerStatusPolicyBindingSchema.optional(),
+      status_policy_binding_commitment: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+      authorization_bundle: FederationEvidenceBundleSchema,
+    }).superRefine((metadata, context) => {
+      const { authorization, statusPolicyBinding, registryId, policy } = metadata.authorization_bundle;
+      if (
+        authorization === undefined ||
+        registryId !== metadata.registry_id ||
+        policy.policyId !== metadata.policy_id ||
+        authorization.trustLevel !== metadata.trust_level ||
+        authorization.status !== metadata.status ||
+        authorization.role !== metadata.role ||
+        authorization.resourceType !== metadata.resource_type ||
+        authorization.resourceId !== metadata.resource_id ||
+        (metadata.role === "issuer" && (
+          statusPolicyBinding === undefined ||
+          JSON.stringify(statusPolicyBinding) !== JSON.stringify(metadata.status_policy_binding) ||
+          authorization.statusPolicyBindingCommitment !== metadata.status_policy_binding_commitment
+        )) ||
+        (metadata.role !== "issuer" && (
+          metadata.status_policy_binding !== undefined ||
+          metadata.status_policy_binding_commitment !== undefined
+        ))
+      ) {
+        context.addIssue({ code: "custom", message: "Authorization metadata does not match its governed evidence bundle" });
+      }
     }),
     z.object({
       statement_kind: z.literal("recognition"),
@@ -148,7 +175,7 @@ export const AuthorizationSubordinateStatementInputSchema = z.object({
   issuerEntityId: z.string().url(),
   sourceEndpoint: z.string().url(),
   subjectPublicJwks: JwksSchema,
-  bundle: TrustRegistryEvidenceBundleSchema,
+  bundle: FederationEvidenceBundleSchema,
   now: UnixTimestampSchema.optional(),
   expiresInSeconds: UnixTimestampSchema.optional(),
 });

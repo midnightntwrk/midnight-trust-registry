@@ -59,6 +59,72 @@ The v1 profile supports `did:midnight` and the published DID package's native
 SchnorrJubjub method. Opaque JWK methods are not silently converted to a
 JubJub point. Other suites require a separately specified verification path.
 
+The optional read-only `GET /v1/decision-evidence/{role}/{id}` endpoint may
+return an issuer or verifier `tr-decision-evidence-v1` bundle from an injected
+finalized source. It is disabled with 503 when no source is configured, rejects
+malformed or cross-registry/role/authorization records, and marks a successful
+response `verification: client-required`. The API performs structural parsing
+only. Neither an HTTP 200 nor the source's assertion of finality replaces
+`verifyDecisionEvidenceWithTrustedReaders` with independently authenticated
+accepted epoch and DID observations. Consumers MUST NOT create VC signer
+descriptors directly from this endpoint's response.
+`verifyDecisionEvidenceFromApi` is the client composition helper: it fetches
+the envelope without caching, requires the `client-required` marker and exact
+grant ID/role, then calls `verifyDecisionEvidenceWithTrustedReaders`. It
+accepts only HTTPS or loopback HTTP base URLs. The caller still supplies the
+independent authenticated registry and DID readers; the helper does not
+convert HTTP transport trust into a ledger anchor.
+
+`buildDecisionEvidenceClaim` assembles the v1 issuer/verifier claim from a TR
+evidence bundle, independently supplied accepted-epoch metadata, publication
+signatures, a resolved DID method, exact scope, and governance event
+references. It derives the policy snapshot and Merkle path from the bundle,
+checks the accepted epoch identity/roots/validity, inclusion leaf, and policy
+commitment, and rejects recognition or auditor records. The builder does not
+authenticate the supplied accepted epoch, maintainer keys, DID observation,
+or current decision point. The existing verifier remains mandatory before
+using the result for VC authorization.
+
+The VC integration adapter can now consume the optional API route through
+`createVcSignerCandidateFromApi`. It uses the client verifier with independent
+finalized registry and DID readers before converting the candidate into a VC
+signer descriptor. It rejects an API response that omits the `client-required`
+marker or whose evidence cannot be corroborated by the trusted readers. The
+HTTP response itself is never a signer-authorization proof.
+
+`issueVcSignerAuthorizationFromApi` carries that authenticated candidate into
+the existing pinned-domain authority signer. It validates the returned proof
+before publication, while the signer port still has to independently recheck
+current finalized decision and governed authority-key state before using key
+custody. The simulator journey verifies the proof against the pinned VC
+authority and confirms a missing finalized registry decision does not invoke
+the authority signer.
+
+`createCompactLedgerDecisionReaders` projects a host-supplied finalized Compact
+ledger view into the client reader interface. It matches registry and epoch
+commitments to that ledger, selects the exact current issuer/verifier record
+through its on-chain scope index, and reads current policy, status, lifecycle
+event, and action sequence from the same view. The authorization ID is a
+lookup hint, not evidence of current membership. A newer unrelated epoch does
+not invalidate an older epoch within its sequence window when the current
+policy and exact grant are still unchanged. The host remains responsible for
+proving the ledger view's network finality and currency, accepted-epoch block
+and transaction references, historic maintainer set, off-ledger evaluation
+time, and DID-state observation. Passing a simulator ledger satisfies none of
+those production provenance requirements.
+
+`createVerifiedDecisionEvidenceSource` supplies the optional API route from an
+indexed evidence bundle without treating that index as an anchor. It builds a
+claim, requires exact role and authorization ID, obtains the expected
+registry/scope selection and finalized readers from one separate trusted host
+port, and runs the full client verifier before returning the claim. Indexed
+candidate data cannot select its own registry, contract, DID, or scope.
+The API still marks the response `client-required`; the consumer must verify
+again using its own independently authenticated readers. In the simulator
+demo, a stale issuer or verifier claim after suspension or revocation causes
+the source to fail closed and the HTTP route to return 503. A live host must
+replace both the bundle index and reader port with genuine finalized sources.
+
 ## Inputs
 
 The candidate builder receives a versioned decision-evidence bundle and

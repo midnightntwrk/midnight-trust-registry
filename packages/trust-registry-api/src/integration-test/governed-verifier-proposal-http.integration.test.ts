@@ -23,6 +23,7 @@ import {
   type PreparedGovernedVerifierProposal,
 } from "../governed-verifier-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -76,7 +77,6 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       role: "verifier",
       scope: createVerifierAuthorizationScopeFixture(verifier),
     });
-    let proposed = false;
     const port: GovernedVerifierProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== verifier.authorizationId) {
@@ -96,7 +96,6 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           const eventHash = harness.executeVerifierProposalWithSignatures(
             verifier, submitted, signers, verifierSignature,
           );
-          proposed = true;
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
         } catch {
           throw new GovernedVerifierProposalRejectedError("invalid-signers");
@@ -106,12 +105,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
         if (authorizationId !== verifier.authorizationId) {
           throw new GovernedVerifierProposalRejectedError("unknown-authorization");
         }
-        if (!proposed) return null;
-        const record = harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment);
-        return {
-          eventHash: `0x${Buffer.from(record.proposalGovernanceEventHash).toString("hex")}`,
-          evidenceCommitment: `0x${Buffer.from(record.evidenceCommitment).toString("hex")}`,
-        };
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "verifier", authorizationId);
       },
     };
     const server = createTrustRegistryApiServer({

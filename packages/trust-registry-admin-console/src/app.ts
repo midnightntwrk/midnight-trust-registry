@@ -40,6 +40,7 @@ type AppState = {
   error: string | undefined;
   flash: string | undefined;
   governedBusy: boolean;
+  governedAction: GovernedMembershipAction | undefined;
   governedKey: string | undefined;
   governedPrepared: PreparedGovernedMembershipAction | undefined;
   governedSignersJson: string;
@@ -88,12 +89,6 @@ const countCards = (
   + board.summary.auditorCounts[status]
   + board.summary.recognitionCounts[status];
 
-const governedActionFor = (card: ReviewCard): GovernedMembershipAction | undefined =>
-  card.status === "proposed" ? "approve"
-    : card.status === "authorized" ? "activate"
-      : card.status === "active" ? "suspend"
-        : card.status === "suspended" ? "revoke" : undefined;
-
 const assertExactFields = (value: unknown, fields: readonly string[], label: string): void => {
   if (value === null || typeof value !== "object" || Array.isArray(value)
     || Object.keys(value).length !== fields.length
@@ -111,7 +106,7 @@ const assertRedactedEvidence = (value: unknown): void => {
   assertExactFields(submission.envelope, [
     "version", "registryId", "applicationId", "subjectDid", "role", "policyId", "policyVersion",
     "scopeCommitment", "governedResource", "evidenceVerifierDid", "verifiedAt", "expiresAt",
-    "challengeHash", "presentationHash", "claimsCommitment",
+    "challengeHash", "presentationHash", "claimsCommitment", "statusDecisionCommitment",
   ], "Application evidence envelope");
   const envelope = submission.envelope as Record<string, unknown>;
   for (const [key, field] of Object.entries(envelope)) {
@@ -177,6 +172,7 @@ export const createAdminConsoleApp = (
     error: undefined,
     flash: undefined,
     governedBusy: false,
+    governedAction: undefined,
     governedKey: undefined,
     governedPrepared: undefined,
     governedSignersJson: "",
@@ -286,6 +282,7 @@ export const createAdminConsoleApp = (
         board,
         cards,
         governedKey: undefined,
+        governedAction: undefined,
         governedPrepared: undefined,
         governedSignersJson: "",
         proposalPrepared: undefined,
@@ -303,6 +300,7 @@ export const createAdminConsoleApp = (
         error: formatApiError(error),
         flash: undefined,
         governedKey: undefined,
+        governedAction: undefined,
         governedPrepared: undefined,
         proposalPrepared: undefined,
         policyPhase: undefined,
@@ -364,17 +362,15 @@ export const createAdminConsoleApp = (
     setState({ publishing: false, epochLabel: "" });
   };
 
-  const prepareGoverned = async () => {
+  const prepareGoverned = async (action: GovernedMembershipAction) => {
     if (state.loading || state.publishing || state.governedBusy) return;
     const card = selectedCard();
-    if (card === undefined) return;
-    const action = governedActionFor(card);
-    if (action === undefined) return;
-    setState({ governedBusy: true, governedKey: undefined, governedPrepared: undefined,
+    if (card === undefined || !getReviewActions(card.status).includes(action)) return;
+    setState({ governedBusy: true, governedAction: undefined, governedKey: undefined, governedPrepared: undefined,
       governedSignersJson: "", error: undefined, flash: undefined });
     try {
       const prepared = await getClient().prepareGovernedAction(card.target, card.id, action);
-      setState({ governedBusy: false, governedKey: `${card.key}:${action}`, governedPrepared: prepared });
+      setState({ governedBusy: false, governedAction: action, governedKey: `${card.key}:${action}`, governedPrepared: prepared });
     } catch (error) {
       setState({ governedBusy: false, error: formatApiError(error) });
     }
@@ -384,8 +380,9 @@ export const createAdminConsoleApp = (
     if (state.loading || state.publishing || state.governedBusy) return;
     const card = selectedCard();
     if (card === undefined) return;
-    const action = governedActionFor(card);
-    if (action === undefined || state.governedKey !== `${card.key}:${action}`
+    const action = state.governedAction;
+    if (action === undefined || !getReviewActions(card.status).includes(action)
+      || state.governedKey !== `${card.key}:${action}`
       || state.governedPrepared === undefined) return;
     const prepared = state.governedPrepared;
     let signers: GovernedMembershipSignatureRequest["signers"];
@@ -410,7 +407,7 @@ export const createAdminConsoleApp = (
         governedBusy: false,
         error: formatApiError(error),
         ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
-          ? { governedKey: undefined, governedPrepared: undefined, governedSignersJson: "" }
+          ? { governedAction: undefined, governedKey: undefined, governedPrepared: undefined, governedSignersJson: "" }
           : {}),
       });
     }
@@ -638,6 +635,7 @@ export const createAdminConsoleApp = (
       element.addEventListener("click", () => {
         setState({
           selectedKey: element.dataset.selectKey,
+          governedAction: undefined,
           governedKey: undefined,
           governedPrepared: undefined,
           governedSignersJson: "",
@@ -646,9 +644,10 @@ export const createAdminConsoleApp = (
       });
     });
 
-    root.querySelector<HTMLButtonElement>("[data-governed-prepare]")?.addEventListener("click", () => {
-      void prepareGoverned();
-    });
+    root.querySelectorAll<HTMLButtonElement>("[data-governed-prepare]").forEach((button) => button.addEventListener("click", () => {
+      const action = button.dataset.governedPrepare as GovernedMembershipAction;
+      void prepareGoverned(action);
+    }));
     root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")?.addEventListener("input", (event) => {
       state.governedSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
     });
@@ -786,7 +785,9 @@ export const createAdminConsoleApp = (
       `;
     }
 
-    const governedAction = governedActionFor(card);
+    const governedAction = state.governedAction !== undefined
+      && getReviewActions(card.status).includes(state.governedAction)
+      ? state.governedAction : undefined;
     const prepared = governedAction !== undefined
       && state.governedKey === `${card.key}:${governedAction}`
       ? state.governedPrepared : undefined;
@@ -811,12 +812,12 @@ export const createAdminConsoleApp = (
             <dd>${escapeHtml(card.updatedAt)}</dd>
           </div>
         </dl>
-        ${governedAction === undefined ? "" : `
+        ${getReviewActions(card.status).length === 0 ? "" : `
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
-            <h3>External ${escapeHtml(governedAction)} signatures</h3>
+            <h3>External maintainer signatures</h3>
             <p>Prepare the current ledger-bound action, have existing maintainers sign its policy-bound digest outside this browser, then submit their public keys and signatures. This console never handles private keys.</p>
-            <button class="button secondary" type="button" data-governed-prepare${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(governedAction)}</button>
+            ${getReviewActions(card.status).map((action) => `<button class="button secondary" type="button" data-governed-prepare="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(action)}</button>`).join("")}
             ${prepared === undefined ? "" : `
               <p>Sign this exact context. A changed sequence or policy requires a fresh preparation.</p>
               <pre class="governed-context mono">${escapeHtml(JSON.stringify(prepared, null, 2))}</pre>
@@ -824,7 +825,7 @@ export const createAdminConsoleApp = (
                 <label>External signer entries as JSON array
                   <textarea class="input mono governed-signers" data-governed-signers spellcheck="false" placeholder='[{"keyId":"0x...","publicKey":{"x":"...","y":"..."},"signature":"0x..."}]'>${escapeHtml(state.governedSignersJson)}</textarea>
                 </label>
-                <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${escapeHtml(governedAction)}</button>
+                <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${escapeHtml(governedAction ?? "action")}</button>
               </form>
             `}
           </section>

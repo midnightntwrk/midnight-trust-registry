@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import type { Server } from "node:http";
 
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
@@ -13,7 +14,15 @@ import {
   type GovernedResource,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
-import { createMidnightDid, createMidnightDidLedgerFixture, createMidnightDidResolver } from "@midnight-ntwrk/trust-registry-integration";
+import {
+  bytes32Commitment,
+  createIssuerAuthorizationScopeFixture,
+  createIssuerScenarioFixture,
+  createMidnightDid,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
+  LocalTrustRegistryIntegrationHarness,
+} from "@midnight-ntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
@@ -122,6 +131,71 @@ describe("pending application registration over private HTTP", () => {
     expect(bindingPreflight.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  it("accepts a fresh DID-signed application after a verified archived proposal", async () => {
+    const label = "issuer-reapply-http";
+    const harness = new LocalTrustRegistryIntegrationHarness(label);
+    const baseIssuer = createIssuerScenarioFixture(label);
+    const issuer = {
+      ...baseIssuer,
+      subjectDid: applicantDid,
+      subjectDidCommitment: bytes32Commitment(applicantDid),
+    };
+    const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
+    const issuerResource = { type: "credentialFamily" as const, id: issuer.resourceId };
+    const state: PendingApplicationRegistrationState = {
+      workspace: createOperatorWorkspace({ label }), applications: [], consumedNonces: [],
+    };
+    const registration = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
+    server = createTrustRegistryApiServer({
+      source: createInMemorySource(state.workspace.snapshot),
+      clock: () => NOW,
+      pendingApplicationRegistration: registration,
+    });
+    const base = await listen(server);
+    const post = (body: unknown) => fetch(`${base}/v1/pending-applications`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const first = signedRequest(state, "22", {
+      applicationId: "application:issuer:reapply:v1",
+      authorizationId: issuer.authorizationId,
+      scope: issuerScope,
+      governedResource: issuerResource,
+    });
+    expect((await post(first)).status).toBe(201);
+    const pending = registration.readPending(first.applicationId)!;
+    const replacement = signedRequest(state, "23", {
+      applicationId: "application:issuer:reapply:v2",
+      authorizationId: `${issuer.authorizationId}:replacement`,
+      scope: issuerScope,
+      governedResource: issuerResource,
+    });
+    expect((await post(replacement)).status).toBe(409);
+    harness.proposeIssuer(issuer);
+    const eventHash = harness.archiveIssuer(issuer);
+    const bundle = harness.buildIssuerHistoricalEvidence(issuer);
+    const observation = {
+      authorizationId: pending.authorizationId,
+      binding: pending.binding,
+      status: "archived" as const,
+      archiveEventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
+    };
+    const verify = () => {
+      new TrustRegistrySimulatorClient(harness.simulator).verifyIssuerAuthorizationBundle(
+        bundle, { expectedRegistryId: harness.registryId, requireActive: false },
+      );
+      return bundle.authorization?.status === "archived"
+        && bundle.authorization.authorizationId === observation.authorizationId
+        && bundle.authorization.subjectDid === observation.binding.subjectDid
+        ? bundle.authorization.lifecycleEventRoot : null;
+    };
+    await registration.recordArchived(observation, verify);
+    expect(registration.readPending(first.applicationId)).toBeNull();
+    const accepted = await post(replacement);
+    expect(accepted.status).toBe(201);
+    expect(registration.readPending(replacement.applicationId)?.status).toBe("pending");
+    expect((await post(first)).status).toBe(409);
+  });
+
   it("registers a DID-signed exact scope, then admits one challenge-bound VP for that pending record", async () => {
     const state: PendingApplicationRegistrationState = {
       workspace: createOperatorWorkspace({ label: "auditor-http-registration" }),
@@ -157,6 +231,7 @@ describe("pending application registration over private HTTP", () => {
           scopeCommitment: proof.scopeCommitment,
           presentationHash: `0x${"55".repeat(32)}`,
           claimsCommitment: `0x${"66".repeat(32)}`,
+          statusDecisionCommitment: `0x${"77".repeat(32)}`,
           verifiedAt: NOW,
           expiresAt: "2026-10-13T00:02:00.000Z",
         };
@@ -262,6 +337,7 @@ describe("pending application registration over private HTTP", () => {
           scopeCommitment: proof.scopeCommitment,
           presentationHash: `0x${"55".repeat(32)}`,
           claimsCommitment: `0x${"66".repeat(32)}`,
+          statusDecisionCommitment: `0x${"77".repeat(32)}`,
           verifiedAt: NOW,
           expiresAt: "2026-10-13T00:02:00.000Z",
         };

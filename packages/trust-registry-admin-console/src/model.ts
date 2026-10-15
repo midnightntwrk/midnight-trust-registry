@@ -63,7 +63,7 @@ export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
 const REVIEW_ACTIONS_BY_STATUS: Record<ReviewStatus, readonly ReviewAction[]> = {
   proposed: ["approve", "archive"],
   authorized: ["activate", "revoke", "archive"],
-  active: ["suspend", "revoke"],
+  active: ["suspend", "revoke", "archive"],
   suspended: ["revoke", "archive"],
   revoked: ["archive"],
   superseded: [],

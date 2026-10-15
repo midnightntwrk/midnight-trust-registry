@@ -305,6 +305,47 @@ describe("record schemas", () => {
     ).toThrow(/authorizedAt is required/);
   });
 
+  it("accepts archived proposals without inventing approval or activation timestamps", () => {
+    const archivedAt = "2026-05-20T02:00:00Z";
+    const authorization = {
+      authorizationId: "auth:issuer:denied:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: ISSUER_RESOURCE_ID,
+      policyId: "policy:university:v1",
+      trustLevel: "approved",
+      status: "archived",
+      statusPolicyBindingCommitment: HASH_B,
+      proposedAt: "2026-05-20T00:00:00Z",
+      archivedAt,
+      evidenceHash: HASH_C,
+      lifecycleEventRoot: HASH_A,
+    };
+    const recognition = {
+      recognitionId: "rec:denied:issuer",
+      registryId: "registry:midnight:university",
+      recognizedAuthorityDid: "did:web:gaia-x.example",
+      recognizedRegistryId: "registry:gaia-x:edu",
+      scope: { resourceType: "recognized-scope", resourceId: "vc-type:degree:v1" },
+      policyId: "policy:university:v1",
+      trustLevel: "peer-approved",
+      status: "archived",
+      proposedAt: "2026-05-20T00:00:00Z",
+      archivedAt,
+      evidenceHash: HASH_D,
+      lifecycleEventRoot: HASH_B,
+    };
+
+    expect(AuthorizationRecordSchema.parse(authorization).activeFrom).toBeUndefined();
+    expect(RecognitionRecordSchema.parse(recognition).effectiveFrom).toBeUndefined();
+    expect(() => AuthorizationRecordSchema.parse({ ...authorization, activeFrom: archivedAt }))
+      .toThrow(/authorizedAt is required/u);
+    expect(() => RecognitionRecordSchema.parse({ ...recognition, effectiveFrom: archivedAt }))
+      .toThrow(/authorizedAt is required/u);
+  });
+
   it("allows pre-activation recognition records without effectiveFrom", () => {
     expect(() =>
       RecognitionRecordSchema.parse({

@@ -31,7 +31,7 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "integration": "node scripts/check-vc-composition.mjs && vitest run --dir src/test",
+    "integration": "node scripts/check-vc-composition.mjs && vitest run --dir src/test --testTimeout 15000",
     "integration:light": "pnpm run integration",
     "test:light": "node scripts/check-vc-composition.mjs",
     "build:light": "pnpm run build"
@@ -45,7 +45,8 @@
     "@midnight-ntwrk/midnight-did-domain": "0.7.0",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
+    "zod": "^4.1.0"
   },
   "devDependencies": {
     "@midnight-ntwrk/compact-runtime": "0.16.0"

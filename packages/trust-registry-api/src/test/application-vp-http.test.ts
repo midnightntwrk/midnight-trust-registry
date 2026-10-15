@@ -96,6 +96,7 @@ describe("application VP HTTP intake", () => {
           scopeCommitment: proof.scopeCommitment ?? "",
           presentationHash: `0x${"2".repeat(64)}`,
           claimsCommitment: `0x${"3".repeat(64)}`,
+          statusDecisionCommitment: `0x${"4".repeat(64)}`,
           verifiedAt: new Date(nowMs).toISOString(),
           expiresAt: new Date(nowMs + 60_000).toISOString(),
         };
@@ -283,6 +284,7 @@ describe("application VP HTTP intake", () => {
       return {
         nonce: issued.nonce, subjectDid: binding.subjectDid, scopeCommitment: binding.scopeCommitment,
         presentationHash: `0x${"2".repeat(64)}`, claimsCommitment: `0x${"3".repeat(64)}`,
+        statusDecisionCommitment: `0x${"4".repeat(64)}`,
         verifiedAt: new Date(nowMs).toISOString(), expiresAt: new Date(nowMs + 60_000).toISOString(),
       };
     });

@@ -22,6 +22,7 @@ import {
   type PreparedGovernedMaintainerProposal,
 } from "../governed-maintainer-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -66,7 +67,6 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
     }
-    let proposed = false;
     const port: GovernedMaintainerProposalPort = {
       async prepare(maintainerId, submitted) {
         if (maintainerId !== candidate.maintainerId) {
@@ -86,7 +86,6 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           const eventHash = harness.executeMaintainerProposalWithSignatures(
             candidate, submitted, signers, verifierSignature,
           );
-          proposed = true;
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
         } catch {
           throw new GovernedMaintainerProposalRejectedError("invalid-signers");
@@ -96,12 +95,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
         if (maintainerId !== candidate.maintainerId) {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");
         }
-        if (!proposed) return null;
-        const record = harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment);
-        return {
-          eventHash: `0x${Buffer.from(record.proposalGovernanceEventHash).toString("hex")}`,
-          evidenceCommitment: `0x${Buffer.from(record.evidenceCommitment).toString("hex")}`,
-        };
+        return resolveCompactProposalObservation(async () => harness.simulator.getLedger(),
+          harness.registryId, "maintainer", maintainerId);
       },
     };
     const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port });

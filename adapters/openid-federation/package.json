@@ -39,6 +39,7 @@
     "test:light": "vitest run --testTimeout 30000"
   },
   "dependencies": {
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
     "jose": "^6.1.0",
     "zod": "^4.1.0"

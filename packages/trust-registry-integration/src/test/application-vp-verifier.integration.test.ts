@@ -18,6 +18,7 @@ import {
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
 } from "../application-vp-verifier.js";
+import { verifyApplicationStatusDecisionWitness } from "../application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
@@ -41,11 +42,30 @@ async function fixture() {
   return {
     input: { ...scenario.input, scope: scenario.input.scope, family },
     material: scenario.material,
+    issuerBinding: scenario.fixtureStatusPolicyBinding,
     family,
   };
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("retains the exact private status witness used to create redacted VP evidence", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const result = await verifyApplicationVp(scenario.input);
+    const challengeHash = sha256Hex(Buffer.from(scenario.input.nonce.slice(2), "hex"));
+    const signed = scenario.readStatusWitness(challengeHash);
+    expect(signed).not.toBeNull();
+    expect(scenario.readStatusWitness(sha256Hex("other-challenge"))).toBeNull();
+    await expect(verifyApplicationStatusDecisionWitness({
+      signed,
+      expectedCommitment: result.statusDecisionCommitment,
+      material: scenario.material,
+      binding: scenario.fixtureStatusPolicyBinding,
+      nonce: scenario.input.nonce,
+      evaluatedAtMs: scenario.input.evaluatedAtMs,
+      resolver: scenario.input.resolver,
+    })).resolves.toBe(true);
+  });
+
   it("uses distinct authentication and assertion methods on the same applicant DID", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     const did = parseMidnightDIDString(scenario.input.expectedSubjectDid);
@@ -188,7 +208,7 @@ describe("published VC proof and DID application verifier port", () => {
     const context = { nonce: NONCE, binding, evaluatedAt: new Date(NOW).toISOString() };
     const verified = await ports.verifyPresentation(input.submission, context);
     expect(verified.subjectDid).toBe(input.expectedSubjectDid);
-    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
+    expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());
     expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
     const commitment = sha256Hex("application-evidence-test");
     const signature = await ports.signEvidence(commitment);
@@ -312,7 +332,7 @@ describe("published VC proof and DID application verifier port", () => {
     expect(verified.scopeCommitment).toBe(computeAuthorizationScopeCommitment(input.scope));
     expect(verified.presentationHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(verified.presentationHash).not.toBe(sha256Hex(bytes32("presentation-body")));
-    expect(verified.expiresAt).toBe(new Date(NOW + 15 * 60_000).toISOString());
+    expect(verified.expiresAt).toBe(new Date(NOW + 5 * 60_000).toISOString());
     expect(JSON.stringify(verified)).not.toContain("private-presentation-payload");
     expect(family.assertIssuerEligible).toHaveBeenCalledOnce();
     expect(family.assertCredentialBodyBinding).toHaveBeenCalledOnce();
@@ -429,7 +449,10 @@ describe("published VC proof and DID application verifier port", () => {
     const { input, material, family } = await fixture();
     family.prepare = vi.fn(async () => ({ ...material, credentialExpiresAtMs: NOW + 48 * 60 * 60_000 }));
     family.assertCredentialBodyBinding = vi.fn(async () => true as const);
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 48 * 60 * 60_000 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 48 * 60 * 60_000,
+      statusDecisionCommitment: sha256Hex("test-status-long-lived"),
+    }));
     await expect(verifyApplicationVp(input)).resolves.toMatchObject({
       expiresAt: new Date(NOW + 24 * 60 * 60_000).toISOString(),
     });
@@ -497,30 +520,67 @@ describe("published VC proof and DID application verifier port", () => {
     family.prepare = vi.fn(async () => material);
     await expect(verifyApplicationVp({ ...input, evaluatedAtMs: NOW + 6 * 60_000 })).rejects.toMatchObject({ category: "expired" });
 
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW - 1 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW - 1,
+      statusDecisionCommitment: sha256Hex("test-status-expired"),
+    }));
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "expired" });
     expect(family.assertRoleClaims).not.toHaveBeenCalled();
 
-    family.assertStatusActive = vi.fn(async () => ({ validUntilMs: NOW + 15 * 60_000 }));
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 15 * 60_000,
+      statusDecisionCommitment: sha256Hex("test-status-claims"),
+    }));
     family.assertRoleClaims = vi.fn(async () => { throw new Error("private claim mismatch"); });
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
   });
 
   it("redacts issuer and status adapter denials before returning any attestation", async () => {
-    const { input, family } = await fixture();
-    family.assertIssuerEligible = vi.fn(async () => false as unknown as true);
+    const { input, family, issuerBinding } = await fixture();
+    family.assertIssuerEligible = vi.fn(async () => false as unknown as typeof issuerBinding);
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({
       category: "ineligible",
       message: "Application VP ineligible",
     });
     expect(family.assertStatusActive).not.toHaveBeenCalled();
 
-    family.assertIssuerEligible = vi.fn(async () => true as const);
+    family.assertIssuerEligible = vi.fn(async () => issuerBinding);
     family.assertStatusActive = vi.fn(async () => { throw new Error("private status witness details"); });
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({
       category: "ineligible",
       message: "Application VP ineligible",
     });
     expect(family.assertRoleClaims).not.toHaveBeenCalled();
+  });
+
+  it("passes only the eligible issuer's governed status binding and challenge context to status verification", async () => {
+    const { input, family, issuerBinding } = await fixture();
+    await verifyApplicationVp(input);
+    expect(family.assertStatusActive).toHaveBeenCalledWith(
+      expect.any(Object), issuerBinding, { nonce: NONCE, evaluatedAtMs: NOW },
+    );
+
+    family.assertStatusActive.mockClear();
+    family.assertIssuerEligible = vi.fn(async () => ({
+      ...issuerBinding,
+      statusRegistryId: sha256Hex("substituted-governed-registry"),
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+    expect(family.assertStatusActive).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing or malformed status-decision commitments before issuing evidence", async () => {
+    const { input, family } = await fixture();
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 60_000,
+      statusDecisionCommitment: undefined as unknown as string,
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+    expect(family.assertRoleClaims).not.toHaveBeenCalled();
+    family.assertStatusActive = vi.fn(async () => ({
+      validUntilMs: NOW + 60_000,
+      statusDecisionCommitment: "not-a-commitment",
+    }));
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
   });
 });

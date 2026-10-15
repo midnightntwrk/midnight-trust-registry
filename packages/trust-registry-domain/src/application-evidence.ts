@@ -71,6 +71,7 @@ export const ApplicationEvidenceEnvelopeSchema = z
     challengeHash: HashHexSchema,
     presentationHash: HashHexSchema,
     claimsCommitment: HashHexSchema,
+    statusDecisionCommitment: HashHexSchema,
   })
   .superRefine((envelope, ctx) => {
     const issuerType = IssuerGovernedResourceTypeSchema.safeParse(envelope.governedResource.type);

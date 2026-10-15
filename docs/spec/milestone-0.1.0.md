@@ -141,9 +141,16 @@ steps separately and does not imply atomic execution or network finality.
 
 Application states are `proposed -> authorized -> active`, followed by
 `suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
-lifecycle validators. A rejected proposal MUST be terminal or represented by
-an explicit rejection event before its scope can be reused; 0.1.0 issues
-must settle this currently missing transition. A superseding application gets
+lifecycle validators. A denied proposal is archived by a quorum-governed
+action before its exact scope can be reused. The original ID and proposal
+evidence remain in the ledger; a new application MUST use a new ID. Archival
+records the terminal decision but does not encode an off-chain denial reason.
+A private applicant-intake store MUST retain the old application and nonce,
+stop serving its pending VP binding, and release its exact-scope reservation
+only after its host independently verifies the matching archived ledger event.
+The new application MUST also use a new authorization ID. A caller-supplied
+HTTP flag or an unverified workspace status cannot release the reservation.
+A superseding application gets
 a new ID and explicit predecessor reference. No status change is inferred from
 a changed API response alone.
 
@@ -207,8 +214,13 @@ policy and live credential status. The implementation sequence and required
 negative cases are recorded in
 [the recognition accreditation plan](../plans/recognition-accreditation-vp.md).
 
-A current trust answer uses the latest accepted finalized epoch and evaluates
-the grant at the query time. A historical answer names the evaluation time and
+A current trust answer uses an accepted finalized epoch for the selected
+statement, checks its event root against the current grant lifecycle and its
+policy root against current policy, and evaluates the grant at the query time.
+An unrelated statement's later epoch does not by itself supersede an unchanged
+grant. Requiring the latest publication of an otherwise unchanged statement
+needs an authenticated per-statement epoch index, not the ledger's global
+latest-epoch ID. A historical answer names the evaluation time and
 the epoch or ledger view that establishes it; it does not silently substitute
 today's policy or keys. For a credential issued at time T, an issuance-time
 issuer grant is necessary but insufficient: the verifier also checks the VC

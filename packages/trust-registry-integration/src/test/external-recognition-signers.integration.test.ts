@@ -45,6 +45,28 @@ const signPrepared = (
 });
 
 describe("externally signed Compact authority recognition", () => {
+  it("archives a proposed recognition with a fresh external quorum", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("denied-recognition");
+    const second = createMaintainerScenarioFixture("denial-second");
+    const third = createMaintainerScenarioFixture("denial-third");
+    const recognition = createRecognitionScenarioFixture("denied-authority");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.proposeRecognition(recognition);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+
+    const prepared = harness.prepareRecognitionDecisionAction(recognition, "archive");
+    const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+    expect(() => harness.executeRecognitionDecisionWithSignatures(
+      recognition, "archive", signers.slice(0, 1),
+    )).toThrow();
+    harness.executeRecognitionDecisionWithSignatures(recognition, "archive", signers);
+    expect(harness.readRecognitionStatus(recognition)).toBe("archived");
+    expect(() => harness.executeRecognitionDecisionWithSignatures(
+      recognition, "archive", signers,
+    )).toThrow();
+  });
+
   it("commits a DID-verified authority statement rather than fixture evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("did-recognition");
     const authoritySeed = new Uint8Array(32).fill(116);

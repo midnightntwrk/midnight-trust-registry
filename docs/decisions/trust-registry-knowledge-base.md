@@ -899,6 +899,14 @@ reason to weaken the receipt's future-acceptance guard. Production status
 ledger evidence, distributed admission/finality, and recovery after uncertain
 network submission remain open.
 
+The follow-on local proposal-resolution helper reads the immutable Compact
+proposal-evidence map for issuer, verifier, auditor, and maintainer roles from
+an injected finalized ledger view. HTTP recovery tests no longer rely on an
+in-memory `proposed` flag. A deliberately stale finalized view returns
+`not-observed` even after the simulator has accepted a write; only advancing
+that view exposes the event. This narrows the recovery boundary but does not
+provide a live-network finality reader or make a negative lookup retry-safe.
+
 The joined private HTTP test now carries a signed Midnight accreditation VC/VP
 and separate authority DID assertion through one-use challenge acceptance,
 private receipt recovery, and the governed Compact recognition proposal. It
@@ -910,3 +918,233 @@ fixture window precedes later multi-action policy-effective times. Avoid
 comparing parsed binding objects by reference (Zod clones them) or comparing
 `Buffer` and `Uint8Array` objects directly; compare canonical binding hashes
 and normalized hex commitments instead.
+
+The local proposal recovery branch now covers all five proposal roles,
+including recognition. The recognition HTTP resolver is private: it checks
+the authority session, accepted accreditation receipt, canonical challenge
+binding, and exact evidence commitment before reading an injected finalized
+Compact view. It returns `not-observed` for stale/absent finalized records,
+never an automatic retry signal. The applicant portal exposes this lookup
+only on its existing authenticated same-origin private host; the admin
+console remains maintainer-only. The portal sends receipt ID and evidence
+commitment without storing raw VP, session material, or receipt inputs in
+browser storage. Negative tests cover receipt substitution, denied access,
+stale finality, ledger evidence mismatch, reader outage, and cross-origin UI
+disablement. `./run.sh --light` passed (20/20 tasks) and `pnpm audit
+--audit-level low` reported no vulnerabilities. A production finalized-ledger
+reader and distributed admission store remain open; simulator confirmation
+must not be described as network finality.
+
+The applicant portal now wires the entire private recognition accreditation
+interaction: one-use challenge, external authority assertion plus VP submission,
+accepted-receipt recovery, and finalized-proposal lookup. The portal never
+signs for the authority. It rejects a submission with the wrong challenge
+nonce before sending, clears raw VP JSON after submit, and invalidates the
+challenge and receipt view when the recognition ID changes. All four calls use
+same-origin credentials and no-store; the UI disables them when the configured
+API is cross-origin. The server remains responsible for actual DID assertion,
+VC/VP/status, accreditor policy, and receipt verification. Focused portal
+tests and `./run.sh --light` pass (20/20), docs build passes, and audit is
+clean. The demo host still needs a real authenticated recognition port and
+finality reader before this can be presented as live-network onboarding.
+
+The next local #79 slice adds an optional public `GET
+/v1/decision-evidence/{role}/{id}` query for issuer and verifier bundles.
+The server accepts only structurally valid `tr-decision-evidence-v1` from an
+injected finalized source, checks exact role, authorization ID, and registry
+identity, and otherwise returns 404/503 without falling back to a mutable
+snapshot. The response explicitly says `verification: client-required`.
+`verifyDecisionEvidenceFromApi` then fetches over HTTPS or loopback HTTP and
+composes the existing trusted-reader verifier. HTTP source trust is not an
+accepted epoch, current grant, DID-state proof, or descriptor authority.
+Focused tests reject missing/malformed/wrong-registry source data and absent
+DID readers. Full light validation passed (20/20 tasks, about 57 seconds with
+downstream client/API tests), docs build passed, and audit was clean. A real
+finalized decision-evidence source remains a separate production integration.
+
+The local #79 client builder `buildDecisionEvidenceClaim` now assembles issuer
+and verifier decision-evidence claims from the evidence bundle, an independently
+supplied accepted epoch, publication signatures, resolved DID method, scope,
+and event references. It derives the policy snapshot and inclusion proof,
+rejects other roles, and checks accepted-epoch, grant-inclusion, and policy
+commitment consistency before returning. It does not authenticate the accepted
+epoch, DID observation, maintainer keys, or current decision point; callers
+must still use the trusted-reader verifier. Simulator tests exercise both roles
+and reject a different accepted root or grant leaf.
+
+The follow-on VC adapter `createVcSignerCandidateFromApi` connects the optional
+public evidence query to the existing trusted-reader VC descriptor conversion.
+It accepts only the client-required API envelope and independently checks the
+finalized registry decision and DID state before constructing a descriptor.
+The simulator journey covers valid API delivery, a false server-verification
+claim, and an unavailable finalized reader. This is a compositional test, not
+a live-network finalized-reader implementation.
+
+The next local #73 slice connects verified API evidence to authority proof
+issuance through `issueVcSignerAuthorizationFromApi`. It reuses pinned-domain
+checks and proof verification, while the separately gated signer rechecks the
+governed authority key before key custody. A simulator test verifies the
+resulting proof and confirms missing finalized registry state cannot call the
+signer. Schnorr proof bytes are not expected to be identical across valid
+signings of the same decision. Production finality and authority key custody
+remain open.
+
+The governed simulator demo now exercises the optional public decision-evidence
+query for both issuer and verifier, requires its `client-required` envelope,
+verifies the claim against separately supplied simulator ledger/DID readers,
+obtains a gated VC authority proof, and installs it in the compiled consumer.
+The demo reader re-reads current ledger status and action sequence for every
+verification; after suspension and revocation it rejects the previously served
+active API claim before issuing an inactive transition proof.
+The demo uses `buildDecisionEvidenceClaim` rather than duplicating envelope
+assembly. Its injected evidence source and reader state are simulator fixtures;
+they must not be described as a production finalized-ledger adapter. The
+focused governed demo passes locally in about 14 seconds.
+
+The next local #79/#73 slice introduces `createCompactLedgerDecisionReaders`.
+It checks accepted epoch commitments against a supplied finalized Compact
+ledger view, uses the current issuer/verifier on-chain scope index and record,
+and derives current policy/status/action sequence from that same view. The
+client reader now passes the claimed grant ID only as a lookup hint. A later
+unrelated epoch is allowed only if the claimed epoch remains within its
+sequence window and current policy and exact grant still match. Focused tests
+reject a changed epoch root, current policy, wrong role, wrong grant ID, and
+wrong verifier resource. The governed demo uses this projection and still
+rejects four stale active API claims after suspend/revoke. This adapter does
+not authenticate finality, historic signer sets, off-ledger time, or DID state;
+the embedding network host must supply those independently.
+
+The local source slice adds `createVerifiedDecisionEvidenceSource`: the
+optional API route now has a reusable implementation that assembles a claim
+from an indexed bundle, checks exact role/authorization ID, and verifies it
+against a separately supplied reader port before serving. Consumers still
+receive `client-required` and must reverify independently. The governed demo
+uses this source for issuer and verifier; after either role is suspended or
+revoked, the source returns an unavailable result (HTTP 503) rather than
+serving its earlier active claim. Simulator fixtures remain the only current
+source of ledger/DID observations, not production network finality.
+
+The source now takes the expected registry, contract, DID, role, and scope
+selection from the same trusted host context as its finalized readers. An
+indexed candidate contains only builder input and cannot select a different
+trust domain for its own verification. A negative simulator case substitutes
+the trusted registry selection and fails before the claim is served. This is
+still a host-port contract: the host must independently authenticate the
+selection and reader provenance, and public consumers must verify again.
+
+The simulator proves a pending proposal can be denied using the existing
+quorum-governed archive circuit for issuer, verifier, auditor, recognition,
+and maintainer membership. A live proposal blocks a duplicate scope or DID;
+after archival a fresh ID can reuse it while the original ledger record stays
+archived. A separate two-maintainer case proves one signer cannot archive a
+pending issuer once the ordinary threshold is two. This resolves the spec's
+earlier ambiguity without inventing an unreleased `rejected` status. Archival
+does not record an off-chain denial reason.
+
+The local governed-action API and admin console now expose `archive` alongside
+the other externally signed lifecycle decisions. The simulator harness routes
+the same prepared signer context to the role-specific Compact archive circuit
+for all five roles; an HTTP issuer denial and a recognition denial both reject
+insufficient signatures or replay. The domain parser accepts an archived
+proposal without invented approval or activation timestamps, while retaining
+timestamp requirements for records that progressed further. OpenAPI and the
+endpoint guide describe this as a signed terminal denial, not a trust grant.
+The follow-on conformance test exercises external quorum archival for proposed
+issuer, verifier, auditor, and maintainer records, including one-signer and
+replay rejection. Recognition has its own externally signed denial test.
+The admin console also exposes the Compact-permitted archive action for an
+already active record rather than requiring an artificial revoke first.
+The next local HTTP/query test closes the denial observation loop. Both an
+issuer and an external recognition are archived through external signatures,
+then exposed as historical evidence without approval or activation timestamps.
+Default client verification rejects both as non-active; explicit historical
+verification succeeds, and timestamped query evaluation is never trusted.
+Recognition does not create a local issuer entry.
+The governed demo now prints `proposalDenial`: it rejects a duplicate live
+scope and insufficient archive quorum, archives the pending issuer under two
+external JubJub signatures, proves the old evidence cannot authorize current
+trust, and permits a fresh ID to propose the same scope. Its fixture is a
+simulator scenario, not network-finalized evidence or a production denial API.
+Private pending-registration state previously had no terminal transition, so
+an archived proposal could leave its scope reserved forever. The local
+admission stores now expose host-only `recordArchived`, requiring a verifier
+callback for an exact original binding and archived event. It preserves prior
+application IDs and consumed nonces, disables the old pending VP binding,
+and accepts a new DID-signed application plus authorization ID for the same
+scope. The host must authenticate Compact finality; the packaged CLI still
+does not wire a production registration or governed-action port.
+
+The local application VP fixture now uses a DID-signed status attestation by
+default rather than an unsigned boolean decision. Its verifier pins the
+fixture status registry and authority method, binds credential root, status
+handle, and one-use challenge, then checks assertion-key signature, DID state,
+active flag, and five-minute freshness. The `statusDecision` fixture override
+remains only for adversarial tests. This improves #76 intake evidence but does
+not verify a live status-registry root or network finality; no public
+non-revocation claim follows from the fixture. Focused integration tests cover
+re-signed substitutions and unsigned tampering.
+
+The next #76 boundary now requires issuer eligibility to return a full
+status-policy binding rather than a boolean. `verifyApplicationVp` checks the
+credential registry against that binding before status lookup and forwards the
+same binding and challenge context. A reference adapter obtains it from
+`verifyDecisionEvidenceWithTrustedReaders`, checking the active issuer DID,
+assertion key, and registry. The host must still provide authenticated
+finality-aware readers; the VP fixture remains deliberately non-governed.
+The HTTP fixture exposed a live-nonce integration boundary: the local status
+authority must sign the actual one-use challenge for the pinned credential
+root, registry, and handle rather than reusing an attestation signed when the
+fixture was constructed. Its deterministic fetcher now does that, and the
+auditor apply -> VP HTTP test passes. Parallel Compact signer tests exceeded
+Vitest's default five-second case limit under the repository integration
+runner; the integration package now uses a 15-second per-case limit without
+changing product timeouts. Full `./run.sh integration --light` passed after
+both adjustments.
+The #76/#79 composition now verifies a signed fixture credential and
+presentation against the same Midnight DID assertion key as an active
+simulator issuer decision. The status adapter consumes that decision's exact
+policy binding and a challenge-specific status signature; a suspended current
+grant fails before evidence issuance. The fixture supports a separate status
+method under the issuer DID and a chosen DID state version solely for this
+cross-surface local test. Production finality and status-registry root
+verification remain open.
+
+The redacted application evidence envelope now requires a
+`statusDecisionCommitment` computed from the verified signed status statement,
+observed authority DID state version, and full governed issuer status-policy
+binding. This binds the status decision to
+the evidence-verifier signature without publishing the private witness. The
+admin console's strict envelope allowlist must be updated whenever a required
+redacted field is added. The commitment is not an independently verifiable
+non-revocation proof: a later auditor needs the retained signed statement,
+authenticated historical DID state, and an appropriate status-registry trust
+anchor. The local fixture has none of the latter network-finality guarantees.
+The `verifyApplicationStatusDecisionWitness` helper revalidates the exact
+private signed witness against the redacted commitment and an independently
+obtained issuer status-policy binding and historical DID resolver. The demo
+now retains the actual fetched fixture witness for each challenge; a prebuilt
+copy of the same status statement was not sufficient because its Schnorr
+signature bytes can differ. The public receipt still contains only hashes.
+
+OpenID Federation authorization subordinate statements now carry the issuer
+status-policy binding and its leaf commitment with the TR evidence bundle.
+The adapter rejects a substituted binding and strips legacy unanchored status
+hints. This is a publisher claim, not a trust decision: the relying party must
+verify the bundle against an independent accepted epoch and current grant.
+The consumer-side federation helper now correlates the signed issuer claim
+with a separately verified decision-evidence claim. Its simulator test uses
+real epoch publication signatures and a current-grant read; it rejects
+publisher substitution, unrelated evidence, and a suspended current grant.
+The embedding host must still establish federation-key provenance and network
+finality for both registry and DID readers.
+
+PR #191 review questioned whether an older issuer epoch could remain current
+after a newer one was published. The first global-latest guard failed the
+governed demo because simulator epochs are single-statement commitments: a
+newer unrelated epoch does not supersede an unchanged issuer grant. The
+Compact reader instead compares the selected epoch event root with the
+current grant lifecycle root. A two-epoch regression accepts the unchanged
+grant while its window is open and rejects the same epoch after that grant is
+suspended. Production implementations still need an authenticated latest
+applicable epoch index if policy requires rejecting duplicate publications
+of an unchanged statement.

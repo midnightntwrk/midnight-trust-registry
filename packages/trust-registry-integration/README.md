@@ -4,6 +4,25 @@ Integration scenarios for `midnight-trust-registry`.
 
 Current coverage:
 
+- Application VP intake now requires issuer eligibility to return a full
+  governed issuer status-policy binding. The reference trusted-reader adapter
+  checks an active finalized issuer decision, the credential issuer's DID
+  assertion key, and the status-registry ID before the signed status-attestation
+  source receives that binding and the one-use challenge. The local fixture
+  commits the verified signed status statement, authority DID state version,
+  and governed issuer status-policy binding into redacted application evidence.
+  The fixture retains the exact signed witness for private audit because
+  re-signing the same statement can produce different proof bytes. The
+  governed-registry demo audits all four applicant roles and rejects a
+  substituted issuer policy without returning the witness publicly. This
+  commitment is not a public non-revocation proof. The fixture uses a
+  deterministic non-governed grant and attestation fetcher; network
+  finality and an independent live status-registry proof are still required
+  for production non-revocation claims.
+  A simulator composition test now signs a fixture VC/VP with the same issuer
+  key as a verified active grant, uses that grant's status-policy preimage for
+  challenge-bound status verification, and rejects a suspended current grant.
+
 - local simulator trust-decision flows for issuer, verifier, and recognition
 - `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and
   `prepareIssuerDecisionAction`/`executeIssuerDecisionWithSignatures` expose

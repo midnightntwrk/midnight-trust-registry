@@ -8,8 +8,10 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { decodeJubjubJwkCoordinate, parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
 import {
+  verifyDecisionEvidenceFromApi,
   verifyDecisionEvidenceWithTrustedReaders,
   verifyInactiveDecisionEvidenceWithTrustedReaders,
+  type DecisionEvidenceCandidate,
   type TrustedDecisionEvidenceReaders,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -37,6 +39,14 @@ const createVcSignerCandidateForExpectedState = async (
   const candidate = expectedState === "active"
     ? await verifyDecisionEvidenceWithTrustedReaders(evidence, selection, readers)
     : await verifyInactiveDecisionEvidenceWithTrustedReaders(evidence, selection, readers, expectedState);
+  return createDescriptorFromTrustedCandidate(candidate, method, expectedState);
+};
+
+const createDescriptorFromTrustedCandidate = (
+  candidate: DecisionEvidenceCandidate,
+  method: MidnightDIDMethodBinding,
+  expectedState: "active" | "suspended" | "revoked",
+) => {
   const vcScopeCommitment = vcScopeCommitmentFromRegistryScope(candidate.scope);
   const didId = parseMidnightDID(parseMidnightDIDString(candidate.subjectDid)).id;
   const fragment = candidate.didMethod.methodId.slice(candidate.subjectDid.length);
@@ -73,6 +83,20 @@ export const createVcSignerCandidateFromTrustedDecision = (
   readers: TrustedDecisionEvidenceReaders,
   method: MidnightDIDMethodBinding,
 ) => createVcSignerCandidateForExpectedState(evidence, selection, readers, method, "active");
+
+/** Fetches an untrusted API claim, then requires independent finalized readers before descriptor conversion. */
+export const createVcSignerCandidateFromApi = async (
+  apiBase: string,
+  authorizationId: string,
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">,
+  readers: TrustedDecisionEvidenceReaders,
+  method: MidnightDIDMethodBinding,
+  fetchImpl: typeof fetch = fetch,
+) => createDescriptorFromTrustedCandidate(
+  await verifyDecisionEvidenceFromApi(apiBase, authorizationId, selection, readers, fetchImpl),
+  method,
+  "active",
+);
 
 /** Explicitly inactive: this candidate cannot authorize a new issuer proof or verifier request. */
 export const createInactiveVcSignerCandidateFromTrustedDecision = (

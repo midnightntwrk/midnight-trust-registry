@@ -25,6 +25,11 @@ x-parameters:
     in: path
     required: true
     schema: { type: string, enum: [issuer, verifier, auditor] }
+  decisionRole: &decisionRole
+    name: role
+    in: path
+    required: true
+    schema: { type: string, enum: [issuer, verifier] }
   governedRole: &governedRole
     name: role
     in: path
@@ -131,6 +136,22 @@ components:
                   y: { type: string }
               signature: { type: string, description: Canonical JubJub Schnorr signature }
       additionalProperties: true
+    RecognitionProposalRecovery:
+      type: object
+      required: [receiptId, evidenceCommitment]
+      properties:
+        receiptId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        evidenceCommitment: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+      additionalProperties: false
+    DecisionEvidenceResponse:
+      type: object
+      required: [verification, evidence]
+      properties:
+        verification: { type: string, enum: [client-required] }
+        evidence:
+          type: object
+          description: Structurally parsed tr-decision-evidence-v1 bundle; the consumer must independently authenticate the accepted epoch, quorum, current grant, DID state, and inclusion proof before use.
+      additionalProperties: false
   responses:
     BadRequest: { description: Invalid path, query, or body }
     NotFound: { description: Record not found }
@@ -203,6 +224,18 @@ paths:
       tags: [Query]
       summary: Read authorization evidence bundle
       responses: *queryResponses
+  /v1/decision-evidence/{role}/{id}:
+    parameters: [*decisionRole, *id]
+    get:
+      tags: [Query]
+      summary: Fetch unverified issuer or verifier decision evidence from a finalized source
+      description: The route is unavailable without a trusted reader. The response is not an authorization decision; clients must independently verify accepted epoch and DID anchors and current-state currency.
+      responses:
+        '200':
+          description: Structurally valid bundle requiring independent client verification
+          content: { application/json: { schema: { $ref: '#/components/schemas/DecisionEvidenceResponse' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
   /v1/authorizations/evaluate:
     post:
       tags: [Query]
@@ -352,10 +385,27 @@ paths:
     post:
       tags: [Governed]
       summary: Observe matching proposal without resubmission
-      description: Available for issuer, verifier, auditor, and maintainer ports; not recognition.
+      description: Available for issuer, verifier, auditor, and maintainer ports; recognition has a separate private recovery route.
+      responses: *governedResponses
+  /v1/governed/recognition/{id}/proposal/resolve:
+    parameters: [*id]
+    post:
+      tags: [Private intake]
+      summary: Recover an admitted recognition proposal from finalized Compact evidence
+      description: >-
+        Requires host authentication, the exact accepted accreditation receipt,
+        and a trusted finalized proposal reader. A not-observed result is
+        ambiguous and must not trigger automatic resubmission.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionProposalRecovery' } } }
       responses: *governedResponses
   /v1/governed/{role}/{id}/actions/{action}:
     parameters: [*governedRole, *id, *action]
+    description: >-
+      Externally signed lifecycle action. Archiving a proposed target is a
+      quorum-governed denial that preserves the proposal in history without
+      approval or activation timestamps.
     get:
       tags: [Governed]
       summary: Prepare current Compact action signer context

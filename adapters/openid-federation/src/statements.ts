@@ -218,6 +218,11 @@ export const buildAuthorizationSubordinateStatementPayload = (
         role: authorization.role,
         resource_type: authorization.resourceType,
         resource_id: authorization.resourceId,
+        ...(authorization.role === "issuer" ? {
+          status_policy_binding: parsed.bundle.statusPolicyBinding,
+          status_policy_binding_commitment: authorization.statusPolicyBindingCommitment,
+        } : {}),
+        authorization_bundle: parsed.bundle,
       },
     },
   });
