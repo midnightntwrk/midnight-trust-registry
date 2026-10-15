@@ -4,6 +4,13 @@ Status: implementation plan, not a release claim. The 0.1.0 simulator fixture
 remains the supported baseline until the tests and network qualification below
 pass. This slice is independent of PR #203 and must be rebased after it lands.
 
+Local progress: the pure Compact `deploymentBoundMaintainerActionDigest` and
+strict TypeScript sign/verify helpers use a versioned network-and-address-bound
+payload. A focused negative test rejects the same signature on a different
+network commitment or contract address. These helpers are not yet called by
+`performAuthorizedMaintainerAction`; the old signing path is still active.
+They must not be published alone or described as a replay fix.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract

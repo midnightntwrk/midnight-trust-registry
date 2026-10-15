@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applicationEvidenceSignatureDigest,
+  computeDeploymentBoundMaintainerActionDigest,
   computeVerifierEvidenceBoundProposalPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   decodeCanonicalJubjubSignatureHex,
@@ -13,9 +14,11 @@ import {
   encodeJubjubSignature,
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   signPolicyBoundMaintainerActionFromSeed,
   signVerifierProposalEvidenceFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
+  verifyDeploymentBoundMaintainerAction,
   verifyIssuerProposalEvidenceSignature,
   verifyPolicyBoundMaintainerAction,
   verifyVerifierProposalEvidenceSignature,
@@ -26,6 +29,39 @@ const commitment = Uint8Array.from({ length: 32 }, (_, index) => index);
 const keyIdCommitment = new Uint8Array(32).fill(7);
 
 describe("application evidence commitment signing", () => {
+  it("separates governed signatures across deployments and networks", () => {
+    const registryId = new Uint8Array(32).fill(1);
+    const network = new Uint8Array(32).fill(2);
+    const address = new Uint8Array(32).fill(3);
+    const policy = new Uint8Array(32).fill(4);
+    const action = new Uint8Array(32).fill(5);
+    const payload = new Uint8Array(32).fill(6);
+    const publicKey = deriveJubjubPublicKeyFromSeed(seed);
+    const signature = signDeploymentBoundMaintainerActionFromSeed(
+      seed, registryId, network, address, policy, action, payload, 7n,
+    );
+    const verify = (targetNetwork: Uint8Array, targetAddress: Uint8Array) =>
+      verifyDeploymentBoundMaintainerAction(
+        publicKey, registryId, targetNetwork, targetAddress, policy, action, payload, 7n, signature,
+      );
+
+    expect(verify(network, address)).toBe(true);
+    expect(verify(new Uint8Array(32).fill(8), address)).toBe(false);
+    expect(verify(network, new Uint8Array(32).fill(9))).toBe(false);
+    expect(verifyPolicyBoundMaintainerAction(
+      publicKey, registryId, policy, action, payload, 7n, signature,
+    )).toBe(false);
+    expect(computeDeploymentBoundMaintainerActionDigest(
+      registryId, network, address, policy, action, payload, 7n,
+    )).toHaveLength(4);
+    expect(() => signDeploymentBoundMaintainerActionFromSeed(
+      seed, registryId, network, new Uint8Array(31), policy, action, payload, 7n,
+    )).toThrow(/Contract address must be 32 bytes/);
+    expect(() => signDeploymentBoundMaintainerActionFromSeed(
+      seed, registryId, new Uint8Array(32), address, policy, action, payload, 7n,
+    )).toThrow(/Network id commitment must be set/);
+  });
+
   it("separates the evidence domain from a raw DID payload and binds the key id", () => {
     const payload = new TextEncoder().encode('{"applicationId":"example"}');
     const payloadCommitment = createHash("sha256").update(payload).digest();

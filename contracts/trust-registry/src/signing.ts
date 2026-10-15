@@ -454,6 +454,25 @@ export const computePolicyBoundMaintainerActionDigest = (
     actionSequence,
   ) as TrustRegistryActionDigest;
 
+export const computeDeploymentBoundMaintainerActionDigest = (
+  registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryActionDigest =>
+  pureCircuits.deploymentBoundMaintainerActionDigest(
+    require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Network id commitment"),
+    require32Bytes(contractAddress, "Contract address"),
+    require32Bytes(policyCommitment, "Policy commitment"),
+    require32Bytes(actionKind, "Action kind"),
+    require32Bytes(actionPayloadHash, "Action payload hash"),
+    actionSequence,
+  ) as TrustRegistryActionDigest;
+
 export const computeCreateEvidenceVerifierKeyPayloadHash = (
   authorizationId: Uint8Array,
   didCommitment: Uint8Array,
@@ -816,6 +835,29 @@ export const signPolicyBoundMaintainerActionFromSeed = (
     ),
   );
 
+export const signDeploymentBoundMaintainerActionFromSeed = (
+  seedBytes: Uint8Array,
+  registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+): TrustRegistryJubjubSignature =>
+  signMaintainerActionDigestFromSeed(
+    seedBytes,
+    computeDeploymentBoundMaintainerActionDigest(
+      registryId,
+      networkIdCommitment,
+      contractAddress,
+      policyCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+  );
+
 const verifyMaintainerActionDigest = (
   publicKey: JubjubPoint,
   digest: TrustRegistryActionDigest,
@@ -842,6 +884,31 @@ export const verifyPolicyBoundMaintainerAction = (
     publicKey,
     computePolicyBoundMaintainerActionDigest(
       registryId,
+      policyCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    ),
+    signature,
+  );
+
+export const verifyDeploymentBoundMaintainerAction = (
+  publicKey: JubjubPoint,
+  registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
+  policyCommitment: Uint8Array,
+  actionKind: Uint8Array,
+  actionPayloadHash: Uint8Array,
+  actionSequence: bigint,
+  signature: TrustRegistryJubjubSignature,
+): boolean =>
+  verifyMaintainerActionDigest(
+    publicKey,
+    computeDeploymentBoundMaintainerActionDigest(
+      registryId,
+      networkIdCommitment,
+      contractAddress,
       policyCommitment,
       actionKind,
       actionPayloadHash,

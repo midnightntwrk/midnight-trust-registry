@@ -680,6 +680,47 @@ export pure circuit policyBoundMaintainerActionDigest(
   );
 }
 
+export pure circuit deploymentBoundActionPayloadHash(
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(policyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "tr:deployment:action:v1"),
+    networkIdCommitment,
+    contractAddress,
+    policyCommitment,
+    actionPayloadHash
+  ]);
+}
+
+export pure circuit deploymentBoundMaintainerActionDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Vector<4, Field> {
+  return maintainerActionDigest(
+    registryIdValue,
+    actionKind,
+    deploymentBoundActionPayloadHash(
+      networkIdCommitment,
+      contractAddress,
+      policyCommitment,
+      actionPayloadHash
+    ),
+    actionSequence
+  );
+}
+
 export pure circuit maintainerSignerSetHash(
   signerCount: Uint<64>,
   signer1KeyId: Bytes<32>,
