@@ -44,7 +44,7 @@ x-parameters:
     name: action
     in: path
     required: true
-    schema: { type: string, enum: [approve, activate] }
+    schema: { type: string, enum: [approve, activate, suspend, revoke, archive] }
   applicationAction: &applicationAction
     name: action
     in: path

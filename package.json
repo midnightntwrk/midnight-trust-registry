@@ -17,7 +17,7 @@
   "scripts": {
     "clean": "turbo run clean --continue",
     "clean:artifacts": "pnpm run clean",
-    "docs-check": "./scripts/check-docs.sh",
+    "docs-check": "./scripts/check-docs.sh && node scripts/check-openapi.mjs",
     "docs:build": "pnpm --filter @midnight-ntwrk/trust-registry-docs run docs:build",
     "docs:dev": "pnpm --filter @midnight-ntwrk/trust-registry-docs run docs:dev",
     "audit": "pnpm audit --audit-level low",
