@@ -595,7 +595,7 @@ export const createAdminConsoleApp = (
     } catch (error) {
       if (!isCurrentHost(host)) return;
       const outcomeUnknown = !(error instanceof TrustRegistryAdminConsoleApiError)
-        || error.problem.status === 409 || error.problem.status === 503;
+        || error.problem.status === 409 || (error.problem.status ?? 0) >= 500;
       const detail = formatApiError(error);
       setState({ governedBusy: false,
         error: error instanceof TrustRegistryAdminConsoleApiError

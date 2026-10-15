@@ -328,6 +328,7 @@ describe("admin console browser handlers", () => {
     let observed = false;
     let uncertain = false;
     let transportFailure = false;
+    let serverFailure = false;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       if (path.endsWith("/proposal/prepare")) {
@@ -339,6 +340,7 @@ describe("admin console browser handlers", () => {
       if (path.endsWith("/proposal/submit")) {
         posted.push({ path, body: JSON.parse(String(init?.body)) });
         if (transportFailure) throw new Error("connection dropped");
+        if (serverFailure) return Response.json({ status: 500, detail: "operator host failed after submit" }, { status: 500 });
         if (uncertain) return Response.json({
           type: "https://example.test/problems/proposal-submission-uncertain",
           status: 503,
@@ -502,6 +504,18 @@ describe("admin console browser handlers", () => {
       new Event("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => expect(root.textContent).toContain("Submission outcome is unknown"));
+    expect(root.querySelector("[data-proposal-submit]")).toBeNull();
+
+    transportFailure = false;
+    serverFailure = true;
+    prepare();
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-submit]")).not.toBeNull());
+    setInput("[data-proposal-signers]", JSON.stringify(signers));
+    setInput("[data-proposal-verifier-signature]", verifierSignature);
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain("operator host failed after submit"));
     expect(root.querySelector("[data-proposal-submit]")).toBeNull();
   });
 });
