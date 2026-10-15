@@ -150,6 +150,61 @@ adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionW
 });
 assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
 
+const denialHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-denial");
+const denialSecond = createMaintainerScenarioFixture("governed-demo-denial-second");
+const denialThird = createMaintainerScenarioFixture("governed-demo-denial-third");
+const deniedIssuer = createIssuerScenarioFixture("governed-demo-denied-issuer");
+const replacementIssuer = {
+  ...deniedIssuer,
+  authorizationId: `${deniedIssuer.authorizationId}:replacement`,
+  authorizationIdCommitment: bytes32Commitment(`${deniedIssuer.authorizationId}:replacement`),
+};
+denialHarness.authorizeMaintainer(denialSecond);
+denialHarness.authorizeMaintainer(denialThird);
+denialHarness.proposeIssuer(deniedIssuer);
+adversarialMatrix.expectThrown(() => denialHarness.proposeIssuer(replacementIssuer), {
+  id: "denied-proposal-blocks-live-scope-reuse",
+  invariant: "A second application cannot claim the same scope while a proposal remains live",
+  boundary: "compact",
+  messagePattern: /live authorization/iu,
+  category: "duplicate-live-scope-rejected",
+});
+denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const denialPrepared = denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
+const denialActionCount = denialHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSignatures(
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared)],
+), {
+  id: "denied-proposal-requires-quorum",
+  invariant: "Archiving a pending issuer proposal requires the current maintainer quorum",
+  boundary: "compact",
+  messagePattern: /threshold|quorum|signer|authorization/iu,
+  category: "insufficient-archive-quorum",
+});
+assert.equal(denialHarness.simulator.getLedger().governanceActionCount, denialActionCount);
+const denialEventHash = denialHarness.executeIssuerDecisionWithSignatures(
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared), signCompact(denialThird, denialPrepared)],
+);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.archived);
+const deniedBundle = denialHarness.buildIssuerHistoricalEvidence(deniedIssuer);
+assert.equal(deniedBundle.authorization?.status, "archived");
+assert.equal(deniedBundle.authorization?.authorizedAt, undefined);
+assert.equal(deniedBundle.authorization?.activeFrom, undefined);
+adversarialMatrix.expectThrown(() => new TrustRegistrySimulatorClient(denialHarness.simulator)
+  .verifyIssuerAuthorizationBundle(deniedBundle, {}), {
+  id: "denied-proposal-is-not-trust",
+  invariant: "Historical evidence for an archived proposal cannot authorize a current issuer",
+  boundary: "client",
+  messagePattern: /not active/iu,
+  category: "archived-issuer-not-active",
+});
+const replacementProposalEventHash = denialHarness.proposeIssuer(replacementIssuer, [denialSecond]);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(replacementIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.proposed);
+assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  AuthorizationStatus.archived);
+
 const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
 const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
 const expiringIssuer = createIssuerScenarioFixture("governed-demo-expired-evidence");
@@ -2103,6 +2158,16 @@ try {
       evidenceCommitment: issuerEvidence.commitment,
       source: "authenticated VP HTTP intake and governed HTTP proposal",
     },
+    proposalDenial: {
+      deniedAuthorizationId: deniedIssuer.authorizationId,
+      denialEventHash: asHex(denialEventHash),
+      historicalStatus: deniedBundle.authorization.status,
+      currentTrust: false,
+      replacementAuthorizationId: replacementIssuer.authorizationId,
+      replacementProposalEventHash: asHex(replacementProposalEventHash),
+      replacementStatus: "proposed",
+      source: "quorum-signed Compact archival; local simulator, not network finality",
+    },
     otherProposals,
     recognitionProposal: {
       eventHash: asHex(recognitionProposalEventHash),
@@ -2157,6 +2222,8 @@ try {
       "vp-revoked-fixture-status:403", "vp-challenge-replay:404",
       "proposal-cross-role-evidence:403", "proposal-wrong-target:403",
       "proposal-missing-receipt:403", "proposal-substituted-pending-target:403",
+      "denied-proposal-blocks-live-scope-reuse:compact", "denied-proposal-requires-quorum:compact",
+      "denied-proposal-is-not-trust:client",
       "proposal-one-signer:403", "proposal-replay:409", "decision-one-signer:403",
       "candidate-self-vote:403", "replayed-context:409", "cross-role:404",
       "recognition-is-not-local-issuer-or-maintainer:client",

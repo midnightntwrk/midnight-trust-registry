@@ -1060,3 +1060,8 @@ then exposed as historical evidence without approval or activation timestamps.
 Default client verification rejects both as non-active; explicit historical
 verification succeeds, and timestamped query evaluation is never trusted.
 Recognition does not create a local issuer entry.
+The governed demo now prints `proposalDenial`: it rejects a duplicate live
+scope and insufficient archive quorum, archives the pending issuer under two
+external JubJub signatures, proves the old evidence cannot authorize current
+trust, and permits a fresh ID to propose the same scope. Its fixture is a
+simulator scenario, not network-finalized evidence or a production denial API.
