@@ -70,7 +70,7 @@ import {
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
-import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceResponse } from "../adapters/trqp/dist/index.js";
+import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
@@ -2002,14 +2002,9 @@ try {
       assert.equal(verifyHistoricalRecognitionEvidenceResponse(response, selection, anchor).trustedAtTime, true);
       assert.equal((await verifyHistoricalRecognitionEvidenceFromApi(base, selection, anchor)).trustedAtTime, true);
       const trqpRequest = target.trqpRequest(at);
-      const trqpResponse = await expectHttp(await fetch(`${base}/v1/trqp/recognitions/evidence`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(trqpRequest),
-      }), 200);
-      assert.equal(verifyTrqpRecognitionEvidenceResponse(
-        trqpResponse, trqpRequest, harness.registryDid, anchor,
-      ).recognized, true);
+      assert.equal((await verifyTrqpRecognitionEvidenceFromApi(
+        base, trqpRequest, harness.registryDid, anchor,
+      )).recognized, true);
       assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, {
         ...selection, recognizedRegistryId: `${selection.recognizedRegistryId}:other`,
       }, anchor), /scope mismatch/iu);

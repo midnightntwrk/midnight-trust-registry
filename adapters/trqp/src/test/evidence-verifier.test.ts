@@ -10,12 +10,16 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
+  verifyTrqpAuthorizationEvidenceFromApi,
+  verifyTrqpRecognitionEvidenceFromApi,
+} from "../evidence-http.js";
+import {
   verifyTrqpAuthorizationEvidenceResponse,
   verifyTrqpRecognitionEvidenceResponse,
 } from "../evidence-verifier.js";
 
 describe("independent TRQP evidence verification", () => {
-  it("accepts an issuer grant and rejects substituted tuple, time, decision, and anchor", () => {
+  it("accepts an issuer grant and rejects substituted tuple, time, decision, and anchor", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("trqp-verified-issuer");
     const issuer = createIssuerScenarioFixture("trqp-verified-issuer");
     harness.authorizeIssuer(issuer);
@@ -42,6 +46,30 @@ describe("independent TRQP evidence verification", () => {
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(response, request, harness.registryDid, anchor))
       .toMatchObject({ authorized: true, statusAtTime: "active" });
+    const fetchImpl: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe("http://127.0.0.1:4400/v1/trqp/authorizations/evidence");
+      expect(init).toMatchObject({ method: "POST", cache: "no-store", redirect: "error" });
+      expect(JSON.parse(String(init?.body))).toEqual(request);
+      return new Response(JSON.stringify(response), { status: 200 });
+    };
+    expect((await verifyTrqpAuthorizationEvidenceFromApi(
+      "http://127.0.0.1:4400", request, harness.registryDid, anchor, fetchImpl,
+    )).authorized).toBe(true);
+    await expect(verifyTrqpAuthorizationEvidenceFromApi(
+      "http://registry.example", request, harness.registryDid, anchor, fetchImpl,
+    )).rejects.toThrow(/HTTPS or loopback/u);
+    await expect(verifyTrqpAuthorizationEvidenceFromApi(
+      "https://registry.example", { ...request, authority_id: `${harness.registryDid}:other` },
+      harness.registryDid, anchor, async () => { throw new Error("must not fetch"); },
+    )).rejects.toThrow(/trusted configuration/u);
+    await expect(verifyTrqpAuthorizationEvidenceFromApi(
+      "https://registry.example", request, harness.registryDid, anchor,
+      async () => new Response("{}", { status: 424 }),
+    )).rejects.toThrow(/unavailable \(424\)/u);
+    await expect(verifyTrqpAuthorizationEvidenceFromApi(
+      "https://registry.example", request, harness.registryDid, anchor,
+      async () => new Response(null, { status: 302, headers: { location: "https://other.example" } }),
+    )).rejects.toThrow(/unavailable \(302\)/u);
     expect(() => verifyTrqpAuthorizationEvidenceResponse(response, {
       ...request, resource: `${request.resource}:other`,
     }, harness.registryDid, anchor)).toThrow(/trusted request/u);
@@ -108,7 +136,7 @@ describe("independent TRQP evidence verification", () => {
     }, { ...request, action: "issue" }, harness.registryDid, anchor)).toThrow(/evidence role/u);
   });
 
-  it("requires exact recognition context and never turns it into a local grant", () => {
+  it("requires exact recognition context and never turns it into a local grant", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("trqp-verified-recognition");
     const recognition = createRecognitionScenarioFixture("trqp-verified-recognition");
     harness.authorizeRecognition(recognition);
@@ -136,6 +164,18 @@ describe("independent TRQP evidence verification", () => {
     });
     expect(verifyTrqpRecognitionEvidenceResponse(response, request,
       harness.registryDid, anchor).recognized).toBe(true);
+    expect((await verifyTrqpRecognitionEvidenceFromApi(
+      "https://registry.example", request, harness.registryDid, anchor,
+      async (input, init) => {
+        expect(String(input)).toBe("https://registry.example/v1/trqp/recognitions/evidence");
+        expect(init).toMatchObject({ method: "POST", cache: "no-store", redirect: "error" });
+        return new Response(JSON.stringify(response), { status: 200 });
+      },
+    )).recognized).toBe(true);
+    await expect(verifyTrqpRecognitionEvidenceFromApi(
+      "https://registry.example", { ...request, context: { time: at } },
+      harness.registryDid, anchor, async () => { throw new Error("must not fetch"); },
+    )).rejects.toThrow(/explicit time and external registry/u);
     expect(() => verifyTrqpRecognitionEvidenceResponse({
       ...response, resource: `${request.resource}:other`,
     }, { ...request, resource: `${request.resource}:other` }, harness.registryDid, anchor))

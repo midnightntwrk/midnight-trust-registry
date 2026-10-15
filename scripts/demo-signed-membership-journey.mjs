@@ -62,7 +62,7 @@ import {
 } from "../packages/trust-registry-api/dist/index.js";
 import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admin-console/dist/api.js";
 import { TrustRegistryApplicantPortalClient } from "../packages/trust-registry-applicant-portal/dist/api.js";
-import { verifyTrqpAuthorizationEvidenceResponse } from "../adapters/trqp/dist/index.js";
+import { verifyTrqpAuthorizationEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const role = process.argv[2];
 if (role !== "issuer" && role !== "verifier" && role !== "auditor" && role !== "maintainer") {
@@ -699,9 +699,8 @@ try {
       assert.equal(fromApi.trustedAtTime, decision.trustedAtTime);
       if (role === "issuer" || role === "verifier") {
         const request = trqpRequest(at);
-        const trqpEvidence = await expectHttp(await post("/v1/trqp/authorizations/evidence", request), 200);
-        const verifiedTrqp = verifyTrqpAuthorizationEvidenceResponse(
-          trqpEvidence, request, harness.registryDid, anchor,
+        const verifiedTrqp = await verifyTrqpAuthorizationEvidenceFromApi(
+          base, request, harness.registryDid, anchor,
         );
         assert.equal(verifiedTrqp.authorized, decision.trustedAtTime);
         assert.equal(verifiedTrqp.bundle.epoch.epochId, trustedEpoch.epochId);

@@ -12,6 +12,9 @@ Current scope:
 - `verifyTrqpAuthorizationEvidenceResponse` and
   `verifyTrqpRecognitionEvidenceResponse` for independently anchored proof and
   decision checks against an exact request
+- `verifyTrqpAuthorizationEvidenceFromApi` and
+  `verifyTrqpRecognitionEvidenceFromApi` to fetch the local/HTTPS evidence route
+  and apply those checks without treating 404/424 as a deny decision
 
 When `context.time` is supplied, authorization and recognition decisions use
 the record's lifecycle at that time, not its current status. Otherwise the
