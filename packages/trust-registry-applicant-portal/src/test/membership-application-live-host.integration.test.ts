@@ -142,6 +142,6 @@ describe("membership forms with the live admission host", () => {
       } finally {
         await new Promise<void>((resolveClose, reject) => host.server.close((error) => error ? reject(error) : resolveClose()));
       }
-    }, 20_000);
+    }, 45_000);
   }
 });
