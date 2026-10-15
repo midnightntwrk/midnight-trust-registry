@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import {
+  TrustRegistryApiResolveRecognitionRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
+} from "./browser-schemas.js";
+export { TrustRegistryApiResolveRecognitionRequestSchema, TrustRegistryApiEvaluateRecognitionRequestSchema };
+
+import {
   MutableSnapshotTargetSchema,
   TrustRegistryOperatorWorkspaceOperationSchema,
   TrustRegistryAuthorizationSnapshotEntrySchema,
@@ -137,19 +143,6 @@ export const TrustRegistryApiRecognitionListResponseSchema = z.object({
   entries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
 });
 
-export const TrustRegistryApiResolveRecognitionRequestSchema = z.object({
-  recognizedAuthorityDid: NonEmptyStringSchema,
-  recognizedRegistryId: NonEmptyStringSchema.optional(),
-  scopeResourceType: RecognitionRecordSchema.shape.scope.shape.resourceType.optional(),
-  scopeResourceId: NonEmptyStringSchema,
-  trustLevel: NonEmptyStringSchema.optional(),
-});
-
-export const TrustRegistryApiEvaluateRecognitionRequestSchema =
-  TrustRegistryApiResolveRecognitionRequestSchema.extend({
-    at: TimestampSchema,
-  });
-
 const TrustRegistryApiTemporalEvaluationBaseSchema = z.object({
   evaluatedAt: TimestampSchema,
   trustedAtTime: z.boolean(),
@@ -168,12 +161,23 @@ export const TrustRegistryApiRecognitionEvaluationResponseSchema =
     entry: TrustRegistryRecognitionSnapshotEntrySchema,
   });
 
+export const TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema =
+  TrustRegistryApiAuthorizationEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
+export const TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema =
+  TrustRegistryApiRecognitionEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
 export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
 export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
 export const TrustRegistryApiMutationContextSchema = z.strictObject({
   registryId: RegistryRecordSchema.shape.registryId,
   expectedEpochId: EpochCommitmentSchema.shape.epochId,
   expectedWorkspaceCommitment: HashHexSchema,
+  evaluatedAt: z.string().datetime({ offset: true }),
 });
 export const TrustRegistryApiSignedMutationRequestSchema = z.strictObject({
   intent: MutationIntentSchema,
@@ -283,4 +287,10 @@ export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
 >;
 export type TrustRegistryApiRecognitionEvaluationResponse = z.infer<
   typeof TrustRegistryApiRecognitionEvaluationResponseSchema
+>;
+export type TrustRegistryApiAuthorizationEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema
 >;

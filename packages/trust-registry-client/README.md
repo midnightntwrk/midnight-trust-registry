@@ -36,12 +36,36 @@ before evidence and raw
 record reads, including when the ledger changes after client construction;
 that simulator is a local reference, not a production trust source.
 
+`verifyHistoricalAuthorizationEvidenceResponse` and
+`verifyHistoricalRecognitionEvidenceResponse` check the native API's
+timestamped response against an exact caller-selected scope and a
+caller-authenticated epoch record, publication key, and registry commitment.
+They recompute the status at the requested instant from the proved statement
+instead of accepting the server's `trustedAtTime` flag. The API response itself
+is not an epoch anchor: callers must establish finality, publication-key
+authority, and which epoch was canonical at that historical point from an
+independent ledger history source. The helpers return historical evidence, not
+permission to perform a new action now.
+
+`verifyHistoricalAuthorizationEvidenceFromApi` and
+`verifyHistoricalRecognitionEvidenceFromApi` fetch the corresponding native
+`/evaluate/evidence` route and apply those same checks before returning a
+decision. They require the caller's independently authenticated epoch anchor
+as an argument; they never take one from the HTTP response. Remote endpoints
+must use HTTPS (loopback HTTP is allowed for local demos). Fetches use
+`no-store` and reject redirects. A `404` or `424` response rejects rather than
+becoming a negative trust decision. The caller still has to establish which
+accepted epoch applies at the requested instant.
+
 `verifyAuditorRequestMandate` additionally requires an explicit evaluation
 time and a current auditor authorization record read from independently
 trusted ledger state. An older active bundle remains valid as historical
 evidence but cannot authorize a new audit request after suspension or
-revocation. The simulator client reads that current record itself. Production
-callers must not pass a cached record or derive it from the bundle under test.
+revocation. The current record must also match the verified grant's ID, DID,
+request resource, governed policy commitment, trust level, evidence hash, and
+lifecycle event; a different active grant is not interchangeable. The simulator
+client reads that current record itself. Production callers must not pass a
+cached record or derive it from the bundle under test.
 
 `assertDecisionEvidenceDidMethodMatchesObservation` parses a DID Document with
 the published Midnight DID package and matches the exact method, native JWK,

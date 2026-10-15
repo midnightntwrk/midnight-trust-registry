@@ -1,4 +1,6 @@
 export * from "./evidence.js";
+export * from "./historical-evidence-response.js";
+export * from "./historical-evidence-http.js";
 export * from "./auditor-mandate.js";
 export * from "./did-observation.js";
 export * from "./decision-epoch-signatures.js";

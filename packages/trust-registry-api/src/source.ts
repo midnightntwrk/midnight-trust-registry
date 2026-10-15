@@ -33,6 +33,7 @@ import {
   evaluateRecognitionRecordAtTime,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
+  canonicalizeJson,
   compareRfc3339Instants,
   type EpochCommitment,
   type RegistryRecord,
@@ -403,6 +404,18 @@ export const evaluateAuthorizationEntryAtTimestamp = async (
 ): Promise<SnapshotTemporalAuthorizationInspection | null> =>
   evaluateAuthorizationInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
 
+export const evaluateAuthorizationEvidenceAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveAuthorizationRequest,
+  evaluatedAt: string,
+): Promise<(SnapshotTemporalAuthorizationInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
+  const snapshot = await source.loadSnapshot();
+  const inspection = evaluateAuthorizationInSnapshot(snapshot, request, evaluatedAt);
+  if (inspection === null) return null;
+  const bundle = authorizationEvidenceAtTime(snapshot, inspection, evaluatedAt);
+  return { ...inspection, epoch: bundle?.epoch ?? inspection.epoch, bundle };
+};
+
 export const listRecognitionEntries = async (
   source: TrustRegistryApiStateSource,
   query: TrustRegistryApiRecognitionListQuery = {},
@@ -435,6 +448,7 @@ const resolveRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
+      && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -469,6 +483,7 @@ const evaluateRecognitionInSnapshot = (
     (entry) =>
       entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
       && entry.recognition.scope.resourceId === request.scopeResourceId
+      && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
       && (
         request.recognizedRegistryId === undefined
         || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
@@ -489,6 +504,18 @@ export const evaluateRecognitionEntryAtTimestamp = async (
   evaluatedAt: string,
 ): Promise<SnapshotTemporalRecognitionInspection | null> =>
   evaluateRecognitionInSnapshot(await source.loadSnapshot(), request, evaluatedAt);
+
+export const evaluateRecognitionEvidenceAtTimestamp = async (
+  source: TrustRegistryApiStateSource,
+  request: TrustRegistryApiResolveRecognitionRequest,
+  evaluatedAt: string,
+): Promise<(SnapshotTemporalRecognitionInspection & { bundle: TrustRegistryEvidenceBundle | null }) | null> => {
+  const snapshot = await source.loadSnapshot();
+  const inspection = evaluateRecognitionInSnapshot(snapshot, request, evaluatedAt);
+  if (inspection === null) return null;
+  const bundle = recognitionEvidenceAtTime(snapshot, inspection, evaluatedAt);
+  return { ...inspection, epoch: bundle?.epoch ?? inspection.epoch, bundle };
+};
 
 const bundleMatchesEpoch = (
   bundle: TrustRegistryEvidenceBundle,
@@ -608,6 +635,7 @@ export const createTrqpSourceFromStateSource = (
       recognizedAuthorityDid: request.entity_id,
       recognizedRegistryId,
       scopeResourceId: request.resource,
+      ...(request.context?.scope_context === undefined ? {} : { scopeContext: request.context.scope_context }),
       ...(request.action.length === 0 ? {} : {
         scopeResourceType: request.action as NonNullable<
           TrustRegistryApiResolveRecognitionRequest["scopeResourceType"]

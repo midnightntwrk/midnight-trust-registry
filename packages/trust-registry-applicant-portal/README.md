@@ -6,6 +6,13 @@ Current scope:
 
 - submit issuer, verifier, or recognition applications through the existing API
 - inspect current active issuer, verifier, auditor, and recognition records
+- export an exact DID/role/governed-resource authorization claim at a supplied
+  RFC3339 timestamp. The portal labels its status and bundle as an unverified
+  API claim; a relying party must use an independently authenticated historical
+  ledger anchor and the client verifier before accepting it as evidence.
+- export an external recognition claim by authority DID, registry, scope
+  resource, optional exact context map, and timestamp. Omitted context selects
+  only context-free records. Recognition never grants local membership.
 - show an authenticated, server-owned canonical scope for a pending membership
   application, issue a one-use VP challenge, and submit the presentation to
   receive redacted signed evidence and a receipt. The VP is never placed in
@@ -16,11 +23,21 @@ Current scope:
 - register a pending issuer, verifier, auditor, or maintainer application with
   an externally signed Midnight DID `apply` intent. The browser accepts a
   signed request, never a private key.
+- prepare canonical issuer, verifier, and maintainer requests from structured
+  fields. The maintainer scope and governed resource both use the registry ID
+  returned by the host's current mutation context; an applicant cannot select
+  a different registry in the form. External signing and governance approval
+  remain separate steps.
 - enter the complete auditor request scope (profile, purpose, credential-scope
-  commitment, attributes, predicates, and disclosure level) and submit only an
-  externally signed auditor application with matching scope fields. The host
-  verifies the canonical governed resource and DID signature; the browser's
-  comparison is an early rejection, not a substitute for host verification.
+  commitment, attributes, predicates, and disclosure level), application IDs,
+  and applicant Midnight DID authentication method. The portal fetches the
+  current workspace/epoch and host evaluation time, generates a fresh nonce,
+  and displays the exact canonical resource, `tr-mutation-intent-v1` JSON, and
+  SHA-256 digest bytes for an external JubJub signer. Paste only the resulting
+  canonical 96-byte signature; the browser constructs the signed request and
+  never receives a private key. The host rechecks the DID signature, current
+  context, nonce, and complete scope. If signing context expires or the
+  workspace changes, refresh and sign the newly prepared digest.
 - look up an auditor authorization by ID and distinguish pending or unrecorded
   applications from current active grants and archived or expired records.
   Historical activation is never displayed as current trust.
@@ -55,20 +72,60 @@ exposing this flow.
 
 To demonstrate the private panel without a production host, run
 `pnpm run demo:auditor` from the repository root and open its loopback URL.
-Paste the signed fixture application printed in the terminal. After the panel
-issues a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>`
-in another terminal and paste the generated fixture VP. This reference host
-uses a single local fixture applicant, an in-memory session and evidence store,
+The terminal prints a signed fixture application for the advanced JSON field
+and the same fixture's values for the auditor form. To use the form, enter the
+printed draft values, select **Prepare signing digest**, run
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>` in another
+terminal, and paste its signature. The demo smoke test signs the digest from
+this same form preparation code and registers the result through the HTTP API.
+After registration, issue a challenge, run
+`node scripts/demo-auditor-admission.mjs vp <nonce>`, and paste the fixture VP.
+The `sign-digest` command uses a fixed fixture key and must never sign a real
+application. A DOM-driven integration test also runs the form against the
+loopback HTTP host: it rejects a forged signature, accepts a valid one, issues
+a challenge, and submits the one-use VP. This is not a browser-engine or
+live-network test. This reference host uses a single local fixture applicant,
+an in-memory session and evidence store,
 and a fixed virtual clock. It never activates membership and must not be
 exposed on a public interface. `pnpm run demo:auditor:smoke` verifies the same
 HTTP flow without a browser.
 
-For the auditor-specific form, copy the full request scope from the signed
-application into its fields and paste the same externally signed JSON. The
+The portal build bundles its browser entry point; raw TypeScript ESM output
+cannot resolve workspace package imports in a browser. With Google Chrome
+installed, `pnpm run test:browser` builds the local workspace and runs a
+separate Playwright suite against the same loopback admission host. It covers
+issuer, verifier, auditor, and maintainer form signing, forged-signature
+rejection, pending registration, one-use VP evidence, and redacted UI output.
+This optional browser gate is not a network-finality or production-key test.
+
+For the auditor-specific form, fill the exact scope and applicant DID fields,
+select **Prepare signing digest**, sign the displayed digest bytes using the
+applicant DID authentication key outside the browser, and paste the returned
+`0x`-prefixed 96-byte JubJub signature. The advanced full-JSON field remains
+available for an external signer that constructs the complete envelope. The
 portal rejects a different role or scope before sending it. A successful
 registration shows `pending`, not `active`; after governance acts, use the
 authorization ID lookup to inspect the public current status. The label-only
-demo form intentionally does not offer auditor submission.
+demo form intentionally does not offer auditor submission. The reference
+`demo:auditor` host uses a fixed virtual clock; the prepared intent uses that
+host's evaluation time, not the browser clock or Midnight epoch counter.
+
+The issuer, verifier, and maintainer forms follow the same external-signature flow. An
+issuer must name the exact credential family, schema and semantic version,
+credential definition, status method, and the resource type it seeks to
+govern. A verifier must name the complete request profile, purpose,
+credential-scope commitment, allowed attributes and predicates, and disclosure
+level. The portal derives role-specific governed resource IDs and includes the
+whole scope, selected resource, registry context, and nonce in the signed
+digest. A changed host binding is rejected before the page reports `pending`.
+For a maintainer, the host registry ID is the scope and resource; it is not
+editable in the form. The signer still owns the DID key outside the browser;
+registering and presenting eligibility evidence does not activate membership.
+For a loopback walkthrough, run
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer` or substitute
+`verifier` or `maintainer`, then use its printed draft and the fixture-only `sign-digest` and
+`vp <nonce> <role>` commands. The demo does not make an issuance or
+presentation decision on the network.
 
 Run locally from the repo root:
 

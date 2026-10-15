@@ -107,6 +107,43 @@ and submit without handing either page a private key. Their DOM-handler tests
 cover accepted and stale-context paths; a real-browser signed-intent smoke
 remains separate #59 work.
 
+### Auditor Applicant Form
+
+Run `pnpm run demo:auditor` and open the loopback URL. The terminal prints
+the fixture draft values for the structured auditor form. Enter those values,
+prepare the signing digest, sign it with
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>`, and paste the
+signature into the form. Then issue a challenge and generate its VP with
+`node scripts/demo-auditor-admission.mjs vp <nonce>`. The form binds the exact
+auditor request profile, purpose, predicates, disclosure level, registry
+workspace commitment, epoch, and one-use nonce before requesting a signature.
+The fixed-key signer and virtual clock are **fixture-only**; never use them for
+real applications. `pnpm run demo:auditor:smoke` sends an envelope prepared by
+the same form code through the HTTP registration and VP intake, including
+rejections for unauthorized registration, changed payload, wrong scope, and
+replayed VP. The portal's DOM-driven live-host test also exercises forged
+signature rejection and recovery through its form handlers. Neither test uses
+a browser engine or demonstrates Midnight-network finality. Successful
+evidence intake does not activate membership.
+
+The applicant portal also has structured issuer and verifier forms. Issuer
+preparation binds the credential family, schema/version, definition, status
+method, and selected issuer resource type; verifier preparation binds the
+complete request profile, purpose, credential-scope commitment, allowed
+attributes and predicates, and disclosure level. Both use a fresh host context
+and an externally signed Midnight DID digest. Their DOM-to-HTTP integration
+tests register each role with the fixture DID key and complete VP evidence
+intake through the live loopback API. These are pending records only, not
+governance approval or Midnight network finality.
+
+To demonstrate one of those forms interactively, start
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer` or replace `issuer`
+with `verifier`. Enter the printed draft, sign the displayed digest with
+`node scripts/demo-auditor-admission.mjs sign-digest <digest>`, then generate
+the challenge-bound presentation with
+`node scripts/demo-auditor-admission.mjs vp <nonce> <role>`. The demo key and
+role-scoped VP generator are fixtures only.
+
 ### Compact-Governed Registry Journey
 
 Run the separate quorum-backed reference demo:

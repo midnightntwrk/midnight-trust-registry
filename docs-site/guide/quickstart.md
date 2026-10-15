@@ -23,6 +23,18 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
+The issuer, verifier, and auditor demos also query the native timestamped
+evidence API after suspension and revocation. Each response is checked against
+the simulator's separately read epoch record and maintainer key; a substituted
+resource or epoch root is rejected. An old active decision stays provable at
+its original instant, but does not imply current authorization. Lifecycle
+actions can replace the current record's `evidenceHash`, while an archived
+bundle retains its original evidence commitment. The simulator anchor in this
+demo is not a production finalized-ledger reader.
+The governed demo performs the analogous historical proof check for external
+recognition after suspension and revocation, including wrong-registry and
+wrong-root rejection. Recognition still does not confer local issuer trust.
+
 For the cross-surface local API and UI smoke, use `pnpm run demo:smoke`. The repository's [demo guide](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/demo-and-release.md) explains its fixture and process model. `pnpm run integration` runs the broader simulator and API integration suite. The demos may take longer than `--light` because Compact artifacts and proving material can be generated.
 
 ## Local API and applications
@@ -37,6 +49,24 @@ pnpm run demo:serve:applicant-portal
 ```
 
 `demo:serve:api` deliberately passes `--unsafe-demo-mutations`. That switch is accepted only on loopback and makes unsigned workspace replay available for UI demonstrations. **Never use it for real trust decisions.** The packaged CLI does not inject production DID resolution or Compact-backed governed-action ports; those routes return `503` unless an embedding host supplies them. See [API safety](../api/index.md).
+
+For a signed applicant walkthrough, use the isolated fixture host instead:
+`node scripts/demo-auditor-admission.mjs serve 4400 issuer`, replacing `issuer`
+with `verifier`, `auditor`, or `maintainer` as needed. The applicant portal shows structured
+role-specific fields and a digest to sign outside the browser. The terminal
+prints the matching fixture draft and one-use VP command. A successful run
+registers a pending application and redacted eligibility evidence; it does
+not approve or activate membership. The signer, clock, DID resolver, and VP
+are local fixtures, not production trust or Midnight finality.
+The maintainer form derives its exact registry scope from the API's current
+context rather than an applicant-entered registry ID.
+
+With Google Chrome installed, `pnpm run test:browser` builds and exercises
+the issuer, verifier, auditor, and maintainer forms in a real browser against
+the authenticated loopback admission host. The browser test rejects a forged
+applicant signature, accepts the valid fixture signature, and submits a
+challenge-bound VP without rendering raw presentation data. It does not
+establish production identity, status-root finality, or network settlement.
 
 ## Read a decision
 

@@ -1,6 +1,7 @@
 export * from "./did-resolution.js";
 export * from "./application-vp-verifier.js";
 export * from "./application-status-attestation.js";
+export * from "./application-status-http.js";
 export * from "./governed-application-issuer.js";
 export * from "./vp-evidence-attestation.js";
 export * from "./recognition-authority-assertion.js";
@@ -11,6 +12,7 @@ export * from "./vp-scenario-fixtures.js";
 export * from "./fixtures.js";
 export * from "./local-simulator-harness.js";
 export * from "./compact-decision-reader.js";
+export * from "./compact-historical-anchor.js";
 export * from "./vc-signer-candidate.js";
 export * from "./vc-signer-authorization.js";
 export * from "./vc-scope.js";

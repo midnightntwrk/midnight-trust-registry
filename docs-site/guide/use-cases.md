@@ -25,4 +25,14 @@ One organization can hold multiple roles, but each role is a separate scoped gra
 5. **Audit:** a verifier checks the auditor's exact mandate before considering an information request, then applies consent and disclosure policy off-registry.
 6. **Recognize:** the local registry evaluates accredited evidence for an external authority and records a scoped recognition. That never converts into a local issuer or verifier authorization.
 
+The applicant portal's historical authorization panel implements only the
+read/export part of Query. It shows the API's status-at-time claim and raw
+bundle for an exact DID, role, resource, and timestamp, but does not have an
+independently authenticated ledger reader in the browser. Relying parties
+must verify the exported bundle with the client helper and their own accepted
+historical epoch and publication-key context before making a trust decision.
+The adjacent recognition panel exports the same kind of historical claim for
+an external authority and an exact context-qualified scope; it does not turn
+recognition into a local membership grant.
+
 The full acceptance and rejection matrix is the [0.1.0 reference profile](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/milestone-0.1.0.md#4-use-cases). The [sequence diagrams](../architecture/flows.md) show how these actors interact with the implemented boundaries.

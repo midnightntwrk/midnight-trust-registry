@@ -9,6 +9,12 @@ Current scope:
 - explicit TR-only extensions for registry metadata and evidence-bundle export
 - adapter logic over an abstract read source so the package is not tied to the
   local simulator
+- `verifyTrqpAuthorizationEvidenceResponse` and
+  `verifyTrqpRecognitionEvidenceResponse` for independently anchored proof and
+  decision checks against an exact request
+- `verifyTrqpAuthorizationEvidenceFromApi` and
+  `verifyTrqpRecognitionEvidenceFromApi` to fetch the local/HTTPS evidence route
+  and apply those checks without treating 404/424 as a deny decision
 
 When `context.time` is supplied, authorization and recognition decisions use
 the record's lifecycle at that time, not its current status. Otherwise the
@@ -22,5 +28,16 @@ prove it; the evidence endpoint returns `epoch-evidence-unavailable` (424),
 distinct from a missing statement (404). Neither answer proves the snapshot
 is fresh relative to a later ledger state. See
 [`docs/spec/trqp-time-and-evidence.md`](../../docs/spec/trqp-time-and-evidence.md).
-Retaining and exporting every historical bundle is follow-on work under
+The API can export selected archived statement bundles; durable retention and
+canonical network-history selection remain follow-on work under
 [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).
+
+The evidence verifiers require a caller-selected explicit `context.time`, a
+trusted authority DID, and an epoch context obtained independently of the
+TRQP response. They check the echoed tuple and time, epoch signature and
+inclusion proof, exact statement scope, and the projected allow/deny result.
+Recognition verification also requires `context.recognized_registry_id` and
+the exact `scope_context` map; recognition never grants local issuer authority.
+These helpers do not authenticate ledger finality, select the canonical
+historical epoch, or validate a wall-clock source. A 404/424 response remains
+an unavailable proof, not a verified deny decision.

@@ -19,7 +19,13 @@ import {
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
-import { bytes32Commitment, createVerifiedDecisionEvidenceSource } from "../packages/trust-registry-client/dist/index.js";
+import {
+  bytes32Commitment,
+  createVerifiedDecisionEvidenceSource,
+  defaultSequenceToTimestamp,
+  verifyHistoricalRecognitionEvidenceFromApi,
+  verifyHistoricalRecognitionEvidenceResponse,
+} from "../packages/trust-registry-client/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   ApplicationChallengeBindingSchema,
@@ -45,6 +51,7 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  resolveCompactHistoricalEpochAnchor,
   recognitionAuthorityAssertionDigest,
   recognitionAccreditationSubmissionCommitment,
   VP_FIXTURE_NONCE,
@@ -63,7 +70,7 @@ import {
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
-import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
+import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
@@ -1662,6 +1669,12 @@ try {
   const recognitionBundle = await expectHttp(await fetch(
     `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
   ), 200);
+  const locallyVerifiedRecognition = harness.evaluateCurrentRecognitionDecision(recognition);
+  const trustedRecognitionEpoch = {
+    epochId: locallyVerifiedRecognition.epoch.epochId,
+    policyVersion: locallyVerifiedRecognition.policy.version,
+  };
+  assert.equal(recognitionBundle.epoch.epochId, trustedRecognitionEpoch.epochId);
   assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
   adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
     id: "recognition-not-issuer-authorization",
@@ -1972,6 +1985,33 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(target.evaluationBody(at)),
     });
+    const verifyNativeRecognitionAt = async (at) => {
+      if (!recognitionTarget) return;
+      const selection = target.evaluationBody(at);
+      const response = await expectHttp(await fetch(`${base}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(selection),
+      }), 200);
+      const anchor = resolveCompactHistoricalEpochAnchor({
+        ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        ...trustedRecognitionEpoch,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
+      });
+      const { epochRecord } = anchor;
+      assert.equal(verifyHistoricalRecognitionEvidenceResponse(response, selection, anchor).trustedAtTime, true);
+      assert.equal((await verifyHistoricalRecognitionEvidenceFromApi(base, selection, anchor)).trustedAtTime, true);
+      const trqpRequest = target.trqpRequest(at);
+      assert.equal((await verifyTrqpRecognitionEvidenceFromApi(
+        base, trqpRequest, harness.registryDid, anchor,
+      )).recognized, true);
+      assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, {
+        ...selection, recognizedRegistryId: `${selection.recognizedRegistryId}:other`,
+      }, anchor), /scope mismatch/iu);
+      assert.throws(() => verifyHistoricalRecognitionEvidenceResponse(response, selection, {
+        ...anchor, epochRecord: { ...epochRecord, stateRoot: new Uint8Array(32) },
+      }), /state root mismatch/iu);
+    };
     const queryTrqpAt = target.trqpRequest === undefined ? undefined : (at) => fetch(
       `${base}/v1/trqp/${recognitionTarget ? "recognitions" : "authorizations"}/query`,
       {
@@ -2047,6 +2087,7 @@ try {
       boundary: "api", trusted: true,
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-suspension", historicalAfterSuspension.trustedAtTime);
+    await verifyNativeRecognitionAt(roleActiveAt);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
@@ -2102,6 +2143,7 @@ try {
       boundary: "api", trusted: true,
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-revocation", historicalAfterRevocation.trustedAtTime);
+    await verifyNativeRecognitionAt(roleActiveAt);
     adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,

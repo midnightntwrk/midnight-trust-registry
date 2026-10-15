@@ -141,6 +141,16 @@ signature value is the DID package's 96-byte encoding rendered as lowercase,
 `0x`-prefixed hex, with a response scalar below the JubJub group order and
 canonical field coordinates. Other encodings are not accepted by this profile.
 
+The reference status-authority HTTP adapter sends only status-registry ID,
+status-handle commitment, credential-body root, and challenge hash to an
+operator-configured HTTPS endpoint. The response is untrusted until its
+canonical statement, bounded freshness, active status, governed issuer
+status-policy binding, and Midnight DID assertion-key signature verify.
+Transport success alone is not a status decision; the operator must still
+authenticate the issuer grant and the status authority's DID state. This
+attestation profile is not a proof of Midnight network finality or a general
+VC status-registry protocol.
+
 ### Application challenge lifecycle
 
 Before receiving a VP, the evidence verifier issues a fresh 32-byte random

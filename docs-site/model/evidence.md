@@ -12,6 +12,38 @@ The proposal binds the evidence-verifier key, policy version, nonce, application
 
 An external caller must verify the bundle against an **independently trusted** registry/epoch anchor, not simply trust JSON returned by the same API. Check the exact role and scope, current lifecycle, policy commitment, signer threshold, event/inclusion proof, and observation view. Client helpers support this evaluation, but the caller owns anchor selection.
 
+The client package exports `verifyHistoricalAuthorizationEvidenceFromApi` and
+`verifyHistoricalRecognitionEvidenceFromApi`. Pass the exact query selection
+and an epoch record, publication key, and registry commitment authenticated
+from ledger history. These functions fetch the native timestamped evidence
+route and return only after its response, scope, signature, roots, and inclusion
+proof verify. They do **not** authenticate the supplied anchor or decide which
+epoch was canonical at that time. A `404`/`424` is an error, not an
+authorization denial; remote HTTP is rejected in favor of HTTPS.
+
+The integration package's `resolveCompactHistoricalEpochAnchor` can extract
+that verifier context from a **host-authenticated finalized Compact ledger
+view**. It checks the registry, accepted epoch record, committed policy
+version, and publication signer before the client evaluates the HTTP claim.
+The embedding host still must authenticate the deployment and finalized
+ledger view, select the appropriate historical epoch, and supply a trusted
+counter-to-time mapping. Midnight counters are not network timestamps.
+In the local demos, the expected per-statement epoch is derived from the
+Compact status sequence before the API response is verified; the HTTP server
+does not choose its own anchor. This fixture-specific selection does not
+establish canonical network history for a production deployment.
+
+The TRQP adapter also exports issuer/verifier and recognition evidence
+verifiers. They require explicit request time, a trusted authority DID, and a
+caller-supplied epoch anchor; they reject a response whose tuple, proof, or
+allow/deny result disagrees with the request and proved lifecycle. Recognition
+requires the exact external registry and scope context and does not authorize
+local issuance. Fetch-and-verify helpers reject non-loopback HTTP, redirects,
+and unavailable evidence instead of turning them into negative decisions. The
+signed issuer/verifier and governed recognition demos call the live TRQP
+evidence routes through these helpers and verify against simulator-ledger
+anchors, including archived decisions after later lifecycle changes.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).

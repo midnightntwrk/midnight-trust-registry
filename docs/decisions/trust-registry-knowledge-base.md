@@ -1148,3 +1148,207 @@ grant while its window is open and rejects the same epoch after that grant is
 suspended. Production implementations still need an authenticated latest
 applicable epoch index if policy requires rejecting duplicate publications
 of an unchanged statement.
+
+The native HTTP API now offers timestamped evidence export for authorization
+and recognition, matching TRQP's archived-bundle selection. It evaluates the
+record and selects its bundle from one snapshot, returns 404 for no matching
+statement, and returns 424 when the statement exists without epoch-bound
+evidence at that instant. The returned bundle remains a claim until independently
+verified against an accepted epoch.
+
+The native evidence response must report the *selected bundle's* epoch, not
+the generic temporal query's latest epoch: an unrelated later publication can
+overlap the same timestamp. The client now checks exact authorization or
+recognition scope, independently anchored epoch/root/signature/inclusion,
+and recomputed status at the requested instant. These helpers do not establish
+that the supplied epoch was canonical in ledger history or that its signer
+was authoritative; the caller must authenticate those inputs independently.
+Simulator-backed negative tests cover root, signature, scope, and server status
+substitution. Keep client tests that use the integration harness in the
+integration package to avoid a client-to-integration dependency cycle.
+Independent review of the native historical verifier found that recognition
+`scope.context` was not selected, the statement `policyId` was not tied to the
+proved bundle policy, and response entry/signer fields could contradict the
+verified bundle. The client now rejects context substitution, enforces the
+policy-ID link in the shared bundle verifier, and checks response fields for
+consistency. Native recognition lookups accept an optional exact `scopeContext`
+map; the consumer verifier treats an omitted context as an expectation of no
+context. An independently authenticated canonical historical epoch selection
+remains a host responsibility, not a guarantee of the API or bundle.
+The applicant portal now exposes the native historical authorization export
+for issuer, verifier, and auditor records. It preserves exact query inputs,
+does not cache the POST response, rejects a different role/DID/resource/epoch,
+and prominently labels the result as unverified. It deliberately does not
+perform browser-side proof verification without an independently authenticated
+historical ledger reader.
+Native recognition lookup now compares the context map unconditionally:
+omitted context selects only context-free records, never a context-bound
+record by accident. The applicant portal has a parallel recognition evidence
+panel, validates the request through the API schema, and labels its result as
+unverified. This keeps API and UI exact-scope semantics aligned while
+production historical epoch authentication remains outside the browser.
+Independent review of this slice found that TRQP could no longer select a
+context-qualified recognition once native selection became exact. The named
+TRQP `context.scope_context` extension now reaches the same selector, and the
+adapter checks it against attached evidence. Review also found that an array
+could masquerade as a string map in the portal's context comparison; the
+response shape is now validated before comparison. The portal additionally
+requires registry ID and resource type so its result cannot hide wildcard
+selection of those scope dimensions.
+The signed issuer, verifier, and auditor simulator demos now use the live
+timestamped evidence API after lifecycle changes and verify each response
+against separately read epoch and maintainer records. A substituted scope or
+epoch root fails. This caught an overly strict response consistency check:
+the current record's `evidenceHash` changes for suspension/revocation while
+the archived statement keeps its original evidence commitment. Compare the
+stable identity, scope, policy, and status-binding fields across those records,
+but authenticate the historical `evidenceHash` through its signed epoch and
+Merkle inclusion proof instead. Production epoch finality remains a separate
+host responsibility.
+The governed simulator demo now queries native historical recognition evidence
+after suspension and revocation, verifies the original active statement
+against a separate simulator epoch/signer read, and rejects substituted
+recognized-registry and epoch-root inputs. It is reference conformance, not a
+network-finality claim or transitive issuer authorization.
+The public client now composes native historical HTTP fetch and proof
+verification for both authorization and recognition. The caller supplies a
+separately authenticated epoch record, publication key, and registry
+commitment; the HTTP response is never allowed to supply its own anchor.
+Remote fetch requires HTTPS, loopback HTTP is local-only, redirects are
+rejected, and `404`/`424` remain errors rather than negative decisions.
+Canonical historical epoch selection and network finality remain external.
+The integration package now projects historical verification context from a
+host-authenticated Compact ledger view rather than requiring demo callers to
+manually combine epoch and signer map reads. It rejects wrong contract format,
+registry commitment, missing epoch, uncommitted policy root/version, and
+inconsistent publication signer. Signed issuer/verifier/auditor and governed
+recognition demos now use this projection and the native HTTP fetch-plus-proof
+client. The simulator supplies the ledger and deterministic counter-to-time
+mapping; a production host must supply an authenticated finalized view and
+its own historical epoch-selection/time provenance.
+The signed journeys derive expected statement epochs from Compact status
+sequences, and the recognition demo captures its expected epoch from the local
+simulator before accepting API evidence. Neither demo lets the API select its
+own anchor. This is a local fixture boundary, not a network-finality proof.
+TRQP evidence verification is now exercised against those same live API
+journeys: issuer/verifier and recognition proof responses must match exact
+requests, ledger-selected epoch anchors, and independently recomputed temporal
+decisions. Recognition remains a distinct result, not a local authorization.
+
+The UC-14 auditor mandate check now requires the independently read current
+active ledger record to match the verified grant's ID, DID, exact request
+resource, governed policy commitment, trust level, evidence hash, and lifecycle
+event. A substituted active record therefore cannot revive a stale audit
+mandate. Compact's `AuditorAuthorizationRecord.policyId` holds the governed
+policy commitment, so compare it to the verified statement epoch's policy
+root rather than hashing the human-readable policy ID. Focused client tests,
+`./run.sh --light`, `./run.sh integration --light`, and the dependency audit
+passed. This remains simulator-backed evidence, not Midnight network finality.
+
+The sibling VC repository's status-registry package remains a private
+prototype and explicitly lacks authenticated mutation and in-circuit live-root
+proof. Do not copy or import it as a production solution for #76/#90. The
+published VC core provides status-reference shape and commitment checks; a
+governed status authority plus authenticated current-state adapter is still a
+separate functional deliverable.
+
+The #90 reference integration now has an HTTP source for its DID-signed
+application status attestation. It POSTs only registry/handle/body-root and
+challenge commitments to an operator-configured HTTPS endpoint and passes the
+untrusted response through the existing governed issuer binding, DID method,
+signature, active-status, and freshness verifier. A full VC/VP application
+test accepts the active response, returns only a redacted decision commitment,
+and rejects a re-signed revoked response; focused transport tests reject
+substitution, stale answers, insecure endpoints, and outages. This is not a
+general VC status registry, an independent live-root proof, or network
+finality. `./run.sh --light`, `./run.sh integration --light`, `./run.sh docs`,
+and `pnpm audit --audit-level low` passed on the local stack.
+
+The #152 auditor applicant portal now prepares a canonical `apply` intent from
+structured IDs, DID authentication method, and the complete audit request
+scope. It derives the composite governed resource, asks the current API for
+workspace/epoch and host evaluation time, generates a fresh nonce, and shows
+the digest bytes to sign outside the browser. It posts only the returned
+canonical JubJub signature with the prepared envelope; the host still checks
+the DID method, revision, nonce, exact scope, and later one-use VP evidence.
+The API mutation context now exposes `evaluatedAt` from its configured host
+clock so the fixed-time simulator demo and applicant preparation agree. This
+is not a Midnight consensus timestamp. Focused browser/domain/API tests,
+`./run.sh --light`, `./run.sh integration --light`, docs build, and audit pass.
+Keep #152 open until publication, exact-head CI, independent security review,
+and the remaining production authentication/availability boundaries are met.
+
+The loopback auditor-admission demo now uses that same portal preparation
+helper for its signed application instead of hand-building a parallel intent.
+Its API source exposes the read-only workspace context needed by the form but
+rejects governance writes. A fixture-only CLI command signs the displayed
+32-byte digest with the demo DID key; the HTTP smoke prepares a fresh
+signature from the form helper, registers it through the real admission route,
+and then verifies the one-use VP evidence path and negative cases. Schnorr
+signatures are randomized, so compare the canonical intent/scope rather than
+signature bytes across preparations. The fixed key, virtual clock, and local
+session remain strictly demo-only; acceptance is pending and does not confer
+auditor membership.
+
+The portal test harness now mounts the real auditor form against the loopback
+demo host's HTTP routes rather than returning mocked application responses.
+Its adapter carries the fixture session over Node HTTP because Happy DOM's
+default window origin differs from the ephemeral loopback port. It proves a
+forged signature is rejected without consuming the application, then signs
+the displayed digest, registers the pending application, issues a VP
+challenge, and verifies redacted evidence acceptance through the DOM.
+This covers form-handler-to-API conformance, not an actual browser engine or
+Midnight network submission.
+
+Issuer and verifier applicant forms now construct the same canonical pending
+application intent as auditor, with role-specific scopes and governed resource
+IDs. Issuer includes schema semantic version, definition, status method, and
+selected resource type; verifier includes full request purpose and disclosure
+scope. The portal retains no signing key and rejects a host pending binding
+whose complete canonical scope, commitment, or subject DID differs from the
+prepared request. Domain and DOM tests cover field substitution; role-specific
+DOM-to-live-HTTP tests verify fixture DID signatures and one-use VP intake.
+These flows stop at pending admission and do not grant membership or prove
+Midnight finality.
+An independent read-only review found the response check initially omitted
+registry ID. The portal now requires the pending binding registry to equal
+the signed intent registry, and DOM tests reject both scope and registry
+substitution before reporting `pending`.
+The loopback demo now selects issuer, verifier, or auditor fixtures for its
+serve/application/VP commands, so each structured applicant form can be
+demonstrated with a matching externally signed fixture application and
+challenge-bound presentation. The default remains auditor for existing smoke
+calls. The role selector never changes production authorization rules.
+
+The maintainer applicant form now uses the same externally signed pending
+application path. Its `tr-scope-v1` registry ID and governed resource are
+both derived from the host's current mutation context, not an editable form
+field. The portal checks the returned canonical scope and registry against
+the signed intent. Domain, DOM substitution, and DOM-to-live-HTTP tests cover
+forged signature rejection, pending registration, and one-use VP evidence.
+The loopback demo accepts `maintainer` for matching fixture application/VP
+commands. This is pending admission only; existing maintainers still govern
+approval, and the reference host has no network finality or production key
+custody. The sibling VC status-registry package is still private and lacks
+an independently authenticated current-root proof, so the DID-signed status
+attestation remains a narrower authority statement rather than a general
+non-revocation proof.
+
+Real Chrome exposed that the applicant portal served unresolved workspace
+package specifiers from TypeScript ESM output; Happy DOM tests had imported
+the same modules through Node and missed the deployment failure. The normal
+portal build now bundles the browser entry point with esbuild. A narrow
+browser-safe domain export and API recognition-query schema entry avoid
+pulling server-only Node modules and Midnight on-chain WASM into that bundle.
+An optional Playwright suite drives all four role forms against the loopback
+HTTP admission host, rejects forged signatures, then completes pending
+registration and one-use VP evidence. This is real-browser validation of a
+fixture host, not production authentication or finalized-network evidence.
+
+The admin console has a separate host-selection boundary. Switching its API
+base invalidates prior board reads and prepared signatures, clears pasted
+envelopes and the selected record, and fences late governance responses by
+the original host revision. A Chrome test holds a registry-A epoch publication
+response while connecting to registry B, then confirms the A receipt cannot
+replace B's board. The A transaction may still have executed; changing a
+browser connection is not a cancellation or a finality observation.

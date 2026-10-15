@@ -22,6 +22,15 @@ Current coverage:
   A simulator composition test now signs a fixture VC/VP with the same issuer
   key as a verified active grant, uses that grant's status-policy preimage for
   challenge-bound status verification, and rejects a suspended current grant.
+  `createHttpApplicationStatusSource` can fetch the same signed attestation
+  from a configured HTTPS status authority endpoint (loopback HTTP is only for
+  local demos). It POSTs the registry, handle, credential-body root, and
+  challenge commitments with no raw credential, disables cache and redirects,
+  and then applies the same governed-binding, DID assertion-key signature,
+  challenge, active-status, and freshness checks. Network/5xx/429 failures are
+  retryable dependency outages; 4xx, malformed, and invalid signed answers
+  never establish eligibility. The transport does not authenticate Midnight
+  finality or provide an independent live status-registry proof.
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
 - `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and
@@ -139,6 +148,16 @@ Current coverage:
   local fixtures; production finality, governed external VC schema enrollment,
   production finalized authority-key reads and durable deployed consumer
   state remain open.
+- `resolveCompactHistoricalEpochAnchor` projects an epoch record, committed
+  policy version, and publication signer from a caller-authenticated finalized
+  Compact ledger view. The caller supplies the registry and epoch IDs, policy
+  version, and an authenticated sequence-to-time mapping; wrong format,
+  registry, epoch, policy root, or signer record fails closed. The native
+  historical HTTP verifier then checks the API claim against this context.
+  This adapter does not fetch network state, establish finality, prove a
+  canonical per-statement epoch selection, or derive wall-clock time from
+  Midnight counters. Simulator demos exercise the projection with local
+  ledger state only.
 - `createQuorumGatedVcAuthoritySigner` is a signer-side port wrapper. It uses
   its own trusted registry/DID readers to recheck current finalized quorum and
   method state, then requires an independent finalized current VC authority-key

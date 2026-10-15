@@ -37,12 +37,25 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   the query projection into an independently verifiable assertion.
 - Before attaching a source bundle, the adapter MUST match its registry ID and
   statement tuple to the requested authority, entity, action, and resource.
-  Recognition additionally matches `recognized_registry_id` when requested.
+  Recognition additionally matches `recognized_registry_id` when requested
+  and the exact string-valued `scope_context` map. Omitting `scope_context`
+  selects only context-free recognitions. This named context extension keeps
+  context-qualified records queryable without treating an omitted map as a
+  wildcard.
   A mismatch is invalid source data, not a negative trust decision or evidence
   for another party. This structural check does not replace independent
   verification of the epoch anchor, signatures, and inclusion proof.
 - Epoch window and bundle equality checks compare RFC3339 instants
   semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
+- An independently verified TRQP evidence decision requires an explicit
+  `context.time`, a caller-trusted authority DID, and an epoch anchor selected
+  from authenticated ledger history rather than the response. The verifier
+  MUST match the response tuple and evaluation instant, check the signed
+  epoch and statement inclusion, then recompute `authorized` or `recognized`
+  from the proved lifecycle. For recognition, the verifier requires the exact
+  `recognized_registry_id` and `scope_context`; it MUST NOT treat recognition
+  as a local issuer grant. Ledger finality, canonical historical selection,
+  and trustworthy sequence-to-time mapping remain host obligations.
 
 ## Multiple records for one scope
 

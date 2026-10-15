@@ -128,7 +128,8 @@ describe("trust registry api", () => {
     const workspacePath = join(tempDir, "mutation-context.json");
     const workspace = createOperatorWorkspace({ label: "mutation-context" });
     await writeWorkspaceToFile(workspacePath, workspace);
-    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    const evaluatedAt = "2026-10-15T05:00:00.000Z";
+    const server = await startServer(createWorkspaceFileSource(workspacePath), () => evaluatedAt);
     try {
       const first = await fetch(`${server.url}/v1/registry/mutation-context`);
       expect(first.status).toBe(200);
@@ -138,6 +139,7 @@ describe("trust registry api", () => {
         registryId: workspace.snapshot.registry.registryId,
         expectedEpochId: workspace.snapshot.currentEpoch.epochId,
         expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+        evaluatedAt,
       });
       expect(JSON.stringify(firstContext)).not.toContain("operations");
 
@@ -149,6 +151,7 @@ describe("trust registry api", () => {
         registryId: next.snapshot.registry.registryId,
         expectedEpochId: next.snapshot.currentEpoch.epochId,
         expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(next),
+        evaluatedAt,
       });
       expect(computeOperatorWorkspaceCommitment(next)).not.toBe(firstContext.expectedWorkspaceCommitment);
     } finally {
@@ -748,6 +751,101 @@ describe("trust registry api", () => {
     }
   });
 
+  it("requires exact recognition context rather than treating omission as a wildcard", async () => {
+    const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
+    const original = snapshot.recognitionEntries[0];
+    if (original === undefined) throw new Error("expected recognition fixture");
+    if (original.evidence.recognition === undefined) throw new Error("expected recognition evidence");
+    const evidenceRecognition = original.evidence.recognition;
+    const context = { purpose: "assurance" };
+    const source = createInMemorySource({
+      ...snapshot,
+      recognitionEntries: [{
+        ...original,
+        recognition: { ...original.recognition, scope: { ...original.recognition.scope, context } },
+        evidence: {
+          ...original.evidence,
+          recognition: {
+            ...evidenceRecognition,
+            scope: { ...evidenceRecognition.scope, context },
+          },
+        },
+      }],
+    });
+    const server = await startServer(source);
+    try {
+      const request = {
+        recognizedAuthorityDid: original.recognition.recognizedAuthorityDid,
+        recognizedRegistryId: original.recognition.recognizedRegistryId,
+        scopeResourceType: original.recognition.scope.resourceType,
+        scopeResourceId: original.recognition.scope.resourceId,
+      };
+      const query = async (body: object) => fetch(`${server.url}/v1/recognitions/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await query(request)).status).toBe(404);
+      expect((await query({ ...request, scopeContext: { purpose: "other" } })).status).toBe(404);
+      expect((await query({ ...request, scopeContext: context })).status).toBe(200);
+      const trqpRequest = {
+        entity_id: request.recognizedAuthorityDid,
+        authority_id: snapshot.registry.registryDid,
+        action: request.scopeResourceType,
+        resource: request.scopeResourceId,
+        context: {
+          time: original.evidence.epoch.validFrom,
+          recognized_registry_id: request.recognizedRegistryId,
+        },
+      };
+      const trqpQuery = async (body: object) => fetch(`${server.url}/v1/trqp/recognitions/query`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await trqpQuery(trqpRequest)).status).toBe(404);
+      expect((await trqpQuery({ ...trqpRequest, context: {
+        ...trqpRequest.context, scope_context: context,
+      } })).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
+    const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1_000).toISOString();
+    const unrelatedEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:unrelated`,
+      validFrom: at,
+    };
+    const server = await startServer(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, unrelatedEpoch],
+    }));
+    try {
+      const request = {
+        role: "issuer",
+        subjectDid: entry.authorization.subjectDid,
+        resourceId: entry.authorization.resourceId,
+        at,
+      };
+      const plain = await fetch(`${server.url}/v1/authorizations/evaluate`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      const evidence = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(plain.status).toBe(200);
+      expect(evidence.status).toBe(200);
+      expect((await plain.json()).epoch.epochId).toBe(unrelatedEpoch.epochId);
+      const result = await evidence.json();
+      expect(result.epoch).toEqual(result.bundle.epoch);
+      expect(result.epoch.epochId).toBe(entry.evidence.epoch.epochId);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves archived issuer evidence for its epoch after a later revocation", async () => {
     let workspace = createOperatorWorkspace({ label: "trqp-issuer-archive" });
     const submitted = applyOperation(workspace, {
@@ -787,8 +885,52 @@ describe("trust registry api", () => {
       expect(result.authorized).toBe(true);
       expect(result.bundle.authorization.status).toBe("active");
       expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const nativeRequest = {
+        role: "issuer",
+        subjectDid: activeBundle.authorization.subjectDid,
+        resourceId: activeBundle.authorization.resourceId,
+        at: activeBundle.epoch.validFrom,
+      };
+      const native = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(nativeRequest),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.authorization.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
+      const wrongScope = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...nativeRequest,
+          resourceId: `${nativeRequest.resourceId.slice(0, -1)}${nativeRequest.resourceId.endsWith("a") ? "b" : "a"}`,
+        }),
+      });
+      expect(wrongScope.status).toBe(404);
     } finally {
       await server.close();
+    }
+
+    const missingArchive = await startServer(createInMemorySource({ ...snapshot, evidenceArchive: [] }));
+    try {
+      const response = await fetch(`${missingArchive.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer",
+          subjectDid: activeBundle.authorization.subjectDid,
+          resourceId: activeBundle.authorization.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(response.status).toBe(424);
+      expect((await response.json()).type).toMatch(/epoch-evidence-unavailable$/u);
+    } finally {
+      await missingArchive.close();
     }
 
     expect(TrustRegistryOperatorSnapshotSchema.safeParse({
@@ -844,6 +986,36 @@ describe("trust registry api", () => {
       expect(result.recognized).toBe(true);
       expect(result.bundle.recognition.status).toBe("active");
       expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const native = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.recognition.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
+      const wrongContext = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          scopeContext: { purpose: "different" },
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(wrongContext.status).toBe(404);
     } finally {
       await server.close();
     }
@@ -880,6 +1052,18 @@ describe("trust registry api", () => {
         }),
       });
       expect(response.status).toBe(424);
+      const native = await fetch(`${poisonedServer.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(424);
     } finally {
       await poisonedServer.close();
     }

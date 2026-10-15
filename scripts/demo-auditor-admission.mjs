@@ -12,13 +12,17 @@ import {
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
+import { sha256Hex } from "../packages/trust-registry-domain/dist/index.js";
 import {
-  computeAuthorizationScopeCommitment,
-  computePendingApplicationPayloadCommitment,
-  mutationIntentDigestBytes,
-  requestGovernedResourceId,
-  sha256Hex,
-} from "../packages/trust-registry-domain/dist/index.js";
+  prepareAuditorApplication,
+  signPreparedAuditorApplication,
+} from "../packages/trust-registry-applicant-portal/dist/auditor-application.js";
+import {
+  prepareIssuerApplication,
+  prepareMaintainerApplication,
+  prepareVerifierApplication,
+  signPreparedMembershipApplication,
+} from "../packages/trust-registry-applicant-portal/dist/membership-application.js";
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
@@ -29,7 +33,6 @@ import {
   InMemoryApplicationChallengeStore,
   InMemoryPendingApplicationRegistrationPort,
   computeOperatorWorkspaceCommitment,
-  createInMemorySource,
   createTrustRegistryApiServer,
 } from "../packages/trust-registry-api/dist/index.js";
 import { createStaticAssetHandler } from "./serve-static.mjs";
@@ -49,46 +52,89 @@ const scope = {
   allowedPredicates: ["is-licensed"],
   disclosureLevel: "restricted",
 };
-const governedResource = { type: "requestProfile", id: requestGovernedResourceId(scope) };
+const issuerScope = {
+  version: "tr-scope-v1", role: "issuer", credentialFamilyId: "family:degree:v1",
+  schemaId: "schema:degree", schemaVersion: "1.0.0",
+  credentialDefinitionId: "definition:degree:v1", statusMethod: "status:registry:v1",
+};
+const verifierScope = {
+  version: "tr-scope-v1", role: "verifier", requestProfileId: "profile:age-gate:v1",
+  purpose: "age-gate", credentialScopeCommitment: `0x${"aa".repeat(32)}`,
+  allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"],
+  disclosureLevel: "minimal",
+};
+export const demoRegistryId = createOperatorWorkspace({ label: "auditor-admission-demo" }).snapshot.registry.registryId;
+const maintainerScope = { version: "tr-scope-v1", role: "maintainer", registryId: demoRegistryId };
+const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope, maintainer: maintainerScope };
+export const applicationDraft = {
+  applicationId,
+  authorizationId: "auth:auditor:local-demo:v1",
+  actorDid: subjectDid,
+  actorKeyId: `${subjectDid}#auth-1`,
+  requestProfileId: scope.requestProfileId,
+  purpose: scope.purpose,
+  credentialScopeCommitment: scope.credentialScopeCommitment,
+  allowedAttributes: scope.allowedAttributes,
+  allowedPredicates: scope.allowedPredicates,
+  disclosureLevel: scope.disclosureLevel,
+};
+const issuerDraft = {
+  applicationId: "application:issuer:local-demo:v1", authorizationId: "auth:issuer:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+  credentialFamilyId: issuerScope.credentialFamilyId, schemaId: issuerScope.schemaId,
+  schemaVersion: issuerScope.schemaVersion, credentialDefinitionId: issuerScope.credentialDefinitionId,
+  statusMethod: issuerScope.statusMethod, governedResourceType: "credentialFamily",
+};
+const verifierDraft = {
+  applicationId: "application:verifier:local-demo:v1", authorizationId: "auth:verifier:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+  requestProfileId: verifierScope.requestProfileId, purpose: verifierScope.purpose,
+  credentialScopeCommitment: verifierScope.credentialScopeCommitment,
+  allowedAttributes: verifierScope.allowedAttributes, allowedPredicates: verifierScope.allowedPredicates,
+  disclosureLevel: verifierScope.disclosureLevel,
+};
+const maintainerDraft = {
+  applicationId: "application:maintainer:local-demo:v1", authorizationId: "auth:maintainer:local-demo:v1",
+  actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`,
+};
+const drafts = { auditor: applicationDraft, issuer: issuerDraft, verifier: verifierDraft, maintainer: maintainerDraft };
 
-function signedApplication(workspace) {
-  const intent = {
-    version: "tr-mutation-intent-v1",
-    registryId: workspace.snapshot.registry.registryId,
-    actorDid: subjectDid,
-    actorKeyId: `${subjectDid}#auth-1`,
-    actorRole: "applicant",
-    action: "apply",
-    target: "auditor",
-    targetId: applicationId,
-    scopeCommitment: computeAuthorizationScopeCommitment(scope),
-    payloadCommitment: computePendingApplicationPayloadCommitment({
-      applicationId, authorizationId: "auth:auditor:local-demo:v1", scope, governedResource,
-    }),
-    nonce: `0x${"22".repeat(32)}`,
-    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
-    expectedEpochId: workspace.snapshot.currentEpoch.epochId,
-    issuedAt: new Date(VP_FIXTURE_TIME_MS - 60_000).toISOString(),
-    expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
-  };
-  return {
-    applicationId,
-    authorizationId: "auth:auditor:local-demo:v1",
-    scope,
-    governedResource,
-    intent,
-    signature: {
-      keyId: intent.actorKeyId,
-      algorithm: "jubjub-schnorr",
-      value: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
-        23n, payloadToJubjubDigest(mutationIntentDigestBytes(intent)),
-      ))).toString("hex")}`,
-    },
-  };
+function requestedRole(raw) {
+  if (!Object.hasOwn(scopes, raw)) throw new Error("Demo role must be issuer, verifier, auditor, or maintainer");
+  return raw;
 }
 
-async function startHost(port) {
-  const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
+export function signDigest(digest) {
+  if (typeof digest !== "string" || !/^0x[0-9a-f]{64}$/u.test(digest)) {
+    throw new Error("Pass the canonical 0x-prefixed 32-byte digest after sign-digest");
+  }
+  return `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+    23n, payloadToJubjubDigest(Buffer.from(digest.slice(2), "hex")),
+  ))).toString("hex")}`;
+}
+
+function signedApplication(workspace, role = "auditor") {
+  const context = {
+    registryId: workspace.snapshot.registry.registryId,
+    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+    expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+    evaluatedAt: NOW,
+  };
+  const nonce = `0x${"22".repeat(32)}`;
+  const prepared = role === "issuer"
+    ? prepareIssuerApplication(issuerDraft, context, nonce)
+    : role === "verifier"
+      ? prepareVerifierApplication(verifierDraft, context, nonce)
+      : role === "maintainer"
+        ? prepareMaintainerApplication(maintainerDraft, context, nonce)
+        : prepareAuditorApplication(applicationDraft, context, nonce);
+  return role === "auditor"
+    ? signPreparedAuditorApplication(prepared, signDigest(prepared.digest))
+    : signPreparedMembershipApplication(prepared, signDigest(prepared.digest));
+}
+
+export async function startHost(port, staticDir = fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url)), applicationScope = scope) {
+  const fixture = await createApplicationVpScenarioFixture(undefined, { scope: applicationScope, subjectDid, evidenceVerifierDid });
   const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
   const registration = new InMemoryPendingApplicationRegistrationPort({
     workspace, applications: [], consumedNonces: [],
@@ -103,7 +149,7 @@ async function startHost(port) {
   const cookie = `${cookieName}=${session.toString("hex")}`;
   const receipts = new Map();
   const staticHandler = createStaticAssetHandler({
-    distDir: resolve(fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url))),
+    distDir: resolve(staticDir),
     name: "auditor-admission-demo",
   });
   let server;
@@ -129,7 +175,13 @@ async function startHost(port) {
     }
   };
   server = createTrustRegistryApiServer({
-    source: createInMemorySource(workspace.snapshot),
+    source: {
+      mode: "workspace",
+      loadSnapshot: async () => workspace.snapshot,
+      loadWorkspace: async () => workspace,
+      writeWorkspace: async () => { throw new Error("Demo governance mutations are disabled"); },
+      withExclusiveWrite: async () => { throw new Error("Demo governance mutations are disabled"); },
+    },
     clock: () => NOW,
     pendingApplicationRegistration: registration,
     authorizePendingApplicationRegistration: async (request) => {
@@ -175,7 +227,7 @@ async function startHost(port) {
     },
   });
   await new Promise((resolveListen) => server.listen(port, "127.0.0.1", resolveListen));
-  return { server, base: `http://${expectedHost()}`, cookie, application: signedApplication(workspace), receipts };
+  return { server, base: `http://${expectedHost()}`, cookie, application: signedApplication(workspace, applicationScope.role), receipts };
 }
 
 async function smoke() {
@@ -222,10 +274,18 @@ async function smoke() {
       request.end(JSON.stringify(host.application));
     });
     assert.equal(spoofedRegistrationStatus, 403);
+    const contextResponse = await fetch(`${host.base}/v1/registry/mutation-context`);
+    assert.equal(contextResponse.status, 200);
+    const context = await contextResponse.json();
+    assert.equal(context.evaluatedAt, NOW);
+    const prepared = prepareAuditorApplication(applicationDraft, context, host.application.intent.nonce);
+    const formApplication = signPreparedAuditorApplication(prepared, signDigest(prepared.digest));
+    assert.deepEqual(formApplication.intent, host.application.intent);
+    assert.deepEqual(formApplication.scope, host.application.scope);
     assert.equal((await post(registrationPath, {
       ...host.application, authorizationId: "auth:auditor:substituted:v1",
     })).status, 400);
-    const registered = await post(registrationPath, host.application);
+    const registered = await post(registrationPath, formApplication);
     assert.equal(registered.status, 201);
     assert.equal((await registered.json()).authorizationId, host.application.authorizationId);
     const path = `/v1/application-evidence/${applicationId}`;
@@ -263,27 +323,39 @@ async function smoke() {
   }
 }
 
-if (command === "application") {
-  process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" })))}\n`);
-} else if (command === "vp") {
-  const nonce = process.argv[3];
+export async function presentationForNonce(nonce, applicationScope = scope) {
   if (nonce === undefined || !/^0x[0-9a-f]{64}$/u.test(nonce)) {
     throw new Error("Pass the canonical challenge nonce after vp");
   }
-  const fixture = await createApplicationVpScenarioFixture(nonce, { scope, subjectDid, evidenceVerifierDid });
-  process.stdout.write(`${JSON.stringify(fixture.input.submission)}\n`);
-} else if (command === "smoke") {
-  await smoke();
-} else if (command === "serve") {
-  const rawPort = process.argv[3] ?? "4400";
-  const port = Number(rawPort);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
-  const host = await startHost(port);
-  process.stdout.write(`Fixture-only auditor portal: ${host.base}\n`);
-  process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
-  process.stdout.write(`${JSON.stringify(host.application)}\n`);
-  process.stdout.write("After issuing a challenge, run `node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its VP JSON.\n");
-  process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
-} else {
-  throw new Error("Usage: demo-auditor-admission.mjs [serve [port]|application|vp <nonce>|smoke]");
+  const fixture = await createApplicationVpScenarioFixture(nonce, { scope: applicationScope, subjectDid, evidenceVerifierDid });
+  return fixture.input.submission;
+}
+
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  if (command === "application") {
+    const role = requestedRole(process.argv[3] ?? "auditor");
+    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
+  } else if (command === "sign-digest") {
+    process.stdout.write(`${signDigest(process.argv[3])}\n`);
+  } else if (command === "vp") {
+    const role = requestedRole(process.argv[4] ?? "auditor");
+    process.stdout.write(`${JSON.stringify(await presentationForNonce(process.argv[3], scopes[role]))}\n`);
+  } else if (command === "smoke") {
+    await smoke();
+  } else if (command === "serve") {
+    const rawPort = process.argv[3] ?? "4400";
+    const port = Number(rawPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Demo port must be 1-65535");
+    const role = requestedRole(process.argv[4] ?? "auditor");
+    const host = await startHost(port, undefined, scopes[role]);
+    process.stdout.write(`Fixture-only ${role} portal: ${host.base}\n`);
+    process.stdout.write("Paste this DID-signed fixture application in the portal:\n");
+    process.stdout.write(`${JSON.stringify(host.application)}\n`);
+    process.stdout.write(`Or use the ${role} form with this fixture draft, prepare its digest, then run \`node scripts/demo-auditor-admission.mjs sign-digest <digest>\` and paste the signature:\n`);
+    process.stdout.write(`${JSON.stringify(drafts[role])}\n`);
+    process.stdout.write(`After issuing a challenge, run \`node scripts/demo-auditor-admission.mjs vp <nonce> ${role}\` and paste its VP JSON.\n`);
+    process.stdout.write("Loopback/in-memory fixture only; not a public admission host or production status verifier.\n");
+  } else {
+    throw new Error("Usage: demo-auditor-admission.mjs [serve [port] [issuer|verifier|auditor|maintainer]|application [role]|sign-digest <digest>|vp <nonce> [role]|smoke]");
+  }
 }
