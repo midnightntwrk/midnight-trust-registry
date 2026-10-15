@@ -60,6 +60,12 @@ unanchored hints and reject a substituted binding before signing. A relying
 party must still validate the bundled authorization against an independently
 accepted epoch and current grant; the federation signature does not supply
 that trust anchor or prove live credential status.
+The reference consumer API `verifyFederatedIssuerStatusClaim` rejects a
+publisher/subject mismatch, a different authorization leaf or epoch, and an
+inactive current grant. Its caller must authenticate the federation publisher
+and keys and provide independent finalized registry/DID readers; the adapter
+does not turn a supplied JSON Web Key Set or simulator observation into a
+network trust anchor.
 
 `createGovernedApplicationIssuerEligibility` is the reference connection from
 current decision evidence to VP intake. The deployment supplies a fixed issuer

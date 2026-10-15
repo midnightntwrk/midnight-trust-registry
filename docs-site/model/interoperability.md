@@ -25,5 +25,10 @@ hints. The adapter checks that the binding matches the bundled authorization
 commitment before signing, but that check is not independent ledger proof.
 Consumers must validate the bundle against their own accepted registry epoch
 and current grant before using the status registry or authority.
+The `verifyFederatedIssuerStatusClaim` adapter entry point performs this
+cross-check against separately supplied decision evidence and trusted readers.
+The embedding host remains responsible for authenticating the federation
+publisher/JWKS and for finality and provenance of those readers. This is not
+a live credential non-revocation check.
 
 Interop with another registry requires a mapping of identifiers, scopes, semantics, policy versions, key/algorithm suites, evidence format, revocation/time model, and anchor/finality. If any mapping cannot preserve exact scope and verifiable authority, fail closed rather than importing a `trusted` boolean. Native contract verification remains JubJub in this reference implementation; secp256k1, P-256, and Ed25519 evidence may be evaluated off-chain only under a future explicit adapter and policy.

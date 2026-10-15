@@ -84,6 +84,9 @@ importers:
 
   adapters/openid-federation:
     dependencies:
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:0.1.0
+        version: link:../../packages/trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-domain

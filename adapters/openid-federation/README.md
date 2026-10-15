@@ -20,6 +20,15 @@ the embedded TR bundle against an independently accepted epoch before using
 the status registry or authority. A federation publisher signature alone
 cannot authorize an issuer or prove non-revocation.
 
+`verifyFederatedIssuerStatusClaim` performs that consumer-side correlation for
+an issuer: it checks the signed statement's publisher and subject, matches the
+embedded grant leaf, policy, and epoch to a separate decision-evidence claim,
+then calls the Trust Registry client's current-grant verifier. Callers must
+authenticate the expected publisher and JWKS through their federation trust
+chain, and supply independently authenticated, finalized registry and DID
+readers. A successful result identifies the governed status registry and
+authority; it still does not prove that a particular VC is unrevoked.
+
 Out of scope in this slice:
 
 - native OIDC provider or RP metadata projection

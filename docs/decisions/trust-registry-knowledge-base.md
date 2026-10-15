@@ -1131,3 +1131,9 @@ status-policy binding and its leaf commitment with the TR evidence bundle.
 The adapter rejects a substituted binding and strips legacy unanchored status
 hints. This is a publisher claim, not a trust decision: the relying party must
 verify the bundle against an independent accepted epoch and current grant.
+The consumer-side federation helper now correlates the signed issuer claim
+with a separately verified decision-evidence claim. Its simulator test uses
+real epoch publication signatures and a current-grant read; it rejects
+publisher substitution, unrelated evidence, and a suspended current grant.
+The embedding host must still establish federation-key provenance and network
+finality for both registry and DID readers.
