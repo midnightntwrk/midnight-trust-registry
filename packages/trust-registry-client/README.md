@@ -47,6 +47,16 @@ authority, and which epoch was canonical at that historical point from an
 independent ledger history source. The helpers return historical evidence, not
 permission to perform a new action now.
 
+`verifyHistoricalAuthorizationEvidenceFromApi` and
+`verifyHistoricalRecognitionEvidenceFromApi` fetch the corresponding native
+`/evaluate/evidence` route and apply those same checks before returning a
+decision. They require the caller's independently authenticated epoch anchor
+as an argument; they never take one from the HTTP response. Remote endpoints
+must use HTTPS (loopback HTTP is allowed for local demos). Fetches use
+`no-store` and reject redirects. A `404` or `424` response rejects rather than
+becoming a negative trust decision. The caller still has to establish which
+accepted epoch applies at the requested instant.
+
 `verifyAuditorRequestMandate` additionally requires an explicit evaluation
 time and a current auditor authorization record read from independently
 trusted ledger state. An older active bundle remains valid as historical

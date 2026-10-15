@@ -16,7 +16,7 @@ import {
   type RecognitionTemporalEvaluation,
 } from "./temporal.js";
 
-type HistoricalAuthorizationSelection = {
+export type HistoricalAuthorizationSelection = {
   role: "issuer" | "verifier" | "auditor";
   subjectDid: string;
   resourceId: string;
@@ -25,7 +25,7 @@ type HistoricalAuthorizationSelection = {
   at: string;
 };
 
-type HistoricalRecognitionSelection = {
+export type HistoricalRecognitionSelection = {
   recognizedAuthorityDid: string;
   recognizedRegistryId?: string;
   scopeResourceType?: string;

@@ -12,6 +12,15 @@ The proposal binds the evidence-verifier key, policy version, nonce, application
 
 An external caller must verify the bundle against an **independently trusted** registry/epoch anchor, not simply trust JSON returned by the same API. Check the exact role and scope, current lifecycle, policy commitment, signer threshold, event/inclusion proof, and observation view. Client helpers support this evaluation, but the caller owns anchor selection.
 
+The client package exports `verifyHistoricalAuthorizationEvidenceFromApi` and
+`verifyHistoricalRecognitionEvidenceFromApi`. Pass the exact query selection
+and an epoch record, publication key, and registry commitment authenticated
+from ledger history. These functions fetch the native timestamped evidence
+route and return only after its response, scope, signature, roots, and inclusion
+proof verify. They do **not** authenticate the supplied anchor or decide which
+epoch was canonical at that time. A `404`/`424` is an error, not an
+authorization denial; remote HTTP is rejected in favor of HTTPS.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).

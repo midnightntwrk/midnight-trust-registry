@@ -1210,3 +1210,10 @@ after suspension and revocation, verifies the original active statement
 against a separate simulator epoch/signer read, and rejects substituted
 recognized-registry and epoch-root inputs. It is reference conformance, not a
 network-finality claim or transitive issuer authorization.
+The public client now composes native historical HTTP fetch and proof
+verification for both authorization and recognition. The caller supplies a
+separately authenticated epoch record, publication key, and registry
+commitment; the HTTP response is never allowed to supply its own anchor.
+Remote fetch requires HTTPS, loopback HTTP is local-only, redirects are
+rejected, and `404`/`424` remain errors rather than negative decisions.
+Canonical historical epoch selection and network finality remain external.

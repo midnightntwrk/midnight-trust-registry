@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   bytes32Commitment,
+  verifyHistoricalAuthorizationEvidenceFromApi,
   verifyHistoricalAuthorizationEvidenceResponse,
+  verifyHistoricalRecognitionEvidenceFromApi,
   verifyHistoricalRecognitionEvidenceResponse,
   verifyTrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-client";
@@ -13,7 +15,7 @@ import { createIssuerScenarioFixture, createRecognitionScenarioFixture } from ".
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("historical native evidence responses", () => {
-  it("verifies an archived issuer claim against an independent signed epoch anchor", () => {
+  it("verifies an archived issuer claim against an independent signed epoch anchor", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("historical-native-issuer");
     const issuer = createIssuerScenarioFixture("degree");
     harness.authorizeIssuer(issuer);
@@ -86,9 +88,43 @@ describe("historical native evidence responses", () => {
     expect(() => verifyHistoricalAuthorizationEvidenceResponse({
       ...response, epoch: wrongSignerEpoch, bundle: { ...bundle, epoch: wrongSignerEpoch },
     }, selection, anchor)).toThrow(/signature/u);
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe("https://registry.example/v1/authorizations/evaluate/evidence");
+      expect(init).toMatchObject({
+        method: "POST", cache: "no-store", redirect: "error", body: JSON.stringify(selection),
+      });
+      return new Response(JSON.stringify(response), { status: 200 });
+    };
+    expect((await verifyHistoricalAuthorizationEvidenceFromApi(
+      "https://registry.example", selection, anchor, fetchImpl,
+    )).trustedAtTime).toBe(true);
+    await expect(verifyHistoricalAuthorizationEvidenceFromApi(
+      "https://registry.example", selection, { ...anchor, epochRecord: {
+        ...epochRecord, stateRoot: new Uint8Array(32),
+      } }, fetchImpl,
+    )).rejects.toThrow(/state root mismatch/u);
+    await expect(verifyHistoricalAuthorizationEvidenceFromApi(
+      "http://registry.example", selection, anchor, fetchImpl,
+    )).rejects.toThrow(/HTTPS or loopback/u);
+    await expect(verifyHistoricalAuthorizationEvidenceFromApi(
+      "https://registry.example", selection, anchor,
+      async () => new Response("{}", { status: 424 }),
+    )).rejects.toThrow(/unavailable \(424\)/u);
+    await expect(verifyHistoricalAuthorizationEvidenceFromApi(
+      "https://registry.example", selection, anchor,
+      async () => new Response("{}", { status: 404 }),
+    )).rejects.toThrow(/unavailable \(404\)/u);
+    await expect(verifyHistoricalAuthorizationEvidenceFromApi(
+      "https://registry.example", selection, anchor,
+      async (_input, init) => {
+        expect(init?.redirect).toBe("error");
+        return new Response(null, { status: 302, headers: { location: "https://other.example" } });
+      },
+    )).rejects.toThrow(/unavailable \(302\)/u);
   });
 
-  it("verifies an exact-scope recognition claim and rejects registry substitution", () => {
+  it("verifies an exact-scope recognition claim and rejects registry substitution", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("historical-native-recognition");
     const recognition = createRecognitionScenarioFixture("gaia-x");
     harness.authorizeRecognition(recognition);
@@ -145,5 +181,16 @@ describe("historical native evidence responses", () => {
         },
       },
     }, selection, anchor)).toThrow(/scope mismatch/u);
+    const fetchImpl: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe("http://127.0.0.1:4400/v1/recognitions/evaluate/evidence");
+      expect(init).toMatchObject({ method: "POST", cache: "no-store", redirect: "error" });
+      return new Response(JSON.stringify(response), { status: 200 });
+    };
+    expect((await verifyHistoricalRecognitionEvidenceFromApi(
+      "http://127.0.0.1:4400", selection, anchor, fetchImpl,
+    )).trustedAtTime).toBe(true);
+    await expect(verifyHistoricalRecognitionEvidenceFromApi(
+      "http://registry.example", selection, anchor, fetchImpl,
+    )).rejects.toThrow(/HTTPS or loopback/u);
   });
 });
