@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import {
   encodeJubjubSignature,
@@ -74,6 +76,7 @@ const label = `signed-${role}-journey`;
 const now = new Date(VP_FIXTURE_TIME_MS);
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
+const execFileAsync = promisify(execFile);
 const harness = new LocalTrustRegistryIntegrationHarness(label);
 const maintainers = [
   createMaintainerScenarioFixture(`${label}-first`),
@@ -588,6 +591,7 @@ try {
 
   let trustResult;
   let lifecycleResult = null;
+  let restartDecisionTimes;
   if (role === "maintainer") {
     const membership = harness.simulator.getMaintainerMembership(profile.idCommitment);
     assert.equal(membership.status, AuthorizationStatus.active);
@@ -790,7 +794,18 @@ try {
       lifecycle.push({ action, changedAt, currentTrusted: false, historicalActiveRetained: true });
     }
     lifecycleResult = lifecycle;
+    restartDecisionTimes = [activeAt, lifecycle.at(-1).changedAt];
   }
+  const { stdout: restartOutput } = await execFileAsync(process.execPath, [
+    join(import.meta.dirname, "probe-workspace-restart.mjs"),
+    workspacePath,
+    snapshot.currentEpoch.epochId,
+    role,
+    ...(role === "maintainer" ? [] : [participant.subjectDid, resourceId, ...restartDecisionTimes]),
+  ]);
+  const restart = JSON.parse(restartOutput);
+  assert.equal(restart.restartedEpochId, snapshot.currentEpoch.epochId);
+  assert.equal(restart.historicalDecisionRecovered, role !== "maintainer");
   process.stdout.write(`${JSON.stringify({
     demo: `signed-${role}-journey`,
     mode: "deterministic local Compact simulator with private file-backed workspace and admission state",
@@ -801,6 +816,7 @@ try {
     evidenceCommitment: submitted.evidence.commitment,
     currentEpochId: snapshot.currentEpoch.epochId,
     externallyPublishedEpochIds: publishedEpochIds,
+    processRestart: restart,
     clientSurfaces: ["applicant portal", "admin console"],
     lifecycle: lifecycleResult,
     ...trustResult,

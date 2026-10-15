@@ -186,6 +186,8 @@ serves public queries from a fresh private file-backed operator workspace.
 Only the host's governed epoch-publication port updates that workspace from
 the simulator projection. It acquires the local workspace lock before Compact
 execution, so a competing process gets 409 without advancing governance.
+The demo then starts a separate read-only API process against the same file to
+check that the final epoch and historical/current decisions survive restart.
 Unsafe fixture mutation routes remain disabled. It
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
 maintainer proposal/approval/activation, and externally signed registry epoch

@@ -28,6 +28,10 @@ its API reads from that file. Governed Compact epoch publication persists the
 new simulator projection; unsigned fixture mutation routes remain disabled.
 The demo acquires the workspace lock before the Compact epoch action and
 checks that another process receives 409 without advancing that action.
+After the lifecycle, a separate Node process opens the persisted workspace
+and serves the final epoch. For issuer, verifier, and auditor, it also recovers
+the historical active decision and the final revoked decision from public HTTP
+queries without sharing the original simulator process.
 The file adapter provides local durability and locking, not network finality
 or atomic admission-plus-governance execution.
 
