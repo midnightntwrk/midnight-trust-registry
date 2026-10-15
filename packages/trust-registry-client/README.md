@@ -61,8 +61,11 @@ accepted epoch applies at the requested instant.
 time and a current auditor authorization record read from independently
 trusted ledger state. An older active bundle remains valid as historical
 evidence but cannot authorize a new audit request after suspension or
-revocation. The simulator client reads that current record itself. Production
-callers must not pass a cached record or derive it from the bundle under test.
+revocation. The current record must also match the verified grant's ID, DID,
+request resource, governed policy commitment, trust level, evidence hash, and
+lifecycle event; a different active grant is not interchangeable. The simulator
+client reads that current record itself. Production callers must not pass a
+cached record or derive it from the bundle under test.
 
 `assertDecisionEvidenceDidMethodMatchesObservation` parses a DID Document with
 the published Midnight DID package and matches the exact method, native JWK,

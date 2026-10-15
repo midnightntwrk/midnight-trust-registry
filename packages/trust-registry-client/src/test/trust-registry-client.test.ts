@@ -73,6 +73,20 @@ describe("trust registry client", () => {
     expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
       ...options, evaluationTime: undefined as unknown as string,
     })).toThrow(/requires expected registry/u);
+    const liveRecord = harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment);
+    for (const [field, replacement, message] of [
+      ["policyId", bytes32Commitment("policy:substituted"), /current governed policy mismatch/u],
+      ["trustLevel", bytes32Commitment("trust-level:substituted"), /current trust level mismatch/u],
+      ["lifecycleEventHash", new Uint8Array(32), /current lifecycle event mismatch/u],
+    ] as const) {
+      const changed = vi.spyOn(harness.simulator, "getAuditorAuthorization")
+        .mockReturnValue({ ...liveRecord, [field]: replacement });
+      try {
+        expect(() => client.verifyAuditorRequestMandate(bundle, scope, options)).toThrow(message);
+      } finally {
+        changed.mockRestore();
+      }
+    }
     expect(() => client.verifyAuditorRequestMandate(
       harness.evaluateCurrentVerifierDecision(verifier), scope, options,
     )).toThrow();

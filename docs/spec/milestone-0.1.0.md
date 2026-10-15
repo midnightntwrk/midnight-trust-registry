@@ -94,7 +94,7 @@ consider an audit request, never permission to release data.
 | UC-11 | Operator publishes an epoch | State/event/policy roots and signer evidence anchor a bounded view | Invalid root, signer, policy, or unpublished/unfinalized view |
 | UC-12 | Relying party evaluates at time T | Active scoped grant, accepted epoch, DID/key history, policy snapshot, and proof all verify | Wrong registry, scope, time, status, Merkle path, or stale epoch |
 | UC-13 | Holder presents a credential | Verifier checks VC proof, VC status, issuer grant at issuance, and applicable current policy | Registry lookup used as substitute for VC proof or status |
-| UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant and exact request purpose | Blanket data access or holder tracking through the registry |
+| UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant, exact request purpose, and matching active current ledger record | Blanket data access or holder tracking through the registry |
 | UC-15 | VC consumer installs a registry decision | A governed issuer or verifier grant yields a VC-compatible descriptor and authority proof accepted under a pinned local anchor | Witness-supplied authority, wrong network/contract, method/key/scope substitution, stale sequence, or revoked-to-active replay |
 
 ## 5. Application And Decision Protocol

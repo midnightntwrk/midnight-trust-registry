@@ -64,7 +64,10 @@ export const verifyAuditorRequestMandate = (
     ["authorization ID", current.authorizationId, bytes32Commitment(authorization.authorizationId)],
     ["subject DID", current.subjectDidCommitment, bytes32Commitment(authorization.subjectDid)],
     ["request resource", current.requestResourceId, bytes32Commitment(requestResourceId)],
+    ["governed policy", current.policyId, hashHexToBytes32(verified.epoch.policyRoot)],
+    ["trust level", current.trustLevel, bytes32Commitment(authorization.trustLevel)],
     ["evidence hash", current.evidenceHash, hashHexToBytes32(authorization.evidenceHash)],
+    ["lifecycle event", current.lifecycleEventHash, hashHexToBytes32(authorization.lifecycleEventRoot)],
   ] as const) {
     if (!sameBytes32(actual, expected)) throw new Error(`Auditor mandate current ${field} mismatch`);
   }
