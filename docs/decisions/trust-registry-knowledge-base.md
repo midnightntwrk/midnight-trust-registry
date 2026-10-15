@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 ## Purpose
 
@@ -11,6 +11,55 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 15 2026 Delivery Checkpoint
+
+- PR #192 merged to `milestone-0.1.0` at `62de1aff`. It adds exact-scope
+  historical evidence exports, independent anchored decision verification,
+  portal lookups, TRQP evidence verification, and role journey coverage. The
+  API's historical status remains a claim until a caller verifies its bundle
+  against independently obtained anchors. The sibling VC status-registry
+  package is private; the current DID-signed status attestation is not a
+  general VC non-revocation proof.
+- The local `codex/trust-registry-proposal-handoff` stack adds a private
+  file-backed one-shot submission journal for issuer, verifier, auditor, and
+  maintainer governed proposals. It reserves before Compact execution and
+  never assumes a dropped response means failure. Cryptographic vote preflight
+  rejects malformed or duplicate maintainer signatures before reservation;
+  active membership, quorum, and evidence-verifier authority remain Compact
+  decisions. Issue #193 tracks bounded journal rotation and recovery after
+  the three planned review rounds.
+- The admin console clears prepared context and pasted signatures after an
+  ambiguous submit while retaining the redacted evidence and target needed
+  for manual receipt recovery. Four Playwright journeys use the real admin
+  bundle, API, journal, and Compact simulator to observe successful issuer,
+  verifier, auditor, and maintainer proposals whose HTTP responses were lost,
+  then reconcile from a later simulator ledger view. Each first rejects a
+  forged maintainer vote without reserving the journal or executing Compact.
+  This exercises the local integration boundary, not Midnight network finality.
+- At local signed head `b4b40f7`, `./run.sh --light` passed 20/20 tasks,
+  `./run.sh integration` passed the 66-circuit build plus API/simulator suites
+  and actor demos, `pnpm audit --audit-level low` found no vulnerabilities,
+  and the full Playwright suite passed 9/9 once proof compilation had ended.
+  The full run spent about 23 minutes primarily in `zkir compile-many` key
+  generation; the 8.5 MiB ZKIR directory yielded more than 1.5 GiB of keys.
+  Focused API/DOM/Chrome checks and cached light builds remain the practical
+  inner loop; keep one full proving run per coherent publication batch.
+- The stacked local #59 journey now serves all four signed membership demos
+  from a fresh private file-backed operator workspace, not a memory API
+  snapshot. Governed epoch publication projects the Compact result into the
+  workspace file while holding its cross-process lock. A second process
+  holding that lock causes 409 before Compact advances. Unsafe fixture
+  mutation routes stay disabled. A separate read-only process then reopens
+  the workspace and recovers the final epoch and the historical active/current
+  revoked decisions for issuer, verifier, and auditor. A regression test found
+  that projecting a missing per-grant historical epoch after an externally
+  signed epoch could move Compact's latest pointer backward. The fixture now
+  materializes grant evidence before preparing the signed epoch; the CLI
+  projector preflights the required grant epochs and rejects a missing one
+  before it can mutate the ledger after a signed publication. This
+  closes one local-host gap but does not
+  make admission plus governance atomic or establish network finality.
 
 ## October 2026 Local Functional Stack
 
@@ -396,12 +445,12 @@ repo-local harness is specified in
 `docs/plans/milestone-0.1.0-delivery-harness.md`: issue-backed PRs, documented
 exact-head review, light, Quality, and scan gates, bounded review rounds, and
 guarded merging. PR #82's receipt gate was rejected as a self-declared policy
-check; replacement PR #91 removes it. `.github/CODEOWNERS` plus required
-code-owner review protects workflow and policy changes after the bootstrap.
-The bootstrap itself is not yet protected by those controls; a canary must be
-blocked before autonomous milestone merges start. Only the milestone branch
-permits zero-general-human-review product merges. Policy changes still require
-code-owner review; `develop` and `main` remain human-controlled.
+check; replacement PR #91 removes it. On 2026-10-12, the operator clarified
+that this temporary milestone branch does not need GitHub branch protection.
+Its manual merge gates are green current-head CI and documented current-head
+LLM review, internal or external. `CODEOWNERS` routes review but does not
+require approval on the milestone branch. The earlier code-owner canary and
+protection plan is superseded; `develop` and `main` remain human-controlled.
 
 ## Application evidence signing slice (2026-10-06)
 
@@ -1352,3 +1401,20 @@ the original host revision. A Chrome test holds a registry-A epoch publication
 response while connecting to registry B, then confirms the A receipt cannot
 replace B's board. The A transaction may still have executed; changing a
 browser connection is not a cancellation or a finality observation.
+
+Local follow-on stack after the workspace-backed #59 journey: the signed issuer
+demo now submits four invalid VPs over one live challenge (forged credential
+signature, another credential-family scope, revoked fixture status, and expired
+fixture status). Each receives a redacted 403 without an acceptance receipt;
+the original valid VP then succeeds using that same challenge. This is a
+functional #58 intake/retry slice, not production status or network finality.
+The simulator client now uses the caller's `sequenceToTimestamp` mapper for
+both epoch windows and policy supersession. A real Compact-simulator test
+covers default and shifted supersession cutoffs across issuer, verifier,
+auditor, recognition, and auditor-mandate verification. The published OpenAPI
+governed-action enum now includes suspension, revocation, and archival, with
+source parity checked by the ordinary light docs gate. These are two of the
+five #196 findings; the issue remains open. Focused tests, `./run.sh --light`,
+integration-light, and the VitePress build passed locally. No push or PR was
+created. Forge #195 remains untouched because artifact/key compatibility with
+the pinned Trust Registry toolchain has not been established.

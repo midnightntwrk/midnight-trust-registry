@@ -87,7 +87,8 @@ export const ApplicationEvidenceEnvelopeSchema = z
         message: "Governed resource type does not match application role",
       });
     }
-    if (envelope.role === "issuer" && issuerType.success) {
+    const validScopeCommitment = HashHexSchema.safeParse(envelope.scopeCommitment).success;
+    if (envelope.role === "issuer" && issuerType.success && validScopeCommitment) {
       const expectedId = issuerGovernedResourceIdFromScopeCommitment(
         envelope.scopeCommitment.toLowerCase(),
         issuerType.data,
@@ -100,7 +101,7 @@ export const ApplicationEvidenceEnvelopeSchema = z
         });
       }
     }
-    if ((envelope.role === "verifier" || envelope.role === "auditor")
+    if (validScopeCommitment && (envelope.role === "verifier" || envelope.role === "auditor")
       && envelope.governedResource.type === "requestProfile") {
       const expectedId = requestGovernedResourceIdFromScopeCommitment(envelope.scopeCommitment.toLowerCase());
       if (envelope.governedResource.id !== expectedId) {

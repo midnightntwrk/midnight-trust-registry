@@ -23,6 +23,25 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
+Quality CI runs the four journeys together with `pnpm run demo:membership:smoke`
+after the package build; it does not regenerate proving keys for this step.
+
+Each signed journey starts a fresh private operator-workspace file and serves
+its API reads from that file. Governed Compact epoch publication persists the
+new simulator projection; unsigned fixture mutation routes remain disabled.
+The demo acquires the workspace lock before the Compact epoch action and
+checks that another process receives 409 without advancing that action.
+It materializes per-grant historical evidence before preparing the external
+epoch signature. The projector rejects any later evidence generation that
+would replace the signed registry epoch as Compact's current epoch, before
+the projection can advance governance.
+After the lifecycle, a separate Node process opens the persisted workspace
+and serves the final epoch. For issuer, verifier, and auditor, it also recovers
+the historical active decision and the final revoked decision from public HTTP
+queries without sharing the original simulator process.
+The file adapter provides local durability and locking, not network finality
+or atomic admission-plus-governance execution.
+
 The issuer, verifier, and auditor demos also query the native timestamped
 evidence API after suspension and revocation. Each response is checked against
 the simulator's separately read epoch record and maintainer key; a substituted

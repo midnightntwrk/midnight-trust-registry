@@ -2,18 +2,19 @@ import type {
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiApplicationMutationResponse,
+  TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
-import type {
-  TrustRegistryAuthorizationSnapshotEntry,
-  TrustRegistryRecognitionSnapshotEntry,
-} from "@midnight-ntwrk/trust-registry-cli";
+
+type AuthorizationEntry = TrustRegistryApiAuthorizationListResponse["entries"][number];
+type RecognitionEntry = TrustRegistryApiRecognitionListResponse["entries"][number];
 
 export type ReviewTarget = TrustRegistryApiApplicationTarget;
 export type ReviewAction = TrustRegistryApiApplicationAction;
 export type ReviewStatus =
-  | TrustRegistryAuthorizationSnapshotEntry["authorization"]["status"]
-  | TrustRegistryRecognitionSnapshotEntry["recognition"]["status"];
+  | AuthorizationEntry["authorization"]["status"]
+  | RecognitionEntry["recognition"]["status"];
 
 export type ReviewCard = {
   detailRows: readonly { label: string; value: string }[];
@@ -29,11 +30,11 @@ export type ReviewCard = {
 };
 
 export type ReviewBoard = {
-  auditors: readonly TrustRegistryAuthorizationSnapshotEntry[];
-  recognitions: readonly TrustRegistryRecognitionSnapshotEntry[];
+  auditors: readonly AuthorizationEntry[];
+  recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;
-  verifiers: readonly TrustRegistryAuthorizationSnapshotEntry[];
-  issuers: readonly TrustRegistryAuthorizationSnapshotEntry[];
+  verifiers: readonly AuthorizationEntry[];
+  issuers: readonly AuthorizationEntry[];
 };
 
 export type ReviewBoardMutation = TrustRegistryApiApplicationMutationResponse;
@@ -81,7 +82,7 @@ const defaultBuckets = (): ReviewStatusBucket => ({
 });
 
 const latestAuthorizationTimestamp = (
-  entry: TrustRegistryAuthorizationSnapshotEntry,
+  entry: AuthorizationEntry,
 ): string =>
   entry.authorization.archivedAt
   ?? entry.authorization.supersededAt
@@ -93,7 +94,7 @@ const latestAuthorizationTimestamp = (
   ?? entry.authorization.proposedAt;
 
 const latestRecognitionTimestamp = (
-  entry: TrustRegistryRecognitionSnapshotEntry,
+  entry: RecognitionEntry,
 ): string =>
   entry.recognition.archivedAt
   ?? entry.recognition.supersededAt
@@ -143,7 +144,7 @@ export const executeEpochPublication = async (
 
 export const toAuthorizationReviewCard = (
   target: Extract<ReviewTarget, "issuer" | "verifier" | "auditor">,
-  entry: TrustRegistryAuthorizationSnapshotEntry,
+  entry: AuthorizationEntry,
 ): ReviewCard => {
   if (entry.authorization.role !== target) {
     throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
@@ -176,7 +177,7 @@ export const toAuthorizationReviewCard = (
 };
 
 export const toRecognitionReviewCard = (
-  entry: TrustRegistryRecognitionSnapshotEntry,
+  entry: RecognitionEntry,
 ): ReviewCard => ({
   detailRows: [
     { label: "Recognition ID", value: entry.recognition.recognitionId },

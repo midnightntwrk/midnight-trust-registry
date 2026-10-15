@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import {
   encodeJubjubSignature,
@@ -50,6 +52,7 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   computeOperatorWorkspaceCommitment,
+  createWorkspaceFileSource,
   createTrustRegistryApiServer,
   GovernedAuditorProposalRejectedError,
   GovernedIssuerProposalRejectedError,
@@ -63,6 +66,7 @@ import {
 import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admin-console/dist/api.js";
 import { TrustRegistryApplicantPortalClient } from "../packages/trust-registry-applicant-portal/dist/api.js";
 import { verifyTrqpAuthorizationEvidenceFromApi } from "../adapters/trqp/dist/index.js";
+import { withOtherProcessHoldingWorkspace } from "./workspace-lock-fixture.mjs";
 
 const role = process.argv[2];
 if (role !== "issuer" && role !== "verifier" && role !== "auditor" && role !== "maintainer") {
@@ -72,6 +76,7 @@ const label = `signed-${role}-journey`;
 const now = new Date(VP_FIXTURE_TIME_MS);
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
+const execFileAsync = promisify(execFile);
 const harness = new LocalTrustRegistryIntegrationHarness(label);
 const maintainers = [
   createMaintainerScenarioFixture(`${label}-first`),
@@ -93,6 +98,7 @@ const profiles = {
         harness.executeIssuerProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildIssuerHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signIssuerProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareIssuerDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeIssuerDecisionWithSignatures(fixture, action, signers),
@@ -111,6 +117,7 @@ const profiles = {
         harness.executeVerifierProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildVerifierHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signVerifierProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareVerifierDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeVerifierDecisionWithSignatures(fixture, action, signers),
@@ -129,6 +136,7 @@ const profiles = {
         harness.executeAuditorProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment),
       getStatusRecord: () => harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment),
+      materializeStatusEvidence: () => harness.buildAuditorHistoricalEvidence(fixture),
       signProposalEvidence: (prepared) => harness.signAuditorProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareAuditorDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeAuditorDecisionWithSignatures(fixture, action, signers),
@@ -146,6 +154,7 @@ const profiles = {
       executeProposal: (evidence, signers, signature, expected) =>
         harness.executeMaintainerProposalWithSignatures(fixture, evidence, signers, signature, expected),
       getProposalEvidence: () => harness.simulator.getMaintainerProposalEvidence(fixture.maintainerIdCommitment),
+      materializeStatusEvidence: () => {},
       signProposalEvidence: (prepared) => harness.signMaintainerProposalEvidence(prepared),
       prepareDecision: (action) => harness.prepareMaintainerDecisionAction(fixture, action),
       executeDecision: (action, signers) => harness.executeMaintainerDecisionWithSignatures(fixture, action, signers),
@@ -182,10 +191,13 @@ const signingPorts = await createApplicationVpIntakePorts({
   signer: resolverFixture.signer,
 });
 const stateDirectory = await mkdtemp(join(tmpdir(), `tr-signed-${role}-`));
+const workspacePath = join(stateDirectory, "workspace.json");
+const workspaceSource = createWorkspaceFileSource(workspacePath);
+await workspaceSource.writeWorkspace(workspaceForSnapshot());
 const admissionPath = join(stateDirectory, "admission.json");
 const registration = new FileApplicationAdmissionStore(
   admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
-  async () => workspaceForSnapshot(),
+  () => workspaceSource.loadWorkspace(),
 );
 let withholdAcceptedReceipt = false;
 const token = randomBytes(32).toString("hex");
@@ -223,7 +235,7 @@ const expectedEvidence = () => {
   return { scope, challengeHash: acceptedChallengeHash, governedResource };
 };
 const server = createTrustRegistryApiServer({
-  source: { mode: "memory", loadSnapshot: async () => snapshot },
+  source: workspaceSource,
   clock: () => now.toISOString(),
   pendingApplicationRegistration: registration,
   proposalAdmission: admission,
@@ -278,21 +290,25 @@ const server = createTrustRegistryApiServer({
       return harness.prepareRegistryEpochPublicationAction(epochLabel);
     },
     async execute(epochLabel, signers) {
-      let epoch;
-      try {
-        epoch = harness.executeRegistryEpochPublicationWithSignatures(epochLabel, signers);
-      } catch {
-        throw new GovernedEpochPublicationRejectedError();
-      }
-      snapshot = publishSimulatorSnapshot(harness, {
-        label,
-        ...(profile.snapshotKey !== null ? {
-          [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
-        } : {}),
-      }, snapshot, epoch);
-      assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
-        asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
-      return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
+      return workspaceSource.withExclusiveWrite(async () => {
+        let epoch;
+        try {
+          epoch = harness.executeRegistryEpochPublicationWithSignatures(epochLabel, signers);
+        } catch {
+          throw new GovernedEpochPublicationRejectedError();
+        }
+        snapshot = publishSimulatorSnapshot(harness, {
+          label,
+          ...(profile.snapshotKey !== null ? {
+            [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
+          } : {}),
+        }, snapshot, epoch);
+        await workspaceSource.writeWorkspace(workspaceForSnapshot());
+        assert.equal((await workspaceSource.loadSnapshot()).currentEpoch.epochId, snapshot.currentEpoch.epochId);
+        assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
+          asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
+        return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
+      });
     },
   },
   authorizePendingApplicationRegistration: async (request) => {
@@ -369,6 +385,13 @@ const expectHttp = async (response, status) => {
   assert.equal(response.status, status, JSON.stringify(payload));
   return payload;
 };
+const expectProblem = async (response, status, typeSlug) => {
+  const problem = await expectHttp(response, status);
+  assert.equal(problem.status, status);
+  assert.equal(problem.type, `https://midnight.network/problems/trust-registry-api/${typeSlug}`);
+  assert.equal(typeof problem.title, "string");
+  return problem;
+};
 
 try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -385,6 +408,7 @@ try {
   const trustedEpochsByPhase = new Map();
   const publishGovernedEpoch = async (phase) => {
     const epochLabel = `${role}-${phase}`;
+    profile.materializeStatusEvidence();
     const locallyPrepared = harness.prepareRegistryEpochPublicationAction(epochLabel);
     const policyVersion = `v${harness.simulator.getLedger().governancePolicyVersion.toString()}`;
     const prepared = await adminClient.prepareGovernedEpoch(epochLabel);
@@ -399,19 +423,29 @@ try {
       prepared,
       signers: [signAction(maintainers[0], prepared), signAction(maintainers[0], prepared)],
     })).status, 403);
-    assert.equal((await post(publishPath, {
+    await expectProblem(await post(publishPath, {
       label: `${epochLabel}-other`, prepared, signers: quorumSignatures(prepared),
-    })).status, 409);
-    assert.equal((await post(publishPath, {
+    }), 409, "stale-governed-epoch");
+    await expectProblem(await post(publishPath, {
       label: epochLabel,
       prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
       signers: quorumSignatures(prepared),
-    })).status, 409);
+    }), 409, "stale-governed-epoch");
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    if (phase === "activate") {
+      await withOtherProcessHoldingWorkspace(workspacePath, async () => {
+        const locked = await post(publishPath, {
+          label: epochLabel, prepared, signers: quorumSignatures(prepared),
+        });
+        await expectProblem(locked, 409, "governance-write-locked");
+      });
+      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    }
     const receipt = await adminClient.submitGovernedEpoch({
       label: epochLabel, prepared, signers: quorumSignatures(prepared),
     });
     assert.equal(receipt.epoch.epochId, prepared.epochId);
+    assert.equal(snapshot.currentEpoch.epochId, receipt.epoch.epochId);
     const published = await expectHttp(await fetch(
       `${base}/v1/epochs/${encodeURIComponent(receipt.epoch.epochId)}`,
     ), 200);
@@ -437,6 +471,9 @@ try {
     headers: withToken ? { authorization: `Bearer ${token}` } : {},
   });
 
+  assert.equal((await post("/v1/epochs/publish", {})).status, 403);
+  assert.equal((await post("/v1/applications", {})).status, 403);
+  assert.equal((await workspaceSource.loadWorkspace()).snapshot.currentEpoch.epochId, snapshot.currentEpoch.epochId);
   const application = signedApplication();
   assert.equal((await post("/v1/pending-applications", application, false)).status, 403);
   assert.equal((await post("/v1/pending-applications", {
@@ -466,6 +503,35 @@ try {
     challengeHash: challenge.challengeHash,
     presentation: currentProof.input.submission,
   };
+  if (role === "issuer") {
+    const validProof = currentProof;
+    const submitRejectedPresentation = async (proof, presentation) => {
+      currentProof = proof;
+      await expectProblem(await post(`${evidencePath}/submissions`, {
+        ...submission, presentation,
+      }), 403, "application-vp-rejected");
+      assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
+    };
+    const invalidSignature = structuredClone(submission.presentation);
+    invalidSignature.credentialProof.signature.s = (
+      BigInt(invalidSignature.credentialProof.signature.s) + 1n
+    ).toString();
+    await submitRejectedPresentation(currentProof, invalidSignature);
+    const wrongScopeProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions,
+      scope: { ...scope, credentialFamilyId: `${scope.credentialFamilyId}:other` },
+    });
+    await submitRejectedPresentation(wrongScopeProof, wrongScopeProof.input.submission);
+    const revokedStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions, statusDecision: { active: false },
+    });
+    await submitRejectedPresentation(revokedStatusProof, revokedStatusProof.input.submission);
+    const expiredStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...fixtureOptions, statusDecision: { validUntilMs: VP_FIXTURE_TIME_MS - 1 },
+    });
+    await submitRejectedPresentation(expiredStatusProof, expiredStatusProof.input.submission);
+    currentProof = validProof;
+  }
   // The accepted VP response is intentionally lost; recover without reusing the challenge.
   await applicantClient.submitApplicationPresentation(applicationId, challenge, submission.presentation);
   const submitted = await applicantClient.loadAcceptedApplicationEvidence(applicationId);
@@ -473,7 +539,7 @@ try {
   assert.equal(JSON.stringify(submitted).includes(currentProof.input.submission.rawCredentialBody), false);
   const reopened = new FileApplicationAdmissionStore(
     admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
-    async () => workspaceForSnapshot(),
+    () => workspaceSource.loadWorkspace(),
   );
   assert.deepEqual(await reopened.resolveAcceptedEvidence(applicationId), submitted);
   assert.equal((await readFile(admissionPath, "utf8")).includes(currentProof.input.submission.rawCredentialBody), false);
@@ -534,8 +600,7 @@ try {
     prepared: premature,
     signers: quorumSignatures(premature),
   });
-  assert.equal(earlyActivation.status, 403);
-  assert.match((await earlyActivation.json()).type, /governed-action-rejected$/u);
+  await expectProblem(earlyActivation, 403, "governed-action-rejected");
   assert.equal(harness.simulator.getLedger().governanceActionCount, beforePremature);
 
   for (const action of ["approve", "activate"]) {
@@ -546,8 +611,7 @@ try {
       prepared: { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
       signers: quorumSignatures(prepared),
     });
-    assert.equal(stale.status, 409);
-    assert.match((await stale.json()).type, /stale-governed-action$/u);
+    await expectProblem(stale, 409, "stale-governed-action");
     assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAction);
     assert.equal((await post(actionPath, {
       prepared, signers: [signAction(maintainers[0], prepared)],
@@ -566,6 +630,7 @@ try {
 
   let trustResult;
   let lifecycleResult = null;
+  let restartDecisionTimes;
   if (role === "maintainer") {
     const membership = harness.simulator.getMaintainerMembership(profile.idCommitment);
     assert.equal(membership.status, AuthorizationStatus.active);
@@ -670,6 +735,8 @@ try {
       assert.equal(decision.authorized, evaluated.trustedAtTime);
       assert.equal(evidence.authorized, evaluated.trustedAtTime);
       assert.equal(evidence.bundle.inclusionProof.leafHash, bundle.inclusionProof.leafHash);
+      assert.equal(evidence.bundle.authorization.evidenceHash, submitted.receipt.evidenceCommitment);
+      assert.equal(evidence.bundle.authorization.evidenceHash, bundle.authorization.evidenceHash);
       trqpAgreement = true;
     }
     trustResult = {
@@ -768,10 +835,21 @@ try {
       lifecycle.push({ action, changedAt, currentTrusted: false, historicalActiveRetained: true });
     }
     lifecycleResult = lifecycle;
+    restartDecisionTimes = [activeAt, lifecycle.at(-1).changedAt];
   }
+  const { stdout: restartOutput } = await execFileAsync(process.execPath, [
+    join(import.meta.dirname, "probe-workspace-restart.mjs"),
+    workspacePath,
+    snapshot.currentEpoch.epochId,
+    role,
+    ...(role === "maintainer" ? [] : [participant.subjectDid, resourceId, ...restartDecisionTimes]),
+  ]);
+  const restart = JSON.parse(restartOutput);
+  assert.equal(restart.restartedEpochId, snapshot.currentEpoch.epochId);
+  assert.equal(restart.historicalDecisionRecovered, role !== "maintainer");
   process.stdout.write(`${JSON.stringify({
     demo: `signed-${role}-journey`,
-    mode: "deterministic local Compact simulator and private file-backed admission state",
+    mode: "deterministic local Compact simulator with private file-backed workspace and admission state",
     governance: "2-of-3 active maintainers",
     applicationId,
     targetId: profile.id,
@@ -779,20 +857,23 @@ try {
     evidenceCommitment: submitted.evidence.commitment,
     currentEpochId: snapshot.currentEpoch.epochId,
     externallyPublishedEpochIds: publishedEpochIds,
+    processRestart: restart,
     clientSurfaces: ["applicant portal", "admin console"],
     lifecycle: lifecycleResult,
     ...trustResult,
-    expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
+    expectedRejections: ["fixture-mutation-disabled:403", "unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",
       "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),
       "proposal-replay:409", "lost-response-recovered:200",
       "premature-activation:403", "stale-governed-context:409",
-      "single-epoch-signer:403", "duplicate-epoch-signer:403",
+      "single-epoch-signer:403", "duplicate-epoch-signer:403", "cross-process-epoch-lock:409",
       "wrong-epoch-label:409", "stale-epoch-context:409",
       ...(role === "maintainer" ? [] : ["wrong-registry:client", "wrong-resource:client",
         "expired-evidence:client", "out-of-scope-query:404"]),
+      ...(role === "issuer" ? ["invalid-vc-signature:403", "wrong-vc-scope:403",
+        "revoked-vc-status:403", "expired-vc-status:403", "same-challenge-retry:202"] : []),
       ...(role === "verifier" || role === "auditor" ? ["expanded-request-permissions:404"] : []),
       "single-suspend:403", "duplicate-suspend:403", "single-revoke:403", "duplicate-revoke:403"],
   }, null, 2)}\n`);

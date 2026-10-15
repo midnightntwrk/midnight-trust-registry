@@ -37,6 +37,7 @@ import {
 import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 import {
   decodeGovernedMembershipSigners,
+  hasValidProposalSignerBundle,
   GovernedMembershipActionReceiptSchema,
   GovernedMembershipActionRejectedError,
   GovernedMembershipActionSchema,
@@ -44,6 +45,7 @@ import {
   GovernedMembershipSignatureRequestSchema,
   sameGovernedMembershipAction,
   serializeGovernedMembershipAction,
+  type GovernedMembershipActionReceipt,
   type GovernedMembershipActionPort,
 } from "./governed-membership-actions.js";
 import {
@@ -142,6 +144,14 @@ import {
   assertProposalAdmission,
   type ProposalAdmissionPort,
 } from "./proposal-admission.js";
+import {
+  ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionCapacityError,
+  ProposalSubmissionConflictError,
+  ProposalSubmissionOutcomeUnknownError,
+  type GovernedProposalSubmissionRole,
+  type ProposalSubmissionJournal,
+} from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -208,6 +218,8 @@ export type TrustRegistryApiServerOptions = {
   /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   proposalAdmission?: ProposalAdmissionPort;
+  /** Required for a deployable VP-to-Compact handoff; the adapter must persist before submission. */
+  proposalSubmissionJournal?: ProposalSubmissionJournal;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
   nonApiGetHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
@@ -632,6 +644,10 @@ const mapGovernedEpochError = (error: unknown, problemBaseUri: string): never =>
     throw jsonProblem(problemBaseUri, "governed-epoch-rejected", 403,
       "governed epoch publication rejected");
   }
+  if (error instanceof WorkspaceMutationLockedError) {
+    throw jsonProblem(problemBaseUri, "governance-write-locked", 409,
+      "governance write locked");
+  }
   throw error;
 };
 
@@ -724,6 +740,9 @@ export const createTrustRegistryApiServer = (
       || options.recognitionAccreditation.admissionStore !== options.governedRecognitionProposals.admissionStore)) {
     throw new Error("Recognition accreditation and governed proposals require the same admission store");
   }
+  if (options.proposalSubmissionJournal !== undefined && options.proposalAdmission === undefined) {
+    throw new Error("A proposal submission journal requires accepted application admission");
+  }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const trqpAdapter = new TrustRegistryTrqpAdapter(
     createTrqpSourceFromStateSource(options.source),
@@ -751,6 +770,55 @@ export const createTrustRegistryApiServer = (
     } catch {
       throw jsonProblem(problemBaseUri, "unadmitted-proposal", 403,
         "unadmitted proposal", "The proposal has no matching accepted application VP receipt.");
+    }
+  };
+
+  const mapSubmissionJournalError = (error: unknown): never => {
+    if (error instanceof ProposalSubmissionAlreadyPendingError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
+        "proposal submission requires reconciliation",
+        "An earlier submission may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionOutcomeUnknownError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 503,
+        "proposal submission outcome unknown",
+        "The proposal may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionConflictError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-conflict", 409,
+        "proposal submission conflicts with recorded evidence or event");
+    }
+    if (error instanceof ProposalSubmissionCapacityError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-capacity", 503,
+        "proposal submission journal capacity exhausted",
+        "Operator rotation is required; no new proposal was submitted.");
+    }
+    throw error;
+  };
+
+  const executeProposal = async (
+    role: GovernedProposalSubmissionRole,
+    authorizationId: string,
+    evidenceCommitment: string,
+    execute: () => Promise<GovernedMembershipActionReceipt>,
+  ): Promise<GovernedMembershipActionReceipt> => {
+    if (options.proposalSubmissionJournal === undefined) return execute();
+    try {
+      return await options.proposalSubmissionJournal.executeOnce(
+        role, authorizationId, evidenceCommitment, execute,
+      );
+    } catch (error) {
+      return mapSubmissionJournalError(error);
+    }
+  };
+
+  const requireValidProposalSigners = (
+    prepared: Parameters<typeof hasValidProposalSignerBundle>[0],
+    signers: Parameters<typeof hasValidProposalSignerBundle>[1],
+  ): void => {
+    if (!hasValidProposalSignerBundle(prepared, signers)) {
+      throw jsonProblem(problemBaseUri, "invalid-governed-signature", 403,
+        "invalid governed signature", "A maintainer vote does not sign the prepared proposal action.");
     }
   };
 
@@ -783,6 +851,13 @@ export const createTrustRegistryApiServer = (
     if (record.evidenceCommitment !== body.evidence.commitment) {
       throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
         "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
+    }
+    if (options.proposalSubmissionJournal !== undefined) {
+      try {
+        await options.proposalSubmissionJournal.reconcile(role, authorizationId, async () => record);
+      } catch (error) {
+        return mapSubmissionJournalError(error);
+      }
     }
     writeJson(response, 200, { state: "observed", eventHash: record.eventHash });
   };
@@ -1196,9 +1271,11 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature),
+            await executeProposal("issuer", authorizationId, body.evidence.commitment,
+              () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
           return;
@@ -1263,9 +1340,11 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature),
+            await executeProposal("verifier", authorizationId, body.evidence.commitment,
+              () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
           return;
@@ -1330,9 +1409,11 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature),
+            await executeProposal("auditor", authorizationId, body.evidence.commitment,
+              () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
           return;
@@ -1397,9 +1478,11 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
             "invalid governed signature");
         }
+        requireValidProposalSigners(prepared, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature),
+            await executeProposal("maintainer", maintainerId, body.evidence.commitment,
+              () => port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
           return;

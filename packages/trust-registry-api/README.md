@@ -200,6 +200,37 @@ The integration journey verifies a published fixture VC/VP, consumes one
 challenge, submits the resulting redacted evidence through this HTTP proposal
 route, and then approves and activates the issuer with external 2-of-3 votes.
 
+An embedding host may inject `proposalSubmissionJournal` alongside
+`proposalAdmission` for issuer, verifier, auditor, and maintainer proposal
+submission. The private file adapter reserves the role, authorization ID,
+and accepted evidence commitment before calling the Compact-backed port.
+Before reservation the API verifies that every supplied maintainer signature
+signs the current prepared action digest and rejects duplicate key IDs.
+This preflight cannot establish active maintainer membership, quorum, or the
+registered evidence-verifier key; Compact remains authoritative for those
+rules. A later rejection remains an uncertain submission and needs recovery.
+Duplicate attempts return 409 `proposal-submission-uncertain`, including
+after process restart. A returned event hash means `submitted`, not finalized.
+Any failure after the reservation returns 503 `proposal-submission-uncertain`,
+even if the underlying Compact port reported a validation error; the HTTP
+response cannot establish that no submission occurred.
+`/proposal/resolve` can mark an attempt `observed` only after the host's
+role-specific resolution port supplies a matching finalized record. A
+`not-observed` response is not permission to submit again. A thrown Compact
+or network error remains reserved even if it looks like a validation error:
+the journal cannot prove whether the call crossed the submission boundary.
+An operator must reconcile or establish definitive non-submission before
+recovering that attempt. The adapter is single-host/shared-filesystem only;
+the packaged CLI does not configure it or a network-finality reader. It
+stores neither raw VC/VP nor maintainer or verifier signatures. See
+`docs/plans/governed-proposal-submission-handoff.md` for the state model and
+remaining production requirements.
+The local adapter has an explicit 10,000-attempt capacity. At capacity it
+returns 503 `proposal-submission-capacity` before calling the Compact port;
+operators must preserve and reconcile the journal before a controlled
+rotation. The same pre-submission check reserves room for a future event hash
+under the 4 MiB file limit. It never silently evicts unresolved attempts.
+
 Legacy workspace-backed application and epoch routes are disabled by default.
 For the deliberately unsigned local UI smoke demo only, start with
 `--unsafe-demo-mutations`; the CLI accepts that mode only on literal loopback

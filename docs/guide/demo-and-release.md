@@ -144,6 +144,18 @@ the challenge-bound presentation with
 `node scripts/demo-auditor-admission.mjs vp <nonce> <role>`. The demo key and
 role-scoped VP generator are fixtures only.
 
+To exercise the file-backed, quorum-governed issuer path through the public
+applicant and admin clients, run `pnpm run demo:signed-issuer`. Before accepting
+the applicant's VP, this command rejects a forged credential signature, a
+validly signed credential for another family, revoked fixture status, and an
+expired status decision over the same issued challenge. No rejected attempt
+produces an acceptance receipt. The original challenge then accepts the valid
+VP exactly once, after which 2-of-3 maintainers approve and activate the
+issuer, publish an epoch, and retain independently checked active-time evidence
+through suspension and revocation. The fixture status decisions and ledger
+finality are simulated; this is not a general-purpose VC status verifier or a
+live-network transaction.
+
 ### Compact-Governed Registry Journey
 
 Run the separate quorum-backed reference demo:

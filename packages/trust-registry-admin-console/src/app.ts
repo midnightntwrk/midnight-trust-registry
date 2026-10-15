@@ -590,12 +590,17 @@ export const createAdminConsoleApp = (
       if (!isCurrentHost(host)) return;
       await refreshBoard(`Compact ${role} proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
       if (!isCurrentHost(host)) return;
-      setState({ governedBusy: false, proposalAuthorizationId: "", proposalEvidenceJson: "",
-        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
+      setState({ governedBusy: false, proposalPrepared: undefined,
+        proposalSignersJson: "", proposalVerifierSignature: "" });
     } catch (error) {
       if (!isCurrentHost(host)) return;
-      setState({ governedBusy: false, error: formatApiError(error),
-        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+      const outcomeUnknown = !(error instanceof TrustRegistryAdminConsoleApiError)
+        || error.problem.status === 409 || (error.problem.status ?? 0) >= 500;
+      const detail = formatApiError(error);
+      setState({ governedBusy: false,
+        error: error instanceof TrustRegistryAdminConsoleApiError
+          ? detail : `${detail} Submission outcome is unknown. Recover the proposal receipt; do not resubmit automatically.`,
+        ...(outcomeUnknown
           ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
           : {}) });
     }

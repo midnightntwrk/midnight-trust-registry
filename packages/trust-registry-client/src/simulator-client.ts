@@ -167,7 +167,7 @@ export class TrustRegistrySimulatorClient {
   ): TrustRegistryEvidenceBundle {
     return verifyIssuerAuthorizationBundle(bundle, {
       ...options,
-      ...this.buildEpochContext(bundle),
+      ...this.buildEpochContext(bundle, options.sequenceToTimestamp),
     });
   }
 
@@ -177,7 +177,7 @@ export class TrustRegistrySimulatorClient {
   ): TrustRegistryEvidenceBundle {
     return verifyVerifierAuthorizationBundle(bundle, {
       ...options,
-      ...this.buildEpochContext(bundle),
+      ...this.buildEpochContext(bundle, options.sequenceToTimestamp),
     });
   }
 
@@ -187,7 +187,7 @@ export class TrustRegistrySimulatorClient {
   ): TrustRegistryEvidenceBundle {
     return verifyAuditorAuthorizationBundle(bundle, {
       ...options,
-      ...this.buildEpochContext(bundle),
+      ...this.buildEpochContext(bundle, options.sequenceToTimestamp),
     });
   }
 
@@ -199,7 +199,7 @@ export class TrustRegistrySimulatorClient {
     if (bundle.authorization === undefined) throw new Error("Auditor mandate is unavailable");
     return verifyAuditorRequestMandate(bundle, requestedScope, {
       ...options,
-      ...this.buildEpochContext(bundle),
+      ...this.buildEpochContext(bundle, options.sequenceToTimestamp),
       currentAuthorizationRecord: this.getAuditorAuthorizationById(bundle.authorization.authorizationId),
     });
   }
@@ -210,7 +210,7 @@ export class TrustRegistrySimulatorClient {
   ): TrustRegistryEvidenceBundle {
     return verifyRecognitionBundle(bundle, {
       ...options,
-      ...this.buildEpochContext(bundle),
+      ...this.buildEpochContext(bundle, options.sequenceToTimestamp),
     });
   }
 
@@ -220,7 +220,10 @@ export class TrustRegistrySimulatorClient {
     return this.requireSupportedLedger().maintainerRecords.lookup(keyId);
   }
 
-  private buildEpochContext(bundle: TrustRegistryEvidenceBundle): Pick<
+  private buildEpochContext(
+    bundle: TrustRegistryEvidenceBundle,
+    sequenceToTimestamp: BundleVerificationOptions["sequenceToTimestamp"],
+  ): Pick<
     BundleVerificationOptions,
     "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
   > {
@@ -247,7 +250,7 @@ export class TrustRegistrySimulatorClient {
     }
     const nextVersion = version + 1n;
     const policySupersededAt = nextVersion <= ledger.governancePolicyVersion
-      ? defaultSequenceToTimestamp(
+      ? (sequenceToTimestamp ?? defaultSequenceToTimestamp)(
         ledger.governancePolicyEffectiveFromByVersion.lookup(nextVersion),
       )
       : undefined;

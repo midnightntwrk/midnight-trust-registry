@@ -14,11 +14,14 @@ import {
 } from "../model.js";
 
 import type {
-  TrustRegistryAuthorizationSnapshotEntry,
-  TrustRegistryRecognitionSnapshotEntry,
-} from "@midnight-ntwrk/trust-registry-cli";
+  TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiRecognitionListResponse,
+} from "@midnight-ntwrk/trust-registry-api";
 
-const authorizationEvidence = (): TrustRegistryAuthorizationSnapshotEntry["evidence"] =>
+type AuthorizationEntry = TrustRegistryApiAuthorizationListResponse["entries"][number];
+type RecognitionEntry = TrustRegistryApiRecognitionListResponse["entries"][number];
+
+const authorizationEvidence = (): AuthorizationEntry["evidence"] =>
   ({
     bundleId: "bundle:authorization:test",
     generatedAt: "2026-05-23T04:00:00Z",
@@ -60,9 +63,9 @@ const authorizationEvidence = (): TrustRegistryAuthorizationSnapshotEntry["evide
     },
     authorization: undefined,
     recognition: undefined,
-  } as unknown as TrustRegistryAuthorizationSnapshotEntry["evidence"]);
+  } as unknown as AuthorizationEntry["evidence"]);
 
-const recognitionEvidence = (): TrustRegistryRecognitionSnapshotEntry["evidence"] =>
+const recognitionEvidence = (): RecognitionEntry["evidence"] =>
   ({
     bundleId: "bundle:recognition:test",
     generatedAt: "2026-05-23T04:00:00Z",
@@ -73,7 +76,7 @@ const recognitionEvidence = (): TrustRegistryRecognitionSnapshotEntry["evidence"
     inclusionProof: authorizationEvidence().inclusionProof,
     authorization: undefined,
     recognition: undefined,
-  } as unknown as TrustRegistryRecognitionSnapshotEntry["evidence"]);
+  } as unknown as RecognitionEntry["evidence"]);
 
 const board: ReviewBoard = {
   summary: {
@@ -140,7 +143,7 @@ const board: ReviewBoard = {
         proposedAt: "2026-05-23T03:59:00Z",
       },
       evidence: authorizationEvidence(),
-    } as unknown as TrustRegistryAuthorizationSnapshotEntry,
+    } as unknown as AuthorizationEntry,
   ],
   verifiers: [
     {
@@ -161,7 +164,7 @@ const board: ReviewBoard = {
         authorizedAt: "2026-05-23T03:58:00Z",
       },
       evidence: authorizationEvidence(),
-    } as unknown as TrustRegistryAuthorizationSnapshotEntry,
+    } as unknown as AuthorizationEntry,
   ],
   auditors: [
     {
@@ -182,7 +185,7 @@ const board: ReviewBoard = {
         activeFrom: "2026-05-23T03:59:00Z",
       },
       evidence: authorizationEvidence(),
-    } as unknown as TrustRegistryAuthorizationSnapshotEntry,
+    } as unknown as AuthorizationEntry,
     {
       label: "retired-audit",
       authorization: {
@@ -201,7 +204,7 @@ const board: ReviewBoard = {
         archivedAt: "2026-05-23T03:57:00Z",
       },
       evidence: authorizationEvidence(),
-    } as unknown as TrustRegistryAuthorizationSnapshotEntry,
+    } as unknown as AuthorizationEntry,
   ],
   recognitions: [
     {
@@ -226,7 +229,7 @@ const board: ReviewBoard = {
         suspendedAt: "2026-05-23T03:57:00Z",
       },
       evidence: recognitionEvidence(),
-    } as unknown as TrustRegistryRecognitionSnapshotEntry,
+    } as unknown as RecognitionEntry,
   ],
 };
 

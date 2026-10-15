@@ -15,7 +15,7 @@ import {
   type VerifierScenarioFixture,
   bytes32Commitment,
 } from "@midnight-ntwrk/trust-registry-integration";
-import type { EpochCommitment, TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+import { createScopedIdentifier, type EpochCommitment, type TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorWorkspaceSchema,
@@ -311,6 +311,27 @@ export const publishSimulatorSnapshot = (
     )) {
       throw new Error("Published registry epoch does not match the Compact ledger commitment");
     }
+    const ledger = harness.simulator.getLedger();
+    if (!Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId)
+      .equals(Buffer.from(bytes32Commitment(publishedRegistryEpoch.epochId)))) {
+      throw new Error("Published registry epoch is not the current Compact epoch");
+    }
+    const statusSequences = [
+      ...(fixtures.issuers ?? []).map(({ fixture }) =>
+        harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.verifiers ?? []).map(({ fixture }) =>
+        harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.auditors ?? []).map(({ fixture }) =>
+        harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.recognitions ?? []).map(({ fixture }) =>
+        harness.simulator.getRecognition(fixture.recognitionIdCommitment).lastStatusSequence),
+    ];
+    for (const sequence of statusSequences) {
+      const epochId = createScopedIdentifier("epoch", harness.registryId, `seq-${sequence.toString()}`);
+      if (!ledger.epochCommitmentIds.member(bytes32Commitment(epochId))) {
+        throw new Error("Snapshot projection requires grant evidence before the signed registry epoch");
+      }
+    }
   }
   const tracked = createTrackedFixtures();
   for (const entry of fixtures.issuers ?? []) {
@@ -332,6 +353,9 @@ export const publishSimulatorSnapshot = (
   const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
     "Snapshot projected from the supplied Compact simulator state.",
   ], publishedRegistryEpoch);
+  if (publishedRegistryEpoch !== undefined && next.currentEpoch.epochId !== publishedRegistryEpoch.epochId) {
+    throw new Error("Snapshot projection changed the latest governed epoch");
+  }
   if (previous !== undefined && previous.registry.registryId !== next.registry.registryId) {
     throw new Error("Cannot retain evidence from another registry");
   }

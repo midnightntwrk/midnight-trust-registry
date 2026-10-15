@@ -1,6 +1,7 @@
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   decodeCanonicalJubjubSignatureHex,
+  verifyPolicyBoundMaintainerAction,
   type TrustRegistryJubjubSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { z } from "zod";
@@ -127,3 +128,27 @@ export const decodeGovernedMembershipSigners = (
   publicKey: { x: BigInt(signer.publicKey.x), y: BigInt(signer.publicKey.y) },
   signature: decodeCanonicalJubjubSignatureHex(signer.signature),
 }));
+
+/** Reject known-invalid votes before an irreversible proposal submission attempt is reserved. */
+export const hasValidProposalSignerBundle = (
+  prepared: Pick<PreparedGovernedMembershipAction,
+    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+  signers: readonly GovernedMembershipSigner[],
+): boolean => {
+  const keyIds = new Set<string>();
+  for (const signer of signers) {
+    const keyId = Buffer.from(signer.keyId).toString("hex");
+    if (signer.keyId.length !== 32 || keyIds.has(keyId)) return false;
+    keyIds.add(keyId);
+    if (!verifyPolicyBoundMaintainerAction(
+      signer.publicKey,
+      Buffer.from(prepared.registryId.slice(2), "hex"),
+      Buffer.from(prepared.policyCommitment.slice(2), "hex"),
+      Buffer.from(prepared.actionKind.slice(2), "hex"),
+      Buffer.from(prepared.actionPayloadHash.slice(2), "hex"),
+      BigInt(prepared.actionSequence),
+      signer.signature,
+    )) return false;
+  }
+  return signers.length > 0;
+};

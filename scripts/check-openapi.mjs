@@ -38,6 +38,16 @@ for (const path of requiredPaths) {
   if (!document.paths[path]) throw new Error(`Missing OpenAPI path: ${path}`);
 }
 
+const actionSource = readFileSync(resolve(root, "packages/trust-registry-api/src/governed-membership-actions.ts"), "utf8");
+const actionDeclaration = /GovernedMembershipActionSchema\s*=\s*z\.enum\((\[[^\]]+\])\)/u.exec(actionSource);
+if (actionDeclaration === null) throw new Error("Cannot read the governed membership action schema");
+const supportedActions = JSON.parse(actionDeclaration[1]);
+const governedActionPath = document.paths["/v1/governed/{role}/{id}/actions/{action}"];
+const documentedActions = governedActionPath.parameters?.find((parameter) => parameter.name === "action")?.schema?.enum;
+if (JSON.stringify(documentedActions) !== JSON.stringify(supportedActions)) {
+  throw new Error("OpenAPI governed lifecycle actions do not match GovernedMembershipActionSchema");
+}
+
 for (const [path, item] of Object.entries(document.paths)) {
   const parameters = new Set((item.parameters ?? []).map((parameter) => parameter.name));
   for (const name of path.matchAll(/\{([^}]+)\}/g)) {

@@ -15,6 +15,7 @@ export * from "./application-intake.js";
 export * from "./application-vp-http.js";
 export * from "./pending-application-registration.js";
 export * from "./proposal-admission.js";
+export * from "./proposal-submission-journal.js";
 export * from "./governed-membership-actions.js";
 export * from "./governed-epoch-publication.js";
 export * from "./governed-policy-actions.js";
