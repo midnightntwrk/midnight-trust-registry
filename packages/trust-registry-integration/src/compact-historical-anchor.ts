@@ -21,10 +21,20 @@ export function resolveCompactHistoricalEpochAnchor(input: {
   registryId: string;
   epochId: string;
   policyVersion: string;
+  /** Resolve from the authenticated deployment selection, never from the evidence bundle. */
+  contractAddress: Uint8Array;
   sequenceToTimestamp: SequenceToTimestamp;
 }): EpochAnchorVerificationContext {
   const { ledger } = input;
   if (ledger.contractVersion !== 1n) throw new Error("Unsupported trust registry format");
+  for (const [name, value] of [
+    ["Deployment network ID commitment", ledger.deploymentNetworkIdCommitment],
+    ["Contract address", input.contractAddress],
+  ] as const) {
+    if (!(value instanceof Uint8Array) || value.length !== 32 || value.every((byte) => byte === 0)) {
+      throw new Error(`${name} is missing or malformed`);
+    }
+  }
   const registryIdCommitment = bytes32Commitment(input.registryId);
   if (!same(ledger.registryId, registryIdCommitment)) {
     throw new Error("Historical registry ID does not match finalized Compact ledger");
@@ -67,6 +77,8 @@ export function resolveCompactHistoricalEpochAnchor(input: {
     epochRecord,
     maintainerPublicKey: signer.publicKey as JubjubPoint,
     registryIdCommitment,
+    networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+    contractAddress: Uint8Array.from(input.contractAddress),
     sequenceToTimestamp: input.sequenceToTimestamp,
     ...(policySupersededAt === undefined ? {} : { policySupersededAt }),
   };

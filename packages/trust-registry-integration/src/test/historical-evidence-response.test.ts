@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
@@ -26,7 +27,20 @@ describe("historical native evidence responses", () => {
     const input = {
       ledger, registryId: harness.registryId, epochId: bundle.epoch.epochId,
       policyVersion: bundle.policy.version, sequenceToTimestamp: defaultSequenceToTimestamp,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     };
+    expect(() => resolveCompactHistoricalEpochAnchor({
+      ...input, contractAddress: new Uint8Array(31),
+    })).toThrow(/Contract address is missing or malformed/u);
+    expect(() => resolveCompactHistoricalEpochAnchor({
+      ...input, contractAddress: new Uint8Array(32),
+    })).toThrow(/Contract address is missing or malformed/u);
+    expect(() => resolveCompactHistoricalEpochAnchor({
+      ...input, ledger: { ...ledger, deploymentNetworkIdCommitment: new Uint8Array(31) } as Ledger,
+    })).toThrow(/Deployment network ID commitment is missing or malformed/u);
+    expect(() => resolveCompactHistoricalEpochAnchor({
+      ...input, ledger: { ...ledger, deploymentNetworkIdCommitment: new Uint8Array(32) } as Ledger,
+    })).toThrow(/Deployment network ID commitment is missing or malformed/u);
     expect(() => resolveCompactHistoricalEpochAnchor({
       ...input, ledger: { ...ledger, contractVersion: 2n } as Ledger,
     })).toThrow(/Unsupported trust registry format/u);
@@ -69,8 +83,11 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     };
     const anchor = resolveCompactHistoricalEpochAnchor(anchorInput);
+    expect(anchor.networkIdCommitment).toEqual(anchorInput.ledger.deploymentNetworkIdCommitment);
+    expect(anchor.contractAddress).toEqual(Uint8Array.from(anchorInput.contractAddress));
     const { epochRecord } = anchor;
     expect(() => resolveCompactHistoricalEpochAnchor({
       ...anchorInput, registryId: `${harness.registryId}:other`,
@@ -98,6 +115,18 @@ describe("historical native evidence responses", () => {
     };
 
     expect(verifyHistoricalAuthorizationEvidenceResponse(response, selection, anchor).trustedAtTime).toBe(true);
+    expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection,
+      resolveCompactHistoricalEpochAnchor({
+        ...anchorInput, contractAddress: Uint8Array.from({ length: 32 }, () => 1),
+      }))).toThrow(/signature/u);
+    expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection,
+      resolveCompactHistoricalEpochAnchor({
+        ...anchorInput,
+        ledger: {
+          ...anchorInput.ledger,
+          deploymentNetworkIdCommitment: bytes32Commitment("different-network"),
+        } as Ledger,
+      }))).toThrow(/signature/u);
     expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, {
       ...selection, resourceId: `${selection.resourceId}:other`,
     }, anchor)).toThrow(/scope mismatch/u);
@@ -128,6 +157,7 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: laterBundle.epoch.epochId, policyVersion: laterBundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(() => verifyHistoricalAuthorizationEvidenceResponse(response, selection, laterAnchor))
       .toThrow(/Epoch id mismatch/u);
@@ -195,6 +225,7 @@ describe("historical native evidence responses", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     const selection = {
       recognizedAuthorityDid: record.recognizedAuthorityDid,
