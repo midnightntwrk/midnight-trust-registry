@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 ## Purpose
 
@@ -11,6 +11,30 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 15 2026 Delivery Checkpoint
+
+- PR #192 merged to `milestone-0.1.0` at `62de1aff`. It adds exact-scope
+  historical evidence exports, independent anchored decision verification,
+  portal lookups, TRQP evidence verification, and role journey coverage. The
+  API's historical status remains a claim until a caller verifies its bundle
+  against independently obtained anchors. The sibling VC status-registry
+  package is private; the current DID-signed status attestation is not a
+  general VC non-revocation proof.
+- The local `codex/trust-registry-proposal-handoff` stack adds a private
+  file-backed one-shot submission journal for issuer, verifier, auditor, and
+  maintainer governed proposals. It reserves before Compact execution and
+  never assumes a dropped response means failure. Cryptographic vote preflight
+  rejects malformed or duplicate maintainer signatures before reservation;
+  active membership, quorum, and evidence-verifier authority remain Compact
+  decisions. Issue #193 tracks bounded journal rotation and recovery after
+  the three planned review rounds.
+- The admin console clears prepared context and pasted signatures after an
+  ambiguous submit while retaining the redacted evidence and target needed
+  for manual receipt recovery. A Playwright test uses the real admin bundle,
+  API, journal, and Compact simulator to observe a successful proposal whose
+  HTTP response was lost, then reconciles from a later simulator ledger view.
+  This exercises the local integration boundary, not Midnight network finality.
 
 ## October 2026 Local Functional Stack
 
