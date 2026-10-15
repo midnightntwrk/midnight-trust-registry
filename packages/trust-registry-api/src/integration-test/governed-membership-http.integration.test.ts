@@ -245,6 +245,52 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(record.status).toBe(AuthorizationStatus.archived);
       expect(record.archivedAtSequence).toBe(before);
       expect(snapshot.evidenceArchive.some((entry) => entry.authorization?.status === "proposed")).toBe(true);
+
+      const active = await fetch(`${base}/v1/authorizations/issuer?status=active`);
+      expect(active.status).toBe(200);
+      expect((await active.json()).total).toBe(0);
+      const archived = await fetch(`${base}/v1/authorizations/issuer?status=archived`);
+      expect(archived.status).toBe(200);
+      const archivedList = await archived.json();
+      expect(archivedList.total).toBe(1);
+      expect(archivedList.entries[0].authorization.authorizationId).toBe(issuer.authorizationId);
+      expect(archivedList.entries[0].authorization.authorizedAt).toBeUndefined();
+      expect(archivedList.entries[0].authorization.activeFrom).toBeUndefined();
+
+      const evidenceResponse = await fetch(
+        `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
+      );
+      expect(evidenceResponse.status).toBe(200);
+      const bundle = await evidenceResponse.json();
+      expect(bundle.authorization.status).toBe("archived");
+      const client = new TrustRegistrySimulatorClient(harness.simulator);
+      expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/not active/iu);
+      expect(() => client.verifyIssuerAuthorizationBundle(bundle, { requireActive: false }))
+        .not.toThrow();
+
+      const scope = {
+        role: "issuer",
+        subjectDid: issuer.subjectDid,
+        resourceId: issuer.resourceId,
+      };
+      const evaluation = await fetch(`${base}/v1/authorizations/evaluate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...scope, at: bundle.authorization.archivedAt }),
+      });
+      expect(evaluation.status).toBe(200);
+      const decision = await evaluation.json();
+      expect(decision.statusAtTime).toBe("archived");
+      expect(decision.trustedAtTime).toBe(false);
+      const proposedEvaluation = await fetch(`${base}/v1/authorizations/evaluate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...scope, at: bundle.authorization.proposedAt }),
+      });
+      expect(proposedEvaluation.status).toBe(200);
+      const proposedDecision = await proposedEvaluation.json();
+      expect(proposedDecision.statusAtTime).toBe("proposed");
+      expect(proposedDecision.trustedAtTime).toBe(false);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -531,6 +577,101 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(bundle.authorization).toBeUndefined();
       expect(() => new TrustRegistrySimulatorClient(harness.simulator)
         .verifyRecognitionBundle(bundle, {})).not.toThrow();
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("keeps a denied recognition queryable without treating it as local membership", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("governed-recognition-denial-http");
+    const second = createMaintainerScenarioFixture("recognition-denial-second");
+    const third = createMaintainerScenarioFixture("recognition-denial-third");
+    const recognition = createRecognitionScenarioFixture("denied-external-authority");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.proposeRecognition(recognition);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const fixtures = {
+      label: "governed-recognition-denial-http",
+      recognitions: [{ label: "denied-authority", fixture: recognition }],
+    };
+    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    const port: GovernedMembershipActionPort = {
+      async prepare(role, id, action) {
+        if (role !== "recognition" || id !== recognition.recognitionId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
+        if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
+        return { ...prepared, previousLifecycleEventHash: prepared.previousLifecycleEventHash };
+      },
+      async execute(role, id, action, signers) {
+        if (role !== "recognition" || id !== recognition.recognitionId) {
+          throw new GovernedMembershipActionRejectedError("unknown-authorization");
+        }
+        let eventHash: Uint8Array;
+        try {
+          eventHash = harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
+        } catch {
+          throw new GovernedMembershipActionRejectedError("invalid-signers");
+        }
+        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => snapshot },
+      governedMembershipActions: port,
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const endpoint = `${base}/v1/governed/recognition/${recognition.recognitionId}/actions/archive`;
+      const contextResponse = await fetch(endpoint);
+      expect(contextResponse.status).toBe(200);
+      const prepared = await contextResponse.json() as PreparedGovernedMembershipAction;
+      const post = (signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prepared, signers }),
+      });
+      const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+      expect((await post(signers.slice(0, 1))).status).toBe(403);
+      expect((await post(signers)).status).toBe(202);
+      expect((await post(signers)).status).toBe(409);
+
+      const evidenceResponse = await fetch(`${base}/v1/recognitions/${recognition.recognitionId}/evidence`);
+      expect(evidenceResponse.status).toBe(200);
+      const bundle = await evidenceResponse.json();
+      expect(bundle.recognition.status).toBe("archived");
+      expect(bundle.recognition.authorizedAt).toBeUndefined();
+      expect(bundle.recognition.effectiveFrom).toBeUndefined();
+      expect(bundle.authorization).toBeUndefined();
+      const client = new TrustRegistrySimulatorClient(harness.simulator);
+      expect(() => client.verifyRecognitionBundle(bundle, {})).toThrow(/not active/iu);
+      expect(() => client.verifyRecognitionBundle(bundle, { requireActive: false })).not.toThrow();
+
+      const evaluation = await fetch(`${base}/v1/recognitions/evaluate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+          recognizedRegistryId: recognition.recognizedRegistryId,
+          scopeResourceType: recognition.scopeResourceType,
+          scopeResourceId: recognition.scopeResourceId,
+          at: bundle.recognition.archivedAt,
+        }),
+      });
+      expect(evaluation.status).toBe(200);
+      const decision = await evaluation.json();
+      expect(decision.statusAtTime).toBe("archived");
+      expect(decision.trustedAtTime).toBe(false);
+
+      const localMembership = await fetch(`${base}/v1/authorizations/issuer?status=active`);
+      expect(localMembership.status).toBe(200);
+      expect((await localMembership.json()).total).toBe(0);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

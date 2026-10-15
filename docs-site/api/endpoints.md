@@ -40,6 +40,11 @@ Decision evidence is available only when the host injects a source; otherwise it
 
 The `governed` proposal roles are `issuer`, `verifier`, `auditor`, `maintainer`, and `recognition`; recognition has a receipt-gated prepare/submit route. The action route supports `approve`, `activate`, `suspend`, `revoke`, and `archive` under the injected governed port. Archiving a proposed record is a quorum-signed denial that retains its history without inventing approval or activation timestamps. Any absent port yields `503` rather than a workspace mutation. Proposals bind the evidence-verifier key and policy; action signatures bind the current sequence and predecessor event.
 
+An archived proposal remains available through its role-specific evidence
+route. This is historical evidence, not a current grant: the client rejects it
+by default, and timestamped issuer or recognition evaluation returns
+`trustedAtTime: false` before and after denial.
+
 ## Unsafe demo only
 
 `POST /v1/applications`, `POST /v1/applications/{target}/{id}/{action}`, and `POST /v1/epochs/publish` are legacy workspace replay routes. They are disabled by default; `--unsafe-demo-mutations` enables them only on a loopback listener with a mutable workspace. They bypass actor authorization and must not be exposed as production governance.

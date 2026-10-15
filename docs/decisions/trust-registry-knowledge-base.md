@@ -1054,3 +1054,9 @@ issuer, verifier, auditor, and maintainer records, including one-signer and
 replay rejection. Recognition has its own externally signed denial test.
 The admin console also exposes the Compact-permitted archive action for an
 already active record rather than requiring an artificial revoke first.
+The next local HTTP/query test closes the denial observation loop. Both an
+issuer and an external recognition are archived through external signatures,
+then exposed as historical evidence without approval or activation timestamps.
+Default client verification rejects both as non-active; explicit historical
+verification succeeds, and timestamped query evaluation is never trusted.
+Recognition does not create a local issuer entry.

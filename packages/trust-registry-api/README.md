@@ -141,6 +141,10 @@ authorization. The recognition port must preserve the recognized authority,
 external registry, and exact scope bound by the prepared Compact digest.
 Archiving a proposed target is a quorum-signed denial. The archived record
 remains in history and has neither an approval nor an activation timestamp.
+The authorization and recognition evidence routes may return that archived
+record for audit, but a relying party must reject it as a current active
+grant. Timestamped evaluation reports `trustedAtTime: false` for both its
+proposed and archived states.
 A stale context returns 409, invalid
 signer bundle 403, malformed signature 400, and accepted transition 202 with
 the Compact event hash. A 202 is not network finality; a network-backed port
