@@ -44,6 +44,10 @@ An archived proposal remains available through its role-specific evidence
 route. This is historical evidence, not a current grant: the client rejects it
 by default, and timestamped issuer or recognition evaluation returns
 `trustedAtTime: false` before and after denial.
+The private signed registration store holds the original ID, nonce, and scope
+reservation until its embedding host verifies the matching Compact archive and
+records that terminal observation. This is not a public API action. Only then
+may a new DID-signed application and authorization ID reuse the scope.
 
 ## Unsafe demo only
 

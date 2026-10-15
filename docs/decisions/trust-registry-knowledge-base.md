@@ -1065,3 +1065,11 @@ scope and insufficient archive quorum, archives the pending issuer under two
 external JubJub signatures, proves the old evidence cannot authorize current
 trust, and permits a fresh ID to propose the same scope. Its fixture is a
 simulator scenario, not network-finalized evidence or a production denial API.
+Private pending-registration state previously had no terminal transition, so
+an archived proposal could leave its scope reserved forever. The local
+admission stores now expose host-only `recordArchived`, requiring a verifier
+callback for an exact original binding and archived event. It preserves prior
+application IDs and consumed nonces, disables the old pending VP binding,
+and accepts a new DID-signed application plus authorization ID for the same
+scope. The host must authenticate Compact finality; the packaged CLI still
+does not wire a production registration or governed-action port.

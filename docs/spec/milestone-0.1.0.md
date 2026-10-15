@@ -145,6 +145,11 @@ lifecycle validators. A denied proposal is archived by a quorum-governed
 action before its exact scope can be reused. The original ID and proposal
 evidence remain in the ledger; a new application MUST use a new ID. Archival
 records the terminal decision but does not encode an off-chain denial reason.
+A private applicant-intake store MUST retain the old application and nonce,
+stop serving its pending VP binding, and release its exact-scope reservation
+only after its host independently verifies the matching archived ledger event.
+The new application MUST also use a new authorization ID. A caller-supplied
+HTTP flag or an unverified workspace status cannot release the reservation.
 A superseding application gets
 a new ID and explicit predecessor reference. No status change is inferred from
 a changed API response alone.

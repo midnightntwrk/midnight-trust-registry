@@ -2,6 +2,7 @@ import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-regis
 import {
   ApplicationChallengeBindingSchema,
   SignedPendingApplicationSchema,
+  canonicalizeJson,
   computeAuthorizationScopeCommitment,
   pendingApplicationMutationPayload,
   type SignedPendingApplication,
@@ -15,9 +16,26 @@ import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js"
 export const PendingApplicationRecordSchema = z.strictObject({
   authorizationId: z.string().trim().min(1).max(256),
   binding: ApplicationChallengeBindingSchema,
-  status: z.literal("pending"),
+  status: z.enum(["pending", "archived"]),
   createdAt: z.string().datetime({ offset: true }),
+  archiveEventHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+}).superRefine((record, context) => {
+  if ((record.status === "archived") !== (record.archiveEventHash !== undefined)) {
+    context.addIssue({ code: "custom", path: ["archiveEventHash"], message: "Archive event is required only for archived applications" });
+  }
 });
+
+export const ArchivedApplicationObservationSchema = z.strictObject({
+  authorizationId: z.string().trim().min(1).max(256),
+  binding: ApplicationChallengeBindingSchema,
+  status: z.literal("archived"),
+  archiveEventHash: z.string().regex(/^0x[0-9a-f]{64}$/u),
+});
+
+export type ArchivedApplicationObservation = z.infer<typeof ArchivedApplicationObservationSchema>;
+export type VerifyArchivedApplicationObservation = (
+  observation: ArchivedApplicationObservation,
+) => string | null | Promise<string | null>;
 
 export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSchema>;
 
@@ -33,10 +51,42 @@ export interface PendingApplicationRegistrationPort {
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
-  constructor(readonly reason: MutationIntentActorFailure | "duplicate-application" | "duplicate-authorization" | "duplicate-scope" | "nonce-used") {
+  constructor(readonly reason: MutationIntentActorFailure | "duplicate-application" | "duplicate-authorization" | "duplicate-scope" | "nonce-used" | "unknown-application" | "archive-mismatch" | "unverified-archive") {
     super(`Pending application registration rejected: ${reason}`);
     this.name = "PendingApplicationRegistrationRejectedError";
   }
+}
+
+/** Host-only transition. The verifier must authenticate the archived Compact event and its finalized source. */
+export async function reconcileArchivedPendingApplication(
+  state: PendingApplicationRegistrationState,
+  observationInput: unknown,
+  verify: VerifyArchivedApplicationObservation,
+): Promise<PendingApplicationRegistrationState> {
+  const observation = ArchivedApplicationObservationSchema.parse(observationInput);
+  const index = state.applications.findIndex(
+    (record) => record.binding.applicationId === observation.binding.applicationId,
+  );
+  const record = state.applications[index];
+  if (record === undefined) throw new PendingApplicationRegistrationRejectedError("unknown-application");
+  if (record.authorizationId !== observation.authorizationId
+    || canonicalizeJson(record.binding) !== canonicalizeJson(observation.binding)) {
+    throw new PendingApplicationRegistrationRejectedError("archive-mismatch");
+  }
+  if (record.status === "archived") {
+    if (record.archiveEventHash !== observation.archiveEventHash) {
+      throw new PendingApplicationRegistrationRejectedError("archive-mismatch");
+    }
+    return state;
+  }
+  if (await verify(observation) !== observation.archiveEventHash) {
+    throw new PendingApplicationRegistrationRejectedError("unverified-archive");
+  }
+  return {
+    ...state,
+    applications: state.applications.map((entry, position) => position === index
+      ? { ...entry, status: "archived" as const, archiveEventHash: observation.archiveEventHash } : entry),
+  };
 }
 
 /** Pure transition; the host must atomically persist the returned state and recheck its workspace revision. */
@@ -83,8 +133,8 @@ export async function transitionPendingApplicationRegistration(
   if (state.applications.some((record) => record.binding.applicationId === binding.applicationId)) {
     throw new PendingApplicationRegistrationRejectedError("duplicate-application");
   }
-  if (state.applications.some((record) => record.status === "pending"
-    && record.binding.registryId === binding.registryId
+  if (state.applications.some((record) =>
+    record.binding.registryId === binding.registryId
     && record.binding.role === binding.role
     && record.authorizationId === request.authorizationId)) {
     throw new PendingApplicationRegistrationRejectedError("duplicate-authorization");
@@ -130,8 +180,26 @@ export class InMemoryPendingApplicationRegistrationPort implements PendingApplic
     return attempt;
   }
 
+  recordArchived(
+    observation: ArchivedApplicationObservation,
+    verify: VerifyArchivedApplicationObservation,
+  ): Promise<PendingApplicationRecord> {
+    const attempt = this.tail.then(async () => {
+      this.state = await reconcileArchivedPendingApplication(this.state, observation, verify);
+      const record = this.state.applications.find(
+        (entry) => entry.binding.applicationId === observation.binding.applicationId,
+      );
+      if (record === undefined) throw new Error("Archived application disappeared");
+      return structuredClone(record);
+    });
+    this.tail = attempt.then(() => {}, () => {});
+    return attempt;
+  }
+
   readPending(applicationId: string): PendingApplicationRecord | null {
-    const record = this.state.applications.find((item) => item.binding.applicationId === applicationId);
+    const record = this.state.applications.find(
+      (item) => item.binding.applicationId === applicationId && item.status === "pending",
+    );
     return record === undefined ? null : structuredClone(record);
   }
 }

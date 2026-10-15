@@ -22,9 +22,12 @@ import { ApplicationVpReceiptSchema, type ApplicationVpReceipt } from "./applica
 import {
   PendingApplicationRecordSchema,
   PendingApplicationRegistrationRejectedError,
+  reconcileArchivedPendingApplication,
   transitionPendingApplicationRegistration,
+  type ArchivedApplicationObservation,
   type PendingApplicationRecord,
   type PendingApplicationRegistrationPort,
+  type VerifyArchivedApplicationObservation,
 } from "./pending-application-registration.js";
 import { assertProposalAdmission, type AcceptedApplicationEvidence, type ProposalAdmissionPort } from "./proposal-admission.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
@@ -116,8 +119,30 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     });
   }
 
+  async recordArchived(
+    observation: ArchivedApplicationObservation,
+    verify: VerifyArchivedApplicationObservation,
+  ): Promise<PendingApplicationRecord> {
+    return this.withWrite(async () => {
+      const state = await this.readState();
+      const next = await reconcileArchivedPendingApplication({
+        workspace: await this.loadWorkspace(),
+        applications: state.applications,
+        consumedNonces: state.consumedNonces,
+      }, observation, verify);
+      await this.writeState(StateSchema.parse({ ...state, applications: next.applications }));
+      const record = next.applications.find(
+        (entry) => entry.binding.applicationId === observation.binding.applicationId,
+      );
+      if (record === undefined) throw new Error("Archived application disappeared");
+      return structuredClone(record);
+    });
+  }
+
   async readPending(applicationId: string): Promise<PendingApplicationRecord | null> {
-    const record = (await this.readState()).applications.find((entry) => entry.binding.applicationId === applicationId);
+    const record = (await this.readState()).applications.find(
+      (entry) => entry.binding.applicationId === applicationId && entry.status === "pending",
+    );
     return record === undefined ? null : structuredClone(record);
   }
 
@@ -137,7 +162,9 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
   ): Promise<ApplicationVpReceipt> {
     return this.withWrite(async () => {
       const state = await this.readState();
-      const pending = state.applications.find((entry) => entry.binding.applicationId === applicationId);
+      const pending = state.applications.find(
+        (entry) => entry.binding.applicationId === applicationId && entry.status === "pending",
+      );
       if (pending === undefined) throw new ApplicationAdmissionStoreRejectedError("unknown-application");
       if (state.accepted.some((entry) => entry.applicationId === applicationId)) {
         throw new ApplicationAdmissionStoreRejectedError("already-accepted");
