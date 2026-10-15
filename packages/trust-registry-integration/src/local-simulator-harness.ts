@@ -470,6 +470,7 @@ export class LocalTrustRegistryIntegrationHarness {
 
     this.simulator = new TrustRegistrySimulator({
       registryId: this.registryIdCommitment,
+      networkIdCommitment: bytes32Commitment("network:undeployed"),
       registryDidCommitment: this.registryDidCommitment,
       governancePolicyCommitment: this.governancePolicyCommitment,
       maintainerId: this.maintainerIdCommitment,

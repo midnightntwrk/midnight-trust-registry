@@ -17,6 +17,12 @@ fixtures pass deployment inputs to `initialState`. A hostile-first-caller test
 checks that an unregistered caller cannot replace the constructor state. This
 still needs cross-package and real-network qualification before #200 is done.
 
+The constructor also requires a nonzero `deploymentNetworkIdCommitment` and
+stores it as sealed ledger state. Simulator fixtures use an explicit
+`network:undeployed` commitment. The active action verifier does not consume
+this field yet; even after it does, deployment tooling must independently
+authenticate the actual network before signers rely on the declared value.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract

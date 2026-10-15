@@ -78,6 +78,7 @@ export type MaintainerCoAuthorizer = {
 
 export type TrustRegistryBootstrapConfig = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
   registryDidCommitment: Uint8Array;
   governancePolicyCommitment: Uint8Array;
   maintainerId: Uint8Array;
@@ -116,6 +117,7 @@ export class TrustRegistrySimulator {
       bootstrap.maintainerKeyId,
       bootstrap.maintainerPublicKey,
       bootstrap.maintainerThreshold,
+      bootstrap.networkIdCommitment,
     );
     this.circuitContext = createCircuitContext(
       this.contractAddress,

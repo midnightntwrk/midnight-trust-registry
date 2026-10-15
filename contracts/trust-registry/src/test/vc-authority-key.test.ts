@@ -28,6 +28,7 @@ const fixture = () => {
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const simulator = new TrustRegistrySimulator({
     registryId,
+    networkIdCommitment: labelToBytes32("network:undeployed"),
     registryDidCommitment: labelToBytes32("did:midnight:vc-authority-registry"),
     governancePolicyCommitment: policyCommitment,
     maintainerId: maintainer.maintainerId,

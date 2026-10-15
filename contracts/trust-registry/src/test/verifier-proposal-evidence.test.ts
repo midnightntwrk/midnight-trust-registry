@@ -53,6 +53,7 @@ const setup = () => {
   };
   const simulator = new TrustRegistrySimulator({
     registryId,
+    networkIdCommitment: labelToBytes32("network:undeployed"),
     registryDidCommitment,
     governancePolicyCommitment: policy,
     maintainerId: maintainer.maintainerId,

@@ -143,6 +143,7 @@ const createInitializedRegistryFixture = (seedByte: number) => {
 
   const simulator = new TrustRegistrySimulator({
     registryId,
+    networkIdCommitment: labelToBytes32("network:undeployed"),
     registryDidCommitment,
     governancePolicyCommitment,
     maintainerId: bootstrapMaintainer.maintainerId,
@@ -778,6 +779,7 @@ describe("trust registry contract", () => {
 
     const simulator = new TrustRegistrySimulator({
       registryId,
+      networkIdCommitment: labelToBytes32("network:undeployed"),
       registryDidCommitment,
       governancePolicyCommitment,
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -820,6 +822,7 @@ describe("trust registry contract", () => {
     );
     const bootstrap = {
       registryId: labelToBytes32("registry:kanon"),
+      networkIdCommitment: labelToBytes32("network:undeployed"),
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
       governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -832,6 +835,10 @@ describe("trust registry contract", () => {
     expect(() =>
       new TrustRegistrySimulator({ ...bootstrap, registryId: new Uint8Array(32) }),
     ).toThrow(/Registry id must be set/);
+
+    expect(() =>
+      new TrustRegistrySimulator({ ...bootstrap, networkIdCommitment: new Uint8Array(32) }),
+    ).toThrow(/Deployment network id commitment must be set/);
 
     expect(() =>
       new TrustRegistrySimulator({ ...bootstrap, governancePolicyCommitment: new Uint8Array(32) }),
@@ -873,6 +880,7 @@ describe("trust registry contract", () => {
 
     const simulator = new TrustRegistrySimulator(bootstrap);
     expect(simulator.getLedger().initialized).toBe(true);
+    expect(simulator.getLedger().deploymentNetworkIdCommitment).toEqual(bootstrap.networkIdCommitment);
     expect(simulator.contract.impureCircuits).not.toHaveProperty("initializeRegistry");
   });
 
@@ -1323,6 +1331,7 @@ describe("trust registry contract", () => {
 
     const simulator = new TrustRegistrySimulator({
       registryId,
+      networkIdCommitment: labelToBytes32("network:undeployed"),
       registryDidCommitment,
       governancePolicyCommitment,
       maintainerId: bootstrapMaintainer.maintainerId,
@@ -2026,6 +2035,7 @@ describe("trust registry contract", () => {
     );
     const simulator = new TrustRegistrySimulator({
       registryId,
+      networkIdCommitment: labelToBytes32("network:undeployed"),
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
       governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,

@@ -6,7 +6,7 @@ The contract source is [`contracts/trust-registry/src/trust-registry.compact`](h
 
 | Group | Representative ledger fields | Why it exists |
 | --- | --- | --- |
-| Registry and policy | `registryId`, `registryDidCommitment`, `governancePolicyCommitment`, version maps, thresholds | Bind a decision to one registry and immutable policy version |
+| Registry and policy | `registryId`, sealed `deploymentNetworkIdCommitment`, `registryDidCommitment`, `governancePolicyCommitment`, version maps, thresholds | Bind a decision to one registry and immutable policy version; pin the declared network at deployment |
 | Maintainers | key IDs, membership records, current-by-DID/key maps, active count | Enforce live distinct quorum and membership safety |
 | Role grants | issuer, verifier, auditor ID sets/maps and current scope indexes | Keep exact-scope lifecycle records and prevent duplicate current grants |
 | Evidence keys | evidence-verifier and VC authority key records | Admit only governed signatures; support rotation/status history |
@@ -31,7 +31,8 @@ Contract-facing governance uses JubJub Schnorr keys associated with Midnight DID
 
 Constructor bootstrap removes first-caller root substitution, but the active
 governance signature transcript does not yet bind the deployed address or
-network. The pure deployment-bound digest is a local implementation seam, not
+network. The sealed network field is a deployer declaration, not an on-chain
+proof of actual chain identity. The pure deployment-bound digest is a local implementation seam, not
 the active verifier; [#200](https://github.com/midnightntwrk/midnight-trust-registry/issues/200)
 remains a public-network release blocker.
 

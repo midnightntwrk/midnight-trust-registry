@@ -20,6 +20,7 @@ describe("trust registry contract package surfaces", () => {
     const maintainer = createMaintainerFixture("package-surface", 7);
     const simulator = new TrustRegistrySimulator({
       registryId: labelToBytes32("registry:package-surface"),
+      networkIdCommitment: labelToBytes32("network:undeployed"),
       registryDidCommitment: labelToBytes32("did:midnight:package-surface"),
       governancePolicyCommitment: labelToBytes32("policy:package-surface"),
       maintainerId: maintainer.maintainerId,

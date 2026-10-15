@@ -306,6 +306,7 @@ struct AuthorizedMaintainerAction {
 export ledger contractVersion: Uint<32>;
 export ledger initialized: Boolean;
 export ledger registryId: Bytes<32>;
+export sealed ledger deploymentNetworkIdCommitment: Bytes<32>;
 export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
 export ledger governancePolicyVersion: Uint<64>;
@@ -377,8 +378,11 @@ constructor(
   bootstrapMaintainerDidCommitment: Bytes<32>,
   bootstrapMaintainerKeyId: Bytes<32>,
   bootstrapMaintainerPublicKey: JubjubPoint,
-  nextMaintainerThreshold: Uint<64>
+  nextMaintainerThreshold: Uint<64>,
+  networkIdCommitment: Bytes<32>
 ) {
+  assert(networkIdCommitment != pad(32, ""), "Deployment network id commitment must be set");
+  deploymentNetworkIdCommitment = disclose(networkIdCommitment);
   contractVersion = 1;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
