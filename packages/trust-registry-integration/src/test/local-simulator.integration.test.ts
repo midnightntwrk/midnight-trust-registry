@@ -1032,7 +1032,7 @@ describe("trust registry local simulator integration", () => {
     ).toBe(ContractAuthorizationStatus.archived);
   });
 
-  it("rejects duplicate live maintainer identity enrollment and refuses to deactivate the last active maintainer", () => {
+  it("rejects duplicate live maintainer identity enrollment and self-voted deactivation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const candidate = createMaintainerScenarioFixture("self");
     candidate.subjectDidCommitment = harness.maintainerDidCommitment;
@@ -1052,7 +1052,7 @@ describe("trust registry local simulator integration", () => {
     };
 
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
-      /threshold policy/i,
+      /own DID/i,
     );
   });
 

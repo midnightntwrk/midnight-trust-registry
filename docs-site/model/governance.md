@@ -18,6 +18,15 @@ The evidence verifier checks an applicant's private VC/VP and signs a canonical 
 
 Threshold revision and evidence-verifier registration are two separate actions. The old policy authorizes the revision. The new policy governs the next registration, with a fresh signer set and sequence. Until both succeed, new application evidence must not be treated as authorized under the new policy. A simulator can run both in one demonstration; this is not an atomic network transaction.
 
+Threshold revision has a contract-enforced quorum equal to the maximum of the
+**current** ordinary, emergency, and archival thresholds. It is not an ordinary
+maintainer-template action with the default threshold. The simulator's policy
+template therefore does not list `tr:policy:thresholds:update` among ordinary
+actions. A public-network governance design must also preserve a
+non-conflicted quorum for maintainer removal; an all-maintainer threshold can
+otherwise make removal impossible when the subject may not vote. This remains
+a [0.1.0 release blocker](https://github.com/midnightntwrk/midnight-trust-registry/issues/200).
+
 ## Administrative API boundary
 
 `GET /v1/governed/:role/:id/actions/:action` prepares current signer context; `POST` submits externally produced signatures to an injected Compact-backed port. The API does not sign on maintainers' behalf. A stale context is rejected. The packaged CLI has no such port and returns `503` for that route. The unsigned `/v1/applications` and `/v1/epochs/publish` routes are explicitly limited to loopback `--unsafe-demo-mutations` mode.

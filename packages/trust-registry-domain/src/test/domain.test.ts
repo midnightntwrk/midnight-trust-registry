@@ -157,6 +157,7 @@ describe("lifecycle transitions", () => {
     expect(() => assertLifecycleTransition("active", "superseded")).toThrow(
       /Invalid lifecycle transition/,
     );
+    expect(() => assertLifecycleTransition("superseded", "archived")).not.toThrow();
   });
 });
 
