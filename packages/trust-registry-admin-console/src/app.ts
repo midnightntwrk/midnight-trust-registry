@@ -195,6 +195,12 @@ export const createAdminConsoleApp = (
     selectedKey: undefined,
   };
   let signedContextRequestId = 0;
+  let hostRevision = 0;
+  let boardRequestId = 0;
+
+  const currentHost = () => ({ apiBase: state.apiBase, revision: hostRevision });
+  const isCurrentHost = (host: ReturnType<typeof currentHost>) =>
+    host.revision === hostRevision && host.apiBase === state.apiBase;
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -220,6 +226,7 @@ export const createAdminConsoleApp = (
 
   const submitSignedAction = async (raw: string) => {
     if (state.signedBusy || state.signedContext === undefined) return;
+    const host = currentHost();
     let candidate: unknown;
     try {
       candidate = JSON.parse(raw);
@@ -247,22 +254,22 @@ export const createAdminConsoleApp = (
       setState({ signedContext: undefined, error: "Signing context changed. Load a fresh context and sign again." });
       return;
     }
-    const apiBase = state.apiBase;
     if (!await confirm(`Submit signed ${parsed.operation.operation} for ${intent.targetId}?`)) return;
-    if (state.apiBase !== apiBase || state.signedContext !== context) {
+    if (!isCurrentHost(host) || state.signedContext !== context) {
+      if (!isCurrentHost(host)) return;
       setState({ error: "Signing context changed. Load a fresh context and sign again." });
       return;
     }
     setState({ signedBusy: true, error: undefined, flash: undefined });
     try {
       const result = await getClient().submitSignedMutation(parsed as TrustRegistryApiSignedMutationRequest);
-      if (state.apiBase !== apiBase) return;
+      if (!isCurrentHost(host)) return;
       state.signedContext = undefined;
       await refreshBoard(`Signed ${result.operation.operation} accepted. Load a new context for the next action.`);
     } catch (error) {
-      if (state.apiBase === apiBase) setState({ signedContext: undefined, error: formatApiError(error) });
+      if (isCurrentHost(host)) setState({ signedContext: undefined, error: formatApiError(error) });
     } finally {
-      setState({ signedBusy: false });
+      if (isCurrentHost(host)) setState({ signedBusy: false });
     }
   };
 
@@ -270,9 +277,12 @@ export const createAdminConsoleApp = (
     state.cards.find((card) => card.key === state.selectedKey);
 
   const refreshBoard = async (flash?: string) => {
+    const host = currentHost();
+    const requestId = ++boardRequestId;
     setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
       const board = await getClient().loadReviewBoard();
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
       const cards = buildReviewCards(board);
       const nextSelectedKey = state.selectedKey !== undefined
         && cards.some((card) => card.key === state.selectedKey)
@@ -294,6 +304,7 @@ export const createAdminConsoleApp = (
         selectedKey: nextSelectedKey,
       });
     } catch (error) {
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
       setState({
         board: undefined,
         cards: [],
@@ -317,6 +328,7 @@ export const createAdminConsoleApp = (
     action: TrustRegistryApiApplicationAction,
   ) => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const card = selectedCard();
     if (card === undefined) {
       return;
@@ -324,14 +336,18 @@ export const createAdminConsoleApp = (
 
     setState({ loading: true, error: undefined, flash: undefined });
     try {
-      const result = await executeReviewAction(card, action, confirm, (target, id, confirmedAction) =>
-        getClient().mutate(target, id, confirmedAction));
+      const result = await executeReviewAction(card, action, confirm, (target, id, confirmedAction) => {
+        if (!isCurrentHost(host)) throw new Error("API host changed. Review the new registry before acting.");
+        return getClient().mutate(target, id, confirmedAction);
+      });
+      if (!isCurrentHost(host)) return;
       if (result === null) {
         setState({ loading: false });
         return;
       }
       await refreshBoard(describeMutation(result));
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({
         error: formatApiError(error),
         flash: undefined,
@@ -342,16 +358,22 @@ export const createAdminConsoleApp = (
 
   const publishEpoch = async (label: string) => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
-      const result = await executeEpochPublication(label, confirm, (confirmedLabel) =>
-        getClient().publishEpoch(confirmedLabel));
+      const result = await executeEpochPublication(label, confirm, (confirmedLabel) => {
+        if (!isCurrentHost(host)) throw new Error("API host changed. Review the new registry before publishing.");
+        return getClient().publishEpoch(confirmedLabel);
+      });
+      if (!isCurrentHost(host)) return;
       if (result === null) {
         setState({ publishing: false });
         return;
       }
       await refreshBoard(describeMutation(result));
+      if (!isCurrentHost(host)) return;
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({
         error: formatApiError(error),
         flash: undefined,
@@ -364,20 +386,24 @@ export const createAdminConsoleApp = (
 
   const prepareGoverned = async (action: GovernedMembershipAction) => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const card = selectedCard();
     if (card === undefined || !getReviewActions(card.status).includes(action)) return;
     setState({ governedBusy: true, governedAction: undefined, governedKey: undefined, governedPrepared: undefined,
       governedSignersJson: "", error: undefined, flash: undefined });
     try {
       const prepared = await getClient().prepareGovernedAction(card.target, card.id, action);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, governedAction: action, governedKey: `${card.key}:${action}`, governedPrepared: prepared });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
 
   const submitGoverned = async () => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const card = selectedCard();
     if (card === undefined) return;
     const action = state.governedAction;
@@ -393,6 +419,7 @@ export const createAdminConsoleApp = (
       return;
     }
     if (!(await confirm(`Submit ${signers.length} external signatures to ${action} ${card.target} ${card.id}?`))) return;
+    if (!isCurrentHost(host)) return;
     if (state.selectedKey !== card.key || state.governedKey !== `${card.key}:${action}`) return;
     setState({ governedBusy: true, error: undefined, flash: undefined });
     try {
@@ -400,9 +427,12 @@ export const createAdminConsoleApp = (
         prepared,
         signers,
       });
+      if (!isCurrentHost(host)) return;
       await refreshBoard(`Compact ${action} accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({
         governedBusy: false,
         error: formatApiError(error),
@@ -415,6 +445,7 @@ export const createAdminConsoleApp = (
 
   const preparePolicyAction = async (phase: "thresholds" | "evidence-verifier") => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const thresholds = { ...state.policyThresholds };
     if (phase === "thresholds" && Object.values(thresholds).some((value) =>
       !/^(0|[1-9][0-9]*)$/u.test(value))) {
@@ -427,9 +458,11 @@ export const createAdminConsoleApp = (
       const prepared = phase === "thresholds"
         ? await getClient().prepareThresholdRevision(thresholds)
         : await getClient().prepareEvidenceVerifierRegistration();
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, policyPhase: phase, policyPrepared: prepared,
         policyPreparedThresholds: phase === "thresholds" ? thresholds : undefined });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
@@ -437,6 +470,7 @@ export const createAdminConsoleApp = (
   const submitPolicyAction = async () => {
     if (state.loading || state.publishing || state.governedBusy
       || state.policyPrepared === undefined || state.policyPhase === undefined) return;
+    const host = currentHost();
     const prepared = state.policyPrepared;
     const phase = state.policyPhase;
     const thresholds = state.policyPreparedThresholds;
@@ -453,20 +487,24 @@ export const createAdminConsoleApp = (
       return;
     }
     if (!(await confirm(`Submit ${signers.length} external signatures for ${phase}?`))) return;
+    if (!isCurrentHost(host)) return;
     if (state.policyPrepared !== prepared || state.policyPhase !== phase) return;
     setState({ governedBusy: true, error: undefined, flash: undefined });
     try {
       const receipt = phase === "thresholds"
         ? await getClient().submitThresholdRevision({ thresholds: thresholds!, prepared, signers })
         : await getClient().submitEvidenceVerifierRegistration({ prepared, signers });
+      if (!isCurrentHost(host)) return;
       const pending = phase === "thresholds";
       setState({ policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
         policySignersJson: "", policyRegistrationPending: pending });
       await refreshBoard(pending
         ? `Policy revision accepted: ${receipt.eventHash}. Register the evidence-verifier key under the new policy before accepting new applications.`
         : `Evidence-verifier registration accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error),
         ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
           ? { policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
@@ -477,6 +515,7 @@ export const createAdminConsoleApp = (
 
   const prepareProposal = async () => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
     if (id.length === 0) {
@@ -500,17 +539,20 @@ export const createAdminConsoleApp = (
       proposalVerifierSignature: "", error: undefined, flash: undefined });
     try {
       const prepared = await getClient().prepareProposal(role, id, evidence);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, proposalPrepared:
         state.proposalRole === role && state.proposalAuthorizationId.trim() === id
           && state.proposalEvidenceJson === evidenceJson
           ? prepared : undefined });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
 
   const submitProposal = async () => {
     if (state.loading || state.publishing || state.governedBusy || state.proposalPrepared === undefined) return;
+    const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
     const evidenceJson = state.proposalEvidenceJson;
@@ -534,6 +576,7 @@ export const createAdminConsoleApp = (
     const prepared = state.proposalPrepared;
     if (prepared === undefined) return;
     if (!(await confirm(`Submit ${signers.length} maintainer signatures and evidence-verifier signature for ${role} ${id}?`))) return;
+    if (!isCurrentHost(host)) return;
     if (state.proposalPrepared !== prepared || state.proposalRole !== role || state.proposalAuthorizationId.trim() !== id
       || state.proposalEvidenceJson !== evidenceJson || state.proposalVerifierSignature !== verifierSignature) return;
     setState({ governedBusy: true, error: undefined, flash: undefined });
@@ -544,10 +587,13 @@ export const createAdminConsoleApp = (
         signers,
         evidenceVerifierSignature: verifierSignature,
       });
+      if (!isCurrentHost(host)) return;
       await refreshBoard(`Compact ${role} proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, proposalAuthorizationId: "", proposalEvidenceJson: "",
         proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error),
         ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
           ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
@@ -557,6 +603,7 @@ export const createAdminConsoleApp = (
 
   const resolveProposal = async () => {
     if (state.loading || state.publishing || state.governedBusy) return;
+    const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
     if (id.length === 0) {
@@ -578,10 +625,12 @@ export const createAdminConsoleApp = (
     setState({ governedBusy: true, error: undefined, flash: undefined });
     try {
       const result = await getClient().resolveProposal(role, id, evidence);
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, flash: result.state === "observed"
         ? `Compact ${role} proposal observed: ${result.eventHash}. Network finality is not implied.`
         : "Proposal not observed. This does not prove failure; do not resubmit automatically." });
     } catch (error) {
+      if (!isCurrentHost(host)) return;
       setState({ governedBusy: false, error: formatApiError(error) });
     }
   };
@@ -598,11 +647,25 @@ export const createAdminConsoleApp = (
         return;
       }
       const apiBase = normalizeApiBaseUrl(input.value);
+      if (apiBase === state.apiBase) {
+        void refreshBoard();
+        return;
+      }
       storage.setItem(STORAGE_KEY, apiBase);
+      hostRevision += 1;
+      boardRequestId += 1;
       signedContextRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined,
+      const pastedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (pastedEnvelope !== null) pastedEnvelope.value = "";
+      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined,
+        loading: false, publishing: false, signedBusy: false, signedContext: undefined,
+        epochLabel: "", proposalAuthorizationId: "", proposalEvidenceJson: "",
+        governedBusy: false, governedAction: undefined, governedKey: undefined,
+        governedPrepared: undefined, governedSignersJson: "",
+        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "",
         policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
-        policySignersJson: "", policyRegistrationPending: false });
+        policySignersJson: "", policyThresholds: { default: "2", emergency: "2", archival: "2" },
+        policyRegistrationPending: false, error: undefined, flash: undefined });
       void refreshBoard();
     });
 

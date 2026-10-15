@@ -1344,3 +1344,11 @@ An optional Playwright suite drives all four role forms against the loopback
 HTTP admission host, rejects forged signatures, then completes pending
 registration and one-use VP evidence. This is real-browser validation of a
 fixture host, not production authentication or finalized-network evidence.
+
+The admin console has a separate host-selection boundary. Switching its API
+base invalidates prior board reads and prepared signatures, clears pasted
+envelopes and the selected record, and fences late governance responses by
+the original host revision. A Chrome test holds a registry-A epoch publication
+response while connecting to registry B, then confirms the A receipt cannot
+replace B's board. The A transaction may still have executed; changing a
+browser connection is not a cancellation or a finality observation.

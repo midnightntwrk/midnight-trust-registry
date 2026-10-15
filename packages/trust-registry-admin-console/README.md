@@ -51,6 +51,12 @@ Open:
 Notes:
 
 - the console expects the API server to run on loopback
+- switching API hosts clears the board, selected record, prepared governance
+  contexts, pasted signatures/envelopes, and epoch label. Responses from the
+  previous host are ignored; an in-flight submission to that host is not
+  canceled or proof of finality. Inspect its ledger/receipt separately before
+  retrying. `pnpm run test:browser` checks this boundary in Chrome with a
+  delayed epoch publication response
 - the API package now serves permissive CORS headers for this local-only UI
 - the packaged CLI does **not** configure `governedMembershipActions`, so the
   Compact action panel receives 503 in this basic workspace setup. It also
