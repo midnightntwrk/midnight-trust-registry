@@ -50,6 +50,7 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   computeOperatorWorkspaceCommitment,
+  createWorkspaceFileSource,
   createTrustRegistryApiServer,
   GovernedAuditorProposalRejectedError,
   GovernedIssuerProposalRejectedError,
@@ -182,10 +183,12 @@ const signingPorts = await createApplicationVpIntakePorts({
   signer: resolverFixture.signer,
 });
 const stateDirectory = await mkdtemp(join(tmpdir(), `tr-signed-${role}-`));
+const workspaceSource = createWorkspaceFileSource(join(stateDirectory, "workspace.json"));
+await workspaceSource.writeWorkspace(workspaceForSnapshot());
 const admissionPath = join(stateDirectory, "admission.json");
 const registration = new FileApplicationAdmissionStore(
   admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
-  async () => workspaceForSnapshot(),
+  () => workspaceSource.loadWorkspace(),
 );
 let withholdAcceptedReceipt = false;
 const token = randomBytes(32).toString("hex");
@@ -223,7 +226,7 @@ const expectedEvidence = () => {
   return { scope, challengeHash: acceptedChallengeHash, governedResource };
 };
 const server = createTrustRegistryApiServer({
-  source: { mode: "memory", loadSnapshot: async () => snapshot },
+  source: workspaceSource,
   clock: () => now.toISOString(),
   pendingApplicationRegistration: registration,
   proposalAdmission: admission,
@@ -290,6 +293,8 @@ const server = createTrustRegistryApiServer({
           [profile.snapshotKey]: [{ label: `joined-${role}`, fixture: participant }],
         } : {}),
       }, snapshot, epoch);
+      await workspaceSource.withExclusiveWrite(() => workspaceSource.writeWorkspace(workspaceForSnapshot()));
+      assert.equal((await workspaceSource.loadSnapshot()).currentEpoch.epochId, snapshot.currentEpoch.epochId);
       assert.equal(asHex(harness.simulator.getCurrentEpochCommitment().epochId),
         asHex(bytes32Commitment(snapshot.currentEpoch.epochId)));
       return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
@@ -437,6 +442,9 @@ try {
     headers: withToken ? { authorization: `Bearer ${token}` } : {},
   });
 
+  assert.equal((await post("/v1/epochs/publish", {})).status, 403);
+  assert.equal((await post("/v1/applications", {})).status, 403);
+  assert.equal((await workspaceSource.loadWorkspace()).snapshot.currentEpoch.epochId, snapshot.currentEpoch.epochId);
   const application = signedApplication();
   assert.equal((await post("/v1/pending-applications", application, false)).status, 403);
   assert.equal((await post("/v1/pending-applications", {
@@ -473,7 +481,7 @@ try {
   assert.equal(JSON.stringify(submitted).includes(currentProof.input.submission.rawCredentialBody), false);
   const reopened = new FileApplicationAdmissionStore(
     admissionPath, harness.evidenceVerifier.did, resolverFixture.input.resolver,
-    async () => workspaceForSnapshot(),
+    () => workspaceSource.loadWorkspace(),
   );
   assert.deepEqual(await reopened.resolveAcceptedEvidence(applicationId), submitted);
   assert.equal((await readFile(admissionPath, "utf8")).includes(currentProof.input.submission.rawCredentialBody), false);
@@ -771,7 +779,7 @@ try {
   }
   process.stdout.write(`${JSON.stringify({
     demo: `signed-${role}-journey`,
-    mode: "deterministic local Compact simulator and private file-backed admission state",
+    mode: "deterministic local Compact simulator with private file-backed workspace and admission state",
     governance: "2-of-3 active maintainers",
     applicationId,
     targetId: profile.id,
@@ -782,7 +790,7 @@ try {
     clientSurfaces: ["applicant portal", "admin console"],
     lifecycle: lifecycleResult,
     ...trustResult,
-    expectedRejections: ["unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
+    expectedRejections: ["fixture-mutation-disabled:403", "unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
       "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",
       "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",

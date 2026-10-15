@@ -182,6 +182,9 @@ admission service or a production VC status verifier.
 `pnpm run demo:signed-auditor`, and `pnpm run demo:signed-maintainer` run the same joined local membership journey
 for each role. The harness derives
 registration preflight and API snapshots from one Compact simulator, then
+serves public queries from a fresh private file-backed operator workspace.
+Only the host's governed epoch-publication port updates that workspace from
+the simulator projection; unsafe fixture mutation routes remain disabled. It
 exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
 maintainer proposal/approval/activation, and externally signed registry epoch
 publication through the admin console API client. The publish route rejects

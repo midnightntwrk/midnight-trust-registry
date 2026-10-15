@@ -23,6 +23,12 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
+Each signed journey starts a fresh private operator-workspace file and serves
+its API reads from that file. Governed Compact epoch publication persists the
+new simulator projection; unsigned fixture mutation routes remain disabled.
+The file adapter provides local durability and locking, not network finality
+or atomic admission-plus-governance execution.
+
 The issuer, verifier, and auditor demos also query the native timestamped
 evidence API after suspension and revocation. Each response is checked against
 the simulator's separately read epoch record and maintainer key; a substituted
