@@ -1,4 +1,7 @@
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -24,6 +27,7 @@ import {
   type PreparedGovernedIssuerProposal,
 } from "../governed-issuer-proposals.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
+import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
@@ -46,6 +50,89 @@ const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedG
 };
 
 describe("Compact-backed issuer proposals over HTTP", () => {
+  it("journals admitted submission before execution and reconciles a finalized observation", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
+    const issuer = createIssuerScenarioFixture("issuer-journal-candidate");
+    const scope = createIssuerAuthorizationScopeFixture(issuer);
+    const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
+    const evidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId,
+      subjectDid: issuer.subjectDid,
+      role: "issuer",
+      scope,
+      governedResource,
+    });
+    const binding = {
+      registryId: evidence.envelope.registryId,
+      applicationId: evidence.envelope.applicationId,
+      subjectDid: evidence.envelope.subjectDid,
+      evidenceVerifierDid: evidence.envelope.evidenceVerifierDid,
+      role: "issuer" as const,
+      policyId: evidence.envelope.policyId,
+      policyVersion: evidence.envelope.policyVersion,
+      scope,
+      scopeCommitment: evidence.envelope.scopeCommitment,
+      governedResource,
+    };
+    const directory = await mkdtemp(join(tmpdir(), "tr-issuer-journal-http-"));
+    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    const eventHash = `0x${"a1".repeat(32)}`;
+    let observation: { eventHash: string; evidenceCommitment: string } | null = null;
+    let executions = 0;
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "journal" }) },
+      proposalAdmission: {
+        resolvePendingApplication: async () => ({
+          authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
+        }),
+        resolveAcceptedEvidence: async () => ({
+          evidence,
+          receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
+            acceptedAt: "2026-05-20T00:01:00.000Z" },
+        }),
+      },
+      proposalSubmissionJournal: journal,
+      governedIssuerProposals: {
+        prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
+        execute: async () => {
+          executions += 1;
+          return { eventHash };
+        },
+        resolve: async () => observation,
+      },
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+      const endpoint = `http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
+      const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const preparedResponse = await post("prepare", { evidence });
+      expect(preparedResponse.status).toBe(200);
+      const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
+      const maintainer = createMaintainerScenarioFixture("issuer-journal-signer");
+      const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
+      const request = { evidence, prepared, signers: [signPrepared(maintainer, prepared)],
+        evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
+      expect((await post("submit", request)).status).toBe(202);
+      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "submitted", eventHash });
+      const duplicate = await post("submit", request);
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json()).type).toMatch(/proposal-submission-uncertain$/u);
+      expect(executions).toBe(1);
+      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
+      observation = { eventHash, evidenceCommitment: evidence.commitment };
+      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "observed", eventHash });
+      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("requires an injected proposal port", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-proposal-unavailable");
     const server = createTrustRegistryApiServer({
