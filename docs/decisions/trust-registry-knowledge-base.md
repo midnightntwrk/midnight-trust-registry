@@ -1490,3 +1490,22 @@ all initial thresholds, active maintainer count, and the maintainer's
 identity, key, active status, and joining sequence to that comparison;
 the action-signing reader remains narrower by design. The preceding
 `c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.
+
+## 2026-10-17: local decision-evidence continuation
+
+PRs #205 and #207 are merged into `milestone-0.1.0`. The configurable
+deployment/checkpoint stack was rebased onto that milestone without conflict;
+its local signed/DCO head is `a294e6b`. No public deployment has been
+performed. #200 remains open and promotion PR #198 must not be treated as
+release-ready on the strength of simulator qualification.
+
+Local #79 commits `bf66349` and `0969427` make the finalized Compact
+decision reader reject a substituted deployment-network commitment or
+publication network, and require the accepted epoch's off-ledger date window
+to match a host-supplied sequence-to-time projection. The host must still
+authenticate ledger finality/currentness, publication maintainer history,
+DID state, and that time projection. Midnight has no contract wall clock.
+Focused decision-evidence tests, audit, and `./run.sh --light` passed at
+`0969427`; a full integration run started at that exact tree and must be
+checked before claiming full qualification. The published evidence guide
+now explains these boundaries on the local follow-on branch.
