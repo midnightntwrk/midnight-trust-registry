@@ -1594,3 +1594,21 @@ smoke, and low-level audit passed for the corresponding local slices. A full
 integration run at `bb8021b` remains in progress in the separate release
 validation worktree; no result from it should be attributed to `8312507`
 without an exact-head rerun.
+
+The later local audit stack adds signature reconstruction for all five
+proposal roles (`c3a3dde`), a tarball-only recognition report with signer,
+policy, epoch, and rejection commitments (`c8d03ed`), and a simulator
+regression proving that a proposal's retained signature still verifies after
+its evidence-verifier key is retired (`18d4db5`). The new read surface is a
+projection over a caller-supplied finalized ledger; it verifies the proposal
+signature and record joins, but does not prove that the supplied ledger is
+final or that its map entries have independent inclusion proofs. The four
+packed membership journeys and recognition report passed from clean tarball
+installation, API integration passed 67/67, and the light gate passed 20/20.
+No live status authority or public-network deployment is implied. The VC
+status-registry package in the sibling repository remains private and its
+README explicitly rejects production use pending authority and non-membership
+gates; do not satisfy #90 by consuming that prototype. A clean 4.5 GB
+worktree at a commit already contained in this stack was removed while its
+branch ref was preserved. Do not remove the separate worktree running the
+exact-head full integration job.
