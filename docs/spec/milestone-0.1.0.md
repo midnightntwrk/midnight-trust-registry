@@ -134,9 +134,11 @@ and archival thresholds MUST each be strictly less than the active count.
 An active target's DID MUST be absent from all signer slots of its suspension,
 revocation, or archival action. The resulting active set MUST satisfy the same
 threshold-headroom rule, except that one remaining maintainer may use threshold
-one and cannot be removed. Thus a 2-of-3 policy requires a separately signed
-reduction to 1-of-3 before removing one maintainer; the removal must be signed
-under that new policy and recorded as a separate event. All-member thresholds
+one and cannot be removed. Thus a 2-of-3 policy requires one old-quorum-signed
+atomic recovery action that suspends the target and commits a valid 1-of-2
+policy under one governance event. A standalone reduction to 1-of-3 followed
+by removal is unsafe because the target can act during the interval and MUST
+NOT be presented as the recovery procedure. All-member thresholds
 such as 2-of-2 and 3-of-3 are not accepted in this profile. A distinct
 recovery authority or override is deferred and MUST NOT be inferred from a
 single surviving key.

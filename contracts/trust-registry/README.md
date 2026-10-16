@@ -32,8 +32,10 @@ stack on top of this package.
 Policy revisions and active-maintainer removals enforce recovery headroom:
 when more than one maintainer is active, every threshold must be below the
 active count, the removed target cannot sign, and the remaining set must obey
-the same rule. A 2-of-3 group must lower its policy to 1-of-3 before removing
-one member. The contract does not provide a separate recovery authority.
+the same rule. A 2-of-3 group can sign one atomic recovery action under the
+old quorum to suspend the target and install a 1-of-2 policy. A standalone
+reduction to 1-of-3 before suspension exposes an unsafe interval and is not the
+recovery procedure. The contract does not provide a separate recovery authority.
 
 The initial contract format (version 1) stores the
 canonical V1 policy snapshot digest supplied at

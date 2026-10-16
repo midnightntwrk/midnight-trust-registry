@@ -32,8 +32,9 @@ evidence and quorum execution.
 - With two or more active maintainers, every configured threshold MUST be
   below the active count, and a removal MUST leave the same headroom. The
   target cannot sign its own active suspension, revocation, or archival.
-  A 2-of-3 policy must be reduced to 1-of-3 in a separately signed revision
-  before a removal that would otherwise leave an unsafe 2-of-2 set. The
+  A 2-of-3 policy needs one old-quorum-signed atomic recovery action to
+  suspend the target and install a valid 1-of-2 policy. A separate revision
+  to 1-of-3 followed by removal exposes a target-controlled interval. The
   single-maintainer bootstrap case retains threshold one and the last-active
   removal prohibition. A separate recovery authority is deferred; no
   emergency bypass can be inferred from a surviving key.

@@ -10,16 +10,18 @@ Recovery stays within the normal maintainer set in 0.1.0. With more than one
 active maintainer, all three configured thresholds must be below the active
 count; the target of an active suspension, revocation, or archival action
 cannot sign it. The post-removal set must retain that headroom. For example,
-2-of-3 maintainers first sign a policy reduction to 1-of-3, then sign removal
-under the new policy, leaving a safe 1-of-2 set. These are distinct ledger
-actions, not an atomic recovery transaction. An all-member threshold is
-rejected, and a separate recovery authority is a later design, not a hidden
-override in this contract.
+2-of-3 non-target maintainers can sign one atomic recovery action that
+suspends the target and installs a 1-of-2 policy. The old policy authorizes
+the combined payload, and no 1-of-3 state is ever published. A standalone
+revision to 1-of-3 followed by removal is unsafe because the target could
+act alone between transactions; it is not the supported recovery procedure.
+An all-member threshold is rejected, and a separate recovery authority is a
+later design, not a hidden override in this contract.
 The resulting 1-of-2 state is a recovery state, not a recommended steady-state
 governance configuration: either remaining maintainer can remove the other.
 Keep at least three active maintainers with 2-of-3 when independent approval
 is required. The default threshold also needs headroom because it authorizes
-the policy reduction itself; emergency and archival thresholds alone cannot
+the atomic recovery action itself; emergency and archival thresholds alone cannot
 recover an unavailable all-member default quorum. A stronger two-maintainer
 removal rule would require a separately specified recovery authority or
 target-specific quorum in a later milestone.

@@ -149,6 +149,29 @@ components:
                   y: { type: string }
               signature: { type: string, description: Canonical JubJub Schnorr signature }
       additionalProperties: true
+    AtomicMaintainerRecovery:
+      type: object
+      required: [maintainerId, thresholds]
+      properties:
+        maintainerId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        thresholds:
+          type: object
+          required: [default, emergency, archival]
+          properties:
+            default: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+            emergency: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+            archival: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+          additionalProperties: false
+      additionalProperties: false
+    AtomicMaintainerRecoverySubmission:
+      type: object
+      required: [maintainerId, thresholds, prepared, signers]
+      properties:
+        maintainerId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        thresholds: { $ref: '#/components/schemas/AtomicMaintainerRecovery/properties/thresholds' }
+        prepared: { type: object, description: Exact current atomic-recovery prepare response }
+        signers: { $ref: '#/components/schemas/GovernedSigners/properties/signers' }
+      additionalProperties: false
     RecognitionProposalRecovery:
       type: object
       required: [receiptId, evidenceCommitment]
@@ -469,6 +492,23 @@ paths:
     post:
       tags: [Governed]
       summary: Submit signed threshold revision
+      responses: *governedResponses
+  /v1/governed/policy/maintainer-recovery/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare atomic policy revision and active-maintainer suspension under the old quorum
+      description: The target cannot sign. No reduced-quorum state is published before suspension.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AtomicMaintainerRecovery' } } }
+      responses: *governedResponses
+  /v1/governed/policy/maintainer-recovery/submit:
+    post:
+      tags: [Governed]
+      summary: Submit old-quorum signatures for one atomic recovery action
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AtomicMaintainerRecoverySubmission' } } }
       responses: *governedResponses
   /v1/governed/policy/evidence-verifier/prepare:
     post:
