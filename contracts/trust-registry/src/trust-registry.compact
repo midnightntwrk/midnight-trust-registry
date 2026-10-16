@@ -2050,34 +2050,34 @@ circuit assertAuthorizedMaintainerActionExcludesDid(
   const signer1Record = maintainerRecords.lookup(authorizedAction.signer1KeyId);
   assert(
     signer1Record.didCommitment != excludedDidCommitment,
-    "Maintainer may not approve their own onboarding"
+    "Maintainer may not approve an action concerning their own DID"
   );
   if (authorizedAction.signerCount > 1) {
     const signer2Record = maintainerRecords.lookup(authorizedAction.signer2KeyId);
     assert(
       signer2Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve an action concerning their own DID"
     );
   }
   if (authorizedAction.signerCount > 2) {
     const signer3Record = maintainerRecords.lookup(authorizedAction.signer3KeyId);
     assert(
       signer3Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve an action concerning their own DID"
     );
   }
   if (authorizedAction.signerCount > 3) {
     const signer4Record = maintainerRecords.lookup(authorizedAction.signer4KeyId);
     assert(
       signer4Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve an action concerning their own DID"
     );
   }
   if (authorizedAction.signerCount > 4) {
     const signer5Record = maintainerRecords.lookup(authorizedAction.signer5KeyId);
     assert(
       signer5Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve an action concerning their own DID"
     );
   }
 }
@@ -2972,6 +2972,10 @@ export circuit suspendMaintainerMembership(
     pad(32, "tr:maintainer:suspend"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
   assertMaintainerRemovalKeepsThreshold(
     activeMaintainerCount,
     maintainerThreshold,
@@ -3044,6 +3048,10 @@ export circuit revokeMaintainerMembership(
     authorizationBundle,
     pad(32, "tr:maintainer:revoke"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
   );
   if (currentRecord.status == AuthorizationStatus.active) {
     assertMaintainerRemovalKeepsThreshold(
@@ -3128,6 +3136,10 @@ export circuit archiveMaintainerMembership(
     authorizationBundle,
     pad(32, "tr:maintainer:archive"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
   );
   if (currentRecord.status == AuthorizationStatus.active) {
     assertMaintainerRemovalKeepsThreshold(
@@ -3388,6 +3400,10 @@ export circuit authorizeIssuerAuthorization(
     pad(32, "tr:issuer:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.subjectDidCommitment
+  );
 
   issuerAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -3445,6 +3461,10 @@ export circuit activateIssuerAuthorization(
     authorizationBundle,
     pad(32, "tr:issuer:activate"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.subjectDidCommitment
   );
 
   issuerAuthorizationRecords.insert(
@@ -4494,6 +4514,7 @@ export circuit authorizeVerifierAuthorization(
     pad(32, "tr:verifier:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   verifierAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -4554,6 +4575,7 @@ export circuit activateVerifierAuthorization(
     pad(32, "tr:verifier:activate"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   verifierAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -5008,6 +5030,7 @@ export circuit authorizeAuditorAuthorization(
     pad(32, "tr:auditor:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   auditorAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -5068,6 +5091,7 @@ export circuit activateAuditorAuthorization(
     pad(32, "tr:auditor:activate"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   auditorAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -5533,6 +5557,10 @@ export circuit authorizeRecognition(
     pad(32, "tr:recognition:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.recognizedAuthorityDidCommitment
+  );
 
   recognitionRecords.insert(
     disclosedRecognitionId,
@@ -5588,6 +5616,10 @@ export circuit activateRecognition(
     authorizationBundle,
     pad(32, "tr:recognition:activate"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.recognizedAuthorityDidCommitment
   );
 
   recognitionRecords.insert(

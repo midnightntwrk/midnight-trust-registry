@@ -85,6 +85,13 @@ sequence. The contract does not validate the off-chain policy preimage;
 consumers must recompute the snapshot digest from the policy record. Broader
 application-evidence lifecycle work remains open under issue #75.
 
+The signer-order decision above is not yet enforced by the Compact contract.
+It rejects duplicate signers but hashes key identifiers in submitted order, so
+two permutations of the same quorum produce different signer-set and event
+hashes. These hashes must be interpreted as ordered execution evidence, not as
+canonical set identifiers, until a contract-enforced canonical ordering is
+implemented. Consumers must not rely on order independence in this release.
+
 ## Rejected Alternatives
 
 - Preserve signer order as policy meaning: rejected because approval order is
