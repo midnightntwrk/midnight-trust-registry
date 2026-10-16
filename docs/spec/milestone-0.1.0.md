@@ -129,6 +129,18 @@ require a contract change. A maintainer cannot vote on its own admission,
 suspension, or removal, and no decision may leave fewer active maintainers
 than the live threshold. Other policies must preserve these invariants.
 
+For 0.1.0, when two or more maintainers are active, the ordinary, emergency,
+and archival thresholds MUST each be strictly less than the active count.
+An active target's DID MUST be absent from all signer slots of its suspension,
+revocation, or archival action. The resulting active set MUST satisfy the same
+threshold-headroom rule, except that one remaining maintainer may use threshold
+one and cannot be removed. Thus a 2-of-3 policy requires a separately signed
+reduction to 1-of-3 before removing one maintainer; the removal must be signed
+under that new policy and recorded as a separate event. All-member thresholds
+such as 2-of-2 and 3-of-3 are not accepted in this profile. A distinct
+recovery authority or override is deferred and MUST NOT be inferred from a
+single surviving key.
+
 A threshold-policy revision and registration of the evidence-verifier key under
 the new policy are separate governed ledger actions. Maintainers sign the
 revision against the old policy and its current action sequence; the registered

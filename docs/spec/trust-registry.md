@@ -74,6 +74,10 @@ Required fields:
 ### Governance Policy
 
 A governance policy describes who may change the registry and under which process.
+The [0.1.0 reference profile](milestone-0.1.0.md) rejects all-member
+maintainer thresholds and active-target self-votes on removal. A policy
+reduction and removal are separate signed actions; no implicit recovery
+authority exists in this profile.
 
 Required fields:
 

@@ -441,6 +441,14 @@ export pure circuit assertValidMaintainerThresholdPolicy(
   assertValidMaintainerThreshold(activeCount, defaultThreshold);
   assertValidMaintainerThreshold(activeCount, emergencyThreshold);
   assertValidMaintainerThreshold(activeCount, archivalThreshold);
+  if (activeCount > 1) {
+    assert(
+      defaultThreshold < activeCount
+        && emergencyThreshold < activeCount
+        && archivalThreshold < activeCount,
+      "Maintainer policy must leave a non-conflicted removal quorum"
+    );
+  }
 }
 
 export pure circuit assertSingleSignatureMaintainerThreshold(
@@ -1104,6 +1112,12 @@ pure circuit assertMaintainerRemovalKeepsThreshold(
       && currentActiveMaintainerCount > currentEmergencyMaintainerThreshold
       && currentActiveMaintainerCount > currentArchivalMaintainerThreshold,
     "Maintainer removal would violate the configured maintainer threshold policy"
+  );
+  assertValidMaintainerThresholdPolicy(
+    (currentActiveMaintainerCount - (1 as Uint<64>)) as Uint<64>,
+    currentMaintainerThreshold,
+    currentEmergencyMaintainerThreshold,
+    currentArchivalMaintainerThreshold
   );
 }
 
@@ -2101,34 +2115,34 @@ circuit assertAuthorizedMaintainerActionExcludesDid(
   const signer1Record = maintainerRecords.lookup(authorizedAction.signer1KeyId);
   assert(
     signer1Record.didCommitment != excludedDidCommitment,
-    "Maintainer may not approve their own onboarding"
+    "Maintainer may not approve a governed action involving their own DID"
   );
   if (authorizedAction.signerCount > 1) {
     const signer2Record = maintainerRecords.lookup(authorizedAction.signer2KeyId);
     assert(
       signer2Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 2) {
     const signer3Record = maintainerRecords.lookup(authorizedAction.signer3KeyId);
     assert(
       signer3Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 3) {
     const signer4Record = maintainerRecords.lookup(authorizedAction.signer4KeyId);
     assert(
       signer4Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 4) {
     const signer5Record = maintainerRecords.lookup(authorizedAction.signer5KeyId);
     assert(
       signer5Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
 }
@@ -3024,6 +3038,10 @@ export circuit suspendMaintainerMembership(
     emergencyMaintainerThreshold,
     archivalMaintainerThreshold
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
   const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
 
   maintainerMembershipRecords.insert(
@@ -3097,6 +3115,10 @@ export circuit revokeMaintainerMembership(
       maintainerThreshold,
       emergencyMaintainerThreshold,
       archivalMaintainerThreshold
+    );
+    assertAuthorizedMaintainerActionExcludesDid(
+      authorizedAction,
+      currentRecord.maintainerDidCommitment
     );
   }
 
@@ -3181,6 +3203,10 @@ export circuit archiveMaintainerMembership(
       maintainerThreshold,
       emergencyMaintainerThreshold,
       archivalMaintainerThreshold
+    );
+    assertAuthorizedMaintainerActionExcludesDid(
+      authorizedAction,
+      currentRecord.maintainerDidCommitment
     );
   }
 

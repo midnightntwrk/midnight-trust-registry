@@ -215,7 +215,7 @@ describe("governed evidence verifier keys", () => {
       ...key("self-approval", 31),
       didCommitment: registry.maintainer.didCommitment,
     };
-    expect(() => register(registry, candidate)).toThrow(/own onboarding/);
+    expect(() => register(registry, candidate)).toThrow(/own DID/);
     expect(registry.simulator.getLedger().governanceActionCount).toBe(1n);
   });
 
