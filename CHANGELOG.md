@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - reject all-member maintainer thresholds and removals that would strand the
   remaining quorum; add a single old-quorum-authorized action that updates
   policy and suspends a maintainer atomically, without an intermediate
-  reduced-quorum ledger state. The existing active-target self-vote rejection
+  reduced-quorum ledger state. Recovery requires the larger of the old default
+  and emergency thresholds. The existing active-target self-vote rejection
   also applies to this recovery action
 - require governed maintainer signer bundles to use a unique, ascending
   little-endian key-ID order with zero padding. Signer-set and event hashes are

@@ -499,7 +499,7 @@ paths:
     post:
       tags: [Governed]
       summary: Prepare atomic policy revision and active-maintainer suspension under the old quorum
-      description: The target cannot sign. The caller supplies a recovery-evidence commitment, and no reduced-quorum state is published before suspension.
+      description: The target cannot sign. The old quorum is the larger of default and emergency thresholds; the caller supplies a recovery-evidence commitment, and no reduced-quorum state is published before suspension.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AtomicMaintainerRecovery' } } }

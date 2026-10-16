@@ -9,7 +9,9 @@ The 0.1.0 reference fixture uses three maintainer DIDs and 2-of-3 for ordinary, 
 Recovery stays within the normal maintainer set in 0.1.0. With more than one
 active maintainer, all three configured thresholds must be below the active
 count; the target of an active suspension, revocation, or archival action
-cannot sign it. The post-removal set must retain that headroom. For example,
+cannot sign it. The post-removal set must retain that headroom. Atomic recovery
+requires the larger of the current default and emergency thresholds, because
+it both changes policy and suspends a maintainer. For example, when both are two,
 2-of-3 non-target maintainers can sign one atomic recovery action that
 suspends the target and installs a 1-of-2 policy. The old policy authorizes
 the combined payload, and no 1-of-3 state is ever published. A standalone
@@ -20,8 +22,8 @@ later design, not a hidden override in this contract.
 The resulting 1-of-2 state is a recovery state, not a recommended steady-state
 governance configuration: either remaining maintainer can remove the other.
 Keep at least three active maintainers with 2-of-3 when independent approval
-is required. The default threshold also needs headroom because it authorizes
-the atomic recovery action itself; emergency and archival thresholds alone cannot
+is required. The default threshold also needs headroom because it participates in
+the atomic recovery quorum; emergency and archival thresholds alone cannot
 recover an unavailable all-member default quorum. A stronger two-maintainer
 removal rule would require a separately specified recovery authority or
 target-specific quorum in a later milestone.

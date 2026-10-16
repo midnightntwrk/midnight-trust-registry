@@ -16,6 +16,8 @@ This deliberately disallows 2-of-2 and 3-of-3 policies. A 2-of-3 registry
 cannot remove a maintainer under an unchanged 2-of-3 policy: the remaining
 2-of-2 set would lack headroom. Recovery instead uses one old-quorum-signed
 action that suspends the target and commits a valid 1-of-2 policy atomically.
+It requires the larger of the old default and emergency thresholds, so the
+policy-change quorum cannot bypass the suspension quorum.
 The target cannot sign that action. One governance event binds the target,
 caller-supplied evidence commitment, previous lifecycle hash, new policy commitment, version, and all
 three new thresholds. There is no visible intermediate 1-of-3 state.
@@ -25,7 +27,7 @@ two-active policy is 1-of-2, so either maintainer can remove the other without
 its consent. Operators who need independent approval for removal should keep
 at least three active maintainers with 2-of-3 and avoid reducing to two except
 as a short-lived recovery state. The default threshold is included in the
-headroom rule because it authorizes both policy revision and atomic recovery;
+headroom rule because it authorizes policy revision and participates in atomic recovery;
 an all-member default quorum would make those actions impossible if one
 member is unavailable. A separate recovery authority or a target-specific
 removal quorum is deferred rather than implied by this contract.

@@ -32,6 +32,7 @@ evidence and quorum execution.
 - With two or more active maintainers, every configured threshold MUST be
   below the active count, and a removal MUST leave the same headroom. The
   target cannot sign its own active suspension, revocation, or archival.
+  Atomic recovery uses the larger of the old default and emergency thresholds.
   A 2-of-3 policy needs one old-quorum-signed atomic recovery action to
   suspend the target and install a valid 1-of-2 policy. A separate revision
   to 1-of-3 followed by removal exposes a target-controlled interval. The
