@@ -2,6 +2,9 @@
 
 Status: draft, not a release announcement or conformance claim.
 
+The [acceptance evidence map](../plans/milestone-0.1.0-acceptance-map.md)
+indexes local tests and the remaining issue-closure work.
+
 ## Intended Reference Profile
 
 This candidate is a local Midnight simulator reference for a `did:midnight`
