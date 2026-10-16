@@ -53,6 +53,16 @@ it("encodes Compact action kinds exactly and rejects overlong values", () => {
   expect(() => encodeCompactActionKind(`tr:${"x".repeat(30)}`)).toThrow(/exceeds Compact Bytes<32>/);
 });
 
+it("uses the default meta-governance quorum for threshold policy revisions", () => {
+  const updateKind = encodeCompactActionKind("tr:policy:thresholds:update");
+  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 2n, 3n)).toBe(1n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 3n, 2n, 1n)).toBe(3n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(updateKind, 1n, 3n, 2n)).toBe(1n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(
+    encodeCompactActionKind("tr:issuer:authorize"), 1n, 2n, 3n,
+  )).toBe(1n);
+});
+
 it("rejects malformed fixture labels before UTF-8 replacement can alias them", () => {
   expect(() => labelToBytes32(`${"x".repeat(31)}\ud800`)).toThrow(/valid UTF-16/);
   expect(() => labelToBytes32(`${"x".repeat(31)}\udc00`)).toThrow(/valid UTF-16/);
@@ -1278,7 +1288,7 @@ describe("trust registry contract", () => {
       .toEqual(proposalEvent);
   });
 
-  it("rejects duplicate live maintainer identity enrollment and protects the last active maintainer from deactivation", () => {
+  it("rejects duplicate live maintainer identity enrollment and self-voted deactivation", () => {
     const registry = createInitializedRegistryFixture(13);
     const {
       simulator,
@@ -1318,32 +1328,167 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/already has a live membership/i);
 
-    const suspendEvidenceHash = labelToBytes32("evidence:bootstrap:suspend");
-    const suspendActionSequence = simulator.getLedger().governanceActionCount;
-    const suspendSignature = signPolicyBoundMaintainerActionFromSeed(
-      bootstrapMaintainer.seed,
-      registryId,
-      simulator.getLedger().governancePolicyCommitment,
-      SUSPEND_MAINTAINER_ACTION_KIND,
-      computeUpdateMaintainerMembershipPayloadHash(
-        bootstrapMaintainer.maintainerId,
-        simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId)
-          .lifecycleEventHash,
-        suspendEvidenceHash,
-      ),
-      suspendActionSequence,
-    );
-
-    expect(() =>
-      simulator.suspendMaintainerMembership(
-        bootstrapMaintainer.keyId,
-        bootstrapPublicKey,
-        suspendSignature,
-        bootstrapMaintainer.maintainerId,
-        suspendEvidenceHash,
-      ),
-    ).toThrow(/threshold policy/i);
+    const selfActions = [
+      {
+        kind: SUSPEND_MAINTAINER_ACTION_KIND,
+        invoke: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>, evidenceHash: Uint8Array) =>
+          simulator.suspendMaintainerMembership(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+            bootstrapMaintainer.maintainerId, evidenceHash,
+          ),
+      },
+      {
+        kind: REVOKE_MAINTAINER_ACTION_KIND,
+        invoke: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>, evidenceHash: Uint8Array) =>
+          simulator.revokeMaintainerMembership(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+            bootstrapMaintainer.maintainerId, evidenceHash,
+          ),
+      },
+      {
+        kind: ARCHIVE_MAINTAINER_ACTION_KIND,
+        invoke: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>, evidenceHash: Uint8Array) =>
+          simulator.archiveMaintainerMembership(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+            bootstrapMaintainer.maintainerId, evidenceHash,
+          ),
+      },
+    ];
+    for (const action of selfActions) {
+      const sequence = simulator.getLedger().governanceActionCount;
+      const evidenceHash = labelToBytes32(`evidence:self-removal:${sequence}`);
+      const signature = signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId,
+        simulator.getLedger().governancePolicyCommitment,
+        action.kind,
+        computeUpdateMaintainerMembershipPayloadHash(
+          bootstrapMaintainer.maintainerId,
+          simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId).lifecycleEventHash,
+          evidenceHash,
+        ),
+        sequence,
+      );
+      expect(() => action.invoke(signature, evidenceHash)).toThrow(/own DID/i);
+      expect(simulator.getLedger().governanceActionCount).toBe(sequence);
+      expect(simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId).status)
+        .toBe(AuthorizationStatus.active);
+    }
   });
+
+  for (const role of ["issuer", "verifier", "auditor", "recognition"] as const) {
+    it(`rejects a maintainer's own ${role} approval without consuming the action sequence`, () => {
+      const registry = createInitializedRegistryFixture(31);
+      const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+      const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
+        signPolicyBoundMaintainerActionFromSeed(
+          bootstrapMaintainer.seed, registryId,
+          simulator.getLedger().governancePolicyCommitment,
+          kind, payloadHash, simulator.getLedger().governanceActionCount,
+        );
+      const scenario = (() => {
+        if (role === "issuer") {
+          const item = createIssuerAuthorizationFixture("self-vote");
+          item.subjectDidCommitment = bootstrapMaintainer.didCommitment;
+          const proof = issuerProposalProof(registry, item, registerIssuerEvidenceVerifier(registry));
+          simulator.proposeIssuerAuthorization(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, sign(PROPOSE_ISSUER_ACTION_KIND, proof.payloadHash),
+            item.authorizationId, item.subjectDidCommitment, item.resourceType, item.resourceId,
+            item.policyId, item.statusPolicyBindingCommitment, item.trustLevel, item.evidenceHash,
+            proof.verifierAuthorizationId, proof.verifierKeyIdCommitment, proof.evidenceSignature,
+          );
+          return {
+            kind: AUTHORIZE_ISSUER_ACTION_KIND,
+            payloadHash: computeUpdateIssuerAuthorizationPayloadHash(
+              item.authorizationId, simulator.getIssuerAuthorization(item.authorizationId).lifecycleEventHash,
+              item.evidenceHash,
+            ),
+            authorize: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+              simulator.authorizeIssuerAuthorization(
+                bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+                item.authorizationId, item.evidenceHash,
+              ),
+            status: () => simulator.getIssuerAuthorization(item.authorizationId).status,
+          };
+        }
+        if (role === "verifier") {
+          const item = createVerifierAuthorizationFixture("self-vote");
+          item.subjectDidCommitment = bootstrapMaintainer.didCommitment;
+          const proof = verifierProposalProof(registry, item);
+          simulator.proposeVerifierAuthorization(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, sign(PROPOSE_VERIFIER_ACTION_KIND, proof.payloadHash),
+            item.authorizationId, item.subjectDidCommitment, item.requestResourceId,
+            item.allowedAttributeSetCommitment, item.allowedPredicateSetCommitment,
+            item.disclosureLevelCommitment, item.policyId, item.trustLevel, item.evidenceHash,
+            proof.verifierAuthorizationId, proof.verifierKeyIdCommitment, proof.evidenceSignature,
+          );
+          return {
+            kind: AUTHORIZE_VERIFIER_ACTION_KIND,
+            payloadHash: computeUpdateVerifierAuthorizationPayloadHash(
+              item.authorizationId, simulator.getVerifierAuthorization(item.authorizationId).lifecycleEventHash,
+              item.evidenceHash,
+            ),
+            authorize: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+              simulator.authorizeVerifierAuthorization(
+                bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+                item.authorizationId, item.evidenceHash,
+              ),
+            status: () => simulator.getVerifierAuthorization(item.authorizationId).status,
+          };
+        }
+        if (role === "auditor") {
+          const item = createAuditorAuthorizationFixture("self-vote");
+          item.subjectDidCommitment = bootstrapMaintainer.didCommitment;
+          const proof = auditorProposalProof(registry, item);
+          simulator.proposeAuditorAuthorization(
+            bootstrapMaintainer.keyId, bootstrapPublicKey, sign(PROPOSE_AUDITOR_ACTION_KIND, proof.payloadHash),
+            item.authorizationId, item.subjectDidCommitment, item.requestResourceId,
+            item.allowedAttributeSetCommitment, item.allowedPredicateSetCommitment,
+            item.disclosureLevelCommitment, item.policyId, item.trustLevel, item.evidenceHash,
+            proof.verifierAuthorizationId, proof.verifierKeyIdCommitment, proof.evidenceSignature,
+          );
+          return {
+            kind: AUTHORIZE_AUDITOR_ACTION_KIND,
+            payloadHash: computeUpdateAuditorAuthorizationPayloadHash(
+              item.authorizationId, simulator.getAuditorAuthorization(item.authorizationId).lifecycleEventHash,
+              item.evidenceHash,
+            ),
+            authorize: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+              simulator.authorizeAuditorAuthorization(
+                bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+                item.authorizationId, item.evidenceHash,
+              ),
+            status: () => simulator.getAuditorAuthorization(item.authorizationId).status,
+          };
+        }
+        const item = createRecognitionFixture("self-vote");
+        item.recognizedAuthorityDidCommitment = bootstrapMaintainer.didCommitment;
+        const proof = recognitionProposalProof(registry, item, item.evidenceHash);
+        simulator.proposeRecognition(
+          bootstrapMaintainer.keyId, bootstrapPublicKey, sign(PROPOSE_RECOGNITION_ACTION_KIND, proof.payloadHash),
+          item.recognitionId, item.recognizedAuthorityDidCommitment, item.recognizedRegistryId,
+          item.scopeResourceType, item.scopeResourceId, item.policyId, item.trustLevel, item.evidenceHash,
+          proof.verifierAuthorizationId, proof.verifierKeyIdCommitment, proof.evidenceSignature,
+        );
+        return {
+          kind: AUTHORIZE_RECOGNITION_ACTION_KIND,
+          payloadHash: computeUpdateRecognitionPayloadHash(
+            item.recognitionId, simulator.getRecognition(item.recognitionId).lifecycleEventHash,
+            item.evidenceHash,
+          ),
+          authorize: (signature: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+            simulator.authorizeRecognition(
+              bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+              item.recognitionId, item.evidenceHash,
+            ),
+          status: () => simulator.getRecognition(item.recognitionId).status,
+        };
+      })();
+      const sequence = simulator.getLedger().governanceActionCount;
+      expect(() => scenario.authorize(sign(scenario.kind, scenario.payloadHash))).toThrow(/own DID/i);
+      expect(simulator.getLedger().governanceActionCount).toBe(sequence);
+      expect(scenario.status()).toBe(AuthorizationStatus.proposed);
+    });
+  }
 
   it("records a signed generic audit event without a lifecycle transition", () => {
     const simulator = new TrustRegistrySimulator();
@@ -1521,6 +1666,78 @@ describe("trust registry contract", () => {
       activateMaintainerEvidenceHash,
     );
 
+    const conflictedEvidenceHash = labelToBytes32("evidence:self:second-signer");
+    const conflictedSequence = simulator.getLedger().governanceActionCount;
+    const conflictedPayloadHash = computeUpdateMaintainerMembershipPayloadHash(
+      bootstrapMaintainer.maintainerId,
+      simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId).lifecycleEventHash,
+      conflictedEvidenceHash,
+    );
+    const nonconflictedSignature = signPolicyBoundMaintainerActionFromSeed(
+      secondMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      SUSPEND_MAINTAINER_ACTION_KIND, conflictedPayloadHash, conflictedSequence,
+    );
+    const conflictedCoSigner: MaintainerCoAuthorizer = {
+      keyId: bootstrapMaintainer.keyId,
+      publicKey: bootstrapPublicKey,
+      signature: signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        SUSPEND_MAINTAINER_ACTION_KIND, conflictedPayloadHash, conflictedSequence,
+      ),
+    };
+    expect(() => simulator.suspendMaintainerMembership(
+      secondMaintainer.keyId, secondMaintainer.publicKey, nonconflictedSignature,
+      bootstrapMaintainer.maintainerId, conflictedEvidenceHash, [conflictedCoSigner],
+    )).toThrow(/own DID/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(conflictedSequence);
+
+    const selfActivation = createIssuerAuthorizationFixture("self-activation");
+    selfActivation.subjectDidCommitment = bootstrapMaintainer.didCommitment;
+    const selfActivationProof = issuerProposalProof(
+      registry, selfActivation, registerIssuerEvidenceVerifier(registry),
+    );
+    const signAsSecond = (kind: Uint8Array, payloadHash: Uint8Array) =>
+      signPolicyBoundMaintainerActionFromSeed(
+        secondMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        kind, payloadHash, simulator.getLedger().governanceActionCount,
+      );
+    simulator.proposeIssuerAuthorization(
+      secondMaintainer.keyId, secondMaintainer.publicKey,
+      signAsSecond(PROPOSE_ISSUER_ACTION_KIND, selfActivationProof.payloadHash),
+      selfActivation.authorizationId, selfActivation.subjectDidCommitment,
+      selfActivation.resourceType, selfActivation.resourceId, selfActivation.policyId,
+      selfActivation.statusPolicyBindingCommitment, selfActivation.trustLevel,
+      selfActivation.evidenceHash, selfActivationProof.verifierAuthorizationId,
+      selfActivationProof.verifierKeyIdCommitment, selfActivationProof.evidenceSignature,
+    );
+    const authorizePayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      selfActivation.authorizationId,
+      simulator.getIssuerAuthorization(selfActivation.authorizationId).lifecycleEventHash,
+      selfActivation.evidenceHash,
+    );
+    simulator.authorizeIssuerAuthorization(
+      secondMaintainer.keyId, secondMaintainer.publicKey,
+      signAsSecond(AUTHORIZE_ISSUER_ACTION_KIND, authorizePayloadHash),
+      selfActivation.authorizationId, selfActivation.evidenceHash,
+    );
+    const activatePayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
+      selfActivation.authorizationId,
+      simulator.getIssuerAuthorization(selfActivation.authorizationId).lifecycleEventHash,
+      selfActivation.evidenceHash,
+    );
+    const activateSequence = simulator.getLedger().governanceActionCount;
+    expect(() => simulator.activateIssuerAuthorization(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signPolicyBoundMaintainerActionFromSeed(
+        bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        ACTIVATE_ISSUER_ACTION_KIND, activatePayloadHash, activateSequence,
+      ),
+      selfActivation.authorizationId, selfActivation.evidenceHash,
+    )).toThrow(/own DID/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(activateSequence);
+    expect(simulator.getIssuerAuthorization(selfActivation.authorizationId).status)
+      .toBe(AuthorizationStatus.authorized);
+
     const invalidThresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const invalidThresholdPolicySignature = signPolicyBoundMaintainerActionFromSeed(
       bootstrapMaintainer.seed,
@@ -1618,6 +1835,29 @@ describe("trust registry contract", () => {
     expect(simulator.getLedger().emergencyMaintainerThreshold).toEqual(1n);
     expect(simulator.getLedger().archivalMaintainerThreshold).toEqual(2n);
     expect(simulator.getLedger().governancePolicyVersion).toEqual(2n);
+
+    const removalEvidenceHash = labelToBytes32("evidence:nonself:threshold-removal");
+    const removalSequence = simulator.getLedger().governanceActionCount;
+    const removalSignature = signPolicyBoundMaintainerActionFromSeed(
+      secondMaintainer.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      SUSPEND_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        bootstrapMaintainer.maintainerId,
+        simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId).lifecycleEventHash,
+        removalEvidenceHash,
+      ),
+      removalSequence,
+    );
+    expect(() => simulator.suspendMaintainerMembership(
+      secondMaintainer.keyId,
+      secondMaintainer.publicKey,
+      removalSignature,
+      bootstrapMaintainer.maintainerId,
+      removalEvidenceHash,
+    )).toThrow(/threshold policy/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
     expect(Buffer.from(simulator.getLedger().governancePolicyCommitment)).toEqual(
       Buffer.from(labelToBytes32("policy:kanon:v2")),
     );
