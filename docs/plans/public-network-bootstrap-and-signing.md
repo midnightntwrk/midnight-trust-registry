@@ -30,6 +30,17 @@ post-deployment governed event hashes and action signatures bind
 `kernel.self().bytes`. An initialization event alone must never be accepted
 as proof of a specific deployment address.
 
+The client now provides `prepareFinalizedDeploymentActionDigest` as a
+signer-side preflight. It reads a current finalized action state from an
+independently trusted port, compares the selected network, deployed address,
+registry commitment, network commitment, active policy, and action sequence,
+then returns the same Compact digest used by the contract. It rejects
+`undeployed` and placeholder domains. This does **not** supply a network
+adapter or establish finality by itself: the port implementation must
+authenticate the actual network and finalized ledger state, and the operator
+must pin the intended deployment. Mocked-port tests are not public-network
+qualification. No network-private signing key is handled by this helper.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract
