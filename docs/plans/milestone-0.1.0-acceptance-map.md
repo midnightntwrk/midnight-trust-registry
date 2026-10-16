@@ -11,7 +11,7 @@ a finalized-network read, and a package smoke is not a live status proof.
 | Issues | Current executable evidence | Still required before closure |
 | --- | --- | --- |
 | #39 historical API/TRQP | `packages/trust-registry-api/src/test/trust-registry-api.test.ts`; `adapters/trqp/src/test/trqp-adapter.test.ts`; timestamped actor queries in `scripts/demo-signed-membership-journey.mjs` | Audit every requested timestamp/problem/extension case against the issue and record the merged implementation PR. |
-| #58, #59, #78 actor journeys | `scripts/demo-governed-registry.mjs`; `scripts/demo-signed-membership-journey.mjs` for issuer, verifier, auditor, maintainer; `scripts/packed-recognition-journey.mjs` emits a scrubbed accreditation, signer, policy, epoch, and rejection report and checks the retained proposal signature; `pnpm run packed-artifacts:smoke -- --actor-journey` installs the ten tarballs in a temporary consumer | Pass full integration and packaged actor smoke at a clean candidate SHA; confirm all issue-specific negatives. The packed recognition journey is package-only simulator proof, not an HTTP or live-network deployment. |
+| #58, #59, #78 actor journeys | `scripts/demo-governed-registry.mjs`; `scripts/demo-signed-membership-journey.mjs` for issuer, verifier, auditor, maintainer; `scripts/packed-recognition-journey.mjs` emits a scrubbed accreditation, signer, policy, epoch, and rejection report, checks the retained proposal signature, and queries recognition evidence through the packaged public API (200/404/503); `pnpm run packed-artifacts:smoke -- --actor-journey` installs the ten tarballs in a temporary consumer | Pass full integration and packaged actor smoke at a clean candidate SHA; confirm all issue-specific negatives. The packed recognition journey uses a local simulator and loopback HTTP, not a live-network deployment. |
 | #60 adversarial matrix | The governed demo emits invariant, boundary, expected, and observed categories; Compact/API/client/TRQP tests cover additional failures | Audit the issue's full case list and preserve a reproducible report from the candidate run. |
 | #67, #75, #76 evidence and policy | `contracts/trust-registry/src/test/trust-registry.test.ts`; `packages/trust-registry-integration/src/test/application-status-attestation.integration.test.ts`; `packages/trust-registry-api/src/test/signed-mutation-http.test.ts`; `packages/trust-registry-api/src/integration-test/compact-proposal-observation.integration.test.ts` reconstructs and checks all five proposal signatures, rejects substituted ledger joins, and preserves historical verification for all five roles after verifier-key retirement | Match role-specific VC/VP, policy-rotation, evidence-verifier, and privacy criteria to exact tests; pass full integration. The proposal projection trusts the supplied finalized ledger and does not supply an independent inclusion/finality proof. |
 | #77 signed mutation | `packages/trust-registry-api/src/test/signed-mutation-http.test.ts`; `packages/trust-registry-api/src/test/mutation-intent-preflight.test.ts`; four packed actor journeys | Confirm restart, conflict, and all unauthenticated-write denials at the candidate revision. |
@@ -24,14 +24,15 @@ a finalized-network read, and a package smoke is not a live status proof.
 
 ## Next Local Qualification Sequence
 
-1. Let the active full integration run finish; diagnose a failure without
-   discarding its generated proof artifacts. The previous run failed after
-   key generation because the VC demo omitted the simulator sequence clock;
-   the fast light gate now exercises that path.
-2. On a clean signed/DCO candidate tree, run the full package-content check,
-   repack, generate the manifest, and run the manifest-backed four-role
-   packed actor smoke. Record the source SHA and timings separately from
-   manifest bytes.
+1. Keep using focused and light checks while the candidate tree changes. A
+   full integration run passed at an older signed revision, not this head;
+   no full run is active. Avoid restarting solely to repeat identical Compact
+   key generation, which previously consumed over an hour and substantial
+   disk space.
+2. At a stable clean signed/DCO candidate head, run full integration once,
+   preserving its generated proof artifacts. Then run the full package-content
+   check, repack, generate the manifest, and run the manifest-backed actor
+   smoke. Record the exact source SHA and validation timings.
 3. Audit each open issue's remaining checkboxes against the exact test result.
    Close only after a merged PR is linked with its merge SHA, validation
    commands, and deliberately deferred criteria. Leave #90, #200, and #45
