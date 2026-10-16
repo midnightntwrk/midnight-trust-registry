@@ -66,6 +66,26 @@ describe("finalized Compact proposal observation", () => {
       });
       expect(BigInt(snapshot!.verifierPublicKey.x)).toBeGreaterThan(0n);
       expect(BigInt(snapshot!.verifierSignature.response)).toBeGreaterThan(0n);
+      const ledger = harness.simulator.getLedger();
+      const mapName = `${role}ProposalEvidenceRecords`;
+      const substituted = new Proxy(ledger, {
+        get(target, property) {
+          if (property !== mapName) return Reflect.get(target, property, target);
+          const records = Reflect.get(target, property, target) as typeof ledger.issuerProposalEvidenceRecords;
+          return new Proxy(records, {
+            get(map, key) {
+              if (key === "lookup") {
+                return (recordId: Uint8Array) => ({ ...map.lookup(recordId), verifierSignatureResponse: 0n });
+              }
+              const value = Reflect.get(map, key, map);
+              return typeof value === "function" ? value.bind(map) : value;
+            },
+          });
+        },
+      });
+      await expect(resolveCompactProposalEvidenceSnapshot(
+        async () => substituted, harness.registryId, role, id,
+      )).rejects.toThrow("signature is invalid");
       expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, `${id}:other`)).toBeNull();
       await expect(resolveCompactProposalEvidenceSnapshot(read, "registry:wrong", role, id))
         .rejects.toThrow("different trust registry");
@@ -128,28 +148,6 @@ describe("finalized Compact proposal observation", () => {
       ...ledger, issuerAuthorizationRecords: substituted,
     }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
       "does not match its authorization record",
-    );
-  });
-
-  it("rejects a substituted proposal evidence-verifier signature", async () => {
-    const harness = new LocalTrustRegistryIntegrationHarness("proposal-signature-mismatch");
-    const issuer = createIssuerScenarioFixture("signature-mismatch");
-    harness.proposeIssuer(issuer);
-    const ledger = harness.simulator.getLedger();
-    const records = ledger.issuerProposalEvidenceRecords;
-    const substituted = new Proxy(records, {
-      get(target, property) {
-        if (property === "lookup") {
-          return (id: Uint8Array) => ({ ...target.lookup(id), verifierSignatureResponse: 0n });
-        }
-        const value = Reflect.get(target, property, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-    await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
-      ...ledger, issuerProposalEvidenceRecords: substituted,
-    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
-      "signature is invalid",
     );
   });
 
