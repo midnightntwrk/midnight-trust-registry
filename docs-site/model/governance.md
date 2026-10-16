@@ -6,6 +6,16 @@ Governance answers **who may change trust state and what they must sign**. The f
 
 The 0.1.0 reference fixture uses three maintainer DIDs and 2-of-3 for ordinary, membership, emergency, and archival action families. That is a fixture policy, not a universal protocol default. The current Compact signer bundle has five slots, so thresholds above five require a contract change. Signers must be distinct, active, registered, and bound to the exact action and current policy. The candidate cannot count toward its own membership approval, and a change cannot leave fewer active maintainers than the live threshold.
 
+Recovery stays within the normal maintainer set in 0.1.0. With more than one
+active maintainer, all three configured thresholds must be below the active
+count; the target of an active suspension, revocation, or archival action
+cannot sign it. The post-removal set must retain that headroom. For example,
+2-of-3 maintainers first sign a policy reduction to 1-of-3, then sign removal
+under the new policy, leaving a safe 1-of-2 set. These are distinct ledger
+actions, not an atomic recovery transaction. An all-member threshold is
+rejected, and a separate recovery authority is a later design, not a hidden
+override in this contract.
+
 ## Signed action transcript
 
 The contract verifies a JubJub Schnorr signature over a domain-separated digest containing registry ID, action kind, exact payload commitment, and sequence. The payload also binds the pinned network commitment, executing contract address, and current policy commitment; rotating policy or changing deployment invalidates a prepared vote. The contract checks current membership and quorum rather than trusting a caller-supplied `approved` flag. The [Compact reference](../contract/index.md) maps these checks to ledger fields and circuits.

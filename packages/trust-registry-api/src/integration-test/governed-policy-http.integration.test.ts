@@ -76,12 +76,16 @@ describe("Compact-backed policy revision over HTTP", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
-    const thresholds = { default: "3", emergency: "2", archival: "2" };
+    const thresholds = { default: "1", emergency: "1", archival: "1" };
     const port: GovernedPolicyActionPort = {
       async prepareThresholds(value) {
-        return harness.prepareThresholdPolicyRevisionAction(
-          BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
-        );
+        try {
+          return harness.prepareThresholdPolicyRevisionAction(
+            BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+          );
+        } catch {
+          throw new GovernedPolicyActionRejectedError();
+        }
       },
       async executeThresholds(value, signers) {
         try {
@@ -118,6 +122,9 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await post("thresholds/prepare", {
         thresholds: { ...thresholds, default: "03" },
       })).status).toBe(400);
+      expect((await post("thresholds/prepare", {
+        thresholds: { default: "3", emergency: "2", archival: "2" },
+      })).status).toBe(403);
 
       const preparedResponse = await post("thresholds/prepare", { thresholds });
       expect(preparedResponse.status).toBe(200);
@@ -150,9 +157,8 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(revised.status).toBe(202);
       expect((await revised.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect((await submitRevision(revision, [secondVote, thirdVote])).status).toBe(409);
-      expect(harness.simulator.getLedger().maintainerThreshold).toBe(3n);
+      expect(harness.simulator.getLedger().maintainerThreshold).toBe(1n);
       const issuer = createIssuerScenarioFixture("policy-http-issuer");
-      expect(() => harness.proposeIssuer(issuer, [second, third])).toThrow();
 
       const registrationResponse = await post("evidence-verifier/prepare", {});
       expect(registrationResponse.status).toBe(200);
@@ -160,26 +166,19 @@ describe("Compact-backed policy revision over HTTP", () => {
       const bootstrap = createMaintainerFixture("bootstrap", 17);
       bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
       const bootstrapVote = signPrepared(bootstrap, registration);
-      const secondRegistrationVote = signPrepared(second, registration);
-      const thirdRegistrationVote = signPrepared(third, registration);
       const submitRegistration = (prepared: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post("evidence-verifier/submit", { prepared, signers });
-      expect((await submitRegistration(registration, [bootstrapVote, secondRegistrationVote])).status).toBe(403);
-      expect((await submitRegistration(registration,
-        [bootstrapVote, secondRegistrationVote, secondRegistrationVote])).status).toBe(403);
-      expect((await submitRegistration(registration,
-        [bootstrapVote, secondRegistrationVote, signPrepared(outsider, registration)])).status).toBe(403);
+      expect((await submitRegistration(registration, [])).status).toBe(400);
+      expect((await submitRegistration(registration, [signPrepared(outsider, registration)])).status).toBe(403);
       expect((await submitRegistration({ ...registration, actionSequence: revision.actionSequence },
-        [bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).status).toBe(409);
+        [bootstrapVote])).status).toBe(409);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
 
-      const registered = await submitRegistration(registration,
-        [bootstrapVote, secondRegistrationVote, thirdRegistrationVote]);
+      const registered = await submitRegistration(registration, [bootstrapVote]);
       expect(registered.status).toBe(202);
       expect((await registered.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect((await submitRegistration(registration,
-        [bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).status).toBe(409);
-      harness.proposeIssuer(issuer, [second, third]);
+      expect((await submitRegistration(registration, [bootstrapVote])).status).toBe(409);
+      harness.proposeIssuer(issuer, [second]);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 3n);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

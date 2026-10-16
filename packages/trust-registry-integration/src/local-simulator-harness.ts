@@ -49,6 +49,7 @@ import {
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
   type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
+  pureCircuits,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
   type RecognitionRecord as ContractRecognitionRecord,
   type VerifierAuthorizationRecord as ContractVerifierAuthorizationRecord,
@@ -1084,8 +1085,15 @@ export class LocalTrustRegistryIntegrationHarness {
     archivalThreshold: bigint,
     recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
   ): PreparedThresholdPolicyRevisionAction {
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const nextPolicyVersion = this.simulator.getLedger().governancePolicyVersion + 1n;
+    const ledger = this.simulator.getLedger();
+    pureCircuits.assertValidMaintainerThresholdPolicy(
+      ledger.activeMaintainerCount,
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    const actionSequence = ledger.governanceActionCount;
+    const nextPolicyVersion = ledger.governancePolicyVersion + 1n;
     const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
       (anchor) => ({ ...anchor, policyVersion: `v${nextPolicyVersion.toString()}` }),
     );

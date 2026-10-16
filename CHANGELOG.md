@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- reject all-member maintainer thresholds and active-target self-votes for
+  suspension, revocation, and archival; require a signed policy reduction
+  before a removal that would strand the remaining quorum
 - require governed maintainer signer bundles to use a unique, ascending
   little-endian key-ID order with zero padding. Signer-set and event hashes are
   canonical for a quorum; the epoch record's first signer is the lowest key ID,
