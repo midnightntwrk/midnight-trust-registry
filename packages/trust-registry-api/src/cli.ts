@@ -7,7 +7,7 @@ import {
 import { createTrustRegistryApiServer } from "./server.js";
 
 const HELP_TEXT = `Usage:
-  trust-registry-api serve (--snapshot PATH | --workspace PATH) [--host HOST] [--port PORT]
+  trust-registry-api serve (--snapshot PATH | --workspace PATH) [--host HOST] [--port PORT] [--unsafe-demo-mutations]
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -19,6 +19,7 @@ export type TrustRegistryApiCliOptions = {
   port: number;
   snapshotPath?: string;
   workspacePath?: string;
+  unsafeDemoMutations?: boolean;
 };
 
 export const parseTrustRegistryApiCliArgs = (
@@ -73,6 +74,9 @@ export const parseTrustRegistryApiCliArgs = (
         options.workspacePath = workspacePath;
         break;
       }
+      case "--unsafe-demo-mutations":
+        options.unsafeDemoMutations = true;
+        break;
       case "--help":
       case "-h":
         throw new Error(HELP_TEXT);
@@ -98,6 +102,12 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.host.trim().length === 0) {
     throw new Error(`--host must not be empty\n\n${HELP_TEXT}`);
   }
+  if (
+    options.unsafeDemoMutations === true
+    && !["127.0.0.1", "::1"].includes(options.host)
+  ) {
+    throw new Error("--unsafe-demo-mutations requires a loopback host");
+  }
 
   return options;
 };
@@ -113,6 +123,7 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(options.unsafeDemoMutations === undefined ? {} : { allowUnsafeDemoMutations: options.unsafeDemoMutations }),
   });
 
   server.listen(options.port, options.host);

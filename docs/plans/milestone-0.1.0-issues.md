@@ -85,6 +85,12 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
   revoked, expired, and wrong-registry issuer outcomes. Its credential decision
   MUST use the VC composed `VC<>::assertAuthorizedIssuerProof` path, not the
   metadata-only descriptor helper.
+  The local VP fixture keeps authentication and assertion keys as separate
+  relationships on one Midnight DID. The governed simulator demo now joins VP
+  intake, 2-of-3 approval, active epoch, authority-signed descriptor, and the
+  compiled `VC<>::assertAuthorizedIssuerProof` consumer path. Production
+  finalized-state adapters and separately governed credential-definition and
+  status checks remain open; this simulator result alone does not close #58.
 - #59 MUST exercise authenticated applicant and maintainer intents through the
   public API/UI, assert fail-closed stale/replayed writes, and compare the
   public query with client evidence verification.
@@ -123,12 +129,12 @@ Subtasks:
       client, API, TRQP adapter, and OpenID Federation projection where used.
 - [ ] Resolve whether a rejected proposal is terminal and how a superseding
       application references its predecessor; update lifecycle fixtures.
-- [ ] Include an explicit migration note for old ordinal-status or root-only
-      policy records.
+- [ ] Document the fresh-deployment boundary: prototype ordinal-status and
+      root-only policy records are not accepted by the 0.1.0 profile.
 
 Definition of done: the same input yields the same 32-byte scope and policy
 commitments across implementations; mismatched version/scope fails closed;
-existing live records retain their historical policy interpretation. Tests
+historical records retain their policy interpretation within this format. Tests
 cover each role plus field order, array order, version change, wildcard, and
 duplicate-ID negatives. Validation: `./run.sh --light` and
 `./run.sh integration` for contract-facing changes.
@@ -140,9 +146,10 @@ Depends on: ADR-0001, ADR-0002, #49. Labels: `trust-registry`, `governance`,
 
 Tracker title: `feat(evidence): verify Midnight VC/VP eligibility and sign application attestations`
 
-Why: the current simulator fabricates `SHA-256(commitment:keyId)` as a
-signature. A real 0.1.0 journey needs actual DID, VC/VP, status, and policy
-verification before on-chain governance.
+Why: a real 0.1.0 journey needs DID-bound assertion-key authorization and
+actual VC/VP, status, and policy verification before on-chain governance.
+The simulator now uses a real test-key JubJub signature over the evidence
+commitment, but its verifier key is not yet resolved from a DID.
 
 Subtasks:
 
@@ -185,6 +192,8 @@ Why: a VC `AuthorizedSignerDescriptor` must be derived from a real governed
 grant and active DID key, not from a caller-provided boolean or root. Current
 TR bundles prove authorization history but do not bind an exact DID method,
 observed DID version, and the authority context needed for descriptor signing.
+The [decision-evidence client profile](decision-evidence-client.md) defines
+the fail-closed trust boundary and ordered implementation slices.
 
 Subtasks:
 
@@ -222,6 +231,9 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
+      The local candidate adapter now uses trusted current-state readers and
+      checks the exact DID binding and sequence; production reader/finality
+      implementations and authority proof issuance remain required.
 - [x] Align the published Midnight DID dependency to 0.7.0 and verify the
       adapter's canonical fragment and DID-state mapping without importing
       sibling repository source.
@@ -236,15 +248,29 @@ not the older transcript-digest draft.
 - [ ] Specify `domainCommitment` preimage (network, consumer contract,
       registry, authority), governed authority key lifecycle, and the signer
       service's refusal to sign a decision without a committed quorum.
+      Local registration preparation checks canonical DID/method/network
+      preimages and the exact registry address before constructing the quorum
+      payload; the simulator reads the registered key and refuses signing after
+      a governed suspension. Finalized production reads remain open.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
+      A simulator fixture now exercises this exact VC proof circuit through
+      an injected signer port; governed production key custody and issuance
+      remain open.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
+      The local compiled consumer pins the authority in constructor ledger
+      state and rejects wrong-domain installation; production anchor
+      deployment and the complete circuit-level negative matrix remain open.
 - [ ] In the consumer fixture, use the VC composed
       `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
+      The local consumer exercises both circuits, including positive signatures
+      and wrong-scope/forged-signature rejections. Both local descriptors now
+      derive from simulator TR decisions; production finality and governed
+      scope mappings remain open.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 

@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import {
+  TrustRegistryApiResolveRecognitionRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
+} from "./browser-schemas.js";
+export { TrustRegistryApiResolveRecognitionRequestSchema, TrustRegistryApiEvaluateRecognitionRequestSchema };
+
+import {
   MutableSnapshotTargetSchema,
   TrustRegistryOperatorWorkspaceOperationSchema,
   TrustRegistryAuthorizationSnapshotEntrySchema,
@@ -9,6 +15,11 @@ import {
 import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
+  HashHexSchema,
+  IssuerGovernedResourceIdSchema,
+  MutationIntentSchema,
+  MutationIntentSignatureSchema,
+  RequestGovernedResourceIdSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
@@ -20,6 +31,7 @@ export const TimestampSchema = z.string().datetime({ offset: true });
 export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
   "issuer",
   "verifier",
+  "auditor",
 ]);
 
 export const TrustRegistryApiApplicationTargetSchema =
@@ -65,6 +77,10 @@ export const TrustRegistryApiSummarySchema = z.object({
     AuthorizationRecordSchema.shape.status,
     z.number().int().nonnegative(),
   ),
+  auditorCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
   recognitionCounts: z.record(
     RecognitionRecordSchema.shape.status,
     z.number().int().nonnegative(),
@@ -81,7 +97,7 @@ export const TrustRegistryApiAuthorizationListResponseSchema = z.object({
   entries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
 });
 
-export const TrustRegistryApiResolveAuthorizationRequestSchema = z.object({
+const AuthorizationLookupRequestBaseSchema = z.object({
   role: TrustRegistryApiAuthorizationRoleSchema,
   subjectDid: NonEmptyStringSchema,
   resourceId: NonEmptyStringSchema,
@@ -89,10 +105,34 @@ export const TrustRegistryApiResolveAuthorizationRequestSchema = z.object({
   trustLevel: NonEmptyStringSchema.optional(),
 });
 
+const refineAuthorizationLookup = (
+  request: z.infer<typeof AuthorizationLookupRequestBaseSchema>,
+  ctx: z.RefinementCtx,
+): void => {
+  if (request.role === "issuer" && !IssuerGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Issuer lookup requires a canonical composite issuer resource id",
+    });
+  }
+  if ((request.role === "verifier" || request.role === "auditor")
+    && !RequestGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Request lookup requires a canonical composite request resource id",
+    });
+  }
+};
+
+export const TrustRegistryApiResolveAuthorizationRequestSchema =
+  AuthorizationLookupRequestBaseSchema.superRefine(refineAuthorizationLookup);
+
 export const TrustRegistryApiEvaluateAuthorizationRequestSchema =
-  TrustRegistryApiResolveAuthorizationRequestSchema.extend({
+  AuthorizationLookupRequestBaseSchema.extend({
     at: TimestampSchema,
-  });
+  }).superRefine(refineAuthorizationLookup);
 
 export const TrustRegistryApiRecognitionListQuerySchema = z.object({
   status: RecognitionRecordSchema.shape.status.optional(),
@@ -102,19 +142,6 @@ export const TrustRegistryApiRecognitionListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
   entries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
 });
-
-export const TrustRegistryApiResolveRecognitionRequestSchema = z.object({
-  recognizedAuthorityDid: NonEmptyStringSchema,
-  recognizedRegistryId: NonEmptyStringSchema.optional(),
-  scopeResourceType: RecognitionRecordSchema.shape.scope.shape.resourceType.optional(),
-  scopeResourceId: NonEmptyStringSchema,
-  trustLevel: NonEmptyStringSchema.optional(),
-});
-
-export const TrustRegistryApiEvaluateRecognitionRequestSchema =
-  TrustRegistryApiResolveRecognitionRequestSchema.extend({
-    at: TimestampSchema,
-  });
 
 const TrustRegistryApiTemporalEvaluationBaseSchema = z.object({
   evaluatedAt: TimestampSchema,
@@ -134,8 +161,29 @@ export const TrustRegistryApiRecognitionEvaluationResponseSchema =
     entry: TrustRegistryRecognitionSnapshotEntrySchema,
   });
 
+export const TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema =
+  TrustRegistryApiAuthorizationEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
+export const TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema =
+  TrustRegistryApiRecognitionEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
 export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
 export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
+export const TrustRegistryApiMutationContextSchema = z.strictObject({
+  registryId: RegistryRecordSchema.shape.registryId,
+  expectedEpochId: EpochCommitmentSchema.shape.epochId,
+  expectedWorkspaceCommitment: HashHexSchema,
+  evaluatedAt: z.string().datetime({ offset: true }),
+});
+export const TrustRegistryApiSignedMutationRequestSchema = z.strictObject({
+  intent: MutationIntentSchema,
+  signature: MutationIntentSignatureSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
 export const TrustRegistryApiAuthorizationResponseSchema =
   TrustRegistryAuthorizationSnapshotEntrySchema;
 export const TrustRegistryApiRecognitionResponseSchema =
@@ -228,9 +276,21 @@ export type TrustRegistryApiEpochPublishRequest = z.infer<
 export type TrustRegistryApiApplicationMutationResponse = z.infer<
   typeof TrustRegistryApiApplicationMutationResponseSchema
 >;
+export type TrustRegistryApiMutationContext = z.infer<
+  typeof TrustRegistryApiMutationContextSchema
+>;
+export type TrustRegistryApiSignedMutationRequest = z.infer<
+  typeof TrustRegistryApiSignedMutationRequestSchema
+>;
 export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
   typeof TrustRegistryApiAuthorizationEvaluationResponseSchema
 >;
 export type TrustRegistryApiRecognitionEvaluationResponse = z.infer<
   typeof TrustRegistryApiRecognitionEvaluationResponseSchema
+>;
+export type TrustRegistryApiAuthorizationEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema
 >;

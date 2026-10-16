@@ -14,7 +14,7 @@ import {
   MidnightNetwork,
   parseContractAddress,
 } from "@midnight-ntwrk/midnight-did";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import { describe, expect, it } from "vitest";
 
 import {

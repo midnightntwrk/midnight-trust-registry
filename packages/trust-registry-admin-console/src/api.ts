@@ -1,4 +1,20 @@
 import type {
+  GovernedMembershipAction,
+  GovernedMembershipActionReceipt,
+  GovernedMembershipRole,
+  GovernedMembershipSignatureRequest,
+  GovernedEpochPublicationReceipt,
+  GovernedEpochPublishRequest,
+  GovernedEvidenceVerifierSubmitRequest,
+  GovernedPolicyActionReceipt,
+  GovernedThresholdSubmitRequest,
+  GovernedThresholds,
+  PreparedGovernedEpochPublication,
+  PreparedGovernedPolicyAction,
+  PreparedGovernedIssuerProposal,
+  PreparedGovernedVerifierProposal,
+  PreparedGovernedMaintainerProposal,
+  PreparedGovernedMembershipAction,
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiApplicationTarget,
@@ -6,11 +22,17 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
 } from "@midnight-ntwrk/trust-registry-api";
 
 import type { ReviewBoard } from "./model.js";
 
 type FetchLike = typeof fetch;
+export type GovernedProposalRole = Exclude<GovernedMembershipRole, "recognition">;
+export type PreparedGovernedProposal = PreparedGovernedIssuerProposal | PreparedGovernedVerifierProposal
+  | PreparedGovernedMaintainerProposal;
+export type GovernedProposalResolution = { state: "not-observed" } | { state: "observed"; eventHash: string };
 
 export class TrustRegistryAdminConsoleApiError extends Error {
   constructor(
@@ -58,10 +80,11 @@ export class TrustRegistryAdminConsoleClient {
   }
 
   async loadReviewBoard(): Promise<ReviewBoard> {
-    const [summary, issuers, verifiers, recognitions] = await Promise.all([
+    const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([
       this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
       this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer"),
       this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier"),
+      this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor"),
       this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions"),
     ]);
 
@@ -69,6 +92,7 @@ export class TrustRegistryAdminConsoleClient {
       summary,
       issuers: issuers.entries,
       verifiers: verifiers.entries,
+      auditors: auditors.entries,
       recognitions: recognitions.entries,
     };
   }
@@ -82,6 +106,99 @@ export class TrustRegistryAdminConsoleClient {
       `/v1/applications/${encodeURIComponent(target)}/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
       {
         method: "POST",
+      },
+    );
+  }
+
+  async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {
+    return this.request<TrustRegistryApiMutationContext>("/v1/registry/mutation-context", {
+      cache: "no-store",
+    });
+  }
+
+  /** Submit an externally signed intent; this client never receives a private key. */
+  async submitSignedMutation(
+    request: TrustRegistryApiSignedMutationRequest,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/mutations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async prepareGovernedAction(
+    role: GovernedMembershipRole,
+    id: string,
+    action: GovernedMembershipAction,
+  ): Promise<PreparedGovernedMembershipAction> {
+    return this.request<PreparedGovernedMembershipAction>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+    );
+  }
+
+  async submitGovernedAction(
+    role: GovernedMembershipRole,
+    id: string,
+    action: GovernedMembershipAction,
+    request: GovernedMembershipSignatureRequest,
+  ): Promise<GovernedMembershipActionReceipt> {
+    return this.request<GovernedMembershipActionReceipt>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+      },
+    );
+  }
+
+  async prepareProposal(
+    role: GovernedProposalRole,
+    id: string,
+    evidence: unknown,
+  ): Promise<PreparedGovernedProposal> {
+    return this.request<PreparedGovernedProposal>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/prepare`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ evidence }),
+      },
+    );
+  }
+
+  async submitProposal(
+    role: GovernedProposalRole,
+    id: string,
+    request: {
+      evidence: unknown;
+      prepared: PreparedGovernedProposal;
+      signers: GovernedMembershipSignatureRequest["signers"];
+      evidenceVerifierSignature: string;
+    },
+  ): Promise<GovernedMembershipActionReceipt> {
+    return this.request<GovernedMembershipActionReceipt>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/submit`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+      },
+    );
+  }
+
+  async resolveProposal(
+    role: GovernedProposalRole,
+    id: string,
+    evidence: unknown,
+  ): Promise<GovernedProposalResolution> {
+    return this.request<GovernedProposalResolution>(
+      `/v1/governed/${encodeURIComponent(role)}/${encodeURIComponent(id)}/proposal/resolve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ evidence }),
       },
     );
   }
@@ -103,6 +220,56 @@ export class TrustRegistryAdminConsoleClient {
             }),
       },
     );
+  }
+
+  async prepareGovernedEpoch(label: string): Promise<PreparedGovernedEpochPublication> {
+    return this.request<PreparedGovernedEpochPublication>("/v1/governed/epochs/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label }),
+    });
+  }
+
+  async submitGovernedEpoch(request: GovernedEpochPublishRequest): Promise<GovernedEpochPublicationReceipt> {
+    return this.request<GovernedEpochPublicationReceipt>("/v1/governed/epochs/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async prepareThresholdRevision(thresholds: GovernedThresholds): Promise<PreparedGovernedPolicyAction> {
+    return this.request<PreparedGovernedPolicyAction>("/v1/governed/policy/thresholds/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ thresholds }),
+    });
+  }
+
+  async submitThresholdRevision(request: GovernedThresholdSubmitRequest): Promise<GovernedPolicyActionReceipt> {
+    return this.request<GovernedPolicyActionReceipt>("/v1/governed/policy/thresholds/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async prepareEvidenceVerifierRegistration(): Promise<PreparedGovernedPolicyAction> {
+    return this.request<PreparedGovernedPolicyAction>("/v1/governed/policy/evidence-verifier/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+  }
+
+  async submitEvidenceVerifierRegistration(
+    request: GovernedEvidenceVerifierSubmitRequest,
+  ): Promise<GovernedPolicyActionReceipt> {
+    return this.request<GovernedPolicyActionReceipt>("/v1/governed/policy/evidence-verifier/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
   }
 
   private async request<T>(

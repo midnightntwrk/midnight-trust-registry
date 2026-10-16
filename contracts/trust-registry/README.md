@@ -2,12 +2,22 @@
 
 Minimal Compact contract package for the Midnight trust registry.
 
+`build:light` emits the generated contract JavaScript and type declarations
+needed by local tests and package-import smoke checks. It deliberately excludes
+proving keys and ZK IR, even when a previous full compile left them in
+`src/managed`. The full `build` still copies all generated artifacts; this
+light path does not change release packaging or delete compiler outputs.
+The full package content gate also requires matching ZK IR, proving keys, and
+verification keys for every circuit so a light or partial build cannot be
+published as a release artifact. Release light tests run before the full build.
+
 Current scope:
 
 - registry initialization
 - bootstrap maintainer registration
 - generic maintainer authorization with fixed-capacity quorum bundles
-- maintainer threshold-policy updates for default, emergency, and archival actions
+- quorum-signed policy snapshot revisions with versioned digest history and
+  default, emergency, and archival thresholds
 - issuer authorization lifecycle and scope queries
 - verifier authorization lifecycle and scope queries
 - recognition lifecycle and scope queries
@@ -19,6 +29,74 @@ shapes without dynamic arrays. Historical lookup by timestamp, richer
 governance policy bindings, and client-facing mutation/query adapters still
 stack on top of this package.
 
-For v1 epoch publication, the epoch record persists the submitter
-(`signer1`) key id and signature, while the full approving quorum is bound into
-the governance-event chain through the signer-set hash.
+Policy revisions and active-maintainer removals enforce recovery headroom:
+when more than one maintainer is active, every threshold must be below the
+active count, the removed target cannot sign, and the remaining set must obey
+the same rule. Atomic recovery needs the larger old default or emergency quorum.
+A 2-of-3 group can sign one atomic recovery action under the
+old quorum to suspend the target and install a 1-of-2 policy. A standalone
+reduction to 1-of-3 before suspension exposes an unsafe interval and is not the
+recovery procedure. The contract does not provide a separate recovery authority.
+
+The initial contract format (version 1) stores the
+canonical V1 policy snapshot digest supplied at
+bootstrap. A threshold revision atomically records the next digest and version
+in the same signed action, and epoch publication accepts only a committed
+digest effective at the epoch's `validFromSequence`. Every governed action
+signature and event now binds the policy digest active at its sequence; the
+ledger also exposes the digest used by the last authorized action. Compact
+records a revised policy as effective at the next action sequence, because
+the revision action itself was signed under the previous policy. Compact
+signs and stores the digest; clients must independently recompute it from the
+disclosed policy record. The 0.1.0 reference path is a fresh deployment;
+prototype policy-ID roots, signatures, and event hashes are not valid evidence
+for this format. The format-one marker does not make an older prototype with
+the same numeric marker compatible; consumers must check the actual ledger
+shape and verification-key provenance as well. The simulator client's
+constructor checks the marker only; it does not attest a deployed contract or
+prove that another ledger with the same marker has this format.
+All governed action signing and verification uses the policy-bound helpers
+with the active 32-byte policy commitment; no unbound signing API is exposed.
+Issuer, verifier, auditor, and recognition records enter the ledger through
+separate proposal, authorization, and activation actions. The prototype
+direct-create entry points are not part of format one.
+
+For epoch publication, the epoch record persists the lowest signer key ID
+(`signer1` in the canonical little-endian order), its signature, and the policy
+commitment active at publication. It does not authenticate the transaction submitter.
+That commitment can differ from `policyRoot` when an older epoch is published
+after a policy revision. Verify the signature against the publication
+commitment; use `policyRoot` to interpret the epoch's historical window. The
+full approving quorum is bound into the governance-event chain through the
+signer-set hash.
+
+The exported `./testing` helper `labelToBytes32` is for fixtures: labels at
+most 32 UTF-8 bytes retain Compact's zero-padded representation, while longer
+labels use a domain-separated SHA-256 digest to avoid silent truncation
+collisions. It is not a production identifier encoder or migration format.
+Governed maintainer action kinds (the signed `tr:` literals) use
+`encodeCompactActionKind`, which rejects labels that cannot be represented
+exactly as Compact `Bytes<32>` literals. The contract's `midnight:tr:init`
+genesis marker and `midnight:tr:none` initial sentinel are not governed
+maintainer action kinds and are not inputs to this signer encoder.
+
+## Signature Validation Boundary
+
+`decodeCanonicalJubjubSignatureHex` is a TypeScript preflight for untrusted
+signature bytes. It requires a lowercase `0x` encoding of exactly 96 bytes,
+response below the JubJub group order, field-bounded coordinates, and an
+announcement accepted by Compact runtime point arithmetic that is not the
+identity point `(0, 1)`. Structured signature verifiers also reject identity
+public keys and return `false` rather than exposing an off-curve runtime
+trap. These checks do not authorize a signer: callers must select and verify
+the policy-authorized DID key ID and its provenance. Prime-order subgroup
+membership of arbitrary accepted points is not established by this preflight.
+
+The Compact action circuits receive typed fields, not hex strings. They reject
+identity signer keys and announcements, then
+compare each signer key ID and public key against an active maintainer record,
+verify the Schnorr digest in-circuit, and enforce the policy-bound quorum.
+Textual encoding checks and application-evidence DID key selection are
+off-chain ingress responsibilities, not claims made by the Compact circuit.
+The two-key DID resolver fixture covers key selection and a rotated snapshot;
+governed evidence-verifier key rotation in Compact remains tracked by #67.

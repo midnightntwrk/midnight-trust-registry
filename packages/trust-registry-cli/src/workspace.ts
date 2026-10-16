@@ -1,16 +1,21 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   LocalTrustRegistryIntegrationHarness,
+  createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
+  type AuditorScenarioFixture,
   type IssuerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
+  bytes32Commitment,
 } from "@midnight-ntwrk/trust-registry-integration";
-import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+import { createScopedIdentifier, type EpochCommitment, type TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorWorkspaceSchema,
@@ -35,15 +40,29 @@ type TrackedVerifierFixture = {
   label: string;
 };
 
+type TrackedAuditorFixture = {
+  fixture: AuditorScenarioFixture;
+  label: string;
+};
+
 type TrackedRecognitionFixture = {
   fixture: RecognitionScenarioFixture;
   label: string;
 };
 
 type TrackedFixtures = {
+  auditors: Map<string, TrackedAuditorFixture>;
   issuers: Map<string, TrackedIssuerFixture>;
   recognitions: Map<string, TrackedRecognitionFixture>;
   verifiers: Map<string, TrackedVerifierFixture>;
+};
+
+export type SimulatorSnapshotFixtures = {
+  label: string;
+  issuers?: readonly TrackedIssuerFixture[];
+  verifiers?: readonly TrackedVerifierFixture[];
+  auditors?: readonly TrackedAuditorFixture[];
+  recognitions?: readonly TrackedRecognitionFixture[];
 };
 
 const assertNever = (value: never): never => {
@@ -51,6 +70,7 @@ const assertNever = (value: never): never => {
 };
 
 const createTrackedFixtures = (): TrackedFixtures => ({
+  auditors: new Map<string, TrackedAuditorFixture>(),
   issuers: new Map<string, TrackedIssuerFixture>(),
   recognitions: new Map<string, TrackedRecognitionFixture>(),
   verifiers: new Map<string, TrackedVerifierFixture>(),
@@ -61,11 +81,17 @@ const writeWorkspaceJson = async (
   workspace: TrustRegistryOperatorWorkspace,
 ): Promise<void> => {
   await mkdir(dirname(workspacePath), { recursive: true });
-  await writeFile(
-    workspacePath,
-    serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
-    "utf8",
-  );
+  const temporaryPath = `${workspacePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      temporaryPath,
+      serializeJson(TrustRegistryOperatorWorkspaceSchema.parse(workspace)),
+      { encoding: "utf8", flag: "wx" },
+    );
+    await rename(temporaryPath, workspacePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
 };
 
 const loadWorkspaceJson = async (
@@ -73,6 +99,36 @@ const loadWorkspaceJson = async (
 ): Promise<TrustRegistryOperatorWorkspace> => {
   const raw = await readFile(workspacePath, "utf8");
   return TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(raw));
+};
+
+export class WorkspaceMutationLockedError extends Error {
+  constructor() {
+    super("Operator workspace is locked by another writer; stale locks require operator recovery");
+    this.name = "WorkspaceMutationLockedError";
+  }
+}
+
+export const withExclusiveWorkspaceWrite = async <T>(
+  workspacePath: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const lockPath = `${resolve(workspacePath)}.lock`;
+  await mkdir(dirname(lockPath), { recursive: true });
+  let lock;
+  try {
+    lock = await open(lockPath, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new WorkspaceMutationLockedError();
+    }
+    throw error;
+  }
+  try {
+    return await operation();
+  } finally {
+    await lock.close();
+    await unlink(lockPath);
+  }
 };
 
 const currentOrHistoricalIssuerEvidence = (
@@ -95,6 +151,16 @@ const currentOrHistoricalVerifierEvidence = (
   }
 
   return harness.buildVerifierHistoricalEvidence(fixture);
+};
+
+const currentOrHistoricalAuditorEvidence = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  fixture: AuditorScenarioFixture,
+): TrustRegistryEvidenceBundle => {
+  const historical = harness.buildAuditorHistoricalEvidence(fixture);
+  return historical.authorization?.status === "active"
+    ? harness.evaluateCurrentAuditorDecision(fixture)
+    : historical;
 };
 
 const currentOrHistoricalRecognitionEvidence = (
@@ -132,6 +198,18 @@ const verifierEntryFromFixture = (
   };
 };
 
+const auditorEntryFromFixture = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  tracked: TrackedAuditorFixture,
+): TrustRegistryAuthorizationSnapshotEntry => {
+  const evidence = currentOrHistoricalAuditorEvidence(harness, tracked.fixture);
+  return {
+    label: tracked.label,
+    authorization: collectAuthorizationRecord(evidence, "auditor"),
+    evidence,
+  };
+};
+
 const recognitionEntryFromFixture = (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedRecognitionFixture,
@@ -149,8 +227,13 @@ const buildSnapshotFromTrackedFixtures = (
   operationCount: number,
   harness: LocalTrustRegistryIntegrationHarness,
   trackedFixtures: TrackedFixtures,
+  notes: readonly string[] = [
+    "Operator workspace snapshot derived from governed CLI operations.",
+    `Replayed operations: ${operationCount.toString()}.`,
+  ],
+  publishedRegistryEpoch?: EpochCommitment,
 ): TrustRegistryOperatorSnapshot => {
-  const registryEpoch = harness.publishRegistryEpoch("workspace-current");
+  const registryEpoch = publishedRegistryEpoch ?? harness.publishRegistryEpoch("workspace-current");
   const issuerEntries = Array.from(trackedFixtures.issuers.values())
     .map((tracked) => issuerEntryFromFixture(harness, tracked))
     .sort((left, right) =>
@@ -158,6 +241,11 @@ const buildSnapshotFromTrackedFixtures = (
     );
   const verifierEntries = Array.from(trackedFixtures.verifiers.values())
     .map((tracked) => verifierEntryFromFixture(harness, tracked))
+    .sort((left, right) =>
+      left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
+    );
+  const auditorEntries = Array.from(trackedFixtures.auditors.values())
+    .map((tracked) => auditorEntryFromFixture(harness, tracked))
     .sort((left, right) =>
       left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
     );
@@ -173,6 +261,7 @@ const buildSnapshotFromTrackedFixtures = (
   for (const epoch of collectDistinctEpochs([
     ...issuerEntries.map((entry) => entry.evidence),
     ...verifierEntries.map((entry) => entry.evidence),
+    ...auditorEntries.map((entry) => entry.evidence),
     ...recognitionEntries.map((entry) => entry.evidence),
   ])) {
     epochsById.set(epoch.epochId, epoch);
@@ -180,7 +269,12 @@ const buildSnapshotFromTrackedFixtures = (
   const epochs = Array.from(epochsById.values()).sort((left, right) =>
     left.validFrom.localeCompare(right.validFrom),
   );
-  const currentEpoch = epochs.at(-1) ?? registryEpoch;
+  const ledgerCurrentEpochId = harness.simulator.getCurrentEpochCommitment().epochId;
+  const currentEpoch = epochs.find((epoch) =>
+    Buffer.from(bytes32Commitment(epoch.epochId)).equals(Buffer.from(ledgerCurrentEpochId)));
+  if (currentEpoch === undefined) {
+    throw new Error("Current Compact epoch is missing from the projected snapshot");
+  }
 
   return {
     snapshotVersion: "1",
@@ -192,11 +286,111 @@ const buildSnapshotFromTrackedFixtures = (
     epochs,
     issuerEntries,
     verifierEntries,
+    auditorEntries,
     recognitionEntries,
-    notes: [
-      "Operator workspace snapshot derived from governed CLI operations.",
-      `Replayed operations: ${operationCount.toString()}.`,
-    ],
+    evidenceArchive: [],
+    notes: [...notes],
+  };
+};
+
+/** Publishes a simulator epoch and projects the same governed state into the API snapshot model. */
+export const publishSimulatorSnapshot = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  fixtures: SimulatorSnapshotFixtures,
+  previous?: TrustRegistryOperatorSnapshot,
+  publishedRegistryEpoch?: EpochCommitment,
+): TrustRegistryOperatorSnapshot => {
+  if (publishedRegistryEpoch !== undefined) {
+    if (publishedRegistryEpoch.registryId !== harness.registryId) {
+      throw new Error("Published registry epoch belongs to another registry");
+    }
+    harness.getEpochPublicationWitness(publishedRegistryEpoch.epochId);
+    if (!isDeepStrictEqual(
+      publishedRegistryEpoch,
+      harness.getPublishedEpochCommitment(publishedRegistryEpoch.epochId),
+    )) {
+      throw new Error("Published registry epoch does not match the Compact ledger commitment");
+    }
+    const ledger = harness.simulator.getLedger();
+    if (!Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId)
+      .equals(Buffer.from(bytes32Commitment(publishedRegistryEpoch.epochId)))) {
+      throw new Error("Published registry epoch is not the current Compact epoch");
+    }
+    const statusSequences = [
+      ...(fixtures.issuers ?? []).map(({ fixture }) =>
+        harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.verifiers ?? []).map(({ fixture }) =>
+        harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.auditors ?? []).map(({ fixture }) =>
+        harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
+      ...(fixtures.recognitions ?? []).map(({ fixture }) =>
+        harness.simulator.getRecognition(fixture.recognitionIdCommitment).lastStatusSequence),
+    ];
+    for (const sequence of statusSequences) {
+      const epochId = createScopedIdentifier("epoch", harness.registryId, `seq-${sequence.toString()}`);
+      if (!ledger.epochCommitmentIds.member(bytes32Commitment(epochId))) {
+        throw new Error("Snapshot projection requires grant evidence before the signed registry epoch");
+      }
+    }
+  }
+  const tracked = createTrackedFixtures();
+  for (const entry of fixtures.issuers ?? []) {
+    if (tracked.issuers.has(entry.fixture.authorizationId)) throw new Error("Duplicate issuer fixture");
+    tracked.issuers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.verifiers ?? []) {
+    if (tracked.verifiers.has(entry.fixture.authorizationId)) throw new Error("Duplicate verifier fixture");
+    tracked.verifiers.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.auditors ?? []) {
+    if (tracked.auditors.has(entry.fixture.authorizationId)) throw new Error("Duplicate auditor fixture");
+    tracked.auditors.set(entry.fixture.authorizationId, entry);
+  }
+  for (const entry of fixtures.recognitions ?? []) {
+    if (tracked.recognitions.has(entry.fixture.recognitionId)) throw new Error("Duplicate recognition fixture");
+    tracked.recognitions.set(entry.fixture.recognitionId, entry);
+  }
+  const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
+    "Snapshot projected from the supplied Compact simulator state.",
+  ], publishedRegistryEpoch);
+  if (publishedRegistryEpoch !== undefined && next.currentEpoch.epochId !== publishedRegistryEpoch.epochId) {
+    throw new Error("Snapshot projection changed the latest governed epoch");
+  }
+  if (previous !== undefined && previous.registry.registryId !== next.registry.registryId) {
+    throw new Error("Cannot retain evidence from another registry");
+  }
+  return previous === undefined ? next : retainHistoricalEvidence(previous, next);
+};
+
+const snapshotBundles = (
+  snapshot: TrustRegistryOperatorSnapshot,
+): TrustRegistryEvidenceBundle[] => [
+  ...snapshot.issuerEntries.map((entry) => entry.evidence),
+  ...snapshot.verifierEntries.map((entry) => entry.evidence),
+  ...snapshot.auditorEntries.map((entry) => entry.evidence),
+  ...snapshot.recognitionEntries.map((entry) => entry.evidence),
+];
+
+const archiveKey = (bundle: TrustRegistryEvidenceBundle): string =>
+  `${bundle.authorization?.role ?? "recognition"}:${bundle.authorization?.authorizationId ?? bundle.recognition?.recognitionId}:${bundle.epoch.epochId}`;
+
+const retainHistoricalEvidence = (
+  previous: TrustRegistryOperatorSnapshot,
+  next: TrustRegistryOperatorSnapshot,
+): TrustRegistryOperatorSnapshot => {
+  const nextCurrent = new Set(snapshotBundles(next).map(archiveKey));
+  const archive = new Map(previous.evidenceArchive.map((bundle) => [archiveKey(bundle), bundle]));
+  for (const bundle of snapshotBundles(previous)) {
+    const key = archiveKey(bundle);
+    if (!nextCurrent.has(key)) archive.set(key, bundle);
+  }
+  const epochs = new Map(previous.epochs.map((epoch) => [epoch.epochId, epoch]));
+  for (const epoch of next.epochs) epochs.set(epoch.epochId, epoch);
+  return {
+    ...next,
+    epochs: Array.from(epochs.values()).sort((left, right) =>
+      left.validFrom.localeCompare(right.validFrom) || left.epochId.localeCompare(right.epochId)),
+    evidenceArchive: Array.from(archive.values()),
   };
 };
 
@@ -221,6 +415,17 @@ const requireVerifierFixture = (
     throw new Error(`unknown verifier authorization: ${authorizationId}`);
   }
 
+  return fixture.fixture;
+};
+
+const requireAuditorFixture = (
+  trackedFixtures: TrackedFixtures,
+  authorizationId: string,
+): AuditorScenarioFixture => {
+  const fixture = trackedFixtures.auditors.get(authorizationId);
+  if (fixture === undefined) {
+    throw new Error(`unknown auditor authorization: ${authorizationId}`);
+  }
   return fixture.fixture;
 };
 
@@ -268,6 +473,18 @@ const applyMutableOperation = (
           });
           return;
         }
+        case "auditor": {
+          const fixture = createAuditorScenarioFixture(operation.label);
+          if (trackedFixtures.auditors.has(fixture.authorizationId)) {
+            throw new Error(`auditor label already submitted: ${operation.label}`);
+          }
+          harness.proposeAuditor(fixture);
+          trackedFixtures.auditors.set(fixture.authorizationId, {
+            label: operation.label,
+            fixture,
+          });
+          return;
+        }
         case "recognition": {
           const fixture = createRecognitionScenarioFixture(operation.label);
           if (trackedFixtures.recognitions.has(fixture.recognitionId)) {
@@ -292,6 +509,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.approveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.approveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.approveRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -308,6 +528,9 @@ const applyMutableOperation = (
           return;
         case "verifier":
           harness.activateVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          return;
+        case "auditor":
+          harness.activateAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
           harness.activateRecognition(
@@ -326,6 +549,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.suspendVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.suspendAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.suspendRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -343,6 +569,9 @@ const applyMutableOperation = (
         case "verifier":
           harness.revokeVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
+        case "auditor":
+          harness.revokeAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          return;
         case "recognition":
           harness.revokeRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
@@ -359,6 +588,9 @@ const applyMutableOperation = (
           return;
         case "verifier":
           harness.archiveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          return;
+        case "auditor":
+          harness.archiveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
           harness.archiveRecognition(
@@ -407,6 +639,7 @@ export const createOperatorWorkspace = (
     updatedAt: snapshot.generatedAt,
     registryLabel: label,
     operations: [],
+    consumedMutationNonces: [],
     snapshot,
   });
 };
@@ -426,18 +659,19 @@ export const applyWorkspaceOperation = (
 ): TrustRegistryOperatorWorkspace => {
   const operations = [...workspace.operations, operation];
   const { harness, trackedFixtures } = replayWorkspace(workspace.registryLabel, operations);
-  const snapshot = buildSnapshotFromTrackedFixtures(
+  const snapshot = retainHistoricalEvidence(workspace.snapshot, buildSnapshotFromTrackedFixtures(
     workspace.registryLabel,
     operations.length,
     harness,
     trackedFixtures,
-  );
+  ));
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
     workspaceVersion: "1",
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,
+    consumedMutationNonces: workspace.consumedMutationNonces,
     snapshot,
   });
 };
@@ -482,6 +716,18 @@ export const resolveWorkspaceOperationRecord = (
           );
           if (entry === undefined) {
             throw new Error("expected verifier entry after workspace update");
+          }
+          return entry;
+        }
+        case "auditor": {
+          const expectedAuthorizationId = operation.operation === "submit"
+            ? createAuditorScenarioFixture(operation.label).authorizationId
+            : operation.id;
+          const entry = workspace.snapshot.auditorEntries.find(
+            (candidate) => candidate.authorization.authorizationId === expectedAuthorizationId,
+          );
+          if (entry === undefined) {
+            throw new Error("expected auditor entry after workspace update");
           }
           return entry;
         }

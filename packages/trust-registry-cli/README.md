@@ -8,14 +8,23 @@ Current scope:
 - create a mutable operator workspace backed by an append-only CLI action journal
 - inspect registry, policy, authorization, recognition, and epoch records from a
   saved snapshot or a saved operator workspace
-- submit, approve, activate, suspend, revoke, and archive issuer, verifier, and
-  recognition records without raw simulator access
+- submit, approve, activate, suspend, revoke, and archive issuer, verifier,
+  auditor, and recognition records without raw simulator access
 - publish a registry epoch anchor from the local operator workspace
-- export anchored issuer, verifier, and recognition evidence bundles as JSON
-- inspect historical issuer, verifier, recognition, and epoch state at a
+- export anchored issuer, verifier, auditor, and recognition evidence bundles as JSON
+- inspect historical issuer, verifier, auditor, recognition, and epoch state at a
   specific timestamp
 - render deterministic human-readable audit reports from a saved snapshot or a
   saved operator workspace
+
+The package also exports `publishSimulatorSnapshot(harness, fixtures, previousSnapshot?)` for
+local integration scenarios. It publishes a simulator registry epoch and
+projects specified governed issuer, verifier, auditor, and recognition
+fixtures into the same snapshot schema consumed by the API. It is not a
+production ledger indexer or a substitute for externally accepted finality;
+call it explicitly after governance transitions rather than on each read.
+Pass the preceding snapshot on each re-projection to retain prior evidence
+bundles and epoch commitments for temporal queries.
 
 Build the workspace first from the repo root:
 
@@ -67,3 +76,10 @@ node packages/trust-registry-cli/bin/trust-registry.mjs report \
   --workspace ./artifacts/trust-registry/workspace.json \
   --kind full
 ```
+
+The unreleased v1 operator snapshot requires a separate `auditorEntries`
+collection. CLI and API role lookups never treat a verifier entry as an
+auditor grant. The returned lifecycle state must be checked: archived evidence
+preserves history but does not establish current authorization.
+Local snapshots and workspaces created before this field was added must be
+regenerated; there is no compatibility fallback for the unreleased format.

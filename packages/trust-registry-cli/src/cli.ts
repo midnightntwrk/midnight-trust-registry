@@ -8,12 +8,14 @@ import { renderAuditReport, type AuditReportKind } from "./report.js";
 import {
   buildSnapshotSummary,
   exportEvidenceBundle,
+  inspectAuditorEntryAtTimestamp,
   findEpoch,
   inspectEpochAtTimestamp,
   inspectIssuerEntryAtTimestamp,
   inspectRecognitionEntryAtTimestamp,
   inspectVerifierEntryAtTimestamp,
   listEpochs,
+  listAuditorEntries,
   listIssuerEntries,
   listRecognitionEntries,
   listVerifierEntries,
@@ -31,6 +33,7 @@ import {
   applyWorkspaceOperation,
   createOperatorWorkspace,
   loadWorkspaceFromFile,
+  withExclusiveWorkspaceWrite,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
 } from "./workspace.js";
@@ -72,11 +75,11 @@ Commands:
   init-demo        Create a deterministic local snapshot from the simulator harness
   init-workspace   Create a mutable local operator workspace backed by governed CLI actions
   summary          Summarize a saved snapshot
-  list             List issuer, verifier, recognition, or epoch records
+  list             List issuer, verifier, auditor, recognition, or epoch records
   inspect          Print a specific snapshot record as JSON
   export-evidence  Export an anchored evidence bundle as JSON
   report           Emit a human-readable audit report from a saved snapshot
-  submit           Submit an issuer, verifier, or recognition application into a workspace
+  submit           Submit an issuer, verifier, auditor, or recognition application into a workspace
   approve          Approve a submitted workspace application
   activate         Activate an approved workspace application
   suspend          Suspend an active workspace record
@@ -110,6 +113,7 @@ const parseKind = (value: string | undefined): SnapshotRecordKind => {
     case "policy":
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
     case "epoch":
       return value;
@@ -120,7 +124,7 @@ const parseKind = (value: string | undefined): SnapshotRecordKind => {
 
 const parseEvidenceKind = (
   value: string | undefined,
-): "issuer" | "verifier" | "recognition" => {
+): "issuer" | "verifier" | "auditor" | "recognition" => {
   const kind = parseKind(value);
   if (kind === "registry" || kind === "policy" || kind === "epoch") {
     throw new Error(`unsupported evidence kind: ${kind}`);
@@ -133,6 +137,7 @@ const parseMutableTarget = (value: string | undefined): MutableSnapshotTarget =>
   switch (value) {
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
       return value;
     default:
@@ -151,6 +156,7 @@ const parseAuditReportKind = (
     case "policy":
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
     case "epoch":
       return value;
@@ -253,7 +259,7 @@ const runInitWorkspace = async (
       : {},
   );
 
-  await writeWorkspaceToFile(workspacePath, workspace);
+  await withExclusiveWorkspaceWrite(workspacePath, () => writeWorkspaceToFile(workspacePath, workspace));
   io.stdout(`Wrote operator workspace to ${workspacePath}\n`);
   return 0;
 };
@@ -326,6 +332,15 @@ const runList = async (argv: readonly string[], io: CliIo): Promise<number> => {
       }
       return 0;
     }
+    case "auditor": {
+      const entries = listAuditorEntries(snapshot);
+      if (parsed.values.json) {
+        writeJson(io, entries);
+      } else {
+        io.stdout(`${renderAuthorizationList(entries)}\n`);
+      }
+      return 0;
+    }
     case "recognition": {
       const entries = listRecognitionEntries(snapshot);
       if (parsed.values.json) {
@@ -381,6 +396,9 @@ const runInspect = async (argv: readonly string[], io: CliIo): Promise<number> =
         return 0;
       case "verifier":
         writeJson(io, inspectVerifierEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
+        return 0;
+      case "auditor":
+        writeJson(io, inspectAuditorEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
         return 0;
       case "recognition":
         writeJson(io, inspectRecognitionEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
@@ -481,9 +499,12 @@ const runWorkspaceMutation = async (
   io: CliIo,
   json = false,
 ): Promise<number> => {
-  const workspace = await loadWorkspaceFromFile(workspacePath);
-  const updatedWorkspace = applyWorkspaceOperation(workspace, operation);
-  await writeWorkspaceToFile(workspacePath, updatedWorkspace);
+  const updatedWorkspace = await withExclusiveWorkspaceWrite(workspacePath, async () => {
+    const workspace = await loadWorkspaceFromFile(workspacePath);
+    const updated = applyWorkspaceOperation(workspace, operation);
+    await writeWorkspaceToFile(workspacePath, updated);
+    return updated;
+  });
   const result = resolveWorkspaceOperationRecord(updatedWorkspace, operation);
 
   if (json) {
