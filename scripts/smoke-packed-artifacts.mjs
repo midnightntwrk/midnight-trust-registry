@@ -147,6 +147,11 @@ try {
   );
 
   run("node", ["smoke.mjs"], { cwd: smokeRoot });
+  fs.copyFileSync(
+    path.join(repoRoot, "scripts/packed-consumer-scenario.mjs"),
+    path.join(smokeRoot, "packed-consumer-scenario.mjs"),
+  );
+  run("node", ["packed-consumer-scenario.mjs"], { cwd: smokeRoot });
   run(path.join(smokeRoot, "node_modules/.bin/trust-registry"), ["--help"], {
     cwd: smokeRoot,
   });
@@ -154,4 +159,4 @@ try {
   fs.rmSync(smokeRoot, { force: true, recursive: true });
 }
 
-console.log("[smoke-packed-artifacts] Local artifact tarballs install and import cleanly.");
+console.log("[smoke-packed-artifacts] Local artifact tarballs install and verify a consumer scenario.");

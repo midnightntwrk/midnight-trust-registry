@@ -327,6 +327,14 @@ pnpm run packages:check-contents:light
 pnpm run packed-artifacts:smoke
 ```
 
+The smoke runner installs the tarballs in a temporary consumer directory,
+imports each public package entry point, and runs an issuer/verifier scenario
+through the packed local integration harness and simulator client. It verifies
+active evidence and rejects a substituted issuer resource. This checks package
+boundaries and a local consumer workflow; it does not run the HTTP actor demo
+or establish public-network finality. The integration harness is a local-only
+artifact, not a supported public runtime dependency.
+
 For a full release build, run `pnpm run build` and then
 `pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
 On a clean, signed/DCO candidate revision, repack the full build and generate
