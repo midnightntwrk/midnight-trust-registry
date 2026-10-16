@@ -48,7 +48,7 @@ const parseArgs = () => {
             "Options:",
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
-            "  --actor-journey       Run all four signed HTTP actor journeys from packed packages.",
+            "  --actor-journey       Run four signed HTTP journeys and the recognition VC/VP scenario from packed packages.",
             "  --vc-consumer         Compile the packed Ledger 8 consumer fixture and check its pinned authority domain.",
           ].join("\n"),
         );
@@ -174,6 +174,7 @@ try {
   if (actorJourney) {
     for (const script of [
       "demo-signed-membership-journey.mjs",
+      "packed-recognition-journey.mjs",
       "workspace-lock-fixture.mjs",
       "hold-workspace-lock.mjs",
       "probe-workspace-restart.mjs",
@@ -184,6 +185,8 @@ try {
       run("node", ["demo-signed-membership-journey.mjs", role], { cwd: smokeRoot });
       console.log(`[smoke-packed-artifacts] Packed ${role} actor journey passed.`);
     }
+    run("node", ["packed-recognition-journey.mjs"], { cwd: smokeRoot });
+    console.log("[smoke-packed-artifacts] Packed recognition journey passed.");
   }
   run(path.join(smokeRoot, "node_modules/.bin/trust-registry"), ["--help"], {
     cwd: smokeRoot,
