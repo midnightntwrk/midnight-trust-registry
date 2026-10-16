@@ -2217,6 +2217,29 @@ try {
   }), 202);
   assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
   harness.proposeIssuer(threeSignerIssuer, [second, third]);
+  const removalSequence = harness.simulator.getLedger().governanceActionCount;
+  adversarialMatrix.expectThrown(() => harness.suspendMaintainer(candidate), {
+    id: "compact-recovery-policy-reduction-required",
+    invariant: "A maintainer removal cannot leave an all-member quorum",
+    boundary: "compact",
+    messagePattern: /non-conflicted removal quorum/iu,
+    category: "maintainer-recovery-protected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
+  const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
+  const recoveryContext = await expectHttp(await postPolicy("thresholds/prepare", {
+    thresholds: recoveryThresholds,
+  }), 200);
+  const recoveryRevisionReceipt = await expectHttp(await postPolicy("thresholds/submit", {
+    thresholds: recoveryThresholds,
+    prepared: recoveryContext,
+    signers: [sign(second, recoveryContext), sign(third, recoveryContext), sign(candidate, recoveryContext)],
+  }), 202);
+  const recoveryRegistrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
+  const recoveryRegistrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: recoveryRegistrationContext,
+    signers: [sign(second, recoveryRegistrationContext), sign(third, recoveryRegistrationContext)],
+  }), 202);
   const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
   assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
   const postSuspensionIssuer = createIssuerScenarioFixture("governed-demo-post-suspension-issuer");
@@ -2227,7 +2250,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
+    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then reduced to 2-of-4 before removal",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     statusWitnessAudit: {
       roles: statusWitnessAuditedRoles,
@@ -2293,6 +2316,8 @@ try {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
       policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
       thresholdRevisionEventHash: revisionReceipt.eventHash,
+      recoveryPolicyRevisionEventHash: recoveryRevisionReceipt.eventHash,
+      recoveryEvidenceVerifierRegistrationEventHash: recoveryRegistrationReceipt.eventHash,
       evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
       suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
       remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
