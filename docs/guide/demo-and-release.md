@@ -339,10 +339,11 @@ boundaries and a local consumer workflow; it does not run the HTTP actor demo
 or establish public-network finality. The integration harness is a local-only
 artifact, not a supported public runtime dependency.
 
-`./run.sh --light` also runs `demo:governed:check` after the light build. This
-executes the governed simulator demo without printing its large JSON report on
-success, catching API and VC-consumer fixture failures before the expensive
-full Compact proving-key build. It does not replace `./run.sh integration`.
+`./run.sh --light` also runs `demo:governed:check` and the packaged
+`--vc-consumer` smoke after the light build. These catch API and VC-consumer
+fixture failures before the expensive full Compact proving-key build without
+printing the demo's large JSON report on success. They do not replace
+`./run.sh integration`.
 
 For the full local actor-consumer and packaged Ledger 8 fixture gate, run:
 
