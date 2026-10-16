@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import {
+  compareMaintainerKeyIds,
   computeCreateAuditorAuthorizationPayloadHash,
   computeAuditorEvidenceBoundProposalPayloadHash,
   computeMaintainerEvidenceBoundProposalPayloadHash,
@@ -86,6 +87,28 @@ it("rejects malformed fixture labels before UTF-8 replacement can alias them", (
   expect(() => labelToBytes32(`${"x".repeat(31)}\ud800`)).toThrow(/valid UTF-16/);
   expect(() => labelToBytes32(`${"x".repeat(31)}\udc00`)).toThrow(/valid UTF-16/);
   expect(labelToBytes32("valid-\ud83d\ude00")).toHaveLength(32);
+});
+
+it("hashes only strictly sorted, distinct maintainer key ids with zero padding", () => {
+  const zero = new Uint8Array(32);
+  const first = new Uint8Array(32);
+  first[31] = 1;
+  const second = new Uint8Array(32);
+  second[0] = 0x80;
+  const third = new Uint8Array(32);
+  third[0] = 0xff;
+  const hash = pureCircuits.maintainerSignerSetHash(3n, second, third, first, zero, zero);
+  expect(hash).toHaveLength(32);
+  expect(Buffer.from(pureCircuits.maintainerSignerSetHash(2n, second, first, zero, zero, zero))
+    .toString("hex")).toBe("a2a083e62cd7a8c2e3dcca00448fc2b20c4e59e295cdbbedbdd3f34f74430d80");
+  expect(() => pureCircuits.maintainerSignerSetHash(3n, third, second, first, zero, zero))
+    .toThrow(/must be sorted/);
+  expect(() => pureCircuits.maintainerSignerSetHash(3n, second, third, third, zero, zero))
+    .toThrow(/must be sorted/);
+  expect(() => pureCircuits.maintainerSignerSetHash(2n, second, third, first, zero, zero))
+    .toThrow(/must be zero/);
+  expect(() => pureCircuits.maintainerSignerSetHash(1n, zero, zero, zero, zero, zero))
+    .toThrow(/nonzero/);
 });
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
@@ -1915,6 +1938,38 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/version must increase/i);
 
+    const auditPayload = labelToBytes32("quorum:raw-order-rejection");
+    const auditSequence = simulator.getLedger().governanceActionCount;
+    const auditSigners = [
+      { keyId: bootstrapMaintainer.keyId, publicKey: bootstrapPublicKey, seed: bootstrapMaintainer.seed },
+      { keyId: secondMaintainer.keyId, publicKey: secondMaintainer.publicKey, seed: secondMaintainer.seed },
+    ].sort((left, right) => compareMaintainerKeyIds(left.keyId, right.keyId)).reverse()
+      .map(({ keyId, publicKey, seed }) => ({
+        keyId,
+        publicKey,
+        signature: signFixtureDeploymentBoundActionFromSeed(simulator,
+          seed, registryId, simulator.getLedger().governancePolicyCommitment,
+          GENERIC_AUDIT_ACTION_KIND, auditPayload, auditSequence),
+      }));
+    const emptySigner = {
+      keyId: new Uint8Array(32),
+      publicKey: { x: 0n, y: 0n },
+      signature: { announcement: { x: 0n, y: 0n }, response: 0n },
+    };
+    expect(() => simulator.contract.impureCircuits.authorizeMaintainerAuditEvent(
+      simulator.circuitContext,
+      {
+        signerCount: 2n,
+        signer1: auditSigners[0]!,
+        signer2: auditSigners[1]!,
+        signer3: emptySigner,
+        signer4: emptySigner,
+        signer5: emptySigner,
+      },
+      auditPayload,
+    )).toThrow(/Maintainer signer keys must be sorted/);
+    expect(simulator.getLedger().governanceActionCount).toBe(auditSequence);
+
     const issuer = createIssuerAuthorizationFixture("quorum");
     const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
     const issuerProof = issuerProposalProof(
@@ -2315,7 +2370,7 @@ describe("trust registry contract", () => {
         issuerProof.evidenceSignature,
         [duplicateBootstrapAuthorizer],
       ),
-    ).toThrow(/must not contain duplicates/i);
+    ).toThrow(/must be sorted/i);
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {

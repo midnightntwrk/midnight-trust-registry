@@ -36,6 +36,7 @@ import {
   type TrustRegistryPrivateState,
   trustRegistryWitnesses,
 } from "./witnesses.js";
+import { compareMaintainerKeyIds } from "./signing.js";
 
 export const labelToBytes32 = (label: string): Uint8Array => {
   if (label.includes("\0")) throw new Error("Fixture labels must not contain NUL bytes");
@@ -163,14 +164,13 @@ export class TrustRegistrySimulator {
         signature,
       },
       ...coAuthorizers,
-    ];
+    ].sort((left, right) => compareMaintainerKeyIds(left.keyId, right.keyId));
     if (signers.length === 0) {
       throw new Error("at least one maintainer authorizer is required");
     }
     if (signers.length > 5) {
       throw new Error("maintainer authorization bundles support at most 5 signers");
     }
-
     const paddedSigners = [...signers];
     while (paddedSigners.length < 5) {
       paddedSigners.push(this.emptyMaintainerAuthorizationSigner());

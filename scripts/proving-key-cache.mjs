@@ -60,9 +60,19 @@ export function synchronizeProvingKeys({
   compactVersion,
   zkirVersion,
   compile,
+  shardIndex,
+  shardCount,
 }) {
-  const circuits = readdirSync(zkirDir).filter((name) => /^[A-Za-z][A-Za-z0-9_]*\.zkir$/u.test(name)).sort();
-  if (circuits.length === 0) throw new Error("No generated ZKIR circuits to compile");
+  const allCircuits = readdirSync(zkirDir).filter((name) => /^[A-Za-z][A-Za-z0-9_]*\.zkir$/u.test(name)).sort();
+  if (allCircuits.length === 0) throw new Error("No generated ZKIR circuits to compile");
+  if ((shardIndex === undefined) !== (shardCount === undefined)
+    || (shardCount !== undefined && (!Number.isInteger(shardCount) || shardCount < 1
+      || !Number.isInteger(shardIndex) || shardIndex < 0 || shardIndex >= shardCount))) {
+    throw new Error("Invalid proving-key shard");
+  }
+  const circuits = shardCount === undefined ? allCircuits
+    : allCircuits.filter((_, index) => index % shardCount === shardIndex);
+  if (circuits.length === 0) throw new Error("Proving-key shard has no ZKIR circuits");
   mkdirSync(keyDir, { recursive: true });
   const previous = readManifest(join(keyDir, manifestName));
   const compatible = previous?.compactVersion === compactVersion && previous?.zkirVersion === zkirVersion;
@@ -117,15 +127,25 @@ export function synchronizeProvingKeys({
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const args = process.argv.slice(2);
+  if (args.length !== 0 && (args.length !== 2 || args.some((value) => !/^\d+$/u.test(value)))) {
+    throw new Error("Usage: proving-key-cache.mjs [shard-index shard-count]");
+  }
+  const shardIndex = args.length === 2 ? Number(args[0]) : undefined;
+  const shardCount = args.length === 2 ? Number(args[1]) : undefined;
   const compactVersion = readFileSync(join(root, ".compact-version"), "utf8").trim();
   const zkir = findZkirBinary(compactVersion);
   const zkirVersion = execFileSync(zkir, ["--version"], { encoding: "utf8" }).trim();
   const result = synchronizeProvingKeys({
     zkirDir: join(managed, "zkir"),
-    keyDir: join(managed, "keys"),
-    distKeyDir: join(root, "contracts/trust-registry/dist/managed/trust-registry/keys"),
+    keyDir: shardCount === undefined ? join(managed, "keys")
+      : join(managed, "sharded-keys", String(shardCount), String(shardIndex)),
+    distKeyDir: shardCount === undefined
+      ? join(root, "contracts/trust-registry/dist/managed/trust-registry/keys") : undefined,
     compactVersion,
     zkirVersion,
+    shardIndex,
+    shardCount,
     compile: (input, prover, verifier) => execFileSync(zkir, ["compile", input, prover, verifier], { stdio: "inherit" }),
   });
   process.stdout.write(`ZKIR keys: ${result.reused} reused, ${result.generated} generated, ${result.total} total\n`);

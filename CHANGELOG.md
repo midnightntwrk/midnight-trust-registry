@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require governed maintainer signer bundles to use a unique, ascending
+  little-endian key-ID order with zero padding. Signer-set and event hashes are
+  canonical for a quorum; the epoch record's first signer is the lowest key ID,
+  not the transaction submitter. Pre-release order-dependent evidence must be
+  regenerated for the new contract build
 - bootstrap registry identity, policy, and the first maintainer atomically in
   the Compact constructor; govern later actions with signatures bound to the
   declared network commitment, deployed contract address, active policy, and
