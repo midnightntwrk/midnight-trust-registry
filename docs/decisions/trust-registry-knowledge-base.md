@@ -1585,8 +1585,10 @@ proposal-evidence read projection (`2d63fa9`) and optional HTTP query
 registered evidence-verifier key for issuer, verifier, auditor, maintainer,
 and recognition roles. The HTTP route is disabled without a finalized-ledger
 reader and distinguishes a missing record from an unavailable reader. It does
-not independently prove finality, inclusion, proposal-time key status, or the
-signature; #67 must not be closed solely from this projection. The local light
+not independently prove finality, inclusion, or proposal-time key status;
+#67 must not be closed solely from this projection. A follow-on local slice
+reconstructs the role-specific action payload from the authorization record
+and verifies the retained JubJub signature against the registered key. The local light
 lane, API integration suite, docs/OpenAPI build, packed recognition actor
 smoke, and low-level audit passed for the corresponding local slices. A full
 integration run at `bb8021b` remains in progress in the separate release

@@ -70,11 +70,12 @@ components:
       type: object
       description: >-
         Finalized-ledger projection only. Consumers must independently establish
-        ledger finality and inclusion; current key lifecycle is not proposal-time status.
+        ledger finality and inclusion. The retained verifier signature is checked;
+        current key lifecycle is not proposal-time status.
       required: [role, authorizationId, eventHash, evidenceCommitment, verifierAuthorizationId,
         verifierDidCommitment, verifierKeyIdCommitment, verifierSuite, policyCommitment,
         policyVersion, verifierPublicKey, verifierSignature, subjectDidCommitment,
-        grantPolicyIdCommitment, proposedAtSequence]
+        grantPolicyIdCommitment, proposedAtSequence, boundActionPayloadHash, signatureVerified]
       properties:
         role: { type: string, enum: [issuer, verifier, auditor, maintainer, recognition] }
         authorizationId: { type: string }
@@ -90,6 +91,8 @@ components:
         subjectDidCommitment: { $ref: '#/components/schemas/Hex32' }
         grantPolicyIdCommitment: { $ref: '#/components/schemas/Hex32' }
         proposedAtSequence: { type: string, pattern: '^[0-9]+$' }
+        boundActionPayloadHash: { $ref: '#/components/schemas/Hex32' }
+        signatureVerified: { type: boolean, const: true }
         verifierSignature:
           type: object
           required: [announcement, response]
@@ -499,7 +502,7 @@ paths:
       summary: Project proposal verifier and policy evidence from a finalized ledger view
       description: >-
         Optional host-injected finalized ledger reader. This response is not a
-        standalone finality, inclusion, or signature proof; absent records do
+        standalone finality or inclusion proof; absent records do
         not prove a submitted transaction failed.
       responses:
         '200':

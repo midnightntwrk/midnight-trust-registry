@@ -202,7 +202,9 @@ record to its registered verifier key in an independently finalized ledger
 view. It exposes the DID/key and policy snapshot for all five proposal roles;
 it also rejects a finalized view whose authorization record has a different
 evidence commitment and includes the subject and grant-policy commitments.
-It is not a standalone finality or inclusion proof. An embedding host may
+The role-specific signed payload is reconstructed and its registered JubJub
+signature must verify. This is not a standalone finality or inclusion proof.
+An embedding host may
 inject `readFinalizedProposalLedger` to expose the same projection at
 `GET /v1/governed/:role/:id/proposal/evidence`; without that reader the route
 returns 503. A missing record in the supplied finalized view returns 404,

@@ -52,6 +52,8 @@ describe("finalized Compact proposal observation", () => {
         subjectDidCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
         grantPolicyIdCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
         proposedAtSequence: expect.stringMatching(/^[0-9]+$/u),
+        boundActionPayloadHash: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        signatureVerified: true,
       });
       expect(BigInt(snapshot!.verifierPublicKey.x)).toBeGreaterThan(0n);
       expect(BigInt(snapshot!.verifierSignature.response)).toBeGreaterThan(0n);
@@ -117,6 +119,28 @@ describe("finalized Compact proposal observation", () => {
       ...ledger, issuerAuthorizationRecords: substituted,
     }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
       "does not match its authorization record",
+    );
+  });
+
+  it("rejects a substituted proposal evidence-verifier signature", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-signature-mismatch");
+    const issuer = createIssuerScenarioFixture("signature-mismatch");
+    harness.proposeIssuer(issuer);
+    const ledger = harness.simulator.getLedger();
+    const records = ledger.issuerProposalEvidenceRecords;
+    const substituted = new Proxy(records, {
+      get(target, property) {
+        if (property === "lookup") {
+          return (id: Uint8Array) => ({ ...target.lookup(id), verifierSignatureResponse: 0n });
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
+      ...ledger, issuerProposalEvidenceRecords: substituted,
+    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
+      "signature is invalid",
     );
   });
 
