@@ -202,7 +202,7 @@ assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 0n);
 assert.match(hex(proposalEventHash), /^0x[0-9a-f]{64}$/u);
 process.stdout.write(`${JSON.stringify({
   demo: "packed-recognition-journey",
-  mode: "tarball-only local Compact simulator; no network finality",
+  mode: "local Compact simulator; no network finality",
   policyVersion: proposalSnapshot.policyVersion,
   epochId: bundle.epoch.epochId,
   signerKeyIds: signers.map(({ keyId }) => hex(keyId)),
