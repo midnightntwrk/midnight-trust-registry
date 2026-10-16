@@ -18,6 +18,16 @@ before removing one maintainer, because the resulting 2-of-2 state would
 otherwise lack a non-conflicted removal quorum. The update and removal are
 separate, signed governance actions with their own policy and event evidence.
 
+This simple rule has a deliberate two-maintainer tradeoff: the only valid
+two-active policy is 1-of-2, so either maintainer can remove the other without
+its consent. Operators who need independent approval for removal should keep
+at least three active maintainers with 2-of-3 and avoid reducing to two except
+as a short-lived recovery state. The default threshold is included in the
+headroom rule because it authorizes the policy reduction needed before removal;
+an all-member default quorum would make that recovery step impossible if one
+member is unavailable. A separate recovery authority or a target-specific
+removal quorum is deferred rather than implied by this contract.
+
 ## Contract and client work
 
 1. Enforce the threshold headroom in the Compact policy validator and after

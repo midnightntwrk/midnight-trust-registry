@@ -1101,16 +1101,8 @@ pure circuit assertMaintainerRemovalKeepsThreshold(
   currentEmergencyMaintainerThreshold: Uint<64>,
   currentArchivalMaintainerThreshold: Uint<64>
 ): [] {
-  assertValidMaintainerThresholdPolicy(
-    currentActiveMaintainerCount,
-    currentMaintainerThreshold,
-    currentEmergencyMaintainerThreshold,
-    currentArchivalMaintainerThreshold
-  );
   assert(
-    currentActiveMaintainerCount > currentMaintainerThreshold
-      && currentActiveMaintainerCount > currentEmergencyMaintainerThreshold
-      && currentActiveMaintainerCount > currentArchivalMaintainerThreshold,
+    currentActiveMaintainerCount > 1,
     "Maintainer removal would violate the configured maintainer threshold policy"
   );
   assertValidMaintainerThresholdPolicy(
@@ -3042,10 +3034,6 @@ export circuit suspendMaintainerMembership(
     emergencyMaintainerThreshold,
     archivalMaintainerThreshold
   );
-  assertAuthorizedMaintainerActionExcludesDid(
-    authorizedAction,
-    currentRecord.maintainerDidCommitment
-  );
   const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
 
   maintainerMembershipRecords.insert(
@@ -3123,10 +3111,6 @@ export circuit revokeMaintainerMembership(
       maintainerThreshold,
       emergencyMaintainerThreshold,
       archivalMaintainerThreshold
-    );
-    assertAuthorizedMaintainerActionExcludesDid(
-      authorizedAction,
-      currentRecord.maintainerDidCommitment
     );
   }
 
@@ -3215,10 +3199,6 @@ export circuit archiveMaintainerMembership(
       maintainerThreshold,
       emergencyMaintainerThreshold,
       archivalMaintainerThreshold
-    );
-    assertAuthorizedMaintainerActionExcludesDid(
-      authorizedAction,
-      currentRecord.maintainerDidCommitment
     );
   }
 

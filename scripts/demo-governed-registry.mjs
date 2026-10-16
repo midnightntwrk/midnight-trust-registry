@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+import { CompactError, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import {
@@ -945,9 +945,14 @@ const server = createTrustRegistryApiServer({
   },
   governedPolicyActions: {
     async prepareThresholds(value) {
-      return harness.prepareThresholdPolicyRevisionAction(
-        BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
-      );
+      try {
+        return harness.prepareThresholdPolicyRevisionAction(
+          BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+        );
+      } catch (error) {
+        if (!(error instanceof CompactError)) throw error;
+        throw new GovernedPolicyActionRejectedError();
+      }
     },
     async executeThresholds(value, signers) {
       try {
@@ -2196,6 +2201,13 @@ try {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
   const thresholds = { default: "3", emergency: "1", archival: "2" };
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/prepare", {
+    thresholds: { default: "4", emergency: "1", archival: "2" },
+  }), {
+    id: "policy-revision-no-recovery-headroom",
+    invariant: "Preparation rejects a threshold with no non-conflicted recovery quorum",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
   const revisionContext = await expectHttp(await postPolicy("thresholds/prepare", { thresholds }), 200);
   await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
     thresholds, prepared: revisionContext, signers: [sign(second, revisionContext)],

@@ -15,6 +15,14 @@ under the new policy, leaving a safe 1-of-2 set. These are distinct ledger
 actions, not an atomic recovery transaction. An all-member threshold is
 rejected, and a separate recovery authority is a later design, not a hidden
 override in this contract.
+The resulting 1-of-2 state is a recovery state, not a recommended steady-state
+governance configuration: either remaining maintainer can remove the other.
+Keep at least three active maintainers with 2-of-3 when independent approval
+is required. The default threshold also needs headroom because it authorizes
+the policy reduction itself; emergency and archival thresholds alone cannot
+recover an unavailable all-member default quorum. A stronger two-maintainer
+removal rule would require a separately specified recovery authority or
+target-specific quorum in a later milestone.
 Subject-DID exclusion is enforced for grant approval and activation, for
 maintainer removal, and for VC-authority key governance. It is not a blanket
 ban on a subject signing a proposal or a negative action on its ordinary grant:

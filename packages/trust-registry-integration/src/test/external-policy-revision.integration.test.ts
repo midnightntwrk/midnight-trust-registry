@@ -47,17 +47,19 @@ describe("externally signed policy revision", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-policy-revision");
     const second = createMaintainerScenarioFixture("policy-second");
     const third = createMaintainerScenarioFixture("policy-third");
+    const fourth = createMaintainerScenarioFixture("policy-fourth");
     const outsider = createMaintainerScenarioFixture("policy-outsider");
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
+    harness.authorizeMaintainer(fourth);
     harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
 
-    const revision = harness.prepareThresholdPolicyRevisionAction(1n, 1n, 1n);
+    const revision = harness.prepareThresholdPolicyRevisionAction(3n, 3n, 3n);
     const secondVote = signPrepared(harness, second, revision);
     const thirdVote = signPrepared(harness, third, revision);
     const before = harness.simulator.getLedger().governanceActionCount;
     const executeRevision = (signers: MaintainerCoAuthorizer[]) =>
-      harness.executeThresholdPolicyRevisionWithSignatures(1n, 1n, 1n, signers);
+      harness.executeThresholdPolicyRevisionWithSignatures(3n, 3n, 3n, signers);
 
     expect(() => executeRevision([secondVote])).toThrow();
     expect(() => executeRevision([secondVote, secondVote])).toThrow();
@@ -68,7 +70,7 @@ describe("externally signed policy revision", () => {
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
 
     executeRevision([secondVote, thirdVote]);
-    expect(harness.simulator.getLedger().maintainerThreshold).toBe(1n);
+    expect(harness.simulator.getLedger().maintainerThreshold).toBe(3n);
     expect(Uint8Array.from(harness.simulator.getLedger().governancePolicyCommitment))
       .toEqual(Uint8Array.from(revision.nextPolicyCommitment));
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
@@ -81,17 +83,22 @@ describe("externally signed policy revision", () => {
     const bootstrap = createMaintainerFixture("bootstrap", 17);
     bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
     const bootstrapVote = signPrepared(harness, bootstrap, registration);
+    const secondRegistrationVote = signPrepared(harness, second, registration);
+    const thirdRegistrationVote = signPrepared(harness, third, registration);
     const register = (signers: MaintainerCoAuthorizer[]) =>
       harness.executeEvidenceVerifierRegistrationWithSignatures(signers);
     expect(() => register([])).toThrow();
     expect(() => register([signPrepared(harness, outsider, registration)])).toThrow();
     expect(() => register([signPrepared(harness, bootstrap, revision)])).toThrow();
+    expect(() => register([bootstrapVote, secondRegistrationVote])).toThrow();
+    expect(() => register([bootstrapVote, bootstrapVote, thirdRegistrationVote])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
 
-    expect(register([bootstrapVote])).toHaveLength(32);
+    expect(register([bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).toHaveLength(32);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 2n);
-    expect(() => register([bootstrapVote])).toThrow();
-    harness.proposeIssuer(issuer, [second]);
+    expect(() => register([bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).toThrow();
+    expect(() => harness.proposeIssuer(issuer, [second])).toThrow();
+    harness.proposeIssuer(issuer, [second, third]);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 3n);
   }, 30_000);
 });
