@@ -4,6 +4,7 @@ import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "./utils.js";
 
 export type FinalizedDeploymentActionState = {
   networkId: string;
+  finalizedBlockHash: string;
   contractAddress: string;
   registryIdCommitment: string;
   deploymentNetworkIdCommitment: string;
@@ -50,6 +51,7 @@ export async function prepareFinalizedDeploymentActionDigest(
   const observed = await reader.readCurrentFinalizedActionState(address);
   if (observed === null) throw new Error("Finalized deployment action state is unavailable");
   if (observed.networkId !== selection.networkId) throw new Error("Deployment network mismatch");
+  canonicalHex32(observed.finalizedBlockHash, "Finalized block hash");
   if (canonicalHex32(observed.contractAddress, "Observed contract address") !== address) {
     throw new Error("Deployment contract address mismatch");
   }

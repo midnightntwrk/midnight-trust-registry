@@ -54,6 +54,7 @@ export function createCheckpointedDeploymentActionReader(input: {
       }
       return {
         networkId: checkpoint.networkId,
+        finalizedBlockHash: `0x${checkpoint.blockHash.toLowerCase()}`,
         contractAddress: address,
         registryIdCommitment: bytes32Hex(ledger.registryId),
         deploymentNetworkIdCommitment: bytes32Hex(ledger.deploymentNetworkIdCommitment),

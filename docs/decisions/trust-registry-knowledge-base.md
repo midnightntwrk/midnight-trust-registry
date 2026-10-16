@@ -1466,3 +1466,9 @@ published Midnight indexer provider 4.1.1 with the pinned node checkpoint;
 it still needs a funded deployment and finalized constructor readback before
 #200 can close. PR #205's latest `085e3d8` Quality/proving-key shards were
 green at the last check; it remains unmerged.
+
+The local read-only `inspect-deployment` CLI reports the selected network,
+finalized block hash, deployed address, and decoded Compact governance fields.
+It reads endpoint URLs and the approved genesis pin from environment variables
+and handles no wallet key. Successful inspection is not the #200 deployment
+receipt or an independent node-finality proof.

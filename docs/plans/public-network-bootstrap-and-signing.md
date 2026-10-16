@@ -74,6 +74,10 @@ node's finalized block hash, not at the indexer's latest head. This is a
 read-only provider assembly, not a deployment receipt or independent proof
 that the node is honest. The genesis pin must still come from an approved
 source outside the configured RPC/indexer pair.
+The `trust-registry inspect-deployment` CLI exposes this read as JSON, including
+the exact finalized block hash used for the ledger query. It accepts no
+wallet key and performs no mutation. Its output is inspection evidence, not
+a public-network deployment or recovery qualification result.
 
 As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
 lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod

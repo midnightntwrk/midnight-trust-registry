@@ -24,6 +24,7 @@ const selection: DeploymentActionSelection = {
 };
 const observed: FinalizedDeploymentActionState = {
   networkId: selection.networkId,
+  finalizedBlockHash: `0x${"d".repeat(64)}`,
   contractAddress: address,
   registryIdCommitment: bytes32Hex(bytes32Commitment(selection.registryId)),
   deploymentNetworkIdCommitment: bytes32Hex(bytes32Commitment(selection.networkId)),
@@ -57,6 +58,8 @@ describe("finalized deployment action preparation", () => {
     await expect(prepare(selection, { ...observed, contractAddress: `0x${"c".repeat(64)}` }))
       .rejects.toThrow(/address mismatch/u);
     await expect(prepare({ ...selection, networkId: "undeployed" })).rejects.toThrow(/concrete public/u);
+    await expect(prepare(selection, { ...observed, finalizedBlockHash: `0x${"0".repeat(64)}` }))
+      .rejects.toThrow(/Finalized block hash/u);
   });
 
   it("refuses substituted registry, network commitment, policy, or sequence", async () => {

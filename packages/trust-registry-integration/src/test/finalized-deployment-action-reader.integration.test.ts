@@ -50,6 +50,7 @@ describe("checkpointed deployment action reader", () => {
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
     expect(actionState).toEqual({
       networkId: "preprod",
+      finalizedBlockHash: `0x${blockHash}`,
       contractAddress: `0x${address}`,
       registryIdCommitment: bytes32Hex(simulator.getLedger().registryId),
       deploymentNetworkIdCommitment: bytes32Hex(simulator.getLedger().deploymentNetworkIdCommitment),
