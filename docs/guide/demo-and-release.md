@@ -329,6 +329,26 @@ pnpm run packed-artifacts:smoke
 
 For a full release build, run `pnpm run build` and then
 `pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
+On a clean, signed/DCO candidate revision, repack the full build and generate
+its local artifact manifest:
+
+```bash
+pnpm run build
+pnpm run packages:check-contents
+pnpm run artifacts:pack
+pnpm run packed-artifacts:smoke
+pnpm run artifacts:release-manifest
+```
+
+The manifest at `artifacts/release-candidate/<source-sha>/manifest.json` records the exact
+source SHA, Compact pin, lockfile hash, DID/VC dependency versions, contract
+source/generated hashes, and SHA-256/size for each intended npm or local-only
+package. Generation refuses a dirty or unsigned source commit, incomplete
+full Compact outputs, and a contract tarball lacking its circuit ZKIR and
+prover/verifier pairs. A manifest is an artifact inventory, **not** evidence
+that the full tests, network finality, owner approval, or publish rollback gate
+passed. Retain those results separately for the same source SHA. Light-build
+tarballs cannot qualify as a release candidate.
 
 ## Release Workflow
 
