@@ -18,6 +18,7 @@ import {
 import {
   buildDecisionEvidenceClaim,
   bytes32Commitment,
+  defaultSequenceToTimestamp,
   verifyDecisionEvidenceFromApi,
 } from "../packages/trust-registry-client/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
@@ -206,6 +207,7 @@ async function prepareGovernedSignerAuthorization(input) {
         }),
       },
       evaluationTime: bundle.epoch.validFrom,
+      sequenceToTimestamp: defaultSequenceToTimestamp,
     }),
     readFinalizedDidState: async (did) => did === subject.subjectDid
       ? subjectDidState
