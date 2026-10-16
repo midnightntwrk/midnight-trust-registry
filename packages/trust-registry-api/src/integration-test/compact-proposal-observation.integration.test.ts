@@ -151,15 +151,33 @@ describe("finalized Compact proposal observation", () => {
     );
   });
 
-  it("verifies historical proposal evidence after its verifier key is retired", async () => {
+  it("verifies every historical proposal role after its verifier key is retired", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("proposal-key-rotation-history");
     const signer = createMaintainerScenarioFixture("proposal-key-rotation-signer");
     harness.authorizeMaintainer(signer);
     const issuer = createIssuerScenarioFixture("key-rotation-history");
+    const verifier = createVerifierScenarioFixture("key-rotation-history");
+    const auditor = createAuditorScenarioFixture("key-rotation-history");
+    const maintainer = createMaintainerScenarioFixture("key-rotation-history");
+    const recognition = createRecognitionScenarioFixture("key-rotation-history");
     harness.proposeIssuer(issuer);
+    harness.proposeVerifier(verifier);
+    harness.proposeAuditor(auditor);
+    harness.proposeMaintainer(maintainer);
+    harness.proposeRecognition(recognition);
+    const proposals = [
+      ["issuer", issuer.authorizationId],
+      ["verifier", verifier.authorizationId],
+      ["auditor", auditor.authorizationId],
+      ["maintainer", maintainer.maintainerId],
+      ["recognition", recognition.recognitionId],
+    ] as const;
     const read = async () => harness.simulator.getLedger();
-    const before = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId);
-    expect(before?.signatureVerified).toBe(true);
+    const before = await Promise.all(proposals.map(async ([role, id]) => {
+      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id);
+      expect(snapshot?.signatureVerified).toBe(true);
+      return snapshot;
+    }));
     const ledger = harness.simulator.getLedger();
     const oldId = ledger.issuerProposalEvidenceRecords.lookup(issuer.authorizationIdCommitment)
       .evidenceVerifierAuthorizationId;
@@ -186,8 +204,26 @@ describe("finalized Compact proposal observation", () => {
     );
     expect(harness.simulator.getLedger().evidenceVerifierKeyRecords.lookup(oldId).status)
       .toBe(EvidenceVerifierKeyStatus.retired);
-    expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId))
-      .toEqual(before);
+    for (const [index, [role, id]] of proposals.entries()) {
+      expect(before[index]?.verifierAuthorizationId).toBe(`0x${Buffer.from(oldId).toString("hex")}`);
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id))
+        .toEqual(before[index]);
+    }
+    const rotatedLedger = harness.simulator.getLedger();
+    const keyRecords = new Proxy(rotatedLedger.evidenceVerifierKeyRecords, {
+      get(target, property) {
+        if (property === "lookup") {
+          return (id: Uint8Array) => ({ ...target.lookup(id), publicKey: newPublicKey });
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    for (const [role, id] of proposals) {
+      await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
+        ...rotatedLedger, evidenceVerifierKeyRecords: keyRecords,
+      }), harness.registryId, role, id)).rejects.toThrow("signature is invalid");
+    }
   });
 
   it("rejects an unknown runtime role rather than reading recognition records", async () => {

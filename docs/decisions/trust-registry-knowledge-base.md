@@ -1591,9 +1591,8 @@ reconstructs the role-specific action payload from the authorization record
 and verifies the retained JubJub signature against the registered key. The local light
 lane, API integration suite, docs/OpenAPI build, packed recognition actor
 smoke, and low-level audit passed for the corresponding local slices. A full
-integration run at `bb8021b` remains in progress in the separate release
-validation worktree; no result from it should be attributed to `8312507`
-without an exact-head rerun.
+integration run at `bb8021b` later passed in the separate release-validation
+worktree; that result must not be attributed to a later stack head.
 
 The later local audit stack adds signature reconstruction for all five
 proposal roles (`c3a3dde`), a tarball-only recognition report with signer,
@@ -1610,5 +1609,22 @@ status-registry package in the sibling repository remains private and its
 README explicitly rejects production use pending authority and non-membership
 gates; do not satisfy #90 by consuming that prototype. A clean 4.5 GB
 worktree at a commit already contained in this stack was removed while its
-branch ref was preserved. Do not remove the separate worktree running the
-exact-head full integration job.
+branch ref was preserved.
+
+The full `./run.sh integration` at signed `bb8021b` passed after roughly 90
+minutes, including 66 proof circuits, API/adapter integration, and the
+governed and signed actor demos. A rerun at later `0a7ab85` encountered the
+same 66 ZKIR hashes but `compact compile` deleted the existing key directory
+and started regenerating all keys. It was stopped after about 12 minutes as
+free space fell to 25 GiB; the generated contract outputs in that clean
+validation worktree were removed, and a separate clean 14 GiB ancestor
+worktree was retired without deleting its branch ref. Do not count that
+interrupted rerun as a pass or rerun full compilation merely to check
+TypeScript-only changes. The current local stack instead passed the light
+gate, packaged five-actor smoke, docs build, API integration, and audit.
+The packed recognition actor now checks the public evidence route's 200,
+404, and 503 behavior; the proposal projection test verifies all five roles
+after evidence-verifier key retirement and rejects a substituted historical
+public key. Before release, qualify the final clean candidate with a full
+integration run and address redundant key generation without weakening proof
+or package-content checks.
