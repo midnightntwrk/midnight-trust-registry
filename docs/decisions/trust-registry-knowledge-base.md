@@ -1561,3 +1561,19 @@ focused governed demo passes. A new `demo:governed:check` preflight runs that
 demo during `./run.sh --light` in roughly 16 seconds so this class of failure
 is caught before full key generation. Do not report the full integration gate
 green until it is rerun on the final tree.
+
+The local #73 packed-consumer continuation (`0c4c8f5`, `f2c3e4b`,
+`d6fee47`) exports the TR-owned Ledger 8 Compact fixture from the private
+integration tarball. A temporary clean npm install compiles it against the
+published VC Compact package and exercises pinned-domain construction,
+authority-signed issuer/verifier installation, credential and request proofs,
+and forged-signature, replay, and wrong-scope rejection. The light gate now
+runs this packaged check automatically; 20/20 light tasks, the combined
+four-role packed actor journey, package contents, and low-level audit passed
+locally. The signed descriptors in this particular packed smoke are fixture
+data; the source integration test is still responsible for binding them to
+verified Trust Registry decisions. Neither proves a deployed synchronous
+cross-contract call or authenticated public-network finality. Full
+integration on the earlier release-candidate tree was still generating
+Compact proving keys when this checkpoint was written, so it is not evidence
+for the new stack head.
