@@ -1432,3 +1432,16 @@ The same local integration-light run exposed a governed-demo temporal-dead-zone
 error: an early threshold-removal adversarial case implicitly used the later
 main `harness`. Passing `lastActiveHarness` explicitly restores the intended
 threshold-policy assertion. This is a demo wiring repair, not a policy change.
+
+Local #200 follow-on: `prepareFinalizedDeploymentActionDigest` in the client
+accepts a trusted finalized-state reader and refuses to prepare a maintainer
+signature digest when network, deployed address, registry commitment,
+deployment-network commitment, active policy, or action sequence differs from
+the operator's selected deployment. It excludes the `undeployed` profile and
+keeps private keys outside the helper. Focused tests and `./run.sh --light`
+pass. The reader port is a trust boundary, not an implementation of a public
+network provider: a real adapter must authenticate network identity, finalized
+ledger state, and deployment address before #200 or 0.1.0 public-network
+qualification can close. PR #205 exact-head Quality completed green after the
+proving-key jobs were sharded; #207's light/docs checks were also green at the
+last local CI check. Neither PR was merged in this slice.
