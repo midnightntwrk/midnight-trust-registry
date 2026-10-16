@@ -100,6 +100,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     const coMaintainer = createMaintainerScenarioFixture("vc-decision-co-maintainer");
     const issuer = createIssuerScenarioFixture("vc-decision-issuer");
     harness.authorizeMaintainer(coMaintainer);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("vc-decision-third-maintainer"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const networkId = issuer.subjectDid.split(":")[2]!;
     const contractAddress = hex(encodeContractAddress(harness.simulator.contractAddress));

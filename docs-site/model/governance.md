@@ -6,6 +6,27 @@ Governance answers **who may change trust state and what they must sign**. The f
 
 The 0.1.0 reference fixture uses three maintainer DIDs and 2-of-3 for ordinary, membership, emergency, and archival action families. That is a fixture policy, not a universal protocol default. The current Compact signer bundle has five slots, so thresholds above five require a contract change. Signers must be distinct, active, registered, and bound to the exact action and current policy. The candidate cannot count toward its own membership approval, and a change cannot leave fewer active maintainers than the live threshold.
 
+Recovery stays within the normal maintainer set in 0.1.0. With more than one
+active maintainer, all three configured thresholds must be below the active
+count; the target of an active suspension, revocation, or archival action
+cannot sign it. The post-removal set must retain that headroom. Atomic recovery
+requires the larger of the current default and emergency thresholds, because
+it both changes policy and suspends a maintainer. For example, when both are two,
+2-of-3 non-target maintainers can sign one atomic recovery action that
+suspends the target and installs a 1-of-2 policy. The old policy authorizes
+the combined payload, and no 1-of-3 state is ever published. A standalone
+revision to 1-of-3 followed by removal is unsafe because the target could
+act alone between transactions; it is not the supported recovery procedure.
+An all-member threshold is rejected, and a separate recovery authority is a
+later design, not a hidden override in this contract.
+The resulting 1-of-2 state is a recovery state, not a recommended steady-state
+governance configuration: either remaining maintainer can remove the other.
+Keep at least three active maintainers with 2-of-3 when independent approval
+is required. The default threshold also needs headroom because it participates in
+the atomic recovery quorum; emergency and archival thresholds alone cannot
+recover an unavailable all-member default quorum. A stronger two-maintainer
+removal rule would require a separately specified recovery authority or
+target-specific quorum in a later milestone.
 Subject-DID exclusion is enforced for grant approval and activation, for
 maintainer removal, and for VC-authority key governance. It is not a blanket
 ban on a subject signing a proposal or a negative action on its ordinary grant:
@@ -16,11 +37,6 @@ not interpret the exclusion check as a universal conflict-of-interest policy.
 ## Signed action transcript
 
 The contract verifies a JubJub Schnorr signature over a domain-separated digest containing registry ID, action kind, exact payload commitment, and sequence. The payload also binds the pinned network commitment, executing contract address, and current policy commitment; rotating policy or changing deployment invalidates a prepared vote. The contract checks current membership and quorum rather than trusting a caller-supplied `approved` flag. The [Compact reference](../contract/index.md) maps these checks to ledger fields and circuits.
-
-This simulator transcript does not yet bind the deployment's contract address or
-network identity. It must not be reused as a public-network signature format;
-cross-deployment replay resistance is a
-[0.1.0 release blocker](https://github.com/midnightntwrk/midnight-trust-registry/issues/200).
 
 ## Evidence verifier versus maintainer
 

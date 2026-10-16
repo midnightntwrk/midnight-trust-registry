@@ -29,9 +29,16 @@ evidence and quorum execution.
 - Ordinary approvals use the default maintainer threshold. Maintainer
   onboarding uses the membership threshold. Suspension/revocation uses the
   emergency threshold. Archival uses the archival threshold.
-- A transition that would leave fewer active maintainers than its live
-  threshold MUST fail. Recovery requires a separately defined emergency policy
-  and cannot be implied by a single surviving key.
+- With two or more active maintainers, every configured threshold MUST be
+  below the active count, and a removal MUST leave the same headroom. The
+  target cannot sign its own active suspension, revocation, or archival.
+  Atomic recovery uses the larger of the old default and emergency thresholds.
+  A 2-of-3 policy needs one old-quorum-signed atomic recovery action to
+  suspend the target and install a valid 1-of-2 policy. A separate revision
+  to 1-of-3 followed by removal exposes a target-controlled interval. The
+  single-maintainer bootstrap case retains threshold one and the last-active
+  removal prohibition. A separate recovery authority is deferred; no
+  emergency bypass can be inferred from a surviving key.
 - Bootstrap initializes maintainers and policy state. Issuer, verifier,
   auditor, and recognition membership use proposal, approval, and activation;
   none has a direct-create exception.

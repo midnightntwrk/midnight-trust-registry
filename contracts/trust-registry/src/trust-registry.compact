@@ -441,6 +441,14 @@ export pure circuit assertValidMaintainerThresholdPolicy(
   assertValidMaintainerThreshold(activeCount, defaultThreshold);
   assertValidMaintainerThreshold(activeCount, emergencyThreshold);
   assertValidMaintainerThreshold(activeCount, archivalThreshold);
+  if (activeCount > 1) {
+    assert(
+      defaultThreshold < activeCount
+        && emergencyThreshold < activeCount
+        && archivalThreshold < activeCount,
+      "Maintainer policy must leave a non-conflicted removal quorum"
+    );
+  }
 }
 
 export pure circuit assertSingleSignatureMaintainerThreshold(
@@ -1093,17 +1101,15 @@ pure circuit assertMaintainerRemovalKeepsThreshold(
   currentEmergencyMaintainerThreshold: Uint<64>,
   currentArchivalMaintainerThreshold: Uint<64>
 ): [] {
+  assert(
+    currentActiveMaintainerCount > 1,
+    "Maintainer removal would violate the configured maintainer threshold policy"
+  );
   assertValidMaintainerThresholdPolicy(
-    currentActiveMaintainerCount,
+    (currentActiveMaintainerCount - (1 as Uint<64>)) as Uint<64>,
     currentMaintainerThreshold,
     currentEmergencyMaintainerThreshold,
     currentArchivalMaintainerThreshold
-  );
-  assert(
-    currentActiveMaintainerCount > currentMaintainerThreshold
-      && currentActiveMaintainerCount > currentEmergencyMaintainerThreshold
-      && currentActiveMaintainerCount > currentArchivalMaintainerThreshold,
-    "Maintainer removal would violate the configured maintainer threshold policy"
   );
 }
 
@@ -1756,6 +1762,37 @@ export pure circuit updateMaintainerThresholdPolicyPayloadHash(
   ]);
 }
 
+export pure circuit recoverMaintainerMembershipPayloadHash(
+  previousPolicyCommitment: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
+  defaultThreshold: Uint<64>,
+  emergencyThreshold: Uint<64>,
+  archivalThreshold: Uint<64>,
+  maintainerId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const policyPayloadHash = updateMaintainerThresholdPolicyPayloadHash(
+    previousPolicyCommitment,
+    nextPolicyCommitment,
+    nextPolicyVersion,
+    defaultThreshold,
+    emergencyThreshold,
+    archivalThreshold
+  );
+  const removalPayloadHash = updateMaintainerMembershipPayloadHash(
+    maintainerId,
+    previousLifecycleEventHash,
+    evidenceHash
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:maintainer:recover:v1"),
+    policyPayloadHash,
+    removalPayloadHash
+  ]);
+}
+
 export pure circuit governanceEventHash(
   registryIdValue: Bytes<32>,
   networkIdCommitment: Bytes<32>,
@@ -1986,6 +2023,12 @@ export pure circuit actionScopedMaintainerThreshold(
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Uint<64> {
+  if (actionKind == pad(32, "tr:maintainer:recover")) {
+    if (defaultThreshold > emergencyThreshold) {
+      return defaultThreshold;
+    }
+    return emergencyThreshold;
+  }
   if (actionUsesEmergencyMaintainerThreshold(actionKind)) {
     return emergencyThreshold;
   }
@@ -2101,34 +2144,34 @@ circuit assertAuthorizedMaintainerActionExcludesDid(
   const signer1Record = maintainerRecords.lookup(authorizedAction.signer1KeyId);
   assert(
     signer1Record.didCommitment != excludedDidCommitment,
-    "Maintainer may not approve an action concerning their own DID"
+    "Maintainer may not approve a governed action involving their own DID"
   );
   if (authorizedAction.signerCount > 1) {
     const signer2Record = maintainerRecords.lookup(authorizedAction.signer2KeyId);
     assert(
       signer2Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve an action concerning their own DID"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 2) {
     const signer3Record = maintainerRecords.lookup(authorizedAction.signer3KeyId);
     assert(
       signer3Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve an action concerning their own DID"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 3) {
     const signer4Record = maintainerRecords.lookup(authorizedAction.signer4KeyId);
     assert(
       signer4Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve an action concerning their own DID"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 4) {
     const signer5Record = maintainerRecords.lookup(authorizedAction.signer5KeyId);
     assert(
       signer5Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve an action concerning their own DID"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
 }
@@ -2994,6 +3037,52 @@ export circuit activateMaintainerMembership(
   return authorizedAction.eventHash;
 }
 
+// Both ordinary suspension and recovery use the same membership transition.
+circuit applyMaintainerSuspension(
+  currentRecord: MaintainerMembershipRecord,
+  evidenceHash: Bytes<32>,
+  authorizedAction: AuthorizedMaintainerAction
+): [] {
+  const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+
+  maintainerMembershipRecords.insert(
+    currentRecord.maintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: evidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  maintainerRecords.insert(
+    currentRecord.keyId,
+    MaintainerRecord {
+      maintainerId: currentMaintainerRecord.maintainerId,
+      didCommitment: currentMaintainerRecord.didCommitment,
+      keyId: currentMaintainerRecord.keyId,
+      publicKey: currentMaintainerRecord.publicKey,
+      status: MaintainerStatus.suspended,
+      joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence
+    }
+  );
+  activeMaintainerCount = disclose(
+    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+  );
+}
+
 export circuit suspendMaintainerMembership(
   authorizationBundle: MaintainerAuthorizationBundle,
   maintainerId: Bytes<32>,
@@ -3028,44 +3117,79 @@ export circuit suspendMaintainerMembership(
     emergencyMaintainerThreshold,
     archivalMaintainerThreshold
   );
-  const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+  applyMaintainerSuspension(currentRecord, disclosedEvidenceHash, authorizedAction);
+  return authorizedAction.eventHash;
+}
 
-  maintainerMembershipRecords.insert(
-    disclosedMaintainerId,
-    MaintainerMembershipRecord {
-      maintainerId: currentRecord.maintainerId,
-      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
-      keyId: currentRecord.keyId,
-      publicKey: currentRecord.publicKey,
-      policyId: currentRecord.policyId,
-      trustLevel: currentRecord.trustLevel,
-      status: AuthorizationStatus.suspended,
-      proposedAtSequence: currentRecord.proposedAtSequence,
-      authorizedAtSequence: currentRecord.authorizedAtSequence,
-      activeFromSequence: currentRecord.activeFromSequence,
-      suspendedAtSequence: authorizedAction.actionSequence,
-      revokedAtSequence: currentRecord.revokedAtSequence,
-      archivedAtSequence: currentRecord.archivedAtSequence,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
+export circuit recoverMaintainerMembership(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
+  defaultThreshold: Uint<64>,
+  emergencyThreshold: Uint<64>,
+  archivalThreshold: Uint<64>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedNextPolicyCommitment = disclose(nextPolicyCommitment);
+  const disclosedNextPolicyVersion = disclose(nextPolicyVersion);
+  const disclosedDefaultThreshold = disclose(defaultThreshold);
+  const disclosedEmergencyThreshold = disclose(emergencyThreshold);
+  const disclosedArchivalThreshold = disclose(archivalThreshold);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Maintainer membership must be active to recover"
   );
-  maintainerRecords.insert(
-    currentRecord.keyId,
-    MaintainerRecord {
-      maintainerId: currentMaintainerRecord.maintainerId,
-      didCommitment: currentMaintainerRecord.didCommitment,
-      keyId: currentMaintainerRecord.keyId,
-      publicKey: currentMaintainerRecord.publicKey,
-      status: MaintainerStatus.suspended,
-      joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
-      lastStatusSequence: authorizedAction.actionSequence
-    }
+  assert(
+    activeMaintainerCount > 1,
+    "Cannot remove the last active maintainer"
   );
-  activeMaintainerCount = disclose(
-    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+  assertValidMaintainerThresholdPolicy(
+    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>,
+    disclosedDefaultThreshold,
+    disclosedEmergencyThreshold,
+    disclosedArchivalThreshold
   );
+  assert(disclosedNextPolicyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(disclosedNextPolicyVersion == governancePolicyVersion + 1, "Policy version must increase by one");
+  assert(
+    !governancePolicyVersionsByCommitment.member(disclosedNextPolicyCommitment),
+    "Policy commitment must not reuse a historical snapshot"
+  );
+  const actionPayloadHash = disclose(
+    recoverMaintainerMembershipPayloadHash(
+      governancePolicyCommitment,
+      disclosedNextPolicyCommitment,
+      disclosedNextPolicyVersion,
+      disclosedDefaultThreshold,
+      disclosedEmergencyThreshold,
+      disclosedArchivalThreshold,
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:maintainer:recover"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
+  applyMaintainerSuspension(currentRecord, disclosedEvidenceHash, authorizedAction);
+  maintainerThreshold = disclosedDefaultThreshold;
+  emergencyMaintainerThreshold = disclosedEmergencyThreshold;
+  archivalMaintainerThreshold = disclosedArchivalThreshold;
+  governancePolicyCommitment = disclosedNextPolicyCommitment;
+  governancePolicyVersion = disclosedNextPolicyVersion;
+  governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
+  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, governanceActionCount.read());
   return authorizedAction.eventHash;
 }
 

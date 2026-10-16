@@ -20,6 +20,7 @@ import {
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateMaintainerThresholdPolicyPayloadHash,
+  computeRecoverMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -81,6 +82,15 @@ it("uses the default meta-governance quorum for threshold policy revisions", () 
   expect(pureCircuits.actionScopedMaintainerThreshold(
     encodeCompactActionKind("tr:issuer:authorize"), 1n, 2n, 3n,
   )).toBe(1n);
+});
+
+it("requires both current policy and emergency quorums for atomic recovery", () => {
+  expect(pureCircuits.actionScopedMaintainerThreshold(
+    RECOVER_MAINTAINER_ACTION_KIND, 2n, 3n, 2n,
+  )).toBe(3n);
+  expect(pureCircuits.actionScopedMaintainerThreshold(
+    RECOVER_MAINTAINER_ACTION_KIND, 3n, 2n, 2n,
+  )).toBe(3n);
 });
 
 it("rejects malformed fixture labels before UTF-8 replacement can alias them", () => {
@@ -152,6 +162,7 @@ const ROTATE_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority
 const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
+const RECOVER_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:recover");
 const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
 
@@ -174,6 +185,7 @@ it("pins every governed action kind to a Compact literal", () => {
     SUSPEND_AUDITOR_ACTION_KIND, REVOKE_AUDITOR_ACTION_KIND, ARCHIVE_AUDITOR_ACTION_KIND,
     PROPOSE_MAINTAINER_ACTION_KIND, AUTHORIZE_MAINTAINER_ACTION_KIND, ACTIVATE_MAINTAINER_ACTION_KIND,
     SUSPEND_MAINTAINER_ACTION_KIND, REVOKE_MAINTAINER_ACTION_KIND, ARCHIVE_MAINTAINER_ACTION_KIND,
+    RECOVER_MAINTAINER_ACTION_KIND,
     REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
     REVOKE_EVIDENCE_VERIFIER_ACTION_KIND, ROTATE_EVIDENCE_VERIFIER_ACTION_KIND,
     REGISTER_VC_AUTHORITY_ACTION_KIND, SUSPEND_VC_AUTHORITY_ACTION_KIND,
@@ -711,6 +723,43 @@ const createMaintainerCoAuthorizer = (
   ),
 });
 
+const activateAdditionalMaintainer = (
+  registry: RegistryFixture,
+  candidate: ReturnType<typeof createMaintainerMembershipFixture>,
+): void => {
+  const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+  const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
+    signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      kind, payloadHash, simulator.getLedger().governanceActionCount,
+    );
+  const proof = maintainerProposalProof(registry, candidate);
+  simulator.proposeMaintainerMembership(
+    bootstrapMaintainer.keyId, bootstrapPublicKey, sign(PROPOSE_MAINTAINER_ACTION_KIND, proof.payloadHash),
+    candidate.maintainerId, candidate.maintainerDidCommitment,
+    candidate.keyId, candidate.publicKey, candidate.policyId, candidate.trustLevel,
+    candidate.evidenceHash, proof.verifierAuthorizationId, proof.verifierKeyIdCommitment,
+    proof.evidenceSignature,
+  );
+  const authorizeRecord = simulator.getMaintainerMembership(candidate.maintainerId);
+  simulator.authorizeMaintainerMembership(
+    bootstrapMaintainer.keyId, bootstrapPublicKey,
+    sign(AUTHORIZE_MAINTAINER_ACTION_KIND, computeUpdateMaintainerMembershipPayloadHash(
+      candidate.maintainerId, authorizeRecord.lifecycleEventHash, candidate.evidenceHash,
+    )),
+    candidate.maintainerId, candidate.evidenceHash,
+  );
+  const activateRecord = simulator.getMaintainerMembership(candidate.maintainerId);
+  simulator.activateMaintainerMembership(
+    bootstrapMaintainer.keyId, bootstrapPublicKey,
+    sign(ACTIVATE_MAINTAINER_ACTION_KIND, computeUpdateMaintainerMembershipPayloadHash(
+      candidate.maintainerId, activateRecord.lifecycleEventHash, candidate.evidenceHash,
+    )),
+    candidate.maintainerId, candidate.evidenceHash,
+  );
+};
+
 const expectSignedEvidenceMismatch = (
   registry: ReturnType<typeof createInitializedRegistryFixture>,
   actionKind: Uint8Array,
@@ -827,6 +876,17 @@ describe("trust registry contract", () => {
     expect(() =>
       pureCircuits.assertValidMaintainerThresholdPolicy(3n, 2n, 1n, 1n),
     ).not.toThrow();
+    expect(() =>
+      pureCircuits.assertValidMaintainerThresholdPolicy(1n, 1n, 1n, 1n),
+    ).not.toThrow();
+    for (const thresholds of [[2n, 1n, 1n], [1n, 2n, 1n], [1n, 1n, 2n]]) {
+      expect(() => pureCircuits.assertValidMaintainerThresholdPolicy(
+        2n, thresholds[0]!, thresholds[1]!, thresholds[2]!,
+      )).toThrow(/non-conflicted removal quorum/i);
+    }
+    expect(() =>
+      pureCircuits.assertValidMaintainerThresholdPolicy(3n, 3n, 2n, 2n),
+    ).toThrow(/non-conflicted removal quorum/i);
     expect(() => pureCircuits.assertValidMaintainerThreshold(0n, 1n)).toThrow(
       /at least 1/i,
     );
@@ -1137,6 +1197,22 @@ describe("trust registry contract", () => {
     expect(activeMaintainer.status).toEqual(MaintainerStatus.active);
     expect(simulator.getLedger().activeMaintainerCount).toEqual(2n);
 
+    const allMemberPolicy = labelToBytes32("policy:recovery:two-of-two");
+    const allMemberPolicySequence = simulator.getLedger().governanceActionCount;
+    const allMemberPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+      computeUpdateMaintainerThresholdPolicyPayloadHash(
+        simulator.getLedger().governancePolicyCommitment,
+        allMemberPolicy, 2n, 2n, 2n, 2n,
+      ), allMemberPolicySequence,
+    );
+    expect(() => simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, allMemberPolicySignature,
+      allMemberPolicy, 2n, 2n, 2n, 2n,
+    )).toThrow(/non-conflicted removal quorum/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(allMemberPolicySequence);
+
     const suspendEvidenceHash = labelToBytes32("evidence:governed:suspend");
     const suspendActionSequence = simulator.getLedger().governanceActionCount;
     const suspendSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
@@ -1151,6 +1227,27 @@ describe("trust registry contract", () => {
       ),
       suspendActionSequence,
     );
+
+    const selfRemovalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      candidate.seed,
+      registryId,
+      simulator.getLedger().governancePolicyCommitment,
+      SUSPEND_MAINTAINER_ACTION_KIND,
+      computeUpdateMaintainerMembershipPayloadHash(
+        candidate.maintainerId,
+        activeMembership.lifecycleEventHash,
+        suspendEvidenceHash,
+      ),
+      suspendActionSequence,
+    );
+    expect(() => simulator.suspendMaintainerMembership(
+      candidate.keyId,
+      candidate.publicKey,
+      selfRemovalSignature,
+      candidate.maintainerId,
+      suspendEvidenceHash,
+    )).toThrow(/own DID/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(suspendActionSequence);
 
     simulator.suspendMaintainerMembership(
       bootstrapMaintainer.keyId,
@@ -1424,6 +1521,240 @@ describe("trust registry contract", () => {
     }
   });
 
+  it.each(["revoke", "archive"] as const)(
+    "excludes an active maintainer from their own %s quorum",
+    (action) => {
+      const registry = createInitializedRegistryFixture(73);
+      const { simulator, registryId } = registry;
+      const target = createMaintainerMembershipFixture(`self-${action}`, 74);
+      activateAdditionalMaintainer(registry, target);
+      const kind = action === "revoke"
+        ? REVOKE_MAINTAINER_ACTION_KIND : ARCHIVE_MAINTAINER_ACTION_KIND;
+      const evidenceHash = labelToBytes32(`evidence:self-${action}`);
+      const before = simulator.getLedger().governanceActionCount;
+      const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
+        target.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        kind,
+        computeUpdateMaintainerMembershipPayloadHash(
+          target.maintainerId,
+          simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash,
+          evidenceHash,
+        ),
+        before,
+      );
+      expect(() => {
+        if (action === "revoke") {
+          simulator.revokeMaintainerMembership(
+            target.keyId, target.publicKey, signature, target.maintainerId, evidenceHash,
+          );
+        } else {
+          simulator.archiveMaintainerMembership(
+            target.keyId, target.publicKey, signature, target.maintainerId, evidenceHash,
+          );
+        }
+      }).toThrow(/own DID/i);
+      expect(simulator.getLedger().governanceActionCount).toBe(before);
+      expect(simulator.getMaintainerMembership(target.maintainerId).status)
+        .toBe(AuthorizationStatus.active);
+    },
+  );
+
+  it("atomically reduces policy and removes a target under the old 2-of-3 quorum", () => {
+    const registry = createInitializedRegistryFixture(75);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const second = createMaintainerMembershipFixture("recovery-second", 76);
+    const target = createMaintainerMembershipFixture("recovery-target", 77);
+    activateAdditionalMaintainer(registry, second);
+    activateAdditionalMaintainer(registry, target);
+
+    const twoOfThree = labelToBytes32("policy:recovery:two-of-three");
+    const firstPolicy = simulator.getLedger().governancePolicyCommitment;
+    const policySequence = simulator.getLedger().governanceActionCount;
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signFixtureDeploymentBoundActionFromSeed(simulator,
+        bootstrapMaintainer.seed, registryId, firstPolicy,
+        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+        computeUpdateMaintainerThresholdPolicyPayloadHash(
+          firstPolicy, twoOfThree, 2n, 2n, 2n, 2n,
+        ), policySequence,
+      ),
+      twoOfThree, 2n, 2n, 2n, 2n,
+    );
+
+    const evidenceHash = labelToBytes32("evidence:recovery:remove-target");
+    const removalPayload = computeUpdateMaintainerMembershipPayloadHash(
+      target.maintainerId,
+      simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash,
+      evidenceHash,
+    );
+    const removalSequence = simulator.getLedger().governanceActionCount;
+    const removalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, twoOfThree,
+      SUSPEND_MAINTAINER_ACTION_KIND, removalPayload, removalSequence,
+    );
+    const coSigner = createMaintainerCoAuthorizer(
+      second, simulator, registryId, SUSPEND_MAINTAINER_ACTION_KIND,
+      removalPayload, removalSequence,
+    );
+    expect(() => simulator.suspendMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, removalSignature,
+      target.maintainerId, evidenceHash, [coSigner],
+    )).toThrow(/non-conflicted removal quorum/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
+    expect(simulator.getMaintainerMembership(target.maintainerId).status)
+      .toBe(AuthorizationStatus.active);
+
+    const oneOfTwo = labelToBytes32("policy:recovery:one-of-two");
+    const recoveryPayload = computeRecoverMaintainerMembershipPayloadHash(
+      twoOfThree, oneOfTwo, 3n, 1n, 1n, 1n,
+      target.maintainerId,
+      simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash,
+      evidenceHash,
+    );
+    const recoverySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, twoOfThree,
+      RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
+    );
+    const recoveryCoSigner = createMaintainerCoAuthorizer(
+      second, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
+    );
+    const targetCoSigner = createMaintainerCoAuthorizer(
+      target, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
+    );
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [targetCoSigner],
+    )).toThrow(/own DID/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
+    expect(simulator.getLedger().governancePolicyCommitment).toEqual(twoOfThree);
+    expect(simulator.getMaintainerMembership(target.maintainerId).status)
+      .toBe(AuthorizationStatus.active);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+    )).toThrow(/signer count must satisfy/u);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 2n, 2n, 2n,
+      [recoveryCoSigner],
+    )).toThrow(/non-conflicted removal quorum/u);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 4n, 1n, 1n, 1n,
+      [recoveryCoSigner],
+    )).toThrow(/Policy version must increase by one/u);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, twoOfThree, 3n, 1n, 1n, 1n,
+      [recoveryCoSigner],
+    )).toThrow(/must not reuse a historical snapshot/u);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, labelToBytes32("policy:recovery:tampered"),
+      3n, 1n, 1n, 1n, [recoveryCoSigner],
+    )).toThrow(/invalid jubjub schnorr signature/iu);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, labelToBytes32("evidence:recovery:tampered"),
+      oneOfTwo, 3n, 1n, 1n, 1n, [recoveryCoSigner],
+    )).toThrow(/invalid jubjub schnorr signature/iu);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
+
+    const recoveryEvent = simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [recoveryCoSigner],
+    );
+    expect(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(2n))
+      .toEqual(twoOfThree);
+    expect(simulator.getLedger().lastGovernanceEventHash).toEqual(recoveryEvent);
+    expect(simulator.getLedger().activeMaintainerCount).toBe(2n);
+    expect(simulator.getLedger().emergencyMaintainerThreshold).toBe(1n);
+    expect(simulator.getLedger().governancePolicyCommitment).toEqual(oneOfTwo);
+    expect(simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash)
+      .toEqual(recoveryEvent);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence + 1n);
+    expect(simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(3n))
+      .toBe(removalSequence + 1n);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [recoveryCoSigner],
+    )).toThrow(/must be active to recover/u);
+  });
+  it("requires the higher old emergency quorum for atomic recovery", () => {
+    const registry = createInitializedRegistryFixture(81);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const second = createMaintainerMembershipFixture("recovery-emergency-second", 82);
+    const third = createMaintainerMembershipFixture("recovery-emergency-third", 83);
+    const target = createMaintainerMembershipFixture("recovery-emergency-target", 84);
+    for (const candidate of [second, third, target]) activateAdditionalMaintainer(registry, candidate);
+    const initialPolicy = simulator.getLedger().governancePolicyCommitment;
+    const twoOfFour = labelToBytes32("policy:recovery:two-of-four");
+    const revisionPayload = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      initialPolicy, twoOfFour, 2n, 2n, 3n, 2n,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId, bootstrapPublicKey,
+      signFixtureDeploymentBoundActionFromSeed(simulator, bootstrapMaintainer.seed, registryId,
+        initialPolicy, UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
+        revisionPayload, simulator.getLedger().governanceActionCount),
+      twoOfFour, 2n, 2n, 3n, 2n,
+    );
+    const nextPolicy = labelToBytes32("policy:recovery:two-of-three");
+    const evidenceHash = labelToBytes32("evidence:recovery:emergency");
+    const actionSequence = simulator.getLedger().governanceActionCount;
+    const recoveryPayload = computeRecoverMaintainerMembershipPayloadHash(
+      twoOfFour, nextPolicy, 3n, 2n, 2n, 2n,
+      target.maintainerId,
+      simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash,
+      evidenceHash,
+    );
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, twoOfFour,
+      RECOVER_MAINTAINER_ACTION_KIND, recoveryPayload, actionSequence,
+    );
+    const secondVote = createMaintainerCoAuthorizer(
+      second, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND, recoveryPayload, actionSequence,
+    );
+    const thirdVote = createMaintainerCoAuthorizer(
+      third, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND, recoveryPayload, actionSequence,
+    );
+    const recover = (votes: MaintainerCoAuthorizer[]) => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+      target.maintainerId, evidenceHash, nextPolicy, 3n, 2n, 2n, 2n, votes,
+    );
+    expect(() => recover([secondVote])).toThrow(/signer count must satisfy/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(actionSequence);
+    expect(simulator.getMaintainerMembership(target.maintainerId).status).toBe(AuthorizationStatus.active);
+    recover([secondVote, thirdVote]);
+    expect(simulator.getLedger().activeMaintainerCount).toBe(3n);
+    expect(simulator.getMaintainerMembership(target.maintainerId).status).toBe(AuthorizationStatus.suspended);
+  });
+  it("rejects atomic recovery of the last active maintainer", () => {
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = createInitializedRegistryFixture(85);
+    const target = simulator.getMaintainerMembership(bootstrapMaintainer.maintainerId);
+    const evidenceHash = labelToBytes32("evidence:recovery:last");
+    const nextPolicy = labelToBytes32("policy:recovery:last");
+    const currentPolicy = simulator.getLedger().governancePolicyCommitment;
+    const payload = computeRecoverMaintainerMembershipPayloadHash(
+      currentPolicy, nextPolicy, 2n, 1n, 1n, 1n,
+      bootstrapMaintainer.maintainerId, target.lifecycleEventHash, evidenceHash,
+    );
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, currentPolicy,
+      RECOVER_MAINTAINER_ACTION_KIND, payload, simulator.getLedger().governanceActionCount,
+    );
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+      bootstrapMaintainer.maintainerId, evidenceHash, nextPolicy, 2n, 1n, 1n, 1n,
+    )).toThrow(/last active maintainer/u);
+  });
   for (const role of ["issuer", "verifier", "auditor", "recognition"] as const) {
     it(`rejects a maintainer's own ${role} approval without consuming the action sequence`, () => {
       const registry = createInitializedRegistryFixture(31);
@@ -1789,6 +2120,10 @@ describe("trust registry contract", () => {
     expect(simulator.getIssuerAuthorization(selfActivation.authorizationId).status)
       .toBe(AuthorizationStatus.authorized);
 
+    const thirdMaintainer = createMaintainerMembershipFixture("third", 19);
+    activateAdditionalMaintainer(registry, thirdMaintainer);
+    expect(simulator.getLedger().activeMaintainerCount).toBe(3n);
+
     const invalidThresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const invalidThresholdPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
@@ -1799,7 +2134,7 @@ describe("trust registry contract", () => {
         simulator.getLedger().governancePolicyCommitment,
         labelToBytes32("policy:kanon:v2"),
         2n,
-        3n,
+        4n,
         1n,
         1n,
       ),
@@ -1812,7 +2147,7 @@ describe("trust registry contract", () => {
         invalidThresholdPolicySignature,
         labelToBytes32("policy:kanon:v2"),
         2n,
-        3n,
+        4n,
         1n,
         1n,
       ),
@@ -1907,7 +2242,7 @@ describe("trust registry contract", () => {
       removalSignature,
       bootstrapMaintainer.maintainerId,
       removalEvidenceHash,
-    )).toThrow(/threshold policy/i);
+    )).toThrow(/non-conflicted removal quorum/i);
     expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
     expect(Buffer.from(simulator.getLedger().governancePolicyCommitment)).toEqual(
       Buffer.from(labelToBytes32("policy:kanon:v2")),
@@ -2293,6 +2628,8 @@ describe("trust registry contract", () => {
       secondMaintainer.maintainerId,
       activateMaintainerEvidenceHash,
     );
+
+    activateAdditionalMaintainer(registry, createMaintainerMembershipFixture("third-duplicate", 20));
 
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const thresholdPolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,

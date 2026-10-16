@@ -18,6 +18,7 @@ import {
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateMaintainerThresholdPolicyPayloadHash,
+  computeRecoverMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -49,6 +50,7 @@ import {
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
   type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
+  pureCircuits,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
   type RecognitionRecord as ContractRecognitionRecord,
   type VerifierAuthorizationRecord as ContractVerifierAuthorizationRecord,
@@ -151,6 +153,7 @@ const ARCHIVE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:ar
 const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
+const RECOVER_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:recover");
 const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
@@ -273,6 +276,19 @@ export type PreparedThresholdPolicyRevisionAction = {
   nextPolicyCommitment: Uint8Array;
   nextPolicyVersion: bigint;
 };
+
+export type PreparedAtomicMaintainerRecoveryAction = PreparedThresholdPolicyRevisionAction & {
+  maintainerId: Uint8Array;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash: Uint8Array;
+};
+
+export class AtomicMaintainerRecoveryPrecheckError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AtomicMaintainerRecoveryPrecheckError";
+  }
+}
 
 export type PreparedEvidenceVerifierRegistrationAction = {
   registryId: Uint8Array;
@@ -777,6 +793,7 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:maintainer:propose",
             "tr:maintainer:authorize",
             "tr:maintainer:activate",
+            "tr:maintainer:recover",
             "tr:policy:thresholds:update",
           ],
           evidenceRules: ["governance evidence hash", "maintainer quorum signatures"],
@@ -819,6 +836,7 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:verifier:revoke",
             "tr:maintainer:suspend",
             "tr:maintainer:revoke",
+            "tr:maintainer:recover",
             "tr:recognition:suspend",
             "tr:recognition:revoke",
             "tr:auditor:suspend",
@@ -1084,8 +1102,15 @@ export class LocalTrustRegistryIntegrationHarness {
     archivalThreshold: bigint,
     recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
   ): PreparedThresholdPolicyRevisionAction {
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const nextPolicyVersion = this.simulator.getLedger().governancePolicyVersion + 1n;
+    const ledger = this.simulator.getLedger();
+    pureCircuits.assertValidMaintainerThresholdPolicy(
+      ledger.activeMaintainerCount,
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    const actionSequence = ledger.governanceActionCount;
+    const nextPolicyVersion = ledger.governancePolicyVersion + 1n;
     const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
       (anchor) => ({ ...anchor, policyVersion: `v${nextPolicyVersion.toString()}` }),
     );
@@ -1153,6 +1178,92 @@ export class LocalTrustRegistryIntegrationHarness {
       prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
       defaultThreshold, emergencyThreshold, archivalThreshold,
       signers.slice(1),
+    );
+    this.policyRecordValue = nextPolicyRecord;
+    this.governancePolicyCommitment = prepared.nextPolicyCommitment;
+    this.registryRecord = RegistryRecordSchema.parse({
+      ...this.registryRecord,
+      policyUri: nextPolicyRecord.policyUri,
+      updatedAt: timestampForSequence(prepared.actionSequence),
+      lifecycleEventRoot: bytes32Hex(result),
+    });
+    this.policyRevisions.push({
+      effectiveFromSequence: prepared.actionSequence + 1n,
+      commitment: prepared.nextPolicyCommitment,
+      record: nextPolicyRecord,
+    });
+    return result;
+  }
+
+  prepareAtomicMaintainerRecoveryAction(
+    fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+  ): PreparedAtomicMaintainerRecoveryAction {
+    const ledger = this.simulator.getLedger();
+    if (ledger.activeMaintainerCount <= 1n) {
+      throw new AtomicMaintainerRecoveryPrecheckError("Cannot remove the last active maintainer");
+    }
+    pureCircuits.assertValidMaintainerThresholdPolicy(
+      ledger.activeMaintainerCount - 1n,
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    if (current.status !== ContractAuthorizationStatus.active) {
+      throw new AtomicMaintainerRecoveryPrecheckError("Recovery target must be active");
+    }
+    const policy = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    return {
+      ...policy,
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+      actionKind: Uint8Array.from(RECOVER_MAINTAINER_ACTION_KIND),
+      actionPayloadHash: computeRecoverMaintainerMembershipPayloadHash(
+        policy.policyCommitment,
+        policy.nextPolicyCommitment,
+        policy.nextPolicyVersion,
+        defaultThreshold,
+        emergencyThreshold,
+        archivalThreshold,
+        fixture.maintainerIdCommitment,
+        current.lifecycleEventHash,
+        evidenceHash,
+      ),
+    };
+  }
+
+  executeAtomicMaintainerRecoveryWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Atomic recovery requires a maintainer signature");
+    const prepared = this.prepareAtomicMaintainerRecoveryAction(
+      fixture, evidenceHash, defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${prepared.nextPolicyVersion.toString()}` }),
+    );
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      prepared.nextPolicyVersion, prepared.actionSequence + 1n, nextAnchors,
+    );
+    const result = this.simulator.recoverMaintainerMembership(
+      primary.keyId, primary.publicKey, primary.signature,
+      fixture.maintainerIdCommitment, prepared.evidenceHash,
+      prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
+      defaultThreshold, emergencyThreshold, archivalThreshold, signers.slice(1),
     );
     this.policyRecordValue = nextPolicyRecord;
     this.governancePolicyCommitment = prepared.nextPolicyCommitment;

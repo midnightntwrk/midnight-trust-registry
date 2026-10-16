@@ -123,6 +123,7 @@ describe("trust registry local simulator integration", () => {
     const issuer = createIssuerScenarioFixture("denial-quorum-issuer");
     harness.authorizeMaintainer(second);
     harness.proposeIssuer(issuer);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("denial-third-maintainer"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
     const before = harness.simulator.getLedger().governanceActionCount;
@@ -504,6 +505,7 @@ describe("trust registry local simulator integration", () => {
     const issuer = createIssuerScenarioFixture("quorum-onboarding");
 
     harness.authorizeMaintainer(secondMaintainer);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("quorum-third"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     expect(resolveGovernancePolicyTemplate(harness.policyRecord, "member")).toMatchObject({
       requiredMaintainerThreshold: 2,
@@ -547,6 +549,7 @@ describe("trust registry local simulator integration", () => {
     const secondMaintainer = createMaintainerScenarioFixture("epoch-quorum-second");
     const issuer = createIssuerScenarioFixture("epoch-quorum-issuer");
     harness.authorizeMaintainer(secondMaintainer);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("epoch-quorum-third"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     harness.proposeIssuer(issuer, [secondMaintainer]);
     harness.approveIssuer(issuer, [secondMaintainer]);
@@ -642,6 +645,7 @@ describe("trust registry local simulator integration", () => {
     const originalBundle = harness.evaluateCurrentIssuerDecision(beforeRevision);
     harness.authorizeIssuer(latePublished);
     harness.authorizeMaintainer(secondMaintainer);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("revision-third"));
     const revisionSequence = harness.simulator.getLedger().governanceActionCount;
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     expect(harness.simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n))
@@ -1065,7 +1069,9 @@ describe("trust registry local simulator integration", () => {
   it("rejects non-self maintainer removal that would break a live threshold", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("removal-threshold");
     const second = createMaintainerScenarioFixture("removal-threshold-second");
+    const third = createMaintainerScenarioFixture("removal-threshold-third");
     harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
     const bootstrapMembership = {
       maintainerIdCommitment: harness.maintainerIdCommitment,
@@ -1088,9 +1094,9 @@ describe("trust registry local simulator integration", () => {
         prepared.policyCommitment,
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
-    }])).toThrow(/threshold policy/i);
+    }])).toThrow(/non-conflicted removal quorum/i);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
-    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(3n);
   });
 
   it("rejects evidence from an incompatible contract format at both verification boundaries", () => {

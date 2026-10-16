@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
+import { CompactError, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import {
@@ -18,6 +18,7 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
+import { createMaintainerFixture } from "../contracts/trust-registry/dist/testing.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import {
   bytes32Commitment,
@@ -51,6 +52,7 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  AtomicMaintainerRecoveryPrecheckError,
   resolveCompactHistoricalEpochAnchor,
   recognitionAuthorityAssertionDigest,
   recognitionAccreditationSubmissionCommitment,
@@ -147,20 +149,22 @@ adversarialMatrix.expectThrown(() => lastActiveHarness.revokeMaintainer(bootstra
 assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
 assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
 const thresholdSecond = createMaintainerScenarioFixture("governed-demo-threshold-second");
+const thresholdThird = createMaintainerScenarioFixture("governed-demo-threshold-third");
 lastActiveHarness.authorizeMaintainer(thresholdSecond);
+lastActiveHarness.authorizeMaintainer(thresholdThird);
 lastActiveHarness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [thresholdSecond]);
 const thresholdRemoval = lastActiveHarness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
 const thresholdActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => lastActiveHarness.executeMaintainerDecisionWithSignatures(
-  bootstrapMembership, "suspend", [signCompact(thresholdSecond, thresholdRemoval)],
+  bootstrapMembership, "suspend", [signCompact(thresholdSecond, thresholdRemoval, lastActiveHarness)],
 ), {
   id: "compact-removal-below-maintainer-threshold",
-  invariant: "A non-conflicted signer cannot remove a maintainer below the live threshold",
+  invariant: "A non-conflicted signer cannot remove a maintainer into an all-member quorum",
   boundary: "compact",
-  messagePattern: /threshold policy/iu,
+  messagePattern: /non-conflicted removal quorum/iu,
   category: "maintainer-threshold-protected",
 });
-assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 2n);
+assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 3n);
 assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, thresholdActionCount);
 
 const removedSignerHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
@@ -942,10 +946,43 @@ const server = createTrustRegistryApiServer({
     },
   },
   governedPolicyActions: {
+    async prepareMaintainerRecovery(maintainerId, evidenceHash, value) {
+      if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
+        throw new GovernedPolicyActionRejectedError();
+      }
+      try {
+        return harness.prepareAtomicMaintainerRecoveryAction(
+          candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+        );
+      } catch (error) {
+        if (!(error instanceof CompactError || error instanceof AtomicMaintainerRecoveryPrecheckError)) {
+          throw error;
+        }
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
+    async executeMaintainerRecovery(maintainerId, evidenceHash, value, signers) {
+      if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
+        throw new GovernedPolicyActionRejectedError();
+      }
+      try {
+        const eventHash = harness.executeAtomicMaintainerRecoveryWithSignatures(
+          candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+        );
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
     async prepareThresholds(value) {
-      return harness.prepareThresholdPolicyRevisionAction(
-        BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
-      );
+      try {
+        return harness.prepareThresholdPolicyRevisionAction(
+          BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+        );
+      } catch (error) {
+        if (!(error instanceof CompactError)) throw error;
+        throw new GovernedPolicyActionRejectedError();
+      }
     },
     async executeThresholds(value, signers) {
       try {
@@ -2194,6 +2231,13 @@ try {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
   const thresholds = { default: "3", emergency: "1", archival: "2" };
+  await adversarialMatrix.expectHttp(await postPolicy("thresholds/prepare", {
+    thresholds: { default: "4", emergency: "1", archival: "2" },
+  }), {
+    id: "policy-revision-no-recovery-headroom",
+    invariant: "Preparation rejects a threshold with no non-conflicted recovery quorum",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
   const revisionContext = await expectHttp(await postPolicy("thresholds/prepare", { thresholds }), 200);
   await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
     thresholds, prepared: revisionContext, signers: [sign(second, revisionContext)],
@@ -2233,8 +2277,50 @@ try {
   }), 202);
   assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
   harness.proposeIssuer(threeSignerIssuer, [second, third]);
-  const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
+  const removalSequence = harness.simulator.getLedger().governanceActionCount;
+  adversarialMatrix.expectThrown(() => harness.suspendMaintainer(candidate), {
+    id: "compact-recovery-policy-headroom-required",
+    invariant: "A maintainer removal cannot leave an all-member quorum",
+    boundary: "compact",
+    messagePattern: /non-conflicted removal quorum/iu,
+    category: "maintainer-recovery-protected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
+  const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
+  const recoveryRequest = {
+    maintainerId: asHex(candidate.maintainerIdCommitment),
+    evidenceHash: asHex(bytes32Commitment("incident:governed-demo:maintainer-recovery")),
+    thresholds: recoveryThresholds,
+  };
+  const recoveryContext = await expectHttp(await postPolicy("maintainer-recovery/prepare", {
+    ...recoveryRequest,
+  }), 200);
+  const bootstrap = createMaintainerFixture("bootstrap", 17);
+  bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
+  await adversarialMatrix.expectHttp(await postPolicy("maintainer-recovery/submit", {
+    ...recoveryRequest,
+    prepared: recoveryContext,
+    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(candidate, recoveryContext)],
+  }), {
+    id: "atomic-recovery-target-self-vote",
+    invariant: "The target cannot count toward the old-policy recovery quorum",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
+  const recoveryReceipt = await expectHttp(await postPolicy("maintainer-recovery/submit", {
+    ...recoveryRequest,
+    prepared: recoveryContext,
+    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(third, recoveryContext)],
+  }), 202);
   assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence + 1n);
+  publishCurrentSnapshot();
+  const recoveryRegistrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
+  const recoveryRegistrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
+    prepared: recoveryRegistrationContext,
+    signers: [sign(second, recoveryRegistrationContext), sign(third, recoveryRegistrationContext)],
+  }), 202);
+  const suspendedMaintainerEventHash = recoveryReceipt.eventHash;
   const postSuspensionIssuer = createIssuerScenarioFixture("governed-demo-post-suspension-issuer");
   assert.throws(() => harness.proposeIssuer(postSuspensionIssuer, [candidate, second]),
     /Maintainer must be active/u);
@@ -2243,7 +2329,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures for actor decisions; HTTP-revised to 3-of-4",
+    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then atomically reduced to 2-of-3 with target suspension",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     statusWitnessAudit: {
       roles: statusWitnessAuditedRoles,
@@ -2309,8 +2395,10 @@ try {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
       policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
       thresholdRevisionEventHash: revisionReceipt.eventHash,
+      atomicRecoveryEventHash: recoveryReceipt.eventHash,
+      recoveryEvidenceVerifierRegistrationEventHash: recoveryRegistrationReceipt.eventHash,
       evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
-      suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
+      suspendedMaintainerEventHash,
       remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
       remainingQuorumEventHash: asHex(remainingQuorumEventHash),
     },

@@ -74,6 +74,14 @@ Required fields:
 ### Governance Policy
 
 A governance policy describes who may change the registry and under which process.
+The [0.1.0 reference profile](milestone-0.1.0.md) rejects all-member
+maintainer thresholds and active-target self-votes on removal. A policy
+reduction and suspension are one old-quorum-signed atomic recovery action when
+used to suspend an active maintainer. A standalone policy revision followed by
+removal is not a safe recovery procedure because it exposes an intermediate
+reduced quorum. The old quorum is the larger of the default and emergency
+thresholds; the target cannot sign. No implicit recovery authority exists in
+this profile.
 
 Required fields:
 

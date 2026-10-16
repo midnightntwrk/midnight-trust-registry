@@ -130,6 +130,9 @@ describe("externally signed Compact maintainer onboarding", () => {
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeRejectedProposal);
     expect(() => harness.proposeIssuer(afterRevision, [second, third])).not.toThrow();
 
+    // Lower the ordinary threshold before removal so the remaining three
+    // maintainers retain a quorum that can exclude a future target.
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n, [second, third]);
     harness.suspendMaintainer(candidate);
     expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
       .toBe(AuthorizationStatus.suspended);

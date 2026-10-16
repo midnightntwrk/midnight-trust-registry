@@ -38,6 +38,7 @@ describe("independently signed recognition accreditation VP", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("accreditor-policy");
     const second = createMaintainerScenarioFixture("accreditor-policy-second");
     harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(createMaintainerScenarioFixture("accreditor-policy-third"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const anchor = {
       ...RECOGNITION_VP_FIXTURE_ANCHOR,
@@ -49,18 +50,19 @@ describe("independently signed recognition accreditation VP", () => {
     expect(() => harness.governRecognitionAccreditorAnchor(anchor)).toThrow(/threshold/u);
     expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
     harness.governRecognitionAccreditorAnchor(anchor, [second]);
+    const evaluatedAtMs = Math.max(NOW, Date.parse(harness.policyRecord.effectiveFrom) + 1000);
     const resolved = harness.resolveCurrentRecognitionAccreditorAnchor({
       recognizedRegistryId: anchor.recognizedRegistryId,
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
-      evaluatedAtMs: Math.max(NOW, Date.parse(harness.policyRecord.effectiveFrom) + 1000),
+      evaluatedAtMs,
     });
     expect(resolved.anchor).toEqual(anchor);
     expect(() => harness.resolveCurrentRecognitionAccreditorAnchor({
       recognizedRegistryId: "registry:external:wrong",
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
-      evaluatedAtMs: NOW,
+      evaluatedAtMs,
     })).toThrow(/exact scope/u);
   });
 
