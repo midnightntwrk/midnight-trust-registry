@@ -65,6 +65,16 @@ the API response alone cannot satisfy these provenance requirements; a
 missing or inconsistent read fails closed before any VC signer descriptor is
 accepted.
 
+`createCheckpointedCompactDecisionReaders` joins a checkpoint-pinned Compact
+ledger read with separately authenticated historical publication evidence.
+The publication reader receives the exact finalized block hash and must prove
+the historical signer set independently; a matching current ledger root does
+not prove who was authorized to publish an earlier epoch. The adapter checks
+the selected network and deployed address before consulting that publication
+reader. The checkpoint source, indexer response, DID state, and off-ledger
+clock remain host trust boundaries until independently qualified on a live
+network.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).

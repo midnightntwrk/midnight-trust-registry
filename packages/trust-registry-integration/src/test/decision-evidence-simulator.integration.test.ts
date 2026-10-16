@@ -53,6 +53,7 @@ import {
 } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 import { createCompactLedgerDecisionReaders } from "../compact-decision-reader.js";
+import { createCheckpointedCompactDecisionReaders } from "../checkpointed-compact-decision-reader.js";
 import { verifyApplicationVp } from "../application-vp-verifier.js";
 import { createGovernedApplicationIssuerEligibility } from "../governed-application-issuer.js";
 import { createApplicationVpScenarioFixture } from "../vp-scenario-fixtures.js";
@@ -332,6 +333,78 @@ describe("simulator-backed VC decision evidence composition", () => {
     });
     const compactCandidate = await verifyDecisionEvidenceWithTrustedReaders(compactEvidence, context.selection, compactReaders);
     expect(compactCandidate).toEqual({ ...candidate, decisionSequence: compactSequence });
+    const finalizedBlockHash = sha256Hex("finalized-decision-block");
+    const checkpointedReaders = createCheckpointedCompactDecisionReaders({
+      readCurrentFinalizedLedger: async () => ({
+        networkId,
+        finalizedBlockHash,
+        contractAddress: context.selection.contractAddress,
+        ledger: harness.simulator.getLedger(),
+      }),
+      readAuthenticatedEpochPublication: async (selected, epochId, blockHash) => {
+        expect(selected).toEqual(context.selection);
+        expect(epochId).toBe(evidence.epoch.epochId);
+        expect(blockHash).toBe(finalizedBlockHash);
+        return { acceptedEpoch: context.acceptedEpoch, publication: context.publication };
+      },
+      readEvaluationTime: () => context.decisionPoint.evaluationTime,
+      sequenceToTimestamp: defaultSequenceToTimestamp,
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    expect(await verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, checkpointedReaders,
+    )).toEqual(compactCandidate);
+    const wrongCheckpointReaders = createCheckpointedCompactDecisionReaders({
+      readCurrentFinalizedLedger: async () => ({
+        networkId: "other-network",
+        finalizedBlockHash,
+        contractAddress: context.selection.contractAddress,
+        ledger: harness.simulator.getLedger(),
+      }),
+      readAuthenticatedEpochPublication: async () => {
+        throw new Error("Wrong checkpoint must fail before publication lookup");
+      },
+      readEvaluationTime: () => context.decisionPoint.evaluationTime,
+      sequenceToTimestamp: defaultSequenceToTimestamp,
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongCheckpointReaders,
+    )).rejects.toThrow(/checkpoint does not match selected deployment/u);
+    const wrongAddressReaders = createCheckpointedCompactDecisionReaders({
+      readCurrentFinalizedLedger: async () => ({
+        networkId,
+        finalizedBlockHash,
+        contractAddress: sha256Hex("other-deployment"),
+        ledger: harness.simulator.getLedger(),
+      }),
+      readAuthenticatedEpochPublication: async () => {
+        throw new Error("Wrong deployment must fail before publication lookup");
+      },
+      readEvaluationTime: () => context.decisionPoint.evaluationTime,
+      sequenceToTimestamp: defaultSequenceToTimestamp,
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongAddressReaders,
+    )).rejects.toThrow(/checkpoint does not match selected deployment/u);
+    const malformedCheckpointReaders = createCheckpointedCompactDecisionReaders({
+      readCurrentFinalizedLedger: async () => ({
+        networkId,
+        finalizedBlockHash: `0x${"0".repeat(64)}`,
+        contractAddress: context.selection.contractAddress,
+        ledger: harness.simulator.getLedger(),
+      }),
+      readAuthenticatedEpochPublication: async () => {
+        throw new Error("Invalid checkpoint must fail before publication lookup");
+      },
+      readEvaluationTime: () => context.decisionPoint.evaluationTime,
+      sequenceToTimestamp: defaultSequenceToTimestamp,
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, malformedCheckpointReaders,
+    )).rejects.toThrow(/checkpoint does not match selected deployment/u);
     const wrongEpochReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
         ledger: harness.simulator.getLedger(),
