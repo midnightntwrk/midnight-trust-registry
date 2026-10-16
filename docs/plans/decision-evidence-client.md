@@ -105,7 +105,10 @@ ledger view into the client reader interface. It matches registry and epoch
 commitments to that ledger, including the sealed deployment-network commitment
 and the publication's network commitment, selects the exact current issuer/verifier record
 through its on-chain scope index, and reads current policy, status, lifecycle
-event, and action sequence from the same view. The authorization ID is a
+event, and action sequence from the same view. It also checks the accepted
+epoch's wall-clock interval against a host-supplied sequence-to-time mapping;
+the simulator uses its fixed test mapping, while a live host must supply its
+own authenticated projection. The authorization ID is a
 lookup hint, not evidence of current membership. A newer unrelated epoch does
 not invalidate an older epoch within its sequence window when the current
 policy and exact grant are still unchanged. The host remains responsible for

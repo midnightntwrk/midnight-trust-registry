@@ -15,6 +15,7 @@ import type {
 } from "@midnight-ntwrk/trust-registry-client";
 import {
   sha256Hex,
+  compareRfc3339Instants,
   type DecisionEvidenceSelection,
 } from "@midnight-ntwrk/trust-registry-domain";
 
@@ -26,6 +27,8 @@ export type FinalizedCompactDecisionView = {
   acceptedEpoch: FinalizedRegistryDecisionSnapshot["acceptedEpoch"];
   publication: FinalizedRegistryDecisionSnapshot["publication"];
   evaluationTime: string;
+  /** Host-authenticated mapping; Compact sequences are not wall-clock time. */
+  sequenceToTimestamp(sequence: bigint): string;
 };
 
 const bytes = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slice(2), "hex");
@@ -114,6 +117,8 @@ export function createCompactLedgerDecisionReaders(input: {
         || epoch.publishedAtSequence.toString() !== acceptedEpoch.publicationSequence
         || epoch.validFromSequence.toString() !== acceptedEpoch.validFromSequence
         || epoch.validUntilSequence.toString() !== acceptedEpoch.validUntilSequence
+        || compareRfc3339Instants(acceptedEpoch.validFrom, view.sequenceToTimestamp(epoch.validFromSequence)) !== 0
+        || compareRfc3339Instants(acceptedEpoch.validUntil, view.sequenceToTimestamp(epoch.validUntilSequence)) !== 0
         || !same(epoch.maintainerKeyId, publication.firstSignerKeyIdCommitment)) {
         throw new Error("Accepted epoch does not match finalized Compact ledger");
       }
