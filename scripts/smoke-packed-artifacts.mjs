@@ -185,7 +185,17 @@ try {
       run("node", ["demo-signed-membership-journey.mjs", role], { cwd: smokeRoot });
       console.log(`[smoke-packed-artifacts] Packed ${role} actor journey passed.`);
     }
-    run("node", ["packed-recognition-journey.mjs"], { cwd: smokeRoot });
+    const recognitionReport = JSON.parse(run("node", ["packed-recognition-journey.mjs"], { cwd: smokeRoot }));
+    if (recognitionReport.demo !== "packed-recognition-journey"
+      || recognitionReport.proposalSignatureVerified !== true
+      || !/^0x[0-9a-f]{64}$/u.test(recognitionReport.evidenceCommitment)
+      || !Array.isArray(recognitionReport.signerKeyIds)
+      || recognitionReport.signerKeyIds.length < 2
+      || !Array.isArray(recognitionReport.expectedRejections)
+      || recognitionReport.expectedRejections.length < 6
+      || "vp" in recognitionReport || "assertion" in recognitionReport) {
+      throw new Error("Packed recognition journey did not return a scrubbed, verified evidence report");
+    }
     console.log("[smoke-packed-artifacts] Packed recognition journey passed.");
   }
   run(path.join(smokeRoot, "node_modules/.bin/trust-registry"), ["--help"], {

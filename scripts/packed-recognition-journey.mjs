@@ -23,6 +23,7 @@ import {
 import {
   InMemoryApplicationChallengeStore,
   RecognitionAuthorityChallengeService,
+  resolveCompactProposalEvidenceSnapshot,
 } from "@midnight-ntwrk/trust-registry-api";
 
 const hex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -175,6 +176,16 @@ const proposalEventHash = harness.executeRecognitionProposalWithSignatures(
 assert.equal(hex(harness.simulator.getRecognitionProposalEvidence(
   recognition.recognitionIdCommitment,
 ).evidenceCommitment), verified.evidenceCommitment);
+const proposalSnapshot = await resolveCompactProposalEvidenceSnapshot(
+  async () => harness.simulator.getLedger(), harness.registryId, "recognition", recognition.recognitionId,
+);
+assert.equal(proposalSnapshot?.evidenceCommitment, verified.evidenceCommitment);
+assert.equal(proposalSnapshot?.eventHash, hex(proposalEventHash));
+assert.equal(proposalSnapshot?.signatureVerified, true);
+assert.match(proposalSnapshot.boundActionPayloadHash, /^0x[0-9a-f]{64}$/u);
+await assert.rejects(resolveCompactProposalEvidenceSnapshot(
+  async () => harness.simulator.getLedger(), "registry:other", "recognition", recognition.recognitionId,
+), /different trust registry/u);
 harness.approveRecognition(recognition);
 harness.activateRecognition(recognition);
 const bundle = harness.evaluateCurrentRecognitionDecision(recognition, { expectedRegistryId: harness.registryId });
@@ -189,4 +200,20 @@ harness.suspendRecognition(recognition);
 assert.throws(() => harness.evaluateCurrentRecognitionDecision(recognition), /not active/i);
 assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 0n);
 assert.match(hex(proposalEventHash), /^0x[0-9a-f]{64}$/u);
-console.log("[packed-recognition] VC/VP accreditation, governed proposal, replay refusal, and suspension passed.");
+process.stdout.write(`${JSON.stringify({
+  demo: "packed-recognition-journey",
+  mode: "tarball-only local Compact simulator; no network finality",
+  policyVersion: proposalSnapshot.policyVersion,
+  epochId: bundle.epoch.epochId,
+  signerKeyIds: signers.map(({ keyId }) => hex(keyId)),
+  evidenceCommitment: proposalSnapshot.evidenceCommitment,
+  proposalEventHash: proposalSnapshot.eventHash,
+  proposalSignatureVerified: proposalSnapshot.signatureVerified,
+  activeDecision: "trusted recognition, not local issuer authorization",
+  finalDecision: "suspended recognition",
+  expectedRejections: [
+    "wrong-external-registry", "substituted-authority-assertion", "inactive-accreditation-status",
+    "replayed-challenge", "insufficient-maintainer-quorum", "wrong-recognition-registry",
+    "suspended-current-decision",
+  ],
+}, null, 2)}\n`);
