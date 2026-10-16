@@ -95,8 +95,11 @@ export function createCompactLedgerDecisionReaders(input: {
         || acceptedEpoch.networkId !== selection.networkId
         || acceptedEpoch.contractAddress !== selection.contractAddress
         || acceptedEpoch.epochId !== epochIdHint
+        || !ledger.initialized
         || !same(ledger.registryId, bytes(selection.registryId))
+        || !same(ledger.deploymentNetworkIdCommitment, bytes(selection.networkId))
         || !same(publication.registryIdCommitment, ledger.registryId)
+        || !same(publication.networkIdCommitment, ledger.deploymentNetworkIdCommitment)
         || !same(publication.epochIdCommitment, epochId)
         || !ledger.epochCommitmentRecords.member(epochId)) {
         throw new Error("Finalized Compact decision identity or epoch mismatch");

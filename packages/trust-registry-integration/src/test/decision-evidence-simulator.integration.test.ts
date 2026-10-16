@@ -354,6 +354,36 @@ describe("simulator-backed VC decision evidence composition", () => {
     await expect(verifyDecisionEvidenceWithTrustedReaders(
       compactEvidence, context.selection, wrongEpochIdReaders,
     )).rejects.toThrow(/identity or epoch mismatch/u);
+    const wrongNetworkLedgerReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: {
+          ...harness.simulator.getLedger(),
+          deploymentNetworkIdCommitment: bytes32Commitment("other-network"),
+        },
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongNetworkLedgerReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
+    const wrongPublicationNetworkReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: context.acceptedEpoch,
+        publication: {
+          ...context.publication,
+          networkIdCommitment: bytes32Commitment("other-network"),
+        },
+        evaluationTime: context.decisionPoint.evaluationTime,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongPublicationNetworkReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
     const changedPolicyReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
         ledger: { ...harness.simulator.getLedger(), governancePolicyCommitment: bytes32Commitment("changed-policy") },
