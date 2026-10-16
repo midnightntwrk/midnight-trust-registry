@@ -18,6 +18,7 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const parseArgs = () => {
   const options = {
     artifactsDir: artifactDirectory,
+    actorJourney: false,
   };
   const args = process.argv.slice(2);
 
@@ -32,6 +33,9 @@ const parseArgs = () => {
       case "--manifest":
         options.manifest = args[++index];
         break;
+      case "--actor-journey":
+        options.actorJourney = true;
+        break;
       case "--help":
         console.log(
           [
@@ -40,6 +44,7 @@ const parseArgs = () => {
             "Options:",
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
+            "  --actor-journey       Run all four signed HTTP actor journeys from packed packages.",
           ].join("\n"),
         );
         process.exit(0);
@@ -86,7 +91,7 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir, manifest } = parseArgs();
+const { artifactsDir, manifest, actorJourney } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
 let tarballPaths;
 if (manifest !== undefined) {
@@ -152,6 +157,20 @@ try {
     path.join(smokeRoot, "packed-consumer-scenario.mjs"),
   );
   run("node", ["packed-consumer-scenario.mjs"], { cwd: smokeRoot });
+  if (actorJourney) {
+    for (const script of [
+      "demo-signed-membership-journey.mjs",
+      "workspace-lock-fixture.mjs",
+      "hold-workspace-lock.mjs",
+      "probe-workspace-restart.mjs",
+    ]) {
+      fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(smokeRoot, script));
+    }
+    for (const role of ["issuer", "verifier", "auditor", "maintainer"]) {
+      run("node", ["demo-signed-membership-journey.mjs", role], { cwd: smokeRoot });
+      console.log(`[smoke-packed-artifacts] Packed ${role} actor journey passed.`);
+    }
+  }
   run(path.join(smokeRoot, "node_modules/.bin/trust-registry"), ["--help"], {
     cwd: smokeRoot,
   });

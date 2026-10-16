@@ -298,6 +298,8 @@ Local artifact packages:
 - `@midnight-ntwrk/trust-registry-integration`
 - `@midnight-ntwrk/trust-registry-cli`
 - `@midnight-ntwrk/trust-registry-api`
+- `@midnight-ntwrk/trust-registry-admin-console`
+- `@midnight-ntwrk/trust-registry-applicant-portal`
 - `@midnight-ntwrk/trust-registry-trqp-adapter`
 - `@midnight-ntwrk/trust-registry-openid-federation-adapter`
 
@@ -315,9 +317,11 @@ Local-only artifact packages for now:
 - `@midnight-ntwrk/trust-registry-cli`
 - `@midnight-ntwrk/trust-registry-api`
 
-Those packages remain local-only while their public packaging and deployment
-policy is finalized. They are still packed into `artifacts/npm/` for downstream
-workspace use and smoke-tested there; DID and VC dependencies come from npm.
+Those packages remain private, local-only artifacts while their public
+packaging and deployment policy is finalized. They are packed into
+`artifacts/npm/` for downstream workspace use and smoke-tested there; DID and
+VC dependencies come from npm. The UI artifacts export only their API clients
+for Node consumers, not their browser entry points.
 
 Pack and validate local artifact tarballs:
 
@@ -327,13 +331,28 @@ pnpm run packages:check-contents:light
 pnpm run packed-artifacts:smoke
 ```
 
-The smoke runner installs the tarballs in a temporary consumer directory,
-imports each public package entry point, and runs an issuer/verifier scenario
+The fast smoke runner installs the tarballs in a temporary consumer directory,
+imports each selected package entry point, and runs an issuer/verifier scenario
 through the packed local integration harness and simulator client. It verifies
 active evidence and rejects a substituted issuer resource. This checks package
 boundaries and a local consumer workflow; it does not run the HTTP actor demo
 or establish public-network finality. The integration harness is a local-only
 artifact, not a supported public runtime dependency.
+
+`./run.sh --light` also runs `demo:governed:check` after the light build. This
+executes the governed simulator demo without printing its large JSON report on
+success, catching API and VC-consumer fixture failures before the expensive
+full Compact proving-key build. It does not replace `./run.sh integration`.
+
+For the full local actor-consumer gate, run:
+
+```bash
+pnpm run packed-artifacts:smoke -- --actor-journey
+```
+
+This runs the signed issuer, verifier, auditor, and maintainer HTTP journeys
+from the temporary tarball install, including the packed portal and admin API
+clients. It remains a simulator test, not a finalized network read.
 
 For a full release build, run `pnpm run build` and then
 `pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
@@ -362,7 +381,7 @@ From a clean consumer checkout, verify the approved manifest against the
 received tarballs before the smoke runner installs them:
 
 ```bash
-pnpm run packed-artifacts:smoke -- --manifest artifacts/release-candidate/<source-sha>/manifest.json --artifacts-dir artifacts/npm
+pnpm run packed-artifacts:smoke -- --manifest artifacts/release-candidate/<source-sha>/manifest.json --artifacts-dir artifacts/npm --actor-journey
 ```
 
 With `--manifest`, the runner does not generate missing packages; a missing,

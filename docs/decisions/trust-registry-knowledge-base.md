@@ -1539,7 +1539,25 @@ issuer/verifier consumer scenario from a temporary directory after installing
 the tarballs. It uses only package exports, verifies active evidence with the
 simulator client, and rejects a substituted issuer resource. The 20/20 light
 gate, packed smoke, and low-level audit passed locally. This is not the full
-HTTP applicant/admin/relying-party journey: the UI clients are not among the
-packed local artifacts, and a simulator package consumer does not prove live
-network finality. Keep the full actor demo and release qualification as
-separate gates.
+HTTP applicant/admin/relying-party journey at that commit: the UI clients were
+not yet among the packed local artifacts, and a simulator package consumer
+does not prove live network finality. Keep the full actor demo and release
+qualification as separate gates.
+
+The current local #45 continuation adds the private admin-console and
+applicant-portal API clients to the tarball set, makes the signed membership
+demo import package exports, and runs all four roles from a temporary
+tarball-only install with `--actor-journey`. This closes the clean-consumer
+actor-flow gap locally without making the UI packages public or claiming
+network qualification.
+
+The first full `./run.sh integration` on the #79 parent tree spent about 80
+minutes in Compact key generation and then failed in the governed VC issuer
+demo: the decision-evidence API returned 503 because its fixture supplied no
+`sequenceToTimestamp` function to `createCompactLedgerDecisionReaders`. The
+API correctly redacted the internal error. The local follow-on restores the
+simulator's documented sequence clock in `demo-vc-issuer-consumer.mjs`; the
+focused governed demo passes. A new `demo:governed:check` preflight runs that
+demo during `./run.sh --light` in roughly 16 seconds so this class of failure
+is caught before full key generation. Do not report the full integration gate
+green until it is rerun on the final tree.
