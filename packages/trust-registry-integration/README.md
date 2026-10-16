@@ -9,8 +9,9 @@ Current coverage:
   endpoints, and an independently approved genesis hash. It deploys with the
   registry constructor inputs and returns only the public receipt. A separate
   pinned finalized readback can be `verified`, `pending`, `unavailable`, or
-  `mismatch`; only `verified` matches the selected constructor commitments and
-  initialization sequence. Preserve a receipt and inspect rather than
+  `mismatch`; only `verified` matches the constructor commitments, bootstrap
+  maintainer record and thresholds, and initialization sequence. Preserve a
+  receipt and inspect rather than
   redeploying on any other status. The contract-maintenance key is distinct
   from registry governance quorum keys. This local adapter has not deployed
   to a public network, does not hold a wallet, and does not make the indexer a

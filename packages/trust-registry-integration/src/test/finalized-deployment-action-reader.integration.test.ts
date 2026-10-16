@@ -19,6 +19,7 @@ const blockHash = "d".repeat(64);
 const address = "a".repeat(64);
 const registryId = "registry:midnight:qualification";
 const policy = bytes32Commitment("policy:qualification");
+const bootstrapMaintainerKeyId = bytes32Commitment("maintainer:qualification#key-1");
 
 function fixture() {
   const seed = new Uint8Array(32).fill(13);
@@ -30,7 +31,7 @@ function fixture() {
     governancePolicyCommitment: policy,
     maintainerId: bytes32Commitment("maintainer:qualification"),
     maintainerDidCommitment: bytes32Commitment("did:midnight:preprod:maintainer"),
-    maintainerKeyId: bytes32Commitment("maintainer:qualification#key-1"),
+    maintainerKeyId: bootstrapMaintainerKeyId,
     maintainerPublicKey: deriveJubjubPublicKeyFromSeed(seed),
     maintainerThreshold: 1n,
   });
@@ -66,6 +67,31 @@ describe("checkpointed deployment action reader", () => {
       actionKind: encodeCompactActionKind("tr:epoch:publish"),
       actionPayloadHash: bytes32Commitment("epoch:qualification"),
     }, reader)).resolves.toBeDefined();
+  });
+
+  it("reads the complete constructor bootstrap at one finalized block", async () => {
+    const { simulator, reader, queryContractState } = fixture();
+    const observed = await reader.readCurrentFinalizedBootstrapState(`0x${address}`, bootstrapMaintainerKeyId);
+    expect(queryContractState).toHaveBeenCalledTimes(1);
+    expect(observed).toMatchObject({
+      contractVersion: 1n,
+      registryDidCommitment: bytes32Hex(simulator.getLedger().registryDidCommitment),
+      governancePolicyVersion: 1n,
+      governanceActionSequence: 1n,
+      maintainerThreshold: 1n,
+      emergencyMaintainerThreshold: 1n,
+      archivalMaintainerThreshold: 1n,
+      activeMaintainerCount: 1n,
+      bootstrapMaintainer: {
+        maintainerId: bytes32Hex(bytes32Commitment("maintainer:qualification")),
+        didCommitment: bytes32Hex(bytes32Commitment("did:midnight:preprod:maintainer")),
+        keyId: bytes32Hex(bootstrapMaintainerKeyId),
+        status: 0,
+        joinedAtSequence: 0n,
+      },
+    });
+    expect((await reader.readCurrentFinalizedBootstrapState(`0x${address}`, bytes32Commitment("other-key")))
+      ?.bootstrapMaintainer).toBeNull();
   });
 
   it("fails closed when the checkpoint is absent or malformed", async () => {

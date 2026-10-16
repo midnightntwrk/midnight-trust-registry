@@ -6,9 +6,10 @@ import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import { deployContract, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
-import { bytes32Commitment, bytes32Hex, type FinalizedDeploymentActionState } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
+import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
+import type { FinalizedRegistryBootstrapState } from "./finalized-deployment-action-reader.js";
 import { createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
 import {
   createPublicNetworkDeploymentActionReader,
@@ -38,10 +39,10 @@ export type PublicRegistryDeploymentReceipt = {
 
 export type PublicRegistryDeploymentResult = {
   receipt: PublicRegistryDeploymentReceipt;
-  readback: { status: "verified"; state: FinalizedDeploymentActionState }
+  readback: { status: "verified"; state: FinalizedRegistryBootstrapState }
     | { status: "pending" }
     | { status: "unavailable" }
-    | { status: "mismatch"; state: FinalizedDeploymentActionState };
+    | { status: "mismatch"; state: FinalizedRegistryBootstrapState };
 };
 
 const commitment = (value: Uint8Array, label: string): Uint8Array => {
@@ -112,9 +113,9 @@ export async function deployPublicTrustRegistry(input: {
     blockHash: `0x${publicTx.blockHash}`,
     blockHeight: publicTx.blockHeight,
   };
-  let state: FinalizedDeploymentActionState | null;
+  let state: FinalizedRegistryBootstrapState | null;
   try {
-    state = await reader.readCurrentFinalizedActionState(receipt.contractAddress);
+    state = await reader.readCurrentFinalizedBootstrapState(receipt.contractAddress, maintainerKeyId);
   } catch {
     // The transaction has already been submitted; preserve its public receipt for later inspection.
     return { receipt, readback: { status: "unavailable" } };
@@ -124,7 +125,22 @@ export async function deployPublicTrustRegistry(input: {
     && state.contractAddress === receipt.contractAddress.toLowerCase()
     && state.registryIdCommitment === bytes32Hex(registryId)
     && state.deploymentNetworkIdCommitment === bytes32Hex(networkId)
+    && state.contractVersion === 1n
+    && state.registryDidCommitment === bytes32Hex(registryDid)
     && state.governancePolicyCommitment === bytes32Hex(policy)
-    && state.governanceActionSequence === 1n;
+    && state.governancePolicyVersion === 1n
+    && state.governanceActionSequence === 1n
+    && state.maintainerThreshold === bootstrap.maintainerThreshold
+    && state.emergencyMaintainerThreshold === bootstrap.maintainerThreshold
+    && state.archivalMaintainerThreshold === bootstrap.maintainerThreshold
+    && state.activeMaintainerCount === 1n
+    && state.bootstrapMaintainer !== null
+    && state.bootstrapMaintainer.maintainerId === bytes32Hex(maintainerId)
+    && state.bootstrapMaintainer.didCommitment === bytes32Hex(maintainerDid)
+    && state.bootstrapMaintainer.keyId === bytes32Hex(maintainerKeyId)
+    && state.bootstrapMaintainer.publicKey.x === bootstrap.maintainerPublicKey.x
+    && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
+    && state.bootstrapMaintainer.status === MaintainerStatus.active
+    && state.bootstrapMaintainer.joinedAtSequence === 0n;
   return { receipt, readback: verified ? { status: "verified", state } : { status: "mismatch", state } };
 }

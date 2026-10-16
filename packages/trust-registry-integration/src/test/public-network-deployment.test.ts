@@ -55,19 +55,23 @@ const receipt = {
   blockHeight: 12,
 };
 let observedPolicyOverride: Uint8Array | null = null;
+let observedRegistryDidOverride: Uint8Array | null = null;
+let observedMaintainerDidOverride: Uint8Array | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   observedPolicyOverride = null;
+  observedRegistryDidOverride = null;
+  observedMaintainerDidOverride = null;
   setNetworkId("preview");
   mocks.indexerPublicDataProvider.mockReturnValue({ queryContractState: mocks.queryContractState });
   mocks.deployContract.mockImplementation(async (_providers, options) => {
     const simulator = new TrustRegistrySimulator({
       registryId: options.args[0],
-      registryDidCommitment: options.args[1],
+      registryDidCommitment: observedRegistryDidOverride ?? options.args[1],
       governancePolicyCommitment: observedPolicyOverride ?? options.args[2],
       maintainerId: options.args[3],
-      maintainerDidCommitment: options.args[4],
+      maintainerDidCommitment: observedMaintainerDidOverride ?? options.args[4],
       maintainerKeyId: options.args[5],
       maintainerPublicKey: options.args[6],
       maintainerThreshold: options.args[7],
@@ -122,6 +126,9 @@ describe("public Trust Registry deployment", () => {
     if (result.readback.status === "verified") {
       expect(result.readback.state.registryIdCommitment).toBe(bytes32Hex(bytes32Commitment(registryId)));
       expect(result.readback.state.finalizedBlockHash).toBe(finalized);
+      expect(result.readback.state.registryDidCommitment).toBe(bytes32Hex(bootstrap.registryDidCommitment));
+      expect(result.readback.state.bootstrapMaintainer?.didCommitment)
+        .toBe(bytes32Hex(bootstrap.maintainerDidCommitment));
     }
   });
 
@@ -155,5 +162,13 @@ describe("public Trust Registry deployment", () => {
     const result = await deploy();
     expect(result.receipt.txId).toBe(receipt.txId);
     expect(result.readback.status).toBe("mismatch");
+  });
+
+  it("rejects a substituted registry DID or bootstrap maintainer DID in finalized state", async () => {
+    observedRegistryDidOverride = bytes32Commitment("did:midnight:preview:other-registry");
+    expect((await deploy()).readback.status).toBe("mismatch");
+    observedRegistryDidOverride = null;
+    observedMaintainerDidOverride = bytes32Commitment("did:midnight:preview:other-maintainer");
+    expect((await deploy()).readback.status).toBe("mismatch");
   });
 });

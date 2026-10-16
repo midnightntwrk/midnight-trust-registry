@@ -101,6 +101,11 @@ network qualification: no funded deployment was performed, the host providers
 and RPC/indexer are trusted, and a readback from one indexer is not a
 cryptographic proof of canonical state. Issue #200 remains open until an
 operator-approved live deployment and independent finality/replay checks.
+The bootstrap-specific read also compares the registry DID commitment, policy
+version, all three initial thresholds, active maintainer count, and the
+bootstrap maintainer's ID, DID, key ID, public key, active status, and joined
+sequence. The signer-preflight reader remains limited to current action
+context so later legitimate governance changes do not invalidate it.
 
 As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
 lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod

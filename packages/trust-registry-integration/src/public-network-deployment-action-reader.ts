@@ -1,6 +1,7 @@
-import type { TrustedDeploymentActionReader } from "@midnight-ntwrk/trust-registry-client";
-
-import { createCheckpointedDeploymentActionReader } from "./finalized-deployment-action-reader.js";
+import {
+  createCheckpointedDeploymentActionReader,
+  type FinalizedRegistryBootstrapReader,
+} from "./finalized-deployment-action-reader.js";
 import {
   createRpcFinalizedCheckpointSource,
   type RpcFinalizedCheckpointConfig,
@@ -26,7 +27,7 @@ const indexerEndpoint = (value: string, secure: string, local: string): string =
 /** Wires the published Midnight indexer provider to a separately pinned node checkpoint. */
 export async function createPublicNetworkDeploymentActionReader(
   config: PublicNetworkDeploymentActionReaderConfig,
-): Promise<TrustedDeploymentActionReader> {
+): Promise<FinalizedRegistryBootstrapReader> {
   const checkpointSource = createRpcFinalizedCheckpointSource(config);
   const httpUrl = indexerEndpoint(config.indexerHttpUrl, "https:", "http:");
   const wsUrl = indexerEndpoint(config.indexerWsUrl, "wss:", "ws:");

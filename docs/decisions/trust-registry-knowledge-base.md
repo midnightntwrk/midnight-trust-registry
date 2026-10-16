@@ -1484,4 +1484,9 @@ the receipt for read-only investigation rather than inviting redeployment.
 Initialization is governance action count one, not zero. Five focused adapter
 tests and the local 20/20 light gate passed. The host providers and indexer
 remain trust boundaries; #200 stays open until a funded, operator-approved
-deployment and independent qualification are available.
+deployment and independent qualification are available. The follow-on
+bootstrap-specific finalized read adds the registry DID, policy version,
+all initial thresholds, active maintainer count, and the maintainer's
+identity, key, active status, and joining sequence to that comparison;
+the action-signing reader remains narrower by design. The preceding
+`c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.
