@@ -213,9 +213,13 @@ challenge, submits the resulting redacted evidence through this HTTP proposal
 route, and then approves and activates the issuer with external 2-of-3 votes.
 
 An embedding host may inject `proposalSubmissionJournal` alongside
-`proposalAdmission` for issuer, verifier, auditor, and maintainer proposal
-submission. The private file adapter reserves the role, authorization ID,
-and accepted evidence commitment before calling the Compact-backed port.
+`proposalAdmission` for issuer, verifier, auditor, and maintainer proposals,
+or alongside the matching accreditation admission store for recognition.
+The private file adapter reserves the role, authorization ID, and accepted
+evidence commitment before calling the Compact-backed port. A journaled
+recognition port must also supply a side-effect-free `preflightSubmission`
+that rejects known-invalid current-ledger signatures and quorum before
+reservation. It must recheck at execution; preflight is not finality.
 Before reservation the API verifies that every supplied maintainer signature
 signs the current prepared action digest and rejects duplicate key IDs.
 This preflight cannot establish active maintainer membership, quorum, or the

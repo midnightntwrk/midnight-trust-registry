@@ -222,7 +222,7 @@ export type TrustRegistryApiServerOptions = {
   /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   proposalAdmission?: ProposalAdmissionPort;
-  /** Required for a deployable VP-to-Compact handoff; the adapter must persist before submission. */
+  /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
@@ -747,8 +747,20 @@ export const createTrustRegistryApiServer = (
       || options.recognitionAccreditation.admissionStore !== options.governedRecognitionProposals.admissionStore)) {
     throw new Error("Recognition accreditation and governed proposals require the same admission store");
   }
-  if (options.proposalSubmissionJournal !== undefined && options.proposalAdmission === undefined) {
-    throw new Error("A proposal submission journal requires accepted application admission");
+  const hasMembershipProposalPort = options.governedIssuerProposals !== undefined
+    || options.governedVerifierProposals !== undefined
+    || options.governedAuditorProposals !== undefined
+    || options.governedMaintainerProposals !== undefined;
+  if (options.proposalSubmissionJournal !== undefined
+    && ((hasMembershipProposalPort && options.proposalAdmission === undefined)
+      || (!hasMembershipProposalPort && (options.governedRecognitionProposals === undefined
+        || options.recognitionAccreditation === undefined)))) {
+    throw new Error("A proposal submission journal requires matching application or recognition admission");
+  }
+  if (options.proposalSubmissionJournal !== undefined
+    && options.governedRecognitionProposals !== undefined
+    && options.governedRecognitionProposals.preflightSubmission === undefined) {
+    throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const trqpAdapter = new TrustRegistryTrqpAdapter(
@@ -1154,6 +1166,13 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
             "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
         }
+        if (options.proposalSubmissionJournal !== undefined) {
+          try {
+            await options.proposalSubmissionJournal.reconcile("recognition", recognitionId, async () => record);
+          } catch (error) {
+            return mapSubmissionJournalError(error);
+          }
+        }
         writeJson(response, 200, { state: "observed", eventHash: record.eventHash }, false);
         return;
       }
@@ -1209,9 +1228,13 @@ export const createTrustRegistryApiServer = (
                   "invalid governed signature");
               }
               requireValidProposalSigners(current, signers);
-              return GovernedMembershipActionReceiptSchema.parse(await port.execute(
+              await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
-              ));
+              );
+              return executeProposal("recognition", recognitionId, body.evidenceCommitment, async () =>
+                GovernedMembershipActionReceiptSchema.parse(await port.execute(
+                  binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
+                )));
             },
             clock: () => Date.parse(options.clock?.() ?? new Date().toISOString()),
           });

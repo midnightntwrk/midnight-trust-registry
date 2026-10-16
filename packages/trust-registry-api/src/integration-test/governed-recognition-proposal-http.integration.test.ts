@@ -8,9 +8,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
+  EvidenceVerifierKeyStatus,
+  MaintainerStatus,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
   signRecognitionProposalEvidenceFromSeed,
+  verifyRecognitionProposalEvidenceSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
@@ -37,6 +40,7 @@ import {
   recognitionAuthorityChallengeIdentityHash,
 } from "../recognition-authority-challenges.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
@@ -160,6 +164,29 @@ describe("governed recognition proposal HTTP", () => {
         }
         return harness.prepareRecognitionProposalAction(recognition, bytes(evidence));
       },
+      async preflightSubmission(_binding, _evidence, signers, verifierSignature, prepared) {
+        const ledger = harness.simulator.getLedger();
+        const verifierKey = ledger.evidenceVerifierKeyRecords.lookup(prepared.evidenceVerifierAuthorizationId);
+        if (BigInt(signers.length) < ledger.maintainerThreshold
+          || signers.some((signer) => {
+            if (!ledger.maintainerKeyIds.member(signer.keyId)) return true;
+            const registered = ledger.maintainerRecords.lookup(signer.keyId);
+            return registered.status !== MaintainerStatus.active
+              || registered.publicKey.x !== signer.publicKey.x
+              || registered.publicKey.y !== signer.publicKey.y;
+          })
+          || verifierKey.status !== EvidenceVerifierKeyStatus.active
+          || !Buffer.from(verifierKey.keyIdCommitment).equals(Buffer.from(prepared.evidenceVerifierKeyIdCommitment))
+          || !verifyRecognitionProposalEvidenceSignature(
+            verifierKey.publicKey,
+            prepared.registryId,
+            prepared.evidenceVerifierKeyIdCommitment,
+            prepared.actionPayloadHash,
+            verifierSignature,
+          )) {
+          throw new GovernedRecognitionProposalRejectedError("invalid-signers");
+        }
+      },
       async execute(currentBinding, evidence, signers, verifierSignature, prepared) {
         if (currentBinding.recognitionId !== recognition.recognitionId
           || currentBinding.authorityDid !== recognition.recognizedAuthorityDid
@@ -182,9 +209,11 @@ describe("governed recognition proposal HTTP", () => {
       ),
     };
     const separateStore = new FileRecognitionAdmissionStore(join(directory, "other-admission.json"), governanceWorkspacePath);
+    const journal = new FileProposalSubmissionJournal(join(directory, "proposal-journal.json"));
     expect(() => createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "mismatched" }) },
       governedRecognitionProposals: port,
+      proposalSubmissionJournal: journal,
       recognitionAccreditation: {
         challengeStore: separateStore,
         admissionStore: separateStore,
@@ -192,11 +221,25 @@ describe("governed recognition proposal HTTP", () => {
         resolveCurrentContext: async () => null,
       },
     })).toThrow(/same admission store/u);
+    const noPreflightPort: GovernedRecognitionProposalPort = { ...port };
+    delete noPreflightPort.preflightSubmission;
+    expect(() => createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "no-preflight" }) },
+      governedRecognitionProposals: noPreflightPort,
+      proposalSubmissionJournal: journal,
+      recognitionAccreditation: {
+        challengeStore: admissionStore,
+        admissionStore,
+        authorizeRequest: async () => {},
+        resolveCurrentContext: async () => null,
+      },
+    })).toThrow(/side-effect-free submission preflight/u);
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, {
         label: "recognition-proposal-http", recognitions: [{ label: "partner", fixture: recognition }],
       }) },
       governedRecognitionProposals: port,
+      proposalSubmissionJournal: journal,
       recognitionAccreditation: {
         challengeStore: admissionStore,
         admissionStore,
@@ -263,7 +306,10 @@ describe("governed recognition proposal HTTP", () => {
         });
       const first = sign(harness, second, prepared);
       const other = sign(harness, third, prepared);
-      expect((await submit(prepared, [first])).status).toBe(403);
+      const outsider = sign(harness, createMaintainerScenarioFixture("recognition-outsider"), prepared);
+      const insufficient = await submit(prepared, [first]);
+      expect(insufficient.status, JSON.stringify(await insufficient.json())).toBe(403);
+      expect((await submit(prepared, [first, outsider])).status).toBe(403);
       const wrongVerifier = signRecognitionProposalEvidenceFromSeed(
         second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
         bytes(prepared.actionPayloadHash),
@@ -271,13 +317,16 @@ describe("governed recognition proposal HTTP", () => {
       expect((await submit(prepared, [first, other], wrongVerifier)).status).toBe(403);
       expect((await submit({ ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
         [first, other])).status).toBe(409);
+      expect(await journal.read("recognition", recognition.recognitionId)).toBeNull();
       const accepted = await submit(prepared, [first, other]);
       expect(accepted.status).toBe(202);
       expect((await accepted.json() as { eventHash: string }).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "submitted", evidenceCommitment });
       expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
       expect((await submit(prepared, [first, other])).status).toBe(409);
       expect(await (await resolve(request)).json()).toEqual({ state: "not-observed" });
+      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "submitted" });
       finalizedLedger = harness.simulator.getLedger();
       const recovered = await resolve(request);
       expect(recovered.status).toBe(200);
@@ -286,8 +335,10 @@ describe("governed recognition proposal HTTP", () => {
         finalizedLedger.recognitionProposalEvidenceRecords.lookup(recognition.recognitionIdCommitment)
           .proposalGovernanceEventHash,
       ) });
+      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "observed" });
       port.resolve = async () => ({ eventHash: sha256Hex("unrelated-event"), evidenceCommitment: sha256Hex("unrelated-evidence") });
       expect((await resolve(request)).status).toBe(409);
+      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "observed" });
       port.resolve = async () => { throw new Error("finality source unavailable"); };
       expect((await resolve(request)).status).toBe(503);
     } finally {

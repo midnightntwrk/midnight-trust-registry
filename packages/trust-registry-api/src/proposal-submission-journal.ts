@@ -13,7 +13,7 @@ import { GovernedProposalObservationSchema, type GovernedProposalObservation } f
 const MAX_ENTRIES = 10_000;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
-const ProposalRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer"]);
+const ProposalRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"]);
 const AttemptSchema = z.strictObject({
   role: ProposalRoleSchema,
   authorizationId: z.string().trim().min(1).max(256),
