@@ -4,9 +4,11 @@ import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import {
   decodeJubjubSignature,
+  deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
@@ -1036,7 +1038,7 @@ describe("trust registry local simulator integration", () => {
     ).toBe(ContractAuthorizationStatus.archived);
   });
 
-  it("rejects duplicate live maintainer identity enrollment and refuses to deactivate the last active maintainer", () => {
+  it("rejects duplicate live maintainer identity enrollment and self-voted deactivation", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const candidate = createMaintainerScenarioFixture("self");
     candidate.subjectDidCommitment = harness.maintainerDidCommitment;
@@ -1056,8 +1058,39 @@ describe("trust registry local simulator integration", () => {
     };
 
     expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
-      /threshold policy/i,
+      /own DID/i,
     );
+  });
+
+  it("rejects non-self maintainer removal that would break a live threshold", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("removal-threshold");
+    const second = createMaintainerScenarioFixture("removal-threshold-second");
+    harness.authorizeMaintainer(second);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+    const bootstrapMembership = {
+      maintainerIdCommitment: harness.maintainerIdCommitment,
+      maintainerId: harness.maintainerId,
+      subjectDidCommitment: harness.maintainerDidCommitment,
+      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      seed: new Uint8Array(32),
+      subjectDid: harness.maintainerDid,
+      trustLevel: "bootstrap-maintainer",
+    };
+    const prepared = harness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+    expect(() => harness.executeMaintainerDecisionWithSignatures(bootstrapMembership, "suspend", [{
+      keyId: second.keyId,
+      publicKey: deriveJubjubPublicKeyFromSeed(second.seed),
+      signature: signDeploymentBoundMaintainerActionFromSeed(
+        second.seed, prepared.registryId,
+        harness.simulator.getLedger().deploymentNetworkIdCommitment,
+        Buffer.from(harness.simulator.contractAddress, "hex"),
+        prepared.policyCommitment,
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    }])).toThrow(/threshold policy/i);
+    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
+    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
   });
 
   it("rejects evidence from an incompatible contract format at both verification boundaries", () => {

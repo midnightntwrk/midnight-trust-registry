@@ -25,17 +25,20 @@ Issuer grants use a canonical tuple of credential family, schema ID/version, cre
 ```mermaid
 stateDiagram-v2
   [*] --> proposed
+  proposed --> archived: quorum denial
   proposed --> authorized: quorum approval
   authorized --> active: governed activation
+  authorized --> revoked: governed revocation
+  authorized --> archived: archival action
   active --> suspended: emergency action
   active --> revoked: governed revocation
+  active --> archived: archival action
   suspended --> revoked: governed revocation
-  active --> superseded: replacement
+  suspended --> archived: archival action
   revoked --> archived: archival action
-  superseded --> archived: archival action
 ```
 
-The diagram is conceptual. Exact allowed transitions are validated by the domain and Compact circuits; a proposed rejection/terminal reuse rule remains an explicit 0.1.0 gap. Revocation and archival preserve history. `active` is the only state that grants current authorization; an older active evidence bundle is historical, not proof of current permission.
+The diagram shows the implemented grant transitions. Quorum-signed archival of a proposed record is a denial that retains history. Reinstatement (`suspended` to `active`) and grant supersession are not implemented in the Compact contract; the `superseded` schema value is retained for historical policy and evidence records, not as a grant action. Revocation and archival preserve history. `active` is the only state that grants current authorization; an older active evidence bundle is historical, not proof of current permission.
 
 ## Time and status
 

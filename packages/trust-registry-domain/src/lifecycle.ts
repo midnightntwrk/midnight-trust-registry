@@ -15,10 +15,10 @@ export type LifecycleStatus = z.infer<typeof LifecycleStatusSchema>;
 const lifecycleTransitionMap: Record<LifecycleStatus, LifecycleStatus[]> = {
   proposed: ["authorized", "archived"],
   authorized: ["active", "revoked", "archived"],
-  active: ["suspended", "revoked", "superseded", "archived"],
-  suspended: ["active", "revoked", "superseded", "archived"],
+  active: ["suspended", "revoked", "archived"],
+  suspended: ["revoked", "archived"],
   revoked: ["archived"],
-  superseded: ["archived"],
+  superseded: [],
   archived: [],
 };
 
