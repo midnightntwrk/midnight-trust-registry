@@ -1428,3 +1428,7 @@ rejected. This is reference gateway replay retention, not an on-chain nonce
 store or public-network throughput guarantee. Fake-clock, restart, concurrent
 HTTP, schema-capacity, and keyed-lookup tests belong to this slice; keep it
 local until a coherent functional stack is ready for review.
+The same local integration-light run exposed a governed-demo temporal-dead-zone
+error: an early threshold-removal adversarial case implicitly used the later
+main `harness`. Passing `lastActiveHarness` explicitly restores the intended
+threshold-policy assertion. This is a demo wiring repair, not a policy change.
