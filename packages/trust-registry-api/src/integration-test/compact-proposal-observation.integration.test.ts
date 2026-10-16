@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
+import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 
 import {
   createAuditorScenarioFixture,
@@ -16,6 +17,7 @@ import {
   resolveCompactProposalObservation,
   type ProposalRole,
 } from "../compact-proposal-observation.js";
+import { createTrustRegistryApiServer } from "../server.js";
 
 describe("finalized Compact proposal observation", () => {
   it.each(["issuer", "verifier", "auditor", "maintainer", "recognition"] as const)(
@@ -117,5 +119,51 @@ describe("finalized Compact proposal observation", () => {
     });
     await expect(resolveCompactProposalObservation(read, "registry:wrong:trusted", "issuer", issuer.authorizationId))
       .rejects.toThrow("different trust registry");
+  });
+
+  it("serves proposal snapshots only from the injected finalized view", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-snapshot-http");
+    const issuer = createIssuerScenarioFixture("snapshot-http");
+    let finalized = harness.simulator.getLedger();
+    const source = { mode: "memory" as const,
+      loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "proposal-snapshot-http" }) };
+    const server = createTrustRegistryApiServer({
+      source,
+      readFinalizedProposalLedger: async () => finalized,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const url = `http://127.0.0.1:${address.port}/v1/governed/issuer/${encodeURIComponent(issuer.authorizationId)}/proposal/evidence`;
+      expect((await fetch(url)).status).toBe(404);
+      harness.proposeIssuer(issuer);
+      expect((await fetch(url)).status).toBe(404);
+      finalized = harness.simulator.getLedger();
+      const response = await fetch(url);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toMatchObject({
+        role: "issuer",
+        authorizationId: issuer.authorizationId,
+        policyCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      });
+      expect((await fetch(url.replace("/issuer/", "/other/"))).status).toBe(400);
+      expect((await fetch(url.replace("/issuer/", "/verifier/"))).status).toBe(404);
+      expect((await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${"x".repeat(257)}/proposal/evidence`)).status)
+        .toBe(400);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    const unavailable = createTrustRegistryApiServer({ source });
+    await new Promise<void>((resolve) => unavailable.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = unavailable.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${encodeURIComponent(issuer.authorizationId)}/proposal/evidence`);
+      expect(response.status).toBe(503);
+    } finally {
+      await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });

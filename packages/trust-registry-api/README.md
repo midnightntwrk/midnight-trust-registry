@@ -200,7 +200,11 @@ finality.
 For audit tooling, `resolveCompactProposalEvidenceSnapshot` joins a proposal
 record to its registered verifier key in an independently finalized ledger
 view. It exposes the DID/key and policy snapshot for all five proposal roles;
-it is not a standalone finality or inclusion proof and is not an HTTP route.
+it is not a standalone finality or inclusion proof. An embedding host may
+inject `readFinalizedProposalLedger` to expose the same projection at
+`GET /v1/governed/:role/:id/proposal/evidence`; without that reader the route
+returns 503. A missing record in the supplied finalized view returns 404,
+not proof that an in-flight proposal failed.
 Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
 injected `governedVerifierProposals`, `governedAuditorProposals`, and

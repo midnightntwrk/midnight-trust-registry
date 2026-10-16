@@ -103,6 +103,11 @@ import {
   type GovernedProposalObservation,
 } from "./governed-proposal-observation.js";
 import {
+  resolveCompactProposalEvidenceSnapshot,
+  type FinalizedProposalLedgerReader,
+  type ProposalRole,
+} from "./compact-proposal-observation.js";
+import {
   decodeVerifierEvidenceVerifierSignature,
   GovernedVerifierProposalPrepareRequestSchema,
   GovernedVerifierProposalRejectedError,
@@ -221,6 +226,8 @@ export type TrustRegistryApiServerOptions = {
   recognitionAccreditation?: RecognitionAccreditationHttpPort;
   /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
+  /** Optional read-only proposal audit source; this server does not establish ledger finality. */
+  readFinalizedProposalLedger?: FinalizedProposalLedgerReader;
   proposalAdmission?: ProposalAdmissionPort;
   /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
@@ -915,6 +922,31 @@ export const createTrustRegistryApiServer = (
             registryId: summary.registryId,
           }),
         );
+        return;
+      }
+
+      if (method === "GET" && segments.length === 6 && segments[0] === "v1"
+        && segments[1] === "governed" && segments[4] === "proposal" && segments[5] === "evidence") {
+        response.setHeader("cache-control", "no-store");
+        const role = segments[2]!;
+        if (!["issuer", "verifier", "auditor", "maintainer", "recognition"].includes(role)) {
+          throw jsonProblem(problemBaseUri, "invalid-proposal-role", 400, "invalid proposal role");
+        }
+        if (segments[3]!.length === 0 || segments[3]!.length > 256) {
+          throw jsonProblem(problemBaseUri, "invalid-proposal-id", 400, "invalid proposal ID");
+        }
+        if (options.readFinalizedProposalLedger === undefined) {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
+            "proposal evidence unavailable");
+        }
+        const registry = await loadRegistryRecord(options.source);
+        const snapshot = await resolveCompactProposalEvidenceSnapshot(
+          options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+        );
+        if (snapshot === null) {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-not-found", 404, "proposal evidence not found");
+        }
+        writeJson(response, 200, snapshot, false);
         return;
       }
 

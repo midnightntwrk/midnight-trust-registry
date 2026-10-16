@@ -299,7 +299,9 @@ immutable proposal record to its registered verifier key and returns the DID,
 key, suite, policy snapshot, signature, commitment, and governance event.
 This projection is not itself a finality, inclusion, or signature proof, and
 the key's present lifecycle status must not be substituted for its status at
-proposal time. The recognition HTTP resolution route
+proposal time. Hosts with a finalized reader can expose the projection through
+`GET /v1/governed/:role/:id/proposal/evidence`; a 404 in that view does not
+prove a transaction failed. The recognition HTTP resolution route
 requires private request authorization and the exact accepted accreditation
 receipt, application binding, and evidence commitment. It may recover an
 observed event after the receipt window has passed, but cannot authorize a new
