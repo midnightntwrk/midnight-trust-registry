@@ -1509,3 +1509,13 @@ Focused decision-evidence tests, audit, and `./run.sh --light` passed at
 `0969427`; a full integration run started at that exact tree and must be
 checked before claiming full qualification. The published evidence guide
 now explains these boundaries on the local follow-on branch.
+
+The next local #79 slice, `9d6ecc4`, exposes the same block-hash-pinned
+Compact ledger used by deployment preflight to the VC decision reader.
+`createCheckpointedCompactDecisionReaders` refuses a mismatched network,
+deployed address, or malformed/zero finalized block hash before consulting
+the separately authenticated historical-publication port. It still needs
+host-authenticated publication signer history, DID state, evaluation time,
+and network finality; the simulator test is not a live qualification. The
+integration package passed 154/154 tests, `./run.sh --light` passed 20/20
+tasks, and audit reported no known vulnerabilities at this slice.
