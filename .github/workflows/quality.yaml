@@ -32,6 +32,8 @@ jobs:
     name: Typecheck, Audit, and Packaging Baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      proving_required: ${{ steps.proving-inputs.outputs.required }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -122,27 +124,6 @@ jobs:
         env:
           TR_PROVING_BASE: ${{ github.event.before }}
 
-      - name: Restore ZKIR-derived proving keys
-        if: steps.proving-inputs.outputs.required == 'true'
-        id: proving-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: contracts/trust-registry/src/managed/trust-registry/keys
-          key: tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-${{ github.sha }}
-          restore-keys: |
-            tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-
-
-      - name: Verify and complete ZKIR-derived proving keys
-        if: steps.proving-inputs.outputs.required == 'true'
-        run: node scripts/proving-key-cache.mjs
-
-      - name: Save verified proving keys
-        if: steps.proving-inputs.outputs.required == 'true' && steps.proving-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: contracts/trust-registry/src/managed/trust-registry/keys
-          key: tr-proving-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-${{ github.sha }}
-
       - name: Typecheck all workspaces
         run: pnpm run typecheck:light
 
@@ -155,3 +136,100 @@ jobs:
 
       - name: Audit dependencies
         run: pnpm audit --audit-level low
+
+  proving-keys:
+    name: Proving Keys (shard ${{ matrix.shard }})
+    needs: quality
+    if: needs.quality.outputs.proving_required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
+      - name: Restore pinned Compact installation
+        id: compact-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Set up Compact toolchain
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
+        with:
+          compact-version: ${{ steps.compact-version.outputs.version }}
+          cache-enabled: 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Add cached Compact to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Compact installation
+        run: node scripts/check-compact-version.mjs --check-installed
+        env:
+          TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
+
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
+      - name: Save verified Compact installation
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Validate Compact workflow semantics
+        run: pnpm run check:compact-version
+
+      - name: Generate contract ZKIR without proving keys
+        run: pnpm --filter @midnight-ntwrk/trust-registry-contract run compact:light
+
+      - name: Restore shard proving keys
+        id: proving-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: contracts/trust-registry/src/managed/trust-registry/sharded-keys/12/${{ matrix.shard }}
+          key: tr-proving-shard-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-12-${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: |
+            tr-proving-shard-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-12-${{ matrix.shard }}-
+
+      - name: Verify and complete shard proving keys
+        run: node scripts/proving-key-cache.mjs ${{ matrix.shard }} 12
+
+      - name: Save verified shard proving keys
+        if: steps.proving-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: contracts/trust-registry/src/managed/trust-registry/sharded-keys/12/${{ matrix.shard }}
+          key: tr-proving-shard-v1-${{ runner.os }}-${{ runner.arch }}-compact-${{ steps.compact-version.outputs.version }}-12-${{ matrix.shard }}-${{ github.sha }}
