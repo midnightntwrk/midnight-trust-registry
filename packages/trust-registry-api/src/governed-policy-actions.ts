@@ -20,6 +20,7 @@ export const GovernedThresholdPrepareRequestSchema = z.strictObject({
 
 export const GovernedMaintainerRecoveryPrepareRequestSchema = GovernedThresholdPrepareRequestSchema.extend({
   maintainerId: Bytes32Schema,
+  evidenceHash: Bytes32Schema,
 });
 
 export const PreparedGovernedPolicyActionSchema = z.strictObject({
@@ -36,6 +37,8 @@ export const PreparedGovernedPolicyActionSchema = z.strictObject({
   keyIdCommitment: Bytes32Schema.optional(),
   policyVersion: ScalarSchema.optional(),
   maintainerId: Bytes32Schema.optional(),
+  previousLifecycleEventHash: Bytes32Schema.optional(),
+  evidenceHash: Bytes32Schema.optional(),
 });
 
 export const GovernedThresholdSubmitRequestSchema = GovernedThresholdPrepareRequestSchema.extend({
@@ -75,6 +78,8 @@ export type GovernedPolicyActionContext = {
   keyIdCommitment?: Uint8Array;
   policyVersion?: bigint;
   maintainerId?: Uint8Array;
+  previousLifecycleEventHash?: Uint8Array;
+  evidenceHash?: Uint8Array;
 };
 
 export type GovernedPolicyActionPort = {
@@ -87,10 +92,12 @@ export type GovernedPolicyActionPort = {
   executeEvidenceVerifier(signers: readonly GovernedMembershipSigner[]): Promise<GovernedPolicyActionReceipt>;
   prepareMaintainerRecovery?(
     maintainerId: string,
+    evidenceHash: string,
     thresholds: GovernedThresholds,
   ): Promise<GovernedPolicyActionContext>;
   executeMaintainerRecovery?(
     maintainerId: string,
+    evidenceHash: string,
     thresholds: GovernedThresholds,
     signers: readonly GovernedMembershipSigner[],
   ): Promise<GovernedPolicyActionReceipt>;
@@ -135,6 +142,12 @@ export const serializeGovernedPolicyAction = (
   }),
   ...(context.maintainerId === undefined ? {} : {
     maintainerId: bytes32Hex(context.maintainerId),
+  }),
+  ...(context.previousLifecycleEventHash === undefined ? {} : {
+    previousLifecycleEventHash: bytes32Hex(context.previousLifecycleEventHash),
+  }),
+  ...(context.evidenceHash === undefined ? {} : {
+    evidenceHash: bytes32Hex(context.evidenceHash),
   }),
 });
 

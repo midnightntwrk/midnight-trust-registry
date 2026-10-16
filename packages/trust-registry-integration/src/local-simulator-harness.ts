@@ -1196,6 +1196,7 @@ export class LocalTrustRegistryIntegrationHarness {
 
   prepareAtomicMaintainerRecoveryAction(
     fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
@@ -1217,12 +1218,11 @@ export class LocalTrustRegistryIntegrationHarness {
     const policy = this.prepareThresholdPolicyRevisionAction(
       defaultThreshold, emergencyThreshold, archivalThreshold,
     );
-    const evidenceHash = bytes32Commitment(`${fixture.maintainerId}:recover`);
     return {
       ...policy,
       maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
       previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
-      evidenceHash,
+      evidenceHash: Uint8Array.from(evidenceHash),
       actionKind: Uint8Array.from(RECOVER_MAINTAINER_ACTION_KIND),
       actionPayloadHash: computeRecoverMaintainerMembershipPayloadHash(
         policy.policyCommitment,
@@ -1240,6 +1240,7 @@ export class LocalTrustRegistryIntegrationHarness {
 
   executeAtomicMaintainerRecoveryWithSignatures(
     fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
@@ -1248,7 +1249,7 @@ export class LocalTrustRegistryIntegrationHarness {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Atomic recovery requires a maintainer signature");
     const prepared = this.prepareAtomicMaintainerRecoveryAction(
-      fixture, defaultThreshold, emergencyThreshold, archivalThreshold,
+      fixture, evidenceHash, defaultThreshold, emergencyThreshold, archivalThreshold,
     );
     const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors.map(
       (anchor) => ({ ...anchor, policyVersion: `v${prepared.nextPolicyVersion.toString()}` }),

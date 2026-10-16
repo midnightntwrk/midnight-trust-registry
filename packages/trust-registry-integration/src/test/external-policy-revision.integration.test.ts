@@ -113,14 +113,15 @@ describe("externally signed policy revision", () => {
     harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
 
     const before = harness.simulator.getLedger();
-    const prepared = harness.prepareAtomicMaintainerRecoveryAction(target, 1n, 1n, 1n);
+    const evidenceHash = bytes32Commitment("incident:atomic-maintainer-recovery");
+    const prepared = harness.prepareAtomicMaintainerRecoveryAction(target, evidenceHash, 1n, 1n, 1n);
     const secondVote = signPrepared(harness, second, prepared);
     const targetVote = signPrepared(harness, target, prepared);
     const bootstrap = createMaintainerFixture("bootstrap", 17);
     bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
     const bootstrapVote = signPrepared(harness, bootstrap, prepared);
     const recover = (signers: MaintainerCoAuthorizer[]) =>
-      harness.executeAtomicMaintainerRecoveryWithSignatures(target, 1n, 1n, 1n, signers);
+      harness.executeAtomicMaintainerRecoveryWithSignatures(target, evidenceHash, 1n, 1n, 1n, signers);
 
     expect(() => recover([bootstrapVote])).toThrow();
     expect(() => recover([bootstrapVote, targetVote])).toThrow();

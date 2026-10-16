@@ -215,11 +215,11 @@ describe("Compact-backed policy revision over HTTP", () => {
       async executeThresholds() { throw new Error("Not configured for this test"); },
       async prepareEvidenceVerifier() { throw new Error("Not configured for this test"); },
       async executeEvidenceVerifier() { throw new Error("Not configured for this test"); },
-      async prepareMaintainerRecovery(maintainerId, value) {
+      async prepareMaintainerRecovery(maintainerId, evidenceHash, value) {
         if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
         try {
           return harness.prepareAtomicMaintainerRecoveryAction(
-            target, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+            target, bytes(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
           );
         } catch (error) {
           if (!(error instanceof CompactError || error instanceof AtomicMaintainerRecoveryPrecheckError)) {
@@ -228,11 +228,11 @@ describe("Compact-backed policy revision over HTTP", () => {
           throw new GovernedPolicyActionRejectedError();
         }
       },
-      async executeMaintainerRecovery(maintainerId, value, signers) {
+      async executeMaintainerRecovery(maintainerId, evidenceHash, value, signers) {
         if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
         try {
           return { eventHash: hex(harness.executeAtomicMaintainerRecoveryWithSignatures(
-            target, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+            target, bytes(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
           )) };
         } catch {
           throw new GovernedPolicyActionRejectedError();
@@ -251,11 +251,15 @@ describe("Compact-backed policy revision over HTTP", () => {
       const post = (path: string, body: unknown) => fetch(`${endpoint}/${path}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
-      const request = { maintainerId: targetId, thresholds };
+      const evidenceHash = hex(bytes32Commitment("incident:policy-http-recovery"));
+      const request = { maintainerId: targetId, evidenceHash, thresholds };
+      expect((await post("prepare", { maintainerId: targetId, thresholds })).status).toBe(400);
       const preparedResponse = await post("prepare", request);
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedPolicyAction;
       expect(prepared.maintainerId).toBe(targetId);
+      expect(prepared.evidenceHash).toBe(evidenceHash);
+      expect(prepared.previousLifecycleEventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       const bootstrap = createMaintainerFixture("bootstrap", 17);
       bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
       const bootstrapVote = signPrepared(bootstrap, prepared);
@@ -267,6 +271,12 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await submit(prepared, [bootstrapVote])).status).toBe(403);
       expect((await submit(prepared, [bootstrapVote, targetVote])).status).toBe(403);
       expect((await submit({ ...prepared, actionSequence: "0" }, [bootstrapVote, secondVote])).status).toBe(409);
+      expect((await post("submit", {
+        ...request,
+        evidenceHash: hex(bytes32Commitment("incident:substituted")),
+        prepared,
+        signers: [bootstrapVote, secondVote],
+      })).status).toBe(409);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
       const recovered = await submit(prepared, [bootstrapVote, secondVote]);
       expect(recovered.status).toBe(202);

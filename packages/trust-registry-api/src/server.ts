@@ -1520,11 +1520,11 @@ export const createTrustRegistryApiServer = (
         const body = await parseJsonBody(request, (value) => (preparing
           ? GovernedMaintainerRecoveryPrepareRequestSchema
           : GovernedMaintainerRecoverySubmitRequestSchema).parse(value), problemBaseUri);
-        const { maintainerId, thresholds } = body;
+        const { maintainerId, evidenceHash, thresholds } = body;
         let signerContext;
         let current;
         try {
-          signerContext = await port.prepareMaintainerRecovery(maintainerId, thresholds);
+          signerContext = await port.prepareMaintainerRecovery(maintainerId, evidenceHash, thresholds);
           current = serializeGovernedPolicyAction(signerContext);
         } catch (error) {
           return mapGovernedPolicyError(error, problemBaseUri);
@@ -1549,7 +1549,7 @@ export const createTrustRegistryApiServer = (
         requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedPolicyActionReceiptSchema.parse(
-            await port.executeMaintainerRecovery(maintainerId, thresholds, signers),
+            await port.executeMaintainerRecovery(maintainerId, evidenceHash, thresholds, signers),
           );
           writeJson(response, 202, receipt);
           return;

@@ -44,7 +44,7 @@ Timestamped evidence export uses the same selector and snapshot as the temporal 
 | `POST /v1/governed/{role}/{id}/proposal/prepare`, `/submit`, `/resolve` | Compact-backed role proposal, external signatures, read-only recovery; role-specific port required |
 | `GET`, `POST /v1/governed/{role}/{id}/actions/{action}` | Prepare then submit externally signed lifecycle actions |
 | `POST /v1/governed/policy/{thresholds,evidence-verifier}/{prepare,submit}` | Two distinct policy/key actions, each with fresh context |
-| `POST /v1/governed/policy/maintainer-recovery/{prepare,submit}` | One old-quorum-signed policy revision and target suspension, committed atomically; target cannot sign |
+| `POST /v1/governed/policy/maintainer-recovery/{prepare,submit}` | Caller supplies a recovery-evidence commitment; the old quorum signs one atomic policy revision and target suspension; target cannot sign |
 | `POST /v1/governed/epochs/prepare`, `/publish` | Governed epoch signing/publication port |
 | `GET /v1/registry/mutation-context`, `POST /v1/mutations` | Workspace revision, epoch, host evaluation time, and DID-signed intent; resolver required for writes |
 

@@ -151,9 +151,10 @@ components:
       additionalProperties: true
     AtomicMaintainerRecovery:
       type: object
-      required: [maintainerId, thresholds]
+      required: [maintainerId, evidenceHash, thresholds]
       properties:
         maintainerId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        evidenceHash: { type: string, pattern: '^0x[0-9a-f]{64}$', description: Operator-supplied commitment to the recovery evidence }
         thresholds:
           type: object
           required: [default, emergency, archival]
@@ -165,9 +166,10 @@ components:
       additionalProperties: false
     AtomicMaintainerRecoverySubmission:
       type: object
-      required: [maintainerId, thresholds, prepared, signers]
+      required: [maintainerId, evidenceHash, thresholds, prepared, signers]
       properties:
         maintainerId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        evidenceHash: { type: string, pattern: '^0x[0-9a-f]{64}$' }
         thresholds: { $ref: '#/components/schemas/AtomicMaintainerRecovery/properties/thresholds' }
         prepared: { type: object, description: Exact current atomic-recovery prepare response }
         signers: { $ref: '#/components/schemas/GovernedSigners/properties/signers' }
@@ -497,7 +499,7 @@ paths:
     post:
       tags: [Governed]
       summary: Prepare atomic policy revision and active-maintainer suspension under the old quorum
-      description: The target cannot sign. No reduced-quorum state is published before suspension.
+      description: The target cannot sign. The caller supplies a recovery-evidence commitment, and no reduced-quorum state is published before suspension.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AtomicMaintainerRecovery' } } }

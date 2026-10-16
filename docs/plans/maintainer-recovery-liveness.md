@@ -17,7 +17,7 @@ cannot remove a maintainer under an unchanged 2-of-3 policy: the remaining
 2-of-2 set would lack headroom. Recovery instead uses one old-quorum-signed
 action that suspends the target and commits a valid 1-of-2 policy atomically.
 The target cannot sign that action. One governance event binds the target,
-evidence, previous lifecycle hash, new policy commitment, version, and all
+caller-supplied evidence commitment, previous lifecycle hash, new policy commitment, version, and all
 three new thresholds. There is no visible intermediate 1-of-3 state.
 
 This simple rule has a deliberate two-maintainer tradeoff: the only valid

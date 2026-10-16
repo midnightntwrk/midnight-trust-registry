@@ -946,13 +946,13 @@ const server = createTrustRegistryApiServer({
     },
   },
   governedPolicyActions: {
-    async prepareMaintainerRecovery(maintainerId, value) {
+    async prepareMaintainerRecovery(maintainerId, evidenceHash, value) {
       if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
         throw new GovernedPolicyActionRejectedError();
       }
       try {
         return harness.prepareAtomicMaintainerRecoveryAction(
-          candidate, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+          candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
         );
       } catch (error) {
         if (!(error instanceof CompactError || error instanceof AtomicMaintainerRecoveryPrecheckError)) {
@@ -961,13 +961,13 @@ const server = createTrustRegistryApiServer({
         throw new GovernedPolicyActionRejectedError();
       }
     },
-    async executeMaintainerRecovery(maintainerId, value, signers) {
+    async executeMaintainerRecovery(maintainerId, evidenceHash, value, signers) {
       if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
         throw new GovernedPolicyActionRejectedError();
       }
       try {
         const eventHash = harness.executeAtomicMaintainerRecoveryWithSignatures(
-          candidate, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+          candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
         );
         return { eventHash: asHex(eventHash) };
       } catch {
@@ -2289,6 +2289,7 @@ try {
   const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
   const recoveryRequest = {
     maintainerId: asHex(candidate.maintainerIdCommitment),
+    evidenceHash: asHex(bytes32Commitment("incident:governed-demo:maintainer-recovery")),
     thresholds: recoveryThresholds,
   };
   const recoveryContext = await expectHttp(await postPolicy("maintainer-recovery/prepare", {
