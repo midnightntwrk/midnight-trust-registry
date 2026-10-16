@@ -1519,3 +1519,17 @@ host-authenticated publication signer history, DID state, evaluation time,
 and network finality; the simulator test is not a live qualification. The
 integration package passed 154/154 tests, `./run.sh --light` passed 20/20
 tasks, and audit reported no known vulnerabilities at this slice.
+
+The local #45 release-candidate manifest slice (`865b8b5`, `d185d70`)
+records a signed/DCO source SHA, Compact pin, lockfile and contract hashes,
+published DID/VC dependency versions, and hashes/sizes for each packed
+artifact. Generation rejects dirty source, incomplete full Compact outputs,
+and a contract tarball without all named proof artifacts. Manifest-backed
+package smoke verifies the exact tarball set before installation; its local
+light-artifact flow passed, but no full release candidate has been generated
+or approved. A genuine candidate still needs full build/integration, exact
+revision CI, owner/rollback approval, and public-network qualification.
+Issue #90's VC status-registry package exists in the sibling VC checkout but
+is marked private; npm returned 404 on 2026-10-17. Do not copy its source or
+claim external status verification until an owner-published package or
+approved adapter is consumable.
