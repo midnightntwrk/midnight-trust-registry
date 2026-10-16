@@ -1533,3 +1533,13 @@ Issue #90's VC status-registry package exists in the sibling VC checkout but
 is marked private; npm returned 404 on 2026-10-17. Do not copy its source or
 claim external status verification until an owner-published package or
 approved adapter is consumable.
+
+The follow-on #45 commit `49ca956` makes `packed-artifacts:smoke` run an
+issuer/verifier consumer scenario from a temporary directory after installing
+the tarballs. It uses only package exports, verifies active evidence with the
+simulator client, and rejects a substituted issuer resource. The 20/20 light
+gate, packed smoke, and low-level audit passed locally. This is not the full
+HTTP applicant/admin/relying-party journey: the UI clients are not among the
+packed local artifacts, and a simulator package consumer does not prove live
+network finality. Keep the full actor demo and release qualification as
+separate gates.
