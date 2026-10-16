@@ -2279,7 +2279,7 @@ try {
   harness.proposeIssuer(threeSignerIssuer, [second, third]);
   const removalSequence = harness.simulator.getLedger().governanceActionCount;
   adversarialMatrix.expectThrown(() => harness.suspendMaintainer(candidate), {
-    id: "compact-recovery-policy-reduction-required",
+    id: "compact-recovery-policy-headroom-required",
     invariant: "A maintainer removal cannot leave an all-member quorum",
     boundary: "compact",
     messagePattern: /non-conflicted removal quorum/iu,
@@ -2328,7 +2328,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then atomically reduced to 2-of-3 with target removal",
+    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then atomically reduced to 2-of-3 with target suspension",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     statusWitnessAudit: {
       roles: statusWitnessAuditedRoles,

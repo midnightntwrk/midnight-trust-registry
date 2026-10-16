@@ -136,6 +136,8 @@ describe("externally signed policy revision", () => {
     expect(after.activeMaintainerCount).toBe(2n);
     expect(after.maintainerThreshold).toBe(1n);
     expect(after.governancePolicyCommitment).toEqual(Uint8Array.from(prepared.nextPolicyCommitment));
+    expect(harness.policyRecord.policyTemplates.find((template) => template.family === "maintainer")
+      ?.applicableActionKinds).toContain("tr:maintainer:recover");
     expect(after.governancePolicyEffectiveFromByVersion.lookup(prepared.nextPolicyVersion))
       .toBe(before.governanceActionCount + 1n);
     expect(harness.simulator.getMaintainerMembership(target.maintainerIdCommitment).lifecycleEventHash)
