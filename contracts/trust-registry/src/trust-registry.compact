@@ -716,6 +716,32 @@ export pure circuit deploymentBoundMaintainerActionDigest(
   );
 }
 
+pure circuit signerKeyIdLess(left: Bytes<32>, right: Bytes<32>): Boolean {
+  const leftHigh = slice<16>(left, 16) as Uint<128>;
+  const rightHigh = slice<16>(right, 16) as Uint<128>;
+  const leftLow = slice<16>(left, 0) as Uint<128>;
+  const rightLow = slice<16>(right, 0) as Uint<128>;
+  return leftHigh < rightHigh || (leftHigh == rightHigh && leftLow < rightLow);
+}
+
+pure circuit hashCanonicalMaintainerSignerSet(
+  signerCount: Uint<64>,
+  signer1KeyId: Bytes<32>,
+  signer2KeyId: Bytes<32>,
+  signer3KeyId: Bytes<32>,
+  signer4KeyId: Bytes<32>,
+  signer5KeyId: Bytes<32>
+): Bytes<32> {
+  return persistentHash<Vector<6, Bytes<32>>>([
+    ((signerCount as Field) as Bytes<32>),
+    signer1KeyId,
+    signer2KeyId,
+    signer3KeyId,
+    signer4KeyId,
+    signer5KeyId
+  ]);
+}
+
 export pure circuit maintainerSignerSetHash(
   signerCount: Uint<64>,
   signer1KeyId: Bytes<32>,
@@ -729,14 +755,39 @@ export pure circuit maintainerSignerSetHash(
     signerCount <= 5,
     "Maintainer signer count exceeds supported bundle capacity"
   );
-  return persistentHash<Vector<6, Bytes<32>>>([
-    ((signerCount as Field) as Bytes<32>),
+  assert(signer1KeyId != pad(32, ""), "Maintainer signer key must be nonzero");
+  if (signerCount < 2) {
+    assert(signer2KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 3) {
+    assert(signer3KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 4) {
+    assert(signer4KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 5) {
+    assert(signer5KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount > 1) {
+    assert(signerKeyIdLess(signer1KeyId, signer2KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 2) {
+    assert(signerKeyIdLess(signer2KeyId, signer3KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 3) {
+    assert(signerKeyIdLess(signer3KeyId, signer4KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 4) {
+    assert(signerKeyIdLess(signer4KeyId, signer5KeyId), "Maintainer signer keys must be sorted");
+  }
+  return hashCanonicalMaintainerSignerSet(
+    signerCount,
     signer1KeyId,
     signer2KeyId,
     signer3KeyId,
     signer4KeyId,
     signer5KeyId
-  ]);
+  );
 }
 
 export pure circuit schnorrChallengeDigest(
@@ -1998,7 +2049,7 @@ circuit finalizeAuthorizedMaintainerAction(
   signer5KeyId: Bytes<32>
 ): AuthorizedMaintainerAction {
   const signerSetHash = disclose(
-    maintainerSignerSetHash(
+    hashCanonicalMaintainerSignerSet(
       signerCount,
       signer1KeyId,
       signer2KeyId,
@@ -2145,6 +2196,10 @@ circuit performAuthorizedMaintainerAction(
     signer2KeyId != signer1KeyId,
     "Maintainer signer set must not contain duplicates"
   );
+  assert(
+    signerKeyIdLess(signer1KeyId, signer2KeyId),
+    "Maintainer signer keys must be sorted"
+  );
   if (disclosedSignerCount == 2) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2166,6 +2221,10 @@ circuit performAuthorizedMaintainerAction(
   assert(
     signer3KeyId != signer1KeyId && signer3KeyId != signer2KeyId,
     "Maintainer signer set must not contain duplicates"
+  );
+  assert(
+    signerKeyIdLess(signer2KeyId, signer3KeyId),
+    "Maintainer signer keys must be sorted"
   );
   if (disclosedSignerCount == 3) {
     return finalizeAuthorizedMaintainerAction(
@@ -2191,6 +2250,10 @@ circuit performAuthorizedMaintainerAction(
       && signer4KeyId != signer3KeyId,
     "Maintainer signer set must not contain duplicates"
   );
+  assert(
+    signerKeyIdLess(signer3KeyId, signer4KeyId),
+    "Maintainer signer keys must be sorted"
+  );
   if (disclosedSignerCount == 4) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2215,6 +2278,10 @@ circuit performAuthorizedMaintainerAction(
       && signer5KeyId != signer3KeyId
       && signer5KeyId != signer4KeyId,
     "Maintainer signer set must not contain duplicates"
+  );
+  assert(
+    signerKeyIdLess(signer4KeyId, signer5KeyId),
+    "Maintainer signer keys must be sorted"
   );
   if (disclosedSignerCount == 5) {
     return finalizeAuthorizedMaintainerAction(

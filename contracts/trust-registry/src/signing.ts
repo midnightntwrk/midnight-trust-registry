@@ -94,6 +94,16 @@ const require32Bytes = (value: Uint8Array, label: string): Buffer => {
   return Buffer.from(value);
 };
 
+/** Compare bytes32 key IDs as unsigned little-endian integers, matching Compact's two-limb order. */
+export const compareMaintainerKeyIds = (left: Uint8Array, right: Uint8Array): number => {
+  require32Bytes(left, "Left maintainer key ID");
+  require32Bytes(right, "Right maintainer key ID");
+  for (let index = 31; index >= 0; index -= 1) {
+    if (left[index] !== right[index]) return left[index]! - right[index]!;
+  }
+  return 0;
+};
+
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */
 export const applicationEvidenceSignatureDigest = (
   keyIdCommitment: Uint8Array,
