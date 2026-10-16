@@ -54,9 +54,9 @@ current finalized registry and DID states. The integration package's
 `createCompactLedgerDecisionReaders` projects a supplied Compact ledger view:
 it matches the sealed registry and deployment-network commitments, accepted
 epoch roots and sequence window, publication context, current policy, and the
-exact active authorization record in its scope index. It also compares the
-epoch's off-ledger dates to a host-supplied sequence-to-time projection. The
-authorization ID in the response is only a lookup hint.
+exact current authorization record and status in its scope index. It also
+compares the epoch's off-ledger dates to a host-supplied sequence-to-time
+projection. The authorization ID in the response is only a lookup hint.
 
 The host must establish network finality and currency, authenticate the
 historical publication maintainer set and DID observation, and provide the
