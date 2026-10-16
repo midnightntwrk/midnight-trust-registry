@@ -21,6 +21,8 @@ const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
 
 export const PreparedGovernedMaintainerProposalSchema = z.strictObject({
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   maintainerId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   policyVersion: ScalarSchema,
@@ -46,6 +48,8 @@ export const GovernedMaintainerProposalSubmitRequestSchema = z.strictObject({
 export type PreparedGovernedMaintainerProposal = z.infer<typeof PreparedGovernedMaintainerProposalSchema>;
 export type GovernedMaintainerProposalContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   maintainerId: Uint8Array;
   policyCommitment: Uint8Array;
   policyVersion: bigint;
@@ -85,6 +89,8 @@ export const serializeGovernedMaintainerProposal = (
   context: GovernedMaintainerProposalContext,
 ): PreparedGovernedMaintainerProposal => PreparedGovernedMaintainerProposalSchema.parse({
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   maintainerId: bytes32Hex(context.maintainerId),
   policyCommitment: bytes32Hex(context.policyCommitment),
   policyVersion: context.policyVersion.toString(),

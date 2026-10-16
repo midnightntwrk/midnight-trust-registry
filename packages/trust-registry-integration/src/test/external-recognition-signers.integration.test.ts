@@ -7,7 +7,7 @@ import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-sc
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
@@ -28,15 +28,18 @@ import {
 import { recognitionAuthorityAssertionDigest } from "../recognition-authority-assertion.js";
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedRecognitionAction,
     "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
     action.actionPayloadHash,
@@ -56,7 +59,7 @@ describe("externally signed Compact authority recognition", () => {
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
     const prepared = harness.prepareRecognitionDecisionAction(recognition, "archive");
-    const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+    const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
     expect(() => harness.executeRecognitionDecisionWithSignatures(
       recognition, "archive", signers.slice(0, 1),
     )).toThrow();
@@ -138,7 +141,7 @@ describe("externally signed Compact authority recognition", () => {
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const current = await prepare();
     const evidenceSignature = harness.signRecognitionProposalEvidence(current);
-    const signers = [signPrepared(second, current), signPrepared(third, current)];
+    const signers = [signPrepared(harness, second, current), signPrepared(harness, third, current)];
     expect(() => harness.executeRecognitionProposalWithSignatures(
       recognition, signers, evidenceSignature, prepared,
     )).toThrow(/stale or substituted/u);
@@ -169,7 +172,7 @@ describe("externally signed Compact authority recognition", () => {
     const proposal = harness.prepareRecognitionProposalAction(recognition);
     const evidenceSignature = harness.signRecognitionProposalEvidence(proposal);
     const initial = harness.simulator.getLedger().governanceActionCount;
-    const signers = [signPrepared(second, proposal), signPrepared(third, proposal)];
+    const signers = [signPrepared(harness, second, proposal), signPrepared(harness, third, proposal)];
     expect(() => harness.executeRecognitionProposalWithSignatures(
       recognition, signers.slice(0, 1), evidenceSignature,
     )).toThrow();
@@ -190,22 +193,22 @@ describe("externally signed Compact authority recognition", () => {
       .toThrow(/Unsupported recognition decision action/u);
     const beforeApproval = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
-      signPrepared(second, { ...approval, policyCommitment: new Uint8Array(32) }),
-      signPrepared(third, approval),
+      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+      signPrepared(harness, third, approval),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
     harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
     const activation = harness.prepareRecognitionDecisionAction(recognition, "activate");
     const beforeActivation = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
     harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
-      signPrepared(second, activation), signPrepared(third, activation),
+      signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
 
     const bundle = harness.evaluateCurrentRecognitionDecision(recognition, {

@@ -1,8 +1,10 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   signVerifierProposalEvidenceFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
@@ -20,15 +22,18 @@ import {
 } from "../local-simulator-harness.js";
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedVerifierProposalAction,
     "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
     action.actionPayloadHash,
@@ -54,8 +59,8 @@ describe("externally signed Compact verifier governance", () => {
     });
     const proposal = harness.prepareVerifierProposalAction(verifier, evidence);
     const verifierSignature = harness.signVerifierProposalEvidence(proposal);
-    const firstProposalSigner = signPrepared(second, proposal);
-    const secondProposalSigner = signPrepared(third, proposal);
+    const firstProposalSigner = signPrepared(harness, second, proposal);
+    const secondProposalSigner = signPrepared(harness, third, proposal);
     const beforeProposal = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.prepareVerifierProposalAction(verifier, evidence, {
       scope: createVerifierAuthorizationScopeFixture(verifier),
@@ -69,7 +74,7 @@ describe("externally signed Compact verifier governance", () => {
       verifier, evidence, [firstProposalSigner, firstProposalSigner], verifierSignature,
     )).toThrow();
     expect(() => harness.executeVerifierProposalWithSignatures(
-      verifier, evidence, [firstProposalSigner, signPrepared(outsider, proposal)], verifierSignature,
+      verifier, evidence, [firstProposalSigner, signPrepared(harness, outsider, proposal)], verifierSignature,
     )).toThrow();
     expect(() => harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner, secondProposalSigner],
@@ -92,27 +97,27 @@ describe("externally signed Compact verifier governance", () => {
       .toThrow(/Unsupported verifier decision action/u);
     const beforeApproval = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeVerifierDecisionWithSignatures(
-      verifier, "approve", [signPrepared(second, approval)],
+      verifier, "approve", [signPrepared(harness, second, approval)],
     )).toThrow();
     expect(() => harness.executeVerifierDecisionWithSignatures(
       verifier, "approve", [
-        signPrepared(second, { ...approval, policyCommitment: new Uint8Array(32) }),
-        signPrepared(third, approval),
+        signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+        signPrepared(harness, third, approval),
       ],
     )).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
     harness.executeVerifierDecisionWithSignatures(verifier, "approve", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
     const activation = harness.prepareVerifierDecisionAction(verifier, "activate");
     const beforeActivation = harness.simulator.getLedger().governanceActionCount;
     expect(() => harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
-      signPrepared(second, approval), signPrepared(third, approval),
+      signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ])).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
     harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
-      signPrepared(second, activation), signPrepared(third, activation),
+      signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
 
     const bundle = harness.evaluateCurrentVerifierDecision(verifier, {

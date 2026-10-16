@@ -15,7 +15,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
@@ -75,12 +75,15 @@ import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
 const changeLastHexNibble = (value) => `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
-const sign = (maintainer, prepared) => {
+const sign = (maintainer, prepared, sourceHarness = harness) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const ledger = sourceHarness.simulator.getLedger();
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
-    fromHex(prepared.registryId),
-    fromHex(prepared.policyCommitment),
+    ledger.registryId,
+    ledger.deploymentNetworkIdCommitment,
+    Buffer.from(sourceHarness.simulator.contractAddress, "hex"),
+    ledger.governancePolicyCommitment,
     fromHex(prepared.actionKind),
     fromHex(prepared.actionPayloadHash),
     BigInt(prepared.actionSequence),
@@ -91,18 +94,23 @@ const sign = (maintainer, prepared) => {
     signature: asHex(encodeJubjubSignature(signature)),
   };
 };
-const signCompact = (maintainer, prepared) => ({
-  keyId: maintainer.keyId,
-  publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
-    maintainer.seed,
-    prepared.registryId,
-    prepared.policyCommitment,
-    prepared.actionKind,
-    prepared.actionPayloadHash,
-    prepared.actionSequence,
-  ),
-});
+const signCompact = (maintainer, prepared, sourceHarness = harness) => {
+  const ledger = sourceHarness.simulator.getLedger();
+  return {
+    keyId: maintainer.keyId,
+    publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
+    signature: signDeploymentBoundMaintainerActionFromSeed(
+      maintainer.seed,
+      ledger.registryId,
+      ledger.deploymentNetworkIdCommitment,
+      Buffer.from(sourceHarness.simulator.contractAddress, "hex"),
+      ledger.governancePolicyCommitment,
+      prepared.actionKind,
+      prepared.actionPayloadHash,
+      prepared.actionSequence,
+    ),
+  };
+};
 
 const expectHttp = async (response, status) => {
   const payload = await response.json();
@@ -164,7 +172,7 @@ removedSignerHarness.proposeIssuer(removedSignerIssuer);
 const removedSignerApproval = removedSignerHarness.prepareIssuerDecisionAction(removedSignerIssuer, "approve");
 const removedSignerActionCount = removedSignerHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionWithSignatures(
-  removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval)],
+  removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval, removedSignerHarness)],
 ), {
   id: "compact-removed-maintainer-signer",
   invariant: "A suspended maintainer key cannot approve a new issuer",
@@ -197,7 +205,7 @@ denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 const denialPrepared = denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
 const denialActionCount = denialHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSignatures(
-  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared)],
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness)],
 ), {
   id: "denied-proposal-requires-quorum",
   invariant: "Archiving a pending issuer proposal requires the current maintainer quorum",
@@ -207,7 +215,7 @@ adversarialMatrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSign
 });
 assert.equal(denialHarness.simulator.getLedger().governanceActionCount, denialActionCount);
 const denialEventHash = denialHarness.executeIssuerDecisionWithSignatures(
-  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared), signCompact(denialThird, denialPrepared)],
+  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness), signCompact(denialThird, denialPrepared, denialHarness)],
 );
 assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
   AuthorizationStatus.archived);
@@ -293,8 +301,8 @@ policyHarness.authorizeMaintainer(policySecond);
 policyHarness.authorizeMaintainer(policyThird);
 policyHarness.proposeIssuer(pendingPolicyIssuer);
 const oldPolicyAction = policyHarness.prepareIssuerDecisionAction(pendingPolicyIssuer, "approve");
-const oldPolicySignature = signCompact(policySecond, oldPolicyAction);
-const oldPolicyCoSignature = signCompact(policyThird, oldPolicyAction);
+const oldPolicySignature = signCompact(policySecond, oldPolicyAction, policyHarness);
+const oldPolicyCoSignature = signCompact(policyThird, oldPolicyAction, policyHarness);
 policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 const policyActionCountBeforeReplay = policyHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
@@ -1461,10 +1469,10 @@ try {
       });
       await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], signers[0]]), {
         id: `${role}-${action}-duplicate-signer`,
-        invariant: "One maintainer key cannot be counted twice toward a governed decision quorum",
+        invariant: "The API rejects a duplicate maintainer key before governed execution",
         boundary: "api",
         status: 403,
-        problemType: "governed-action-rejected",
+        problemType: "invalid-governed-signature",
       });
       if (role === "maintainer") {
         await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), {
@@ -2011,6 +2019,8 @@ try {
       }), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
         ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        expectedNetworkId: harness.registryDid.split(":")[2],
+        contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedRecognitionEpoch,
         sequenceToTimestamp: defaultSequenceToTimestamp,
       });

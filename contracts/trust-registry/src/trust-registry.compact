@@ -306,6 +306,7 @@ struct AuthorizedMaintainerAction {
 export ledger contractVersion: Uint<32>;
 export ledger initialized: Boolean;
 export ledger registryId: Bytes<32>;
+export sealed ledger deploymentNetworkIdCommitment: Bytes<32>;
 export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
 export ledger governancePolicyVersion: Uint<64>;
@@ -369,7 +370,19 @@ export ledger epochCommitmentIds: Set<Bytes<32>>;
 export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
-constructor() {
+constructor(
+  nextRegistryId: Bytes<32>,
+  nextRegistryDidCommitment: Bytes<32>,
+  nextGovernancePolicyCommitment: Bytes<32>,
+  bootstrapMaintainerId: Bytes<32>,
+  bootstrapMaintainerDidCommitment: Bytes<32>,
+  bootstrapMaintainerKeyId: Bytes<32>,
+  bootstrapMaintainerPublicKey: JubjubPoint,
+  nextMaintainerThreshold: Uint<64>,
+  networkIdCommitment: Bytes<32>
+) {
+  assert(networkIdCommitment != pad(32, ""), "Deployment network id commitment must be set");
+  deploymentNetworkIdCommitment = disclose(networkIdCommitment);
   contractVersion = 1;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
@@ -391,6 +404,16 @@ constructor() {
   lastAuthorizedPolicyCommitment = pad(32, "midnight:tr:unset");
   lastAuthorizedMaintainerKeyId = pad(32, "midnight:tr:none");
   lastAuthorizedSignerSetHash = pad(32, "midnight:tr:none");
+  initializeRegistry(
+    nextRegistryId,
+    nextRegistryDidCommitment,
+    nextGovernancePolicyCommitment,
+    bootstrapMaintainerId,
+    bootstrapMaintainerDidCommitment,
+    bootstrapMaintainerKeyId,
+    bootstrapMaintainerPublicKey,
+    nextMaintainerThreshold
+  );
 }
 
 export pure circuit assertValidMaintainerThreshold(
@@ -652,21 +675,29 @@ export pure circuit recognitionProposalEvidenceSignatureDigest(
   ];
 }
 
-export pure circuit policyBoundActionPayloadHash(
+export pure circuit deploymentBoundActionPayloadHash(
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   policyCommitment: Bytes<32>,
   actionPayloadHash: Bytes<32>
 ): Bytes<32> {
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(policyCommitment != pad(32, ""), "Policy commitment must be set");
   assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
-  return persistentHash<Vector<3, Bytes<32>>>([
-    pad(32, "tr:policy:action:v1"),
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "tr:deployment:action:v1"),
+    networkIdCommitment,
+    contractAddress,
     policyCommitment,
     actionPayloadHash
   ]);
 }
 
-export pure circuit policyBoundMaintainerActionDigest(
+export pure circuit deploymentBoundMaintainerActionDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   policyCommitment: Bytes<32>,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>,
@@ -675,7 +706,12 @@ export pure circuit policyBoundMaintainerActionDigest(
   return maintainerActionDigest(
     registryIdValue,
     actionKind,
-    policyBoundActionPayloadHash(policyCommitment, actionPayloadHash),
+    deploymentBoundActionPayloadHash(
+      networkIdCommitment,
+      contractAddress,
+      policyCommitment,
+      actionPayloadHash
+    ),
     actionSequence
   );
 }
@@ -1671,14 +1707,21 @@ export pure circuit updateMaintainerThresholdPolicyPayloadHash(
 
 export pure circuit governanceEventHash(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   policyCommitment: Bytes<32>,
   maintainerSignerSetHashValue: Bytes<32>,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>,
   actionSequence: Uint<64>
 ): Bytes<32> {
-  return persistentHash<Vector<6, Bytes<32>>>([
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  return persistentHash<Vector<9, Bytes<32>>>([
+    pad(32, "tr:deployment:event:v1"),
     registryIdValue,
+    networkIdCommitment,
+    contractAddress,
     policyCommitment,
     maintainerSignerSetHashValue,
     actionKind,
@@ -1687,7 +1730,25 @@ export pure circuit governanceEventHash(
   ]);
 }
 
-export circuit initializeRegistry(
+export pure circuit registryInitializationEventHash(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  maintainerSignerSetHashValue: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:deployment:init:v1"),
+    registryIdValue,
+    networkIdCommitment,
+    policyCommitment,
+    maintainerSignerSetHashValue,
+    actionPayloadHash
+  ]);
+}
+
+circuit initializeRegistry(
   nextRegistryId: Bytes<32>,
   nextRegistryDidCommitment: Bytes<32>,
   nextGovernancePolicyCommitment: Bytes<32>,
@@ -1758,13 +1819,12 @@ export circuit initializeRegistry(
     )
   );
   const initializationEventHash = disclose(
-    governanceEventHash(
+    registryInitializationEventHash(
       disclosedRegistryId,
+      deploymentNetworkIdCommitment,
       disclosedGovernancePolicyCommitment,
       initializationSignerSetHash,
-      pad(32, "midnight:tr:init"),
-      initializationPayloadHash,
-      0
+      initializationPayloadHash
     )
   );
 
@@ -1950,6 +2010,8 @@ circuit finalizeAuthorizedMaintainerAction(
   const eventHash = disclose(
     governanceEventHash(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       governancePolicyCommitment,
       signerSetHash,
       actionKind,
@@ -2038,8 +2100,10 @@ circuit performAuthorizedMaintainerAction(
     archivalMaintainerThreshold
   );
   const actionSequence = governanceActionCount.read();
-  const digest = policyBoundMaintainerActionDigest(
+  const digest = deploymentBoundMaintainerActionDigest(
     registryId,
+    deploymentNetworkIdCommitment,
+    kernel.self().bytes,
     governancePolicyCommitment,
     disclosedActionKind,
     disclosedActionPayloadHash,

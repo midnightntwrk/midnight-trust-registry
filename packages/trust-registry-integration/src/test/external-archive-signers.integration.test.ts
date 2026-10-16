@@ -1,8 +1,10 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
 
@@ -26,14 +28,17 @@ type PreparedActionSigningContext = {
 };
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: PreparedActionSigningContext,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
     action.actionPayloadHash,
@@ -93,7 +98,7 @@ describe("externally signed proposal archival", () => {
       harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
       const prepared = scenario.prepare();
-      const signers = [signPrepared(second, prepared), signPrepared(third, prepared)];
+      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
       const before = harness.simulator.getLedger().governanceActionCount;
       expect(() => scenario.execute(signers.slice(0, 1))).toThrow();
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before);

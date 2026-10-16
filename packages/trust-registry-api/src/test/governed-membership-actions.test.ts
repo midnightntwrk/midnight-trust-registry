@@ -12,6 +12,8 @@ const context = (
   field: "authorizationId" | "maintainerId" | "recognitionId",
 ): GovernedMembershipActionContext => ({
   registryId: bytes(1),
+  networkIdCommitment: bytes(9),
+  contractAddress: bytes(10),
   [field]: bytes(2),
   policyCommitment: bytes(3),
   actionKind: bytes(4),

@@ -20,6 +20,8 @@ const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
 
 export const PreparedGovernedRecognitionProposalSchema = z.strictObject({
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   recognitionId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   actionKind: Bytes32Schema,
@@ -43,6 +45,8 @@ export const GovernedRecognitionProposalSubmitRequestSchema = GovernedRecognitio
 
 export type GovernedRecognitionProposalContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   recognitionId: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -92,6 +96,8 @@ export const serializeGovernedRecognitionProposal = (
   context: GovernedRecognitionProposalContext,
 ): PreparedGovernedRecognitionProposal => PreparedGovernedRecognitionProposalSchema.parse({
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   recognitionId: bytes32Hex(context.recognitionId),
   policyCommitment: bytes32Hex(context.policyCommitment),
   actionKind: bytes32Hex(context.actionKind),

@@ -5,7 +5,7 @@ import {
   encodeCompactActionKind,
   JUBJUB_ORDER,
   pureCircuits,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   AcceptedDecisionEpochSchema,
@@ -48,6 +48,8 @@ export const assertDecisionEpochPublicationSignatures = (
   acceptedInput: unknown,
   context: {
     registryIdCommitment: Uint8Array;
+    networkIdCommitment: Uint8Array;
+    contractAddress: Uint8Array;
     epochIdCommitment: Uint8Array;
     firstSignerKeyIdCommitment: Uint8Array;
     activeMaintainersAtPublication: readonly ActivePublicationMaintainer[];
@@ -60,9 +62,19 @@ export const assertDecisionEpochPublicationSignatures = (
   }
   for (const [name, value] of [
     ["Registry id commitment", context.registryIdCommitment],
+    ["Network id commitment", context.networkIdCommitment],
+    ["Contract address", context.contractAddress],
     ["Epoch id commitment", context.epochIdCommitment],
     ["First signer key commitment", context.firstSignerKeyIdCommitment],
   ] as const) requireBytes32(value, name);
+  if (context.networkIdCommitment.every((byte) => byte === 0)
+    || context.contractAddress.every((byte) => byte === 0)) {
+    throw new Error("Epoch publication deployment context must be nonzero");
+  }
+  if (!sameBytes32(context.networkIdCommitment, bytes32Commitment(accepted.networkId))
+    || !sameBytes32(context.contractAddress, hashHexToBytes32(accepted.contractAddress))) {
+    throw new Error("Epoch publication deployment context does not match the accepted record");
+  }
   if (
     !sameBytes32(context.registryIdCommitment, bytes32Commitment(accepted.registryId))
     || !sameBytes32(context.epochIdCommitment, bytes32Commitment(accepted.epochId))
@@ -115,9 +127,11 @@ export const assertDecisionEpochPublicationSignatures = (
     }
     requirePrimeOrderKey(authorized.publicKey);
     const signature = decodeCanonicalJubjubSignatureHex(signer.signature);
-    if (!verifyPolicyBoundMaintainerAction(
+    if (!verifyDeploymentBoundMaintainerAction(
       authorized.publicKey,
       context.registryIdCommitment,
+      context.networkIdCommitment,
+      context.contractAddress,
       policyCommitment,
       PUBLISH,
       payload,
@@ -137,6 +151,8 @@ export const assertDecisionEpochPublicationSignatures = (
   );
   const computedEventHash = pureCircuits.governanceEventHash(
     context.registryIdCommitment,
+    context.networkIdCommitment,
+    context.contractAddress,
     policyCommitment,
     signerSetHash,
     PUBLISH,

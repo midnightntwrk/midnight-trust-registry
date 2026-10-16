@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -34,9 +34,11 @@ const signPrepared = (
   return {
     keyId: hex(maintainer.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
-    signature: hex(encodeJubjubSignature(signPolicyBoundMaintainerActionFromSeed(
+    signature: hex(encodeJubjubSignature(signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       bytes(prepared.registryId),
+      bytes(prepared.networkIdCommitment),
+      bytes(prepared.contractAddress),
       bytes(prepared.policyCommitment),
       bytes(prepared.actionKind),
       bytes(prepared.actionPayloadHash),
@@ -121,6 +123,8 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const revision = await preparedResponse.json() as PreparedGovernedPolicyAction;
+      expect(revision.networkIdCommitment).toBe(hex(harness.simulator.getLedger().deploymentNetworkIdCommitment));
+      expect(revision.contractAddress).toBe(`0x${harness.simulator.contractAddress}`);
       const secondVote = signPrepared(second, revision);
       const thirdVote = signPrepared(third, revision);
       const submitRevision = (prepared: PreparedGovernedPolicyAction, signers: unknown[]) =>
@@ -129,6 +133,12 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await submitRevision(revision, [secondVote])).status).toBe(403);
       expect((await submitRevision(revision, [secondVote, secondVote])).status).toBe(403);
       expect((await submitRevision(revision, [secondVote, signPrepared(outsider, revision)])).status).toBe(403);
+      expect((await submitRevision(revision, [secondVote, signPrepared(third, {
+        ...revision, networkIdCommitment: hex(bytes32Commitment("wrong-network")),
+      })])).status).toBe(403);
+      expect((await submitRevision(revision, [secondVote, signPrepared(third, {
+        ...revision, contractAddress: hex(bytes32Commitment("wrong-address")),
+      })])).status).toBe(403);
       expect((await submitRevision(revision, [
         { ...secondVote, signature: "0x01" }, thirdVote,
       ])).status).toBe(400);

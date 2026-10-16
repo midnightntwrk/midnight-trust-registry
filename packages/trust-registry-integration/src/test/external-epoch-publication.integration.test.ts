@@ -1,8 +1,10 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
 
@@ -13,14 +15,17 @@ import {
 } from "../local-simulator-harness.js";
 
 const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedRegistryEpochPublicationAction,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-  signature: signPolicyBoundMaintainerActionFromSeed(
+  signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
     prepared.actionPayloadHash,
@@ -38,8 +43,8 @@ describe("externally signed registry epoch publication", () => {
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
     const prepared = harness.prepareRegistryEpochPublicationAction("external-quorum");
-    const secondSignature = signPrepared(second, prepared);
-    const thirdSignature = signPrepared(third, prepared);
+    const secondSignature = signPrepared(harness, second, prepared);
+    const thirdSignature = signPrepared(harness, third, prepared);
     const before = harness.simulator.getLedger().governanceActionCount;
 
     expect(() => harness.executeRegistryEpochPublicationWithSignatures(
@@ -49,11 +54,11 @@ describe("externally signed registry epoch publication", () => {
       "external-quorum", [secondSignature, secondSignature],
     )).toThrow();
     expect(() => harness.executeRegistryEpochPublicationWithSignatures(
-      "external-quorum", [secondSignature, signPrepared(outsider, prepared)],
+      "external-quorum", [secondSignature, signPrepared(harness, outsider, prepared)],
     )).toThrow();
     expect(() => harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", [
-        signPrepared(second, { ...prepared, policyCommitment: new Uint8Array(32) }),
+        signPrepared(harness, second, { ...prepared, policyCommitment: new Uint8Array(32) }),
         thirdSignature,
       ],
     )).toThrow();

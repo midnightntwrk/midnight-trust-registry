@@ -20,6 +20,8 @@ export const GovernedThresholdPrepareRequestSchema = z.strictObject({
 
 export const PreparedGovernedPolicyActionSchema = z.strictObject({
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   actionKind: Bytes32Schema,
   actionPayloadHash: Bytes32Schema,
@@ -52,6 +54,8 @@ export type GovernedPolicyActionReceipt = z.infer<typeof GovernedPolicyActionRec
 
 export type GovernedPolicyActionContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -89,6 +93,8 @@ export const serializeGovernedPolicyAction = (
   context: GovernedPolicyActionContext,
 ): PreparedGovernedPolicyAction => PreparedGovernedPolicyActionSchema.parse({
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   policyCommitment: bytes32Hex(context.policyCommitment),
   actionKind: bytes32Hex(context.actionKind),
   actionPayloadHash: bytes32Hex(context.actionPayloadHash),

@@ -430,24 +430,19 @@ export const verifyMaintainerProposalEvidenceSignature = (
   }
 };
 
-export const computePolicyBoundActionPayloadHash = (
-  policyCommitment: Uint8Array,
-  actionPayloadHash: Uint8Array,
-): Uint8Array =>
-  pureCircuits.policyBoundActionPayloadHash(
-    require32Bytes(policyCommitment, "Policy commitment"),
-    require32Bytes(actionPayloadHash, "Action payload hash"),
-  );
-
-export const computePolicyBoundMaintainerActionDigest = (
+export const computeDeploymentBoundMaintainerActionDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   policyCommitment: Uint8Array,
   actionKind: Uint8Array,
   actionPayloadHash: Uint8Array,
   actionSequence: bigint,
 ): TrustRegistryActionDigest =>
-  pureCircuits.policyBoundMaintainerActionDigest(
+  pureCircuits.deploymentBoundMaintainerActionDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Network id commitment"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(policyCommitment, "Policy commitment"),
     require32Bytes(actionKind, "Action kind"),
     require32Bytes(actionPayloadHash, "Action payload hash"),
@@ -797,9 +792,11 @@ const signMaintainerActionDigestFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(require32Bytes(seedBytes, "Maintainer seed"), digest);
 
-export const signPolicyBoundMaintainerActionFromSeed = (
+export const signDeploymentBoundMaintainerActionFromSeed = (
   seedBytes: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   policyCommitment: Uint8Array,
   actionKind: Uint8Array,
   actionPayloadHash: Uint8Array,
@@ -807,8 +804,10 @@ export const signPolicyBoundMaintainerActionFromSeed = (
 ): TrustRegistryJubjubSignature =>
   signMaintainerActionDigestFromSeed(
     seedBytes,
-    computePolicyBoundMaintainerActionDigest(
+    computeDeploymentBoundMaintainerActionDigest(
       registryId,
+      networkIdCommitment,
+      contractAddress,
       policyCommitment,
       actionKind,
       actionPayloadHash,
@@ -829,9 +828,11 @@ const verifyMaintainerActionDigest = (
   }
 };
 
-export const verifyPolicyBoundMaintainerAction = (
+export const verifyDeploymentBoundMaintainerAction = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   policyCommitment: Uint8Array,
   actionKind: Uint8Array,
   actionPayloadHash: Uint8Array,
@@ -840,8 +841,10 @@ export const verifyPolicyBoundMaintainerAction = (
 ): boolean =>
   verifyMaintainerActionDigest(
     publicKey,
-    computePolicyBoundMaintainerActionDigest(
+    computeDeploymentBoundMaintainerActionDigest(
       registryId,
+      networkIdCommitment,
+      contractAddress,
       policyCommitment,
       actionKind,
       actionPayloadHash,

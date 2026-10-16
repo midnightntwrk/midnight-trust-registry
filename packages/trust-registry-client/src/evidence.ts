@@ -5,7 +5,7 @@ import {
   computeCreateEpochCommitmentPayloadHash,
   decodeCanonicalJubjubSignatureHex,
   encodeCompactActionKind,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
@@ -39,6 +39,8 @@ export type EpochAnchorVerificationContext = {
   epochRecord: EpochCommitmentRecord;
   maintainerPublicKey: JubjubPoint;
   registryIdCommitment: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   sequenceToTimestamp?: SequenceToTimestamp;
   policySupersededAt?: string;
 };
@@ -177,13 +179,23 @@ const assertEpochAnchor = (
   if (!sameBytes32(bytes32Commitment(bundle.registryId), options.registryIdCommitment)) {
     throw new Error("Registry ID commitment does not match the evidence bundle");
   }
+  for (const [name, value] of [
+    ["Network ID commitment", options.networkIdCommitment],
+    ["Contract address", options.contractAddress],
+  ] as const) {
+    if (!(value instanceof Uint8Array) || value.length !== 32 || value.every((byte) => byte === 0)) {
+      throw new Error(`${name} is missing or malformed`);
+    }
+  }
 
   let validSignature = false;
   let verificationFault: unknown;
   try {
-    validSignature = verifyPolicyBoundMaintainerAction(
+    validSignature = verifyDeploymentBoundMaintainerAction(
       options.maintainerPublicKey,
       options.registryIdCommitment,
+      options.networkIdCommitment,
+      options.contractAddress,
       epochRecord.publicationPolicyCommitment,
       EPOCH_PUBLISH_ACTION_KIND,
       payloadHash,

@@ -32,10 +32,10 @@ import {
   signIssuerProposalEvidenceFromSeed,
   signRecognitionProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
   type TrustRegistryJubjubSignature,
   verifyApplicationEvidenceCommitmentSignature,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
@@ -164,6 +164,8 @@ export type IssuerDecisionAction = "approve" | "activate" | "suspend" | "revoke"
 
 export type PreparedIssuerDecisionAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   authorizationId: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -175,6 +177,8 @@ export type PreparedIssuerDecisionAction = {
 
 export type PreparedIssuerProposalAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   authorizationId: Uint8Array;
   policyCommitment: Uint8Array;
   policyVersion: bigint;
@@ -188,7 +192,7 @@ export type PreparedIssuerProposalAction = {
 };
 
 type PreparedRequestProposalAction = Pick<PreparedIssuerDecisionAction,
-  "registryId" | "authorizationId" | "policyCommitment" | "actionKind" |
+  "registryId" | "networkIdCommitment" | "contractAddress" | "authorizationId" | "policyCommitment" | "actionKind" |
   "actionPayloadHash" | "actionSequence" | "evidenceHash">;
 
 export type PreparedAuditorProposalAction = PreparedRequestProposalAction & {
@@ -205,6 +209,8 @@ export type PreparedVerifierProposalAction = PreparedRequestProposalAction & {
 
 export type PreparedRecognitionAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   recognitionId: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -221,6 +227,8 @@ export type PreparedRecognitionProposalAction = PreparedRecognitionAction & {
 
 export type PreparedMaintainerAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   maintainerId: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -239,6 +247,8 @@ export type PreparedMaintainerProposalAction = PreparedMaintainerAction & {
 export type PreparedRegistryEpochPublicationAction = {
   epochId: string;
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   epochIdCommitment: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
@@ -253,6 +263,8 @@ export type PreparedRegistryEpochPublicationAction = {
 
 export type PreparedThresholdPolicyRevisionAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -263,6 +275,8 @@ export type PreparedThresholdPolicyRevisionAction = {
 
 export type PreparedEvidenceVerifierRegistrationAction = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -412,7 +426,6 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   constructor(label = "kanon") {
-    this.simulator = new TrustRegistrySimulator();
     this.registryId = createScopedIdentifier("registry", label, "trusted");
     this.registryDid = createMidnightDid(`registry:${label}`);
     this.registryIdCommitment = bytes32Commitment(this.registryId);
@@ -469,16 +482,18 @@ export class LocalTrustRegistryIntegrationHarness {
       trustLevel: "bootstrap-maintainer",
     });
 
-    this.simulator.initializeRegistry(
-      this.registryIdCommitment,
-      this.registryDidCommitment,
-      this.governancePolicyCommitment,
-      this.maintainerIdCommitment,
-      this.maintainerDidCommitment,
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      1n,
-    );
+    this.simulator = new TrustRegistrySimulator({
+      registryId: this.registryIdCommitment,
+      networkIdCommitment: bytes32Commitment("undeployed"),
+      contractAddress: sha256Hex(`trust-registry:simulator:${this.registryId}`).slice(2),
+      registryDidCommitment: this.registryDidCommitment,
+      governancePolicyCommitment: this.governancePolicyCommitment,
+      maintainerId: this.maintainerIdCommitment,
+      maintainerDidCommitment: this.maintainerDidCommitment,
+      maintainerKeyId: this.bootstrapMaintainer.keyId,
+      maintainerPublicKey: this.bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
     this.authorizeEvidenceVerifierForCurrentPolicy();
   }
 
@@ -519,6 +534,8 @@ export class LocalTrustRegistryIntegrationHarness {
     const actionSequence = this.simulator.getLedger().governanceActionCount;
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
       actionKind: Uint8Array.from(REGISTER_EVIDENCE_VERIFIER_ACTION_KIND),
       actionPayloadHash,
@@ -905,9 +922,11 @@ export class LocalTrustRegistryIntegrationHarness {
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
   ) {
-    return signPolicyBoundMaintainerActionFromSeed(
+    return signDeploymentBoundMaintainerActionFromSeed(
       seed,
       registryId,
+      this.simulator.getLedger().deploymentNetworkIdCommitment,
+      Buffer.from(this.simulator.contractAddress, "hex"),
       this.simulator.getLedger().governancePolicyCommitment,
       actionKind,
       actionPayloadHash,
@@ -1096,6 +1115,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
       actionKind: Uint8Array.from(UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND),
       actionPayloadHash,
@@ -1228,6 +1249,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       policyVersion: ledger.governancePolicyVersion,
@@ -1309,6 +1332,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(actionKinds[action]),
@@ -1499,6 +1524,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       policyVersion: ledger.governancePolicyVersion,
@@ -1596,6 +1623,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(actionKinds[action]),
@@ -1820,6 +1849,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       policyVersion: ledger.governancePolicyVersion,
@@ -1901,6 +1932,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(actionKinds[action]),
@@ -2028,6 +2061,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(PROPOSE_RECOGNITION_ACTION_KIND),
@@ -2142,6 +2177,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(actionKinds[action]),
@@ -2285,6 +2322,8 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       policyVersion: ledger.governancePolicyVersion,
@@ -2366,6 +2405,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
       policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(actionKinds[action]),
@@ -2714,9 +2755,11 @@ export class LocalTrustRegistryIntegrationHarness {
     let verified = false;
     let verificationFault: unknown;
     try {
-      verified = verifyPolicyBoundMaintainerAction(
+      verified = verifyDeploymentBoundMaintainerAction(
         maintainerRecord.publicKey,
         this.registryIdCommitment,
+        this.simulator.getLedger().deploymentNetworkIdCommitment,
+        Buffer.from(this.simulator.contractAddress, "hex"),
         epochRecord.publicationPolicyCommitment,
         CREATE_EPOCH_ACTION_KIND,
         payloadHash,
@@ -3228,6 +3271,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return {
       epochId,
       registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       epochIdCommitment,
       policyCommitment: Uint8Array.from(this.simulator.getLedger().governancePolicyCommitment),
       actionKind: Uint8Array.from(CREATE_EPOCH_ACTION_KIND),

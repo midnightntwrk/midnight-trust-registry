@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import { defaultSequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
@@ -43,6 +44,8 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(response, request, harness.registryDid, anchor))
       .toMatchObject({ authorized: true, statusAtTime: "active" });
@@ -104,6 +107,8 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: suspended.epoch.epochId, policyVersion: suspended.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(deniedResponse, deniedRequest,
       harness.registryDid, deniedAnchor)).toMatchObject({ authorized: false, statusAtTime: "suspended" });
@@ -128,6 +133,8 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpAuthorizationEvidenceResponse(response, request,
       harness.registryDid, anchor).authorized).toBe(true);
@@ -161,6 +168,8 @@ describe("independent TRQP evidence verification", () => {
       ledger: harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
+      expectedNetworkId: harness.registryDid.split(":")[2]!,
+      contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
     });
     expect(verifyTrqpRecognitionEvidenceResponse(response, request,
       harness.registryDid, anchor).recognized).toBe(true);

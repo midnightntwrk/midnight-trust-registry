@@ -224,6 +224,8 @@ describe("simulator-backed VC decision evidence composition", () => {
       acceptedEpoch,
       publication: {
         registryIdCommitment: harness.registryIdCommitment,
+        networkIdCommitment: ledger.deploymentNetworkIdCommitment,
+        contractAddress: encodeContractAddress(harness.simulator.contractAddress),
         epochIdCommitment: bytes32Commitment(bundle.epoch.epochId),
         firstSignerKeyIdCommitment: epochRecord.maintainerKeyId,
         activeMaintainersAtPublication: witness.signatures.map((signer) => {
@@ -900,6 +902,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: acceptedVerifierEpoch,
         publication: {
           registryIdCommitment: harness.registryIdCommitment,
+          networkIdCommitment: verifierLedger.deploymentNetworkIdCommitment,
+          contractAddress: encodeContractAddress(harness.simulator.contractAddress),
           epochIdCommitment: bytes32Commitment(verifierBundle.epoch.epochId),
           firstSignerKeyIdCommitment: verifierEpochRecord.maintainerKeyId,
           activeMaintainersAtPublication: verifierWitness.signatures.map((signer) => {
@@ -1300,6 +1304,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: AcceptedDecisionEpochSchema.parse(acceptedEpoch),
         publication: {
           registryIdCommitment: harness.registryIdCommitment,
+          networkIdCommitment: ledger.deploymentNetworkIdCommitment,
+          contractAddress: encodeContractAddress(harness.simulator.contractAddress),
           epochIdCommitment: bytes32Commitment(oldBundle.epoch.epochId),
           firstSignerKeyIdCommitment: oldRecord.maintainerKeyId,
           activeMaintainersAtPublication: [],

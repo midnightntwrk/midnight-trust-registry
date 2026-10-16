@@ -16,7 +16,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature as encodeGovernanceSignature,
   AuthorizationStatus,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
@@ -213,9 +213,11 @@ const admission = {
 };
 const signAction = (maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     fromHex(prepared.registryId),
+    fromHex(prepared.networkIdCommitment),
+    fromHex(prepared.contractAddress),
     fromHex(prepared.policyCommitment),
     fromHex(prepared.actionKind),
     fromHex(prepared.actionPayloadHash),
@@ -757,6 +759,8 @@ try {
       const response = await expectHttp(await post("/v1/authorizations/evaluate/evidence", selection), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
         ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        expectedNetworkId: harness.registryDid.split(":")[2],
+        contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedEpoch,
         sequenceToTimestamp: defaultSequenceToTimestamp,
       });

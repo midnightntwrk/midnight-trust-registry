@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createCircuitContext, sampleContractAddress, type CircuitResults } from "@midnight-ntwrk/compact-runtime";
+import { createCircuitContext, encodeContractAddress, type CircuitResults } from "@midnight-ntwrk/compact-runtime";
 import { signJubjubDigestFromSeed, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +12,7 @@ import {
   computeUpdateVerifierAuthorizationPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../signing.js";
 import { createMaintainerFixture, labelToBytes32, TrustRegistrySimulator } from "../testing.js";
 import {
@@ -24,6 +24,7 @@ import { type TrustRegistryPrivateState } from "../witnesses.js";
 
 const bytesEqual = (actual: Uint8Array, expected: Uint8Array) =>
   expect(Buffer.from(actual)).toEqual(Buffer.from(expected));
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
 
 const proposal = (label = "first") => ({
   authorizationId: labelToBytes32(`verifier-authorization:${label}`),
@@ -38,7 +39,6 @@ const proposal = (label = "first") => ({
 });
 
 const setup = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = labelToBytes32("registry:verifier-proposal-evidence");
   const registryDidCommitment = labelToBytes32("did:midnight:verifier-proposal-registry");
   const policy = labelToBytes32("policy:verifier-evidence:first");
@@ -52,12 +52,20 @@ const setup = () => {
     publicKey: deriveJubjubPublicKeyFromSeed(verifierSeed),
     suite: labelToBytes32("jubjub-schnorr"),
   };
-  simulator.initializeRegistry(
-    registryId, registryDidCommitment, policy, maintainer.maintainerId,
-    maintainer.didCommitment, maintainer.keyId, maintainerPublicKey, 1n,
-  );
-  const sign = (kind: string, payloadHash: Uint8Array) => signPolicyBoundMaintainerActionFromSeed(
-    maintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+  const simulator = new TrustRegistrySimulator({
+    registryId,
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
+    registryDidCommitment,
+    governancePolicyCommitment: policy,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
+    maintainerPublicKey,
+    maintainerThreshold: 1n,
+  });
+  const sign = (kind: string, payloadHash: Uint8Array) => signDeploymentBoundMaintainerActionFromSeed(
+    maintainer.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+    simulator.getLedger().governancePolicyCommitment,
     encodeCompactActionKind(kind), payloadHash, simulator.getLedger().governanceActionCount,
   );
   const keyPayload = computeCreateEvidenceVerifierKeyPayloadHash(
@@ -85,7 +93,7 @@ const setup = () => {
   };
   const commit = <T>(result: CircuitResults<TrustRegistryPrivateState, T>): T => {
     simulator.circuitContext = createCircuitContext(
-      sampleContractAddress(),
+      simulator.contractAddress,
       result.context.currentZswapLocalState,
       result.context.currentQueryContext.state,
       result.context.currentPrivateState,

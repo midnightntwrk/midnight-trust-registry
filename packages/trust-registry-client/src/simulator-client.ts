@@ -26,11 +26,11 @@ import {
 } from "./evidence.js";
 import { verifyAuditorRequestMandate, type AuditorMandate, type AuditorMandateOptions } from "./auditor-mandate.js";
 import type { AuthorizationScope } from "@midnight-ntwrk/trust-registry-domain";
-import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp, sameBytes32 } from "./utils.js";
+import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp, hashHexToBytes32, sameBytes32 } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<
   BundleVerificationOptions,
-  "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
+  "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "networkIdCommitment" | "contractAddress" | "policySupersededAt"
 >;
 
 export class TrustRegistrySimulatorClient {
@@ -194,7 +194,7 @@ export class TrustRegistrySimulatorClient {
   verifyAuditorRequestMandate(
     bundle: TrustRegistryEvidenceBundle,
     requestedScope: Extract<AuthorizationScope, { role: "auditor" }>,
-    options: Omit<AuditorMandateOptions, "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt" | "currentAuthorizationRecord">,
+    options: Omit<AuditorMandateOptions, "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "networkIdCommitment" | "contractAddress" | "policySupersededAt" | "currentAuthorizationRecord">,
   ): AuditorMandate {
     if (bundle.authorization === undefined) throw new Error("Auditor mandate is unavailable");
     return verifyAuditorRequestMandate(bundle, requestedScope, {
@@ -225,7 +225,7 @@ export class TrustRegistrySimulatorClient {
     sequenceToTimestamp: BundleVerificationOptions["sequenceToTimestamp"],
   ): Pick<
     BundleVerificationOptions,
-    "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "policySupersededAt"
+    "epochRecord" | "maintainerPublicKey" | "registryIdCommitment" | "networkIdCommitment" | "contractAddress" | "policySupersededAt"
   > {
     const ledger = this.requireSupportedLedger();
     if (typeof bundle?.registryId !== "string" || bundle.registryId.length === 0) {
@@ -262,6 +262,8 @@ export class TrustRegistrySimulatorClient {
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: ledger.registryId,
+      networkIdCommitment: ledger.deploymentNetworkIdCommitment,
+      contractAddress: hashHexToBytes32(this.#simulator.contractAddress),
       ...(policySupersededAt === undefined ? {} : { policySupersededAt }),
     };
   }

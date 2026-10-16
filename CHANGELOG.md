@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- bootstrap registry identity, policy, and the first maintainer atomically in
+  the Compact constructor; govern later actions with signatures bound to the
+  declared network commitment, deployed contract address, active policy, and
+  action sequence. Governed API prepare responses expose the same signing
+  domain, and submit routes precheck votes against freshly prepared context
 - moved pre-release contract fixture and client simulator exports to explicit
   `/testing` and `/simulator` subpaths instead of shipping them from production
   package roots; packaged smoke checks enforce those boundaries
@@ -74,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- removed the public first-call registry initializer and the pre-release
+  policy-only maintainer signing helpers; existing prototype signatures and
+  event hashes are not accepted by this unreleased contract format
 - removed the pre-release `authorizeMaintainerAction` circuit and simulator
   wrapper with caller-supplied action kinds; use `authorizeMaintainerAuditEvent`
   for a fixed-kind generic audit event

@@ -11,7 +11,7 @@ import {
   computeUpdateVcAuthorityKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../signing.js";
 import { createMaintainerFixture, labelToBytes32, TrustRegistrySimulator } from "../testing.js";
 
@@ -20,23 +20,32 @@ const SUSPEND = encodeCompactActionKind("tr:vc-authority:key:suspend");
 const REVOKE = encodeCompactActionKind("tr:vc-authority:key:revoke");
 const ROTATE = encodeCompactActionKind("tr:vc-authority:key:rotate");
 const committed = (value: string): Uint8Array => new Uint8Array(createHash("sha256").update(value).digest());
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
+const signFixtureDeploymentBoundActionFromSeed = (
+  simulator: TrustRegistrySimulator,
+  seed: Uint8Array, registryId: Uint8Array, policyCommitment: Uint8Array,
+  actionKind: Uint8Array, payloadHash: Uint8Array, sequence: bigint,
+) => signDeploymentBoundMaintainerActionFromSeed(
+  seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+  policyCommitment, actionKind, payloadHash, sequence,
+);
 
 const fixture = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = committed("registry:vc-authority-test");
   const policyCommitment = labelToBytes32("policy:vc-authority-test");
   const maintainer = createMaintainerFixture("vc-authority-test", 31);
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  simulator.initializeRegistry(
+  const simulator = new TrustRegistrySimulator({
     registryId,
-    labelToBytes32("did:midnight:vc-authority-registry"),
-    policyCommitment,
-    maintainer.maintainerId,
-    maintainer.didCommitment,
-    maintainer.keyId,
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
+    registryDidCommitment: labelToBytes32("did:midnight:vc-authority-registry"),
+    governancePolicyCommitment: policyCommitment,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
     maintainerPublicKey,
-    1n,
-  );
+    maintainerThreshold: 1n,
+  });
   return { simulator, registryId, policyCommitment, maintainer, maintainerPublicKey };
 };
 
@@ -76,7 +85,7 @@ const register = (
     policy,
     policyVersion,
   );
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
     policy,
@@ -111,7 +120,7 @@ const update = (
     simulator.getVcAuthorityKey(keyIdCommitment).lifecycleEventHash,
     reasonHash,
   );
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
     simulator.getLedger().governancePolicyCommitment,
@@ -158,7 +167,7 @@ const rotate = (
     newCreatePayload,
     reasonHash,
   );
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
     simulator.getLedger().governancePolicyCommitment,

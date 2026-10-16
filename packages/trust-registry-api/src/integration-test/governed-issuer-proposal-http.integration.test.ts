@@ -9,7 +9,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -32,11 +32,17 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (maintainer: MaintainerScenarioFixture, prepared: PreparedGovernedIssuerProposal) => {
+const signPrepared = (
+  harness: LocalTrustRegistryIntegrationHarness,
+  maintainer: MaintainerScenarioFixture,
+  prepared: PreparedGovernedIssuerProposal,
+) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const signature = signPolicyBoundMaintainerActionFromSeed(
+  const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
+    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
     bytes(prepared.actionPayloadHash),
@@ -123,10 +129,10 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
       const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
-      const request = { evidence, prepared, signers: [signPrepared(second, prepared), signPrepared(third, prepared)],
+      const request = { evidence, prepared, signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
       const wrongSequence = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
-      const forged = await post("submit", { ...request, signers: [signPrepared(second, wrongSequence), request.signers[1]] });
+      const forged = await post("submit", { ...request, signers: [signPrepared(harness, second, wrongSequence), request.signers[1]] });
       expect(forged.status).toBe(403);
       expect((await forged.json()).type).toMatch(/invalid-governed-signature$/u);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
@@ -257,8 +263,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
           signers,
           evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}`,
         });
-      const first = signPrepared(second, prepared);
-      const other = signPrepared(third, prepared);
+      const first = signPrepared(harness, second, prepared);
+      const other = signPrepared(harness, third, prepared);
       expect((await post("prepare", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
       })).status).toBe(403);

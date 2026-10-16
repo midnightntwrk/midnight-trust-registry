@@ -21,6 +21,8 @@ const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
 
 export const PreparedGovernedVerifierProposalSchema = z.strictObject({
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   authorizationId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   policyVersion: ScalarSchema,
@@ -46,6 +48,8 @@ export const GovernedVerifierProposalSubmitRequestSchema = z.strictObject({
 export type PreparedGovernedVerifierProposal = z.infer<typeof PreparedGovernedVerifierProposalSchema>;
 export type GovernedVerifierProposalContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   authorizationId: Uint8Array;
   policyCommitment: Uint8Array;
   policyVersion: bigint;
@@ -87,6 +91,8 @@ export const serializeGovernedVerifierProposal = (
   context: GovernedVerifierProposalContext,
 ): PreparedGovernedVerifierProposal => PreparedGovernedVerifierProposalSchema.parse({
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   authorizationId: bytes32Hex(context.authorizationId),
   policyCommitment: bytes32Hex(context.policyCommitment),
   policyVersion: context.policyVersion.toString(),

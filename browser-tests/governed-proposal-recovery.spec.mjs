@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
@@ -33,18 +33,21 @@ import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 const bytes = (hex) => Buffer.from(hex.slice(2), "hex");
 const hex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 
-const signPrepared = (maintainer, prepared) => {
+const signPrepared = (harness, maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
+  const ledger = harness.simulator.getLedger();
   return {
     keyId: hex(maintainer.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
-    signature: hex(encodeJubjubSignature(signPolicyBoundMaintainerActionFromSeed(
-    maintainer.seed,
-    bytes(prepared.registryId),
-    bytes(prepared.policyCommitment),
-    bytes(prepared.actionKind),
-    bytes(prepared.actionPayloadHash),
-    BigInt(prepared.actionSequence),
+    signature: hex(encodeJubjubSignature(signDeploymentBoundMaintainerActionFromSeed(
+      maintainer.seed,
+      ledger.registryId,
+      ledger.deploymentNetworkIdCommitment,
+      Buffer.from(harness.simulator.contractAddress, "hex"),
+      ledger.governancePolicyCommitment,
+      bytes(prepared.actionKind),
+      bytes(prepared.actionPayloadHash),
+      BigInt(prepared.actionSequence),
     ))),
   };
 };
@@ -183,7 +186,7 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     const verifierSignature = scenario.signEvidence(scenario.prepare(evidence));
     const forgedContext = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
     await page.locator("[data-proposal-signers]").fill(JSON.stringify([
-      signPrepared(second, forgedContext), signPrepared(third, prepared),
+      signPrepared(harness, second, forgedContext), signPrepared(harness, third, prepared),
     ]));
     await page.locator("[data-proposal-verifier-signature]").fill(hex(encodeJubjubSignature(verifierSignature)));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
@@ -191,7 +194,7 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     expect(await journal.read(role, scenario.id)).toBeNull();
     expect(executions).toBe(0);
     await page.locator("[data-proposal-signers]").fill(JSON.stringify([
-      signPrepared(second, prepared), signPrepared(third, prepared),
+      signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
     ]));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
     await expect(page.locator("body")).toContainText("proposal submission outcome unknown");

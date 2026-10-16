@@ -1,7 +1,7 @@
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   decodeCanonicalJubjubSignatureHex,
-  verifyPolicyBoundMaintainerAction,
+  verifyDeploymentBoundMaintainerAction,
   type TrustRegistryJubjubSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { z } from "zod";
@@ -14,6 +14,8 @@ export const GovernedMembershipActionSchema = z.enum(["approve", "activate", "su
 
 export const PreparedGovernedMembershipActionSchema = z.strictObject({
   registryId: Bytes32Schema,
+  networkIdCommitment: Bytes32Schema,
+  contractAddress: Bytes32Schema,
   targetId: Bytes32Schema,
   policyCommitment: Bytes32Schema,
   actionKind: Bytes32Schema,
@@ -46,6 +48,8 @@ export type GovernedMembershipActionReceipt = z.infer<typeof GovernedMembershipA
 
 export type GovernedMembershipActionContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   authorizationId?: Uint8Array;
   maintainerId?: Uint8Array;
   recognitionId?: Uint8Array;
@@ -98,6 +102,8 @@ export const serializeGovernedMembershipAction = (
   role: GovernedMembershipRole,
 ): PreparedGovernedMembershipAction => PreparedGovernedMembershipActionSchema.parse({
   registryId: bytes32Hex(context.registryId),
+  networkIdCommitment: bytes32Hex(context.networkIdCommitment),
+  contractAddress: bytes32Hex(context.contractAddress),
   targetId: actionTargetId(context, role),
   policyCommitment: bytes32Hex(context.policyCommitment),
   actionKind: bytes32Hex(context.actionKind),
@@ -112,6 +118,8 @@ export const sameGovernedMembershipAction = (
   submitted: PreparedGovernedMembershipAction,
 ): boolean => (
   current.registryId === submitted.registryId
+  && current.networkIdCommitment === submitted.networkIdCommitment
+  && current.contractAddress === submitted.contractAddress
   && current.targetId === submitted.targetId
   && current.policyCommitment === submitted.policyCommitment
   && current.actionKind === submitted.actionKind
@@ -129,10 +137,10 @@ export const decodeGovernedMembershipSigners = (
   signature: decodeCanonicalJubjubSignatureHex(signer.signature),
 }));
 
-/** Reject known-invalid votes before an irreversible proposal submission attempt is reserved. */
+/** Reject known-invalid votes before submitting a governed action. */
 export const hasValidProposalSignerBundle = (
-  prepared: Pick<PreparedGovernedMembershipAction,
-    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+  context: Pick<GovernedMembershipActionContext,
+    "registryId" | "networkIdCommitment" | "contractAddress" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
   signers: readonly GovernedMembershipSigner[],
 ): boolean => {
   const keyIds = new Set<string>();
@@ -140,13 +148,15 @@ export const hasValidProposalSignerBundle = (
     const keyId = Buffer.from(signer.keyId).toString("hex");
     if (signer.keyId.length !== 32 || keyIds.has(keyId)) return false;
     keyIds.add(keyId);
-    if (!verifyPolicyBoundMaintainerAction(
+    if (!verifyDeploymentBoundMaintainerAction(
       signer.publicKey,
-      Buffer.from(prepared.registryId.slice(2), "hex"),
-      Buffer.from(prepared.policyCommitment.slice(2), "hex"),
-      Buffer.from(prepared.actionKind.slice(2), "hex"),
-      Buffer.from(prepared.actionPayloadHash.slice(2), "hex"),
-      BigInt(prepared.actionSequence),
+      context.registryId,
+      context.networkIdCommitment,
+      context.contractAddress,
+      context.policyCommitment,
+      context.actionKind,
+      context.actionPayloadHash,
+      context.actionSequence,
       signer.signature,
     )) return false;
   }

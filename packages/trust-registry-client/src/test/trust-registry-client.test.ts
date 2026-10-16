@@ -21,7 +21,7 @@ import {
   verifyTrustRegistryEvidenceBundle,
 } from "../index.js";
 import { TrustRegistrySimulatorClient } from "../simulator-client.js";
-import { defaultSequenceToTimestamp } from "../utils.js";
+import { defaultSequenceToTimestamp, hashHexToBytes32 } from "../utils.js";
 import * as ClientRoot from "../index.js";
 
 const changeLastHexNibble = (hash: string): string =>
@@ -210,6 +210,10 @@ describe("trust registry client", () => {
     }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
     const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
     const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const deploymentContext = {
+      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      contractAddress: hashHexToBytes32(harness.simulator.contractAddress),
+    };
     const equivalentEpochSpelling = {
       ...activeBundle,
       epoch: {
@@ -226,6 +230,7 @@ describe("trust registry client", () => {
     expect(() => client.verifyIssuerAuthorizationBundle(tamperedEpochRegistry, {}))
       .toThrow(/Epoch registry mismatch/);
     expect(() => verifyTrustRegistryEvidenceBundle(tamperedEpochRegistry, {
+      ...deploymentContext,
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
@@ -247,6 +252,7 @@ describe("trust registry client", () => {
     expect(() => client.verifyIssuerAuthorizationBundle(tamperedRegistry, {}))
       .toThrow(/does not match the simulator ledger/);
     expect(() => verifyTrustRegistryEvidenceBundle(tamperedRegistry, {
+      ...deploymentContext,
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
@@ -258,6 +264,7 @@ describe("trust registry client", () => {
         statusAuthorityVerificationMethod: "did:midnight:attacker#status-1",
       },
     }, {
+      ...deploymentContext,
       expectedRegistryId: harness.registryId,
       epochRecord,
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
@@ -373,19 +380,26 @@ describe("trust registry client", () => {
     const client = new TrustRegistrySimulatorClient(harness.simulator);
     const epochRecord = client.getEpochCommitmentById(bundle.epoch.epochId);
     const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const deploymentContext = {
+      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      contractAddress: hashHexToBytes32(harness.simulator.contractAddress),
+    };
 
     expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      ...deploymentContext,
       epochRecord: { ...epochRecord, publicationPolicyCommitment: undefined as never },
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
     expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      ...deploymentContext,
       epochRecord: { ...epochRecord, publicationPolicyCommitment: new Uint8Array(32) },
       maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
       registryIdCommitment: bytes32Commitment(harness.registryId),
     })).toThrow(/Epoch publication policy commitment is missing or malformed/);
     for (const malformed of [new Uint8Array(31), new Uint8Array(33), new Uint8Array(32), "not-bytes"]) {
       expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+        ...deploymentContext,
         epochRecord,
         maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
         registryIdCommitment: malformed as never,
@@ -395,6 +409,7 @@ describe("trust registry client", () => {
     let verifierFault: unknown;
     try {
       verifyTrustRegistryEvidenceBundle(bundle, {
+        ...deploymentContext,
         epochRecord: { ...epochRecord, publishedAtSequence: "invalid" as never },
         maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
         registryIdCommitment: bytes32Commitment(harness.registryId),

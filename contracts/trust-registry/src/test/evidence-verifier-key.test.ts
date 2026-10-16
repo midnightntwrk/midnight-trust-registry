@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +9,7 @@ import {
   computeUpdateEvidenceVerifierKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "../signing.js";
 import {
   createMaintainerFixture,
@@ -21,27 +22,30 @@ const REGISTER = encodeCompactActionKind("tr:evidence-verifier:register");
 const SUSPEND = encodeCompactActionKind("tr:evidence-verifier:suspend");
 const REVOKE = encodeCompactActionKind("tr:evidence-verifier:revoke");
 const ROTATE = encodeCompactActionKind("tr:evidence-verifier:rotate");
+const FIXTURE_NETWORK_ID_COMMITMENT = labelToBytes32("network:undeployed");
 
 const fixture = () => {
-  const simulator = new TrustRegistrySimulator();
   const registryId = labelToBytes32("registry:evidence-test");
   const policyCommitment = labelToBytes32("policy:evidence-test");
   const maintainer = createMaintainerFixture("evidence-test", 11);
   const maintainerPublicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  simulator.initializeRegistry(
+  const simulator = new TrustRegistrySimulator({
     registryId,
-    labelToBytes32("did:midnight:evidence-registry"),
-    policyCommitment,
-    maintainer.maintainerId,
-    maintainer.didCommitment,
-    maintainer.keyId,
+    networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
+    registryDidCommitment: labelToBytes32("did:midnight:evidence-registry"),
+    governancePolicyCommitment: policyCommitment,
+    maintainerId: maintainer.maintainerId,
+    maintainerDidCommitment: maintainer.didCommitment,
+    maintainerKeyId: maintainer.keyId,
     maintainerPublicKey,
-    1n,
-  );
+    maintainerThreshold: 1n,
+  });
   const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
-    signPolicyBoundMaintainerActionFromSeed(
+    signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       registryId,
+      FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress),
       simulator.getLedger().governancePolicyCommitment,
       kind,
       payloadHash,

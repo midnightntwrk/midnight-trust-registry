@@ -7,7 +7,7 @@ import {
   encodeCompactActionKind,
   encodeJubjubSignature,
   pureCircuits,
-  signPolicyBoundMaintainerActionFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 
 import { assertDecisionEpochPublicationSignatures } from "../decision-epoch-signatures.js";
@@ -22,11 +22,13 @@ const EPOCH = "epoch:0001";
 const DID1 = `did:midnight:devnet:${"1".repeat(64)}`;
 const DID2 = `did:midnight:devnet:${"2".repeat(64)}`;
 const PUBLISH = encodeCompactActionKind("tr:epoch:publish");
-const signatureHex = (value: ReturnType<typeof signPolicyBoundMaintainerActionFromSeed>) =>
+const signatureHex = (value: ReturnType<typeof signDeploymentBoundMaintainerActionFromSeed>) =>
   `0x${Buffer.from(encodeJubjubSignature(value)).toString("hex")}`;
 
 function fixture() {
   const registryIdCommitment = bytes32Commitment(REGISTRY);
+  const networkIdCommitment = bytes32Commitment("devnet");
+  const contractAddress = hashHexToBytes32(A);
   const epochIdCommitment = bytes32Commitment(EPOCH);
   const policyCommitment = hashHexToBytes32(E);
   const keys = [
@@ -49,8 +51,9 @@ function fixture() {
   const signatures = keys.map(({ keyId, seed }) => ({
     keyId,
     algorithm: "jubjub-schnorr" as const,
-    signature: signatureHex(signPolicyBoundMaintainerActionFromSeed(
-      seed, registryIdCommitment, policyCommitment, PUBLISH, payload, 10n,
+    signature: signatureHex(signDeploymentBoundMaintainerActionFromSeed(
+      seed, registryIdCommitment, networkIdCommitment, contractAddress,
+      policyCommitment, PUBLISH, payload, 10n,
     )),
   }));
   const signerSetHash = pureCircuits.maintainerSignerSetHash(
@@ -60,7 +63,8 @@ function fixture() {
     new Uint8Array(32), new Uint8Array(32), new Uint8Array(32),
   );
   const publicationEventHash = bytes32Hex(pureCircuits.governanceEventHash(
-    registryIdCommitment, policyCommitment, signerSetHash, PUBLISH, payload, 10n,
+    registryIdCommitment, bytes32Commitment("devnet"), hashHexToBytes32(A),
+    policyCommitment, signerSetHash, PUBLISH, payload, 10n,
   ));
   const epoch = {
     epochId: EPOCH,
@@ -98,11 +102,13 @@ function fixture() {
   };
   const context = {
     registryIdCommitment,
+    networkIdCommitment,
+    contractAddress,
     epochIdCommitment,
     firstSignerKeyIdCommitment: activeMaintainersAtPublication[0]!.keyIdCommitment,
     activeMaintainersAtPublication,
   };
-  return { epoch, accepted, context, publicationEventHash };
+  return { epoch, accepted, context, payload, publicationEventHash };
 }
 
 describe("decision epoch publication signatures", () => {
@@ -111,6 +117,28 @@ describe("decision epoch publication signatures", () => {
     expect(() => assertDecisionEpochPublicationSignatures(
       epoch, publicationEventHash, accepted, context,
     )).not.toThrow();
+  });
+
+  it("rejects a publication signed for another deployment", () => {
+    const { epoch, accepted, context, payload, publicationEventHash } = fixture();
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, networkIdCommitment: bytes32Commitment("mainnet"),
+    })).toThrow(/deployment context does not match/u);
+    expect(() => assertDecisionEpochPublicationSignatures(epoch, publicationEventHash, accepted, {
+      ...context, contractAddress: hashHexToBytes32(B),
+    })).toThrow(/deployment context does not match/u);
+    const otherDeploymentSignature = signatureHex(signDeploymentBoundMaintainerActionFromSeed(
+      new Uint8Array(32).fill(13), context.registryIdCommitment,
+      bytes32Commitment("mainnet"), context.contractAddress,
+      hashHexToBytes32(E), PUBLISH, payload, 10n,
+    ));
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch,
+      quorum: { ...epoch.quorum, signatures: [
+        { ...epoch.quorum.signatures[0]!, signature: otherDeploymentSignature },
+        epoch.quorum.signatures[1]!,
+      ] },
+    }, publicationEventHash, accepted, context)).toThrow(/maintainer signature is invalid/u);
   });
 
   it("rejects bad signatures, repeated or missing signers, and unsafe keys", () => {
