@@ -41,6 +41,18 @@ authenticate the actual network and finalized ledger state, and the operator
 must pin the intended deployment. Mocked-port tests are not public-network
 qualification. No network-private signing key is handled by this helper.
 
+The integration package now provides `createCheckpointedDeploymentActionReader`.
+It accepts a Midnight `PublicDataProvider` and a separate trusted checkpoint
+source, queries the contract state **at the checkpoint block hash**, decodes
+the generated Trust Registry ledger, and supplies the registry/network/policy/
+sequence fields to the signer preflight. The checkpoint source must establish
+both the named network and block finality independently of the indexed
+evidence being evaluated. The simulator test exercises the real ledger decoder
+and block-hash query shape, but not an actual network or a trusted checkpoint
+implementation. A public-network qualification still needs a target network,
+funded deployment wallet, authenticated checkpoint source, deployment receipt,
+and finalized readback of the deployed address and constructor state.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract

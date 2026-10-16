@@ -43,6 +43,7 @@
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.7.0",
     "@midnight-ntwrk/midnight-did-contract": "0.7.0",
     "@midnight-ntwrk/midnight-did-domain": "0.7.0",
+    "@midnight-ntwrk/midnight-js-types": "4.1.1",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
