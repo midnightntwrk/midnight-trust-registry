@@ -1577,3 +1577,18 @@ cross-contract call or authenticated public-network finality. Full
 integration on the earlier release-candidate tree was still generating
 Compact proving keys when this checkpoint was written, so it is not evidence
 for the new stack head.
+
+The next local stack adds a packaged recognition VC/VP accreditation and
+governed-proposal journey (`bb8021b`) and then an independently finalized
+proposal-evidence read projection (`2d63fa9`) and optional HTTP query
+(`8312507`). The read projects the existing immutable proposal record and
+registered evidence-verifier key for issuer, verifier, auditor, maintainer,
+and recognition roles. The HTTP route is disabled without a finalized-ledger
+reader and distinguishes a missing record from an unavailable reader. It does
+not independently prove finality, inclusion, proposal-time key status, or the
+signature; #67 must not be closed solely from this projection. The local light
+lane, API integration suite, docs/OpenAPI build, packed recognition actor
+smoke, and low-level audit passed for the corresponding local slices. A full
+integration run at `bb8021b` remains in progress in the separate release
+validation worktree; no result from it should be attributed to `8312507`
+without an exact-head rerun.
