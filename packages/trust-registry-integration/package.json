@@ -20,10 +20,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./fixtures/vc-authority-consumer.compact": "./src/compact/vc-authority-consumer.compact"
   },
   "files": [
     "dist/**",
+    "src/compact/vc-authority-consumer.compact",
     "README.md"
   ],
   "scripts": {

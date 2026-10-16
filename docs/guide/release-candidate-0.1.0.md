@@ -33,7 +33,7 @@ signed/DCO source SHA and attach results from that exact tree for:
 3. `pnpm run packages:check-contents`, `pnpm run artifacts:pack`, and
    `pnpm run artifacts:release-manifest` after a full Compact build.
 4. A clean consumer install using the approved manifest with
-   `pnpm run packed-artifacts:smoke -- --manifest <path> --actor-journey`.
+   `pnpm run packed-artifacts:smoke -- --manifest <path> --actor-journey --vc-consumer`.
 5. Exact-head CI results, independent review, release owner sign-off, and a
    recorded recovery/rollback decision.
 

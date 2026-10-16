@@ -2,6 +2,15 @@
 
 Integration scenarios for `midnight-trust-registry`.
 
+The local-only package exports its Ledger 8 consumer source as
+`@midnight-ntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
+Compile it with the repository's pinned Compact compiler and the published
+`@midnight-ntwrk/credential-compact` include path. The packed-artifact smoke
+gate's `--vc-consumer` option tests that clean-install boundary and pinned
+authority-domain construction; source integration tests additionally exercise
+signer proof acceptance and replay rejection. Neither path proves deployed
+cross-contract synchronization or network finality.
+
 Current coverage:
 
 - `deployPublicTrustRegistry` accepts host-owned funded Midnight.js providers,

@@ -19,6 +19,7 @@ const parseArgs = () => {
   const options = {
     artifactsDir: artifactDirectory,
     actorJourney: false,
+    vcConsumer: false,
   };
   const args = process.argv.slice(2);
 
@@ -36,6 +37,9 @@ const parseArgs = () => {
       case "--actor-journey":
         options.actorJourney = true;
         break;
+      case "--vc-consumer":
+        options.vcConsumer = true;
+        break;
       case "--help":
         console.log(
           [
@@ -45,6 +49,7 @@ const parseArgs = () => {
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
             "  --actor-journey       Run all four signed HTTP actor journeys from packed packages.",
+            "  --vc-consumer         Compile the packed Ledger 8 consumer fixture and check its pinned authority domain.",
           ].join("\n"),
         );
         process.exit(0);
@@ -91,7 +96,7 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir, manifest, actorJourney } = parseArgs();
+const { artifactsDir, manifest, actorJourney, vcConsumer } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
 let tarballPaths;
 if (manifest !== undefined) {
@@ -157,6 +162,15 @@ try {
     path.join(smokeRoot, "packed-consumer-scenario.mjs"),
   );
   run("node", ["packed-consumer-scenario.mjs"], { cwd: smokeRoot });
+  if (vcConsumer) {
+    fs.copyFileSync(
+      path.join(repoRoot, "scripts/packed-vc-consumer-scenario.mjs"),
+      path.join(smokeRoot, "packed-vc-consumer-scenario.mjs"),
+    );
+    const compactVersion = fs.readFileSync(path.join(repoRoot, ".compact-version"), "utf8").trim();
+    run("node", ["packed-vc-consumer-scenario.mjs", compactVersion], { cwd: smokeRoot });
+    console.log("[smoke-packed-artifacts] Packed Ledger 8 consumer fixture passed.");
+  }
   if (actorJourney) {
     for (const script of [
       "demo-signed-membership-journey.mjs",

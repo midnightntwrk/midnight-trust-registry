@@ -344,15 +344,20 @@ executes the governed simulator demo without printing its large JSON report on
 success, catching API and VC-consumer fixture failures before the expensive
 full Compact proving-key build. It does not replace `./run.sh integration`.
 
-For the full local actor-consumer gate, run:
+For the full local actor-consumer and packaged Ledger 8 fixture gate, run:
 
 ```bash
-pnpm run packed-artifacts:smoke -- --actor-journey
+pnpm run packed-artifacts:smoke -- --actor-journey --vc-consumer
 ```
 
 This runs the signed issuer, verifier, auditor, and maintainer HTTP journeys
 from the temporary tarball install, including the packed portal and admin API
-clients. It remains a simulator test, not a finalized network read.
+clients. The optional `--vc-consumer` path also requires the pinned Compact
+compiler, compiles the integration package's exported consumer fixture against
+the published VC Compact package, and checks its pinned authority domain and
+substitution rejection. It does not replace the source integration test's
+signer-authorization proof checks. These remain simulator tests, not finalized
+network reads or deployed cross-contract calls.
 
 For a full release build, run `pnpm run build` and then
 `pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
@@ -381,7 +386,7 @@ From a clean consumer checkout, verify the approved manifest against the
 received tarballs before the smoke runner installs them:
 
 ```bash
-pnpm run packed-artifacts:smoke -- --manifest artifacts/release-candidate/<source-sha>/manifest.json --artifacts-dir artifacts/npm --actor-journey
+pnpm run packed-artifacts:smoke -- --manifest artifacts/release-candidate/<source-sha>/manifest.json --artifacts-dir artifacts/npm --actor-journey --vc-consumer
 ```
 
 With `--manifest`, the runner does not generate missing packages; a missing,
