@@ -204,6 +204,8 @@ it also rejects a finalized view whose authorization record has a different
 evidence commitment and includes the subject and grant-policy commitments.
 The role-specific signed payload is reconstructed and its registered JubJub
 signature must verify. This is not a standalone finality or inclusion proof.
+The check uses the retained key record, so later key retirement does not
+invalidate an otherwise valid historical proposal signature.
 An embedding host may
 inject `readFinalizedProposalLedger` to expose the same projection at
 `GET /v1/governed/:role/:id/proposal/evidence`; without that reader the route

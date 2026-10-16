@@ -301,6 +301,8 @@ It checks the matching authorization record's ID and evidence commitment and
 projects the subject DID and grant-policy commitments. It reconstructs the
 role-specific bound action payload from that record and verifies the retained
 JubJub signature against the registered key before returning the snapshot.
+The retired historical key remains usable for checking its earlier signature;
+its present status does not retroactively authorize a new proposal.
 This projection is not itself a finality or inclusion proof, and
 the key's present lifecycle status must not be substituted for its status at
 proposal time. Hosts with a finalized reader can expose the projection through

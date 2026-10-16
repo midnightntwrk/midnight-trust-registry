@@ -2,8 +2,17 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import {
+  computeCreateEvidenceVerifierKeyPayloadHash,
+  computeRotateEvidenceVerifierKeyPayloadHash,
+  deriveJubjubPublicKeyFromSeed,
+  EvidenceVerifierKeyStatus,
+  signDeploymentBoundMaintainerActionFromSeed,
+} from "@midnight-ntwrk/trust-registry-contract";
+import { labelToBytes32 } from "@midnight-ntwrk/trust-registry-contract/testing";
 
 import {
+  bytes32Commitment,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -142,6 +151,45 @@ describe("finalized Compact proposal observation", () => {
     }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
       "signature is invalid",
     );
+  });
+
+  it("verifies historical proposal evidence after its verifier key is retired", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-key-rotation-history");
+    const signer = createMaintainerScenarioFixture("proposal-key-rotation-signer");
+    harness.authorizeMaintainer(signer);
+    const issuer = createIssuerScenarioFixture("key-rotation-history");
+    harness.proposeIssuer(issuer);
+    const read = async () => harness.simulator.getLedger();
+    const before = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId);
+    expect(before?.signatureVerified).toBe(true);
+    const ledger = harness.simulator.getLedger();
+    const oldId = ledger.issuerProposalEvidenceRecords.lookup(issuer.authorizationIdCommitment)
+      .evidenceVerifierAuthorizationId;
+    const oldKey = ledger.evidenceVerifierKeyRecords.lookup(oldId);
+    const newId = bytes32Commitment("historical-evidence-verifier-replacement");
+    const newKeyId = bytes32Commitment("historical-evidence-verifier-replacement#assertion-1");
+    const newPublicKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(91));
+    const reason = bytes32Commitment("evidence-verifier-rotation");
+    const nextPayload = computeCreateEvidenceVerifierKeyPayloadHash(
+      newId, oldKey.verifierDidCommitment, newKeyId, newPublicKey,
+      oldKey.suite, oldKey.policyCommitment, oldKey.policyVersion,
+    );
+    const actionPayload = computeRotateEvidenceVerifierKeyPayloadHash(
+      oldId, oldKey.lifecycleEventHash, nextPayload, reason,
+    );
+    const signature = signDeploymentBoundMaintainerActionFromSeed(
+      signer.seed, ledger.registryId, ledger.deploymentNetworkIdCommitment,
+      Buffer.from(harness.simulator.contractAddress, "hex"), ledger.governancePolicyCommitment,
+      labelToBytes32("tr:evidence-verifier:rotate"), actionPayload, ledger.governanceActionCount,
+    );
+    harness.simulator.rotateEvidenceVerifierKey(
+      signer.keyId, deriveJubjubPublicKeyFromSeed(signer.seed), signature,
+      oldId, newId, newKeyId, newPublicKey, reason,
+    );
+    expect(harness.simulator.getLedger().evidenceVerifierKeyRecords.lookup(oldId).status)
+      .toBe(EvidenceVerifierKeyStatus.retired);
+    expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId))
+      .toEqual(before);
   });
 
   it("rejects an unknown runtime role rather than reading recognition records", async () => {
