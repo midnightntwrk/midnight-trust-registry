@@ -2023,6 +2023,12 @@ export pure circuit actionScopedMaintainerThreshold(
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Uint<64> {
+  if (actionKind == pad(32, "tr:maintainer:recover")) {
+    if (defaultThreshold > emergencyThreshold) {
+      return defaultThreshold;
+    }
+    return emergencyThreshold;
+  }
   if (actionUsesEmergencyMaintainerThreshold(actionKind)) {
     return emergencyThreshold;
   }

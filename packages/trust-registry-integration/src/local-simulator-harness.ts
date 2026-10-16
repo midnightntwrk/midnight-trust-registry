@@ -836,6 +836,7 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:verifier:revoke",
             "tr:maintainer:suspend",
             "tr:maintainer:revoke",
+            "tr:maintainer:recover",
             "tr:recognition:suspend",
             "tr:recognition:revoke",
             "tr:auditor:suspend",

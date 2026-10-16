@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z, ZodError } from "zod";
 
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -191,6 +192,7 @@ import {
 } from "./schemas.js";
 
 const DEFAULT_PROBLEM_BASE = "https://midnight.network/problems/trust-registry-api";
+const RECOVER_MAINTAINER_ACTION_KIND = `0x${Buffer.from(encodeCompactActionKind("tr:maintainer:recover")).toString("hex")}`;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 class HttpProblem extends Error {
@@ -1527,7 +1529,18 @@ export const createTrustRegistryApiServer = (
           signerContext = await port.prepareMaintainerRecovery(maintainerId, evidenceHash, thresholds);
           current = serializeGovernedPolicyAction(signerContext);
         } catch (error) {
+          if (!preparing && error instanceof GovernedPolicyActionRejectedError) {
+            throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+              "stale governed policy action", "The signed context no longer matches current ledger state.");
+          }
           return mapGovernedPolicyError(error, problemBaseUri);
+        }
+        if (current.maintainerId !== maintainerId
+          || current.evidenceHash !== evidenceHash
+          || current.actionKind !== RECOVER_MAINTAINER_ACTION_KIND
+          || current.previousLifecycleEventHash === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-policy-context-mismatch", 502,
+            "governed policy context mismatch", "The recovery port returned a context for another action or evidence commitment.");
         }
         response.setHeader("cache-control", "no-store");
         if (preparing) {

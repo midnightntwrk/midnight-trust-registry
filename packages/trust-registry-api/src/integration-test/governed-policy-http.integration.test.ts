@@ -254,6 +254,20 @@ describe("Compact-backed policy revision over HTTP", () => {
       const evidenceHash = hex(bytes32Commitment("incident:policy-http-recovery"));
       const request = { maintainerId: targetId, evidenceHash, thresholds };
       expect((await post("prepare", { maintainerId: targetId, thresholds })).status).toBe(400);
+      const originalPrepare = port.prepareMaintainerRecovery;
+      if (originalPrepare === undefined) throw new Error("Recovery port unavailable");
+      for (const mismatch of [
+        { maintainerId: bytes32Commitment("other-maintainer") },
+        { evidenceHash: bytes32Commitment("other-evidence") },
+        { actionKind: bytes32Commitment("other-action") },
+      ]) {
+        port.prepareMaintainerRecovery = async (...args) => ({
+          ...await originalPrepare(...args),
+          ...mismatch,
+        });
+        expect((await post("prepare", request)).status).toBe(502);
+      }
+      port.prepareMaintainerRecovery = originalPrepare;
       const preparedResponse = await post("prepare", request);
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedPolicyAction;
@@ -287,7 +301,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(harness.simulator.getLedger().maintainerThreshold).toBe(1n);
       expect(harness.simulator.getMaintainerMembership(target.maintainerIdCommitment).status)
         .toBe(AuthorizationStatus.suspended);
-      expect((await submit(prepared, [bootstrapVote, secondVote])).status).toBe(403);
+      expect((await submit(prepared, [bootstrapVote, secondVote])).status).toBe(409);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
