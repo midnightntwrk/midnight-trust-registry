@@ -4,6 +4,17 @@ Integration scenarios for `midnight-trust-registry`.
 
 Current coverage:
 
+- `deployPublicTrustRegistry` accepts host-owned funded Midnight.js providers,
+  an explicit contract-maintenance signing key, network-configured RPC/indexer
+  endpoints, and an independently approved genesis hash. It deploys with the
+  registry constructor inputs and returns only the public receipt. A separate
+  pinned finalized readback can be `verified`, `pending`, `unavailable`, or
+  `mismatch`; only `verified` matches the selected constructor commitments and
+  initialization sequence. Preserve a receipt and inspect rather than
+  redeploying on any other status. The contract-maintenance key is distinct
+  from registry governance quorum keys. This local adapter has not deployed
+  to a public network, does not hold a wallet, and does not make the indexer a
+  cryptographic source of state truth. Issue #200 remains open.
 - `createRpcFinalizedCheckpointSource` checks a configured public network's
   node RPC genesis against an independently approved pin, then reads its
   finalized head. `createCheckpointedDeploymentActionReader` queries the

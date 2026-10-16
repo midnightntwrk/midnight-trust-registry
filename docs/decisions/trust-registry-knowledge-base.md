@@ -1472,3 +1472,16 @@ finalized block hash, deployed address, and decoded Compact governance fields.
 It reads endpoint URLs and the approved genesis pin from environment variables
 and handles no wallet key. Successful inspection is not the #200 deployment
 receipt or an independent node-finality proof.
+
+The next local #200 adapter, `deployPublicTrustRegistry`, takes host-owned
+Midnight.js providers and an explicit contract-maintenance signing key. Its
+network, RPC/indexer endpoints, and approved genesis pin are configurable for
+Preview, Preprod, and Mainnet; no live wallet or deployment is bundled. It
+checks the configured SDK network and pinned node genesis before submission,
+then keeps only the public deployment receipt. Finalized readback can be
+verified, pending, unavailable, or mismatched; any non-verified result retains
+the receipt for read-only investigation rather than inviting redeployment.
+Initialization is governance action count one, not zero. Five focused adapter
+tests and the local 20/20 light gate passed. The host providers and indexer
+remain trust boundaries; #200 stays open until a funded, operator-approved
+deployment and independent qualification are available.

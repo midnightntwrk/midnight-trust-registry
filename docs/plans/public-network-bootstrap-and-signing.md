@@ -79,6 +79,29 @@ the exact finalized block hash used for the ledger query. It accepts no
 wallet key and performs no mutation. Its output is inspection evidence, not
 a public-network deployment or recovery qualification result.
 
+`deployPublicTrustRegistry` is a host-invoked deployment adapter, not a
+default CLI command. The host supplies its own funded Midnight.js
+`ContractProviders`, an explicit contract-maintenance `SigningKey`, network
+ID (`preview`, `preprod`, or `mainnet`), RPC/indexer endpoints, and an
+independently approved genesis pin. The adapter checks the SDK network setting,
+the pinned node checkpoint, indexer URL policy, and nonzero constructor
+commitments before invoking the published Midnight deployment API. The
+maintenance key authorizes Midnight contract maintenance; it is **not** a
+Trust Registry governance quorum key. The adapter never returns private
+deployment transaction data or manages wallet/key custody.
+
+The returned public receipt is retained even if the finalized readback is
+`pending` (indexer lag), `unavailable` (read error), or `mismatch` (observed
+ledger disagrees). Only `verified` means the observed registry ID, deployment
+network commitment, active policy, and initialization action count of one
+match the supplied constructor inputs at a pinned finalized block. A non-
+verified result must be investigated with read-only inspection using the
+receipt, **not** retried as a fresh deployment. This is still not public-
+network qualification: no funded deployment was performed, the host providers
+and RPC/indexer are trusted, and a readback from one indexer is not a
+cryptographic proof of canonical state. Issue #200 remains open until an
+operator-approved live deployment and independent finality/replay checks.
+
 As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
 lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod
 RPC/indexer endpoints were retired on 9 October; Preprod now uses Blockfrost
@@ -142,8 +165,8 @@ References:
 2. Move registry identity, policy, and bootstrap maintainer installation into
    the constructor or an equivalently authenticated atomic deployment path.
    Remove the public `initializeRegistry` circuit. Preserve one canonical
-   initialization event and sequence zero. Update generated bindings and
-   simulator fixtures together.
+   initialization event at governance action count one. Update generated
+   bindings and simulator fixtures together.
 3. Bind all governed action digests to the pinned deployment domain. Update
    the Compact verifier and TypeScript signing helpers atomically, then the
    simulator, CLI, API action preparation, demos, epoch evidence, TRQP exports,
