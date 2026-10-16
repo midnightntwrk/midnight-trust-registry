@@ -11,9 +11,51 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "@midnight-ntwrk/trust-registry-integration";
 
-import { resolveCompactProposalObservation, type ProposalRole } from "../compact-proposal-observation.js";
+import {
+  resolveCompactProposalEvidenceSnapshot,
+  resolveCompactProposalObservation,
+  type ProposalRole,
+} from "../compact-proposal-observation.js";
 
 describe("finalized Compact proposal observation", () => {
+  it.each(["issuer", "verifier", "auditor", "maintainer", "recognition"] as const)(
+    "projects the immutable %s evidence and the registered verifier key",
+    async (role: ProposalRole) => {
+      const harness = new LocalTrustRegistryIntegrationHarness(`proposal-snapshot-${role}`);
+      const fixture = role === "issuer" ? createIssuerScenarioFixture("snapshot")
+        : role === "verifier" ? createVerifierScenarioFixture("snapshot")
+          : role === "auditor" ? createAuditorScenarioFixture("snapshot")
+            : role === "maintainer" ? createMaintainerScenarioFixture("snapshot")
+              : createRecognitionScenarioFixture("snapshot");
+      const id = "maintainerId" in fixture ? fixture.maintainerId
+        : "recognitionId" in fixture ? fixture.recognitionId : fixture.authorizationId;
+      const read = async () => harness.simulator.getLedger();
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id)).toBeNull();
+      if (role === "issuer") harness.proposeIssuer(fixture as ReturnType<typeof createIssuerScenarioFixture>);
+      else if (role === "verifier") harness.proposeVerifier(fixture as ReturnType<typeof createVerifierScenarioFixture>);
+      else if (role === "auditor") harness.proposeAuditor(fixture as ReturnType<typeof createAuditorScenarioFixture>);
+      else if (role === "maintainer") harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>);
+      else harness.proposeRecognition(fixture as ReturnType<typeof createRecognitionScenarioFixture>);
+      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id);
+      expect(snapshot).toMatchObject({
+        role,
+        authorizationId: id,
+        eventHash: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        evidenceCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        verifierAuthorizationId: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        verifierDidCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        verifierKeyIdCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        policyCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        policyVersion: expect.stringMatching(/^[1-9][0-9]*$/u),
+      });
+      expect(BigInt(snapshot!.verifierPublicKey.x)).toBeGreaterThan(0n);
+      expect(BigInt(snapshot!.verifierSignature.response)).toBeGreaterThan(0n);
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, `${id}:other`)).toBeNull();
+      await expect(resolveCompactProposalEvidenceSnapshot(read, "registry:wrong", role, id))
+        .rejects.toThrow("different trust registry");
+    },
+  );
+
   it.each(["issuer", "verifier", "auditor", "maintainer", "recognition"] as const)(
     "recovers a lost %s receipt from proposal evidence, not a process-local flag",
     async (role: ProposalRole) => {

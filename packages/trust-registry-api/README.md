@@ -197,6 +197,10 @@ clients must not automatically submit it again. The route returns 503 when
 the host has no role-specific resolution port. This read-only recovery path does not make
 the private admission file and ledger transactional or establish network
 finality.
+For audit tooling, `resolveCompactProposalEvidenceSnapshot` joins a proposal
+record to its registered verifier key in an independently finalized ledger
+view. It exposes the DID/key and policy snapshot for all five proposal roles;
+it is not a standalone finality or inclusion proof and is not an HTTP route.
 Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
 injected `governedVerifierProposals`, `governedAuditorProposals`, and
