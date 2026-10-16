@@ -350,6 +350,18 @@ that the full tests, network finality, owner approval, or publish rollback gate
 passed. Retain those results separately for the same source SHA. Light-build
 tarballs cannot qualify as a release candidate.
 
+From a clean consumer checkout, verify the approved manifest against the
+received tarballs before the smoke runner installs them:
+
+```bash
+pnpm run packed-artifacts:smoke -- --manifest artifacts/release-candidate/<source-sha>/manifest.json --artifacts-dir artifacts/npm
+```
+
+With `--manifest`, the runner does not generate missing packages; a missing,
+extra, duplicated, truncated, or hash-mismatched artifact fails before npm
+installation. Obtain the manifest through the reviewed release channel: its
+hashes do not authenticate an attacker-supplied manifest by themselves.
+
 ## Release Workflow
 
 ### Public-network security gate

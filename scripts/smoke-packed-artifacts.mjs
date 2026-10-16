@@ -11,6 +11,7 @@ import {
   artifactWorkspaces,
   packageManifestCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
+import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -28,6 +29,9 @@ const parseArgs = () => {
       case "--artifacts-dir":
         options.artifactsDir = args[++index];
         break;
+      case "--manifest":
+        options.manifest = args[++index];
+        break;
       case "--help":
         console.log(
           [
@@ -35,6 +39,7 @@ const parseArgs = () => {
             "",
             "Options:",
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
+            "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
           ].join("\n"),
         );
         process.exit(0);
@@ -81,16 +86,23 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir } = parseArgs();
+const { artifactsDir, manifest } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
-fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
-ensureArtifacts(resolvedArtifactsDir);
-
-const tarballPaths = fs
-  .readdirSync(resolvedArtifactsDir)
-  .filter((fileName) => fileName.endsWith(".tgz"))
-  .sort()
-  .map((fileName) => path.join(resolvedArtifactsDir, fileName));
+let tarballPaths;
+if (manifest !== undefined) {
+  if (typeof manifest !== "string" || manifest.length === 0) {
+    throw new Error("--manifest requires a file path");
+  }
+  const candidate = JSON.parse(fs.readFileSync(path.resolve(repoRoot, manifest), "utf8"));
+  tarballPaths = verifyReleaseCandidateArtifacts(candidate, resolvedArtifactsDir);
+} else {
+  fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
+  ensureArtifacts(resolvedArtifactsDir);
+  tarballPaths = fs.readdirSync(resolvedArtifactsDir)
+    .filter((fileName) => fileName.endsWith(".tgz"))
+    .sort()
+    .map((fileName) => path.join(resolvedArtifactsDir, fileName));
+}
 
 if (tarballPaths.length !== artifactWorkspaces.length) {
   throw new Error(

@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,6 +70,39 @@ export function assertFullPackedContract(paths, contractInfo) {
   if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
   const missing = missingFullContractArtifacts(files, "trust-registry", proofCircuitNames(contractInfo));
   if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
+}
+
+export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
+  if (manifest?.format !== "tr-release-candidate-manifest-v1"
+    || !HASH.test(manifest.sourceRevision)
+    || !Array.isArray(manifest.packages)
+    || manifest.packages.length !== workspaces.length) {
+    throw new Error("Release candidate manifest format or package count is invalid");
+  }
+  const expected = new Set(workspaces);
+  const seen = new Set();
+  const filenames = new Set();
+  for (const entry of manifest.packages) {
+    if (!expected.has(entry.workspace) || seen.has(entry.workspace)
+      || filenames.has(entry.filename)
+      || typeof entry.filename !== "string"
+      || !/^[a-z0-9][a-z0-9.-]*\.tgz$/u.test(entry.filename)
+      || !/^[0-9a-f]{64}$/u.test(entry.sha256)
+      || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes <= 0) {
+      throw new Error("Release candidate package entry is invalid or duplicated");
+    }
+    seen.add(entry.workspace);
+    filenames.add(entry.filename);
+    const path = join(artifactDir, entry.filename);
+    if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
+      throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
+    }
+  }
+  const present = readdirSync(artifactDir).filter((name) => name.endsWith(".tgz"));
+  if (present.length !== filenames.size || present.some((name) => !filenames.has(name))) {
+    throw new Error("Release candidate artifact directory contains unlisted tarballs");
+  }
+  return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
 
 const run = (command, args, trim = true) => {
