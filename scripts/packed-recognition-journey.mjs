@@ -9,6 +9,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
   createMaintainerScenarioFixture,
   createMidnightDid,
@@ -21,6 +22,7 @@ import {
   VP_FIXTURE_TIME_MS,
 } from "@midnight-ntwrk/trust-registry-integration";
 import {
+  createTrustRegistryApiServer,
   InMemoryApplicationChallengeStore,
   RecognitionAuthorityChallengeService,
   resolveCompactProposalEvidenceSnapshot,
@@ -186,6 +188,42 @@ assert.match(proposalSnapshot.boundActionPayloadHash, /^0x[0-9a-f]{64}$/u);
 await assert.rejects(resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), "registry:other", "recognition", recognition.recognitionId,
 ), /different trust registry/u);
+const api = createTrustRegistryApiServer({
+  source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "packed-recognition" }) },
+  readFinalizedProposalLedger: async () => harness.simulator.getLedger(),
+});
+try {
+  await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const address = api.address();
+  if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
+  const endpoint = `http://127.0.0.1:${address.port}/v1/governed/recognition/`;
+  const response = await fetch(`${endpoint}${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const observed = await response.json();
+  assert.equal(observed.evidenceCommitment, proposalSnapshot.evidenceCommitment);
+  assert.equal(observed.eventHash, proposalSnapshot.eventHash);
+  assert.equal(observed.signatureVerified, true);
+  const absent = await fetch(`${endpoint}${encodeURIComponent("recognition:absent")}/proposal/evidence`);
+  assert.equal(absent.status, 404);
+  assert.match((await absent.json()).type, /proposal-evidence-not-found$/u);
+} finally {
+  await new Promise((resolve, reject) => api.close((error) => error ? reject(error) : resolve()));
+}
+const unavailableApi = createTrustRegistryApiServer({
+  source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "packed-recognition" }) },
+});
+try {
+  await new Promise((resolve) => unavailableApi.listen(0, "127.0.0.1", resolve));
+  const address = unavailableApi.address();
+  if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/recognition/`
+    + `${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`);
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).type, /proposal-evidence-unavailable$/u);
+} finally {
+  await new Promise((resolve, reject) => unavailableApi.close((error) => error ? reject(error) : resolve()));
+}
 harness.approveRecognition(recognition);
 harness.activateRecognition(recognition);
 const bundle = harness.evaluateCurrentRecognitionDecision(recognition, { expectedRegistryId: harness.registryId });
@@ -209,11 +247,12 @@ process.stdout.write(`${JSON.stringify({
   evidenceCommitment: proposalSnapshot.evidenceCommitment,
   proposalEventHash: proposalSnapshot.eventHash,
   proposalSignatureVerified: proposalSnapshot.signatureVerified,
+  proposalApiEvidenceVerified: true,
   activeDecision: "trusted recognition, not local issuer authorization",
   finalDecision: "suspended recognition",
   expectedRejections: [
     "wrong-external-registry", "substituted-authority-assertion", "inactive-accreditation-status",
     "replayed-challenge", "insufficient-maintainer-quorum", "wrong-recognition-registry",
-    "suspended-current-decision",
+    "suspended-current-decision", "missing-proposal-evidence:404", "unavailable-ledger-reader:503",
   ],
 }, null, 2)}\n`);

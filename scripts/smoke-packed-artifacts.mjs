@@ -188,11 +188,13 @@ try {
     const recognitionReport = JSON.parse(run("node", ["packed-recognition-journey.mjs"], { cwd: smokeRoot }));
     if (recognitionReport.demo !== "packed-recognition-journey"
       || recognitionReport.proposalSignatureVerified !== true
+      || recognitionReport.proposalApiEvidenceVerified !== true
       || !/^0x[0-9a-f]{64}$/u.test(recognitionReport.evidenceCommitment)
       || !Array.isArray(recognitionReport.signerKeyIds)
       || recognitionReport.signerKeyIds.length < 2
       || !Array.isArray(recognitionReport.expectedRejections)
-      || recognitionReport.expectedRejections.length < 6
+      || !recognitionReport.expectedRejections.includes("missing-proposal-evidence:404")
+      || !recognitionReport.expectedRejections.includes("unavailable-ledger-reader:503")
       || "vp" in recognitionReport || "assertion" in recognitionReport) {
       throw new Error("Packed recognition journey did not return a scrubbed, verified evidence report");
     }
