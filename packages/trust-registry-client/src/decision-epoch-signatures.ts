@@ -1,5 +1,6 @@
 import { ecAdd, ecMul, type JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
+  compareMaintainerKeyIds,
   computeCreateEpochCommitmentPayloadHash,
   decodeCanonicalJubjubSignatureHex,
   encodeCompactActionKind,
@@ -144,6 +145,11 @@ export const assertDecisionEpochPublicationSignatures = (
   }
   if (!sameBytes32(signerKeyIds[0]!, context.firstSignerKeyIdCommitment)) {
     throw new Error("Epoch publication first signer does not match the accepted record");
+  }
+  for (let index = 1; index < signerKeyIds.length; index += 1) {
+    if (compareMaintainerKeyIds(signerKeyIds[index - 1]!, signerKeyIds[index]!) >= 0) {
+      throw new Error("Epoch publication signer keys must be sorted");
+    }
   }
   const [first, second = ZERO, third = ZERO, fourth = ZERO, fifth = ZERO] = signerKeyIds;
   const signerSetHash = pureCircuits.maintainerSignerSetHash(

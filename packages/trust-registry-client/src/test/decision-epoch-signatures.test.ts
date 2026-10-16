@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
 import {
+  compareMaintainerKeyIds,
   computeCreateEpochCommitmentPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
@@ -34,7 +35,9 @@ function fixture() {
   const keys = [
     { keyId: `${DID1}#key-1`, seed: new Uint8Array(32).fill(13) },
     { keyId: `${DID2}#key-1`, seed: new Uint8Array(32).fill(17) },
-  ];
+  ].sort((left, right) => compareMaintainerKeyIds(
+    bytes32Commitment(left.keyId), bytes32Commitment(right.keyId),
+  ));
   const activeMaintainersAtPublication = keys.map(({ keyId, seed }) => ({
     keyId,
     keyIdCommitment: bytes32Commitment(keyId),
@@ -175,6 +178,17 @@ describe("decision epoch publication signatures", () => {
         context.activeMaintainersAtPublication[1]!,
       ],
     })).toThrow(/prime order/u);
+  });
+
+  it("rejects a reordered quorum even when every signature is valid", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch,
+      quorum: { ...epoch.quorum, signatures: [...epoch.quorum.signatures].reverse() },
+    }, publicationEventHash, accepted, {
+      ...context,
+      firstSignerKeyIdCommitment: context.activeMaintainersAtPublication[1]!.keyIdCommitment,
+    })).toThrow(/signer keys must be sorted/u);
   });
 
   it("rejects changed publication preimages, threshold, first signer, and event", () => {

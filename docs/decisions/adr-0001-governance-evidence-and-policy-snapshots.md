@@ -13,10 +13,12 @@ evidence and quorum execution.
 
 ## Decision
 
-- Signer-set commitments are canonical and order independent. Sort active
-  maintainer key identifiers lexicographically before hashing or evaluating a
-  signer bundle. The submitter is recorded separately and has no extra voting
-  power.
+- Signer-set commitments are canonical and order independent. Sort the 32-byte
+  maintainer key-ID commitments as unsigned little-endian integers before
+  submitting a signer bundle. Compact verifies strict ordering, distinctness,
+  and zero padding before hashing. The first slot is the lowest key ID, not a
+  privileged vote or proof of transaction submission. A transaction submitter
+  must be authenticated separately by the transport when that identity matters.
 - A policy version is immutable. A governed event binds `policyId`,
   `policyVersion`, its policy commitment, and the threshold family used by the
   decision. Later policy versions never reinterpret earlier events.
@@ -84,6 +86,28 @@ action signatures and event evidence to the commitment effective at the action
 sequence. The contract does not validate the off-chain policy preimage;
 consumers must recompute the snapshot digest from the policy record. Broader
 application-evidence lifecycle work remains open under issue #75.
+
+Maintainer signatures all cover the same deployment-bound action digest, so
+sorting their signed entries does not change what each signer approved. The
+fixed-capacity bundle contains one to five active signers followed by zero
+padding. Both the contract and publication-evidence client enforce the same
+order; `lastAuthorizedMaintainerKeyId` and the accepted epoch's first-signer
+field identify the lowest signer key ID, not the transaction submitter.
+This amends the original byte-lexicographic draft: Compact compares two exact
+128-bit limbs rather than unrolling a costly 32-byte comparison fold.
+On the pinned Compact 0.31.1 compiler, `--skip-zk` serialized 65 ZKIR circuits
+at 8,842,084 bytes before this rule and 11,333,251 bytes after it. The
+`publishEpochCommitment` ZKIR grew from 199,395 to 260,269 bytes. These are
+compiler-output size measurements, not proving-time or key-size measurements;
+full artifact and integration qualification remains a release gate.
+
+Canonical two-signer example: `signer1 = 0x80` followed by 31 zero bytes,
+`signer2 = 31 zero bytes` followed by `0x01`, and signer slots 3-5 all zero.
+Little-endian ordering puts `signer1` first; the Compact
+`maintainerSignerSetHash(2, signer1, signer2, 0, 0, 0)` is
+`0xa2a083e62cd7a8c2e3dcca00448fc2b20c4e59e295cdbbedbdd3f34f74430d80`.
+Reversing the two signed entries is rejected before event creation, rather
+than producing a second historical event hash for the same quorum.
 
 ## Rejected Alternatives
 

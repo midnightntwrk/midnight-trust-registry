@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  compareMaintainerKeyIds,
   computeCreateEpochCommitmentPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
@@ -133,7 +134,9 @@ function fixture(
   const keys = MAINTAINER_DIDS.map((did, index) => ({
     keyId: `${did}#key-1`,
     seed: new Uint8Array(32).fill(index === 0 ? 13 : 17),
-  }));
+  })).sort((left, right) => compareMaintainerKeyIds(
+    bytes32Commitment(left.keyId), bytes32Commitment(right.keyId),
+  ));
   const activeMaintainersAtPublication = keys.map(({ keyId, seed }) => ({
     keyId,
     keyIdCommitment: bytes32Commitment(keyId),

@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 
 import {
+  compareMaintainerKeyIds,
   computeCreateAuditorAuthorizationPayloadHash,
   computeAuditorEvidenceBoundProposalPayloadHash,
   computeMaintainerEvidenceBoundProposalPayloadHash,
@@ -3317,7 +3318,9 @@ export class LocalTrustRegistryIntegrationHarness {
         sameBytes(candidate.keyId, signer.keyId));
       if (maintainer === undefined) throw new Error("Epoch signer is not a known maintainer");
       return { signer, maintainer };
-    });
+    }).sort((left, right) => compareMaintainerKeyIds(
+      left.signer.keyId, right.signer.keyId,
+    ));
     const eventHash = this.simulator.publishEpochCommitment(
       primary.keyId, primary.publicKey, primary.signature,
       prepared.epochIdCommitment, prepared.stateRoot, prepared.eventRoot,
@@ -3386,7 +3389,7 @@ export class LocalTrustRegistryIntegrationHarness {
         signatures: [
           {
             keyId: `${this.maintainerDid}#key-1`,
-            algorithm: "jubjub-schnorr",
+            algorithm: "jubjub-schnorr" as const,
             signature: bytes32Hex(encodeJubjubSignature(signature)),
           },
           ...coMaintainers.map((maintainer, index) => ({
@@ -3394,7 +3397,9 @@ export class LocalTrustRegistryIntegrationHarness {
             algorithm: "jubjub-schnorr" as const,
             signature: bytes32Hex(encodeJubjubSignature(coAuthorizers[index]!.signature)),
           })),
-        ],
+        ].sort((left, right) => compareMaintainerKeyIds(
+          bytes32Commitment(left.keyId), bytes32Commitment(right.keyId),
+        )),
       });
     }
 
