@@ -354,9 +354,10 @@ This runs the signed issuer, verifier, auditor, and maintainer HTTP journeys
 from the temporary tarball install, including the packed portal and admin API
 clients. The optional `--vc-consumer` path also requires the pinned Compact
 compiler, compiles the integration package's exported consumer fixture against
-the published VC Compact package, and checks its pinned authority domain and
-substitution rejection. It does not replace the source integration test's
-signer-authorization proof checks. These remain simulator tests, not finalized
+the published VC Compact package, and checks its pinned authority domain,
+issuer/verifier proof acceptance, and forged-signature, replay, and scope
+rejection. The source integration test separately binds signer descriptors to
+verified Trust Registry decisions. These remain simulator tests, not finalized
 network reads or deployed cross-contract calls.
 
 For a full release build, run `pnpm run build` and then
