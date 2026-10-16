@@ -1445,3 +1445,15 @@ ledger state, and deployment address before #200 or 0.1.0 public-network
 qualification can close. PR #205 exact-head Quality completed green after the
 proving-key jobs were sharded; #207's light/docs checks were also green at the
 last local CI check. Neither PR was merged in this slice.
+
+The next local #200 slice supplies `createRpcFinalizedCheckpointSource`:
+`chain_getBlockHash(0)` must match an out-of-band approved genesis pin before
+the source accepts `chain_getFinalizedHead`. The checkpoint then drives the
+block-hash-scoped indexer ledger read. Focused tests cover wrong genesis,
+malformed JSON-RPC, missing hashes, and unsafe URLs; `./run.sh --light` and
+audit pass. This trusts the configured node for finality and does not prove a
+deployment. Official Midnight environment documentation now places public
+Preprod RPC/indexer behind Blockfrost project-token URLs; the older
+Midnight-hosted Preprod endpoints shut down on 2026-10-09. Preview remains a
+public RPC/indexer and faucet target. Do not derive the approved genesis pin
+from the same live RPC response or disclose project tokens in reports.

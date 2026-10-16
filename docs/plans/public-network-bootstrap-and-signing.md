@@ -53,6 +53,27 @@ implementation. A public-network qualification still needs a target network,
 funded deployment wallet, authenticated checkpoint source, deployment receipt,
 and finalized readback of the deployed address and constructor state.
 
+`createRpcFinalizedCheckpointSource` can supply that reader's checkpoint from a
+Midnight node RPC. It checks `chain_getBlockHash(0)` against a separately
+approved genesis hash **before** accepting `chain_getFinalizedHead`; it never
+learns the trusted pin from the same endpoint. The node RPC and indexer are
+distinct data sources, but the node itself remains a trusted finality source.
+The operator must provision the approved network/genesis pair and an HTTPS
+endpoint, then compare the resulting block hash with the indexer's
+block-hash-scoped contract state. A successful RPC test does not prove contract
+deployment, wallet funding, or constructor state. The source rejects remote
+plain HTTP, URL-embedded basic credentials, malformed JSON-RPC responses,
+zero hashes, and wrong genesis. Project tokens in query parameters are not
+logged by this library and must still be handled as secrets by the host.
+
+As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
+lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod
+RPC/indexer endpoints were retired on 9 October; Preprod now uses Blockfrost
+endpoints and a Midnight Preprod project token. Do not copy stale Preprod URLs
+from older DID examples. The [deployment guide](https://docs.midnight.network/guides/deploy-and-operate)
+describes provider construction and a funded wallet; those pieces are still
+required for #200's live deployment qualification.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract

@@ -4,6 +4,16 @@ Integration scenarios for `midnight-trust-registry`.
 
 Current coverage:
 
+- `createRpcFinalizedCheckpointSource` checks a configured public network's
+  node RPC genesis against an independently approved pin, then reads its
+  finalized head. `createCheckpointedDeploymentActionReader` queries the
+  generated Trust Registry ledger at that block hash and supplies the
+  deployment-signing preflight. These are read-only components: the host must
+  trust the node for finality, protect RPC credentials, and independently pin
+  the network/genesis pair. Mocked provider tests and a successful RPC probe
+  do not qualify a public-network deployment; wallet funding, deployment,
+  finalized constructor readback, and replay checks remain #200 work.
+
 - Application VP intake now requires issuer eligibility to return a full
   governed issuer status-policy binding. The reference trusted-reader adapter
   checks an active finalized issuer decision, the credential issuer's DID
