@@ -66,6 +66,15 @@ plain HTTP, URL-embedded basic credentials, malformed JSON-RPC responses,
 zero hashes, and wrong genesis. Project tokens in query parameters are not
 logged by this library and must still be handled as secrets by the host.
 
+`createPublicNetworkDeploymentActionReader` composes this pinned RPC source
+with Midnight's published 4.1.1 indexer public-data provider. The operator
+supplies HTTPS indexer query and WSS subscription URLs; remote plaintext and
+URL-embedded credentials are rejected. The indexer state is read at the
+node's finalized block hash, not at the indexer's latest head. This is a
+read-only provider assembly, not a deployment receipt or independent proof
+that the node is honest. The genesis pin must still come from an approved
+source outside the configured RPC/indexer pair.
+
 As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
 lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod
 RPC/indexer endpoints were retired on 9 October; Preprod now uses Blockfrost

@@ -8,7 +8,9 @@ Current coverage:
   node RPC genesis against an independently approved pin, then reads its
   finalized head. `createCheckpointedDeploymentActionReader` queries the
   generated Trust Registry ledger at that block hash and supplies the
-  deployment-signing preflight. These are read-only components: the host must
+  deployment-signing preflight. `createPublicNetworkDeploymentActionReader`
+  wires both to the published Midnight indexer provider using configured
+  HTTPS/WSS endpoints. These are read-only components: the host must
   trust the node for finality, protect RPC credentials, and independently pin
   the network/genesis pair. Mocked provider tests and a successful RPC probe
   do not qualify a public-network deployment; wallet funding, deployment,

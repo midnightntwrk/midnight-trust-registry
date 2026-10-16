@@ -17,6 +17,7 @@ export * from "./vc-signer-candidate.js";
 export * from "./vc-signer-authorization.js";
 export * from "./finalized-deployment-action-reader.js";
 export * from "./rpc-finalized-checkpoint.js";
+export * from "./public-network-deployment-action-reader.js";
 export * from "./vc-scope.js";
 export * from "./vc-authority-signer.js";
 export * from "./vc-authority-registration.js";

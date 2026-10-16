@@ -1457,3 +1457,12 @@ Preprod RPC/indexer behind Blockfrost project-token URLs; the older
 Midnight-hosted Preprod endpoints shut down on 2026-10-09. Preview remains a
 public RPC/indexer and faucet target. Do not derive the approved genesis pin
 from the same live RPC response or disclose project tokens in reports.
+
+At exact local parent head `51dff47`, full `./run.sh integration` passed:
+65 proof circuits and all integration/actor-demo suites completed. This
+does not validate the later RPC-source or provider-composition commits as a
+full integration run. The follow-on local provider-composition slice uses
+published Midnight indexer provider 4.1.1 with the pinned node checkpoint;
+it still needs a funded deployment and finalized constructor readback before
+#200 can close. PR #205's latest `085e3d8` Quality/proving-key shards were
+green at the last check; it remains unmerged.
