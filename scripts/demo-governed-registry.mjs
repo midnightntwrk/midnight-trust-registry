@@ -301,6 +301,10 @@ const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-p
 const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
 policyHarness.authorizeIssuer(historicalIssuer);
 const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+const originalPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
+  label: "governed-demo-policy-replay",
+  issuers: [{ fixture: historicalIssuer, label: "historical-issuer" }],
+});
 policyHarness.authorizeMaintainer(policySecond);
 policyHarness.authorizeMaintainer(policyThird);
 policyHarness.proposeIssuer(pendingPolicyIssuer);
@@ -340,6 +344,46 @@ const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentP
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
+  label: "governed-demo-policy-replay",
+  issuers: [
+    { fixture: historicalIssuer, label: "historical-issuer" },
+    { fixture: currentPolicyIssuer, label: "current-issuer" },
+  ],
+}, originalPolicySnapshot);
+const policyServer = createTrustRegistryApiServer({
+  source: { mode: "memory", loadSnapshot: async () => revisedPolicySnapshot },
+});
+await new Promise((resolve) => policyServer.listen(0, "127.0.0.1", resolve));
+try {
+  const address = policyServer.address();
+  assert.ok(address && typeof address !== "string");
+  const oldEvidence = originalPolicySnapshot.issuerEntries[0]?.evidence;
+  assert.ok(oldEvidence?.authorization);
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "issuer",
+      subjectDid: historicalIssuer.subjectDid,
+      resourceId: historicalIssuer.resourceId,
+      at: oldEvidence.epoch.validFrom,
+    }),
+  });
+  const historicalDecision = await expectHttp(response, 200);
+  assert.equal(historicalDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
+  assert.equal(historicalDecision.bundle.policy.version, oldEvidence.policy.version);
+  assert.notEqual(historicalDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
+  adversarialMatrix.expectDecision(historicalDecision, {
+    id: "issuer-historical-api-after-threshold-change",
+    invariant: "A policy threshold revision retains the old issuer decision at its original epoch",
+    boundary: "api",
+    trusted: true,
+    statusAtTime: "active",
+  });
+} finally {
+  await new Promise((resolve) => policyServer.close(resolve));
+}
 adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
   historicalPolicyBundle, {},
 ), {
