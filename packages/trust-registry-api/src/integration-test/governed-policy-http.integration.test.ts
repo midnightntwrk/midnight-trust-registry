@@ -9,12 +9,14 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
+import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  AtomicMaintainerRecoveryPrecheckError,
   type MaintainerScenarioFixture,
 } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -163,6 +165,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await submitRevision(revision, [secondVote, thirdVote])).status).toBe(409);
       expect(harness.simulator.getLedger().maintainerThreshold).toBe(3n);
       const issuer = createIssuerScenarioFixture("policy-http-issuer");
+      expect(() => harness.proposeIssuer(issuer, [second, third])).toThrow();
 
       const registrationResponse = await post("evidence-verifier/prepare", {});
       expect(registrationResponse.status).toBe(200);
@@ -193,6 +196,88 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(() => harness.proposeIssuer(issuer, [second])).toThrow();
       harness.proposeIssuer(issuer, [second, third]);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 3n);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 120_000);
+
+  it("atomically recovers a maintainer through old-quorum external signatures", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("policy-http-atomic-recovery");
+    const second = createMaintainerScenarioFixture("policy-http-recovery-second");
+    const target = createMaintainerScenarioFixture("policy-http-recovery-target");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(target);
+    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    const targetId = hex(target.maintainerIdCommitment);
+    const thresholds = { default: "1", emergency: "1", archival: "1" };
+    const port: GovernedPolicyActionPort = {
+      async prepareThresholds() { throw new Error("Not configured for this test"); },
+      async executeThresholds() { throw new Error("Not configured for this test"); },
+      async prepareEvidenceVerifier() { throw new Error("Not configured for this test"); },
+      async executeEvidenceVerifier() { throw new Error("Not configured for this test"); },
+      async prepareMaintainerRecovery(maintainerId, value) {
+        if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
+        try {
+          return harness.prepareAtomicMaintainerRecoveryAction(
+            target, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+          );
+        } catch (error) {
+          if (!(error instanceof CompactError || error instanceof AtomicMaintainerRecoveryPrecheckError)) {
+            throw error;
+          }
+          throw new GovernedPolicyActionRejectedError();
+        }
+      },
+      async executeMaintainerRecovery(maintainerId, value, signers) {
+        if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
+        try {
+          return { eventHash: hex(harness.executeAtomicMaintainerRecoveryWithSignatures(
+            target, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+          )) };
+        } catch {
+          throw new GovernedPolicyActionRejectedError();
+        }
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "recovery" }) },
+      governedPolicyActions: port,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const endpoint = `http://127.0.0.1:${address.port}/v1/governed/policy/maintainer-recovery`;
+      const post = (path: string, body: unknown) => fetch(`${endpoint}/${path}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const request = { maintainerId: targetId, thresholds };
+      const preparedResponse = await post("prepare", request);
+      expect(preparedResponse.status).toBe(200);
+      const prepared = await preparedResponse.json() as PreparedGovernedPolicyAction;
+      expect(prepared.maintainerId).toBe(targetId);
+      const bootstrap = createMaintainerFixture("bootstrap", 17);
+      bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
+      const bootstrapVote = signPrepared(bootstrap, prepared);
+      const secondVote = signPrepared(second, prepared);
+      const targetVote = signPrepared(target, prepared);
+      const before = harness.simulator.getLedger().governanceActionCount;
+      const submit = (context: PreparedGovernedPolicyAction, signers: unknown[]) =>
+        post("submit", { ...request, prepared: context, signers });
+      expect((await submit(prepared, [bootstrapVote])).status).toBe(403);
+      expect((await submit(prepared, [bootstrapVote, targetVote])).status).toBe(403);
+      expect((await submit({ ...prepared, actionSequence: "0" }, [bootstrapVote, secondVote])).status).toBe(409);
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      const recovered = await submit(prepared, [bootstrapVote, secondVote]);
+      expect(recovered.status).toBe(202);
+      const receipt = await recovered.json() as { eventHash: string };
+      expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
+      expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
+      expect(harness.simulator.getLedger().maintainerThreshold).toBe(1n);
+      expect(harness.simulator.getMaintainerMembership(target.maintainerIdCommitment).status)
+        .toBe(AuthorizationStatus.suspended);
+      expect((await submit(prepared, [bootstrapVote, secondVote])).status).toBe(403);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

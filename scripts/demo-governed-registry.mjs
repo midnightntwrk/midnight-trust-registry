@@ -18,6 +18,7 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
+import { createMaintainerFixture } from "../contracts/trust-registry/dist/testing.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import {
   bytes32Commitment,
@@ -51,6 +52,7 @@ import {
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
+  AtomicMaintainerRecoveryPrecheckError,
   resolveCompactHistoricalEpochAnchor,
   recognitionAuthorityAssertionDigest,
   recognitionAccreditationSubmissionCommitment,
@@ -944,6 +946,34 @@ const server = createTrustRegistryApiServer({
     },
   },
   governedPolicyActions: {
+    async prepareMaintainerRecovery(maintainerId, value) {
+      if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
+        throw new GovernedPolicyActionRejectedError();
+      }
+      try {
+        return harness.prepareAtomicMaintainerRecoveryAction(
+          candidate, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
+        );
+      } catch (error) {
+        if (!(error instanceof CompactError || error instanceof AtomicMaintainerRecoveryPrecheckError)) {
+          throw error;
+        }
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
+    async executeMaintainerRecovery(maintainerId, value, signers) {
+      if (maintainerId !== asHex(candidate.maintainerIdCommitment)) {
+        throw new GovernedPolicyActionRejectedError();
+      }
+      try {
+        const eventHash = harness.executeAtomicMaintainerRecoveryWithSignatures(
+          candidate, BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
+        );
+        return { eventHash: asHex(eventHash) };
+      } catch {
+        throw new GovernedPolicyActionRejectedError();
+      }
+    },
     async prepareThresholds(value) {
       try {
         return harness.prepareThresholdPolicyRevisionAction(
@@ -2257,21 +2287,39 @@ try {
   });
   assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
   const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
-  const recoveryContext = await expectHttp(await postPolicy("thresholds/prepare", {
+  const recoveryRequest = {
+    maintainerId: asHex(candidate.maintainerIdCommitment),
     thresholds: recoveryThresholds,
+  };
+  const recoveryContext = await expectHttp(await postPolicy("maintainer-recovery/prepare", {
+    ...recoveryRequest,
   }), 200);
-  const recoveryRevisionReceipt = await expectHttp(await postPolicy("thresholds/submit", {
-    thresholds: recoveryThresholds,
+  const bootstrap = createMaintainerFixture("bootstrap", 17);
+  bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
+  await adversarialMatrix.expectHttp(await postPolicy("maintainer-recovery/submit", {
+    ...recoveryRequest,
     prepared: recoveryContext,
-    signers: [sign(second, recoveryContext), sign(third, recoveryContext), sign(candidate, recoveryContext)],
+    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(candidate, recoveryContext)],
+  }), {
+    id: "atomic-recovery-target-self-vote",
+    invariant: "The target cannot count toward the old-policy recovery quorum",
+    boundary: "api", status: 403, problemType: "governed-policy-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
+  const recoveryReceipt = await expectHttp(await postPolicy("maintainer-recovery/submit", {
+    ...recoveryRequest,
+    prepared: recoveryContext,
+    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(third, recoveryContext)],
   }), 202);
+  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence + 1n);
+  publishCurrentSnapshot();
   const recoveryRegistrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
   const recoveryRegistrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
     prepared: recoveryRegistrationContext,
     signers: [sign(second, recoveryRegistrationContext), sign(third, recoveryRegistrationContext)],
   }), 202);
-  const suspendedMaintainerEventHash = harness.suspendMaintainer(candidate);
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  const suspendedMaintainerEventHash = recoveryReceipt.eventHash;
   const postSuspensionIssuer = createIssuerScenarioFixture("governed-demo-post-suspension-issuer");
   assert.throws(() => harness.proposeIssuer(postSuspensionIssuer, [candidate, second]),
     /Maintainer must be active/u);
@@ -2280,7 +2328,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
-    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then reduced to 2-of-4 before removal",
+    governance: "2-of-3 external JubJub signatures; HTTP-revised to 3-of-4, then atomically reduced to 2-of-3 with target removal",
     acceptedVpRecovery: "issuer, verifier, auditor, and maintainer recovered by authenticated receipt lookup",
     statusWitnessAudit: {
       roles: statusWitnessAuditedRoles,
@@ -2346,10 +2394,10 @@ try {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
       policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
       thresholdRevisionEventHash: revisionReceipt.eventHash,
-      recoveryPolicyRevisionEventHash: recoveryRevisionReceipt.eventHash,
+      atomicRecoveryEventHash: recoveryReceipt.eventHash,
       recoveryEvidenceVerifierRegistrationEventHash: recoveryRegistrationReceipt.eventHash,
       evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
-      suspendedMaintainerEventHash: asHex(suspendedMaintainerEventHash),
+      suspendedMaintainerEventHash,
       remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
       remainingQuorumEventHash: asHex(remainingQuorumEventHash),
     },

@@ -796,6 +796,29 @@ export const computeUpdateMaintainerThresholdPolicyPayloadHash = (
     archivalThreshold,
   );
 
+export const computeRecoverMaintainerMembershipPayloadHash = (
+  previousPolicyCommitment: Uint8Array,
+  nextPolicyCommitment: Uint8Array,
+  nextPolicyVersion: bigint,
+  defaultThreshold: bigint,
+  emergencyThreshold: bigint,
+  archivalThreshold: bigint,
+  maintainerId: Uint8Array,
+  previousLifecycleEventHash: Uint8Array,
+  evidenceHash: Uint8Array,
+): Uint8Array =>
+  pureCircuits.recoverMaintainerMembershipPayloadHash(
+    require32Bytes(previousPolicyCommitment, "Previous policy commitment"),
+    require32Bytes(nextPolicyCommitment, "Next policy commitment"),
+    nextPolicyVersion,
+    defaultThreshold,
+    emergencyThreshold,
+    archivalThreshold,
+    require32Bytes(maintainerId, "Maintainer id"),
+    require32Bytes(previousLifecycleEventHash, "Previous lifecycle event hash"),
+    require32Bytes(evidenceHash, "Evidence hash"),
+  );
+
 const signMaintainerActionDigestFromSeed = (
   seedBytes: Uint8Array,
   digest: TrustRegistryActionDigest,

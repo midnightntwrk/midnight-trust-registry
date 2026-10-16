@@ -18,6 +18,10 @@ export const GovernedThresholdPrepareRequestSchema = z.strictObject({
   thresholds: GovernedThresholdsSchema,
 });
 
+export const GovernedMaintainerRecoveryPrepareRequestSchema = GovernedThresholdPrepareRequestSchema.extend({
+  maintainerId: Bytes32Schema,
+});
+
 export const PreparedGovernedPolicyActionSchema = z.strictObject({
   registryId: Bytes32Schema,
   networkIdCommitment: Bytes32Schema,
@@ -31,9 +35,14 @@ export const PreparedGovernedPolicyActionSchema = z.strictObject({
   authorizationId: Bytes32Schema.optional(),
   keyIdCommitment: Bytes32Schema.optional(),
   policyVersion: ScalarSchema.optional(),
+  maintainerId: Bytes32Schema.optional(),
 });
 
 export const GovernedThresholdSubmitRequestSchema = GovernedThresholdPrepareRequestSchema.extend({
+  prepared: PreparedGovernedPolicyActionSchema,
+  signers: GovernedMembershipSignersSchema,
+});
+export const GovernedMaintainerRecoverySubmitRequestSchema = GovernedMaintainerRecoveryPrepareRequestSchema.extend({
   prepared: PreparedGovernedPolicyActionSchema,
   signers: GovernedMembershipSignersSchema,
 });
@@ -65,6 +74,7 @@ export type GovernedPolicyActionContext = {
   authorizationId?: Uint8Array;
   keyIdCommitment?: Uint8Array;
   policyVersion?: bigint;
+  maintainerId?: Uint8Array;
 };
 
 export type GovernedPolicyActionPort = {
@@ -75,6 +85,15 @@ export type GovernedPolicyActionPort = {
   ): Promise<GovernedPolicyActionReceipt>;
   prepareEvidenceVerifier(): Promise<GovernedPolicyActionContext>;
   executeEvidenceVerifier(signers: readonly GovernedMembershipSigner[]): Promise<GovernedPolicyActionReceipt>;
+  prepareMaintainerRecovery?(
+    maintainerId: string,
+    thresholds: GovernedThresholds,
+  ): Promise<GovernedPolicyActionContext>;
+  executeMaintainerRecovery?(
+    maintainerId: string,
+    thresholds: GovernedThresholds,
+    signers: readonly GovernedMembershipSigner[],
+  ): Promise<GovernedPolicyActionReceipt>;
 };
 
 export class GovernedPolicyActionRejectedError extends Error {
@@ -113,6 +132,9 @@ export const serializeGovernedPolicyAction = (
   }),
   ...(context.policyVersion === undefined ? {} : {
     policyVersion: context.policyVersion.toString(),
+  }),
+  ...(context.maintainerId === undefined ? {} : {
+    maintainerId: bytes32Hex(context.maintainerId),
   }),
 });
 

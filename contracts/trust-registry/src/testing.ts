@@ -256,6 +256,39 @@ export class TrustRegistrySimulator {
     );
   }
 
+  recoverMaintainerMembership(
+    maintainerKeyId: Uint8Array,
+    maintainerPublicKey: JubjubPoint,
+    signature: { announcement: JubjubPoint; response: bigint },
+    candidateMaintainerId: Uint8Array,
+    evidenceHash: Uint8Array,
+    nextPolicyCommitment: Uint8Array,
+    nextPolicyVersion: bigint,
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
+  ): Uint8Array {
+    return this.executeCircuit(() =>
+      this.contract.impureCircuits.recoverMaintainerMembership(
+        this.circuitContext,
+        this.buildMaintainerAuthorizationBundle(
+          maintainerKeyId,
+          maintainerPublicKey,
+          signature,
+          coAuthorizers,
+        ),
+        candidateMaintainerId,
+        evidenceHash,
+        nextPolicyCommitment,
+        nextPolicyVersion,
+        defaultThreshold,
+        emergencyThreshold,
+        archivalThreshold,
+      ),
+    );
+  }
+
   proposeMaintainerMembership(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,

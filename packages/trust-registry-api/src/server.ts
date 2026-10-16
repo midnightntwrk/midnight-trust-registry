@@ -60,6 +60,8 @@ import {
 import {
   GovernedEvidenceVerifierPrepareRequestSchema,
   GovernedEvidenceVerifierSubmitRequestSchema,
+  GovernedMaintainerRecoveryPrepareRequestSchema,
+  GovernedMaintainerRecoverySubmitRequestSchema,
   GovernedPolicyActionReceiptSchema,
   GovernedPolicyActionRejectedError,
   GovernedThresholdPrepareRequestSchema,
@@ -1497,6 +1499,62 @@ export const createTrustRegistryApiServer = (
           return;
         } catch (error) {
           return mapGovernedMaintainerProposalError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 5
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "policy"
+        && segments[3] === "maintainer-recovery"
+        && (segments[4] === "prepare" || segments[4] === "submit")
+      ) {
+        const port = requireGovernedPolicyActions(options, problemBaseUri);
+        if (port.prepareMaintainerRecovery === undefined || port.executeMaintainerRecovery === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-policy-unavailable", 503,
+            "governed policy actions unavailable", "An atomic maintainer recovery port is not configured.");
+        }
+        const preparing = segments[4] === "prepare";
+        const body = await parseJsonBody(request, (value) => (preparing
+          ? GovernedMaintainerRecoveryPrepareRequestSchema
+          : GovernedMaintainerRecoverySubmitRequestSchema).parse(value), problemBaseUri);
+        const { maintainerId, thresholds } = body;
+        let signerContext;
+        let current;
+        try {
+          signerContext = await port.prepareMaintainerRecovery(maintainerId, thresholds);
+          current = serializeGovernedPolicyAction(signerContext);
+        } catch (error) {
+          return mapGovernedPolicyError(error, problemBaseUri);
+        }
+        response.setHeader("cache-control", "no-store");
+        if (preparing) {
+          writeJson(response, 200, current);
+          return;
+        }
+        const submitted = GovernedMaintainerRecoverySubmitRequestSchema.parse(body);
+        if (!sameGovernedPolicyAction(current, submitted.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+            "stale governed policy action", "The signed context no longer matches current ledger state.");
+        }
+        let signers;
+        try {
+          signers = decodeGovernedMembershipSigners(submitted);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        requireValidProposalSigners(signerContext, signers);
+        try {
+          const receipt = GovernedPolicyActionReceiptSchema.parse(
+            await port.executeMaintainerRecovery(maintainerId, thresholds, signers),
+          );
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedPolicyError(error, problemBaseUri);
         }
       }
 

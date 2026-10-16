@@ -20,6 +20,7 @@ import {
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateMaintainerThresholdPolicyPayloadHash,
+  computeRecoverMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
@@ -152,6 +153,7 @@ const ROTATE_VC_AUTHORITY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority
 const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
+const RECOVER_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:recover");
 const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 const GENERIC_AUDIT_ACTION_KIND = encodeCompactActionKind("tr:audit:generic");
 
@@ -174,6 +176,7 @@ it("pins every governed action kind to a Compact literal", () => {
     SUSPEND_AUDITOR_ACTION_KIND, REVOKE_AUDITOR_ACTION_KIND, ARCHIVE_AUDITOR_ACTION_KIND,
     PROPOSE_MAINTAINER_ACTION_KIND, AUTHORIZE_MAINTAINER_ACTION_KIND, ACTIVATE_MAINTAINER_ACTION_KIND,
     SUSPEND_MAINTAINER_ACTION_KIND, REVOKE_MAINTAINER_ACTION_KIND, ARCHIVE_MAINTAINER_ACTION_KIND,
+    RECOVER_MAINTAINER_ACTION_KIND,
     REGISTER_EVIDENCE_VERIFIER_ACTION_KIND, SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND,
     REVOKE_EVIDENCE_VERIFIER_ACTION_KIND, ROTATE_EVIDENCE_VERIFIER_ACTION_KIND,
     REGISTER_VC_AUTHORITY_ACTION_KIND, SUSPEND_VC_AUTHORITY_ACTION_KIND,
@@ -1547,7 +1550,7 @@ describe("trust registry contract", () => {
     },
   );
 
-  it("requires a signed policy reduction before a 2-of-3 maintainer removal", () => {
+  it("atomically reduces policy and removes a target under the old 2-of-3 quorum", () => {
     const registry = createInitializedRegistryFixture(75);
     const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
     const second = createMaintainerMembershipFixture("recovery-second", 76);
@@ -1593,41 +1596,68 @@ describe("trust registry contract", () => {
     expect(simulator.getMaintainerMembership(target.maintainerId).status)
       .toBe(AuthorizationStatus.active);
 
-    const oneOfThree = labelToBytes32("policy:recovery:one-of-three");
-    const reductionPayload = computeUpdateMaintainerThresholdPolicyPayloadHash(
-      twoOfThree, oneOfThree, 3n, 1n, 1n, 1n,
+    const oneOfTwo = labelToBytes32("policy:recovery:one-of-two");
+    const recoveryPayload = computeRecoverMaintainerMembershipPayloadHash(
+      twoOfThree, oneOfTwo, 3n, 1n, 1n, 1n,
+      target.maintainerId,
+      simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash,
+      evidenceHash,
     );
-    const reductionSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+    const recoverySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed, registryId, twoOfThree,
-      UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-      reductionPayload, removalSequence,
+      RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
     );
-    const reductionCoSigner = createMaintainerCoAuthorizer(
-      second, simulator, registryId, UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-      reductionPayload, removalSequence,
+    const recoveryCoSigner = createMaintainerCoAuthorizer(
+      second, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
     );
-    const reductionEvent = simulator.updateMaintainerThresholdPolicy(
-      bootstrapMaintainer.keyId, bootstrapPublicKey, reductionSignature,
-      oneOfThree, 3n, 1n, 1n, 1n, [reductionCoSigner],
+    const targetCoSigner = createMaintainerCoAuthorizer(
+      target, simulator, registryId, RECOVER_MAINTAINER_ACTION_KIND,
+      recoveryPayload, removalSequence,
+    );
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [targetCoSigner],
+    )).toThrow(/own DID/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
+    expect(simulator.getLedger().governancePolicyCommitment).toEqual(twoOfThree);
+    expect(simulator.getMaintainerMembership(target.maintainerId).status)
+      .toBe(AuthorizationStatus.active);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, labelToBytes32("policy:recovery:tampered"),
+      3n, 1n, 1n, 1n, [recoveryCoSigner],
+    )).toThrow();
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, labelToBytes32("evidence:recovery:tampered"),
+      oneOfTwo, 3n, 1n, 1n, 1n, [recoveryCoSigner],
+    )).toThrow();
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
+
+    const recoveryEvent = simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [recoveryCoSigner],
     );
     expect(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(2n))
       .toEqual(twoOfThree);
-    expect(simulator.getLedger().lastGovernanceEventHash).toEqual(reductionEvent);
-
-    const finalRemovalSequence = simulator.getLedger().governanceActionCount;
-    const finalRemovalSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
-      bootstrapMaintainer.seed, registryId, oneOfThree,
-      SUSPEND_MAINTAINER_ACTION_KIND, removalPayload, finalRemovalSequence,
-    );
-    const removalEvent = simulator.suspendMaintainerMembership(
-      bootstrapMaintainer.keyId, bootstrapPublicKey, finalRemovalSignature,
-      target.maintainerId, evidenceHash,
-    );
+    expect(simulator.getLedger().lastGovernanceEventHash).toEqual(recoveryEvent);
     expect(simulator.getLedger().activeMaintainerCount).toBe(2n);
     expect(simulator.getLedger().emergencyMaintainerThreshold).toBe(1n);
-    expect(simulator.getLedger().governancePolicyCommitment).toEqual(oneOfThree);
+    expect(simulator.getLedger().governancePolicyCommitment).toEqual(oneOfTwo);
     expect(simulator.getMaintainerMembership(target.maintainerId).lifecycleEventHash)
-      .toEqual(removalEvent);
+      .toEqual(recoveryEvent);
+    expect(simulator.getLedger().governanceActionCount).toBe(removalSequence + 1n);
+    expect(simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(3n))
+      .toBe(removalSequence + 1n);
+    expect(() => simulator.recoverMaintainerMembership(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, recoverySignature,
+      target.maintainerId, evidenceHash, oneOfTwo, 3n, 1n, 1n, 1n,
+      [recoveryCoSigner],
+    )).toThrow();
   });
   for (const role of ["issuer", "verifier", "auditor", "recognition"] as const) {
     it(`rejects a maintainer's own ${role} approval without consuming the action sequence`, () => {
