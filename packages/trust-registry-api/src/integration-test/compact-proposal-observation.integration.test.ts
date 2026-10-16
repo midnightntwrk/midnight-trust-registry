@@ -49,6 +49,9 @@ describe("finalized Compact proposal observation", () => {
         verifierKeyIdCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
         policyCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
         policyVersion: expect.stringMatching(/^[1-9][0-9]*$/u),
+        subjectDidCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        grantPolicyIdCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+        proposedAtSequence: expect.stringMatching(/^[0-9]+$/u),
       });
       expect(BigInt(snapshot!.verifierPublicKey.x)).toBeGreaterThan(0n);
       expect(BigInt(snapshot!.verifierSignature.response)).toBeGreaterThan(0n);
@@ -93,6 +96,28 @@ describe("finalized Compact proposal observation", () => {
     await expect(resolveCompactProposalObservation(async () => {
       throw new Error("finality source unavailable");
     }, "registry:test", "issuer", "candidate")).rejects.toThrow("finality source unavailable");
+  });
+
+  it("rejects an indexer view that substitutes authorization evidence", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-snapshot-mismatch");
+    const issuer = createIssuerScenarioFixture("snapshot-mismatch");
+    harness.proposeIssuer(issuer);
+    const ledger = harness.simulator.getLedger();
+    const records = ledger.issuerAuthorizationRecords;
+    const substituted = new Proxy(records, {
+      get(target, property) {
+        if (property === "lookup") {
+          return (id: Uint8Array) => ({ ...target.lookup(id), evidenceHash: new Uint8Array(32) });
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
+      ...ledger, issuerAuthorizationRecords: substituted,
+    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
+      "does not match its authorization record",
+    );
   });
 
   it("rejects an unknown runtime role rather than reading recognition records", async () => {

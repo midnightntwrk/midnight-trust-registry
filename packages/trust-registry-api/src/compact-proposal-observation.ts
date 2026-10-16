@@ -25,6 +25,9 @@ export type CompactProposalEvidenceSnapshot = GovernedProposalObservation & {
   policyVersion: string;
   verifierPublicKey: { x: string; y: string };
   verifierSignature: { announcement: { x: string; y: string }; response: string };
+  subjectDidCommitment: string;
+  grantPolicyIdCommitment: string;
+  proposedAtSequence: string;
 };
 
 const hex = (value: Uint8Array): string => {
@@ -89,6 +92,24 @@ export async function resolveCompactProposalEvidenceSnapshot(
           : ledger.recognitionProposalEvidenceRecords;
   if (!records.member(id)) return null;
   const proposal = records.lookup(id);
+  const authorizationRecords = role === "issuer" ? ledger.issuerAuthorizationRecords
+    : role === "verifier" ? ledger.verifierAuthorizationRecords
+      : role === "auditor" ? ledger.auditorAuthorizationRecords
+        : role === "maintainer" ? ledger.maintainerMembershipRecords
+          : ledger.recognitionRecords;
+  if (!authorizationRecords.member(id)) {
+    throw new Error("Proposal authorization is absent from the finalized ledger");
+  }
+  const authorization = authorizationRecords.lookup(id);
+  const recordedId = "maintainerId" in authorization ? authorization.maintainerId
+    : "recognitionId" in authorization ? authorization.recognitionId : authorization.authorizationId;
+  const subjectDidCommitment = "maintainerDidCommitment" in authorization
+    ? authorization.maintainerDidCommitment
+    : "recognizedAuthorityDidCommitment" in authorization
+      ? authorization.recognizedAuthorityDidCommitment : authorization.subjectDidCommitment;
+  if (hex(recordedId) !== hex(id) || hex(authorization.evidenceHash) !== hex(proposal.evidenceCommitment)) {
+    throw new Error("Proposal evidence does not match its authorization record");
+  }
   if (!ledger.evidenceVerifierKeyAuthorizationIds.member(proposal.evidenceVerifierAuthorizationId)) {
     throw new Error("Proposal evidence verifier key is absent from the finalized ledger");
   }
@@ -118,5 +139,8 @@ export async function resolveCompactProposalEvidenceSnapshot(
       },
       response: proposal.verifierSignatureResponse.toString(),
     },
+    subjectDidCommitment: hex(subjectDidCommitment),
+    grantPolicyIdCommitment: hex(authorization.policyId),
+    proposedAtSequence: authorization.proposedAtSequence.toString(),
   };
 }

@@ -297,6 +297,8 @@ The API package also exports `resolveCompactProposalEvidenceSnapshot` for all
 five roles. Given an independently finalized ledger reader, it joins the
 immutable proposal record to its registered verifier key and returns the DID,
 key, suite, policy snapshot, signature, commitment, and governance event.
+It checks the matching authorization record's ID and evidence commitment and
+projects the subject DID and grant-policy commitments.
 This projection is not itself a finality, inclusion, or signature proof, and
 the key's present lifecycle status must not be substituted for its status at
 proposal time. Hosts with a finalized reader can expose the projection through

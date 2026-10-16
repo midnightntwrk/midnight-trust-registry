@@ -73,7 +73,8 @@ components:
         ledger finality and inclusion; current key lifecycle is not proposal-time status.
       required: [role, authorizationId, eventHash, evidenceCommitment, verifierAuthorizationId,
         verifierDidCommitment, verifierKeyIdCommitment, verifierSuite, policyCommitment,
-        policyVersion, verifierPublicKey, verifierSignature]
+        policyVersion, verifierPublicKey, verifierSignature, subjectDidCommitment,
+        grantPolicyIdCommitment, proposedAtSequence]
       properties:
         role: { type: string, enum: [issuer, verifier, auditor, maintainer, recognition] }
         authorizationId: { type: string }
@@ -86,6 +87,9 @@ components:
         policyCommitment: { $ref: '#/components/schemas/Hex32' }
         policyVersion: { type: string, pattern: '^[0-9]+$' }
         verifierPublicKey: { $ref: '#/components/schemas/JubjubPoint' }
+        subjectDidCommitment: { $ref: '#/components/schemas/Hex32' }
+        grantPolicyIdCommitment: { $ref: '#/components/schemas/Hex32' }
+        proposedAtSequence: { type: string, pattern: '^[0-9]+$' }
         verifierSignature:
           type: object
           required: [announcement, response]
