@@ -15,6 +15,12 @@ under the new policy, leaving a safe 1-of-2 set. These are distinct ledger
 actions, not an atomic recovery transaction. An all-member threshold is
 rejected, and a separate recovery authority is a later design, not a hidden
 override in this contract.
+Subject-DID exclusion is enforced for grant approval and activation, for
+maintainer removal, and for VC-authority key governance. It is not a blanket
+ban on a subject signing a proposal or a negative action on its ordinary grant:
+those actions do not increase that subject's trust. Evidence-verifier and grant
+deactivation still require the configured maintainer quorum. Consumers must
+not interpret the exclusion check as a universal conflict-of-interest policy.
 
 ## Signed action transcript
 
@@ -27,6 +33,15 @@ The evidence verifier checks an applicant's private VC/VP and signs a canonical 
 ## Policy rotation
 
 Threshold revision and evidence-verifier registration are two separate actions. The old policy authorizes the revision. The new policy governs the next registration, with a fresh signer set and sequence. Until both succeed, new application evidence must not be treated as authorized under the new policy. A simulator can run both in one demonstration; this is not an atomic network transaction.
+
+The current default maintainer quorum is the meta-governance authority for
+`tr:policy:thresholds:update`, including recognition-accreditor anchor
+revisions. Emergency and archival thresholds govern their respective actions,
+not changes to the policy itself. A public-network policy must specify recovery
+and preserve a non-conflicted quorum for maintainer removal: an all-maintainer
+emergency or archival threshold can otherwise make removal impossible when the
+subject may not vote. This remains a
+[0.1.0 release blocker](https://github.com/midnightntwrk/midnight-trust-registry/issues/200).
 
 ## Administrative API boundary
 
