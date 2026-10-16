@@ -1,9 +1,10 @@
 import {
+  MAX_CONSUMED_MUTATION_NONCES,
   TrustRegistryOperatorWorkspaceOperationSchema,
   type TrustRegistryOperatorWorkspace,
   type TrustRegistryOperatorWorkspaceOperation,
 } from "@midnight-ntwrk/trust-registry-cli";
-import { MutationIntentSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { MutationIntentSchema, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
@@ -15,7 +16,7 @@ import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js"
 
 export type SignedMutationState = {
   workspace: TrustRegistryOperatorWorkspace;
-  consumedNonces: readonly string[];
+  consumedNonces: Readonly<Record<string, string>>;
 };
 
 export class MutationNonceAlreadyUsedError extends Error {
@@ -23,6 +24,14 @@ export class MutationNonceAlreadyUsedError extends Error {
   constructor() {
     super("Mutation nonce has already been consumed for this actor and registry");
     this.name = "MutationNonceAlreadyUsedError";
+  }
+}
+
+export class MutationNonceCapacityExceededError extends Error {
+  readonly code = "MUTATION_NONCE_CAPACITY_EXCEEDED";
+  constructor() {
+    super("The live signed-mutation nonce window is full");
+    this.name = "MutationNonceCapacityExceededError";
   }
 }
 
@@ -44,8 +53,12 @@ export async function transitionSignedMutationState(
 ): Promise<SignedMutationState> {
   const intent = MutationIntentSchema.parse(intentInput);
   const operation = TrustRegistryOperatorWorkspaceOperationSchema.parse(operationInput);
-  const nonceKey = JSON.stringify([intent.registryId, intent.actorDid, intent.nonce]);
-  if (state.consumedNonces.includes(nonceKey)) throw new MutationNonceAlreadyUsedError();
+  const nonceKey = sha256Hex(JSON.stringify(["tr:mutation:nonce:v2", intent.registryId, intent.actorDid, intent.nonce]));
+  const nowMs = now.getTime();
+  const existingExpiry = state.consumedNonces[nonceKey];
+  if (existingExpiry !== undefined && Date.parse(existingExpiry) > nowMs) {
+    throw new MutationNonceAlreadyUsedError();
+  }
 
   const preflight = await preflightMutationIntentActor(
     intent, signatureInput, mutationPayloadForWorkspaceOperation(operation),
@@ -53,6 +66,11 @@ export async function transitionSignedMutationState(
   );
   if (!preflight.ok) throw new MutationIntentActorRejectedError(preflight.reason);
 
+  const retained = Object.fromEntries(Object.entries(state.consumedNonces)
+    .filter(([, expiry]) => Date.parse(expiry) > nowMs));
+  if (Object.keys(retained).length >= MAX_CONSUMED_MUTATION_NONCES) {
+    throw new MutationNonceCapacityExceededError();
+  }
   const workspace = applyIntentBoundWorkspaceOperation(preflight.intent, state.workspace, operation, now);
-  return { workspace, consumedNonces: [...state.consumedNonces, nonceKey] };
+  return { workspace, consumedNonces: { ...retained, [nonceKey]: intent.expiresAt } };
 }

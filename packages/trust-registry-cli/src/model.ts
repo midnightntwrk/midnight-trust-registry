@@ -239,12 +239,19 @@ export type TrustRegistryOperatorSnapshot = z.infer<
   typeof TrustRegistryOperatorSnapshotSchema
 >;
 
+export const MAX_CONSUMED_MUTATION_NONCES = 10_000;
+
 export const TrustRegistryOperatorWorkspaceSchema = z.object({
-  workspaceVersion: z.literal("1"),
+  workspaceVersion: z.literal("2"),
   updatedAt: z.string().datetime({ offset: true }),
   registryLabel: SnapshotEntryLabelSchema,
   operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),
-  consumedMutationNonces: z.array(z.string()).default([]),
+  consumedMutationNonces: z.record(
+    z.string().regex(/^0x[0-9a-f]{64}$/u),
+    z.string().datetime({ offset: false }).refine((value) =>
+      Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value),
+  ).refine((entries) => Object.keys(entries).length <= MAX_CONSUMED_MUTATION_NONCES,
+    "Too many unexpired mutation nonces"),
   snapshot: TrustRegistryOperatorSnapshotSchema,
 });
 

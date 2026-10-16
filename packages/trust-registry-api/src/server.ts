@@ -156,7 +156,7 @@ import {
   type ProposalSubmissionJournal,
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
-import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError } from "./signed-mutation-state.js";
+import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
@@ -550,6 +550,9 @@ const mapMutationError = (
   }
   if (error instanceof MutationNonceAlreadyUsedError) {
     throw jsonProblem(problemBaseUri, "mutation-replay", 409, "mutation replay", error.message);
+  }
+  if (error instanceof MutationNonceCapacityExceededError) {
+    throw jsonProblem(problemBaseUri, "mutation-nonce-capacity", 503, "mutation nonce capacity exceeded", error.message);
   }
   if (error instanceof WorkspaceMutationLockedError) {
     throw jsonProblem(problemBaseUri, "workspace-locked", 409, "workspace locked", error.message);

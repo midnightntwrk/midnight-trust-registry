@@ -127,7 +127,7 @@ const createAuthorizationMutationResponse = (
 ): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "2",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:003",
@@ -202,7 +202,7 @@ const createAuthorizationMutationResponse = (
 const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "2",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:003",
@@ -267,7 +267,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
 const createEpochMutationResponse = (): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "2",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:004",

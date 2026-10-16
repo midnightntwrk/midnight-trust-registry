@@ -7,7 +7,7 @@ import { TrustRegistryEvidenceBundleSchema } from "@midnight-ntwrk/trust-registr
 
 import { runCli } from "../cli.js";
 import { createDemoSnapshot } from "../demo-snapshot.js";
-import { TrustRegistryOperatorSnapshotSchema } from "../model.js";
+import { MAX_CONSUMED_MUTATION_NONCES, TrustRegistryOperatorSnapshotSchema, TrustRegistryOperatorWorkspaceSchema } from "../model.js";
 import { loadSnapshotFromFile } from "../snapshot.js";
 import {
   applyWorkspaceOperation,
@@ -35,6 +35,26 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
+  it("validates bounded version-2 mutation nonce history", () => {
+    const workspace = createOperatorWorkspace({ label: "nonce-schema" });
+    const expiry = "2026-10-10T00:05:00.000Z";
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, consumedMutationNonces: { invalid: expiry },
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, consumedMutationNonces: { [`0x${"11".repeat(32)}`]: "not-a-date" },
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, consumedMutationNonces: undefined,
+    }).success).toBe(false);
+    const full = Object.fromEntries(Array.from({ length: MAX_CONSUMED_MUTATION_NONCES + 1 }, (_, index) => [
+      `0x${index.toString(16).padStart(64, "0")}`, expiry,
+    ]));
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, consumedMutationNonces: full,
+    }).success).toBe(false);
+  });
+
   it("rejects auditor snapshot rows with a substituted role or evidence record", () => {
     const snapshot = createDemoSnapshot({ label: "auditor-snapshot-boundary" });
     const auditor = snapshot.auditorEntries[0];
@@ -533,14 +553,15 @@ describe("trust registry operator CLI", () => {
     expect(JSON.parse(evidence.stdout).authorization.status).toBe("archived");
   }, CLI_TEST_TIMEOUT_MS);
 
-  it("uses the API workspace lock and loads an existing workspace without nonce history", async () => {
+  it("uses the API workspace lock and rejects the pre-release workspace format", async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-shared-lock-"));
     const workspacePath = join(directory, "workspace.json");
     await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
     const stored = JSON.parse(await readFile(workspacePath, "utf8")) as Record<string, unknown>;
-    delete stored.consumedMutationNonces;
+    stored.workspaceVersion = "1";
     await writeFile(workspacePath, JSON.stringify(stored));
-    expect((await loadWorkspaceFromFile(workspacePath)).consumedMutationNonces).toEqual([]);
+    await expect(loadWorkspaceFromFile(workspacePath)).rejects.toThrow(/Workspace version 1 is unsupported/u);
+    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
 
     await writeFile(`${workspacePath}.lock`, "other writer", { flag: "wx" });
     try {

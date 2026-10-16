@@ -1418,3 +1418,13 @@ five #196 findings; the issue remains open. Focused tests, `./run.sh --light`,
 integration-light, and the VitePress build passed locally. No push or PR was
 created. Forge #195 remains untouched because artifact/key compatibility with
 the pinned Trust Registry toolchain has not been established.
+
+Local #202 slice: operator workspace format 2 replaces the unbounded signed
+mutation nonce string array with a hash-keyed expiry map. The API checks a
+registry/actor/nonce identity directly, prunes expired records only inside its
+exclusive write, and returns a fail-closed 503 at 10,000 live entries instead
+of evicting replay evidence. Version-1 pre-release workspaces are explicitly
+rejected. This is reference gateway replay retention, not an on-chain nonce
+store or public-network throughput guarantee. Fake-clock, restart, concurrent
+HTTP, schema-capacity, and keyed-lookup tests belong to this slice; keep it
+local until a coherent functional stack is ready for review.
