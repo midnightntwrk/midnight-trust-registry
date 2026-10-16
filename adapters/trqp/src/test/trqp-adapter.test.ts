@@ -468,6 +468,69 @@ describe("trust registry TRQP adapter", () => {
     }
   });
 
+  it("rejects issuer evidence with a substituted epoch, policy, or lifecycle decision", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("inconsistent-evidence");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const request = {
+      entity_id: issuer.subjectDid,
+      authority_id: harness.registryDid,
+      action: "issue",
+      resource: issuer.resourceId,
+      context: { time: bundle.epoch.validFrom },
+    };
+    const decisions: TrqpAuthorizationDecision[] = [
+      { bundle: { ...bundle, epoch: { ...bundle.epoch, registryId: "registry:other:trusted" } },
+        statusAtTime: "active", trustedAtTime: true },
+      { bundle: { ...bundle, epoch: { ...bundle.epoch, policyRoot: `0x${"ab".repeat(32)}` } },
+        statusAtTime: "active", trustedAtTime: true },
+      { bundle: { ...bundle, policy: { ...bundle.policy, policyId: `${bundle.policy.policyId}:other` } },
+        statusAtTime: "active", trustedAtTime: true },
+      { bundle, statusAtTime: "revoked", trustedAtTime: false },
+      { bundle, statusAtTime: "active", trustedAtTime: false },
+    ];
+    for (const decision of decisions) {
+      const adapter = new TrustRegistryTrqpAdapter({
+        getRegistryRecord: () => harness.registryRecord,
+        getAuthorizationDecision: () => decision,
+        getRecognitionDecision: () => null,
+      });
+      const problem = expectProblem(await adapter.getAuthorizationEvidence(request));
+      expect(problem.status).toBe(500);
+      expect(problem.type).toMatch(/invalid-source-data$/u);
+    }
+  });
+
+  it("rejects recognition evidence with a substituted policy or lifecycle decision", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const recognition = createRecognitionScenarioFixture("inconsistent-evidence");
+    harness.authorizeRecognition(recognition);
+    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    const request = {
+      entity_id: recognition.recognizedAuthorityDid,
+      authority_id: harness.registryDid,
+      action: recognition.scopeResourceType,
+      resource: recognition.scopeResourceId,
+      context: { time: bundle.epoch.validFrom, recognized_registry_id: recognition.recognizedRegistryId },
+    };
+    const decisions: TrqpRecognitionDecision[] = [
+      { bundle: { ...bundle, epoch: { ...bundle.epoch, policyRoot: `0x${"cd".repeat(32)}` } },
+        statusAtTime: "active", trustedAtTime: true },
+      { bundle, statusAtTime: "suspended", trustedAtTime: false },
+    ];
+    for (const decision of decisions) {
+      const adapter = new TrustRegistryTrqpAdapter({
+        getRegistryRecord: () => harness.registryRecord,
+        getAuthorizationDecision: () => null,
+        getRecognitionDecision: () => decision,
+      });
+      const problem = expectProblem(await adapter.getRecognitionEvidence(request));
+      expect(problem.status).toBe(500);
+      expect(problem.type).toMatch(/invalid-source-data$/u);
+    }
+  });
+
   it("returns problem details for unknown authorities or unmatched tuples", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");

@@ -3,11 +3,17 @@ import {
   TrustRegistryEvidenceBundleSchema,
   canonicalizeJson,
   compareRfc3339Instants,
+  computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type RecognitionRecord,
   type RegistryRecord,
   type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
 
 import {
   TrqpAuthorizationEvidenceResponseSchema,
@@ -105,6 +111,17 @@ const evidenceUnavailableProblem = (
   status: 424,
   detail: "The trust statement exists, but no epoch-bound evidence is available for the evaluation time.",
 });
+
+const matchesBundlePolicyContext = (
+  bundle: TrustRegistryEvidenceBundle,
+  registryId: string,
+  policyId: string,
+): boolean => bundle.epoch.registryId === registryId
+  && bundle.policy.registryId === registryId
+  && bundle.policy.policyId === policyId
+  && bundle.epoch.policyRoot === computeGovernancePolicySnapshotCommitment(
+    deriveGovernancePolicySnapshot(bundle.policy),
+  );
 
 const describeAuthorizationMessage = (
   status: string,
@@ -372,6 +389,16 @@ export class TrustRegistryTrqpAdapter {
         return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
           "Authorization evidence does not match the requested authority, entity, action, and resource.") };
       }
+      if (!matchesBundlePolicyContext(parsedBundle, registry.registryId, authorization.policyId)) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Authorization evidence does not match its epoch and policy context.") };
+      }
+      const evaluation = evaluateAuthorizationRecordAtTime(authorization, evaluatedAt);
+      if (decision.statusAtTime !== evaluation.statusAtTime
+        || decision.trustedAtTime !== evaluation.trustedAtTime) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Authorization decision contradicts the evidence lifecycle at the evaluation time.") };
+      }
     }
     if (requireEvidence && parsedBundle !== undefined) {
       if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
@@ -451,6 +478,16 @@ export class TrustRegistryTrqpAdapter {
           && recognition.recognizedRegistryId !== request.context.recognized_registry_id)) {
         return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
           "Recognition evidence does not match the requested authority, entity, action, resource, and registry.") };
+      }
+      if (!matchesBundlePolicyContext(parsedBundle, registry.registryId, recognition.policyId)) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Recognition evidence does not match its epoch and policy context.") };
+      }
+      const evaluation = evaluateRecognitionRecordAtTime(recognition, evaluatedAt);
+      if (decision.statusAtTime !== evaluation.statusAtTime
+        || decision.trustedAtTime !== evaluation.trustedAtTime) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Recognition decision contradicts the evidence lifecycle at the evaluation time.") };
       }
     }
     if (requireEvidence && parsedBundle !== undefined) {

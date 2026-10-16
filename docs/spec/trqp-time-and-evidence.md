@@ -45,6 +45,11 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   A mismatch is invalid source data, not a negative trust decision or evidence
   for another party. This structural check does not replace independent
   verification of the epoch anchor, signatures, and inclusion proof.
+- The adapter MUST also reject evidence whose epoch registry, statement policy
+  ID, or policy snapshot root disagrees with its bundle, or whose source
+  `statusAtTime`/trust result disagrees with the included lifecycle at the
+  selected instant. These consistency checks do not authenticate the source
+  bundle or establish network finality.
 - Epoch window and bundle equality checks compare RFC3339 instants
   semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
 - An independently verified TRQP evidence decision requires an explicit
