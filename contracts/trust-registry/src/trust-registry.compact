@@ -2193,10 +2193,6 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer2KeyId != signer1KeyId,
-    "Maintainer signer set must not contain duplicates"
-  );
-  assert(
     signerKeyIdLess(signer1KeyId, signer2KeyId),
     "Maintainer signer keys must be sorted"
   );
@@ -2217,10 +2213,6 @@ circuit performAuthorizedMaintainerAction(
   const signer3KeyId = verifyAuthorizedMaintainerSigner(
     authorizationBundle.signer3,
     digest
-  );
-  assert(
-    signer3KeyId != signer1KeyId && signer3KeyId != signer2KeyId,
-    "Maintainer signer set must not contain duplicates"
   );
   assert(
     signerKeyIdLess(signer2KeyId, signer3KeyId),
@@ -2245,12 +2237,6 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer4KeyId != signer1KeyId
-      && signer4KeyId != signer2KeyId
-      && signer4KeyId != signer3KeyId,
-    "Maintainer signer set must not contain duplicates"
-  );
-  assert(
     signerKeyIdLess(signer3KeyId, signer4KeyId),
     "Maintainer signer keys must be sorted"
   );
@@ -2271,13 +2257,6 @@ circuit performAuthorizedMaintainerAction(
   const signer5KeyId = verifyAuthorizedMaintainerSigner(
     authorizationBundle.signer5,
     digest
-  );
-  assert(
-    signer5KeyId != signer1KeyId
-      && signer5KeyId != signer2KeyId
-      && signer5KeyId != signer3KeyId
-      && signer5KeyId != signer4KeyId,
-    "Maintainer signer set must not contain duplicates"
   );
   assert(
     signerKeyIdLess(signer4KeyId, signer5KeyId),

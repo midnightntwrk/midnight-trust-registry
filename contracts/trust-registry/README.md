@@ -52,8 +52,9 @@ Issuer, verifier, auditor, and recognition records enter the ledger through
 separate proposal, authorization, and activation actions. The prototype
 direct-create entry points are not part of format one.
 
-For epoch publication, the epoch record persists the submitter
-(`signer1`) key id, signature, and policy commitment active at publication.
+For epoch publication, the epoch record persists the lowest signer key ID
+(`signer1` in the canonical little-endian order), its signature, and the policy
+commitment active at publication. It does not authenticate the transaction submitter.
 That commitment can differ from `policyRoot` when an older epoch is published
 after a policy revision. Verify the signature against the publication
 commitment; use `policyRoot` to interpret the epoch's historical window. The

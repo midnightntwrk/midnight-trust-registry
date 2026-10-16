@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import {
+  compareMaintainerKeyIds,
   computeCreateAuditorAuthorizationPayloadHash,
   computeAuditorEvidenceBoundProposalPayloadHash,
   computeMaintainerEvidenceBoundProposalPayloadHash,
@@ -1697,6 +1698,38 @@ describe("trust registry contract", () => {
       ),
     ).toThrow(/version must increase/i);
 
+    const auditPayload = labelToBytes32("quorum:raw-order-rejection");
+    const auditSequence = simulator.getLedger().governanceActionCount;
+    const auditSigners = [
+      { keyId: bootstrapMaintainer.keyId, publicKey: bootstrapPublicKey, seed: bootstrapMaintainer.seed },
+      { keyId: secondMaintainer.keyId, publicKey: secondMaintainer.publicKey, seed: secondMaintainer.seed },
+    ].sort((left, right) => compareMaintainerKeyIds(left.keyId, right.keyId)).reverse()
+      .map(({ keyId, publicKey, seed }) => ({
+        keyId,
+        publicKey,
+        signature: signFixtureDeploymentBoundActionFromSeed(simulator,
+          seed, registryId, simulator.getLedger().governancePolicyCommitment,
+          GENERIC_AUDIT_ACTION_KIND, auditPayload, auditSequence),
+      }));
+    const emptySigner = {
+      keyId: new Uint8Array(32),
+      publicKey: { x: 0n, y: 0n },
+      signature: { announcement: { x: 0n, y: 0n }, response: 0n },
+    };
+    expect(() => simulator.contract.impureCircuits.authorizeMaintainerAuditEvent(
+      simulator.circuitContext,
+      {
+        signerCount: 2n,
+        signer1: auditSigners[0]!,
+        signer2: auditSigners[1]!,
+        signer3: emptySigner,
+        signer4: emptySigner,
+        signer5: emptySigner,
+      },
+      auditPayload,
+    )).toThrow(/Maintainer signer keys must be sorted/);
+    expect(simulator.getLedger().governanceActionCount).toBe(auditSequence);
+
     const issuer = createIssuerAuthorizationFixture("quorum");
     const proposedEvidenceHash = labelToBytes32("evidence:quorum:issuer:propose");
     const issuerProof = issuerProposalProof(
@@ -2097,7 +2130,7 @@ describe("trust registry contract", () => {
         issuerProof.evidenceSignature,
         [duplicateBootstrapAuthorizer],
       ),
-    ).toThrow(/must not contain duplicates/i);
+    ).toThrow(/must be sorted/i);
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {

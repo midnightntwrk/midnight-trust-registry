@@ -96,8 +96,8 @@ field identify the lowest signer key ID, not the transaction submitter.
 This amends the original byte-lexicographic draft: Compact compares two exact
 128-bit limbs rather than unrolling a costly 32-byte comparison fold.
 On the pinned Compact 0.31.1 compiler, `--skip-zk` serialized 65 ZKIR circuits
-at 8,842,084 bytes before this rule and 11,333,251 bytes after it. The
-`publishEpochCommitment` ZKIR grew from 199,395 to 260,269 bytes. These are
+at 8,842,084 bytes before this rule and 11,223,309 bytes after it. The
+`publishEpochCommitment` ZKIR grew from 199,395 to 257,616 bytes. These are
 compiler-output size measurements, not proving-time or key-size measurements;
 full artifact and integration qualification remains a release gate.
 
