@@ -901,7 +901,7 @@ export const createTrustRegistryApiServer = (
         || (segments.length === 4 && segments[1] === "recognition-evidence"
           && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "accepted"))
         || (segments.length === 6 && segments[1] === "governed" && segments[2] === "recognition"
-          && segments[4] === "proposal" && segments[5] === "resolve")
+          && segments[4] === "proposal" && (segments[5] === "resolve" || segments[5] === "evidence"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -935,14 +935,32 @@ export const createTrustRegistryApiServer = (
         if (segments[3]!.length === 0 || segments[3]!.length > 256) {
           throw jsonProblem(problemBaseUri, "invalid-proposal-id", 400, "invalid proposal ID");
         }
+        if (role === "recognition") {
+          if (options.recognitionAccreditation === undefined) {
+            throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+              "recognition accreditation unavailable");
+          }
+          try {
+            await options.recognitionAccreditation.authorizeRequest(segments[3]!, request);
+          } catch {
+            throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+              "recognition accreditation forbidden");
+          }
+        }
         if (options.readFinalizedProposalLedger === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
-        const registry = await loadRegistryRecord(options.source);
-        const snapshot = await resolveCompactProposalEvidenceSnapshot(
-          options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
-        );
+        let snapshot;
+        try {
+          const registry = await loadRegistryRecord(options.source);
+          snapshot = await resolveCompactProposalEvidenceSnapshot(
+            options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+          );
+        } catch {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
+            "proposal evidence unavailable");
+        }
         if (snapshot === null) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-not-found", 404, "proposal evidence not found");
         }

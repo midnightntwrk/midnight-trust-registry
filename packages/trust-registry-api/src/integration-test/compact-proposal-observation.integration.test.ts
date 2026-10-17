@@ -129,7 +129,24 @@ describe("finalized Compact proposal observation", () => {
     }, "registry:test", "issuer", "candidate")).rejects.toThrow("finality source unavailable");
   });
 
-  it("rejects an indexer view that substitutes authorization evidence", async () => {
+  it("retains proposal evidence after a later lifecycle action changes the authorization evidence", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("proposal-history-after-suspension");
+    const issuer = createIssuerScenarioFixture("history-after-suspension");
+    harness.proposeIssuer(issuer);
+    const read = async () => harness.simulator.getLedger();
+    const proposal = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId);
+    harness.approveIssuer(issuer);
+    harness.activateIssuer(issuer);
+    harness.suspendIssuer(issuer);
+    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).evidenceHash)
+      .not.toEqual(harness.simulator.getLedger().issuerProposalEvidenceRecords.lookup(
+        issuer.authorizationIdCommitment,
+      ).evidenceCommitment);
+    expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId))
+      .toEqual(proposal);
+  });
+
+  it("rejects an indexer view that substitutes an immutable authorization subject", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("proposal-snapshot-mismatch");
     const issuer = createIssuerScenarioFixture("snapshot-mismatch");
     harness.proposeIssuer(issuer);
@@ -138,7 +155,7 @@ describe("finalized Compact proposal observation", () => {
     const substituted = new Proxy(records, {
       get(target, property) {
         if (property === "lookup") {
-          return (id: Uint8Array) => ({ ...target.lookup(id), evidenceHash: new Uint8Array(32) });
+          return (id: Uint8Array) => ({ ...target.lookup(id), subjectDidCommitment: bytes32Commitment("did:midnight:other") });
         }
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
@@ -146,9 +163,7 @@ describe("finalized Compact proposal observation", () => {
     });
     await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
       ...ledger, issuerAuthorizationRecords: substituted,
-    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow(
-      "does not match its authorization record",
-    );
+    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow("signature is invalid");
   });
 
   it("verifies every historical proposal role after its verifier key is retired", async () => {
@@ -258,9 +273,13 @@ describe("finalized Compact proposal observation", () => {
     let finalized = harness.simulator.getLedger();
     const source = { mode: "memory" as const,
       loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "proposal-snapshot-http" }) };
+    let failRead = false;
     const server = createTrustRegistryApiServer({
       source,
-      readFinalizedProposalLedger: async () => finalized,
+      readFinalizedProposalLedger: async () => {
+        if (failRead) throw new Error("private indexer diagnostic");
+        return finalized;
+      },
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
@@ -283,6 +302,10 @@ describe("finalized Compact proposal observation", () => {
       expect((await fetch(url.replace("/issuer/", "/verifier/"))).status).toBe(404);
       expect((await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${"x".repeat(257)}/proposal/evidence`)).status)
         .toBe(400);
+      failRead = true;
+      const failed = await fetch(url);
+      expect(failed.status).toBe(503);
+      expect(JSON.stringify(await failed.json())).not.toContain("private indexer diagnostic");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -295,6 +318,29 @@ describe("finalized Compact proposal observation", () => {
       expect(response.status).toBe(503);
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("keeps recognition proposal evidence behind the private accreditation gate", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("recognition-proposal-evidence-private");
+    const recognition = createRecognitionScenarioFixture("private-proposal-evidence");
+    harness.proposeRecognition(recognition);
+    const source = { mode: "memory" as const,
+      loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "private-proposal-evidence" }) };
+    const server = createTrustRegistryApiServer({
+      source,
+      readFinalizedProposalLedger: async () => harness.simulator.getLedger(),
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const url = `http://127.0.0.1:${address.port}/v1/governed/recognition/${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`;
+      const response = await fetch(url);
+      expect(response.status).toBe(503);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   });
 });

@@ -126,7 +126,7 @@ export async function resolveCompactProposalEvidenceSnapshot(
     ? authorization.maintainerDidCommitment
     : "recognizedAuthorityDidCommitment" in authorization
       ? authorization.recognizedAuthorityDidCommitment : authorization.subjectDidCommitment;
-  if (hex(recordedId) !== hex(id) || hex(authorization.evidenceHash) !== hex(proposal.evidenceCommitment)) {
+  if (hex(recordedId) !== hex(id)) {
     throw new Error("Proposal evidence does not match its authorization record");
   }
   if (!ledger.evidenceVerifierKeyAuthorizationIds.member(proposal.evidenceVerifierAuthorizationId)) {
@@ -146,26 +146,26 @@ export async function resolveCompactProposalEvidenceSnapshot(
     const record = ledger.issuerAuthorizationRecords.lookup(id);
     basePayloadHash = computeCreateIssuerAuthorizationPayloadHash(record.authorizationId, record.subjectDidCommitment,
       record.resourceType, record.resourceId, record.policyId, record.statusPolicyBindingCommitment,
-      record.trustLevel, record.evidenceHash);
+      record.trustLevel, proposal.evidenceCommitment);
   } else if (role === "verifier") {
     const record = ledger.verifierAuthorizationRecords.lookup(id);
     basePayloadHash = computeCreateVerifierAuthorizationPayloadHash(record.authorizationId, record.subjectDidCommitment,
       record.requestResourceId, record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
-      record.disclosureLevelCommitment, record.policyId, record.trustLevel, record.evidenceHash);
+      record.disclosureLevelCommitment, record.policyId, record.trustLevel, proposal.evidenceCommitment);
   } else if (role === "auditor") {
     const record = ledger.auditorAuthorizationRecords.lookup(id);
     basePayloadHash = computeCreateAuditorAuthorizationPayloadHash(record.authorizationId, record.subjectDidCommitment,
       record.requestResourceId, record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
-      record.disclosureLevelCommitment, record.policyId, record.trustLevel, record.evidenceHash);
+      record.disclosureLevelCommitment, record.policyId, record.trustLevel, proposal.evidenceCommitment);
   } else if (role === "maintainer") {
     const record = ledger.maintainerMembershipRecords.lookup(id);
     basePayloadHash = computeCreateMaintainerMembershipPayloadHash(record.maintainerId, record.maintainerDidCommitment,
-      record.keyId, record.publicKey, record.policyId, record.trustLevel, record.evidenceHash);
+      record.keyId, record.publicKey, record.policyId, record.trustLevel, proposal.evidenceCommitment);
   } else {
     const record = ledger.recognitionRecords.lookup(id);
     basePayloadHash = computeCreateRecognitionPayloadHash(record.recognitionId, record.recognizedAuthorityDidCommitment,
       record.recognizedRegistryId, record.scopeResourceType, record.scopeResourceId, record.policyId,
-      record.trustLevel, record.evidenceHash);
+      record.trustLevel, proposal.evidenceCommitment);
   }
   const bind = role === "issuer" ? computeIssuerEvidenceBoundProposalPayloadHash
     : role === "verifier" ? computeVerifierEvidenceBoundProposalPayloadHash

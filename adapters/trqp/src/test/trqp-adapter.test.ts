@@ -531,6 +531,45 @@ describe("trust registry TRQP adapter", () => {
     }
   });
 
+  it("reports out-of-epoch evidence before contradictory source lifecycle decisions", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("out-of-epoch-issuer");
+    const recognition = createRecognitionScenarioFixture("out-of-epoch-recognition");
+    harness.authorizeIssuer(issuer);
+    harness.authorizeRecognition(recognition);
+    const authorizationBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    const adapter = new TrustRegistryTrqpAdapter({
+      getRegistryRecord: () => harness.registryRecord,
+      getAuthorizationDecision: () => ({
+        bundle: authorizationBundle, statusAtTime: "revoked", trustedAtTime: false,
+      }),
+      getRecognitionDecision: () => ({
+        bundle: recognitionBundle, statusAtTime: "suspended", trustedAtTime: false,
+      }),
+    });
+    const outside = (until: string) => new Date(Date.parse(until) + 1000).toISOString();
+    const authorizationProblem = expectProblem(await adapter.getAuthorizationEvidence({
+      entity_id: issuer.subjectDid,
+      authority_id: harness.registryDid,
+      action: "issue",
+      resource: issuer.resourceId,
+      context: { time: outside(authorizationBundle.epoch.validUntil) },
+    }));
+    expect(authorizationProblem.status).toBe(424);
+    const recognitionProblem = expectProblem(await adapter.getRecognitionEvidence({
+      entity_id: recognition.recognizedAuthorityDid,
+      authority_id: harness.registryDid,
+      action: recognition.scopeResourceType,
+      resource: recognition.scopeResourceId,
+      context: {
+        time: outside(recognitionBundle.epoch.validUntil),
+        recognized_registry_id: recognition.recognizedRegistryId,
+      },
+    }));
+    expect(recognitionProblem.status).toBe(424);
+  });
+
   it("returns problem details for unknown authorities or unmatched tuples", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");
