@@ -378,6 +378,12 @@ const contractStatusName = (
   return assertUnreachable(status);
 };
 
+const proposalEvidenceHashForTest = (verified: Uint8Array, override?: Uint8Array): Uint8Array => {
+  if (override === undefined) return verified;
+  if (override.length !== 32) throw new Error("Proposal evidence hash override must be 32 bytes");
+  return Uint8Array.from(override);
+};
+
 export class LocalTrustRegistryIntegrationHarness {
   readonly simulator: TrustRegistrySimulator;
   readonly registryId: string;
@@ -1332,6 +1338,7 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
       governedResource: { type: "registry", id: this.registryId },
     },
+    testEvidenceHashOverride?: Uint8Array,
   ): PreparedMaintainerProposalAction {
     if (
       expectedEvidence.scope.role !== "maintainer" ||
@@ -1342,13 +1349,14 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Maintainer proposal scope does not match governed registry");
     }
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const verifiedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.maintainerId,
       subjectDid: fixture.subjectDid,
       role: "maintainer",
       ...expectedEvidence,
     });
+    const proposedEvidenceHash = proposalEvidenceHashForTest(verifiedEvidenceHash, testEvidenceHashOverride);
     const ledger = this.simulator.getLedger();
     const baseMaintainerPayloadHash = computeCreateMaintainerMembershipPayloadHash(
       fixture.maintainerIdCommitment,
@@ -1595,6 +1603,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
+    testEvidenceHashOverride?: Uint8Array,
   ): PreparedIssuerProposalAction {
     if (
       expectedEvidence.scope.role !== "issuer" ||
@@ -1606,13 +1615,14 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Issuer proposal scope does not match governed resource");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const verifiedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "issuer",
       ...expectedEvidence,
     });
+    const proposedEvidenceHash = proposalEvidenceHashForTest(verifiedEvidenceHash, testEvidenceHashOverride);
     const statusPolicyBindingCommitment = hashHexToBytes32(
       computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
     );
@@ -1930,6 +1940,7 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
+    testEvidenceHashOverride?: Uint8Array,
   ): PreparedVerifierProposalAction {
     if (
       expectedEvidence.scope.role !== "verifier" ||
@@ -1940,13 +1951,14 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Verifier proposal scope does not match governed request profile");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const verifiedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "verifier",
       ...expectedEvidence,
     });
+    const proposedEvidenceHash = proposalEvidenceHashForTest(verifiedEvidenceHash, testEvidenceHashOverride);
     const ledger = this.simulator.getLedger();
     const baseVerifierPayloadHash = computeCreateVerifierAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
@@ -2403,6 +2415,7 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
+    testEvidenceHashOverride?: Uint8Array,
   ): PreparedAuditorProposalAction {
     if (
       expectedEvidence.scope.role !== "auditor" ||
@@ -2413,13 +2426,14 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Auditor proposal scope does not match governed request profile");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const verifiedEvidenceHash = this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "auditor",
       ...expectedEvidence,
     });
+    const proposedEvidenceHash = proposalEvidenceHashForTest(verifiedEvidenceHash, testEvidenceHashOverride);
     const ledger = this.simulator.getLedger();
     const baseAuditorPayloadHash = computeCreateAuditorAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,

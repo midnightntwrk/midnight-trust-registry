@@ -209,6 +209,11 @@ describe("Compact-backed policy revision over HTTP", () => {
     const beforeRevision = publishSimulatorSnapshot(harness, fixtures);
     const oldBundle = beforeRevision.issuerEntries[0]?.evidence;
     if (oldBundle?.authorization === undefined) throw new Error("Active issuer evidence missing");
+    const oldEpochStart = Date.parse(oldBundle.epoch.validFrom);
+    const oldEpochEnd = Date.parse(oldBundle.epoch.validUntil);
+    const historicalInstant = new Date(Math.floor((oldEpochStart + oldEpochEnd) / 2)).toISOString();
+    expect(Date.parse(historicalInstant)).toBeGreaterThan(oldEpochStart);
+    expect(Date.parse(historicalInstant)).toBeLessThan(oldEpochEnd);
 
     const second = createMaintainerScenarioFixture("policy-http-history-second");
     const third = createMaintainerScenarioFixture("policy-http-history-third");
@@ -234,7 +239,7 @@ describe("Compact-backed policy revision over HTTP", () => {
           role: "issuer",
           subjectDid: issuer.subjectDid,
           resourceId: issuer.resourceId,
-          at: oldBundle.epoch.validFrom,
+          at: historicalInstant,
         }),
       });
       expect(historical.status).toBe(200);
@@ -254,7 +259,7 @@ describe("Compact-backed policy revision over HTTP", () => {
           authority_id: snapshot.registry.registryDid,
           action: "issue",
           resource: issuer.resourceId,
-          context: { time: oldBundle.epoch.validFrom },
+          context: { time: historicalInstant },
         }),
       });
       expect(trqp.status).toBe(200);

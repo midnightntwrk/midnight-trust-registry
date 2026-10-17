@@ -1629,16 +1629,16 @@ public key. Before release, qualify the final clean candidate with a full
 integration run and address redundant key generation without weakening proof
 or package-content checks.
 
-The next local #60 stack (`22bafc4` through `3690f07`) adds Compact-backed
-historical native/TRQP HTTP checks across a maintainer-threshold revision,
-records the native historical decision in the machine-readable governed-demo
-matrix, proves that a verifier needs the revised quorum before activation,
-and rejects an issuer proposal whose evidence hash is changed while retaining
-otherwise valid maintainer and verifier signatures. API integration passed
-67/67 after the HTTP test; the governed-demo preflight passed in about 16
-seconds for each matrix increment, while `./run.sh --light` passed 20/20 and
-audit remained clean. The direct active-maintainer self-DID Compact test
-already exists; an API candidate self-vote may fail earlier at active-key
-lookup. Other adversarial-matrix role/boundary gaps remain in the coverage
-map. None of these local checks substitute for final-head full proving or
+The #60 slice in draft PR #211 adds historical native/TRQP HTTP checks across
+a maintainer-threshold revision and records a historical API decision in the
+machine-readable governed-demo matrix. Compact cases require the revised
+quorum for verifier, auditor, and maintainer approvals, and cross-role
+proposal cases reject missing or duplicate signers. Issuer, verifier,
+auditor, and maintainer proposal cases substitute evidence hashes while
+retaining the old maintainer signatures; the replacement evidence-verifier
+signatures are checked independently. The direct active-maintainer self-DID
+Compact test already exists; an API candidate self-vote may fail earlier at
+active-key lookup. Other adversarial-matrix role/boundary gaps remain in the
+coverage map. Local light, focused integration, demo, and audit results are
+recorded on PR #211; they do not substitute for final-head full proving or
 authenticated public-network finality.
