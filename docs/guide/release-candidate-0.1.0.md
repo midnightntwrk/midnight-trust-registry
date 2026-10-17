@@ -29,7 +29,8 @@ Before changing this status to approved, the release owner must record one
 signed/DCO source SHA and attach results from that exact tree for:
 
 1. `./run.sh --light`, `./run.sh integration`, and `./run.sh docs`.
-2. `pnpm run demo:smoke` and the four-role packed actor journey.
+2. `pnpm run demo:smoke` and the packed journey for four HTTP membership
+   roles plus recognition VC/VP accreditation and governance.
 3. `pnpm run packages:check-contents`, `pnpm run artifacts:pack`, and
    `pnpm run artifacts:release-manifest` after a full Compact build.
 4. A clean consumer install using the approved manifest with

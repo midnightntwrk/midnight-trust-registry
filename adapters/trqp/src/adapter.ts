@@ -3,11 +3,17 @@ import {
   TrustRegistryEvidenceBundleSchema,
   canonicalizeJson,
   compareRfc3339Instants,
+  computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type RecognitionRecord,
   type RegistryRecord,
   type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  evaluateAuthorizationRecordAtTime,
+  evaluateRecognitionRecordAtTime,
+} from "@midnight-ntwrk/trust-registry-client";
 
 import {
   TrqpAuthorizationEvidenceResponseSchema,
@@ -105,6 +111,21 @@ const evidenceUnavailableProblem = (
   status: 424,
   detail: "The trust statement exists, but no epoch-bound evidence is available for the evaluation time.",
 });
+
+const matchesBundlePolicyContext = (
+  bundle: TrustRegistryEvidenceBundle,
+  registryId: string,
+  policyId: string,
+  evaluatedAt: string,
+): boolean => bundle.epoch.registryId === registryId
+  && bundle.policy.registryId === registryId
+  && bundle.policy.policyId === policyId
+  && compareRfc3339Instants(evaluatedAt, bundle.policy.effectiveFrom) >= 0
+  && (bundle.policy.effectiveUntil === undefined
+    || compareRfc3339Instants(evaluatedAt, bundle.policy.effectiveUntil) < 0)
+  && bundle.epoch.policyRoot === computeGovernancePolicySnapshotCommitment(
+    deriveGovernancePolicySnapshot(bundle.policy),
+  );
 
 const describeAuthorizationMessage = (
   status: string,
@@ -361,6 +382,10 @@ export class TrustRegistryTrqpAdapter {
       };
     }
     if (parsedBundle !== undefined) {
+      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
+        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
+        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      }
       const authorization = parsedBundle.authorization!;
       const expectedRole = request.action === "issue" ? "issuer"
         : request.action === "verify" ? "verifier" : null;
@@ -372,11 +397,15 @@ export class TrustRegistryTrqpAdapter {
         return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
           "Authorization evidence does not match the requested authority, entity, action, and resource.") };
       }
-    }
-    if (requireEvidence && parsedBundle !== undefined) {
-      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
-        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
-        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      if (!matchesBundlePolicyContext(parsedBundle, registry.registryId, authorization.policyId, evaluatedAt)) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Authorization evidence does not match its epoch and policy context.") };
+      }
+      const evaluation = evaluateAuthorizationRecordAtTime(authorization, evaluatedAt);
+      if (decision.statusAtTime !== evaluation.statusAtTime
+        || decision.trustedAtTime !== evaluation.trustedAtTime) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Authorization decision contradicts the evidence lifecycle at the evaluation time.") };
       }
     }
     if (decision.trustedAtTime && decision.statusAtTime !== "active") {
@@ -439,6 +468,10 @@ export class TrustRegistryTrqpAdapter {
       };
     }
     if (parsedBundle !== undefined) {
+      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
+        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
+        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      }
       const recognition = parsedBundle.recognition!;
       if (parsedBundle.registryId !== registry.registryId
         || recognition.registryId !== registry.registryId
@@ -452,11 +485,15 @@ export class TrustRegistryTrqpAdapter {
         return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
           "Recognition evidence does not match the requested authority, entity, action, resource, and registry.") };
       }
-    }
-    if (requireEvidence && parsedBundle !== undefined) {
-      if (compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validFrom) < 0
-        || compareRfc3339Instants(evaluatedAt, parsedBundle.epoch.validUntil) > 0) {
-        return { ok: false, problem: evidenceUnavailableProblem(this.problemBaseUri) };
+      if (!matchesBundlePolicyContext(parsedBundle, registry.registryId, recognition.policyId, evaluatedAt)) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Recognition evidence does not match its epoch and policy context.") };
+      }
+      const evaluation = evaluateRecognitionRecordAtTime(recognition, evaluatedAt);
+      if (decision.statusAtTime !== evaluation.statusAtTime
+        || decision.trustedAtTime !== evaluation.trustedAtTime) {
+        return { ok: false, problem: invalidSourceProblem(this.problemBaseUri,
+          "Recognition decision contradicts the evidence lifecycle at the evaluation time.") };
       }
     }
     if (decision.trustedAtTime && decision.statusAtTime !== "active") {

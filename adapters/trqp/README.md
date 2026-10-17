@@ -28,6 +28,10 @@ prove it; the evidence endpoint returns `epoch-evidence-unavailable` (424),
 distinct from a missing statement (404). Neither answer proves the snapshot
 is fresh relative to a later ledger state. See
 [`docs/spec/trqp-time-and-evidence.md`](../../docs/spec/trqp-time-and-evidence.md).
+Before returning an evidence response, the adapter also rejects source data
+whose epoch registry, policy ID/root, or lifecycle decision contradicts the
+included statement at `time_evaluated`. This is a consistency check, not an
+independent ledger anchor or cryptographic proof verification.
 The API can export selected archived statement bundles; durable retention and
 canonical network-history selection remain follow-on work under
 [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39).

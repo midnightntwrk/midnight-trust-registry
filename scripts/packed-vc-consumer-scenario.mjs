@@ -139,7 +139,7 @@ try {
     role: SignerRole.issuer,
     signerVerificationMethodRef: issuerMethodRef,
     signerPublicKey: deriveJubjubPublicKeyFromSeed(issuerSeed),
-    didStateVersion: 1n,
+    didStateVersion: 2n,
     verificationRelationship: VerificationRelationship.assertionMethod,
     scopeCommitment: pureCircuits.issuerScopeCommitment(schema),
     policyCommitment: fixtureBytes("packed-vc-policy"),
@@ -156,6 +156,30 @@ try {
     circuitContext,
     issuer,
     { ...issuerProof, signature: { ...issuerProof.signature, s: issuerProof.signature.s + 1n } },
+  ), /Signature verification failed/i);
+  assert.throws(() => contract.circuits.installSignerAuthorization(
+    circuitContext,
+    issuer,
+    { ...issuerProof, signerVerificationMethodRef: {
+      ...issuerProof.signerVerificationMethodRef,
+      methodId: fixtureBytes("other-authority-method"),
+    } },
+  ), /Authorization proof method does not match authority/i);
+  assert.throws(() => contract.circuits.installSignerAuthorization(
+    circuitContext,
+    issuer,
+    { ...issuerProof, publicKey: deriveJubjubPublicKeyFromSeed(issuerSeed) },
+  ), /Jubjub points do not match/i);
+  assert.throws(() => contract.circuits.installSignerAuthorization(
+    circuitContext,
+    issuer,
+    fixtureProof(
+      authoritySeed,
+      authority.verificationMethodRef,
+      pureCircuits.signerAuthorizationDecisionRoot(issuer, fixtureBytes("wrong-authority-domain")),
+      issuer.decisionSequence,
+      pureCircuits.signerAuthorizationProofChallenge,
+    ),
   ), /Signature verification failed/i);
   const installedIssuer = contract.circuits.installSignerAuthorization(circuitContext, issuer, issuerProof);
   circuitContext = createCircuitContext(
@@ -202,6 +226,35 @@ try {
     { ...credentialProof, signature: { ...credentialProof.signature, s: credentialProof.signature.s + 1n } },
     issuer.authorizationId,
   ), /Signature verification failed/i);
+  assert.throws(() => contract.circuits.assertIssuerCredentialSchemaSignerProof(
+    circuitContext, credential,
+    { ...credentialProof, signerVerificationMethodRef: {
+      ...credentialProof.signerVerificationMethodRef,
+      methodId: fixtureBytes("other-issuer-method"),
+    } },
+    issuer.authorizationId,
+  ), /Proof signer method does not match authorization/i);
+  assert.throws(() => contract.circuits.assertIssuerCredentialSchemaSignerProof(
+    circuitContext, credential,
+    { ...credentialProof, publicKey: deriveJubjubPublicKeyFromSeed(authoritySeed) },
+    issuer.authorizationId,
+  ), /Jubjub points do not match/i);
+  const wrongSchemaCredential = {
+    ...credential,
+    schema: { ...schema, schemaId: fixtureBytes("other-schema") },
+  };
+  assert.throws(() => contract.circuits.assertIssuerCredentialSchemaSignerProof(
+    circuitContext,
+    wrongSchemaCredential,
+    fixtureProof(
+      issuerSeed,
+      issuerMethodRef,
+      compiled.pureCircuits.credentialBodyRoot(wrongSchemaCredential),
+      1n,
+      pureCircuits.issuanceProofChallenge,
+    ),
+    issuer.authorizationId,
+  ), /Issuer authorization scope does not match schema/i);
 
   const verifierSeed = new Uint8Array(32).fill(51);
   const requestScopeCommitment = fixtureBytes("packed-vc-request-scope");
@@ -237,8 +290,45 @@ try {
   assert.throws(() => contract.circuits.assertVerifierRequestAuthorized(
     circuitContext, fixtureBytes("wrong-request-scope"), requestProof, verifier.authorizationId,
   ), /Verifier authorization scope does not match request/i);
+  assert.throws(() => contract.circuits.assertVerifierRequestAuthorized(
+    circuitContext,
+    requestScopeCommitment,
+    { ...requestProof, signerVerificationMethodRef: {
+      ...requestProof.signerVerificationMethodRef,
+      methodId: fixtureBytes("other-verifier-method"),
+    } },
+    verifier.authorizationId,
+  ), /Proof signer method does not match authorization/i);
+  assert.throws(() => contract.circuits.assertVerifierRequestAuthorized(
+    circuitContext,
+    requestScopeCommitment,
+    { ...requestProof, publicKey: deriveJubjubPublicKeyFromSeed(issuerSeed) },
+    verifier.authorizationId,
+  ), /Jubjub points do not match/i);
 
-  console.log("[packed-vc-consumer] Ledger 8 fixture accepted packed issuer/verifier proofs and rejected substitution.");
+  const rolledBackIssuer = { ...issuer, decisionSequence: 2n, didStateVersion: 1n };
+  assert.throws(() => contract.circuits.installSignerAuthorization(
+    circuitContext, rolledBackIssuer, authorityProofFor(rolledBackIssuer),
+  ), /DID state version must not decrease/i);
+  const revokedIssuer = { ...issuer, decisionSequence: 2n, state: AuthorizationState.revoked };
+  const installedRevocation = contract.circuits.installSignerAuthorization(
+    circuitContext, revokedIssuer, authorityProofFor(revokedIssuer),
+  );
+  circuitContext = createCircuitContext(
+    contractAddress,
+    installedRevocation.context.currentZswapLocalState,
+    installedRevocation.context.currentQueryContext.state,
+    installedRevocation.context.currentPrivateState,
+  );
+  assert.throws(() => contract.circuits.assertIssuerCredentialSchemaSignerProof(
+    circuitContext, credential, credentialProof, issuer.authorizationId,
+  ), /Signer authorization must be active/i);
+  const revivedIssuer = { ...issuer, decisionSequence: 3n };
+  assert.throws(() => contract.circuits.installSignerAuthorization(
+    circuitContext, revivedIssuer, authorityProofFor(revivedIssuer),
+  ), /Revoked signer authorization must remain revoked/i);
+
+  console.log("[packed-vc-consumer] Ledger 8 accepted issuer/verifier proofs and rejected substitution, rollback, and revoked replay.");
 } finally {
   rmSync(output, { recursive: true, force: true });
 }

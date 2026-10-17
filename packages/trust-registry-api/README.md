@@ -197,6 +197,20 @@ clients must not automatically submit it again. The route returns 503 when
 the host has no role-specific resolution port. This read-only recovery path does not make
 the private admission file and ledger transactional or establish network
 finality.
+For audit tooling, `resolveCompactProposalEvidenceSnapshot` joins a proposal
+record to its registered verifier key in an independently finalized ledger
+view. It exposes the DID/key and policy snapshot for all five proposal roles;
+it also rejects a finalized view whose authorization record has a different
+evidence commitment and includes the subject and grant-policy commitments.
+The role-specific signed payload is reconstructed and its registered JubJub
+signature must verify. This is not a standalone finality or inclusion proof.
+The check uses the retained key record, so later key retirement does not
+invalidate an otherwise valid historical proposal signature.
+An embedding host may
+inject `readFinalizedProposalLedger` to expose the same projection at
+`GET /v1/governed/:role/:id/proposal/evidence`; without that reader the route
+returns 503. A missing record in the supplied finalized view returns 404,
+not proof that an in-flight proposal failed.
 Verifier, auditor, and maintainer proposals use the same prepare/submit pattern at
 `/v1/governed/:role/:id/proposal/{prepare,submit}` with independently
 injected `governedVerifierProposals`, `governedAuditorProposals`, and
@@ -213,9 +227,13 @@ challenge, submits the resulting redacted evidence through this HTTP proposal
 route, and then approves and activates the issuer with external 2-of-3 votes.
 
 An embedding host may inject `proposalSubmissionJournal` alongside
-`proposalAdmission` for issuer, verifier, auditor, and maintainer proposal
-submission. The private file adapter reserves the role, authorization ID,
-and accepted evidence commitment before calling the Compact-backed port.
+`proposalAdmission` for issuer, verifier, auditor, and maintainer proposals,
+or alongside the matching accreditation admission store for recognition.
+The private file adapter reserves the role, authorization ID, and accepted
+evidence commitment before calling the Compact-backed port. A journaled
+recognition port must also supply a side-effect-free `preflightSubmission`
+that rejects known-invalid current-ledger signatures and quorum before
+reservation. It must recheck at execution; preflight is not finality.
 Before reservation the API verifies that every supplied maintainer signature
 signs the current prepared action digest and rejects duplicate key IDs.
 This preflight cannot establish active maintainer membership, quorum, or the

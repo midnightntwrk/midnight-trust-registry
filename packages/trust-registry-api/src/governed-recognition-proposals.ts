@@ -68,6 +68,14 @@ export type GovernedRecognitionProposalPort = {
   }>;
   /** Derive the current Compact context for this exact recognized scope and evidence hash. */
   prepare(binding: RecognitionAuthorityChallengeBinding, evidenceCommitment: string): Promise<GovernedRecognitionProposalContext>;
+  /** Side-effect-free current-ledger validation before a durable submission reservation. */
+  preflightSubmission?(
+    binding: RecognitionAuthorityChallengeBinding,
+    evidenceCommitment: string,
+    signers: readonly GovernedMembershipSigner[],
+    evidenceVerifierSignature: TrustRegistryJubjubSignature,
+    prepared: GovernedRecognitionProposalContext,
+  ): Promise<void>;
   /** Recheck current ledger state and Compact signatures/quorum/sequence before accepting. */
   execute(
     binding: RecognitionAuthorityChallengeBinding,

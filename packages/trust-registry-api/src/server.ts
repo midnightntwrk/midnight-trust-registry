@@ -103,6 +103,11 @@ import {
   type GovernedProposalObservation,
 } from "./governed-proposal-observation.js";
 import {
+  resolveCompactProposalEvidenceSnapshot,
+  type FinalizedProposalLedgerReader,
+  type ProposalRole,
+} from "./compact-proposal-observation.js";
+import {
   decodeVerifierEvidenceVerifierSignature,
   GovernedVerifierProposalPrepareRequestSchema,
   GovernedVerifierProposalRejectedError,
@@ -221,8 +226,10 @@ export type TrustRegistryApiServerOptions = {
   recognitionAccreditation?: RecognitionAccreditationHttpPort;
   /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
+  /** Optional read-only proposal audit source; this server does not establish ledger finality. */
+  readFinalizedProposalLedger?: FinalizedProposalLedgerReader;
   proposalAdmission?: ProposalAdmissionPort;
-  /** Required for a deployable VP-to-Compact handoff; the adapter must persist before submission. */
+  /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
   pendingApplicationRegistration?: PendingApplicationRegistrationPort;
   authorizePendingApplicationRegistration?: (request: IncomingMessage) => Promise<void>;
@@ -747,8 +754,20 @@ export const createTrustRegistryApiServer = (
       || options.recognitionAccreditation.admissionStore !== options.governedRecognitionProposals.admissionStore)) {
     throw new Error("Recognition accreditation and governed proposals require the same admission store");
   }
-  if (options.proposalSubmissionJournal !== undefined && options.proposalAdmission === undefined) {
-    throw new Error("A proposal submission journal requires accepted application admission");
+  const hasMembershipProposalPort = options.governedIssuerProposals !== undefined
+    || options.governedVerifierProposals !== undefined
+    || options.governedAuditorProposals !== undefined
+    || options.governedMaintainerProposals !== undefined;
+  if (options.proposalSubmissionJournal !== undefined
+    && ((hasMembershipProposalPort && options.proposalAdmission === undefined)
+      || (!hasMembershipProposalPort && (options.governedRecognitionProposals === undefined
+        || options.recognitionAccreditation === undefined)))) {
+    throw new Error("A proposal submission journal requires matching application or recognition admission");
+  }
+  if (options.proposalSubmissionJournal !== undefined
+    && options.governedRecognitionProposals !== undefined
+    && options.governedRecognitionProposals.preflightSubmission === undefined) {
+    throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const trqpAdapter = new TrustRegistryTrqpAdapter(
@@ -882,7 +901,7 @@ export const createTrustRegistryApiServer = (
         || (segments.length === 4 && segments[1] === "recognition-evidence"
           && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "accepted"))
         || (segments.length === 6 && segments[1] === "governed" && segments[2] === "recognition"
-          && segments[4] === "proposal" && segments[5] === "resolve")
+          && segments[4] === "proposal" && (segments[5] === "resolve" || segments[5] === "evidence"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -903,6 +922,49 @@ export const createTrustRegistryApiServer = (
             registryId: summary.registryId,
           }),
         );
+        return;
+      }
+
+      if (method === "GET" && segments.length === 6 && segments[0] === "v1"
+        && segments[1] === "governed" && segments[4] === "proposal" && segments[5] === "evidence") {
+        response.setHeader("cache-control", "no-store");
+        const role = segments[2]!;
+        if (!["issuer", "verifier", "auditor", "maintainer", "recognition"].includes(role)) {
+          throw jsonProblem(problemBaseUri, "invalid-proposal-role", 400, "invalid proposal role");
+        }
+        if (segments[3]!.length === 0 || segments[3]!.length > 256) {
+          throw jsonProblem(problemBaseUri, "invalid-proposal-id", 400, "invalid proposal ID");
+        }
+        if (role === "recognition") {
+          if (options.recognitionAccreditation === undefined) {
+            throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+              "recognition accreditation unavailable");
+          }
+          try {
+            await options.recognitionAccreditation.authorizeRequest(segments[3]!, request);
+          } catch {
+            throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+              "recognition accreditation forbidden");
+          }
+        }
+        if (options.readFinalizedProposalLedger === undefined) {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
+            "proposal evidence unavailable");
+        }
+        let snapshot;
+        try {
+          const registry = await loadRegistryRecord(options.source);
+          snapshot = await resolveCompactProposalEvidenceSnapshot(
+            options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+          );
+        } catch {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
+            "proposal evidence unavailable");
+        }
+        if (snapshot === null) {
+          throw jsonProblem(problemBaseUri, "proposal-evidence-not-found", 404, "proposal evidence not found");
+        }
+        writeJson(response, 200, snapshot, false);
         return;
       }
 
@@ -1154,6 +1216,13 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
             "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
         }
+        if (options.proposalSubmissionJournal !== undefined) {
+          try {
+            await options.proposalSubmissionJournal.reconcile("recognition", recognitionId, async () => record);
+          } catch (error) {
+            return mapSubmissionJournalError(error);
+          }
+        }
         writeJson(response, 200, { state: "observed", eventHash: record.eventHash }, false);
         return;
       }
@@ -1209,9 +1278,13 @@ export const createTrustRegistryApiServer = (
                   "invalid governed signature");
               }
               requireValidProposalSigners(current, signers);
-              return GovernedMembershipActionReceiptSchema.parse(await port.execute(
+              await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
-              ));
+              );
+              return executeProposal("recognition", recognitionId, body.evidenceCommitment, async () =>
+                GovernedMembershipActionReceiptSchema.parse(await port.execute(
+                  binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
+                )));
             },
             clock: () => Date.parse(options.clock?.() ?? new Date().toISOString()),
           });

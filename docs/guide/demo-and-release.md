@@ -360,6 +360,13 @@ issuer/verifier proof acceptance, and forged-signature, replay, and scope
 rejection. The source integration test separately binds signer descriptors to
 verified Trust Registry decisions. These remain simulator tests, not finalized
 network reads or deployed cross-contract calls.
+The actor path also runs `scripts/packed-recognition-journey.mjs`: it checks
+accreditation VC/VP intake, a governed recognition proposal, the retained
+verifier signature through the public read-only evidence route, a missing
+proposal and unavailable-ledger rejection, and suspension. Run that script
+directly to inspect its scrubbed JSON report. It contains commitments, signer
+key IDs, policy version, epoch, and expected rejection categories, not the VP
+or authority assertion.
 
 For a full release build, run `pnpm run build` and then
 `pnpm run packages:check-contents`; the latter requires proving keys and ZK IR.
