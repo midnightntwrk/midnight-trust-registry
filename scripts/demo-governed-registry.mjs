@@ -468,6 +468,54 @@ adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationB
   invariant: "The verifier can be activated under the revised maintainer quorum",
   boundary: "client",
 });
+const revisedPolicyAuditor = createAuditorScenarioFixture("governed-demo-policy-auditor");
+policyHarness.proposeAuditor(revisedPolicyAuditor);
+const auditorApproval = policyHarness.prepareAuditorDecisionAction(revisedPolicyAuditor, "approve");
+const beforeAuditorRejection = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
+  revisedPolicyAuditor, "approve", [signCompact(policySecond, auditorApproval, policyHarness)],
+), {
+  id: "auditor-revised-policy-insufficient-quorum",
+  invariant: "An auditor approval under the revised policy requires the new maintainer quorum",
+  boundary: "compact",
+  messagePattern: /quorum|threshold|signer/iu,
+  category: "revised-policy-insufficient-quorum",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
+policyHarness.approveAuditor(revisedPolicyAuditor);
+policyHarness.activateAuditor(revisedPolicyAuditor);
+adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
+  policyHarness.evaluateCurrentAuditorDecision(revisedPolicyAuditor), {},
+), {
+  id: "auditor-current-policy-after-threshold-change",
+  invariant: "The auditor can be activated under the revised maintainer quorum",
+  boundary: "client",
+});
+const revisedPolicyMaintainer = createMaintainerScenarioFixture("governed-demo-policy-maintainer");
+policyHarness.proposeMaintainer(revisedPolicyMaintainer);
+const maintainerApproval = policyHarness.prepareMaintainerDecisionAction(revisedPolicyMaintainer, "approve");
+const beforeMaintainerRejection = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
+  revisedPolicyMaintainer, "approve", [signCompact(policySecond, maintainerApproval, policyHarness)],
+), {
+  id: "maintainer-revised-policy-insufficient-quorum",
+  invariant: "A maintainer approval under the revised policy requires the new maintainer quorum",
+  boundary: "compact",
+  messagePattern: /quorum|threshold|signer/iu,
+  category: "revised-policy-insufficient-quorum",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
+policyHarness.approveMaintainer(revisedPolicyMaintainer);
+policyHarness.activateMaintainer(revisedPolicyMaintainer);
+adversarialMatrix.expectVerified(() => {
+  const membership = policyHarness.simulator.getMaintainerMembership(revisedPolicyMaintainer.maintainerIdCommitment);
+  assert.equal(membership.status, AuthorizationStatus.active);
+  return membership;
+}, {
+  id: "maintainer-current-policy-after-threshold-change",
+  invariant: "The maintainer can be activated under the revised maintainer quorum",
+  boundary: "integration",
+});
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
