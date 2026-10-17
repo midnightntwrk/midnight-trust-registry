@@ -143,6 +143,13 @@ describe("public Trust Registry deployment", () => {
     expect(mocks.deployContract).not.toHaveBeenCalled();
   });
 
+  it("rejects an unsatisfiable bootstrap quorum before contacting the network", async () => {
+    await expect(deploy({}, { ...bootstrap, maintainerThreshold: 2n }))
+      .rejects.toThrow("Bootstrap maintainer threshold must be one");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
   it("returns a public receipt when the indexer has not caught up, without suggesting redeployment", async () => {
     mocks.queryContractState.mockResolvedValueOnce(null);
     const result = await deploy();

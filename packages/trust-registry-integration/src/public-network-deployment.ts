@@ -71,8 +71,8 @@ export async function deployPublicTrustRegistry(input: {
   if (bootstrap.registryId.length === 0 || bootstrap.registryId.includes("\0")) {
     throw new Error("Registry id must be a nonempty canonical string");
   }
-  if (bootstrap.maintainerThreshold < 1n || bootstrap.maintainerThreshold > 5n) {
-    throw new Error("Bootstrap maintainer threshold must be between one and five");
+  if (bootstrap.maintainerThreshold !== 1n) {
+    throw new Error("Bootstrap maintainer threshold must be one until more maintainers are active");
   }
   const registryId = bytes32Commitment(bootstrap.registryId);
   const networkId = bytes32Commitment(network.networkId);
