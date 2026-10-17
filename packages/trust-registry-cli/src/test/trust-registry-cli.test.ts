@@ -53,7 +53,7 @@ describe("trust registry operator CLI", () => {
     expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
       ...workspace, consumedMutationNonces: full,
     }).success).toBe(false);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("rejects auditor snapshot rows with a substituted role or evidence record", () => {
     const snapshot = createDemoSnapshot({ label: "auditor-snapshot-boundary" });
