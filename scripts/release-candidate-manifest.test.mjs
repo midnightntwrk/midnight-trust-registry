@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   assertFullPackedContract,
   buildReleaseCandidateManifest,
+  hashPackedTarEntry,
   verifyReleaseCandidateArtifacts,
 } from "./release-candidate-manifest.mjs";
 
@@ -63,7 +64,16 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.throws(() => verifyReleaseCandidateArtifacts({
     ...manifest, packages: [manifest.packages[0], manifest.packages[0]],
   }, input.artifactDir, input.workspaces), /duplicated/u);
+  assert.throws(() => verifyReleaseCandidateArtifacts({
+    ...manifest, packages: manifest.packages.map((entry, index) => ({
+      ...entry, workspace: manifest.packages[1 - index].workspace,
+    })),
+  }, input.artifactDir, input.workspaces), /invalid or duplicated/u);
+  assert.throws(() => verifyReleaseCandidateArtifacts({
+    ...manifest, packageVersion: "0.2.0",
+  }, input.artifactDir, input.workspaces), /invalid or duplicated/u);
   put(root, "artifacts/npm/unlisted-0.1.0.tgz", "extra-tarball");
+  assert.throws(() => buildReleaseCandidateManifest(input), /unlisted/u);
   assert.throws(() => verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces), /unlisted/u);
   rmSync(join(root, "artifacts/npm/unlisted-0.1.0.tgz"));
   put(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz", "tampered-tarball");
@@ -71,6 +81,18 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.throws(() => buildReleaseCandidateManifest({ ...input, revision: "short" }), /full Git commit SHA/u);
   rmSync(join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz"));
   assert.throws(() => buildReleaseCandidateManifest(input), /missing or empty/u);
+});
+
+test("hashes packed contract entries larger than the subprocess default buffer", () => {
+  const root = mkdtempSync(join(tmpdir(), "tr-release-large-entry-"));
+  roots.push(root);
+  const content = "generated-contract\n".repeat(130_000);
+  put(root, "package/dist/managed/trust-registry/contract/index.js", content);
+  const tarball = join(root, "contract.tgz");
+  const packed = spawnSync("tar", ["-czf", tarball, "package"], { cwd: root, encoding: "utf8" });
+  assert.equal(packed.status, 0, packed.stderr);
+  assert.equal(hashPackedTarEntry(tarball, "package/dist/managed/trust-registry/contract/index.js"),
+    createHash("sha256").update(content).digest("hex"));
 });
 
 test("packed Compact contract must contain every ZKIR and prover/verifier pair", () => {

@@ -37,8 +37,11 @@ signed/DCO source SHA and attach results from that exact tree for:
 5. Exact-head CI results, independent review, release owner sign-off, and a
    recorded recovery/rollback decision.
 
-The manifest lists artifact bytes and source inputs. It does not authenticate
-its own distribution channel or prove any test, review, or network claim.
+The manifest lists artifact bytes and source inputs. A matching tarball digest
+does not by itself prove that every generated file was built from the recorded
+source revision: run the full build and pack on the clean, signed candidate
+tree before producing the manifest. The manifest does not authenticate its own
+distribution channel or prove any test, review, or network claim.
 The private admin-console, applicant-portal, API, CLI, and integration
 tarballs are local-only artifacts, not a public npm support promise.
 

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { artifactDirectory, artifactWorkspaces, publishWorkspaces } from "./trust-registry-workspace-catalog.mjs";
+import { artifactDirectory, artifactWorkspaces, packageManifestCatalog, publishWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 import { missingFullContractArtifacts, proofCircuitNames } from "./package-contents-policy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,6 +17,12 @@ const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 const packedFilename = (name, version) =>
   `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
+const assertExactTarballs = (artifactDir, filenames) => {
+  const present = readdirSync(artifactDir).filter((name) => name.endsWith(".tgz"));
+  if (present.length !== filenames.size || present.some((name) => !filenames.has(name))) {
+    throw new Error("Release candidate artifact directory contains unlisted tarballs");
+  }
+};
 
 export function buildReleaseCandidateManifest(input) {
   const { repoRoot, artifactDir, revision, workspaces = artifactWorkspaces,
@@ -46,6 +52,7 @@ export function buildReleaseCandidateManifest(input) {
   if (new Set(packages.map(({ filename }) => filename)).size !== packages.length) {
     throw new Error("Release packages have duplicate filenames");
   }
+  assertExactTarballs(artifactDir, new Set(packages.map(({ filename }) => filename)));
   const dependencies = packageRoot.dependencies ?? {};
   return {
     format: "tr-release-candidate-manifest-v1",
@@ -79,11 +86,21 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     || manifest.packages.length !== workspaces.length) {
     throw new Error("Release candidate manifest format or package count is invalid");
   }
+  if (typeof manifest.packageVersion !== "string" || manifest.packageVersion.length === 0
+    || typeof manifest.compactCompilerVersion !== "string" || manifest.compactCompilerVersion.length === 0
+    || !/^[0-9a-f]{64}$/u.test(manifest.lockfileSha256)
+    || !/^[0-9a-f]{64}$/u.test(manifest.contractSourceSha256)
+    || !/^[0-9a-f]{64}$/u.test(manifest.generatedContractSha256)) {
+    throw new Error("Release candidate manifest identity or source hashes are invalid");
+  }
   const expected = new Set(workspaces);
   const seen = new Set();
   const filenames = new Set();
   for (const entry of manifest.packages) {
     if (!expected.has(entry.workspace) || seen.has(entry.workspace)
+      || entry.name !== packageManifestCatalog.get(entry.workspace)?.name
+      || entry.version !== manifest.packageVersion
+      || entry.filename !== packedFilename(entry.name, entry.version)
       || filenames.has(entry.filename)
       || typeof entry.filename !== "string"
       || !/^[a-z0-9][a-z0-9.-]*\.tgz$/u.test(entry.filename)
@@ -98,18 +115,20 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
   }
-  const present = readdirSync(artifactDir).filter((name) => name.endsWith(".tgz"));
-  if (present.length !== filenames.size || present.some((name) => !filenames.has(name))) {
-    throw new Error("Release candidate artifact directory contains unlisted tarballs");
-  }
+  assertExactTarballs(artifactDir, filenames);
   return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
 
 const run = (command, args, trim = true) => {
-  const result = spawnSync(command, args, { cwd: root, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr.trim()}`);
+  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed: ${result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}`}`);
+  }
   return trim ? result.stdout.trim() : result.stdout;
 };
+
+export const hashPackedTarEntry = (tarball, entry) =>
+  hashBytes(run("tar", ["-xOzf", tarball, entry], false));
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 2) throw new Error("Usage: node scripts/release-candidate-manifest.mjs");
@@ -139,7 +158,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     ["package/dist/managed/trust-registry/contract/index.js",
       "contracts/trust-registry/dist/managed/trust-registry/contract/index.js"],
   ]) {
-    if (hashBytes(run("tar", ["-xOzf", contractTarball, packed], false)) !== sha256(join(root, source))) {
+    if (hashPackedTarEntry(contractTarball, packed) !== sha256(join(root, source))) {
       throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
     }
   }
