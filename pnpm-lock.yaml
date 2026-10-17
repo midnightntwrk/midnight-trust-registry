@@ -51,6 +51,36 @@ importers:
       '@eslint/js':
         specifier: ^9.29.0
         version: 9.39.4
+      '@midnight-ntwrk/trust-registry-admin-console':
+        specifier: workspace:*
+        version: link:packages/trust-registry-admin-console
+      '@midnight-ntwrk/trust-registry-api':
+        specifier: workspace:*
+        version: link:packages/trust-registry-api
+      '@midnight-ntwrk/trust-registry-applicant-portal':
+        specifier: workspace:*
+        version: link:packages/trust-registry-applicant-portal
+      '@midnight-ntwrk/trust-registry-cli':
+        specifier: workspace:*
+        version: link:packages/trust-registry-cli
+      '@midnight-ntwrk/trust-registry-client':
+        specifier: workspace:*
+        version: link:packages/trust-registry-client
+      '@midnight-ntwrk/trust-registry-contract':
+        specifier: workspace:*
+        version: link:contracts/trust-registry
+      '@midnight-ntwrk/trust-registry-domain':
+        specifier: workspace:*
+        version: link:packages/trust-registry-domain
+      '@midnight-ntwrk/trust-registry-integration':
+        specifier: workspace:*
+        version: link:packages/trust-registry-integration
+      '@midnight-ntwrk/trust-registry-openid-federation-adapter':
+        specifier: workspace:*
+        version: link:adapters/openid-federation
+      '@midnight-ntwrk/trust-registry-trqp-adapter':
+        specifier: workspace:*
+        version: link:adapters/trqp
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1

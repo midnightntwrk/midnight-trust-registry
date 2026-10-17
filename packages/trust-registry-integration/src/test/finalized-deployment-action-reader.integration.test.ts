@@ -58,6 +58,15 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
+    const finalizedLedger = await reader.readCurrentFinalizedLedger(`0x${address}`);
+    expect(finalizedLedger).toMatchObject({
+      networkId: "preprod",
+      finalizedBlockHash: `0x${blockHash}`,
+      contractAddress: `0x${address}`,
+    });
+    if (finalizedLedger === null) throw new Error("Expected a finalized ledger");
+    expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
+    expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",
       contractAddress: `0x${address}`,
@@ -98,6 +107,8 @@ describe("checkpointed deployment action reader", () => {
     const { reader, readCurrentFinalizedCheckpoint, queryContractState } = fixture();
     readCurrentFinalizedCheckpoint.mockResolvedValueOnce(null as never);
     await expect(reader.readCurrentFinalizedActionState(`0x${address}`)).resolves.toBeNull();
+    readCurrentFinalizedCheckpoint.mockResolvedValueOnce(null as never);
+    await expect(reader.readCurrentFinalizedLedger(`0x${address}`)).resolves.toBeNull();
     readCurrentFinalizedCheckpoint.mockResolvedValueOnce({ networkId: "undeployed", blockHash });
     await expect(reader.readCurrentFinalizedActionState(`0x${address}`)).rejects.toThrow(/malformed/u);
     expect(queryContractState).not.toHaveBeenCalled();

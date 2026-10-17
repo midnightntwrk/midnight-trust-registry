@@ -28,6 +28,12 @@ test("manifest lint works before packages are installed", () => {
     }
     assert.equal(existsSync(join(root, "node_modules")), false);
     assert.equal(checkWorkspaceManifests(root), true);
+    const rootPackagePath = join(root, "package.json");
+    const rootPackage = JSON.parse(readFileSync(rootPackagePath, "utf8"));
+    delete rootPackage.devDependencies["@midnight-ntwrk/trust-registry-contract"];
+    writeFileSync(rootPackagePath, JSON.stringify(rootPackage));
+    assert.throws(() => checkWorkspaceManifests(root), /root script dependency/);
+    copyFileSync(join(source, "package.json"), rootPackagePath);
     const contractPath = join(root, "contracts/trust-registry/package.json");
     const contract = JSON.parse(readFileSync(contractPath, "utf8"));
     contract.dependencies["@midnight-ntwrk/compact-runtime"] = "0.0.0";

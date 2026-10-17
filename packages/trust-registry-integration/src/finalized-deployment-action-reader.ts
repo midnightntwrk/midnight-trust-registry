@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedDeploymentActionState,
   TrustedDeploymentActionReader,
@@ -37,10 +38,18 @@ export type FinalizedRegistryBootstrapState = FinalizedDeploymentActionState & {
 };
 
 export type FinalizedRegistryBootstrapReader = TrustedDeploymentActionReader & {
+  readCurrentFinalizedLedger(contractAddress: string): Promise<FinalizedRegistryLedgerView | null>;
   readCurrentFinalizedBootstrapState(
     contractAddress: string,
     bootstrapMaintainerKeyId: Uint8Array,
   ): Promise<FinalizedRegistryBootstrapState | null>;
+};
+
+export type FinalizedRegistryLedgerView = {
+  networkId: string;
+  finalizedBlockHash: string;
+  contractAddress: string;
+  ledger: Ledger;
 };
 
 const bytes32Hex = (value: Uint8Array): string =>
@@ -89,6 +98,15 @@ export function createCheckpointedDeploymentActionReader(input: {
     return { actionState, ledger };
   };
   return {
+    async readCurrentFinalizedLedger(contractAddress) {
+      const observed = await readState(contractAddress);
+      return observed === null ? null : {
+        networkId: observed.actionState.networkId,
+        finalizedBlockHash: observed.actionState.finalizedBlockHash,
+        contractAddress: observed.actionState.contractAddress,
+        ledger: observed.ledger,
+      };
+    },
     async readCurrentFinalizedActionState(contractAddress): Promise<FinalizedDeploymentActionState | null> {
       return (await readState(contractAddress))?.actionState ?? null;
     },
