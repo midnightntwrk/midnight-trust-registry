@@ -1444,6 +1444,25 @@ try {
   });
   assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
   adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+    issuer, issuerEvidence, [proposalPrimary], verifierSignature, expectedIssuerEvidence,
+  ), {
+    id: "compact-issuer-proposal-insufficient-quorum",
+    invariant: "Compact requires the active maintainer quorum for an issuer proposal",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|maintainer|signer|assert/iu,
+    category: "proposal-quorum-rejected",
+  });
+  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+    issuer, issuerEvidence, [proposalPrimary, proposalPrimary], verifierSignature, expectedIssuerEvidence,
+  ), {
+    id: "compact-issuer-proposal-duplicate-signer",
+    invariant: "Compact cannot count the same maintainer twice for an issuer proposal",
+    boundary: "compact",
+    messagePattern: /quorum|threshold|maintainer|signer|duplicate|assert/iu,
+    category: "proposal-duplicate-signer-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
+  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
     issuer,
     issuerEvidence,
     [proposalPrimary, proposalCoSigner],
@@ -1565,6 +1584,23 @@ try {
       invariant: `One maintainer cannot provide both signatures for a ${role} proposal quorum`,
       boundary: "api", status: 403, problemType: "invalid-governed-signature",
     });
+    const compactSigner = signCompact(second, compactPrepared);
+    const beforeCompactQuorumRejections = harness.simulator.getLedger().governanceActionCount;
+    adversarialMatrix.expectThrown(() => target.execute(evidence, [compactSigner], signature), {
+      id: `compact-${role}-proposal-insufficient-quorum`,
+      invariant: `Compact requires the active maintainer quorum for a ${role} proposal`,
+      boundary: "compact",
+      messagePattern: /quorum|threshold|maintainer|signer|assert/iu,
+      category: "proposal-quorum-rejected",
+    });
+    adversarialMatrix.expectThrown(() => target.execute(evidence, [compactSigner, compactSigner], signature), {
+      id: `compact-${role}-proposal-duplicate-signer`,
+      invariant: `Compact cannot count the same maintainer twice for a ${role} proposal`,
+      boundary: "compact",
+      messagePattern: /quorum|threshold|maintainer|signer|duplicate|assert/iu,
+      category: "proposal-duplicate-signer-rejected",
+    });
+    assert.equal(harness.simulator.getLedger().governanceActionCount, beforeCompactQuorumRejections);
     if (role === "verifier" || role === "auditor") {
       const fixture = role === "verifier" ? verifier : auditor;
       const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
