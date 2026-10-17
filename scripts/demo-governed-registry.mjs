@@ -1415,10 +1415,38 @@ try {
     issuer, issuerEvidence, expectedIssuerEvidence,
   );
   const actionCountBeforeWrongVerifier = harness.simulator.getLedger().governanceActionCount;
+  const alteredProposalEvidenceHash = Uint8Array.from(compactIssuerProposal.evidenceHash);
+  alteredProposalEvidenceHash[0] ^= 1;
+  const proposalPrimary = signCompact(second, compactIssuerProposal);
+  const proposalCoSigner = signCompact(third, compactIssuerProposal);
+  adversarialMatrix.expectThrown(() => harness.simulator.proposeIssuerAuthorization(
+    proposalPrimary.keyId,
+    proposalPrimary.publicKey,
+    proposalPrimary.signature,
+    issuer.authorizationIdCommitment,
+    issuer.subjectDidCommitment,
+    issuer.resourceType,
+    issuer.resourceIdCommitment,
+    compactIssuerProposal.policyCommitment,
+    compactIssuerProposal.statusPolicyBindingCommitment,
+    bytes32Commitment(issuer.trustLevel),
+    alteredProposalEvidenceHash,
+    compactIssuerProposal.evidenceVerifierAuthorizationId,
+    compactIssuerProposal.evidenceVerifierKeyIdCommitment,
+    verifierSignature,
+    [proposalCoSigner],
+  ), {
+    id: "compact-issuer-proposal-altered-evidence-hash",
+    invariant: "A valid quorum cannot reuse its signed issuer proposal with a substituted evidence commitment",
+    boundary: "compact",
+    messagePattern: /signature|evidence|assert|authorization/iu,
+    category: "proposal-evidence-substitution-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
   adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
     issuer,
     issuerEvidence,
-    [signCompact(second, compactIssuerProposal), signCompact(third, compactIssuerProposal)],
+    [proposalPrimary, proposalCoSigner],
     wrongVerifierSignature,
     expectedIssuerEvidence,
   ), {
