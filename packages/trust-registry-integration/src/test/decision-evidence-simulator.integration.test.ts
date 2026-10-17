@@ -31,6 +31,7 @@ import {
 import {
   buildDecisionEvidenceClaim,
   createVerifiedDecisionEvidenceSource,
+  defaultSequenceToTimestamp,
   assertDecisionEvidenceConsistentWithSuppliedContext,
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
@@ -322,6 +323,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: context.acceptedEpoch,
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: async (did, network, sequence) => {
         expect([did, network, sequence]).toEqual([issuer.subjectDid, networkId, compactSequence]);
@@ -336,6 +338,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: { ...context.acceptedEpoch, stateRoot: sha256Hex("wrong-finalized-epoch-root") },
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
     });
@@ -348,18 +351,66 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: { ...context.acceptedEpoch, epochId: "epoch:unrelated" },
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
     });
     await expect(verifyDecisionEvidenceWithTrustedReaders(
       compactEvidence, context.selection, wrongEpochIdReaders,
     )).rejects.toThrow(/identity or epoch mismatch/u);
+    const wrongNetworkLedgerReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: {
+          ...harness.simulator.getLedger(),
+          deploymentNetworkIdCommitment: bytes32Commitment("other-network"),
+        },
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongNetworkLedgerReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
+    const wrongPublicationNetworkReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: context.acceptedEpoch,
+        publication: {
+          ...context.publication,
+          networkIdCommitment: bytes32Commitment("other-network"),
+        },
+        evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongPublicationNetworkReaders,
+    )).rejects.toThrow(/identity or epoch mismatch/u);
+    const wrongTimeMappingReaders = createCompactLedgerDecisionReaders({
+      readFinalizedView: async () => ({
+        ledger: harness.simulator.getLedger(),
+        acceptedEpoch: context.acceptedEpoch,
+        publication: context.publication,
+        evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: (sequence) =>
+          new Date(Date.parse(defaultSequenceToTimestamp(sequence)) + 60_000).toISOString(),
+      }),
+      readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
+    });
+    await expect(verifyDecisionEvidenceWithTrustedReaders(
+      compactEvidence, context.selection, wrongTimeMappingReaders,
+    )).rejects.toThrow(/does not match finalized Compact ledger/u);
     const changedPolicyReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
         ledger: { ...harness.simulator.getLedger(), governancePolicyCommitment: bytes32Commitment("changed-policy") },
         acceptedEpoch: context.acceptedEpoch,
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: compactReaders.readCurrentFinalizedDidState,
     });
@@ -958,6 +1009,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         acceptedEpoch: verifierSnapshot.acceptedEpoch,
         publication: verifierSnapshot.publication,
         evaluationTime: verifierSnapshot.decisionPoint.evaluationTime,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: verifierReaders.readCurrentFinalizedDidState,
     });
@@ -1312,6 +1364,7 @@ describe("simulator-backed VC decision evidence composition", () => {
           activeMaintainersAtPublication: [],
         },
         evaluationTime: oldBundle.epoch.validFrom,
+        sequenceToTimestamp: defaultSequenceToTimestamp,
       }),
       readFinalizedDidState: async () => { throw new Error("Stale epoch must fail before DID lookup"); },
     });

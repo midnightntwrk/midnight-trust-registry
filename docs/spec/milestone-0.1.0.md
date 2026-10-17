@@ -381,6 +381,12 @@ signatures on behalf of remote callers. Local fixture signing is explicitly
 test-only. Read endpoints MAY be public, but must not expose off-ledger VC/VP
 payloads or private operator data. A local operator workspace needs atomic
 single-writer behavior or a documented fail-closed concurrency guard.
+The reference workspace MUST retain each consumed signed-mutation nonce until
+the signed intent expires, prune expired entries inside that same atomic write
+boundary, and fail closed at its documented live-entry limit rather than evict
+a valid replay marker. Its nonce identity is scoped to registry, actor DID,
+and nonce. Workspace file format 2 rejects unsupported pre-release format 1;
+no silent compatibility default is permitted.
 
 TRQP v2 authorization and recognition queries are read-only projections of
 local decisions. Registry metadata, historical proof export, and audit profile

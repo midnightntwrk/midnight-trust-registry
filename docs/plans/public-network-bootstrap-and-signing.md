@@ -30,6 +30,91 @@ post-deployment governed event hashes and action signatures bind
 `kernel.self().bytes`. An initialization event alone must never be accepted
 as proof of a specific deployment address.
 
+The client now provides `prepareFinalizedDeploymentActionDigest` as a
+signer-side preflight. It reads a current finalized action state from an
+independently trusted port, compares the selected network, deployed address,
+registry commitment, network commitment, active policy, and action sequence,
+then returns the same Compact digest used by the contract. It rejects
+`undeployed` and placeholder domains. This does **not** supply a network
+adapter or establish finality by itself: the port implementation must
+authenticate the actual network and finalized ledger state, and the operator
+must pin the intended deployment. Mocked-port tests are not public-network
+qualification. No network-private signing key is handled by this helper.
+
+The integration package now provides `createCheckpointedDeploymentActionReader`.
+It accepts a Midnight `PublicDataProvider` and a separate trusted checkpoint
+source, queries the contract state **at the checkpoint block hash**, decodes
+the generated Trust Registry ledger, and supplies the registry/network/policy/
+sequence fields to the signer preflight. The checkpoint source must establish
+both the named network and block finality independently of the indexed
+evidence being evaluated. The simulator test exercises the real ledger decoder
+and block-hash query shape, but not an actual network or a trusted checkpoint
+implementation. A public-network qualification still needs a target network,
+funded deployment wallet, authenticated checkpoint source, deployment receipt,
+and finalized readback of the deployed address and constructor state.
+
+`createRpcFinalizedCheckpointSource` can supply that reader's checkpoint from a
+Midnight node RPC. It checks `chain_getBlockHash(0)` against a separately
+approved genesis hash **before** accepting `chain_getFinalizedHead`; it never
+learns the trusted pin from the same endpoint. The node RPC and indexer are
+distinct data sources, but the node itself remains a trusted finality source.
+The operator must provision the approved network/genesis pair and an HTTPS
+endpoint, then compare the resulting block hash with the indexer's
+block-hash-scoped contract state. A successful RPC test does not prove contract
+deployment, wallet funding, or constructor state. The source rejects remote
+plain HTTP, URL-embedded basic credentials, malformed JSON-RPC responses,
+zero hashes, and wrong genesis. Project tokens in query parameters are not
+logged by this library and must still be handled as secrets by the host.
+
+`createPublicNetworkDeploymentActionReader` composes this pinned RPC source
+with Midnight's published 4.1.1 indexer public-data provider. The operator
+supplies HTTPS indexer query and WSS subscription URLs; remote plaintext and
+URL-embedded credentials are rejected. The indexer state is read at the
+node's finalized block hash, not at the indexer's latest head. This is a
+read-only provider assembly, not a deployment receipt or independent proof
+that the node is honest. The genesis pin must still come from an approved
+source outside the configured RPC/indexer pair.
+The `trust-registry inspect-deployment` CLI exposes this read as JSON, including
+the exact finalized block hash used for the ledger query. It accepts no
+wallet key and performs no mutation. Its output is inspection evidence, not
+a public-network deployment or recovery qualification result.
+
+`deployPublicTrustRegistry` is a host-invoked deployment adapter, not a
+default CLI command. The host supplies its own funded Midnight.js
+`ContractProviders`, an explicit contract-maintenance `SigningKey`, network
+ID (`preview`, `preprod`, or `mainnet`), RPC/indexer endpoints, and an
+independently approved genesis pin. The adapter checks the SDK network setting,
+the pinned node checkpoint, indexer URL policy, and nonzero constructor
+commitments before invoking the published Midnight deployment API. The
+maintenance key authorizes Midnight contract maintenance; it is **not** a
+Trust Registry governance quorum key. The adapter never returns private
+deployment transaction data or manages wallet/key custody.
+
+The returned public receipt is retained even if the finalized readback is
+`pending` (indexer lag), `unavailable` (read error), or `mismatch` (observed
+ledger disagrees). Only `verified` means the observed registry ID, deployment
+network commitment, active policy, and initialization action count of one
+match the supplied constructor inputs at a pinned finalized block. A non-
+verified result must be investigated with read-only inspection using the
+receipt, **not** retried as a fresh deployment. This is still not public-
+network qualification: no funded deployment was performed, the host providers
+and RPC/indexer are trusted, and a readback from one indexer is not a
+cryptographic proof of canonical state. Issue #200 remains open until an
+operator-approved live deployment and independent finality/replay checks.
+The bootstrap-specific read also compares the registry DID commitment, policy
+version, all three initial thresholds, active maintainer count, and the
+bootstrap maintainer's ID, DID, key ID, public key, active status, and joined
+sequence. The signer-preflight reader remains limited to current action
+context so later legitimate governance changes do not invalidate it.
+
+As of October 2026, [Midnight's environment reference](https://docs.midnight.network/relnotes/network)
+lists public Preview RPC/indexer endpoints. The old Midnight-hosted Preprod
+RPC/indexer endpoints were retired on 9 October; Preprod now uses Blockfrost
+endpoints and a Midnight Preprod project token. Do not copy stale Preprod URLs
+from older DID examples. The [deployment guide](https://docs.midnight.network/guides/deploy-and-operate)
+describes provider construction and a funded wallet; those pieces are still
+required for #200's live deployment qualification.
+
 ## Threats and invariants
 
 1. A third party must not be able to call an uninitialized deployed contract
@@ -85,8 +170,8 @@ References:
 2. Move registry identity, policy, and bootstrap maintainer installation into
    the constructor or an equivalently authenticated atomic deployment path.
    Remove the public `initializeRegistry` circuit. Preserve one canonical
-   initialization event and sequence zero. Update generated bindings and
-   simulator fixtures together.
+   initialization event at governance action count one. Update generated
+   bindings and simulator fixtures together.
 3. Bind all governed action digests to the pinned deployment domain. Update
    the Compact verifier and TypeScript signing helpers atomically, then the
    simulator, CLI, API action preparation, demos, epoch evidence, TRQP exports,

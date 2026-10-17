@@ -57,6 +57,7 @@ type CommandName =
   | "revoke"
   | "archive"
   | "publish-epoch"
+  | "inspect-deployment"
   | "help";
 
 type CliIo = {
@@ -86,6 +87,7 @@ Commands:
   revoke           Revoke a suspended or active workspace record
   archive          Archive a revoked or historical workspace record
   publish-epoch    Publish the current workspace registry epoch anchor
+  inspect-deployment  Read a Trust Registry deployment at a pinned finalized network checkpoint
 
 Examples:
   trust-registry init-demo --output ./artifacts/trust-registry/demo.json
@@ -105,6 +107,8 @@ Examples:
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry publish-epoch --workspace ./artifacts/trust-registry/workspace.json
+  TR_RPC_URL=... TR_INDEXER_HTTP_URL=... TR_INDEXER_WS_URL=... TR_EXPECTED_GENESIS_HASH=... \\
+    trust-registry inspect-deployment --network preview --address 0x<64 hex digits>
 `;
 
 const parseKind = (value: string | undefined): SnapshotRecordKind => {
@@ -611,6 +615,44 @@ const runPublishEpoch = async (
   );
 };
 
+const runInspectDeployment = async (argv: readonly string[], io: CliIo): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      network: { type: "string" },
+      address: { type: "string" },
+    },
+    strict: true,
+  });
+  const networkId = requireStringOption(parsed.values.network, "--network");
+  if (networkId !== "preview" && networkId !== "preprod" && networkId !== "mainnet") {
+    throw new Error("--network must be preview, preprod, or mainnet");
+  }
+  const address = requireStringOption(parsed.values.address, "--address");
+  const { createPublicNetworkDeploymentActionReader } = await import(
+    "@midnight-ntwrk/trust-registry-integration"
+  );
+  const reader = await createPublicNetworkDeploymentActionReader({
+    networkId,
+    rpcUrl: requireStringOption(process.env.TR_RPC_URL, "TR_RPC_URL"),
+    indexerHttpUrl: requireStringOption(process.env.TR_INDEXER_HTTP_URL, "TR_INDEXER_HTTP_URL"),
+    indexerWsUrl: requireStringOption(process.env.TR_INDEXER_WS_URL, "TR_INDEXER_WS_URL"),
+    expectedGenesisHash: requireStringOption(
+      process.env.TR_EXPECTED_GENESIS_HASH,
+      "TR_EXPECTED_GENESIS_HASH",
+    ),
+  });
+  const state = await reader.readCurrentFinalizedActionState(address);
+  if (state === null) throw new Error("No Trust Registry state at the finalized checkpoint");
+  writeJson(io, {
+    qualification: "read-only",
+    ...state,
+    governanceActionSequence: state.governanceActionSequence.toString(),
+  });
+  return 0;
+};
+
 export const runCli = async (
   argv: readonly string[],
   io: CliIo = defaultIo,
@@ -651,6 +693,8 @@ export const runCli = async (
         return await runWorkspaceTargetOperation(rest, io, "archive");
       case "publish-epoch":
         return await runPublishEpoch(rest, io);
+      case "inspect-deployment":
+        return await runInspectDeployment(rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;

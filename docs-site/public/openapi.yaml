@@ -536,7 +536,7 @@ paths:
     post:
       tags: [Governed]
       summary: Submit DID-signed workspace mutation intent
-      description: Requires injected Midnight DID resolver; packaged CLI returns 503.
+      description: Requires injected Midnight DID resolver; packaged CLI returns 503. Workspace format 2 retains nonce identities through intent expiry, prunes on successful atomic writes, and returns 503 mutation-nonce-capacity rather than evicting a live nonce when the 10,000-entry local window is full.
       responses: *governedResponses
   /v1/applications:
     post:

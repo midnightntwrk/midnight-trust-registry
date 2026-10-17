@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace, MAX_CONSUMED_MUTATION_NONCES } from "@midnight-ntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -10,6 +10,7 @@ import {
   computeAuthorizationScopeCommitment,
   computeMutationPayloadCommitment,
   mutationIntentDigestBytes,
+  sha256Hex,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -19,7 +20,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
-import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, transitionSignedMutationState } from "../signed-mutation-state.js";
+import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, transitionSignedMutationState } from "../signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const workspace = createOperatorWorkspace({ label: "signed-transition" });
@@ -61,28 +62,67 @@ const resolver = createMidnightDidResolver([
 
 describe("pure signed mutation state transition", () => {
   it("applies a valid operation and consumes its nonce only in the returned state", async () => {
-    const initial = { workspace, consumedNonces: [] } as const;
+    const initial = { workspace, consumedNonces: {} } as const;
     const next = await transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver);
     expect(next.workspace.operations).toHaveLength(1);
-    expect(next.consumedNonces).toEqual([JSON.stringify([intent.registryId, actorDid, intent.nonce])]);
+    const nonceKey = sha256Hex(JSON.stringify(["tr:mutation:nonce:v2", intent.registryId, actorDid, intent.nonce]));
+    expect(next.consumedNonces).toEqual({ [nonceKey]: intent.expiresAt });
     expect(initial.workspace.operations).toHaveLength(0);
-    expect(initial.consumedNonces).toHaveLength(0);
+    expect(Object.keys(initial.consumedNonces)).toHaveLength(0);
 
     const newRevision = { ...intent, expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(next.workspace) };
     await expect(transitionSignedMutationState(next, newRevision, signatureFor(newRevision), operation, now, resolver))
       .rejects.toBeInstanceOf(MutationNonceAlreadyUsedError);
-    expect(next.consumedNonces).toHaveLength(1);
+    expect(Object.keys(next.consumedNonces)).toHaveLength(1);
   });
 
   it("does not consume a nonce when signature or operation binding fails", async () => {
-    const initial = { workspace, consumedNonces: [] } as const;
+    const initial = { workspace, consumedNonces: {} } as const;
     await expect(transitionSignedMutationState(
       initial, intent, { ...signatureFor(intent), value: `0x${"00".repeat(96)}` }, operation, now, resolver,
     )).rejects.toBeInstanceOf(MutationIntentActorRejectedError);
     await expect(transitionSignedMutationState(
       initial, intent, signatureFor(intent), { ...operation, label: "other" }, now, resolver,
     )).rejects.toBeInstanceOf(MutationIntentActorRejectedError);
-    expect(initial.consumedNonces).toHaveLength(0);
+    expect(Object.keys(initial.consumedNonces)).toHaveLength(0);
     expect(initial.workspace.operations).toHaveLength(0);
+  });
+
+  it("prunes expired nonce entries while retaining every live identity", async () => {
+    const expiredKey = sha256Hex("expired");
+    const liveKey = sha256Hex("live");
+    const initial = {
+      workspace,
+      consumedNonces: {
+        [expiredKey]: "2026-10-10T00:01:00.000Z",
+        [liveKey]: "2026-10-10T00:02:00.000Z",
+      },
+    };
+    const next = await transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver);
+    expect(next.consumedNonces[expiredKey]).toBeUndefined();
+    expect(next.consumedNonces[liveKey]).toBe("2026-10-10T00:02:00.000Z");
+    expect(Object.keys(next.consumedNonces)).toHaveLength(2);
+    expect(Object.keys(initial.consumedNonces)).toHaveLength(2);
+  });
+
+  it("fails closed at the live-window cap without evicting a valid nonce", async () => {
+    const live = Object.fromEntries(Array.from({ length: MAX_CONSUMED_MUTATION_NONCES }, (_, index) => [
+      `0x${index.toString(16).padStart(64, "0")}`, "2026-10-10T00:02:00.000Z",
+    ]));
+    const initial = { workspace, consumedNonces: live };
+    await expect(transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver))
+      .rejects.toBeInstanceOf(MutationNonceCapacityExceededError);
+    expect(Object.keys(initial.consumedNonces)).toHaveLength(MAX_CONSUMED_MUTATION_NONCES);
+    expect(initial.workspace.operations).toHaveLength(0);
+  });
+
+  it("checks a replay by key without scanning the retained window", async () => {
+    const nonceKey = sha256Hex(JSON.stringify(["tr:mutation:nonce:v2", intent.registryId, actorDid, intent.nonce]));
+    const live = new Proxy({ [nonceKey]: intent.expiresAt }, {
+      ownKeys: () => { throw new Error("nonce lookup scanned all entries"); },
+    });
+    await expect(transitionSignedMutationState(
+      { workspace, consumedNonces: live }, intent, signatureFor(intent), operation, now, resolver,
+    )).rejects.toBeInstanceOf(MutationNonceAlreadyUsedError);
   });
 });
