@@ -1544,7 +1544,8 @@ try {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ evidence }),
     }), 200);
-    const signature = target.signEvidence(target.prepare(evidence));
+    const compactPrepared = target.prepare(evidence);
+    const signature = target.signEvidence(compactPrepared);
     const body = {
       evidence,
       prepared,
@@ -1564,6 +1565,69 @@ try {
       invariant: `One maintainer cannot provide both signatures for a ${role} proposal quorum`,
       boundary: "api", status: 403, problemType: "invalid-governed-signature",
     });
+    if (role === "verifier" || role === "auditor") {
+      const fixture = role === "verifier" ? verifier : auditor;
+      const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
+      alteredEvidenceHash[0] ^= 1;
+      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
+      const primary = signCompact(second, compactPrepared);
+      adversarialMatrix.expectThrown(() => harness.simulator[
+        role === "verifier" ? "proposeVerifierAuthorization" : "proposeAuditorAuthorization"
+      ](
+        primary.keyId,
+        primary.publicKey,
+        primary.signature,
+        fixture.authorizationIdCommitment,
+        fixture.subjectDidCommitment,
+        fixture.requestResourceIdCommitment,
+        fixture.allowedAttributeSetCommitment,
+        fixture.allowedPredicateSetCommitment,
+        fixture.disclosureLevelCommitment,
+        compactPrepared.policyCommitment,
+        bytes32Commitment(fixture.trustLevel),
+        alteredEvidenceHash,
+        compactPrepared.evidenceVerifierAuthorizationId,
+        compactPrepared.evidenceVerifierKeyIdCommitment,
+        signature,
+        [signCompact(third, compactPrepared)],
+      ), {
+        id: `compact-${role}-proposal-altered-evidence-hash`,
+        invariant: `A valid quorum cannot reuse its signed ${role} proposal with a substituted evidence commitment`,
+        boundary: "compact",
+        messagePattern: /signature|evidence|assert|authorization/iu,
+        category: "proposal-evidence-substitution-rejected",
+      });
+      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+    }
+    if (role === "maintainer") {
+      const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
+      alteredEvidenceHash[0] ^= 1;
+      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
+      const primary = signCompact(second, compactPrepared);
+      adversarialMatrix.expectThrown(() => harness.simulator.proposeMaintainerMembership(
+        primary.keyId,
+        primary.publicKey,
+        primary.signature,
+        candidate.maintainerIdCommitment,
+        candidate.subjectDidCommitment,
+        candidate.keyId,
+        deriveJubjubPublicKeyFromSeed(candidate.seed),
+        compactPrepared.policyCommitment,
+        bytes32Commitment(candidate.trustLevel),
+        alteredEvidenceHash,
+        compactPrepared.evidenceVerifierAuthorizationId,
+        compactPrepared.evidenceVerifierKeyIdCommitment,
+        signature,
+        [signCompact(third, compactPrepared)],
+      ), {
+        id: "compact-maintainer-proposal-altered-evidence-hash",
+        invariant: "A valid quorum cannot reuse its signed maintainer proposal with a substituted evidence commitment",
+        boundary: "compact",
+        messagePattern: /signature|evidence|assert|authorization/iu,
+        category: "proposal-evidence-substitution-rejected",
+      });
+      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+    }
     assert.equal((await submit(body)).status, 202);
     const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {
       method: "POST", headers: { "content-type": "application/json" },
