@@ -12,6 +12,14 @@ import {
 } from "./demo-vc-issuer-consumer.mjs";
 
 import {
+  computeAuditorEvidenceBoundProposalPayloadHash,
+  computeCreateAuditorAuthorizationPayloadHash,
+  computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateMaintainerMembershipPayloadHash,
+  computeCreateVerifierAuthorizationPayloadHash,
+  computeIssuerEvidenceBoundProposalPayloadHash,
+  computeMaintainerEvidenceBoundProposalPayloadHash,
+  computeVerifierEvidenceBoundProposalPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
@@ -348,6 +356,7 @@ const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentP
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+policyHarness.revokeIssuer(historicalIssuer, [policySecond]);
 const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [
@@ -364,6 +373,14 @@ try {
   assert.ok(address && typeof address !== "string");
   const oldEvidence = originalPolicySnapshot.issuerEntries[0]?.evidence;
   assert.ok(oldEvidence?.authorization);
+  const historicalIssuerEntry = revisedPolicySnapshot.issuerEntries.find((entry) =>
+    entry.authorization.authorizationId === historicalIssuer.authorizationId);
+  assert.equal(historicalIssuerEntry?.authorization.status, "revoked");
+  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
+    bundle.authorization?.authorizationId === oldEvidence.authorization.authorizationId
+      && bundle.epoch.epochId === oldEvidence.epoch.epochId));
+  const historicalInstant = new Date(Date.parse(oldEvidence.epoch.validFrom) + 1).toISOString();
+  assert.ok(Date.parse(historicalInstant) < Date.parse(historicalIssuerEntry.evidence.epoch.validFrom));
   const response = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -371,7 +388,7 @@ try {
       role: "issuer",
       subjectDid: historicalIssuer.subjectDid,
       resourceId: historicalIssuer.resourceId,
-      at: oldEvidence.epoch.validFrom,
+      at: historicalInstant,
     }),
   });
   const historicalDecision = await expectHttp(response, 200);
@@ -862,8 +879,8 @@ const proposalTargets = new Map([
   ["verifier", {
     id: verifier.authorizationId,
     evidence: () => evidenceByRole.get("verifier"),
-    prepare: (evidence, testEvidenceHashOverride) => harness.prepareVerifierProposalAction(
-      verifier, evidence, expectedEvidenceByRole.get("verifier"), testEvidenceHashOverride,
+    prepare: (evidence) => harness.prepareVerifierProposalAction(
+      verifier, evidence, expectedEvidenceByRole.get("verifier"),
     ),
     execute: (evidence, signers, signature) =>
       harness.executeVerifierProposalWithSignatures(
@@ -877,8 +894,8 @@ const proposalTargets = new Map([
   ["auditor", {
     id: auditor.authorizationId,
     evidence: () => evidenceByRole.get("auditor"),
-    prepare: (evidence, testEvidenceHashOverride) => harness.prepareAuditorProposalAction(
-      auditor, evidence, expectedEvidenceByRole.get("auditor"), testEvidenceHashOverride,
+    prepare: (evidence) => harness.prepareAuditorProposalAction(
+      auditor, evidence, expectedEvidenceByRole.get("auditor"),
     ),
     execute: (evidence, signers, signature) =>
       harness.executeAuditorProposalWithSignatures(
@@ -892,8 +909,8 @@ const proposalTargets = new Map([
   ["maintainer", {
     id: candidate.maintainerId,
     evidence: () => evidenceByRole.get("maintainer"),
-    prepare: (evidence, testEvidenceHashOverride) => harness.prepareMaintainerProposalAction(
-      candidate, evidence, expectedEvidenceByRole.get("maintainer"), testEvidenceHashOverride,
+    prepare: (evidence) => harness.prepareMaintainerProposalAction(
+      candidate, evidence, expectedEvidenceByRole.get("maintainer"),
     ),
     execute: (evidence, signers, signature) =>
       harness.executeMaintainerProposalWithSignatures(
@@ -905,12 +922,114 @@ const proposalTargets = new Map([
     missing: "unknown-maintainer",
   }],
 ]);
+const withAlteredProposalEvidence = (role, fixture, prepared, evidenceHash) => {
+  const trustLevel = bytes32Commitment(fixture.trustLevel);
+  const base = role === "issuer"
+    ? computeCreateIssuerAuthorizationPayloadHash(
+      fixture.authorizationIdCommitment, fixture.subjectDidCommitment,
+      fixture.resourceType, fixture.resourceIdCommitment, prepared.policyCommitment,
+      prepared.statusPolicyBindingCommitment, trustLevel, evidenceHash,
+    )
+    : role === "maintainer"
+      ? computeCreateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment, fixture.subjectDidCommitment, fixture.keyId,
+        deriveJubjubPublicKeyFromSeed(fixture.seed), prepared.policyCommitment,
+        trustLevel, evidenceHash,
+      )
+      : (role === "verifier" ? computeCreateVerifierAuthorizationPayloadHash
+        : computeCreateAuditorAuthorizationPayloadHash)(
+        fixture.authorizationIdCommitment, fixture.subjectDidCommitment,
+        fixture.requestResourceIdCommitment, fixture.allowedAttributeSetCommitment,
+        fixture.allowedPredicateSetCommitment, fixture.disclosureLevelCommitment,
+        prepared.policyCommitment, trustLevel, evidenceHash,
+      );
+  const bind = role === "issuer" ? computeIssuerEvidenceBoundProposalPayloadHash
+    : role === "verifier" ? computeVerifierEvidenceBoundProposalPayloadHash
+      : role === "auditor" ? computeAuditorEvidenceBoundProposalPayloadHash
+        : computeMaintainerEvidenceBoundProposalPayloadHash;
+  return {
+    ...prepared,
+    evidenceHash,
+    actionPayloadHash: bind(base, prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment, prepared.policyCommitment, prepared.policyVersion),
+  };
+};
+const submitRawProposal = (role, fixture, prepared, verifierSignature, signers) => {
+  const [primary, ...coSigners] = signers;
+  assert.ok(primary);
+  const authorization = [primary.keyId, primary.publicKey, primary.signature];
+  const verifier = [
+    prepared.evidenceVerifierAuthorizationId,
+    prepared.evidenceVerifierKeyIdCommitment,
+    verifierSignature,
+    coSigners,
+  ];
+  if (role === "issuer") {
+    return harness.simulator.proposeIssuerAuthorization(
+      ...authorization,
+      fixture.authorizationIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.resourceType,
+      fixture.resourceIdCommitment,
+      prepared.policyCommitment,
+      prepared.statusPolicyBindingCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      ...verifier,
+    );
+  }
+  if (role === "maintainer") {
+    return harness.simulator.proposeMaintainerMembership(
+      ...authorization,
+      fixture.maintainerIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.keyId,
+      deriveJubjubPublicKeyFromSeed(fixture.seed),
+      prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      ...verifier,
+    );
+  }
+  assert.ok(role === "verifier" || role === "auditor");
+  return harness.simulator[
+    role === "verifier" ? "proposeVerifierAuthorization" : "proposeAuditorAuthorization"
+  ](
+    ...authorization,
+    fixture.authorizationIdCommitment,
+    fixture.subjectDidCommitment,
+    fixture.requestResourceIdCommitment,
+    fixture.allowedAttributeSetCommitment,
+    fixture.allowedPredicateSetCommitment,
+    fixture.disclosureLevelCommitment,
+    prepared.policyCommitment,
+    bytes32Commitment(fixture.trustLevel),
+    prepared.evidenceHash,
+    ...verifier,
+  );
+};
+const assertFreshProposalCanExecute = (role, fixture, prepared, verifierSignature) => {
+  const originalContext = harness.simulator.circuitContext;
+  const originalCount = harness.simulator.getLedger().governanceActionCount;
+  try {
+    submitRawProposal(role, fixture, prepared, verifierSignature, [
+      signCompact(second, prepared), signCompact(third, prepared),
+    ]);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, originalCount + 1n);
+  } finally {
+    harness.simulator.circuitContext = originalContext;
+  }
+  assert.equal(harness.simulator.getLedger().governanceActionCount, originalCount);
+};
 const assertValidProposalVerifierSignature = (role, prepared, signature) => {
   const verifierKey = harness.simulator.getEvidenceVerifierKey(prepared.evidenceVerifierAuthorizationId);
-  const verify = role === "issuer" ? verifyIssuerProposalEvidenceSignature
-    : role === "verifier" ? verifyVerifierProposalEvidenceSignature
-      : role === "auditor" ? verifyAuditorProposalEvidenceSignature
-        : verifyMaintainerProposalEvidenceSignature;
+  const verify = {
+    issuer: verifyIssuerProposalEvidenceSignature,
+    verifier: verifyVerifierProposalEvidenceSignature,
+    auditor: verifyAuditorProposalEvidenceSignature,
+    maintainer: verifyMaintainerProposalEvidenceSignature,
+  }[role];
+  assert.ok(verify, `Unknown proposal role: ${role}`);
   assert.equal(verify(
     verifierKey.publicKey, prepared.registryId, prepared.evidenceVerifierKeyIdCommitment,
     prepared.actionPayloadHash, signature,
@@ -1480,29 +1599,17 @@ try {
   const actionCountBeforeWrongVerifier = harness.simulator.getLedger().governanceActionCount;
   const alteredProposalEvidenceHash = Uint8Array.from(compactIssuerProposal.evidenceHash);
   alteredProposalEvidenceHash[0] ^= 1;
-  const alteredIssuerProposal = harness.prepareIssuerProposalAction(
-    issuer, issuerEvidence, expectedIssuerEvidence, alteredProposalEvidenceHash,
+  const alteredIssuerProposal = withAlteredProposalEvidence(
+    "issuer", issuer, compactIssuerProposal, alteredProposalEvidenceHash,
   );
   const alteredIssuerVerifierSignature = harness.signIssuerProposalEvidence(alteredIssuerProposal);
   assertValidProposalVerifierSignature("issuer", alteredIssuerProposal, alteredIssuerVerifierSignature);
   const proposalPrimary = signCompact(second, compactIssuerProposal);
   const proposalCoSigner = signCompact(third, compactIssuerProposal);
-  adversarialMatrix.expectThrown(() => harness.simulator.proposeIssuerAuthorization(
-    proposalPrimary.keyId,
-    proposalPrimary.publicKey,
-    proposalPrimary.signature,
-    issuer.authorizationIdCommitment,
-    issuer.subjectDidCommitment,
-    issuer.resourceType,
-    issuer.resourceIdCommitment,
-    compactIssuerProposal.policyCommitment,
-    compactIssuerProposal.statusPolicyBindingCommitment,
-    bytes32Commitment(issuer.trustLevel),
-    alteredProposalEvidenceHash,
-    compactIssuerProposal.evidenceVerifierAuthorizationId,
-    compactIssuerProposal.evidenceVerifierKeyIdCommitment,
-    alteredIssuerVerifierSignature,
-    [proposalCoSigner],
+  assertFreshProposalCanExecute("issuer", issuer, alteredIssuerProposal, alteredIssuerVerifierSignature);
+  adversarialMatrix.expectThrown(() => submitRawProposal(
+    "issuer", issuer, alteredIssuerProposal, alteredIssuerVerifierSignature,
+    [proposalPrimary, proposalCoSigner],
   ), {
     id: "compact-issuer-proposal-altered-evidence-hash",
     invariant: "A valid quorum cannot reuse its signed issuer proposal with a substituted evidence commitment",
@@ -1674,28 +1781,13 @@ try {
       const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
       alteredEvidenceHash[0] ^= 1;
       const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
-      const alteredPrepared = target.prepare(evidence, alteredEvidenceHash);
+      const alteredPrepared = withAlteredProposalEvidence(role, fixture, compactPrepared, alteredEvidenceHash);
       const alteredVerifierSignature = target.signEvidence(alteredPrepared);
       assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      adversarialMatrix.expectThrown(() => harness.simulator[
-        role === "verifier" ? "proposeVerifierAuthorization" : "proposeAuditorAuthorization"
-      ](
-        compactSigner.keyId,
-        compactSigner.publicKey,
-        compactSigner.signature,
-        fixture.authorizationIdCommitment,
-        fixture.subjectDidCommitment,
-        fixture.requestResourceIdCommitment,
-        fixture.allowedAttributeSetCommitment,
-        fixture.allowedPredicateSetCommitment,
-        fixture.disclosureLevelCommitment,
-        compactPrepared.policyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        alteredEvidenceHash,
-        compactPrepared.evidenceVerifierAuthorizationId,
-        compactPrepared.evidenceVerifierKeyIdCommitment,
-        alteredVerifierSignature,
-        [signCompact(third, compactPrepared)],
+      assertFreshProposalCanExecute(role, fixture, alteredPrepared, alteredVerifierSignature);
+      adversarialMatrix.expectThrown(() => submitRawProposal(
+        role, fixture, alteredPrepared, alteredVerifierSignature,
+        [compactSigner, signCompact(third, compactPrepared)],
       ), {
         id: `compact-${role}-proposal-altered-evidence-hash`,
         invariant: `A valid quorum cannot reuse its signed ${role} proposal with a substituted evidence commitment`,
@@ -1709,24 +1801,13 @@ try {
       const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
       alteredEvidenceHash[0] ^= 1;
       const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
-      const alteredPrepared = target.prepare(evidence, alteredEvidenceHash);
+      const alteredPrepared = withAlteredProposalEvidence(role, candidate, compactPrepared, alteredEvidenceHash);
       const alteredVerifierSignature = target.signEvidence(alteredPrepared);
       assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      adversarialMatrix.expectThrown(() => harness.simulator.proposeMaintainerMembership(
-        compactSigner.keyId,
-        compactSigner.publicKey,
-        compactSigner.signature,
-        candidate.maintainerIdCommitment,
-        candidate.subjectDidCommitment,
-        candidate.keyId,
-        deriveJubjubPublicKeyFromSeed(candidate.seed),
-        compactPrepared.policyCommitment,
-        bytes32Commitment(candidate.trustLevel),
-        alteredEvidenceHash,
-        compactPrepared.evidenceVerifierAuthorizationId,
-        compactPrepared.evidenceVerifierKeyIdCommitment,
-        alteredVerifierSignature,
-        [signCompact(third, compactPrepared)],
+      assertFreshProposalCanExecute(role, candidate, alteredPrepared, alteredVerifierSignature);
+      adversarialMatrix.expectThrown(() => submitRawProposal(
+        role, candidate, alteredPrepared, alteredVerifierSignature,
+        [compactSigner, signCompact(third, compactPrepared)],
       ), {
         id: "compact-maintainer-proposal-altered-evidence-hash",
         invariant: "A valid quorum cannot reuse its signed maintainer proposal with a substituted evidence commitment",

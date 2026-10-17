@@ -211,7 +211,7 @@ describe("Compact-backed policy revision over HTTP", () => {
     if (oldBundle?.authorization === undefined) throw new Error("Active issuer evidence missing");
     const oldEpochStart = Date.parse(oldBundle.epoch.validFrom);
     const oldEpochEnd = Date.parse(oldBundle.epoch.validUntil);
-    const historicalInstant = new Date(Math.floor((oldEpochStart + oldEpochEnd) / 2)).toISOString();
+    const historicalInstant = new Date(oldEpochStart + 1).toISOString();
     expect(Date.parse(historicalInstant)).toBeGreaterThan(oldEpochStart);
     expect(Date.parse(historicalInstant)).toBeLessThan(oldEpochEnd);
 
@@ -220,7 +220,13 @@ describe("Compact-backed policy revision over HTTP", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    harness.revokeIssuer(issuer, [second]);
     const snapshot = publishSimulatorSnapshot(harness, fixtures, beforeRevision);
+    expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    expect(snapshot.evidenceArchive).toContainEqual(oldBundle);
+    expect(Date.parse(snapshot.issuerEntries[0]?.evidence.epoch.validFrom ?? "")).toBeGreaterThan(
+      Date.parse(historicalInstant),
+    );
     expect(snapshot.policy.policyId).toBe(oldBundle.policy.policyId);
     expect(snapshot.policy.version).not.toBe(oldBundle.policy.version);
 
