@@ -445,6 +445,29 @@ adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundl
   messagePattern: /invalid/iu,
   category: "historical-epoch-signature-rejected",
 });
+const revisedPolicyVerifier = createVerifierScenarioFixture("governed-demo-policy-verifier");
+policyHarness.proposeVerifier(revisedPolicyVerifier);
+const verifierApproval = policyHarness.prepareVerifierDecisionAction(revisedPolicyVerifier, "approve");
+const beforeVerifierRejection = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
+  revisedPolicyVerifier, "approve", [signCompact(policySecond, verifierApproval, policyHarness)],
+), {
+  id: "verifier-revised-policy-insufficient-quorum",
+  invariant: "A verifier approval under the revised policy requires the new maintainer quorum",
+  boundary: "compact",
+  messagePattern: /quorum|threshold|signer/iu,
+  category: "revised-policy-insufficient-quorum",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
+policyHarness.approveVerifier(revisedPolicyVerifier);
+policyHarness.activateVerifier(revisedPolicyVerifier);
+adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
+  policyHarness.evaluateCurrentVerifierDecision(revisedPolicyVerifier), {},
+), {
+  id: "verifier-current-policy-after-threshold-change",
+  invariant: "The verifier can be activated under the revised maintainer quorum",
+  boundary: "client",
+});
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
