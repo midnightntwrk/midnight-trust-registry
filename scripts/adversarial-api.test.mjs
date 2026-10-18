@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { publishSimulatorSnapshot } from "../packages/trust-registry-cli/dist/index.js";
 import {
   createIssuerScenarioFixture,
+  createMaintainerScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -124,6 +125,40 @@ test("issuer-active-trqp", async (context) => {
   const trqpDecision = await queryTrqp(activeAt);
   assert.equal(publicDecision.trustedAtTime, true);
   assert.equal(trqpDecision.authorized, publicDecision.trustedAtTime);
+});
+
+test("issuer-historical-api-after-threshold-change", async (context) => {
+  const { harness, issuer, base, refresh } =
+    await startIssuerApi(context, "isolated-historical-threshold-api");
+  const old = harness.evaluateCurrentIssuerDecision(issuer);
+  const oldAt = new Date(Date.parse(old.epoch.validFrom) + 1).toISOString();
+  const second = createMaintainerScenarioFixture("isolated-threshold-api-second");
+  const third = createMaintainerScenarioFixture("isolated-threshold-api-third");
+  const currentIssuer = createIssuerScenarioFixture("isolated-threshold-api-current");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.proposeIssuer(currentIssuer, [second]);
+  harness.approveIssuer(currentIssuer, [second]);
+  harness.activateIssuer(currentIssuer, [second]);
+  refresh({
+    label: "isolated-historical-threshold-api",
+    issuers: [{ fixture: issuer, label: "historical" }, { fixture: currentIssuer, label: "current" }],
+  });
+  const response = await fetch(`${base}/v1/authorizations/evaluate/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "issuer", subjectDid: issuer.subjectDid, resourceId: issuer.resourceId, at: oldAt,
+    }),
+  });
+  assert.equal(response.status, 200);
+  const decision = await response.json();
+  assert.equal(decision.trustedAtTime, true);
+  assert.equal(decision.statusAtTime, "active");
+  assert.equal(decision.bundle.policy.version, old.policy.version);
+  assert.notEqual(decision.bundle.policy.version,
+    harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
 });
 
 test("issuer-suspended-api", async (context) => {

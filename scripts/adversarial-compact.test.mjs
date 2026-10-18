@@ -269,6 +269,24 @@ test("compact-old-policy-signature-replay", () => {
   harness.approveIssuer(current, [second]);
 });
 
+test("compact-recovery-policy-headroom-required", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-recovery-headroom");
+  const second = createMaintainerScenarioFixture("isolated-recovery-second");
+  const third = createMaintainerScenarioFixture("isolated-recovery-third");
+  const candidate = createMaintainerScenarioFixture("isolated-recovery-candidate");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.authorizeMaintainer(candidate);
+  harness.updateMaintainerThresholdPolicy(3n, 1n, 2n);
+  const before = harness.simulator.getLedger().governanceActionCount;
+  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 4n);
+  assert.throws(() => harness.suspendMaintainer(candidate), /non-conflicted removal quorum/iu);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n, [second, third]);
+  harness.suspendMaintainer(candidate);
+  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+});
+
 test("issuer-history-survives-threshold-change", () => {
   const { client, historical, current } = revisedPolicyEvidence("isolated-history-survives");
   assert.notEqual(historical.epoch.policyRoot, current.epoch.policyRoot);
