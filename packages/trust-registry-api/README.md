@@ -113,8 +113,20 @@ asserts the `workspace-locked` problem, then retries after release. This is a
 same-host, shared-filesystem exclusion guarantee only: it is not a distributed
 lock or crash-durable transaction protocol. Operators must inspect stale locks
 before removal.
-Operator workspaces created before `consumedMutationNonces` existed must be
-regenerated; this unreleased format has no compatibility default.
+Workspace format 2 stores each consumed signed-mutation nonce identity as a
+SHA-256 key with the signed intent's expiry. Entries remain replay-protected
+until that expiry (at most five minutes after issue) and are pruned during the
+next successful exclusive mutation. Lookup is keyed, not a scan. At 10,000
+simultaneously live nonces the API returns `503 mutation-nonce-capacity` rather
+than evicting a valid replay marker. The capacity is a local reference-gateway
+limit, not a ledger or network throughput claim. Version-1 pre-release
+workspaces are rejected explicitly and must be recreated from trusted source
+data; there is no compatibility default or silent migration.
+`node scripts/bench-mutation-nonce-lookups.mjs` measures the in-memory lookup
+shape at 10,000 entries. On Node 24.14.0/darwin-arm64, 5,000 last-key lookups
+took 0.17 ms keyed versus 647.2 ms with the former array scan. This is an
+illustrative microbenchmark, not end-to-end write latency: loading, validation,
+and expiry pruning still process the bounded window.
 
 The packaged CLI does not yet configure a production DID resolver, so it
 serves reads but returns 503 for signed writes. The integration harness

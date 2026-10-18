@@ -202,7 +202,7 @@ export const TrustRegistryApiEpochPublishRequestSchema = z.object({
 
 const TrustRegistryApiMutationResponseBaseSchema = z.object({
   sourceMode: z.literal("workspace"),
-  workspaceVersion: z.literal("1"),
+  workspaceVersion: z.literal("2"),
   workspaceUpdatedAt: TimestampSchema,
   snapshotGeneratedAt: TimestampSchema,
   currentEpochId: NonEmptyStringSchema,

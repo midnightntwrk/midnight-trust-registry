@@ -98,7 +98,12 @@ const loadWorkspaceJson = async (
   workspacePath: string,
 ): Promise<TrustRegistryOperatorWorkspace> => {
   const raw = await readFile(workspacePath, "utf8");
-  return TrustRegistryOperatorWorkspaceSchema.parse(JSON.parse(raw));
+  const parsed: unknown = JSON.parse(raw);
+  if (parsed !== null && typeof parsed === "object" && "workspaceVersion" in parsed
+    && parsed.workspaceVersion === "1") {
+    throw new Error("Workspace version 1 is unsupported; recreate the pre-release workspace before mutation");
+  }
+  return TrustRegistryOperatorWorkspaceSchema.parse(parsed);
 };
 
 export class WorkspaceMutationLockedError extends Error {
@@ -635,11 +640,11 @@ export const createOperatorWorkspace = (
   const snapshot = buildSnapshotFromTrackedFixtures(label, 0, harness, trackedFixtures);
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
-    workspaceVersion: "1",
+    workspaceVersion: "2",
     updatedAt: snapshot.generatedAt,
     registryLabel: label,
     operations: [],
-    consumedMutationNonces: [],
+    consumedMutationNonces: {},
     snapshot,
   });
 };
@@ -667,7 +672,7 @@ export const applyWorkspaceOperation = (
   ));
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
-    workspaceVersion: "1",
+    workspaceVersion: "2",
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,

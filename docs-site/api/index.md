@@ -14,7 +14,7 @@ Without a trusted port, a governed or private route returns `503`; it does not s
 
 ## Authentication is not enough
 
-Private application routes call a trusted `authorizeRequest` callback before reading a body. The embedding host must bind the authenticated principal to the application and defend cookie sessions against CSRF. The reference API does not grant wildcard browser CORS access to raw VPs. Signed `/v1/mutations` verifies a DID method relationship, exact workspace revision, operation, nonce, and five-minute validity window; the packaged CLI returns `503` for writes without an injected resolver.
+Private application routes call a trusted `authorizeRequest` callback before reading a body. The embedding host must bind the authenticated principal to the application and defend cookie sessions against CSRF. The reference API does not grant wildcard browser CORS access to raw VPs. Signed `/v1/mutations` verifies a DID method relationship, exact workspace revision, operation, nonce, and five-minute validity window; the packaged CLI returns `503` for writes without an injected resolver. Workspace format 2 retains hashed nonce identities through their signed expiry, prunes expired entries on successful atomic writes, and rejects writes with `503 mutation-nonce-capacity` instead of evicting a live marker when its 10,000-entry local window is full. Pre-release format-1 workspaces must be recreated from trusted source data.
 
 ## Error model
 

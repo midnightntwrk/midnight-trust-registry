@@ -1418,3 +1418,75 @@ five #196 findings; the issue remains open. Focused tests, `./run.sh --light`,
 integration-light, and the VitePress build passed locally. No push or PR was
 created. Forge #195 remains untouched because artifact/key compatibility with
 the pinned Trust Registry toolchain has not been established.
+
+Local #202 slice: operator workspace format 2 replaces the unbounded signed
+mutation nonce string array with a hash-keyed expiry map. The API checks a
+registry/actor/nonce identity directly, prunes expired records only inside its
+exclusive write, and returns a fail-closed 503 at 10,000 live entries instead
+of evicting replay evidence. Version-1 pre-release workspaces are explicitly
+rejected. This is reference gateway replay retention, not an on-chain nonce
+store or public-network throughput guarantee. Fake-clock, restart, concurrent
+HTTP, schema-capacity, and keyed-lookup tests belong to this slice; keep it
+local until a coherent functional stack is ready for review.
+The same local integration-light run exposed a governed-demo temporal-dead-zone
+error: an early threshold-removal adversarial case implicitly used the later
+main `harness`. Passing `lastActiveHarness` explicitly restores the intended
+threshold-policy assertion. This is a demo wiring repair, not a policy change.
+
+Local #200 follow-on: `prepareFinalizedDeploymentActionDigest` in the client
+accepts a trusted finalized-state reader and refuses to prepare a maintainer
+signature digest when network, deployed address, registry commitment,
+deployment-network commitment, active policy, or action sequence differs from
+the operator's selected deployment. It excludes the `undeployed` profile and
+keeps private keys outside the helper. Focused tests and `./run.sh --light`
+pass. The reader port is a trust boundary, not an implementation of a public
+network provider: a real adapter must authenticate network identity, finalized
+ledger state, and deployment address before #200 or 0.1.0 public-network
+qualification can close. PR #205 exact-head Quality completed green after the
+proving-key jobs were sharded; #207's light/docs checks were also green at the
+last local CI check. Neither PR was merged in this slice.
+
+The next local #200 slice supplies `createRpcFinalizedCheckpointSource`:
+`chain_getBlockHash(0)` must match an out-of-band approved genesis pin before
+the source accepts `chain_getFinalizedHead`. The checkpoint then drives the
+block-hash-scoped indexer ledger read. Focused tests cover wrong genesis,
+malformed JSON-RPC, missing hashes, and unsafe URLs; `./run.sh --light` and
+audit pass. This trusts the configured node for finality and does not prove a
+deployment. Official Midnight environment documentation now places public
+Preprod RPC/indexer behind Blockfrost project-token URLs; the older
+Midnight-hosted Preprod endpoints shut down on 2026-10-09. Preview remains a
+public RPC/indexer and faucet target. Do not derive the approved genesis pin
+from the same live RPC response or disclose project tokens in reports.
+
+At exact local parent head `51dff47`, full `./run.sh integration` passed:
+65 proof circuits and all integration/actor-demo suites completed. This
+does not validate the later RPC-source or provider-composition commits as a
+full integration run. The follow-on local provider-composition slice uses
+published Midnight indexer provider 4.1.1 with the pinned node checkpoint;
+it still needs a funded deployment and finalized constructor readback before
+#200 can close. PR #205's latest `085e3d8` Quality/proving-key shards were
+green at the last check; it remains unmerged.
+
+The local read-only `inspect-deployment` CLI reports the selected network,
+finalized block hash, deployed address, and decoded Compact governance fields.
+It reads endpoint URLs and the approved genesis pin from environment variables
+and handles no wallet key. Successful inspection is not the #200 deployment
+receipt or an independent node-finality proof.
+
+The next local #200 adapter, `deployPublicTrustRegistry`, takes host-owned
+Midnight.js providers and an explicit contract-maintenance signing key. Its
+network, RPC/indexer endpoints, and approved genesis pin are configurable for
+Preview, Preprod, and Mainnet; no live wallet or deployment is bundled. It
+checks the configured SDK network and pinned node genesis before submission,
+then keeps only the public deployment receipt. Finalized readback can be
+verified, pending, unavailable, or mismatched; any non-verified result retains
+the receipt for read-only investigation rather than inviting redeployment.
+Initialization is governance action count one, not zero. Five focused adapter
+tests and the local 20/20 light gate passed. The host providers and indexer
+remain trust boundaries; #200 stays open until a funded, operator-approved
+deployment and independent qualification are available. The follow-on
+bootstrap-specific finalized read adds the registry DID, policy version,
+all initial thresholds, active maintainer count, and the maintainer's
+identity, key, active status, and joining sequence to that comparison;
+the action-signing reader remains narrower by design. The preceding
+`c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.

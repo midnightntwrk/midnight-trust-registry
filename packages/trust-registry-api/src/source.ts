@@ -292,7 +292,7 @@ export const applySignedMutationOperation = (
   if (!commitCheck.ok) throw new MutationIntentActorRejectedError(commitCheck.reason);
   const nextWorkspace = {
     ...next.workspace,
-    consumedMutationNonces: [...next.consumedNonces],
+    consumedMutationNonces: { ...next.consumedNonces },
   };
   await source.writeWorkspace(nextWorkspace);
   return {

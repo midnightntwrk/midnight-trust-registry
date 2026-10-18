@@ -16,6 +16,8 @@ Current scope:
   specific timestamp
 - render deterministic human-readable audit reports from a saved snapshot or a
   saved operator workspace
+- inspect read-only Compact ledger state at an operator-pinned finalized
+  network block for a deployed Trust Registry address
 
 The package also exports `publishSimulatorSnapshot(harness, fixtures, previousSnapshot?)` for
 local integration scenarios. It publishes a simulator registry epoch and
@@ -76,6 +78,23 @@ node packages/trust-registry-cli/bin/trust-registry.mjs report \
   --workspace ./artifacts/trust-registry/workspace.json \
   --kind full
 ```
+
+For read-only deployment inspection, provide the network RPC and indexer
+endpoints through `TR_RPC_URL`, `TR_INDEXER_HTTP_URL`, and
+`TR_INDEXER_WS_URL`. Set `TR_EXPECTED_GENESIS_HASH` to a nonzero hash approved
+out of band, not one copied from the same RPC response. Then run:
+
+```bash
+node packages/trust-registry-cli/bin/trust-registry.mjs inspect-deployment \
+  --network preview --address 0x<64-hex-digit-contract-address>
+```
+
+The JSON result includes the finalized block hash, registry/network/policy
+commitments, and governance action sequence. It contains no wallet secret and
+does not sign or submit transactions. A successful read does not prove that
+the node is honest, that the deployment was authorized, or that #200's
+public-network qualification is complete. Keep project-token endpoint URLs
+out of shell history and logs.
 
 The unreleased v1 operator snapshot requires a separate `auditorEntries`
 collection. CLI and API role lookups never treat a verifier entry as an
