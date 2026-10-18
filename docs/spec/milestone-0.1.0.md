@@ -173,10 +173,28 @@ Signers MUST authenticate that the declared network matches the actual target
 deployment. The current Compact runtime does not prove that correspondence
 on-chain; public-network qualification remains an open release gate.
 
-Application states are `proposed -> authorized -> active`, followed by
-`suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
-lifecycle validators. A denied proposal is archived by a quorum-governed
-action before its exact scope can be reused. The original ID and proposal
+The 0.1.0 authorization lifecycle has these reachable transitions:
+
+<!-- authorization-lifecycle-transitions:start -->
+| From | Allowed next states |
+| --- | --- |
+| `proposed` | `authorized`, `archived` |
+| `authorized` | `active`, `revoked`, `archived` |
+| `active` | `suspended`, `revoked`, `archived` |
+| `suspended` | `revoked`, `archived` |
+| `revoked` | `archived` |
+| `superseded` | none |
+| `archived` | none |
+<!-- authorization-lifecycle-transitions:end -->
+
+`superseded` remains a reserved schema and historical-projection value, not a
+reachable grant or application status in this profile. Policy-version
+supersession is checked through the policy snapshot; it does not silently
+transition an authorization record to `superseded`. The Compact action circuits,
+governed API routes, and simulator demo do not produce that grant transition;
+the client may still parse a historical record carrying the reserved value. A
+denied proposal is archived by a quorum-governed action before its exact scope
+can be reused. The original ID and proposal
 evidence remain in the ledger; a new application MUST use a new ID. Archival
 records the terminal decision but does not encode an off-chain denial reason.
 A private applicant-intake store MUST retain the old application and nonce,
@@ -263,9 +281,12 @@ revoked issuer cannot issue new credentials. Whether a revocation invalidates
 earlier credentials is explicit in the governing policy, never guessed by TR.
 
 Query outcomes MUST distinguish `active`, `not-authorized`, `suspended`,
-`revoked`, `superseded`, `archived`, `out-of-scope`, `expired-policy`,
+`revoked`, `archived`, `out-of-scope`, `expired-policy`,
 `stale-or-unfinalized-epoch`, and
 `invalid-evidence`. A missing or unverifiable historical anchor fails closed.
+The schema can represent a `superseded` historical grant, but 0.1.0 does not
+expose a transition that produces one; no current query may infer it from a
+newer application or policy revision.
 Query responses include registry ID, role, exact scope, policy ID/version,
 effective interval, epoch ID/root, and a verifiable evidence bundle. A listing
 or positive boolean without proof is informational only.

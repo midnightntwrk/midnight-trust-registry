@@ -86,4 +86,6 @@ if problems:
     sys.exit(1)
 PY
 
+node scripts/check-milestone-lifecycle.mjs
+
 echo "documentation check passed"
