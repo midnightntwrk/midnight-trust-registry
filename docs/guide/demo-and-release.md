@@ -292,8 +292,8 @@ The `adversarialMatrix` member is the checked case report; the other members
 are the demo transcript. The output is deterministic in case IDs and categories,
 but local epoch identifiers and event hashes are fixture-dependent.
 Issue #216 is extracting the demo cases into independent tests with fresh
-fixtures and positive controls. The current runner has 39 such tests across
-Compact/integration/client and public HTTP boundaries; it does not yet replace
+fixtures and positive controls. The current runner has 66 such tests across
+Compact/integration/client, public HTTP, and TRQP adapter boundaries; it does not yet replace
 the 171-case demo or make every monolithic setup failure independent.
 
 ## Artifact Boundaries

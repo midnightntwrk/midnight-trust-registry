@@ -44,6 +44,23 @@ const startIssuerApi = async (context, label) => {
     }
     return response.json();
   };
+  const queryTrqp = async (at) => {
+    const response = await fetch(`${base}/v1/trqp/authorizations/query`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        entity_id: issuer.subjectDid,
+        authority_id: harness.registryRecord.registryDid,
+        action: "issue",
+        resource: issuer.resourceId,
+        context: { time: at },
+      }),
+    });
+    if (response.status !== 200) {
+      assert.fail(`Expected TRQP HTTP 200, received ${response.status}: ${await response.text()}`);
+    }
+    return response.json();
+  };
   const refresh = (nextFixtures = fixtures) => {
     snapshot = publishSimulatorSnapshot(harness, nextFixtures, snapshot);
   };
@@ -52,7 +69,7 @@ const startIssuerApi = async (context, label) => {
     refresh();
     return harness.buildIssuerHistoricalEvidence(issuer);
   };
-  return { harness, issuer, base, evaluate, refresh, transition };
+  return { harness, issuer, base, evaluate, queryTrqp, refresh, transition };
 };
 
 test("issuer-wrong-resource-api", async (context) => {
@@ -100,6 +117,15 @@ test("issuer-active-api", async (context) => {
   assert.equal(decision.statusAtTime, "active");
 });
 
+test("issuer-active-trqp", async (context) => {
+  const { harness, issuer, evaluate, queryTrqp } = await startIssuerApi(context, "isolated-active-trqp");
+  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  const publicDecision = await evaluate(activeAt);
+  const trqpDecision = await queryTrqp(activeAt);
+  assert.equal(publicDecision.trustedAtTime, true);
+  assert.equal(trqpDecision.authorized, publicDecision.trustedAtTime);
+});
+
 test("issuer-suspended-api", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-suspended-api");
   const active = harness.evaluateCurrentIssuerDecision(issuer);
@@ -138,4 +164,46 @@ test("issuer-historical-api-after-revocation", async (context) => {
   const decision = await evaluate(active.authorization.activeFrom);
   assert.equal(decision.trustedAtTime, true);
   assert.equal(decision.statusAtTime, "active");
+});
+
+test("issuer-suspended-trqp", async (context) => {
+  const { harness, issuer, evaluate, queryTrqp, transition } =
+    await startIssuerApi(context, "isolated-suspended-trqp");
+  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  assert.equal((await queryTrqp(activeAt)).authorized, true);
+  const suspended = transition("suspendIssuer");
+  const at = suspended.authorization.suspendedAt;
+  assert.equal((await evaluate(at)).trustedAtTime, false);
+  assert.equal((await queryTrqp(at)).authorized, false);
+});
+
+test("issuer-historical-trqp-after-suspension", async (context) => {
+  const { harness, issuer, evaluate, queryTrqp, transition } =
+    await startIssuerApi(context, "isolated-suspension-history-trqp");
+  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  transition("suspendIssuer");
+  assert.equal((await evaluate(activeAt)).trustedAtTime, true);
+  assert.equal((await queryTrqp(activeAt)).authorized, true);
+});
+
+test("issuer-revoked-trqp", async (context) => {
+  const { harness, issuer, evaluate, queryTrqp, transition } =
+    await startIssuerApi(context, "isolated-revoked-trqp");
+  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  assert.equal((await queryTrqp(activeAt)).authorized, true);
+  transition("suspendIssuer");
+  const revoked = transition("revokeIssuer");
+  const at = revoked.authorization.revokedAt;
+  assert.equal((await evaluate(at)).trustedAtTime, false);
+  assert.equal((await queryTrqp(at)).authorized, false);
+});
+
+test("issuer-historical-trqp-after-revocation", async (context) => {
+  const { harness, issuer, evaluate, queryTrqp, transition } =
+    await startIssuerApi(context, "isolated-revocation-history-trqp");
+  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  transition("suspendIssuer");
+  transition("revokeIssuer");
+  assert.equal((await evaluate(activeAt)).trustedAtTime, true);
+  assert.equal((await queryTrqp(activeAt)).authorized, true);
 });
