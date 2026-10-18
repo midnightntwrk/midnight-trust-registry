@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +14,20 @@ const HASH = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
 const hashBytes = (value) => createHash("sha256").update(value).digest("hex");
-const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+const sha256 = (path) => {
+  const hash = createHash("sha256");
+  const fd = openSync(path, "r");
+  try {
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    let length;
+    while ((length = readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+      hash.update(chunk.subarray(0, length));
+    }
+    return hash.digest("hex");
+  } finally {
+    closeSync(fd);
+  }
+};
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 const packedFilename = (name, version) =>
