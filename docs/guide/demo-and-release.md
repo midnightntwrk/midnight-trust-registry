@@ -292,12 +292,12 @@ The `adversarialMatrix` member is the checked case report; the other members
 are the demo transcript. The output is deterministic in case IDs and categories,
 but local epoch identifiers and event hashes are fixture-dependent.
 Issue #216 is extracting the demo cases into independent tests with fresh
-fixtures and positive controls. The current runner has 124 such tests across
+fixtures and positive controls. The current runner has 132 such tests across
 Compact/integration/client, public HTTP, and TRQP adapter boundaries; it does not yet replace
 the 171-case demo or make every monolithic setup failure independent.
 After building the light packages, run `pnpm run check:adversarial-parity` to
 execute both surfaces and compare their stable IDs. It rejects duplicate or
-unknown isolated IDs and lists the 47 demo cases not yet isolated. ID parity
+unknown isolated IDs and lists the 39 demo cases not yet isolated. ID parity
 does not replace review of each test's boundary and invariant. The
 `--require-full` option also fails while any demo case remains unextracted;
 use it before removing a demo path, not as a passing current gate.
