@@ -44,14 +44,16 @@ const parsePackOutput = (workspace, stdout) => {
 const errors = [];
 
 for (const workspace of artifactWorkspaces) {
-  const result = spawnSync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    {
-      cwd: path.join(repoRoot, workspace),
-      encoding: "utf8",
-    },
-  );
+  const isContractWorkspace = compactManagedDirectories.has(workspace);
+  // npm re-parses the multi-gigabyte contract tarball and can fail with Z_BUF_ERROR.
+  const result = isContractWorkspace
+    ? spawnSync("pnpm", [
+      "--config.ignore-scripts=true", "--filter", `./${workspace}`,
+      "pack", "--dry-run", "--json",
+    ], { cwd: repoRoot, encoding: "utf8" })
+    : spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+      cwd: path.join(repoRoot, workspace), encoding: "utf8",
+    });
 
   if (result.status !== 0) {
     errors.push(
@@ -109,7 +111,7 @@ for (const workspace of artifactWorkspaces) {
   }
 
   console.log(
-    `[check-package-contents] ${workspace}: ${filePaths.length} files, ${packument.size} packed bytes`,
+    `[check-package-contents] ${workspace}: ${filePaths.length} files${packument.size === undefined ? "" : `, ${packument.size} packed bytes`}`,
   );
 }
 

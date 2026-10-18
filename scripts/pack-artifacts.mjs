@@ -93,15 +93,15 @@ const packed = [];
 for (const workspace of artifactWorkspaces) {
   const isContractWorkspace = workspace.startsWith("contracts/");
   const stdout = isContractWorkspace
-    ? run("npm", [
+    ? run("pnpm", [
+      "--config.ignore-scripts=true",
+      "--filter",
+      `./${workspace}`,
       "pack",
       "--json",
-      "--ignore-scripts",
       "--pack-destination",
       resolvedOutputDir,
-    ], {
-      cwd: path.join(repoRoot, workspace),
-    })
+    ])
     : run("pnpm", [
       "--filter",
       `./${workspace}`,
