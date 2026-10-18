@@ -108,7 +108,7 @@ const sign = (maintainer, prepared, sourceHarness = harness) => {
     signature: asHex(encodeJubjubSignature(signature)),
   };
 };
-const signCompact = (maintainer, prepared, sourceHarness = harness) => {
+const signCompact = (maintainer, prepared, sourceHarness = harness, policyCommitment) => {
   const ledger = sourceHarness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
@@ -118,7 +118,7 @@ const signCompact = (maintainer, prepared, sourceHarness = harness) => {
       ledger.registryId,
       ledger.deploymentNetworkIdCommitment,
       Buffer.from(sourceHarness.simulator.contractAddress, "hex"),
-      ledger.governancePolicyCommitment,
+      policyCommitment ?? ledger.governancePolicyCommitment,
       prepared.actionKind,
       prepared.actionPayloadHash,
       prepared.actionSequence,
@@ -321,9 +321,7 @@ const originalPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
 policyHarness.authorizeMaintainer(policySecond);
 policyHarness.authorizeMaintainer(policyThird);
 policyHarness.proposeIssuer(pendingPolicyIssuer);
-const oldPolicyAction = policyHarness.prepareIssuerDecisionAction(pendingPolicyIssuer, "approve");
-const oldPolicySignature = signCompact(policySecond, oldPolicyAction, policyHarness);
-const oldPolicyCoSignature = signCompact(policyThird, oldPolicyAction, policyHarness);
+const formerPolicyCommitment = Buffer.from(policyHarness.simulator.getLedger().governancePolicyCommitment);
 policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 const policyActionCountBeforeReplay = policyHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
@@ -335,23 +333,39 @@ adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
   messagePattern: /policyVersion does not match/iu,
   category: "old-policy-application-rejected",
 });
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
+policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
+const currentPolicyAction = policyHarness.prepareIssuerDecisionAction(currentPolicyIssuer, "approve");
+const oldPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness, formerPolicyCommitment);
+const oldPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness, formerPolicyCommitment);
+const policyActionCountBeforeSignatureReplay = policyHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => policyHarness.simulator.authorizeIssuerAuthorization(
   oldPolicySignature.keyId,
   oldPolicySignature.publicKey,
   oldPolicySignature.signature,
-  pendingPolicyIssuer.authorizationIdCommitment,
-  oldPolicyAction.evidenceHash,
+  currentPolicyIssuer.authorizationIdCommitment,
+  currentPolicyAction.evidenceHash,
   [oldPolicyCoSignature],
 ), {
   id: "compact-old-policy-signature-replay",
-  invariant: "A signed action from the former policy cannot satisfy the revised maintainer quorum",
+  invariant: "Former-policy signatures cannot authorize the same payload and sequence under the revised policy",
   boundary: "compact",
-  messagePattern: /signature|policy|assert|maintainer/iu,
+  messagePattern: /Invalid Jubjub Schnorr signature/u,
   category: "old-policy-signature-rejected",
 });
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
-policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
-policyHarness.approveIssuer(currentPolicyIssuer, [policySecond]);
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeSignatureReplay);
+const currentPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness);
+const currentPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness);
+policyHarness.simulator.authorizeIssuerAuthorization(
+  currentPolicySignature.keyId,
+  currentPolicySignature.publicKey,
+  currentPolicySignature.signature,
+  currentPolicyIssuer.authorizationIdCommitment,
+  currentPolicyAction.evidenceHash,
+  [currentPolicyCoSignature],
+);
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount,
+  policyActionCountBeforeSignatureReplay + 1n);
 policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
 const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
@@ -365,6 +379,7 @@ const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
     { fixture: currentPolicyIssuer, label: "current-issuer" },
   ],
 }, originalPolicySnapshot);
+// This listener serves the isolated policy harness's archived snapshot, not the later mutable demo server.
 const policyServer = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => revisedPolicySnapshot },
 });

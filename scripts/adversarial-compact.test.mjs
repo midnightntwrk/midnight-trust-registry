@@ -29,7 +29,7 @@ const bootstrapMembership = (harness) => ({
   trustLevel: "bootstrap-maintainer",
 });
 
-const signAction = (harness, maintainer, prepared) => {
+const signAction = (harness, maintainer, prepared, policyCommitment) => {
   const ledger = harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
@@ -39,7 +39,7 @@ const signAction = (harness, maintainer, prepared) => {
       ledger.registryId,
       ledger.deploymentNetworkIdCommitment,
       Buffer.from(harness.simulator.contractAddress, "hex"),
-      ledger.governancePolicyCommitment,
+      policyCommitment ?? ledger.governancePolicyCommitment,
       prepared.actionKind,
       prepared.actionPayloadHash,
       prepared.actionSequence,
@@ -250,23 +250,28 @@ test("compact-old-policy-signature-replay", () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-old-policy-signature");
   const second = createMaintainerScenarioFixture("isolated-old-signature-second");
   const third = createMaintainerScenarioFixture("isolated-old-signature-third");
-  const issuer = createIssuerScenarioFixture("isolated-old-signature-issuer");
+  const issuer = createIssuerScenarioFixture("isolated-current-signature-issuer");
   harness.authorizeMaintainer(second);
   harness.authorizeMaintainer(third);
-  harness.proposeIssuer(issuer);
-  const prepared = harness.prepareIssuerDecisionAction(issuer, "approve");
-  const oldSignature = signAction(harness, second, prepared);
-  const oldCoSignature = signAction(harness, third, prepared);
+  const oldPolicyCommitment = Buffer.from(harness.simulator.getLedger().governancePolicyCommitment);
   harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.proposeIssuer(issuer, [second]);
+  const prepared = harness.prepareIssuerDecisionAction(issuer, "approve");
+  const oldSignature = signAction(harness, second, prepared, oldPolicyCommitment);
+  const oldCoSignature = signAction(harness, third, prepared, oldPolicyCommitment);
   const before = harness.simulator.getLedger().governanceActionCount;
   assert.throws(() => harness.simulator.authorizeIssuerAuthorization(
     oldSignature.keyId, oldSignature.publicKey, oldSignature.signature,
     issuer.authorizationIdCommitment, prepared.evidenceHash, [oldCoSignature],
-  ), /signature|policy|assert|maintainer/iu);
+  ), /Invalid Jubjub Schnorr signature/u);
   assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  const current = createIssuerScenarioFixture("isolated-current-signature-issuer");
-  harness.proposeIssuer(current, [second]);
-  harness.approveIssuer(current, [second]);
+  const currentSignature = signAction(harness, second, prepared);
+  const currentCoSignature = signAction(harness, third, prepared);
+  harness.simulator.authorizeIssuerAuthorization(
+    currentSignature.keyId, currentSignature.publicKey, currentSignature.signature,
+    issuer.authorizationIdCommitment, prepared.evidenceHash, [currentCoSignature],
+  );
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
 });
 
 test("compact-recovery-policy-headroom-required", () => {
