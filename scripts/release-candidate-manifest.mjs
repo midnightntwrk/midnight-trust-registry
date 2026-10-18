@@ -11,6 +11,8 @@ import { missingFullContractArtifacts, proofCircuitNames } from "./package-conte
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HASH = /^[0-9a-f]{40}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
 const hashBytes = (value) => createHash("sha256").update(value).digest("hex");
 const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
@@ -23,6 +25,19 @@ const assertExactTarballs = (artifactDir, filenames) => {
     throw new Error("Release candidate artifact directory contains unlisted tarballs");
   }
 };
+
+const packedEntries = (tarball) => run("tar", ["-tzf", tarball]).split("\n");
+const packedContractInfo = (tarball) => JSON.parse(readPackedTarEntry(tarball,
+  `${CONTRACT_PREFIX}/compiler/contract-info.json`).toString("utf8"));
+const verifierKeyEntry = (name) => `${CONTRACT_PREFIX}/keys/${name}.verifier`;
+
+function verifierKeyHashes(tarball, contractInfo) {
+  const entries = packedEntries(tarball);
+  assertFullPackedContract(entries, contractInfo);
+  return Object.fromEntries(proofCircuitNames(contractInfo).sort().map((name) => [
+    name, hashPackedTarEntry(tarball, verifierKeyEntry(name)),
+  ]));
+}
 
 export function buildReleaseCandidateManifest(input) {
   const { repoRoot, artifactDir, revision, workspaces = artifactWorkspaces,
@@ -53,9 +68,32 @@ export function buildReleaseCandidateManifest(input) {
     throw new Error("Release packages have duplicate filenames");
   }
   assertExactTarballs(artifactDir, new Set(packages.map(({ filename }) => filename)));
+  const contract = packages.find(({ workspace }) => workspace === "contracts/trust-registry");
+  if (contract === undefined) throw new Error("Release contract package is missing");
+  const contractTarball = join(artifactDir, contract.filename);
+  const contractInfoPath = join(repoRoot,
+    "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json");
+  const contractInfo = json(contractInfoPath);
+  if (hashPackedTarEntry(contractTarball, `${CONTRACT_PREFIX}/compiler/contract-info.json`)
+    !== sha256(contractInfoPath)) {
+    throw new Error("Packed contract metadata does not match the candidate tree");
+  }
+  const verifierKeySha256 = verifierKeyHashes(contractTarball, contractInfo);
+  const sourceKeys = join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/keys");
+  const sourceVerifierNames = readdirSync(sourceKeys).filter((name) => name.endsWith(".verifier"))
+    .map((name) => name.slice(0, -".verifier".length)).sort();
+  if (sourceVerifierNames.join("\0") !== Object.keys(verifierKeySha256).join("\0")) {
+    throw new Error("Generated verifier keys do not match the proof-circuit catalog");
+  }
+  for (const [name, hash] of Object.entries(verifierKeySha256)) {
+    const source = join(sourceKeys, `${name}.verifier`);
+    if (!existsSync(source) || statSync(source).size === 0 || sha256(source) !== hash) {
+      throw new Error(`Packed verifier key does not match the candidate tree: ${name}`);
+    }
+  }
   const dependencies = packageRoot.dependencies ?? {};
   return {
-    format: "tr-release-candidate-manifest-v1",
+    format: "tr-release-candidate-manifest-v2",
     sourceRevision: revision,
     packageVersion: packageRoot.version,
     compactCompilerVersion: readFileSync(join(repoRoot, ".compact-version"), "utf8").trim(),
@@ -63,6 +101,7 @@ export function buildReleaseCandidateManifest(input) {
     lockfileSha256: sha256(join(repoRoot, "pnpm-lock.yaml")),
     contractSourceSha256: sha256(join(repoRoot, "contracts/trust-registry/src/trust-registry.compact")),
     generatedContractSha256: sha256(join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/contract/index.js")),
+    verifierKeySha256,
     identityDependencies: Object.fromEntries(Object.entries(dependencies)
       .filter(([name]) => name.startsWith("@midnight-ntwrk/midnight-did")
         || name.startsWith("@midnight-ntwrk/credential-"))
@@ -80,7 +119,7 @@ export function assertFullPackedContract(paths, contractInfo) {
 }
 
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
-  if (manifest?.format !== "tr-release-candidate-manifest-v1"
+  if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || !HASH.test(manifest.sourceRevision)
     || !Array.isArray(manifest.packages)
     || manifest.packages.length !== workspaces.length) {
@@ -88,9 +127,9 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
   }
   if (typeof manifest.packageVersion !== "string" || manifest.packageVersion.length === 0
     || typeof manifest.compactCompilerVersion !== "string" || manifest.compactCompilerVersion.length === 0
-    || !/^[0-9a-f]{64}$/u.test(manifest.lockfileSha256)
-    || !/^[0-9a-f]{64}$/u.test(manifest.contractSourceSha256)
-    || !/^[0-9a-f]{64}$/u.test(manifest.generatedContractSha256)) {
+    || !SHA256.test(manifest.lockfileSha256)
+    || !SHA256.test(manifest.contractSourceSha256)
+    || !SHA256.test(manifest.generatedContractSha256)) {
     throw new Error("Release candidate manifest identity or source hashes are invalid");
   }
   const expected = new Set(workspaces);
@@ -104,7 +143,7 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
       || filenames.has(entry.filename)
       || typeof entry.filename !== "string"
       || !/^[a-z0-9][a-z0-9.-]*\.tgz$/u.test(entry.filename)
-      || !/^[0-9a-f]{64}$/u.test(entry.sha256)
+      || !SHA256.test(entry.sha256)
       || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes <= 0) {
       throw new Error("Release candidate package entry is invalid or duplicated");
     }
@@ -116,6 +155,18 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     }
   }
   assertExactTarballs(artifactDir, filenames);
+  const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
+  if (contract === undefined) throw new Error("Release contract package is missing");
+  const contractTarball = join(artifactDir, contract.filename);
+  const contractInfo = packedContractInfo(contractTarball);
+  const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
+  const actualHashes = manifest.verifierKeySha256;
+  if (actualHashes === null || typeof actualHashes !== "object" || Array.isArray(actualHashes)
+    || Object.keys(actualHashes).length !== Object.keys(expectedHashes).length
+    || Object.keys(actualHashes).some((name, index) => name !== Object.keys(expectedHashes)[index]
+      || !SHA256.test(actualHashes[name]) || actualHashes[name] !== expectedHashes[name])) {
+    throw new Error("Release candidate verifier-key hashes are invalid or incomplete");
+  }
   return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
 
@@ -127,8 +178,16 @@ const run = (command, args, trim = true) => {
   return trim ? result.stdout.trim() : result.stdout;
 };
 
-export const hashPackedTarEntry = (tarball, entry) =>
-  hashBytes(run("tar", ["-xOzf", tarball, entry], false));
+const readPackedTarEntry = (tarball, entry) => {
+  const result = spawnSync("tar", ["-xOzf", tarball, entry], { maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) {
+    throw new Error(`tar could not read packed entry ${entry}: ${result.error?.message ?? result.stderr.toString().trim()}`);
+  }
+  if (result.stdout.length === 0) throw new Error(`Packed entry is empty: ${entry}`);
+  return result.stdout;
+};
+
+export const hashPackedTarEntry = (tarball, entry) => hashBytes(readPackedTarEntry(tarball, entry));
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 2) throw new Error("Usage: node scripts/release-candidate-manifest.mjs");
@@ -148,7 +207,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   });
   const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
   if (contract === undefined) throw new Error("Release contract package is missing");
-  const packedPaths = run("tar", ["-tzf", join(root, artifactDirectory, contract.filename)]).split("\n");
+  const packedPaths = packedEntries(join(root, artifactDirectory, contract.filename));
   const contractTarball = join(root, artifactDirectory, contract.filename);
   const contractInfo = json(join(root,
     "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json"));

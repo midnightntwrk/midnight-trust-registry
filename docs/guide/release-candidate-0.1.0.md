@@ -38,8 +38,16 @@ signed/DCO source SHA and attach results from that exact tree for:
 5. Exact-head CI results, independent review, release owner sign-off, and a
    recorded recovery/rollback decision.
 
-The manifest lists artifact bytes and source inputs. A matching tarball digest
-does not by itself prove that every generated file was built from the recorded
+The manifest lists artifact bytes and source inputs, plus a sorted
+`verifierKeySha256` mapping from every proof-circuit name in generated Compact
+metadata to the SHA-256 of its packed `keys/<circuit>.verifier` bytes. Generation
+rejects missing, extra, renamed, or source-mismatched keys. Manifest-backed
+smoke verifies the complete mapping against the packed contract before
+installing packages. A public deployment additionally needs finalized on-chain
+verifier-key readback compared with this mapping and an approved
+maintenance-authority model (#213); the manifest alone cannot certify the
+deployed code. A matching tarball digest does not by itself prove that every
+generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
 tree before producing the manifest. The manifest does not authenticate its own
 distribution channel or prove any test, review, or network claim.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -25,6 +25,27 @@ const put = (root, path, content) => {
   writeFileSync(absolute, content);
 };
 
+const packContract = (root, verifier = "verifier-a\n") => {
+  const prefix = "package/dist/managed/trust-registry";
+  const info = JSON.stringify({ circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
+  put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
+  put(root, `packed-contract/${prefix}/compiler/contract-info.json`, info);
+  for (const name of ["proveB", "proveA"]) {
+    put(root, `contracts/trust-registry/dist/managed/trust-registry/keys/${name}.verifier`, verifier);
+    for (const [extension, content] of [["verifier", verifier], ["prover", "prover-a\n"]]) {
+      put(root, `packed-contract/${prefix}/keys/${name}.${extension}`, content);
+    }
+    put(root, `packed-contract/${prefix}/zkir/${name}.zkir`, "zkir-a\n");
+  }
+  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz");
+  mkdirSync(dirname(tarball), { recursive: true });
+  const packed = spawnSync("tar", ["-czf", tarball, "package"], {
+    cwd: join(root, "packed-contract"), encoding: "utf8",
+  });
+  assert.equal(packed.status, 0, packed.stderr);
+  return tarball;
+};
+
 test("candidate manifest binds signed source inputs and exact package bytes", () => {
   const root = mkdtempSync(join(tmpdir(), "tr-release-manifest-"));
   roots.push(root);
@@ -42,7 +63,7 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   put(root, "packages/trust-registry-domain/package.json", JSON.stringify({
     name: "@midnight-ntwrk/trust-registry-domain", version: "0.1.0",
   }));
-  put(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz", "contract-tarball");
+  const contractTarball = packContract(root);
   put(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz", "domain-tarball");
   const input = {
     repoRoot: root, artifactDir: join(root, "artifacts/npm"), revision: "a".repeat(40),
@@ -58,9 +79,24 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
     "@midnight-ntwrk/midnight-did": "0.7.0",
   });
   assert.deepEqual(manifest.packages.map(({ publication }) => publication), ["npm", "local-only"]);
+  const verifierHash = createHash("sha256").update("verifier-a\n").digest("hex");
+  assert.deepEqual(manifest.verifierKeySha256, { proveA: verifierHash, proveB: verifierHash });
+  assert.deepEqual(Object.keys(manifest.verifierKeySha256), ["proveA", "proveB"]);
   assert.equal(manifest.packages[0].sha256,
-    createHash("sha256").update("contract-tarball").digest("hex"));
+    createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  const extraSourceKey = "contracts/trust-registry/dist/managed/trust-registry/keys/extra.verifier";
+  put(root, extraSourceKey, "extra\n");
+  assert.throws(() => buildReleaseCandidateManifest(input), /Generated verifier keys do not match/u);
+  rmSync(join(root, extraSourceKey));
+  for (const verifierKeySha256 of [undefined, {}, { proveA: verifierHash },
+    { proveA: verifierHash, renamed: verifierHash },
+    { proveA: "0".repeat(64), proveB: verifierHash },
+    { proveB: verifierHash, proveA: verifierHash },
+    { proveA: verifierHash, proveB: verifierHash, extra: verifierHash }]) {
+    assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, verifierKeySha256 },
+      input.artifactDir, input.workspaces), /verifier-key hashes are invalid or incomplete/u);
+  }
   assert.throws(() => verifyReleaseCandidateArtifacts({
     ...manifest, packages: [manifest.packages[0], manifest.packages[0]],
   }, input.artifactDir, input.workspaces), /duplicated/u);
@@ -78,6 +114,14 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   rmSync(join(root, "artifacts/npm/unlisted-0.1.0.tgz"));
   put(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz", "tampered-tarball");
   assert.throws(() => verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces), /hash or size mismatch/u);
+  packContract(root, "changed-verifier\n");
+  const changedPackage = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
+    sha256: createHash("sha256").update(readFileSync(contractTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [changedPackage, manifest.packages[1]],
+  }, input.artifactDir, input.workspaces), /verifier-key hashes are invalid or incomplete/u);
+  put(root, "contracts/trust-registry/dist/managed/trust-registry/keys/proveA.verifier", "verifier-a\n");
+  assert.throws(() => buildReleaseCandidateManifest(input), /Packed verifier key does not match/u);
   assert.throws(() => buildReleaseCandidateManifest({ ...input, revision: "short" }), /full Git commit SHA/u);
   rmSync(join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz"));
   assert.throws(() => buildReleaseCandidateManifest(input), /missing or empty/u);
@@ -88,11 +132,15 @@ test("hashes packed contract entries larger than the subprocess default buffer",
   roots.push(root);
   const content = "generated-contract\n".repeat(130_000);
   put(root, "package/dist/managed/trust-registry/contract/index.js", content);
+  const binaryVerifier = Buffer.from([0x00, 0xff, 0x80, 0x0a]);
+  put(root, "package/dist/managed/trust-registry/keys/proveA.verifier", binaryVerifier);
   const tarball = join(root, "contract.tgz");
   const packed = spawnSync("tar", ["-czf", tarball, "package"], { cwd: root, encoding: "utf8" });
   assert.equal(packed.status, 0, packed.stderr);
   assert.equal(hashPackedTarEntry(tarball, "package/dist/managed/trust-registry/contract/index.js"),
     createHash("sha256").update(content).digest("hex"));
+  assert.equal(hashPackedTarEntry(tarball, "package/dist/managed/trust-registry/keys/proveA.verifier"),
+    createHash("sha256").update(binaryVerifier).digest("hex"));
 });
 
 test("packed Compact contract must contain every ZKIR and prover/verifier pair", () => {
@@ -106,6 +154,10 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
   const info = { circuits: [{ name: "proveA", proof: true }] };
   assert.doesNotThrow(() => assertFullPackedContract(paths, info));
   assert.throws(() => assertFullPackedContract(paths.slice(0, -1), info), /verification key for proveA/u);
+  assert.throws(() => assertFullPackedContract([...paths, `${prefix}/keys/extra.verifier`], info),
+    /unexpected proof artifacts for extra/u);
+  assert.throws(() => assertFullPackedContract(paths.map((path) => path.replace("proveA.verifier", "renamed.verifier")), info),
+    /verification key for proveA/u);
   assert.throws(() => assertFullPackedContract(paths.slice(1), info), /contract-info/u);
 });
 
