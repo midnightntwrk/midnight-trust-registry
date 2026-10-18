@@ -6,13 +6,16 @@ import {
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
+import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import { computeApplicationEvidenceCommitment } from "../packages/trust-registry-domain/dist/index.js";
 import {
+  createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
+  createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
@@ -42,6 +45,29 @@ const signAction = (harness, maintainer, prepared) => {
       prepared.actionSequence,
     ),
   };
+};
+
+const revisedPolicyEvidence = (label) => {
+  const harness = new LocalTrustRegistryIntegrationHarness(label);
+  const second = createMaintainerScenarioFixture(`${label}-second`);
+  const third = createMaintainerScenarioFixture(`${label}-third`);
+  const historicalIssuer = createIssuerScenarioFixture(`${label}-historical`);
+  const currentIssuer = createIssuerScenarioFixture(`${label}-current`);
+  harness.authorizeIssuer(historicalIssuer);
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.proposeIssuer(currentIssuer, [second]);
+  harness.approveIssuer(currentIssuer, [second]);
+  harness.activateIssuer(currentIssuer, [second]);
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  const historical = harness.buildIssuerHistoricalEvidence(historicalIssuer);
+  const current = harness.evaluateCurrentIssuerDecision(currentIssuer);
+  assert.equal(historical.policy.version, "v1");
+  assert.equal(current.policy.version, "v2");
+  assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
+  assert.ok(client.verifyIssuerAuthorizationBundle(current, {}));
+  return { client, historical, current };
 };
 
 test("compact-self-voted-maintainer-suspension", () => {
@@ -232,3 +258,130 @@ test("compact-old-policy-signature-replay", () => {
   harness.proposeIssuer(current, [second]);
   harness.approveIssuer(current, [second]);
 });
+
+test("issuer-history-survives-threshold-change", () => {
+  const { client, historical, current } = revisedPolicyEvidence("isolated-history-survives");
+  assert.notEqual(historical.epoch.policyRoot, current.epoch.policyRoot);
+  assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
+});
+
+test("issuer-current-policy-after-threshold-change", () => {
+  const { client, historical, current } = revisedPolicyEvidence("isolated-current-policy");
+  assert.notEqual(historical.policy.version, current.policy.version);
+  assert.ok(client.verifyIssuerAuthorizationBundle(current, {}));
+});
+
+test("issuer-old-policy-current-time-replay", () => {
+  const { client, historical, current } = revisedPolicyEvidence("isolated-policy-current-replay");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(
+    historical, { evaluationTime: current.policy.effectiveFrom },
+  ), /policy snapshot is superseded/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(current, {}));
+});
+
+test("issuer-uncommitted-policy-version", () => {
+  const { client, historical } = revisedPolicyEvidence("isolated-policy-version-tamper");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle({
+    ...historical, policy: { ...historical.policy, version: "v9" },
+  }, {}), /not committed to the ledger/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
+});
+
+test("issuer-historical-proof-tampered-after-policy-revision", () => {
+  const { client, historical } = revisedPolicyEvidence("isolated-historical-proof-tamper");
+  const sibling = historical.inclusionProof.path[0];
+  assert.ok(sibling);
+  const changed = `${sibling.slice(0, -1)}${sibling.endsWith("0") ? "1" : "0"}`;
+  assert.throws(() => client.verifyIssuerAuthorizationBundle({
+    ...historical,
+    inclusionProof: { ...historical.inclusionProof, path: [changed] },
+  }, {}), /event sibling/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
+});
+
+test("issuer-historical-epoch-signature-tampered", () => {
+  const { client, historical } = revisedPolicyEvidence("isolated-historical-signature-tamper");
+  const signed = historical.epoch.maintainerSignatures[0];
+  assert.ok(signed);
+  const changed = `0x${signed.signature[2] === "0" ? "1" : "0"}${signed.signature.slice(3)}`;
+  assert.throws(() => client.verifyIssuerAuthorizationBundle({
+    ...historical,
+    epoch: {
+      ...historical.epoch,
+      maintainerSignatures: [{ ...signed, signature: changed }],
+    },
+  }, {}), /invalid/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
+});
+
+for (const role of [
+  {
+    name: "verifier",
+    fixture: createVerifierScenarioFixture,
+    propose: "proposeVerifier",
+    prepare: "prepareVerifierDecisionAction",
+    execute: "executeVerifierDecisionWithSignatures",
+    approve: "approveVerifier",
+    activate: "activateVerifier",
+    evaluate: "evaluateCurrentVerifierDecision",
+    verify: "verifyVerifierAuthorizationBundle",
+  },
+  {
+    name: "auditor",
+    fixture: createAuditorScenarioFixture,
+    propose: "proposeAuditor",
+    prepare: "prepareAuditorDecisionAction",
+    execute: "executeAuditorDecisionWithSignatures",
+    approve: "approveAuditor",
+    activate: "activateAuditor",
+    evaluate: "evaluateCurrentAuditorDecision",
+    verify: "verifyAuditorAuthorizationBundle",
+  },
+  {
+    name: "maintainer",
+    fixture: createMaintainerScenarioFixture,
+    propose: "proposeMaintainer",
+    prepare: "prepareMaintainerDecisionAction",
+    execute: "executeMaintainerDecisionWithSignatures",
+    approve: "approveMaintainer",
+    activate: "activateMaintainer",
+    evaluate: "evaluateCurrentMaintainerDecision",
+    verify: null,
+  },
+]) {
+  const newPolicyCandidate = (label) => {
+    const harness = new LocalTrustRegistryIntegrationHarness(label);
+    const second = createMaintainerScenarioFixture(`${label}-second`);
+    const third = createMaintainerScenarioFixture(`${label}-third`);
+    const candidate = role.fixture(`${label}-${role.name}`);
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    harness[role.propose](candidate);
+    return { harness, second, candidate };
+  };
+
+  test(`${role.name}-revised-policy-insufficient-quorum`, () => {
+    const { harness, second, candidate } = newPolicyCandidate(`isolated-${role.name}-quorum`);
+    const prepared = harness[role.prepare](candidate, "approve");
+    const before = harness.simulator.getLedger().governanceActionCount;
+    assert.throws(() => harness[role.execute](
+      candidate, "approve", [signAction(harness, second, prepared)],
+    ), /Maintainer signer count must satisfy the action threshold/u);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    harness[role.approve](candidate, [second]);
+  });
+
+  test(`${role.name}-current-policy-after-threshold-change`, () => {
+    const { harness, second, candidate } = newPolicyCandidate(`isolated-${role.name}-current`);
+    harness[role.approve](candidate, [second]);
+    harness[role.activate](candidate, [second]);
+    if (role.verify) {
+      const client = new TrustRegistrySimulatorClient(harness.simulator);
+      assert.ok(client[role.verify](harness[role.evaluate](candidate), {}));
+    } else {
+      const membership = harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment);
+      assert.equal(membership.status, AuthorizationStatus.active);
+    }
+  });
+}
