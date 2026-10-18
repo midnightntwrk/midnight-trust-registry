@@ -191,6 +191,21 @@ describe("decision epoch publication signatures", () => {
     })).toThrow(/signer keys must be sorted/u);
   });
 
+  it("rejects noncanonical signer IDs before decoding or verifying signatures", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    const reversed = [...epoch.quorum.signatures].reverse();
+    const invalidEncoding = `0x${"0".repeat(reversed[0]!.signature.length - 2)}`;
+    reversed[0] = { ...reversed[0]!, signature: invalidEncoding };
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: reversed },
+    }, publicationEventHash, accepted, context)).toThrow(/signer keys must be sorted/u);
+
+    const repeated = { ...epoch.quorum.signatures[0]!, signature: invalidEncoding };
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: [repeated, repeated] },
+    }, publicationEventHash, accepted, context)).toThrow(/distinct active maintainer/u);
+  });
+
   it("rejects changed publication preimages, threshold, first signer, and event", () => {
     const { epoch, accepted, context, publicationEventHash } = fixture();
     for (const changed of [

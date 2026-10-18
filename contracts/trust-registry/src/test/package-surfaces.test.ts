@@ -10,6 +10,7 @@ describe("trust registry contract package surfaces", () => {
     expect(PackageSurface.TrustRegistryContract).toBeDefined();
     expect(PackageSurface).not.toHaveProperty("TrustRegistrySimulator");
     expect(PackageSurface.signDeploymentBoundMaintainerActionFromSeed).toBeDefined();
+    expect(PackageSurface.buildCanonicalMaintainerAuthorizationBundle).toBeDefined();
   });
 
   it("does not expose pre-release direct-create or unbound action APIs", () => {

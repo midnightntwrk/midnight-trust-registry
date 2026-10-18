@@ -2547,7 +2547,7 @@ describe("trust registry contract", () => {
     );
   }, 20_000);
 
-  it("rejects duplicate maintainer signers in quorum execution", () => {
+  it("rejects duplicate maintainer signers before quorum execution", () => {
     const registry = createInitializedRegistryFixture(17);
     const {
       simulator,
@@ -2707,7 +2707,7 @@ describe("trust registry contract", () => {
         issuerProof.evidenceSignature,
         [duplicateBootstrapAuthorizer],
       ),
-    ).toThrow(/must be sorted/i);
+    ).toThrow(/duplicate key ID/u);
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {

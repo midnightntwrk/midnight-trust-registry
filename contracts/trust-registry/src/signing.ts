@@ -22,6 +22,8 @@ import {
 
 import {
   type IssuerResourceType,
+  type MaintainerAuthorizationBundle,
+  type MaintainerAuthorizationSigner,
   pureCircuits,
 } from "./managed/trust-registry/contract/index.js";
 
@@ -102,6 +104,40 @@ export const compareMaintainerKeyIds = (left: Uint8Array, right: Uint8Array): nu
     if (left[index] !== right[index]) return left[index]! - right[index]!;
   }
   return 0;
+};
+
+/** Canonical signer order is independent of the transaction submitter. */
+export const buildCanonicalMaintainerAuthorizationBundle = (
+  input: readonly MaintainerAuthorizationSigner[],
+): MaintainerAuthorizationBundle => {
+  if (input.length < 1 || input.length > 5) {
+    throw new RangeError("Maintainer authorization bundles require 1 to 5 signers");
+  }
+  for (const signer of input) require32Bytes(signer.keyId, "Maintainer key ID");
+  const signers = [...input].sort((left, right) => compareMaintainerKeyIds(left.keyId, right.keyId));
+  if (signers[0]!.keyId.every((byte) => byte === 0)) {
+    throw new Error("Maintainer authorization bundle key IDs must be nonzero");
+  }
+  for (let index = 1; index < signers.length; index += 1) {
+    if (compareMaintainerKeyIds(signers[index - 1]!.keyId, signers[index]!.keyId) === 0) {
+      throw new Error("Maintainer authorization bundle contains a duplicate key ID");
+    }
+  }
+  const emptySigner = (): MaintainerAuthorizationSigner => ({
+    keyId: new Uint8Array(32),
+    publicKey: { x: 0n, y: 0n },
+    signature: { announcement: { x: 0n, y: 0n }, response: 0n },
+  });
+  const padded = [...signers];
+  while (padded.length < 5) padded.push(emptySigner());
+  const [signer1, signer2, signer3, signer4, signer5] = padded as [
+    MaintainerAuthorizationSigner,
+    MaintainerAuthorizationSigner,
+    MaintainerAuthorizationSigner,
+    MaintainerAuthorizationSigner,
+    MaintainerAuthorizationSigner,
+  ];
+  return { signerCount: BigInt(signers.length), signer1, signer2, signer3, signer4, signer5 };
 };
 
 /** Binds the evidence commitment and verifier key id to a distinct Compact Schnorr domain. */

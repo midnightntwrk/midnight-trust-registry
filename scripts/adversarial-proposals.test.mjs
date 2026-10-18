@@ -104,7 +104,7 @@ test("compact-issuer-proposal-duplicate-signer", () => {
   const before = harness.simulator.getLedger().governanceActionCount;
   assert.throws(() => harness.executeIssuerProposalWithSignatures(
     issuer, evidence, [signatures[0], signatures[0]], verifierSignature,
-  ), /Maintainer signer keys must be sorted/u);
+  ), /Maintainer authorization bundle contains a duplicate key ID/u);
   assert.equal(harness.simulator.getLedger().governanceActionCount, before);
   harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
@@ -381,7 +381,7 @@ for (const role of [
     const before = harness.simulator.getLedger().governanceActionCount;
     assert.throws(() => harness[role.execute](
       fixture, evidence, [signatures[0], signatures[0]], verifierSignature,
-    ), /Maintainer signer keys must be sorted/u);
+    ), /Maintainer authorization bundle contains a duplicate key ID/u);
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });

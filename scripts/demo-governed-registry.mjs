@@ -1796,7 +1796,7 @@ try {
     id: "compact-issuer-proposal-duplicate-signer",
     invariant: "Compact cannot count the same maintainer twice for an issuer proposal",
     boundary: "compact",
-    messagePattern: /Maintainer signer keys must be sorted/u,
+    messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
     category: "proposal-duplicate-signer-rejected",
   });
   assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
@@ -1935,7 +1935,7 @@ try {
       id: `compact-${role}-proposal-duplicate-signer`,
       invariant: `Compact cannot count the same maintainer twice for a ${role} proposal`,
       boundary: "compact",
-      messagePattern: /Maintainer signer keys must be sorted/u,
+      messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
       category: "proposal-duplicate-signer-rejected",
     });
     assert.equal(harness.simulator.getLedger().governanceActionCount, beforeCompactQuorumRejections);
