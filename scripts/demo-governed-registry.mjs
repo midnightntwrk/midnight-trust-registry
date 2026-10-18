@@ -131,7 +131,8 @@ const expectHttp = async (response, status) => {
   assert.equal(response.status, status, JSON.stringify(payload));
   return payload;
 };
-const adversarialMatrix = new AdversarialMatrix();
+const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
+const expectedAdversarialCaseCount = 171;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -2674,6 +2675,7 @@ try {
     /Maintainer must be active/u);
   const remainingQuorumEventHash = harness.proposeIssuer(postSuspensionIssuer, [second, third]);
 
+  const matrixReport = adversarialMatrix.report();
   process.stdout.write(`${JSON.stringify({
     mode: "Compact simulator fixture; not network finality",
     registryId: harness.registryId,
@@ -2715,7 +2717,7 @@ try {
       expectedRejections: ["wrong-external-registry", "tampered-authority-signature", "stale-governed-anchor-policy", "inactive-accreditation-status", "substituted-vp", "challenge-replay", "one-maintainer"],
     },
     decisions,
-    actorReport: buildActorEvidenceReport(actorOutcomes, adversarialMatrix.report()),
+    actorReport: buildActorEvidenceReport(actorOutcomes, matrixReport),
     activeEvidence: "issuer, verifier, auditor, and recognition independently verified",
     auditorMandate,
     vcConsumer: vcConsumer.report,
@@ -2767,8 +2769,11 @@ try {
       "wrong-scope:404", "wrong-registry:client", "expired-epoch:client",
       "suspended:client", "revoked:client",
     ],
-    adversarialMatrix: adversarialMatrix.report(),
+    adversarialMatrix: matrixReport,
   }, null, 2)}\n`);
+  assert.equal(matrixReport.summary.total, expectedAdversarialCaseCount,
+    "Governed demo adversarial case count changed without a parity review");
+  adversarialMatrix.assertAllPassed();
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
