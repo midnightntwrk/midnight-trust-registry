@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
-import type { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
+  TrustRegistryContract,
   computeAuditorEvidenceBoundProposalPayloadHash,
   computeCreateAuditorAuthorizationPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
@@ -25,8 +25,24 @@ import {
   type GovernedProposalObservation,
 } from "./governed-proposal-observation.js";
 
-type Ledger = ReturnType<TrustRegistrySimulator["getLedger"]>;
+type Ledger = ReturnType<typeof TrustRegistryContract.ledger>;
 export type ProposalRole = "issuer" | "verifier" | "auditor" | "maintainer" | "recognition";
+
+const proposalRecordKeys = {
+  issuer: "issuerProposalEvidenceRecords",
+  verifier: "verifierProposalEvidenceRecords",
+  auditor: "auditorProposalEvidenceRecords",
+  maintainer: "maintainerProposalEvidenceRecords",
+  recognition: "recognitionProposalEvidenceRecords",
+} as const satisfies Record<ProposalRole, keyof Ledger>;
+
+const authorizationRecordKeys = {
+  issuer: "issuerAuthorizationRecords",
+  verifier: "verifierAuthorizationRecords",
+  auditor: "auditorAuthorizationRecords",
+  maintainer: "maintainerMembershipRecords",
+  recognition: "recognitionRecords",
+} as const satisfies Record<ProposalRole, keyof Ledger>;
 
 /** The caller must supply an independently finalized ledger view, not an unconfirmed transaction result. */
 export type FinalizedProposalLedgerReader = () => Promise<Ledger>;
@@ -72,11 +88,7 @@ export async function resolveCompactProposalObservation(
   if (hex(ledger.registryId) !== sha256Hex(expectedRegistryId)) {
     throw new Error("Finalized ledger belongs to a different trust registry");
   }
-  const records = role === "issuer" ? ledger.issuerProposalEvidenceRecords
-    : role === "verifier" ? ledger.verifierProposalEvidenceRecords
-      : role === "auditor" ? ledger.auditorProposalEvidenceRecords
-        : role === "maintainer" ? ledger.maintainerProposalEvidenceRecords
-          : ledger.recognitionProposalEvidenceRecords;
+  const records = ledger[proposalRecordKeys[role]];
   if (!records.member(key)) return null;
   const record = records.lookup(key);
   return GovernedProposalObservationSchema.parse({
@@ -104,18 +116,10 @@ export async function resolveCompactProposalEvidenceSnapshot(
     throw new Error("Finalized ledger belongs to a different trust registry");
   }
   const id = Buffer.from(sha256Hex(authorizationId).slice(2), "hex");
-  const records = role === "issuer" ? ledger.issuerProposalEvidenceRecords
-    : role === "verifier" ? ledger.verifierProposalEvidenceRecords
-      : role === "auditor" ? ledger.auditorProposalEvidenceRecords
-        : role === "maintainer" ? ledger.maintainerProposalEvidenceRecords
-          : ledger.recognitionProposalEvidenceRecords;
+  const records = ledger[proposalRecordKeys[role]];
   if (!records.member(id)) return null;
   const proposal = records.lookup(id);
-  const authorizationRecords = role === "issuer" ? ledger.issuerAuthorizationRecords
-    : role === "verifier" ? ledger.verifierAuthorizationRecords
-      : role === "auditor" ? ledger.auditorAuthorizationRecords
-        : role === "maintainer" ? ledger.maintainerMembershipRecords
-          : ledger.recognitionRecords;
+  const authorizationRecords = ledger[authorizationRecordKeys[role]];
   if (!authorizationRecords.member(id)) {
     throw new Error("Proposal authorization is absent from the finalized ledger");
   }

@@ -33,7 +33,11 @@ import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js"
 import type { GovernedRecognitionProposalPort, PreparedGovernedRecognitionProposal } from "../governed-recognition-proposals.js";
 import { withRecognitionProposalAdmission } from "../recognition-proposal-admission.js";
 import { recognitionAuthorityChallengeBindingHash } from "../recognition-authority-challenges.js";
-import { createRecognitionAccreditationHttpService, type RecognitionAccreditationHttpPort } from "../recognition-accreditation-http.js";
+import {
+  createRecognitionAccreditationHttpService,
+  RecognitionAccreditationAuthorizationDeniedError,
+  type RecognitionAccreditationHttpPort,
+} from "../recognition-accreditation-http.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
 
@@ -87,6 +91,31 @@ describe("private recognition accreditation HTTP", () => {
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     const preflight = await fetch(path, { method: "OPTIONS", headers: { origin: "https://untrusted.example" } });
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("distinguishes explicit recognition denial from an unavailable authorization dependency", async () => {
+    const paths = await pathsForStore();
+    const store = new FileRecognitionAdmissionStore(paths.path, paths.governancePath);
+    let failure: Error = new RecognitionAccreditationAuthorizationDeniedError();
+    server = createTrustRegistryApiServer({
+      source: createInMemorySource(createOperatorWorkspace({ label: "recognition-auth-errors" }).snapshot),
+      recognitionAccreditation: {
+        challengeStore: store,
+        admissionStore: store,
+        authorizeRequest: async () => { throw failure; },
+        resolveCurrentContext: async () => null,
+      },
+    });
+    const base = await listen(server);
+    const accepted = `${base}/v1/recognition-evidence/${recognitionId}/accepted`;
+    const challenge = `${base}/v1/recognition-evidence/${recognitionId}/challenges`;
+    expect((await fetch(accepted)).status).toBe(403);
+    expect((await post(challenge, {})).status).toBe(403);
+    failure = new Error("private dependency failure detail");
+    for (const response of [await fetch(accepted), await post(challenge, {})]) {
+      expect(response.status).toBe(503);
+      expect(await response.text()).not.toContain("private dependency failure detail");
+    }
   });
 
   it("refuses separate challenge and receipt stores that cannot commit atomically", async () => {
@@ -168,7 +197,9 @@ describe("private recognition accreditation HTTP", () => {
       challengeStore: admissionStore,
       admissionStore,
       authorizeRequest: async (_id, request) => {
-        if (request.headers["x-authority-did"] !== authorityDid) throw new Error("forbidden");
+        if (request.headers["x-authority-did"] !== authorityDid) {
+          throw new RecognitionAccreditationAuthorizationDeniedError();
+        }
       },
       resolveCurrentContext: async (id) => {
         if (id !== recognitionId || fixture === undefined) return null;
