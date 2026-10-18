@@ -254,7 +254,12 @@ endpoint.
 
 The JSON output now includes a partial `tr-adversarial-matrix-v1` report.
 Each recorded case names the violated invariant, boundary, expected category,
-and observed result. API cases assert the exact problem-type slug as well as
+observed result, and a `passed` or `failed` status. The report includes
+`summary.total`, `summary.passed`, and `summary.failed`. A failed case records
+a fixed, redacted reason rather than a response body or thrown message. The
+governed demo checks that the report still contains 171 cases and exits
+nonzero if any recorded case fails or the count changes. API cases assert the
+exact problem-type slug as well as
 HTTP status; TRQP adapter cases assert the exact problem type and status.
 Temporal decision cases record `decision:allow` or `decision:deny`, with the
 API lifecycle status where available. Issuer public API and TRQP decisions are
@@ -262,10 +267,11 @@ compared at activation, suspension, revocation, and the earlier active instant
 after each later transition. The report also records public historical
 decisions for verifier, auditor, and recognition.
 Compact/integration/client cases assert a rejection pattern and report the actual thrown
-error type, not a product error category. Failed Compact approval must also
-leave the governance action count unchanged. The report is
-emitted only after those assertions pass and contains no credential or VP
-bodies. It covers four-role challenge replay and unauthorized challenge access,
+error type on success, not a product error category. Failed Compact approval must also
+leave the governance action count unchanged. The JSON report is emitted before
+the final aggregate assertion, so a failed recorded case remains inspectable;
+unrecorded setup or state assertions can still abort the monolithic demo.
+The report contains no credential or VP bodies. It covers four-role challenge replay and unauthorized challenge access,
 issuer VP scope/body/status failures, governed proposal and action quorum,
 self-vote, duplicate/removed Compact signer, unauthorized evidence verifier,
 last-active-maintainer protection, altered proposal commitment and signed
@@ -285,6 +291,10 @@ node scripts/demo-governed-registry.mjs > /tmp/tr-governed-report.json
 The `adversarialMatrix` member is the checked case report; the other members
 are the demo transcript. The output is deterministic in case IDs and categories,
 but local epoch identifiers and event hashes are fixture-dependent.
+Issue #216 is extracting the demo cases into independent tests with fresh
+fixtures and positive controls. The current runner has 39 such tests across
+Compact/integration/client and public HTTP boundaries; it does not yet replace
+the 171-case demo or make every monolithic setup failure independent.
 
 ## Artifact Boundaries
 

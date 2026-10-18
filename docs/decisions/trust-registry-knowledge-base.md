@@ -1645,3 +1645,13 @@ active-key lookup. Other adversarial-matrix role/boundary gaps remain in the
 coverage map. Local light, focused integration, demo, and audit results are
 recorded in the #60 delivery PR; they do not substitute for final-head full proving or
 authenticated public-network finality.
+
+Issue #216's local runner extraction is stacked above release qualification,
+not merged into a release candidate. The governed-demo matrix now records
+per-case `passed`/`failed` status, a redacted failure reason, and aggregate
+counts; it fails the process if the checked demo count differs from 171 or if
+any recorded case fails. Thirty-nine named cases have independent Node test
+fixtures so far, including revised-policy client and Compact behavior and
+public HTTP lookup/lifecycle behavior. The full 171-case demo remains, and
+top-level setup assertions can still abort it; do not call the extraction
+complete until those remaining cases are isolated and case parity is proved.
