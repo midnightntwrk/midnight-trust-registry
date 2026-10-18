@@ -17,22 +17,22 @@ import {
   encodeJubjubSignature as encodeGovernanceSignature,
   AuthorizationStatus,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "../contracts/trust-registry/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-contract";
 
-import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
+import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
 import {
   defaultSequenceToTimestamp,
   verifyHistoricalAuthorizationEvidenceFromApi,
   verifyHistoricalAuthorizationEvidenceResponse,
-} from "../packages/trust-registry-client/dist/index.js";
-import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "../packages/trust-registry-cli/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-client";
+import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "@midnight-ntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
   requestGovernedResourceId,
-} from "../packages/trust-registry-domain/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
@@ -49,7 +49,7 @@ import {
   resolveCompactHistoricalEpochAnchor,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
-} from "../packages/trust-registry-integration/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-integration";
 import {
   computeOperatorWorkspaceCommitment,
   createWorkspaceFileSource,
@@ -62,10 +62,10 @@ import {
   GovernedVerifierProposalRejectedError,
   FileApplicationAdmissionStore,
   FileApplicationChallengeStore,
-} from "../packages/trust-registry-api/dist/index.js";
-import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admin-console/dist/api.js";
-import { TrustRegistryApplicantPortalClient } from "../packages/trust-registry-applicant-portal/dist/api.js";
-import { verifyTrqpAuthorizationEvidenceFromApi } from "../adapters/trqp/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-api";
+import { TrustRegistryAdminConsoleClient } from "@midnight-ntwrk/trust-registry-admin-console/api";
+import { TrustRegistryApplicantPortalClient } from "@midnight-ntwrk/trust-registry-applicant-portal/api";
+import { verifyTrqpAuthorizationEvidenceFromApi } from "@midnight-ntwrk/trust-registry-trqp-adapter";
 import { withOtherProcessHoldingWorkspace } from "./workspace-lock-fixture.mjs";
 
 const role = process.argv[2];

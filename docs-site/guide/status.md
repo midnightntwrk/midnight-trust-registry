@@ -13,7 +13,7 @@ The 0.1.0 reference profile is a **target**, not a release conformance claim. Th
 | Production Midnight deployment | Not claimed by this documentation |
 | Arbitrary DID methods and secp256k1/P-256/Ed25519 contract verification | Not implemented in Compact reference profile |
 
-The canonical gap list and acceptance criteria live in the [milestone profile](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/milestone-0.1.0.md), [issue plan](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/plans/milestone-0.1.0-issues.md), and [GitHub issues](https://github.com/midnightntwrk/midnight-trust-registry/issues). This site should be updated when code or the profile changes; it does not supersede the specifications.
+The canonical gap list and acceptance criteria live in the [milestone profile](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/milestone-0.1.0.md), [issue plan](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/plans/milestone-0.1.0-issues.md), and [GitHub issues](https://github.com/midnightntwrk/midnight-trust-registry/issues). The [draft release-candidate note](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/release-candidate-0.1.0.md) lists the exact qualification and owner decisions still needed. This site should be updated when code or the profile changes; it does not supersede the specifications.
 
 ## Security assumptions
 

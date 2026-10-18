@@ -1490,3 +1490,90 @@ all initial thresholds, active maintainer count, and the maintainer's
 identity, key, active status, and joining sequence to that comparison;
 the action-signing reader remains narrower by design. The preceding
 `c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.
+
+## 2026-10-17: local decision-evidence continuation
+
+PRs #205 and #207 are merged into `milestone-0.1.0`. The configurable
+deployment/checkpoint stack was rebased onto that milestone without conflict;
+its local signed/DCO head is `a294e6b`. No public deployment has been
+performed. #200 remains open and promotion PR #198 must not be treated as
+release-ready on the strength of simulator qualification.
+
+Local #79 commits `bf66349` and `0969427` make the finalized Compact
+decision reader reject a substituted deployment-network commitment or
+publication network, and require the accepted epoch's off-ledger date window
+to match a host-supplied sequence-to-time projection. The host must still
+authenticate ledger finality/currentness, publication maintainer history,
+DID state, and that time projection. Midnight has no contract wall clock.
+Focused decision-evidence tests, audit, and `./run.sh --light` passed at
+`0969427`; a full integration run started at that exact tree and must be
+checked before claiming full qualification. The published evidence guide
+now explains these boundaries on the local follow-on branch.
+
+The next local #79 slice, `9d6ecc4`, exposes the same block-hash-pinned
+Compact ledger used by deployment preflight to the VC decision reader.
+`createCheckpointedCompactDecisionReaders` refuses a mismatched network,
+deployed address, or malformed/zero finalized block hash before consulting
+the separately authenticated historical-publication port. It still needs
+host-authenticated publication signer history, DID state, evaluation time,
+and network finality; the simulator test is not a live qualification. The
+integration package passed 154/154 tests, `./run.sh --light` passed 20/20
+tasks, and audit reported no known vulnerabilities at this slice.
+
+The local #45 release-candidate manifest slice (`865b8b5`, `d185d70`)
+records a signed/DCO source SHA, Compact pin, lockfile and contract hashes,
+published DID/VC dependency versions, and hashes/sizes for each packed
+artifact. Generation rejects dirty source, incomplete full Compact outputs,
+and a contract tarball without all named proof artifacts. Manifest-backed
+package smoke verifies the exact tarball set before installation; its local
+light-artifact flow passed, but no full release candidate has been generated
+or approved. A genuine candidate still needs full build/integration, exact
+revision CI, owner/rollback approval, and public-network qualification.
+Issue #90's VC status-registry package exists in the sibling VC checkout but
+is marked private; npm returned 404 on 2026-10-17. Do not copy its source or
+claim external status verification until an owner-published package or
+approved adapter is consumable.
+
+The follow-on #45 commit `49ca956` makes `packed-artifacts:smoke` run an
+issuer/verifier consumer scenario from a temporary directory after installing
+the tarballs. It uses only package exports, verifies active evidence with the
+simulator client, and rejects a substituted issuer resource. The 20/20 light
+gate, packed smoke, and low-level audit passed locally. This is not the full
+HTTP applicant/admin/relying-party journey at that commit: the UI clients were
+not yet among the packed local artifacts, and a simulator package consumer
+does not prove live network finality. Keep the full actor demo and release
+qualification as separate gates.
+
+The current local #45 continuation adds the private admin-console and
+applicant-portal API clients to the tarball set, makes the signed membership
+demo import package exports, and runs all four roles from a temporary
+tarball-only install with `--actor-journey`. This closes the clean-consumer
+actor-flow gap locally without making the UI packages public or claiming
+network qualification.
+
+The first full `./run.sh integration` on the #79 parent tree spent about 80
+minutes in Compact key generation and then failed in the governed VC issuer
+demo: the decision-evidence API returned 503 because its fixture supplied no
+`sequenceToTimestamp` function to `createCompactLedgerDecisionReaders`. The
+API correctly redacted the internal error. The local follow-on restores the
+simulator's documented sequence clock in `demo-vc-issuer-consumer.mjs`; the
+focused governed demo passes. A new `demo:governed:check` preflight runs that
+demo during `./run.sh --light` in roughly 16 seconds so this class of failure
+is caught before full key generation. Do not report the full integration gate
+green until it is rerun on the final tree.
+
+The local #73 packed-consumer continuation (`0c4c8f5`, `f2c3e4b`,
+`d6fee47`) exports the TR-owned Ledger 8 Compact fixture from the private
+integration tarball. A temporary clean npm install compiles it against the
+published VC Compact package and exercises pinned-domain construction,
+authority-signed issuer/verifier installation, credential and request proofs,
+and forged-signature, replay, and wrong-scope rejection. The light gate now
+runs this packaged check automatically; 20/20 light tasks, the combined
+four-role packed actor journey, package contents, and low-level audit passed
+locally. The signed descriptors in this particular packed smoke are fixture
+data; the source integration test is still responsible for binding them to
+verified Trust Registry decisions. Neither proves a deployed synchronous
+cross-contract call or authenticated public-network finality. Full
+integration on the earlier release-candidate tree was still generating
+Compact proving keys when this checkpoint was written, so it is not evidence
+for the new stack head.

@@ -81,9 +81,9 @@ export const workspaceCatalog = [
     publishPackage: false,
     manifest: {
       name: "@midnight-ntwrk/trust-registry-integration",
-      files: ["dist/**", "README.md"],
-      exports: ["."],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
+      files: ["dist/**", "src/compact/vc-authority-consumer.compact", "README.md"],
+      exports: [".", "./fixtures/vc-authority-consumer.compact"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "src/compact/vc-authority-consumer.compact"],
       smokeImports: ["@midnight-ntwrk/trust-registry-integration"],
     },
   },
@@ -161,13 +161,27 @@ export const workspaceCatalog = [
   },
   {
     workspace: "packages/trust-registry-admin-console",
-    artifactPackage: false,
+    artifactPackage: true,
     publishPackage: false,
+    manifest: {
+      name: "@midnight-ntwrk/trust-registry-admin-console",
+      files: ["dist/**", "README.md"],
+      exports: ["./api"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-admin-console/api"],
+    },
   },
   {
     workspace: "packages/trust-registry-applicant-portal",
-    artifactPackage: false,
+    artifactPackage: true,
     publishPackage: false,
+    manifest: {
+      name: "@midnight-ntwrk/trust-registry-applicant-portal",
+      files: ["dist/**", "README.md"],
+      exports: ["./api"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-applicant-portal/api"],
+    },
   },
   {
     workspace: "docs-site",

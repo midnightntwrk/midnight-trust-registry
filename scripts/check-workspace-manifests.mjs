@@ -80,6 +80,7 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   }
 
   assertEqual(`${label} name`, packageJson.name, expected.name);
+  assertEqual(`root script dependency ${expected.name}`, rootPackage.devDependencies?.[expected.name], "workspace:*");
   assertEqual(`${label} license`, packageJson.license, "Apache-2.0");
   assertEqual(`${label} engines.node`, packageJson.engines?.node, ">=24");
   assertEqual(`${label} engines.pnpm`, packageJson.engines?.pnpm, ">=10");

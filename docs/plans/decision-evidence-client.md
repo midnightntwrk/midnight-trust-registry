@@ -118,6 +118,15 @@ time and its sequence-to-time projection, and DID-state observation. The
 Compact ledger does not supply a wall clock. Passing a simulator ledger satisfies none of
 those production provenance requirements.
 
+The checkpointed reader composition reuses the deployment action reader's
+block-hash-scoped Compact ledger read for current VC decisions. It checks the
+checkpoint network and deployed address against the caller-selected decision
+before asking a separate authenticated historical-publication port for the
+epoch and signer context. That port receives the exact finalized block hash;
+it must prove historical signer membership, not infer it from today's
+maintainer map. This remains an integration boundary rather than a live
+network finality or DID-state implementation.
+
 `createVerifiedDecisionEvidenceSource` supplies the optional API route from an
 indexed evidence bundle without treating that index as an anchor. It builds a
 claim, requires exact role and authorization ID, obtains the expected

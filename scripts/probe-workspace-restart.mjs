@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   createTrustRegistryApiServer,
   createWorkspaceFileSource,
-} from "../packages/trust-registry-api/dist/index.js";
+} from "@midnight-ntwrk/trust-registry-api";
 
 const [workspacePath, expectedEpochId, role, subjectDid, resourceId, activeAt, revokedAt] = process.argv.slice(2);
 if (!workspacePath || !expectedEpochId || !role) throw new Error("Expected workspace, epoch, and role");

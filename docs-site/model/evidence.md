@@ -44,6 +44,37 @@ signed issuer/verifier and governed recognition demos call the live TRQP
 evidence routes through these helpers and verify against simulator-ledger
 anchors, including archived decisions after later lifecycle changes.
 
+## Current VC trust decisions
+
+The API's issuer/verifier decision-evidence response is a `client-required`
+claim, not an authorization. A VC consumer selects its expected registry,
+deployment, subject DID, role, and exact scope independently. It then calls
+`verifyDecisionEvidenceWithTrustedReaders` with readers that authenticate the
+current finalized registry and DID states. The integration package's
+`createCompactLedgerDecisionReaders` projects a supplied Compact ledger view:
+it matches the sealed registry and deployment-network commitments, accepted
+epoch roots and sequence window, publication context, current policy, and the
+exact current authorization record and status in its scope index. It also
+compares the epoch's off-ledger dates to a host-supplied sequence-to-time
+projection. The authorization ID in the response is only a lookup hint.
+
+The host must establish network finality and currency, authenticate the
+historical publication maintainer set and DID observation, and provide the
+time projection. The Compact ledger has no wall clock. A simulator ledger or
+the API response alone cannot satisfy these provenance requirements; a
+missing or inconsistent read fails closed before any VC signer descriptor is
+accepted.
+
+`createCheckpointedCompactDecisionReaders` joins a checkpoint-pinned Compact
+ledger read with separately authenticated historical publication evidence.
+The publication reader receives the exact finalized block hash and must prove
+the historical signer set independently; a matching current ledger root does
+not prove who was authorized to publish an earlier epoch. The adapter checks
+the selected network and deployed address before consulting that publication
+reader. The checkpoint source, indexer response, DID state, and off-ledger
+clock remain host trust boundaries until independently qualified on a live
+network.
+
 ## What an epoch means
 
 An epoch is a committed bounded registry view. It is not a date or time returned by the Midnight network. Compact counters and event hashes establish order. An operator may attach observation timestamps off-chain; those timestamps require their own trust and finality assumptions. Historical `at` queries select evidence for a requested evaluation instant, but a stale/unfinalized or missing epoch fails closed. See the [time and evidence specification](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/spec/trqp-time-and-evidence.md).
