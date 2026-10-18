@@ -26,6 +26,9 @@ This repository does not own:
 
 ## Documentation Map
 
+- [Documentation site](docs-site/index.md) explains the reference implementation,
+  actors, contract, API, flows, and limitations; the GitHub Pages workflow
+  publishes it from `develop`.
 - [0.1.0 reference profile](docs/spec/milestone-0.1.0.md) defines the actor,
   use-case, security, and release-acceptance contract for the next milestone.
 - [0.1.0 executable issue plan](docs/plans/milestone-0.1.0-issues.md) maps
@@ -55,7 +58,32 @@ pnpm install --frozen-lockfile
 ./run.sh --light
 ```
 
-Integration scenarios currently run separately:
+For documentation changes, run `./run.sh docs` to check links, validate the
+OpenAPI inventory, and build the site. Use `pnpm run docs:dev` for local preview.
+
+`.compact-version` is the single Compact compiler version pin for the Nix
+toolchain and all Compact GitHub workflows. The light gate checks every
+top-level workflow that directly installs Compact, plus Nix; add a future
+Compact-installing composite action to this guard. To upgrade, change that file, update the
+platform-specific fetch hashes in `nix/packages/compact-toolchain.nix`, then
+run `pnpm run check:compact-version` and `./run.sh --light`. Validate the
+toolchain itself with `nix develop --command compactc --version` and
+`nix develop --command ./run.sh --light` before opening a PR. The contract
+build wrapper passes the pin explicitly as `+VERSION`; an unqualified
+`compact compile` can select a different host-installed default. The light
+gate also checks that unqualified compiler default, so a host-installed
+`compact` outside the Nix shell must match the pin for `./run.sh --light` to
+pass. Use the Nix shell if the host default differs.
+
+For local simulator iterations, run the same integration suites and demo smoke
+journeys without generating proving keys:
+
+```bash
+./run.sh integration --light
+```
+
+Before publishing contract or demo changes, run the full integration lane.
+It generates proving keys and remains the validation gate for those artifacts:
 
 ```bash
 ./run.sh integration
@@ -72,9 +100,12 @@ Package artifact validation for downstream consumers:
 
 ```bash
 pnpm run artifacts:pack
-pnpm run packages:check-contents
+pnpm run packages:check-contents:light
 pnpm run packed-artifacts:smoke
 ```
+
+After a full `pnpm run build`, use `pnpm run packages:check-contents` instead;
+the release gate requires proving keys and ZK IR in the contract package.
 
 Artifact tarballs are written to `artifacts/npm/`. The current local artifact
 set is:
@@ -136,11 +167,70 @@ Smoke-test the documented demo flow from a clean local checkout:
 pnpm run demo:smoke
 ```
 
+For the separate, fixture-only auditor applicant journey, run
+`pnpm run demo:auditor` and open `http://127.0.0.1:4400`. This serves the
+portal and its private API on one loopback origin. Paste the DID-signed
+application printed by the command, issue a challenge, then generate the
+matching VP in another terminal with
+`node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its JSON into
+the portal. `pnpm run demo:auditor:smoke` automates that same HTTP path and
+checks unauthorized access, wrong scope, and replay. The host uses a fixture
+identity, in-memory state, and a fixed virtual clock; it is not a public
+admission service or a production VC status verifier.
+
+`pnpm run demo:signed-issuer`, `pnpm run demo:signed-verifier`,
+`pnpm run demo:signed-auditor`, and `pnpm run demo:signed-maintainer` run the same joined local membership journey
+for each role. The harness derives
+registration preflight and API snapshots from one Compact simulator, then
+serves public queries from a fresh private file-backed operator workspace.
+Only the host's governed epoch-publication port updates that workspace from
+the simulator projection. It acquires the local workspace lock before Compact
+execution, so a competing process gets 409 without advancing governance.
+The demo then starts a separate read-only API process against the same file to
+check that the final epoch and historical/current decisions survive restart.
+Unsafe fixture mutation routes remain disabled. It
+exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
+maintainer proposal/approval/activation, and externally signed registry epoch
+publication through the admin console API client. The publish route rejects
+a stale context or insufficient quorum before accepting a ledger commitment;
+the public epoch lookup then observes that exact commitment. The issuer,
+verifier, and auditor paths then use the same signed quorum to suspend and
+revoke the grant, reject single or duplicate signers, deny current trust,
+and preserve the earlier active decision. The maintainer path likewise
+suspends and revokes its non-bootstrap member and checks the active governor
+count in Compact. Issuer,
+verifier, and auditor grants reach an API bundle independently verified by the
+client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
+the ledger. Pending records, consumed nonces, challenges, and accepted redacted
+receipts use private files that a second store instance can reopen. The local
+journeys use the applicant portal client for the signed application and VP
+admission, and the admin console client for quorum proposal and lifecycle
+actions. Issuer and verifier journeys compare the public API trust decision
+and evidence leaf with TRQP at the same selected time; auditor has no TRQP
+mapping in this profile. `./run.sh integration --light` executes all four
+joined journeys as the deterministic local CI target. The local
+file adapter does not make challenge consumption, evidence acceptance, and
+Compact governance one atomic transaction; the demo does not establish
+production family/status verification or network finality.
+Per-grant evidence snapshots still use simulator fixture signing; the
+externally signed route covers registry epoch publication, not every evidence
+bundle created during projection.
+The auditor grant proves an exact request-profile mandate; it does not grant
+automatic access to a verifier's private records.
+The maintainer journey verifies activation in the Compact membership record;
+it does not claim a public issuer-style authorization bundle.
+
 Refresh published DID and VC dependencies with validation:
 
 ```bash
 pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
 ```
+
+`pnpm run check:workspace-manifests` validates checked-in manifests before
+dependencies are installed. After `pnpm install`, run
+`pnpm run check:installed-identity-runtime` to verify the effective DID/VC
+packages, pnpm overrides, and resolved Compact runtime. The light gate runs
+both checks in that order.
 
 For docs-only edits, the minimum fallback remains:
 

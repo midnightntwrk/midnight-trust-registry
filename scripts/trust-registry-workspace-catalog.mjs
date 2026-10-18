@@ -13,6 +13,7 @@ export const workspaceCatalog = [
     workspace: "contracts/trust-registry",
     artifactPackage: true,
     publishPackage: true,
+    compactManagedDirectory: "trust-registry",
     manifest: {
       name: "@midnight-ntwrk/trust-registry-contract",
       files: [
@@ -57,9 +58,9 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-domain",
       files: ["dist/**", "README.md"],
-      exports: ["."],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-domain"],
+      exports: [".", "./browser"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/browser.js"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-domain", "@midnight-ntwrk/trust-registry-domain/browser"],
     },
   },
   {
@@ -69,9 +70,9 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-client",
       files: ["dist/**", "README.md"],
-      exports: ["."],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-client"],
+      exports: [".", "./simulator"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/simulator-client.js"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-client", "@midnight-ntwrk/trust-registry-client/simulator"],
     },
   },
   {
@@ -80,9 +81,9 @@ export const workspaceCatalog = [
     publishPackage: false,
     manifest: {
       name: "@midnight-ntwrk/trust-registry-integration",
-      files: ["dist/**", "README.md"],
-      exports: ["."],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
+      files: ["dist/**", "src/compact/vc-authority-consumer.compact", "README.md"],
+      exports: [".", "./fixtures/vc-authority-consumer.compact"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "src/compact/vc-authority-consumer.compact"],
       smokeImports: ["@midnight-ntwrk/trust-registry-integration"],
     },
   },
@@ -127,7 +128,7 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-api",
       files: ["bin/trust-registry-api.mjs", "dist/**", "README.md"],
-      exports: [".", "./cli", "./server"],
+      exports: [".", "./cli", "./server", "./browser-schemas"],
       bin: ["trust-registry-api"],
       requiredPackedPaths: [
         "README.md",
@@ -136,11 +137,13 @@ export const workspaceCatalog = [
         "dist/index.js",
         "dist/cli.js",
         "dist/server.js",
+        "dist/browser-schemas.js",
       ],
       smokeImports: [
         "@midnight-ntwrk/trust-registry-api",
         "@midnight-ntwrk/trust-registry-api/cli",
         "@midnight-ntwrk/trust-registry-api/server",
+        "@midnight-ntwrk/trust-registry-api/browser-schemas",
       ],
     },
   },
@@ -158,21 +161,44 @@ export const workspaceCatalog = [
   },
   {
     workspace: "packages/trust-registry-admin-console",
-    artifactPackage: false,
+    artifactPackage: true,
     publishPackage: false,
+    manifest: {
+      name: "@midnight-ntwrk/trust-registry-admin-console",
+      files: ["dist/**", "README.md"],
+      exports: ["./api"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-admin-console/api"],
+    },
   },
   {
     workspace: "packages/trust-registry-applicant-portal",
+    artifactPackage: true,
+    publishPackage: false,
+    manifest: {
+      name: "@midnight-ntwrk/trust-registry-applicant-portal",
+      files: ["dist/**", "README.md"],
+      exports: ["./api"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-applicant-portal/api"],
+    },
+  },
+  {
+    workspace: "docs-site",
     artifactPackage: false,
     publishPackage: false,
   },
 ];
 
-export const expectedWorkspaces = ["contracts/*", "packages/*", "adapters/*"];
+export const expectedWorkspaces = ["contracts/*", "packages/*", "adapters/*", "docs-site"];
 
 export const artifactWorkspaces = workspaceCatalog
   .filter(({ artifactPackage }) => artifactPackage)
   .map(({ workspace }) => workspace);
+
+export const compactContractArtifactCatalog = workspaceCatalog
+  .filter(({ compactManagedDirectory }) => compactManagedDirectory !== undefined)
+  .map(({ workspace, compactManagedDirectory }) => ({ workspace, compactManagedDirectory }));
 
 export const publishWorkspaces = workspaceCatalog
   .filter(({ publishPackage }) => publishPackage)

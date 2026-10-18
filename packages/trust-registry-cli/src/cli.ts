@@ -8,12 +8,14 @@ import { renderAuditReport, type AuditReportKind } from "./report.js";
 import {
   buildSnapshotSummary,
   exportEvidenceBundle,
+  inspectAuditorEntryAtTimestamp,
   findEpoch,
   inspectEpochAtTimestamp,
   inspectIssuerEntryAtTimestamp,
   inspectRecognitionEntryAtTimestamp,
   inspectVerifierEntryAtTimestamp,
   listEpochs,
+  listAuditorEntries,
   listIssuerEntries,
   listRecognitionEntries,
   listVerifierEntries,
@@ -31,6 +33,7 @@ import {
   applyWorkspaceOperation,
   createOperatorWorkspace,
   loadWorkspaceFromFile,
+  withExclusiveWorkspaceWrite,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
 } from "./workspace.js";
@@ -54,6 +57,7 @@ type CommandName =
   | "revoke"
   | "archive"
   | "publish-epoch"
+  | "inspect-deployment"
   | "help";
 
 type CliIo = {
@@ -72,17 +76,18 @@ Commands:
   init-demo        Create a deterministic local snapshot from the simulator harness
   init-workspace   Create a mutable local operator workspace backed by governed CLI actions
   summary          Summarize a saved snapshot
-  list             List issuer, verifier, recognition, or epoch records
+  list             List issuer, verifier, auditor, recognition, or epoch records
   inspect          Print a specific snapshot record as JSON
   export-evidence  Export an anchored evidence bundle as JSON
   report           Emit a human-readable audit report from a saved snapshot
-  submit           Submit an issuer, verifier, or recognition application into a workspace
+  submit           Submit an issuer, verifier, auditor, or recognition application into a workspace
   approve          Approve a submitted workspace application
   activate         Activate an approved workspace application
   suspend          Suspend an active workspace record
   revoke           Revoke a suspended or active workspace record
   archive          Archive a revoked or historical workspace record
   publish-epoch    Publish the current workspace registry epoch anchor
+  inspect-deployment  Read a Trust Registry deployment at a pinned finalized network checkpoint
 
 Examples:
   trust-registry init-demo --output ./artifacts/trust-registry/demo.json
@@ -102,6 +107,8 @@ Examples:
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind full
   trust-registry report --snapshot ./artifacts/trust-registry/demo.json --kind issuer --id auth:issuer:passport:v1
   trust-registry publish-epoch --workspace ./artifacts/trust-registry/workspace.json
+  TR_RPC_URL=... TR_INDEXER_HTTP_URL=... TR_INDEXER_WS_URL=... TR_EXPECTED_GENESIS_HASH=... \\
+    trust-registry inspect-deployment --network preview --address 0x<64 hex digits>
 `;
 
 const parseKind = (value: string | undefined): SnapshotRecordKind => {
@@ -110,6 +117,7 @@ const parseKind = (value: string | undefined): SnapshotRecordKind => {
     case "policy":
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
     case "epoch":
       return value;
@@ -120,7 +128,7 @@ const parseKind = (value: string | undefined): SnapshotRecordKind => {
 
 const parseEvidenceKind = (
   value: string | undefined,
-): "issuer" | "verifier" | "recognition" => {
+): "issuer" | "verifier" | "auditor" | "recognition" => {
   const kind = parseKind(value);
   if (kind === "registry" || kind === "policy" || kind === "epoch") {
     throw new Error(`unsupported evidence kind: ${kind}`);
@@ -133,6 +141,7 @@ const parseMutableTarget = (value: string | undefined): MutableSnapshotTarget =>
   switch (value) {
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
       return value;
     default:
@@ -151,6 +160,7 @@ const parseAuditReportKind = (
     case "policy":
     case "issuer":
     case "verifier":
+    case "auditor":
     case "recognition":
     case "epoch":
       return value;
@@ -253,7 +263,7 @@ const runInitWorkspace = async (
       : {},
   );
 
-  await writeWorkspaceToFile(workspacePath, workspace);
+  await withExclusiveWorkspaceWrite(workspacePath, () => writeWorkspaceToFile(workspacePath, workspace));
   io.stdout(`Wrote operator workspace to ${workspacePath}\n`);
   return 0;
 };
@@ -326,6 +336,15 @@ const runList = async (argv: readonly string[], io: CliIo): Promise<number> => {
       }
       return 0;
     }
+    case "auditor": {
+      const entries = listAuditorEntries(snapshot);
+      if (parsed.values.json) {
+        writeJson(io, entries);
+      } else {
+        io.stdout(`${renderAuthorizationList(entries)}\n`);
+      }
+      return 0;
+    }
     case "recognition": {
       const entries = listRecognitionEntries(snapshot);
       if (parsed.values.json) {
@@ -381,6 +400,9 @@ const runInspect = async (argv: readonly string[], io: CliIo): Promise<number> =
         return 0;
       case "verifier":
         writeJson(io, inspectVerifierEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
+        return 0;
+      case "auditor":
+        writeJson(io, inspectAuditorEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
         return 0;
       case "recognition":
         writeJson(io, inspectRecognitionEntryAtTimestamp(snapshot, requireStringOption(id, "--id"), evaluatedAt));
@@ -481,9 +503,12 @@ const runWorkspaceMutation = async (
   io: CliIo,
   json = false,
 ): Promise<number> => {
-  const workspace = await loadWorkspaceFromFile(workspacePath);
-  const updatedWorkspace = applyWorkspaceOperation(workspace, operation);
-  await writeWorkspaceToFile(workspacePath, updatedWorkspace);
+  const updatedWorkspace = await withExclusiveWorkspaceWrite(workspacePath, async () => {
+    const workspace = await loadWorkspaceFromFile(workspacePath);
+    const updated = applyWorkspaceOperation(workspace, operation);
+    await writeWorkspaceToFile(workspacePath, updated);
+    return updated;
+  });
   const result = resolveWorkspaceOperationRecord(updatedWorkspace, operation);
 
   if (json) {
@@ -590,6 +615,44 @@ const runPublishEpoch = async (
   );
 };
 
+const runInspectDeployment = async (argv: readonly string[], io: CliIo): Promise<number> => {
+  const parsed = parseArgs({
+    args: [...argv],
+    allowPositionals: false,
+    options: {
+      network: { type: "string" },
+      address: { type: "string" },
+    },
+    strict: true,
+  });
+  const networkId = requireStringOption(parsed.values.network, "--network");
+  if (networkId !== "preview" && networkId !== "preprod" && networkId !== "mainnet") {
+    throw new Error("--network must be preview, preprod, or mainnet");
+  }
+  const address = requireStringOption(parsed.values.address, "--address");
+  const { createPublicNetworkDeploymentActionReader } = await import(
+    "@midnight-ntwrk/trust-registry-integration"
+  );
+  const reader = await createPublicNetworkDeploymentActionReader({
+    networkId,
+    rpcUrl: requireStringOption(process.env.TR_RPC_URL, "TR_RPC_URL"),
+    indexerHttpUrl: requireStringOption(process.env.TR_INDEXER_HTTP_URL, "TR_INDEXER_HTTP_URL"),
+    indexerWsUrl: requireStringOption(process.env.TR_INDEXER_WS_URL, "TR_INDEXER_WS_URL"),
+    expectedGenesisHash: requireStringOption(
+      process.env.TR_EXPECTED_GENESIS_HASH,
+      "TR_EXPECTED_GENESIS_HASH",
+    ),
+  });
+  const state = await reader.readCurrentFinalizedActionState(address);
+  if (state === null) throw new Error("No Trust Registry state at the finalized checkpoint");
+  writeJson(io, {
+    qualification: "read-only",
+    ...state,
+    governanceActionSequence: state.governanceActionSequence.toString(),
+  });
+  return 0;
+};
+
 export const runCli = async (
   argv: readonly string[],
   io: CliIo = defaultIo,
@@ -630,6 +693,8 @@ export const runCli = async (
         return await runWorkspaceTargetOperation(rest, io, "archive");
       case "publish-epoch":
         return await runPublishEpoch(rest, io);
+      case "inspect-deployment":
+        return await runInspectDeployment(rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;

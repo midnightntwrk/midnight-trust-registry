@@ -11,13 +11,19 @@ import {
   workspaceCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const defaultRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+export function checkWorkspaceManifests(repoRoot = defaultRoot) {
 
 const readJson = (relativePath) =>
   JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), "utf8"));
 
 const rootPackage = readJson("package.json");
 const errors = [];
+const runtimePackageName = "@midnight-ntwrk/compact-runtime";
+const runtimeVersion = readJson("contracts/trust-registry/package.json")
+  .dependencies?.[runtimePackageName];
+const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 
 const assertEqual = (label, actual, expected) => {
   if (actual !== expected) {
@@ -42,11 +48,21 @@ const assertFileExists = (label, relativePath) => {
 };
 
 assertArrayEqual("root workspaces", rootPackage.workspaces, expectedWorkspaces);
+if (typeof runtimeVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(runtimeVersion)) {
+  errors.push("Compact runtime must use an exact semver version");
+}
 
 for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   assertFileExists(`${workspace} package`, path.join(workspace, "package.json"));
   const packageJson = readJson(path.join(workspace, "package.json"));
   const label = `${workspace}/package.json`;
+
+  for (const section of dependencySections) {
+    const declaredRuntime = packageJson[section]?.[runtimePackageName];
+    if (declaredRuntime !== undefined) {
+      assertEqual(`${label} ${section} Compact runtime`, declaredRuntime, runtimeVersion);
+    }
+  }
 
   assertEqual(`${label} name exists`, typeof packageJson.name, "string");
   assertEqual(`${label} version`, packageJson.version, rootPackage.version);
@@ -64,6 +80,7 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
   }
 
   assertEqual(`${label} name`, packageJson.name, expected.name);
+  assertEqual(`root script dependency ${expected.name}`, rootPackage.devDependencies?.[expected.name], "workspace:*");
   assertEqual(`${label} license`, packageJson.license, "Apache-2.0");
   assertEqual(`${label} engines.node`, packageJson.engines?.node, ">=24");
   assertEqual(`${label} engines.pnpm`, packageJson.engines?.pnpm, ">=10");
@@ -102,13 +119,18 @@ for (const { workspace, artifactPackage, publishPackage } of workspaceCatalog) {
 }
 
 if (errors.length > 0) {
-  console.error("[check-workspace-manifests] Trust Registry workspace drift:");
-  for (const error of errors) {
-    console.error(`- ${error}`);
-  }
-  process.exit(1);
+  throw new Error(`[check-workspace-manifests] Trust Registry workspace drift:\n${errors.map((error) => `- ${error}`).join("\n")}`);
 }
 
-console.log(
-  "[check-workspace-manifests] Trust Registry workspace manifests are aligned.",
-);
+return true;
+}
+
+if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+  try {
+    checkWorkspaceManifests();
+    console.log("[check-workspace-manifests] Trust Registry workspace manifests are aligned.");
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

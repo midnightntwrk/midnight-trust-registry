@@ -3,9 +3,11 @@ import type { JWK } from "jose";
 
 import {
   AuthorizationRecordSchema,
+  IssuerStatusPolicyBindingSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  assertIssuerStatusPolicyBindingMatchesAuthorization,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
@@ -13,6 +15,27 @@ const UnixTimestampSchema = z.number().int().nonnegative();
 const JwkSchema = z.custom<JWK>((value) => typeof value === "object" && value !== null);
 const JwksSchema = z.object({
   keys: z.array(JwkSchema).min(1),
+});
+
+export const FederationEvidenceBundleSchema = TrustRegistryEvidenceBundleSchema.transform((bundle) => {
+  if (bundle.authorization?.role === "issuer") {
+    if (bundle.statusPolicyBinding === undefined) {
+      throw new Error("Issuer status policy binding preimage is missing");
+    }
+    if (bundle.authorization.statusPolicyBindingCommitment === undefined) {
+      throw new Error("Issuer status policy binding commitment is missing");
+    }
+    assertIssuerStatusPolicyBindingMatchesAuthorization(
+      bundle.statusPolicyBinding,
+      bundle.registryId,
+      bundle.authorization.authorizationId,
+      bundle.authorization.statusPolicyBindingCommitment,
+    );
+  }
+  const publication = { ...bundle };
+  delete publication.referencedStatusRegistryId;
+  delete publication.referencedStatusPolicyUri;
+  return publication;
 });
 
 export const FederationEntityMetadataSchema = z.object({
@@ -45,8 +68,8 @@ export const MidnightTrustRegistryMetadataSchema = z.discriminatedUnion(
       policy_version: NonEmptyStringSchema,
       policy_uri: z.string().url(),
       status: RegistryRecordSchema.shape.status,
-      authorization_bundle: TrustRegistryEvidenceBundleSchema.optional(),
-      recognition_bundle: TrustRegistryEvidenceBundleSchema.optional(),
+      authorization_bundle: FederationEvidenceBundleSchema.optional(),
+      recognition_bundle: FederationEvidenceBundleSchema.optional(),
     }),
     z.object({
       statement_kind: z.literal("authorization"),
@@ -57,6 +80,32 @@ export const MidnightTrustRegistryMetadataSchema = z.discriminatedUnion(
       role: AuthorizationRecordSchema.shape.role,
       resource_type: AuthorizationRecordSchema.shape.resourceType,
       resource_id: NonEmptyStringSchema,
+      status_policy_binding: IssuerStatusPolicyBindingSchema.optional(),
+      status_policy_binding_commitment: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+      authorization_bundle: FederationEvidenceBundleSchema,
+    }).superRefine((metadata, context) => {
+      const { authorization, statusPolicyBinding, registryId, policy } = metadata.authorization_bundle;
+      if (
+        authorization === undefined ||
+        registryId !== metadata.registry_id ||
+        policy.policyId !== metadata.policy_id ||
+        authorization.trustLevel !== metadata.trust_level ||
+        authorization.status !== metadata.status ||
+        authorization.role !== metadata.role ||
+        authorization.resourceType !== metadata.resource_type ||
+        authorization.resourceId !== metadata.resource_id ||
+        (metadata.role === "issuer" && (
+          statusPolicyBinding === undefined ||
+          JSON.stringify(statusPolicyBinding) !== JSON.stringify(metadata.status_policy_binding) ||
+          authorization.statusPolicyBindingCommitment !== metadata.status_policy_binding_commitment
+        )) ||
+        (metadata.role !== "issuer" && (
+          metadata.status_policy_binding !== undefined ||
+          metadata.status_policy_binding_commitment !== undefined
+        ))
+      ) {
+        context.addIssue({ code: "custom", message: "Authorization metadata does not match its governed evidence bundle" });
+      }
     }),
     z.object({
       statement_kind: z.literal("recognition"),
@@ -126,7 +175,7 @@ export const AuthorizationSubordinateStatementInputSchema = z.object({
   issuerEntityId: z.string().url(),
   sourceEndpoint: z.string().url(),
   subjectPublicJwks: JwksSchema,
-  bundle: TrustRegistryEvidenceBundleSchema,
+  bundle: FederationEvidenceBundleSchema,
   now: UnixTimestampSchema.optional(),
   expiresInSeconds: UnixTimestampSchema.optional(),
 });

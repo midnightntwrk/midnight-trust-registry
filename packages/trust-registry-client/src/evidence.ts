@@ -3,35 +3,46 @@ import { Buffer } from "node:buffer";
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   computeCreateEpochCommitmentPayloadHash,
-  decodeJubjubSignature,
-  labelToBytes32,
-  verifyMaintainerAction,
+  decodeCanonicalJubjubSignatureHex,
+  encodeCompactActionKind,
+  verifyDeploymentBoundMaintainerAction,
 } from "@midnight-ntwrk/trust-registry-contract";
 import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   TrustRegistryEvidenceBundleSchema,
+  compareRfc3339Instants,
   computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
+  assertIssuerStatusPolicyBindingMatchesAuthorization,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type TrustRegistryEvidenceBundle,
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   bytes32Commitment,
-  bytes32Hex,
   defaultSequenceToTimestamp,
   sameBytes32,
   type SequenceToTimestamp,
 } from "./utils.js";
 
-const EPOCH_PUBLISH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const EPOCH_PUBLISH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
+/**
+ * Caller-authenticated epoch context. These values are not authenticated by
+ * the free bundle verifier: resolve them from a format-one registry ledger or
+ * another independently trusted source before treating its result as trust.
+ */
 export type EpochAnchorVerificationContext = {
   epochRecord: EpochCommitmentRecord;
   maintainerPublicKey: JubjubPoint;
   registryIdCommitment: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
   sequenceToTimestamp?: SequenceToTimestamp;
+  policySupersededAt?: string;
 };
 
 export type BundleVerificationOptions = {
@@ -94,6 +105,15 @@ const assertEpochAnchor = (
   const { epochRecord } = options;
   const expectedEpochIdCommitment = bytes32Commitment(bundle.epoch.epochId);
 
+  if (bundle.epoch.registryId !== bundle.registryId) {
+    throw new Error("Epoch registry mismatch");
+  }
+  if (bundle.authorization !== undefined && bundle.authorization.registryId !== bundle.registryId) {
+    throw new Error("Authorization registry mismatch");
+  }
+  if (bundle.recognition !== undefined && bundle.recognition.registryId !== bundle.registryId) {
+    throw new Error("Recognition registry mismatch");
+  }
   if (!sameBytes32(expectedEpochIdCommitment, epochRecord.epochId)) {
     throw new Error("Epoch id mismatch");
   }
@@ -106,28 +126,34 @@ const assertEpochAnchor = (
   if (bundle.epoch.policyRoot !== `0x${Buffer.from(epochRecord.policyRoot).toString("hex")}`) {
     throw new Error("Epoch policy root mismatch");
   }
-  if (bundle.epoch.validFrom !== sequenceToTimestamp(epochRecord.validFromSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validFrom, sequenceToTimestamp(epochRecord.validFromSequence)) !== 0) {
     throw new Error("Epoch validFrom mismatch");
   }
-  if (bundle.epoch.validUntil !== sequenceToTimestamp(epochRecord.validUntilSequence)) {
+  if (compareRfc3339Instants(bundle.epoch.validUntil, sequenceToTimestamp(epochRecord.validUntilSequence)) !== 0) {
     throw new Error("Epoch validUntil mismatch");
   }
 
-  const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
-  if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validFrom) < 0) {
     throw new Error("Epoch is not yet valid for this evidence bundle");
   }
-  if (evaluationTime > Date.parse(bundle.epoch.validUntil)) {
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validUntil) > 0) {
     throw new Error("Epoch is stale for this evidence bundle");
   }
 
-  const maintainerSignature = bundle.epoch.maintainerSignatures.at(0);
-  if (maintainerSignature === undefined) {
-    throw new Error("Epoch commitment must include at least one maintainer signature");
+  const maintainerSignature = bundle.epoch.maintainerSignatures[0]!;
+  if (maintainerSignature.algorithm !== "jubjub-schnorr") {
+    throw new Error("Epoch maintainer signature algorithm is unsupported");
   }
-  const signature = decodeJubjubSignature(
-    Buffer.from(maintainerSignature.signature.replace(/^0x/, ""), "hex"),
-  );
+  if (!sameBytes32(bytes32Commitment(maintainerSignature.keyId), epochRecord.maintainerKeyId)) {
+    throw new Error("Epoch maintainer DID method does not match its accepted key commitment");
+  }
+  let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+  try {
+    signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+  } catch (error) {
+    throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
+  }
   const payloadHash = computeCreateEpochCommitmentPayloadHash(
     epochRecord.epochId,
     epochRecord.stateRoot,
@@ -136,27 +162,78 @@ const assertEpochAnchor = (
     epochRecord.validFromSequence,
     epochRecord.validUntilSequence,
   );
-
   if (
-    !verifyMaintainerAction(
+    !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+    || epochRecord.publicationPolicyCommitment.length !== 32
+    || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
+  ) {
+    throw new Error("Epoch publication policy commitment is missing or malformed");
+  }
+  if (
+    !(options.registryIdCommitment instanceof Uint8Array)
+    || options.registryIdCommitment.length !== 32
+    || options.registryIdCommitment.every((byte) => byte === 0)
+  ) {
+    throw new Error("Registry ID commitment is missing or malformed");
+  }
+  if (!sameBytes32(bytes32Commitment(bundle.registryId), options.registryIdCommitment)) {
+    throw new Error("Registry ID commitment does not match the evidence bundle");
+  }
+  for (const [name, value] of [
+    ["Network ID commitment", options.networkIdCommitment],
+    ["Contract address", options.contractAddress],
+  ] as const) {
+    if (!(value instanceof Uint8Array) || value.length !== 32 || value.every((byte) => byte === 0)) {
+      throw new Error(`${name} is missing or malformed`);
+    }
+  }
+
+  let validSignature = false;
+  let verificationFault: unknown;
+  try {
+    validSignature = verifyDeploymentBoundMaintainerAction(
       options.maintainerPublicKey,
       options.registryIdCommitment,
+      options.networkIdCommitment,
+      options.contractAddress,
+      epochRecord.publicationPolicyCommitment,
       EPOCH_PUBLISH_ACTION_KIND,
       payloadHash,
       epochRecord.publishedAtSequence,
       signature,
-    )
-  ) {
-    throw new Error("Epoch maintainer signature is invalid");
+    );
+  } catch (error) {
+    verificationFault = error;
+  }
+  if (!validSignature) {
+    throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
   }
 };
 
 const assertPolicyAnchor = (
   bundle: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
 ): void => {
-  const expectedPolicyRoot = bytes32Hex(bytes32Commitment(bundle.policy.policyId));
+  const statementPolicyId = bundle.authorization?.policyId ?? bundle.recognition?.policyId;
+  if (statementPolicyId !== bundle.policy.policyId) {
+    throw new Error("Statement policy ID does not match the bundle policy");
+  }
+  const snapshot = deriveGovernancePolicySnapshot(bundle.policy);
+  const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(snapshot);
   if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
     throw new Error("Policy root does not match the bundle policy");
+  }
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, snapshot.effectiveFrom) < 0) {
+    throw new Error("Policy snapshot is not yet effective");
+  }
+  if (
+    (snapshot.effectiveUntil !== null
+      && compareRfc3339Instants(evaluationTime, snapshot.effectiveUntil) >= 0)
+    || (options.policySupersededAt !== undefined
+      && compareRfc3339Instants(evaluationTime, options.policySupersededAt) >= 0)
+  ) {
+    throw new Error("Policy snapshot is superseded at the evaluation time");
   }
 };
 
@@ -197,6 +274,31 @@ const assertInclusionProof = (
   }
 };
 
+const assertIssuerStatusPolicyBinding = (
+  bundle: TrustRegistryEvidenceBundle,
+): void => {
+  if (bundle.authorization?.role !== "issuer") return;
+  if (bundle.statusPolicyBinding === undefined) {
+    throw new Error("Issuer status policy binding preimage is missing");
+  }
+  if (bundle.authorization.statusPolicyBindingCommitment === undefined) {
+    throw new Error("Issuer status policy binding commitment is missing");
+  }
+  assertIssuerStatusPolicyBindingMatchesAuthorization(
+    bundle.statusPolicyBinding,
+    bundle.registryId,
+    bundle.authorization.authorizationId,
+    bundle.authorization.statusPolicyBindingCommitment,
+  );
+  if (
+    bundle.referencedStatusRegistryId !== undefined
+    || bundle.referencedStatusPolicyUri !== undefined
+  ) {
+    throw new Error("Unanchored issuer status metadata is not accepted");
+  }
+};
+
+/** Verifies consistency with the caller's anchor, not that anchor's provenance. */
 export const verifyTrustRegistryEvidenceBundle = (
   bundleInput: TrustRegistryEvidenceBundle,
   options: BundleVerificationOptions,
@@ -212,8 +314,9 @@ export const verifyTrustRegistryEvidenceBundle = (
     );
   }
   assertEpochAnchor(bundle, options);
-  assertPolicyAnchor(bundle);
+  assertPolicyAnchor(bundle, options);
   assertInclusionProof(bundle);
+  assertIssuerStatusPolicyBinding(bundle);
 
   return bundle;
 };

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { deriveJubjubPublicKey } from "@midnight-ntwrk/trust-registry-contract";
+
 import {
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
@@ -11,6 +13,14 @@ import {
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("trust registry DID integration", () => {
+  it("rejects a method id assigned to different relationship keys", () => {
+    const did = createIssuerScenarioFixture("ambiguous-did-method").subjectDid;
+    expect(() => createMidnightDidLedgerFixture(did, {
+      schnorrJubjubAuthenticationMethods: [{ id: "key-1", publicKey: deriveJubjubPublicKey(23n) }],
+      schnorrJubjubAssertionMethods: [{ id: "key-1", publicKey: deriveJubjubPublicKey(29n) }],
+    })).toThrow(/different public keys/u);
+  });
+
   it("resolves trusted issuer and verifier Midnight DIDs through the midnight-did resolver", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");

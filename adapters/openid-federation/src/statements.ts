@@ -16,6 +16,7 @@ import {
   TrustMarkPayloadSchema,
   TrustRegistryEntityConfigurationInputSchema,
   AuthorizationSubordinateStatementInputSchema,
+  FederationEvidenceBundleSchema,
   type EntityStatementPayload,
   type FederationLeafConfigurationInput,
   type RecognitionTrustMarkInput,
@@ -123,12 +124,9 @@ export const buildTrustRegistryPublicationMetadata = (input: {
   bundle?: AuthorizationSubordinateStatementInput["bundle"];
   policyVersion: string;
 }): EntityStatementPayload["metadata"] => {
-  const bundle = input.bundle;
-  const publishedBundle = bundle === undefined ? undefined : { ...bundle };
-  if (publishedBundle !== undefined) {
-    delete publishedBundle.referencedStatusRegistryId;
-    delete publishedBundle.referencedStatusPolicyUri;
-  }
+  const publishedBundle = input.bundle === undefined
+    ? undefined
+    : FederationEvidenceBundleSchema.parse(input.bundle);
 
   return {
     federation_entity: {
@@ -220,6 +218,11 @@ export const buildAuthorizationSubordinateStatementPayload = (
         role: authorization.role,
         resource_type: authorization.resourceType,
         resource_id: authorization.resourceId,
+        ...(authorization.role === "issuer" ? {
+          status_policy_binding: parsed.bundle.statusPolicyBinding,
+          status_policy_binding_commitment: authorization.statusPolicyBindingCommitment,
+        } : {}),
+        authorization_bundle: parsed.bundle,
       },
     },
   });
@@ -403,7 +406,7 @@ export const verifySimpleTrustChain = async (
       throw new Error("trust chain iss/sub linkage is invalid");
     }
 
-    await verifyWithJwks(currentJwt, next.jwks as FederationJwkSet);
+    decodedPayloads[index] = await verifyWithJwks(currentJwt, next.jwks as FederationJwkSet);
   }
 
   const trustAnchor = decodedPayloads.at(-1);
@@ -411,7 +414,7 @@ export const verifySimpleTrustChain = async (
   if (trustAnchor === undefined || trustAnchorJwt === undefined) {
     throw new Error("trust chain cannot be empty");
   }
-  await verifyWithJwks(trustAnchorJwt, trustAnchor.jwks as FederationJwkSet);
+  decodedPayloads[chain.length - 1] = await verifyWithJwks(trustAnchorJwt, trustAnchor.jwks as FederationJwkSet);
 
   const leaf = decodedPayloads[0];
   const superior = decodedPayloads[1];

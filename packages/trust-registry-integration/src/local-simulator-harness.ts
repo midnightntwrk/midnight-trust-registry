@@ -1,108 +1,327 @@
 import { Buffer } from "node:buffer";
 
+import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
+
 import {
+  compareMaintainerKeyIds,
   computeCreateAuditorAuthorizationPayloadHash,
+  computeAuditorEvidenceBoundProposalPayloadHash,
+  computeMaintainerEvidenceBoundProposalPayloadHash,
   computeCreateEpochCommitmentPayloadHash,
   computeCreateMaintainerMembershipPayloadHash,
   computeCreateRecognitionPayloadHash,
+  computeRecognitionEvidenceBoundProposalPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateEvidenceVerifierKeyPayloadHash,
+  computeUpdateVcAuthorityKeyPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
   computeUpdateMaintainerMembershipPayloadHash,
   computeUpdateMaintainerThresholdPolicyPayloadHash,
+  computeRecoverMaintainerMembershipPayloadHash,
   computeUpdateRecognitionPayloadHash,
   computeUpdateIssuerAuthorizationPayloadHash,
   computeUpdateVerifierAuthorizationPayloadHash,
-  createMaintainerFixture,
-  decodeJubjubSignature,
+  decodeCanonicalJubjubSignatureHex,
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
+  encodeCompactActionKind,
+  computeIssuerEvidenceBoundProposalPayloadHash,
+  computeVerifierEvidenceBoundProposalPayloadHash,
+  signApplicationEvidenceCommitmentFromSeed,
+  signAuditorProposalEvidenceFromSeed,
+  signMaintainerProposalEvidenceFromSeed,
+  signIssuerProposalEvidenceFromSeed,
+  signRecognitionProposalEvidenceFromSeed,
+  signVerifierProposalEvidenceFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
+  type TrustRegistryJubjubSignature,
+  verifyApplicationEvidenceCommitmentSignature,
+  verifyDeploymentBoundMaintainerAction,
+} from "@midnight-ntwrk/trust-registry-contract";
+import {
+  createMaintainerFixture,
   labelToBytes32,
   type MaintainerCoAuthorizer,
-  signMaintainerActionFromSeed,
   TrustRegistrySimulator,
-  verifyMaintainerAction,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
   type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
+  pureCircuits,
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
   type RecognitionRecord as ContractRecognitionRecord,
   type VerifierAuthorizationRecord as ContractVerifierAuthorizationRecord,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
+  AuthorizationScopeSchema,
   assertValidApplicationEvidence,
   computeApplicationEvidenceCommitment,
+  computeAuthorizationScopeCommitment,
+  computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   EpochCommitmentSchema,
   type ApplicationEvidenceSubmission,
+  type ApplicationEvidenceSignature,
+  type AuthorizationScope,
   type ApplicationEvidenceRole,
   type AuthorizedEvidenceVerifier,
   type EpochCommitment,
   GovernancePolicyRecordSchema,
+  RecognitionAccreditorAnchorSchema,
   RecognitionRecordSchema,
   type RegistryRecord,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   type AuthorizationRecord,
+  type IssuerStatusPolicyBinding,
   type GovernancePolicyRecord,
+  type GovernedResource,
   type RecognitionRecord,
+  type RecognitionAccreditorAnchor,
+  type SignedRecognitionAuthorityAssertion,
   type TrustRegistryEvidenceBundle,
+  assertGovernancePolicyRevision,
   computeAuthorizationStatementLeafHash,
   computeRecognitionStatementLeafHash,
   computeRegistryStatementLeafHash,
   computeSingleStatementStateRoot,
   createScopedIdentifier,
+  deriveGovernancePolicySnapshot,
+  governedResourceInScope,
+  requestGovernedResourceId,
+  resolveGovernedRecognitionAccreditorAnchor,
   sha256Hex,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   type AuditorScenarioFixture,
   bytes32Commitment,
+  createAuditorAuthorizationScopeFixture,
+  createIssuerAuthorizationScopeFixture,
+  createMaintainerAuthorizationScopeFixture,
   createMidnightDid,
+  createVerifierAuthorizationScopeFixture,
   type IssuerScenarioFixture,
+  issuerResourceTypeDetails,
   type MaintainerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
 } from "./fixtures.js";
+import { prepareVcAuthorityKeyRegistration } from "./vc-authority-registration.js";
+import type { VcAuthorityDomain } from "./vc-signer-authorization.js";
+import {
+  recognitionAuthorityEvidenceBytes,
+  verifyRecognitionAuthorityAssertion,
+} from "./recognition-authority-assertion.js";
 
-const PROPOSE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:propose");
-const AUTHORIZE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:authorize");
-const ACTIVATE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:activate");
-const SUSPEND_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:suspend");
-const REVOKE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:revoke");
-const ARCHIVE_ISSUER_ACTION_KIND = labelToBytes32("tr:issuer:archive");
-const PROPOSE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:propose");
-const AUTHORIZE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:authorize");
-const ACTIVATE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:activate");
-const SUSPEND_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:suspend");
-const REVOKE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:revoke");
-const ARCHIVE_VERIFIER_ACTION_KIND = labelToBytes32("tr:verifier:archive");
-const PROPOSE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:propose");
-const AUTHORIZE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:authorize");
-const ACTIVATE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:activate");
-const SUSPEND_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:suspend");
-const REVOKE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:revoke");
-const ARCHIVE_RECOGNITION_ACTION_KIND = labelToBytes32("tr:recognition:archive");
-const PROPOSE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:propose");
-const AUTHORIZE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:authorize");
-const ACTIVATE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:activate");
-const SUSPEND_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:suspend");
-const REVOKE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:revoke");
-const ARCHIVE_AUDITOR_ACTION_KIND = labelToBytes32("tr:auditor:archive");
-const PROPOSE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:propose");
-const AUTHORIZE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:authorize");
-const ACTIVATE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:activate");
-const SUSPEND_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:suspend");
-const REVOKE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:revoke");
-const ARCHIVE_MAINTAINER_ACTION_KIND = labelToBytes32("tr:maintainer:archive");
-const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = labelToBytes32(
+const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
+const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
+const REGISTER_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:register");
+const SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:suspend");
+const AUTHORIZE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:authorize");
+const ACTIVATE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:activate");
+const SUSPEND_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:suspend");
+const REVOKE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:revoke");
+const ARCHIVE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:archive");
+const PROPOSE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:propose");
+const AUTHORIZE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:authorize");
+const ACTIVATE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:activate");
+const SUSPEND_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:suspend");
+const REVOKE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:revoke");
+const ARCHIVE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:verifier:archive");
+const PROPOSE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:propose");
+const AUTHORIZE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:authorize");
+const ACTIVATE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:activate");
+const SUSPEND_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:suspend");
+const REVOKE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:revoke");
+const ARCHIVE_RECOGNITION_ACTION_KIND = encodeCompactActionKind("tr:recognition:archive");
+const PROPOSE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:propose");
+const AUTHORIZE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:authorize");
+const ACTIVATE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:activate");
+const SUSPEND_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:suspend");
+const REVOKE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:revoke");
+const ARCHIVE_AUDITOR_ACTION_KIND = encodeCompactActionKind("tr:auditor:archive");
+const PROPOSE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:propose");
+const AUTHORIZE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:authorize");
+const ACTIVATE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:activate");
+const SUSPEND_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:suspend");
+const REVOKE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:revoke");
+const ARCHIVE_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:archive");
+const UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND = encodeCompactActionKind(
   "tr:policy:thresholds:update",
 );
-const CREATE_EPOCH_ACTION_KIND = labelToBytes32("tr:epoch:publish");
+const RECOVER_MAINTAINER_ACTION_KIND = encodeCompactActionKind("tr:maintainer:recover");
+const CREATE_EPOCH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
 
 const BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
+
+export type SimulatorApplicationEvidenceExpectation = {
+  scope: AuthorizationScope;
+  challengeHash: string;
+  governedResource: GovernedResource;
+};
+
+export type IssuerDecisionAction = "approve" | "activate" | "suspend" | "revoke" | "archive";
+
+export type PreparedIssuerDecisionAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  authorizationId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  previousLifecycleEventHash: Uint8Array;
+  evidenceHash: Uint8Array;
+};
+
+export type PreparedIssuerProposalAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  authorizationId: Uint8Array;
+  policyCommitment: Uint8Array;
+  policyVersion: bigint;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  statusPolicyBindingCommitment: Uint8Array;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
+type PreparedRequestProposalAction = Pick<PreparedIssuerDecisionAction,
+  "registryId" | "networkIdCommitment" | "contractAddress" | "authorizationId" | "policyCommitment" | "actionKind" |
+  "actionPayloadHash" | "actionSequence" | "evidenceHash">;
+
+export type PreparedAuditorProposalAction = PreparedRequestProposalAction & {
+  policyVersion: bigint;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
+export type PreparedVerifierProposalAction = PreparedRequestProposalAction & {
+  policyVersion: bigint;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
+export type PreparedRecognitionAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  recognitionId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash?: Uint8Array;
+};
+
+export type PreparedRecognitionProposalAction = PreparedRecognitionAction & {
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
+export type PreparedMaintainerAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  maintainerId: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash?: Uint8Array;
+};
+
+export type PreparedMaintainerProposalAction = PreparedMaintainerAction & {
+  policyVersion: bigint;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+};
+
+export type PreparedRegistryEpochPublicationAction = {
+  epochId: string;
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  epochIdCommitment: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  stateRoot: Uint8Array;
+  eventRoot: Uint8Array;
+  policyRoot: Uint8Array;
+  validFromSequence: bigint;
+  validUntilSequence: bigint;
+};
+
+export type PreparedThresholdPolicyRevisionAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  nextPolicyCommitment: Uint8Array;
+  nextPolicyVersion: bigint;
+};
+
+export type PreparedAtomicMaintainerRecoveryAction = PreparedThresholdPolicyRevisionAction & {
+  maintainerId: Uint8Array;
+  evidenceHash: Uint8Array;
+  previousLifecycleEventHash: Uint8Array;
+};
+
+export class AtomicMaintainerRecoveryPrecheckError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AtomicMaintainerRecoveryPrecheckError";
+  }
+}
+
+export type PreparedEvidenceVerifierRegistrationAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  authorizationId: Uint8Array;
+  keyIdCommitment: Uint8Array;
+  policyVersion: bigint;
+};
+
+const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
+  if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
+  if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
+  return { type: "requestProfile", id: requestGovernedResourceId(scope) };
+};
+
+const issuerGovernedResource = (fixture: IssuerScenarioFixture): GovernedResource => {
+  const type = issuerResourceTypeDetails[fixture.resourceType]?.governedType;
+  if (type === undefined) throw new Error("Issuer resource type is invalid");
+  return { type, id: fixture.resourceId };
+};
+
+const defaultIssuerEvidenceExpectation = (
+  fixture: IssuerScenarioFixture,
+): SimulatorApplicationEvidenceExpectation => ({
+  scope: createIssuerAuthorizationScopeFixture(fixture),
+  challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+  governedResource: issuerGovernedResource(fixture),
+});
 
 const bytes32Hex = (value: Uint8Array): string =>
   `0x${Buffer.from(value).toString("hex")}`;
@@ -136,22 +355,7 @@ const assertUnreachable = (value: never): never => {
 
 const issuerResourceTypeName = (
   resourceType: IssuerResourceType,
-): AuthorizationRecord["resourceType"] => {
-  switch (resourceType) {
-    case IssuerResourceType.credentialFamily:
-      return "credential-family";
-    case IssuerResourceType.schema:
-      return "schema";
-    case IssuerResourceType.schemaVersion:
-      return "schema-version";
-    case IssuerResourceType.credentialDefinition:
-      return "credential-definition";
-    case IssuerResourceType.statusMethodRequirement:
-      return "status-method-requirement";
-  }
-
-  return assertUnreachable(resourceType);
-};
+): AuthorizationRecord["resourceType"] => issuerResourceTypeDetails[resourceType].recordType;
 
 const contractStatusName = (
   status: ContractAuthorizationStatus,
@@ -181,33 +385,69 @@ export class LocalTrustRegistryIntegrationHarness {
   readonly registryIdCommitment: Uint8Array;
   readonly registryDidCommitment: Uint8Array;
   readonly policyId: string;
-  readonly governancePolicyCommitment: Uint8Array;
-  readonly registryRecord: RegistryRecord;
+  governancePolicyCommitment: Uint8Array;
+  registryRecord: RegistryRecord;
   readonly maintainerId: string;
   readonly maintainerIdCommitment: Uint8Array;
   readonly maintainerDid: string;
   readonly maintainerDidCommitment: Uint8Array;
   readonly evidenceVerifier: AuthorizedEvidenceVerifier;
+  private currentEvidenceVerifierAuthorizationId!: Uint8Array;
+  private currentEvidenceVerifierKeyIdCommitment!: Uint8Array;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
+  private readonly evidenceVerifierKey = createMaintainerFixture("evidence-verifier", 41);
+  private readonly evidenceVerifierPublicKey = deriveJubjubPublicKeyFromSeed(
+    this.evidenceVerifierKey.seed,
+  );
   private readonly bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
     this.bootstrapMaintainer.seed,
   );
   private readonly knownMaintainers = new Map<string, MaintainerScenarioFixture>();
+  private readonly epochPublicationWitnesses = new Map<string, {
+    eventHash: string;
+    signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
+  }>();
+  private readonly issuerApplicationEvidence = new Map<string, {
+    evidence: ApplicationEvidenceSubmission;
+    challengeHash: string;
+  }>();
   private policyRecordValue: GovernancePolicyRecord;
+  private evidenceTimeMs = BASE_TIMESTAMP_MS;
+  private readonly policyRevisions: Array<{
+    effectiveFromSequence: bigint;
+    commitment: Uint8Array;
+    record: GovernancePolicyRecord;
+  }> = [];
 
   get policyRecord(): GovernancePolicyRecord {
     return this.policyRecordValue;
   }
 
+  advanceEvidenceTimeBy(milliseconds: number): void {
+    if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) {
+      throw new RangeError("Evidence clock advance must be a nonnegative safe integer");
+    }
+    const nextEvidenceTimeMs = this.evidenceTimeMs + milliseconds;
+    if (
+      !Number.isSafeInteger(nextEvidenceTimeMs)
+      || Number.isNaN(new Date(nextEvidenceTimeMs).getTime())
+    ) {
+      throw new RangeError("Evidence clock exceeds the supported timestamp range");
+    }
+    this.evidenceTimeMs = nextEvidenceTimeMs;
+  }
+
+  private evidenceTime(): string {
+    return new Date(this.evidenceTimeMs).toISOString();
+  }
+
   constructor(label = "kanon") {
-    this.simulator = new TrustRegistrySimulator();
     this.registryId = createScopedIdentifier("registry", label, "trusted");
     this.registryDid = createMidnightDid(`registry:${label}`);
     this.registryIdCommitment = bytes32Commitment(this.registryId);
     this.registryDidCommitment = bytes32Commitment(this.registryDid);
     this.policyId = createScopedIdentifier("policy", label, "v1");
-    this.governancePolicyCommitment = bytes32Commitment(this.policyId);
     this.maintainerId = createScopedIdentifier(
       "participant",
       "maintainer",
@@ -217,6 +457,7 @@ export class LocalTrustRegistryIntegrationHarness {
     this.maintainerIdCommitment = bytes32Commitment(this.maintainerId);
     this.maintainerDid = createMidnightDid(`maintainer:${label}:bootstrap`);
     this.maintainerDidCommitment = bytes32Commitment(this.maintainerDid);
+    this.bootstrapMaintainer.keyId = bytes32Commitment(`${this.maintainerDid}#key-1`);
     this.evidenceVerifier = {
       did: createMidnightDid(`evidence-verifier:${label}`),
       keyIds: [createMidnightDid(`evidence-verifier:${label}`) + "#assertion-1"],
@@ -238,6 +479,16 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: sha256Hex(this.registryId),
     });
     this.policyRecordValue = this.buildPolicyRecord(1n, 1n, 1n);
+    this.governancePolicyCommitment = hashHexToBytes32(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(this.policyRecordValue),
+      ),
+    );
+    this.policyRevisions.push({
+      effectiveFromSequence: 0n,
+      commitment: this.governancePolicyCommitment,
+      record: this.policyRecordValue,
+    });
     this.knownMaintainers.set(bytes32Hex(this.maintainerIdCommitment), {
       maintainerId: this.maintainerId,
       maintainerIdCommitment: this.maintainerIdCommitment,
@@ -248,15 +499,155 @@ export class LocalTrustRegistryIntegrationHarness {
       trustLevel: "bootstrap-maintainer",
     });
 
-    this.simulator.initializeRegistry(
-      this.registryIdCommitment,
-      this.registryDidCommitment,
+    this.simulator = new TrustRegistrySimulator({
+      registryId: this.registryIdCommitment,
+      networkIdCommitment: bytes32Commitment("undeployed"),
+      contractAddress: sha256Hex(`trust-registry:simulator:${this.registryId}`).slice(2),
+      registryDidCommitment: this.registryDidCommitment,
+      governancePolicyCommitment: this.governancePolicyCommitment,
+      maintainerId: this.maintainerIdCommitment,
+      maintainerDidCommitment: this.maintainerDidCommitment,
+      maintainerKeyId: this.bootstrapMaintainer.keyId,
+      maintainerPublicKey: this.bootstrapPublicKey,
+      maintainerThreshold: 1n,
+    });
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+  }
+
+  private authorizeEvidenceVerifierForCurrentPolicy(): void {
+    const prepared = this.prepareEvidenceVerifierRegistrationAction();
+    this.executeEvidenceVerifierRegistrationWithSignatures([
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
+  }
+
+  prepareEvidenceVerifierRegistrationAction(): PreparedEvidenceVerifierRegistrationAction {
+    const version = this.simulator.getLedger().governancePolicyVersion;
+    const keyId = `${this.evidenceVerifier.did}#assertion-${version.toString()}`;
+    const authorizationId = bytes32Commitment(
+      createScopedIdentifier("evidence-verifier-key", this.registryId, `v${version.toString()}`),
+    );
+    const didCommitment = bytes32Commitment(this.evidenceVerifier.did);
+    const keyIdCommitment = bytes32Commitment(keyId);
+    const actionPayloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
+      authorizationId,
+      didCommitment,
+      keyIdCommitment,
+      this.evidenceVerifierPublicKey,
+      labelToBytes32("jubjub-schnorr"),
       this.governancePolicyCommitment,
-      this.maintainerIdCommitment,
-      this.maintainerDidCommitment,
+      version,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
+      actionKind: Uint8Array.from(REGISTER_EVIDENCE_VERIFIER_ACTION_KIND),
+      actionPayloadHash,
+      actionSequence,
+      authorizationId,
+      keyIdCommitment,
+      policyVersion: version,
+    };
+  }
+
+  /** Registration is a distinct governance action after a policy revision. */
+  executeEvidenceVerifierRegistrationWithSignatures(
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Evidence-verifier registration requires a maintainer signature");
+    const prepared = this.prepareEvidenceVerifierRegistrationAction();
+    const keyId = `${this.evidenceVerifier.did}#assertion-${prepared.policyVersion.toString()}`;
+    const eventHash = this.simulator.registerEvidenceVerifierKey(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      prepared.authorizationId,
+      bytes32Commitment(this.evidenceVerifier.did),
+      prepared.keyIdCommitment,
+      this.evidenceVerifierPublicKey,
+      labelToBytes32("jubjub-schnorr"),
+      this.governancePolicyCommitment,
+      prepared.policyVersion,
+      signers.slice(1),
+    );
+    this.currentEvidenceVerifierAuthorizationId = prepared.authorizationId;
+    this.currentEvidenceVerifierKeyIdCommitment = prepared.keyIdCommitment;
+    if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
+    return eventHash;
+  }
+
+  registerVcAuthorityKey(input: {
+    domain: VcAuthorityDomain;
+    keyIdCommitment: Uint8Array;
+    publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
+  }): void {
+    const policyCommitment = this.simulator.getLedger().governancePolicyCommitment;
+    const policyVersion = this.simulator.getLedger().governancePolicyVersion;
+    const prepared = prepareVcAuthorityKeyRegistration({
+      domain: input.domain,
+      registryId: this.registryId,
+      registryContractAddress: `0x${this.simulator.contractAddress}`,
+      keyIdCommitment: input.keyIdCommitment,
+      publicKey: input.publicKey,
+      policyCommitment,
+      policyVersion,
+    });
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    this.simulator.registerVcAuthorityKey(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      1n,
+      this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, prepared.payloadHash, actionSequence),
+      prepared.keyIdCommitment,
+      prepared.authorityDidCommitment,
+      prepared.authorityMethodIdCommitment,
+      prepared.publicKey,
+      prepared.networkIdCommitment,
+      prepared.consumerContractAddress,
+      prepared.policyCommitment,
+      prepared.policyVersion,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        REGISTER_VC_AUTHORITY_KEY_ACTION_KIND,
+        prepared.payloadHash,
+        actionSequence,
+      ),
+    );
+  }
+
+  suspendVcAuthorityKey(keyIdCommitment: Uint8Array, reasonHash: Uint8Array): void {
+    const previous = this.simulator.getVcAuthorityKey(keyIdCommitment);
+    const payload = computeUpdateVcAuthorityKeyPayloadHash(
+      keyIdCommitment,
+      previous.lifecycleEventHash,
+      reasonHash,
+    );
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    this.simulator.suspendVcAuthorityKey(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND, payload, actionSequence),
+      keyIdCommitment,
+      reasonHash,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND,
+        payload,
+        actionSequence,
+      ),
     );
   }
 
@@ -264,9 +655,17 @@ export class LocalTrustRegistryIntegrationHarness {
     applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
-    scopeCommitment: Uint8Array;
+    scope: AuthorizationScope;
+    governedResource?: GovernedResource;
   }): ApplicationEvidenceSubmission {
-    const verifiedAt = timestampForSequence(this.simulator.getLedger().governanceActionCount);
+    const scope = AuthorizationScopeSchema.parse(input.scope);
+    if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
+    this.assertSupportedContractFormat();
+    const verifiedAt = this.evidenceTime();
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
       version: "tr-application-evidence-v1" as const,
@@ -276,48 +675,92 @@ export class LocalTrustRegistryIntegrationHarness {
       role: input.role,
       policyId: this.policyId,
       policyVersion: this.policyRecord.version,
-      scopeCommitment: bytes32Hex(input.scopeCommitment),
+      scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      governedResource,
       evidenceVerifierDid: this.evidenceVerifier.did,
       verifiedAt,
       expiresAt,
       challengeHash: sha256Hex(`challenge:${input.applicationId}`),
       presentationHash: sha256Hex(`presentation:${input.applicationId}`),
       claimsCommitment: sha256Hex(`claims:${input.applicationId}`),
+      statusDecisionCommitment: sha256Hex(`status-decision:${input.applicationId}`),
     };
     const commitment = computeApplicationEvidenceCommitment(envelope);
-    const keyId = this.evidenceVerifier.keyIds[0]!;
     return {
       envelope,
       commitment,
-      signature: {
-        keyId,
-        algorithm: "jubjub-schnorr",
-        // The local simulator uses a deterministic verifier adapter only.
-        value: sha256Hex(`${commitment}:${keyId}`),
-      },
+      signature: this.signApplicationEvidenceCommitment(commitment),
     };
+  }
+
+  signApplicationEvidenceCommitment(commitment: string) {
+    const keyId = this.evidenceVerifier.keyIds[0]!;
+    const signature = signApplicationEvidenceCommitmentFromSeed(
+      this.evidenceVerifierKey.seed,
+      bytes32Commitment(keyId),
+      hashHexToBytes32(commitment),
+    );
+    return {
+      keyId,
+      algorithm: "jubjub-schnorr" as const,
+      value: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
+    };
+  }
+
+  verifyApplicationEvidenceSignature(
+    commitment: string,
+    signature: ApplicationEvidenceSignature,
+    verifier: AuthorizedEvidenceVerifier,
+  ): boolean {
+    if (
+      verifier.did !== this.evidenceVerifier.did ||
+      signature.keyId !== this.evidenceVerifier.keyIds[0]
+    ) return false;
+    try {
+      // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
+      return verifyApplicationEvidenceCommitmentSignature(
+        this.evidenceVerifierPublicKey,
+        bytes32Commitment(signature.keyId),
+        hashHexToBytes32(commitment),
+        decodeCanonicalJubjubSignatureHex(signature.value),
+      );
+    } catch {
+      return false;
+    }
   }
 
   assertApplicationEvidence(input: {
     evidence: ApplicationEvidenceSubmission;
+    applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
-    scopeCommitment: Uint8Array;
+    scope: AuthorizationScope;
+    challengeHash?: string;
+    governedResource?: GovernedResource;
   }): Uint8Array {
+    const scope = AuthorizationScopeSchema.parse(input.scope);
+    if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
+    const governedResource = input.governedResource ?? defaultGovernedResource(scope);
+    if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
+      throw new Error("Application evidence governed resource is outside the scope");
+    }
+    this.assertSupportedContractFormat();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
       {
         registryId: this.registryId,
+        applicationId: createScopedIdentifier("application", input.role, input.applicationId),
         subjectDid: input.subjectDid,
         role: input.role,
         policyId: this.policyId,
         policyVersion: this.policyRecord.version,
-        scopeCommitment: bytes32Hex(input.scopeCommitment),
-        evaluatedAt: timestampForSequence(this.simulator.getLedger().governanceActionCount),
+        scopeCommitment: computeAuthorizationScopeCommitment(scope),
+        governedResource,
+        challengeHash: input.challengeHash ?? sha256Hex(`challenge:${input.applicationId}`),
+        evaluatedAt: this.evidenceTime(),
       },
       [this.evidenceVerifier],
-      (commitment, signature) =>
-        signature.value === sha256Hex(`${commitment}:${signature.keyId}`),
+      (commitment, signature, verifier) => this.verifyApplicationEvidenceSignature(commitment, signature, verifier),
     );
     return hashHexToBytes32(parsed.commitment);
   }
@@ -326,14 +769,18 @@ export class LocalTrustRegistryIntegrationHarness {
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
+    version = 1n,
+    effectiveFromSequence = 0n,
+    recognitionAccreditorAnchors: readonly RecognitionAccreditorAnchor[] = [],
   ): GovernancePolicyRecord {
     return GovernancePolicyRecordSchema.parse({
       policyId: this.policyId,
       registryId: this.registryId,
-      version: "v1",
-      policyUri: "https://registry.example/policies/kanon-v1",
+      version: `v${version.toString()}`,
+      policyUri: `https://registry.example/policies/kanon-v${version.toString()}`,
       status: "active",
-      effectiveFrom: timestampForSequence(0n),
+      effectiveFrom: timestampForSequence(effectiveFromSequence),
+      recognitionAccreditorAnchors,
       policyTemplates: [
         {
           templateId: createScopedIdentifier("policy-template", "maintainer", "v1"),
@@ -346,6 +793,7 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:maintainer:propose",
             "tr:maintainer:authorize",
             "tr:maintainer:activate",
+            "tr:maintainer:recover",
             "tr:policy:thresholds:update",
           ],
           evidenceRules: ["governance evidence hash", "maintainer quorum signatures"],
@@ -361,6 +809,8 @@ export class LocalTrustRegistryIntegrationHarness {
             "tr:issuer:propose",
             "tr:issuer:authorize",
             "tr:issuer:activate",
+            "tr:evidence-verifier:register",
+            "tr:evidence-verifier:rotate",
             "tr:verifier:propose",
             "tr:verifier:authorize",
             "tr:verifier:activate",
@@ -380,10 +830,13 @@ export class LocalTrustRegistryIntegrationHarness {
           applicableActionKinds: [
             "tr:issuer:suspend",
             "tr:issuer:revoke",
+            "tr:evidence-verifier:suspend",
+            "tr:evidence-verifier:revoke",
             "tr:verifier:suspend",
             "tr:verifier:revoke",
             "tr:maintainer:suspend",
             "tr:maintainer:revoke",
+            "tr:maintainer:recover",
             "tr:recognition:suspend",
             "tr:recognition:revoke",
             "tr:auditor:suspend",
@@ -472,9 +925,28 @@ export class LocalTrustRegistryIntegrationHarness {
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
   ) {
-    return signMaintainerActionFromSeed(
+    return this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
+      actionKind,
+      actionPayloadHash,
+      actionSequence,
+    );
+  }
+
+  private signMaintainerActionFromSeed(
+    seed: Uint8Array,
+    registryId: Uint8Array,
+    actionKind: Uint8Array,
+    actionPayloadHash: Uint8Array,
+    actionSequence: bigint,
+  ) {
+    return signDeploymentBoundMaintainerActionFromSeed(
+      seed,
+      registryId,
+      this.simulator.getLedger().deploymentNetworkIdCommitment,
+      Buffer.from(this.simulator.contractAddress, "hex"),
+      this.simulator.getLedger().governancePolicyCommitment,
       actionKind,
       actionPayloadHash,
       actionSequence,
@@ -490,7 +962,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return maintainers.map((maintainer) => ({
       keyId: maintainer.keyId,
       publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-      signature: signMaintainerActionFromSeed(
+      signature: this.signMaintainerActionFromSeed(
         maintainer.seed,
         this.registryIdCommitment,
         actionKind,
@@ -544,35 +1016,268 @@ export class LocalTrustRegistryIntegrationHarness {
     archivalThreshold: bigint,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const actionPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+    const prepared = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    const result = this.executeThresholdPolicyRevisionWithSignatures(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      [{
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      }, ...this.maintainerCoAuthorizers(
+        additionalMaintainers, prepared.actionKind, prepared.actionPayloadHash,
+        prepared.actionSequence,
+      )],
+    );
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+    return result;
+  }
+
+  governRecognitionAccreditorAnchor(
+    input: RecognitionAccreditorAnchor,
+    additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+  ): Uint8Array {
+    const anchor = RecognitionAccreditorAnchorSchema.parse(input);
+    const ledger = this.simulator.getLedger();
+    const nextVersion = `v${(ledger.governancePolicyVersion + 1n).toString()}`;
+    if (anchor.targetRegistryId !== this.registryId
+      || anchor.policyId !== this.policyId || anchor.policyVersion !== nextVersion) {
+      throw new Error("Recognition accreditor anchor must name the next governed policy revision");
+    }
+    const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors
+      .filter((current) => current.recognizedRegistryId !== anchor.recognizedRegistryId
+        || current.scopeResourceType !== anchor.scopeResourceType
+        || current.scopeResourceId !== anchor.scopeResourceId)
+      .map((current) => ({ ...current, policyVersion: nextVersion }));
+    nextAnchors.push(anchor);
+    const thresholds = [
+      ledger.maintainerThreshold,
+      ledger.emergencyMaintainerThreshold,
+      ledger.archivalMaintainerThreshold,
+    ] as const;
+    const prepared = this.prepareThresholdPolicyRevisionAction(...thresholds, nextAnchors);
+    const result = this.executeThresholdPolicyRevisionWithSignatures(
+      ...thresholds,
+      [{
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      }, ...this.maintainerCoAuthorizers(
+        additionalMaintainers, prepared.actionKind, prepared.actionPayloadHash,
+        prepared.actionSequence,
+      )],
+      nextAnchors,
+    );
+    this.authorizeEvidenceVerifierForCurrentPolicy();
+    return result;
+  }
+
+  resolveCurrentRecognitionAccreditorAnchor(input: {
+    recognizedRegistryId: string;
+    scopeResourceType: string;
+    scopeResourceId: string;
+    evaluatedAtMs: number;
+  }): ReturnType<typeof resolveGovernedRecognitionAccreditorAnchor> {
+    return resolveGovernedRecognitionAccreditorAnchor({
+      policy: this.policyRecordValue,
+      activePolicyCommitment: bytes32Hex(this.simulator.getLedger().governancePolicyCommitment),
+      scope: {
+        registryId: this.registryId,
+        recognizedRegistryId: input.recognizedRegistryId,
+        scopeResourceType: input.scopeResourceType,
+        scopeResourceId: input.scopeResourceId,
+      },
+      evaluatedAtMs: input.evaluatedAtMs,
+    });
+  }
+
+  prepareThresholdPolicyRevisionAction(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
+  ): PreparedThresholdPolicyRevisionAction {
+    const ledger = this.simulator.getLedger();
+    pureCircuits.assertValidMaintainerThresholdPolicy(
+      ledger.activeMaintainerCount,
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
+    );
+    const actionSequence = ledger.governanceActionCount;
+    const nextPolicyVersion = ledger.governancePolicyVersion + 1n;
+    const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${nextPolicyVersion.toString()}` }),
+    );
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+      nextPolicyVersion,
+      actionSequence + 1n,
+      nextAnchors,
+    );
+    assertGovernancePolicyRevision(
+      deriveGovernancePolicySnapshot(this.policyRecordValue),
+      deriveGovernancePolicySnapshot(nextPolicyRecord),
+    );
+    const nextPolicyCommitment = hashHexToBytes32(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(nextPolicyRecord),
+      ),
+    );
+    const actionPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      this.governancePolicyCommitment,
+      nextPolicyCommitment,
+      nextPolicyVersion,
+      defaultThreshold,
+      emergencyThreshold,
+      archivalThreshold,
+    );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
+      actionKind: Uint8Array.from(UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND),
+      actionPayloadHash,
+      actionSequence,
+      nextPolicyCommitment,
+      nextPolicyVersion,
+    };
+  }
+
+  /** Compact checks current policy, sequence, distinct active keys, signatures, and quorum. */
+  executeThresholdPolicyRevisionWithSignatures(
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    signers: readonly MaintainerCoAuthorizer[],
+    recognitionAccreditorAnchors?: readonly RecognitionAccreditorAnchor[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Threshold revision requires a maintainer signature");
+    const prepared = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold, recognitionAccreditorAnchors,
+    );
+    const nextAnchors = recognitionAccreditorAnchors ?? this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${prepared.nextPolicyVersion.toString()}` }),
+    );
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      prepared.nextPolicyVersion, prepared.actionSequence + 1n,
+      nextAnchors,
     );
     const result = this.simulator.updateMaintainerThresholdPolicy(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
-      ),
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      signers.slice(1),
+    );
+    this.policyRecordValue = nextPolicyRecord;
+    this.governancePolicyCommitment = prepared.nextPolicyCommitment;
+    this.registryRecord = RegistryRecordSchema.parse({
+      ...this.registryRecord,
+      policyUri: nextPolicyRecord.policyUri,
+      updatedAt: timestampForSequence(prepared.actionSequence),
+      lifecycleEventRoot: bytes32Hex(result),
+    });
+    this.policyRevisions.push({
+      effectiveFromSequence: prepared.actionSequence + 1n,
+      commitment: prepared.nextPolicyCommitment,
+      record: nextPolicyRecord,
+    });
+    return result;
+  }
+
+  prepareAtomicMaintainerRecoveryAction(
+    fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+  ): PreparedAtomicMaintainerRecoveryAction {
+    const ledger = this.simulator.getLedger();
+    if (ledger.activeMaintainerCount <= 1n) {
+      throw new AtomicMaintainerRecoveryPrecheckError("Cannot remove the last active maintainer");
+    }
+    pureCircuits.assertValidMaintainerThresholdPolicy(
+      ledger.activeMaintainerCount - 1n,
       defaultThreshold,
       emergencyThreshold,
       archivalThreshold,
-      this.maintainerCoAuthorizers(
-        additionalMaintainers,
-        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
-        actionPayloadHash,
-        actionSequence,
+    );
+    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    if (current.status !== ContractAuthorizationStatus.active) {
+      throw new AtomicMaintainerRecoveryPrecheckError("Recovery target must be active");
+    }
+    const policy = this.prepareThresholdPolicyRevisionAction(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+    );
+    return {
+      ...policy,
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+      actionKind: Uint8Array.from(RECOVER_MAINTAINER_ACTION_KIND),
+      actionPayloadHash: computeRecoverMaintainerMembershipPayloadHash(
+        policy.policyCommitment,
+        policy.nextPolicyCommitment,
+        policy.nextPolicyVersion,
+        defaultThreshold,
+        emergencyThreshold,
+        archivalThreshold,
+        fixture.maintainerIdCommitment,
+        current.lifecycleEventHash,
+        evidenceHash,
       ),
+    };
+  }
+
+  executeAtomicMaintainerRecoveryWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    evidenceHash: Uint8Array,
+    defaultThreshold: bigint,
+    emergencyThreshold: bigint,
+    archivalThreshold: bigint,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Atomic recovery requires a maintainer signature");
+    const prepared = this.prepareAtomicMaintainerRecoveryAction(
+      fixture, evidenceHash, defaultThreshold, emergencyThreshold, archivalThreshold,
     );
-    this.policyRecordValue = this.buildPolicyRecord(
-      defaultThreshold,
-      emergencyThreshold,
-      archivalThreshold,
+    const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors.map(
+      (anchor) => ({ ...anchor, policyVersion: `v${prepared.nextPolicyVersion.toString()}` }),
     );
+    const nextPolicyRecord = this.buildPolicyRecord(
+      defaultThreshold, emergencyThreshold, archivalThreshold,
+      prepared.nextPolicyVersion, prepared.actionSequence + 1n, nextAnchors,
+    );
+    const result = this.simulator.recoverMaintainerMembership(
+      primary.keyId, primary.publicKey, primary.signature,
+      fixture.maintainerIdCommitment, prepared.evidenceHash,
+      prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
+      defaultThreshold, emergencyThreshold, archivalThreshold, signers.slice(1),
+    );
+    this.policyRecordValue = nextPolicyRecord;
+    this.governancePolicyCommitment = prepared.nextPolicyCommitment;
+    this.registryRecord = RegistryRecordSchema.parse({
+      ...this.registryRecord,
+      policyUri: nextPolicyRecord.policyUri,
+      updatedAt: timestampForSequence(prepared.actionSequence),
+      lifecycleEventRoot: bytes32Hex(result),
+    });
+    this.policyRevisions.push({
+      effectiveFromSequence: prepared.actionSequence + 1n,
+      commitment: prepared.nextPolicyCommitment,
+      record: nextPolicyRecord,
+    });
     return result;
   }
 
@@ -583,103 +1288,223 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
-    const proposedEvidenceHash = this.assertApplicationEvidence({
-      evidence: this.createApplicationEvidence({
+    return this.proposeMaintainerWithApplicationEvidence(
+      fixture,
+      this.createApplicationEvidence({
         applicationId: fixture.maintainerId,
         subjectDid: fixture.subjectDid,
         role: "maintainer",
-        scopeCommitment: fixture.maintainerIdCommitment,
+        scope: createMaintainerAuthorizationScopeFixture(this.registryId),
       }),
+    );
+  }
+
+  proposeMaintainerWithApplicationEvidence(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): Uint8Array {
+    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeMaintainerProposalWithSignatures(fixture, evidence, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ], this.signMaintainerProposalEvidence(prepared), expectedEvidence);
+  }
+
+  prepareMaintainerProposalAction(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): PreparedMaintainerProposalAction {
+    if (
+      expectedEvidence.scope.role !== "maintainer" ||
+      expectedEvidence.scope.registryId !== this.registryId ||
+      expectedEvidence.governedResource.type !== "registry" ||
+      expectedEvidence.governedResource.id !== this.registryId
+    ) {
+      throw new Error("Maintainer proposal scope does not match governed registry");
+    }
+    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
+    const proposedEvidenceHash = this.assertApplicationEvidence({
+      evidence,
+      applicationId: fixture.maintainerId,
       subjectDid: fixture.subjectDid,
       role: "maintainer",
-      scopeCommitment: fixture.maintainerIdCommitment,
+      ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_MAINTAINER_ACTION_KIND,
-      computeCreateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment,
-        fixture.subjectDidCommitment,
-        fixture.keyId,
-        candidatePublicKey,
-        this.governancePolicyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        proposedEvidenceHash,
-      ),
-      proposeActionSequence,
-    );
-
-    return this.simulator.proposeMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+    const ledger = this.simulator.getLedger();
+    const baseMaintainerPayloadHash = computeCreateMaintainerMembershipPayloadHash(
       fixture.maintainerIdCommitment,
       fixture.subjectDidCommitment,
       fixture.keyId,
       candidatePublicKey,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      policyVersion: ledger.governancePolicyVersion,
+      actionKind: Uint8Array.from(PROPOSE_MAINTAINER_ACTION_KIND),
+      actionPayloadHash: computeMaintainerEvidenceBoundProposalPayloadHash(
+        baseMaintainerPayloadHash,
+        this.currentEvidenceVerifierAuthorizationId,
+        this.currentEvidenceVerifierKeyIdCommitment,
+        ledger.governancePolicyCommitment,
+        ledger.governancePolicyVersion,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  signMaintainerProposalEvidence(prepared: PreparedMaintainerProposalAction): TrustRegistryJubjubSignature {
+    return signMaintainerProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
+  executeMaintainerProposalWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    verifierSignature: TrustRegistryJubjubSignature,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+      challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
+      governedResource: { type: "registry", id: this.registryId },
+    },
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Maintainer proposal requires a maintainer signature");
+    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+    const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
+
+    return this.simulator.proposeMaintainerMembership(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      fixture.maintainerIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.keyId,
+      candidatePublicKey,
+      prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      verifierSignature,
+      signers.slice(1),
+    );
+  }
+
+  prepareMaintainerDecisionAction(
+    fixture: MaintainerScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedMaintainerAction {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
+      throw new Error("Unsupported maintainer decision action");
+    }
+    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.maintainerId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_MAINTAINER_ACTION_KIND,
+      activate: ACTIVATE_MAINTAINER_ACTION_KIND,
+      suspend: SUSPEND_MAINTAINER_ACTION_KIND,
+      revoke: REVOKE_MAINTAINER_ACTION_KIND,
+      archive: ARCHIVE_MAINTAINER_ACTION_KIND,
+    };
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      maintainerId: Uint8Array.from(fixture.maintainerIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKinds[action]),
+      actionPayloadHash: computeUpdateMaintainerMembershipPayloadHash(
+        fixture.maintainerIdCommitment, current.lifecycleEventHash, evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+    };
+  }
+
+  executeMaintainerDecisionWithSignatures(
+    fixture: MaintainerScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Maintainer decision requires a maintainer signature");
+    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeMaintainerMembership(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    const circuit = action === "activate" ? this.simulator.activateMaintainerMembership.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendMaintainerMembership.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeMaintainerMembership.bind(this.simulator)
+          : this.simulator.archiveMaintainerMembership.bind(this.simulator);
+    const result = circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1));
+    if (action === "activate") this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
+    return result;
+  }
+
+  private fixtureMaintainerDecision(fixture: MaintainerScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+    return this.executeMaintainerDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getMaintainerMembership(
-      fixture.maintainerIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_MAINTAINER_ACTION_KIND,
-      computeUpdateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment,
-        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-
-    return this.simulator.authorizeMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.maintainerIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureMaintainerDecision(fixture, "approve");
   }
 
   activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getMaintainerMembership(
-      fixture.maintainerIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_MAINTAINER_ACTION_KIND,
-      computeUpdateMaintainerMembershipPayloadHash(
-        fixture.maintainerIdCommitment,
-        this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-
-    const result = this.simulator.activateMaintainerMembership(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.maintainerIdCommitment,
-      evidenceHash,
-    );
-    this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
-    return result;
+    return this.fixtureMaintainerDecision(fixture, "activate");
   }
 
   suspendMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
@@ -722,7 +1547,8 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "issuer",
-        scopeCommitment: fixture.resourceIdCommitment,
+        scope: createIssuerAuthorizationScopeFixture(fixture),
+        governedResource: issuerGovernedResource(fixture),
       }),
       additionalMaintainers,
     );
@@ -732,51 +1558,231 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
   ): Uint8Array {
+    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeIssuerProposalWithSignatures(
+      fixture,
+      evidence,
+      [
+        {
+          keyId: this.bootstrapMaintainer.keyId,
+          publicKey: this.bootstrapPublicKey,
+          signature: this.bootstrapActionSignature(
+            prepared.actionKind,
+            prepared.actionPayloadHash,
+            prepared.actionSequence,
+          ),
+        },
+        ...this.maintainerCoAuthorizers(
+          additionalMaintainers,
+          prepared.actionKind,
+          prepared.actionPayloadHash,
+          prepared.actionSequence,
+        ),
+      ],
+      signIssuerProposalEvidenceFromSeed(
+        this.evidenceVerifierKey.seed,
+        prepared.registryId,
+        prepared.evidenceVerifierKeyIdCommitment,
+        prepared.actionPayloadHash,
+      ),
+      expectedEvidence,
+    );
+  }
+
+  prepareIssuerProposalAction(
+    fixture: IssuerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
+  ): PreparedIssuerProposalAction {
+    if (
+      expectedEvidence.scope.role !== "issuer" ||
+      expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
+      expectedEvidence.governedResource.id !== fixture.resourceId ||
+      governedResourceInScope(expectedEvidence.scope, expectedEvidence.governedResource.type) !== fixture.resourceId ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createIssuerAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Issuer proposal scope does not match governed resource");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "issuer",
-      scopeCommitment: fixture.resourceIdCommitment,
+      ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const actionPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
+    const statusPolicyBindingCommitment = hashHexToBytes32(
+      computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
+    );
+    const ledger = this.simulator.getLedger();
+    const baseIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
+      statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
-    return this.simulator.proposeIssuerAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        PROPOSE_ISSUER_ACTION_KIND,
-        actionPayloadHash,
-        proposeActionSequence,
-      ),
+    const actionPayloadHash = computeIssuerEvidenceBoundProposalPayloadHash(
+      baseIssuerPayloadHash,
+      this.currentEvidenceVerifierAuthorizationId,
+      this.currentEvidenceVerifierKeyIdCommitment,
+      ledger.governancePolicyCommitment,
+      ledger.governancePolicyVersion,
+    );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      policyVersion: ledger.governancePolicyVersion,
+      actionKind: Uint8Array.from(PROPOSE_ISSUER_ACTION_KIND),
+      actionPayloadHash,
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      statusPolicyBindingCommitment,
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  signIssuerProposalEvidence(prepared: PreparedIssuerProposalAction): TrustRegistryJubjubSignature {
+    return signIssuerProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
+  executeIssuerProposalWithSignatures(
+    fixture: IssuerScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    verifierSignature: TrustRegistryJubjubSignature,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Issuer proposal requires a maintainer signature");
+    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+    const eventHash = this.simulator.proposeIssuerAuthorization(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
-      this.governancePolicyCommitment,
+      prepared.policyCommitment,
+      prepared.statusPolicyBindingCommitment,
       bytes32Commitment(fixture.trustLevel),
-      proposedEvidenceHash,
-      this.maintainerCoAuthorizers(
-        additionalMaintainers,
-        PROPOSE_ISSUER_ACTION_KIND,
-        actionPayloadHash,
-        proposeActionSequence,
-      ),
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      verifierSignature,
+      signers.slice(1),
     );
+    this.issuerApplicationEvidence.set(fixture.authorizationId, {
+      evidence,
+      challengeHash: expectedEvidence.challengeHash,
+    });
+    return eventHash;
+  }
+
+  private recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): void {
+    const accepted = this.issuerApplicationEvidence.get(fixture.authorizationId);
+    if (accepted === undefined) {
+      throw new Error("Issuer application evidence is unavailable for approval or activation");
+    }
+    const commitment = this.assertApplicationEvidence({
+      evidence: accepted.evidence,
+      applicationId: fixture.authorizationId,
+      subjectDid: fixture.subjectDid,
+      role: "issuer",
+      scope: createIssuerAuthorizationScopeFixture(fixture),
+      challengeHash: accepted.challengeHash,
+      governedResource: issuerGovernedResource(fixture),
+    });
+    const proposal = this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment);
+    if (!Buffer.from(commitment).equals(Buffer.from(proposal.evidenceCommitment))) {
+      throw new Error("Issuer application evidence no longer matches the governed proposal");
+    }
+  }
+
+  prepareIssuerDecisionAction(
+    fixture: IssuerScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedIssuerDecisionAction {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
+      throw new Error("Unsupported issuer decision action");
+    }
+    if (action === "approve" || action === "activate") this.recheckIssuerApplicationEvidence(fixture);
+    const ledger = this.simulator.getLedger();
+    const current = this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment);
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_ISSUER_ACTION_KIND,
+      activate: ACTIVATE_ISSUER_ACTION_KIND,
+      suspend: SUSPEND_ISSUER_ACTION_KIND,
+      revoke: REVOKE_ISSUER_ACTION_KIND,
+      archive: ARCHIVE_ISSUER_ACTION_KIND,
+    };
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKinds[action]),
+      actionPayloadHash: computeUpdateIssuerAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment,
+        current.lifecycleEventHash,
+        evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+    };
+  }
+
+  /** The Compact simulator verifies current context, active signer membership, and quorum. */
+  executeIssuerDecisionWithSignatures(
+    fixture: IssuerScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Issuer decision requires a maintainer signature");
+    const prepared = this.prepareIssuerDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeIssuerAuthorization(
+        primary.keyId,
+        primary.publicKey,
+        primary.signature,
+        fixture.authorizationIdCommitment,
+        prepared.evidenceHash,
+        signers.slice(1),
+      );
+    }
+    const circuit = action === "activate" ? this.simulator.activateIssuerAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendIssuerAuthorization.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeIssuerAuthorization.bind(this.simulator)
+          : this.simulator.archiveIssuerAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
   approveIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
+    this.recheckIssuerApplicationEvidence(fixture);
     const authorizedEvidenceHash = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     ).evidenceHash;
@@ -810,6 +1816,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
   ): Uint8Array {
+    this.recheckIssuerApplicationEvidence(fixture);
     const evidenceHash = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     ).evidenceHash;
@@ -883,7 +1890,7 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "verifier",
-        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+        scope: createVerifierAuthorizationScopeFixture(fixture),
       }),
     );
   }
@@ -891,98 +1898,213 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeVerifierWithApplicationEvidence(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createVerifierAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
   ): Uint8Array {
+    const prepared = this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeVerifierProposalWithSignatures(fixture, evidence, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ], this.signVerifierProposalEvidence(prepared), expectedEvidence);
+  }
+
+  prepareVerifierProposalAction(
+    fixture: VerifierScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createVerifierAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): PreparedVerifierProposalAction {
+    if (
+      expectedEvidence.scope.role !== "verifier" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.scopeResourceId ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createVerifierAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Verifier proposal scope does not match governed request profile");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "verifier",
-      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_VERIFIER_ACTION_KIND,
-      computeCreateVerifierAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
-        fixture.allowedAttributeSetCommitment,
-        fixture.allowedPredicateSetCommitment,
-        fixture.disclosureLevelCommitment,
-        this.governancePolicyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        proposedEvidenceHash,
-      ),
-      proposeActionSequence,
-    );
-    return this.simulator.proposeVerifierAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+    const ledger = this.simulator.getLedger();
+    const baseVerifierPayloadHash = computeCreateVerifierAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      policyVersion: ledger.governancePolicyVersion,
+      actionKind: Uint8Array.from(PROPOSE_VERIFIER_ACTION_KIND),
+      actionPayloadHash: computeVerifierEvidenceBoundProposalPayloadHash(
+        baseVerifierPayloadHash,
+        this.currentEvidenceVerifierAuthorizationId,
+        this.currentEvidenceVerifierKeyIdCommitment,
+        ledger.governancePolicyCommitment,
+        ledger.governancePolicyVersion,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  signVerifierProposalEvidence(prepared: PreparedVerifierProposalAction): TrustRegistryJubjubSignature {
+    return signVerifierProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
+  executeVerifierProposalWithSignatures(
+    fixture: VerifierScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    verifierSignature: TrustRegistryJubjubSignature,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createVerifierAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Verifier proposal requires a maintainer signature");
+    const prepared = this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
+    return this.simulator.proposeVerifierAuthorization(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      fixture.authorizationIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.requestResourceIdCommitment,
+      fixture.allowedAttributeSetCommitment,
+      fixture.allowedPredicateSetCommitment,
+      fixture.disclosureLevelCommitment,
+      prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      verifierSignature,
+      signers.slice(1),
+    );
+  }
+
+  prepareVerifierDecisionAction(
+    fixture: VerifierScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedIssuerDecisionAction {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
+      throw new Error("Unsupported verifier decision action");
+    }
+    const current = this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
+    const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_VERIFIER_ACTION_KIND,
+      activate: ACTIVATE_VERIFIER_ACTION_KIND,
+      suspend: SUSPEND_VERIFIER_ACTION_KIND,
+      revoke: REVOKE_VERIFIER_ACTION_KIND,
+      archive: ARCHIVE_VERIFIER_ACTION_KIND,
+    };
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKinds[action]),
+      actionPayloadHash: computeUpdateVerifierAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment, current.lifecycleEventHash, evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+    };
+  }
+
+  executeVerifierDecisionWithSignatures(
+    fixture: VerifierScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Verifier decision requires a maintainer signature");
+    const prepared = this.prepareVerifierDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeVerifierAuthorization(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    const circuit = action === "activate" ? this.simulator.activateVerifierAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendVerifierAuthorization.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeVerifierAuthorization.bind(this.simulator)
+          : this.simulator.archiveVerifierAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
+  }
+
+  private fixtureVerifierDecision(fixture: VerifierScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareVerifierDecisionAction(fixture, action);
+    return this.executeVerifierDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getVerifierAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_VERIFIER_ACTION_KIND,
-      computeUpdateVerifierAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-    return this.simulator.authorizeVerifierAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.authorizationIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureVerifierDecision(fixture, "approve");
   }
 
   activateVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getVerifierAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_VERIFIER_ACTION_KIND,
-      computeUpdateVerifierAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-
-    return this.simulator.activateVerifierAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.authorizationIdCommitment,
-      evidenceHash,
-    );
+    return this.fixtureVerifierDecision(fixture, "activate");
   }
 
   authorizeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
@@ -1016,91 +2138,216 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   proposeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const proposedEvidenceHash = bytes32Commitment(
-      `${fixture.recognitionId}:propose`,
-    );
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_RECOGNITION_ACTION_KIND,
-      computeCreateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        fixture.recognizedAuthorityDidCommitment,
-        fixture.recognizedRegistryIdCommitment,
-        fixture.scopeResourceTypeCommitment,
-        fixture.scopeResourceIdCommitment,
-        this.governancePolicyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        proposedEvidenceHash,
+    const prepared = this.prepareRecognitionProposalAction(fixture);
+    return this.executeRecognitionProposalWithSignatures(fixture, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
-      proposeActionSequence,
-    );
+    ], this.signRecognitionProposalEvidence(prepared));
+  }
 
-    return this.simulator.proposeRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+  prepareRecognitionProposalAction(
+    fixture: RecognitionScenarioFixture,
+    evidenceHash?: Uint8Array,
+  ): PreparedRecognitionProposalAction {
+    const proposedEvidenceHash = evidenceHash ?? bytes32Commitment(`${fixture.recognitionId}:propose`);
+    if (proposedEvidenceHash.length !== 32) throw new Error("Recognition evidence commitment must be 32 bytes");
+    const ledger = this.simulator.getLedger();
+    const baseRecognitionPayloadHash = computeCreateRecognitionPayloadHash(
       fixture.recognitionIdCommitment,
       fixture.recognizedAuthorityDidCommitment,
       fixture.recognizedRegistryIdCommitment,
       fixture.scopeResourceTypeCommitment,
       fixture.scopeResourceIdCommitment,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(PROPOSE_RECOGNITION_ACTION_KIND),
+      actionPayloadHash: computeRecognitionEvidenceBoundProposalPayloadHash(
+        baseRecognitionPayloadHash,
+        this.currentEvidenceVerifierAuthorizationId,
+        this.currentEvidenceVerifierKeyIdCommitment,
+        ledger.governancePolicyCommitment,
+        ledger.governancePolicyVersion,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  async prepareRecognitionProposalFromAuthorityAssertion(input: {
+    fixture: RecognitionScenarioFixture;
+    signed: SignedRecognitionAuthorityAssertion;
+    challengeHash: string;
+    evaluatedAtMs: number;
+    resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  }): Promise<PreparedRecognitionProposalAction> {
+    const { fixture } = input;
+    const verified = await verifyRecognitionAuthorityAssertion({
+      signed: input.signed,
+      expected: {
+        targetRegistryId: this.registryId,
+        recognitionId: fixture.recognitionId,
+        authorityDid: fixture.recognizedAuthorityDid,
+        recognizedRegistryId: fixture.recognizedRegistryId,
+        scopeResourceType: fixture.scopeResourceType,
+        scopeResourceId: fixture.scopeResourceId,
+        challengeHash: input.challengeHash,
+        evaluatedAtMs: input.evaluatedAtMs,
+      },
+      resolver: input.resolver,
+    });
+    return this.prepareRecognitionProposalAction(
+      fixture, recognitionAuthorityEvidenceBytes(verified),
+    );
+  }
+
+  signRecognitionProposalEvidence(
+    prepared: PreparedRecognitionProposalAction,
+  ): TrustRegistryJubjubSignature {
+    return signRecognitionProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
+  executeRecognitionProposalWithSignatures(
+    fixture: RecognitionScenarioFixture,
+    signers: readonly MaintainerCoAuthorizer[],
+    evidenceSignature: TrustRegistryJubjubSignature,
+    prepared = this.prepareRecognitionProposalAction(fixture),
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Recognition proposal requires a maintainer signature");
+    const current = this.prepareRecognitionProposalAction(fixture, prepared.evidenceHash);
+    if (prepared.actionSequence !== current.actionSequence
+      || !sameBytes(prepared.registryId, current.registryId)
+      || !sameBytes(prepared.recognitionId, current.recognitionId)
+      || !sameBytes(prepared.policyCommitment, current.policyCommitment)
+      || !sameBytes(prepared.actionKind, current.actionKind)
+      || !sameBytes(prepared.actionPayloadHash, current.actionPayloadHash)
+      || !sameBytes(prepared.evidenceVerifierAuthorizationId, current.evidenceVerifierAuthorizationId)
+      || !sameBytes(prepared.evidenceVerifierKeyIdCommitment, current.evidenceVerifierKeyIdCommitment)) {
+      throw new Error("Recognition proposal context is stale or substituted");
+    }
+
+    return this.simulator.proposeRecognition(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      fixture.recognitionIdCommitment,
+      fixture.recognizedAuthorityDidCommitment,
+      fixture.recognizedRegistryIdCommitment,
+      fixture.scopeResourceTypeCommitment,
+      fixture.scopeResourceIdCommitment,
+      prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      evidenceSignature,
+      signers.slice(1),
+    );
+  }
+
+  prepareRecognitionDecisionAction(
+    fixture: RecognitionScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedRecognitionAction {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
+      throw new Error("Unsupported recognition decision action");
+    }
+    const current = this.simulator.getRecognition(fixture.recognitionIdCommitment);
+    const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.recognitionId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_RECOGNITION_ACTION_KIND,
+      activate: ACTIVATE_RECOGNITION_ACTION_KIND,
+      suspend: SUSPEND_RECOGNITION_ACTION_KIND,
+      revoke: REVOKE_RECOGNITION_ACTION_KIND,
+      archive: ARCHIVE_RECOGNITION_ACTION_KIND,
+    };
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      recognitionId: Uint8Array.from(fixture.recognitionIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKinds[action]),
+      actionPayloadHash: computeUpdateRecognitionPayloadHash(
+        fixture.recognitionIdCommitment, current.lifecycleEventHash, evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+    };
+  }
+
+  executeRecognitionDecisionWithSignatures(
+    fixture: RecognitionScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Recognition decision requires a maintainer signature");
+    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeRecognition(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    const circuit = action === "activate" ? this.simulator.activateRecognition.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendRecognition.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeRecognition.bind(this.simulator)
+          : this.simulator.archiveRecognition.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1));
+  }
+
+  private fixtureRecognitionDecision(fixture: RecognitionScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+    return this.executeRecognitionDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = bytes32Commitment(
-      `${fixture.recognitionId}:authorize`,
-    );
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_RECOGNITION_ACTION_KIND,
-      computeUpdateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        this.simulator.getRecognition(fixture.recognitionIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-    return this.simulator.authorizeRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.recognitionIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureRecognitionDecision(fixture, "approve");
   }
 
   activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const evidenceHash = bytes32Commitment(`${fixture.recognitionId}:activate`);
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_RECOGNITION_ACTION_KIND,
-      computeUpdateRecognitionPayloadHash(
-        fixture.recognitionIdCommitment,
-        this.simulator.getRecognition(fixture.recognitionIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-
-    return this.simulator.activateRecognition(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.recognitionIdCommitment,
-      evidenceHash,
-    );
+    return this.fixtureRecognitionDecision(fixture, "activate");
   }
 
   authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
@@ -1116,7 +2363,7 @@ export class LocalTrustRegistryIntegrationHarness {
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "auditor",
-        scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+        scope: createAuditorAuthorizationScopeFixture(fixture),
       }),
     );
   }
@@ -1124,97 +2371,213 @@ export class LocalTrustRegistryIntegrationHarness {
   proposeAuditorWithApplicationEvidence(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
   ): Uint8Array {
+    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
+    return this.executeAuditorProposalWithSignatures(fixture, evidence, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ], this.signAuditorProposalEvidence(prepared), expectedEvidence);
+  }
+
+  prepareAuditorProposalAction(
+    fixture: AuditorScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): PreparedAuditorProposalAction {
+    if (
+      expectedEvidence.scope.role !== "auditor" ||
+      expectedEvidence.governedResource.type !== "requestProfile" ||
+      expectedEvidence.governedResource.id !== fixture.scopeResourceId ||
+      computeAuthorizationScopeCommitment(expectedEvidence.scope) !==
+        computeAuthorizationScopeCommitment(createAuditorAuthorizationScopeFixture(fixture))
+    ) {
+      throw new Error("Auditor proposal scope does not match governed request profile");
+    }
     const proposedEvidenceHash = this.assertApplicationEvidence({
       evidence,
+      applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "auditor",
-      scopeCommitment: bytes32Commitment(fixture.scopeResourceId),
+      ...expectedEvidence,
     });
-    const proposeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const proposeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      PROPOSE_AUDITOR_ACTION_KIND,
-      computeCreateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        fixture.subjectDidCommitment,
-        fixture.requestProfileIdCommitment,
-        fixture.allowedAttributeSetCommitment,
-        fixture.allowedPredicateSetCommitment,
-        fixture.disclosureLevelCommitment,
-        this.governancePolicyCommitment,
-        bytes32Commitment(fixture.trustLevel),
-        proposedEvidenceHash,
-      ),
-      proposeActionSequence,
-    );
-    return this.simulator.proposeAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      proposeSignature,
+    const ledger = this.simulator.getLedger();
+    const baseAuditorPayloadHash = computeCreateAuditorAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
-      this.governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       bytes32Commitment(fixture.trustLevel),
       proposedEvidenceHash,
     );
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      policyVersion: ledger.governancePolicyVersion,
+      actionKind: Uint8Array.from(PROPOSE_AUDITOR_ACTION_KIND),
+      actionPayloadHash: computeAuditorEvidenceBoundProposalPayloadHash(
+        baseAuditorPayloadHash,
+        this.currentEvidenceVerifierAuthorizationId,
+        this.currentEvidenceVerifierKeyIdCommitment,
+        ledger.governancePolicyCommitment,
+        ledger.governancePolicyVersion,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      evidenceHash: Uint8Array.from(proposedEvidenceHash),
+      evidenceVerifierAuthorizationId: Uint8Array.from(this.currentEvidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: Uint8Array.from(this.currentEvidenceVerifierKeyIdCommitment),
+    };
+  }
+
+  signAuditorProposalEvidence(prepared: PreparedAuditorProposalAction): TrustRegistryJubjubSignature {
+    return signAuditorProposalEvidenceFromSeed(
+      this.evidenceVerifierKey.seed,
+      prepared.registryId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      prepared.actionPayloadHash,
+    );
+  }
+
+  executeAuditorProposalWithSignatures(
+    fixture: AuditorScenarioFixture,
+    evidence: ApplicationEvidenceSubmission,
+    signers: readonly MaintainerCoAuthorizer[],
+    verifierSignature: TrustRegistryJubjubSignature,
+    expectedEvidence: SimulatorApplicationEvidenceExpectation = {
+      scope: createAuditorAuthorizationScopeFixture(fixture),
+      challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
+      governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+    },
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Auditor proposal requires a maintainer signature");
+    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
+    return this.simulator.proposeAuditorAuthorization(
+      primary.keyId,
+      primary.publicKey,
+      primary.signature,
+      fixture.authorizationIdCommitment,
+      fixture.subjectDidCommitment,
+      fixture.requestResourceIdCommitment,
+      fixture.allowedAttributeSetCommitment,
+      fixture.allowedPredicateSetCommitment,
+      fixture.disclosureLevelCommitment,
+      prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel),
+      prepared.evidenceHash,
+      prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment,
+      verifierSignature,
+      signers.slice(1),
+    );
+  }
+
+  prepareAuditorDecisionAction(
+    fixture: AuditorScenarioFixture,
+    action: IssuerDecisionAction,
+  ): PreparedIssuerDecisionAction {
+    if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
+      throw new Error("Unsupported auditor decision action");
+    }
+    const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
+    const ledger = this.simulator.getLedger();
+    const evidenceHash = action === "approve" || action === "activate"
+      ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
+    const actionKinds = {
+      approve: AUTHORIZE_AUDITOR_ACTION_KIND,
+      activate: ACTIVATE_AUDITOR_ACTION_KIND,
+      suspend: SUSPEND_AUDITOR_ACTION_KIND,
+      revoke: REVOKE_AUDITOR_ACTION_KIND,
+      archive: ARCHIVE_AUDITOR_ACTION_KIND,
+    };
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      authorizationId: Uint8Array.from(fixture.authorizationIdCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKinds[action]),
+      actionPayloadHash: computeUpdateAuditorAuthorizationPayloadHash(
+        fixture.authorizationIdCommitment, current.lifecycleEventHash, evidenceHash,
+      ),
+      actionSequence: ledger.governanceActionCount,
+      previousLifecycleEventHash: Uint8Array.from(current.lifecycleEventHash),
+      evidenceHash: Uint8Array.from(evidenceHash),
+    };
+  }
+
+  executeAuditorDecisionWithSignatures(
+    fixture: AuditorScenarioFixture,
+    action: IssuerDecisionAction,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Auditor decision requires a maintainer signature");
+    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+    if (action === "approve") {
+      return this.simulator.authorizeAuditorAuthorization(
+        primary.keyId, primary.publicKey, primary.signature,
+        fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1),
+      );
+    }
+    const circuit = action === "activate" ? this.simulator.activateAuditorAuthorization.bind(this.simulator)
+      : action === "suspend" ? this.simulator.suspendAuditorAuthorization.bind(this.simulator)
+        : action === "revoke" ? this.simulator.revokeAuditorAuthorization.bind(this.simulator)
+          : this.simulator.archiveAuditorAuthorization.bind(this.simulator);
+    return circuit(primary.keyId, primary.publicKey, primary.signature,
+      fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
+  }
+
+  private fixtureAuditorDecision(fixture: AuditorScenarioFixture, action: IssuerDecisionAction): Uint8Array {
+    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+    return this.executeAuditorDecisionWithSignatures(fixture, action, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      ),
+    ]);
   }
 
   approveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const authorizedEvidenceHash = this.simulator.getAuditorAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
-    const authorizeSignature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      AUTHORIZE_AUDITOR_ACTION_KIND,
-      computeUpdateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        authorizedEvidenceHash,
-      ),
-      authorizeActionSequence,
-    );
-    return this.simulator.authorizeAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      authorizeSignature,
-      fixture.authorizationIdCommitment,
-      authorizedEvidenceHash,
-    );
+    return this.fixtureAuditorDecision(fixture, "approve");
   }
 
   activateAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    const evidenceHash = this.simulator.getAuditorAuthorization(
-      fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
-      this.bootstrapMaintainer.seed,
-      this.registryIdCommitment,
-      ACTIVATE_AUDITOR_ACTION_KIND,
-      computeUpdateAuditorAuthorizationPayloadHash(
-        fixture.authorizationIdCommitment,
-        this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)
-          .lifecycleEventHash,
-        evidenceHash,
-      ),
-      actionSequence,
-    );
-    return this.simulator.activateAuditorAuthorization(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      signature,
-      fixture.authorizationIdCommitment,
-      evidenceHash,
-    );
+    return this.fixtureAuditorDecision(fixture, "activate");
   }
 
   authorizeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
@@ -1275,6 +2638,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: IssuerScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertIssuerAuthorized(
       fixture.subjectDidCommitment,
@@ -1289,6 +2653,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readIssuerAuthorizationStatus(
     fixture: IssuerScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1297,6 +2662,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1304,7 +2670,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEvidenceBundle({
       authorization,
       subjectDid: fixture.subjectDid,
-      referencedStatusRegistryId: fixture.referencedStatusRegistryId,
+      statusPolicyBinding: this.issuerStatusPolicyBinding(fixture),
       lastStatusSequence: record.lastStatusSequence,
     });
   }
@@ -1313,10 +2679,11 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: VerifierScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1329,6 +2696,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readVerifierAuthorizationStatus(
     fixture: VerifierScenarioFixture,
   ): AuthorizationRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
     );
@@ -1337,6 +2705,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildVerifierHistoricalEvidence(
     fixture: VerifierScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getVerifierAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1353,10 +2722,11 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: AuditorScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
-      fixture.requestProfileIdCommitment,
+      fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
@@ -1370,6 +2740,7 @@ export class LocalTrustRegistryIntegrationHarness {
     fixture: RecognitionScenarioFixture,
     options: { expectedRegistryId?: string } = {},
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
     this.simulator.assertRecognitionActive(
       fixture.recognizedAuthorityDidCommitment,
@@ -1386,7 +2757,13 @@ export class LocalTrustRegistryIntegrationHarness {
     bundle: TrustRegistryEvidenceBundle,
     options: { evaluationTime?: string } = {},
   ): void {
+    const ledger = this.assertSupportedContractFormat();
     this.assertRegistryId(bundle.registryId);
+    const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
+    if (versionMatch === null) {
+      throw new Error("Policy version is invalid");
+    }
+    const version = BigInt(versionMatch[1]!);
     const epochRecord = this.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),
     );
@@ -1409,6 +2786,21 @@ export class LocalTrustRegistryIntegrationHarness {
         `Epoch policy root mismatch: expected ${expectedPolicyRoot}, got ${bundle.epoch.policyRoot}`,
       );
     }
+    const expectedSnapshotRoot = computeGovernancePolicySnapshotCommitment(
+      deriveGovernancePolicySnapshot(bundle.policy),
+    );
+    if (bundle.epoch.policyRoot !== expectedSnapshotRoot) {
+      throw new Error("Epoch policy root does not match the policy snapshot");
+    }
+    if (!ledger.governancePolicyCommitmentsByVersion.member(version)) {
+      throw new Error("Policy version is not committed to the ledger");
+    }
+    if (
+      bytes32Hex(ledger.governancePolicyCommitmentsByVersion.lookup(version))
+      !== expectedSnapshotRoot
+    ) {
+      throw new Error("Policy snapshot does not match the committed ledger version");
+    }
     if (bundle.epoch.registryId !== this.registryId) {
       throw new Error(
         `Epoch registry mismatch: expected ${this.registryId}, got ${bundle.epoch.registryId}`,
@@ -1416,6 +2808,20 @@ export class LocalTrustRegistryIntegrationHarness {
     }
 
     const evaluationTime = Date.parse(options.evaluationTime ?? bundle.generatedAt);
+    if (!Number.isFinite(evaluationTime)) {
+      throw new Error("Evaluation time is invalid");
+    }
+    if (evaluationTime < Date.parse(bundle.policy.effectiveFrom)) {
+      throw new Error("Policy snapshot is not yet effective");
+    }
+    if (
+      version < ledger.governancePolicyVersion
+      && evaluationTime >= Date.parse(timestampForSequence(
+        ledger.governancePolicyEffectiveFromByVersion.lookup(version + 1n),
+      ))
+    ) {
+      throw new Error("Policy snapshot is superseded at the evaluation time");
+    }
     if (evaluationTime < Date.parse(bundle.epoch.validFrom)) {
       throw new Error("Epoch is not yet valid for this evidence bundle");
     }
@@ -1423,15 +2829,23 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Epoch is stale for this evidence bundle");
     }
 
-    const maintainerSignature = bundle.epoch.maintainerSignatures.at(0);
-    if (maintainerSignature === undefined) {
-      throw new Error("Epoch commitment must include at least one maintainer signature");
+    // External callers can bypass the TypeScript tuple type at runtime.
+    if (bundle.epoch.maintainerSignatures.length !== 1) {
+      throw new Error("Epoch commitment must include exactly one maintainer signature");
     }
-    const encodedSignature = Buffer.from(
-      maintainerSignature.signature.replace(/^0x/, ""),
-      "hex",
-    );
-    const signature = decodeJubjubSignature(encodedSignature);
+    const maintainerSignature = bundle.epoch.maintainerSignatures[0]!;
+    if (maintainerSignature.algorithm !== "jubjub-schnorr") {
+      throw new Error("Epoch maintainer signature algorithm is unsupported");
+    }
+    if (!sameBytes(bytes32Commitment(maintainerSignature.keyId), epochRecord.maintainerKeyId)) {
+      throw new Error("Epoch maintainer DID method does not match its ledger key commitment");
+    }
+    let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+    try {
+      signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+    } catch (error) {
+      throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
+    }
     const payloadHash = computeCreateEpochCommitmentPayloadHash(
       bytes32Commitment(bundle.epoch.epochId),
       hashHexToBytes32(bundle.epoch.stateRoot),
@@ -1443,22 +2857,39 @@ export class LocalTrustRegistryIntegrationHarness {
     const maintainerRecord = this.simulator
       .getLedger()
       .maintainerRecords.lookup(epochRecord.maintainerKeyId);
-    const verified = verifyMaintainerAction(
-      maintainerRecord.publicKey,
-      this.registryIdCommitment,
-      CREATE_EPOCH_ACTION_KIND,
-      payloadHash,
-      epochRecord.publishedAtSequence,
-      signature,
-    );
+    if (
+      !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+      || epochRecord.publicationPolicyCommitment.length !== 32
+      || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
+    ) {
+      throw new Error("Epoch publication policy commitment is missing or malformed");
+    }
+    let verified = false;
+    let verificationFault: unknown;
+    try {
+      verified = verifyDeploymentBoundMaintainerAction(
+        maintainerRecord.publicKey,
+        this.registryIdCommitment,
+        this.simulator.getLedger().deploymentNetworkIdCommitment,
+        Buffer.from(this.simulator.contractAddress, "hex"),
+        epochRecord.publicationPolicyCommitment,
+        CREATE_EPOCH_ACTION_KIND,
+        payloadHash,
+        epochRecord.publishedAtSequence,
+        signature,
+      );
+    } catch (error) {
+      verificationFault = error;
+    }
     if (!verified) {
-      throw new Error("Epoch maintainer signature is invalid");
+      throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
     }
   }
 
   buildRecognitionHistoricalEvidence(
     fixture: RecognitionScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getRecognition(fixture.recognitionIdCommitment);
     const recognition = this.buildRecognitionRecord(fixture, record);
     return this.buildEvidenceBundle({
@@ -1471,6 +2902,7 @@ export class LocalTrustRegistryIntegrationHarness {
   readRecognitionStatus(
     fixture: RecognitionScenarioFixture,
   ): RecognitionRecord["status"] {
+    this.assertSupportedContractFormat();
     return contractStatusName(
       this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
     );
@@ -1479,6 +2911,7 @@ export class LocalTrustRegistryIntegrationHarness {
   buildAuditorHistoricalEvidence(
     fixture: AuditorScenarioFixture,
   ): TrustRegistryEvidenceBundle {
+    this.assertSupportedContractFormat();
     const record = this.simulator.getAuditorAuthorization(
       fixture.authorizationIdCommitment,
     );
@@ -1502,7 +2935,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.maintainerIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1561,7 +2994,7 @@ export class LocalTrustRegistryIntegrationHarness {
       currentRecord.lifecycleEventHash,
       evidenceHash,
     );
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1626,7 +3059,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1677,7 +3110,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1728,7 +3161,7 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.recognitionIdCommitment,
     );
     const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = signMaintainerActionFromSeed(
+    const signature = this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -1775,6 +3208,14 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
+  private assertSupportedContractFormat(): ReturnType<TrustRegistrySimulator["getLedger"]> {
+    const ledger = this.simulator.getLedger();
+    if (ledger.contractVersion !== 1n) {
+      throw new Error("Unsupported trust registry format");
+    }
+    return ledger;
+  }
+
   private buildIssuerAuthorizationRecord(
     fixture: IssuerScenarioFixture,
     record: ContractIssuerAuthorizationRecord,
@@ -1788,6 +3229,21 @@ export class LocalTrustRegistryIntegrationHarness {
       trustLevel: fixture.trustLevel,
       record,
     });
+  }
+
+  private issuerStatusPolicyBinding(
+    fixture: IssuerScenarioFixture,
+  ): IssuerStatusPolicyBinding {
+    return {
+      version: "tr-issuer-status-policy-v1",
+      trustRegistryId: this.registryId,
+      issuerAuthorizationId: fixture.authorizationId,
+      statusRegistryId: fixture.statusRegistryId,
+      statusAuthorityVerificationMethod: fixture.statusAuthorityVerificationMethod,
+      statusPolicyId: fixture.statusPolicyId,
+      statusPolicyVersion: fixture.statusPolicyVersion,
+      statusPolicyContentCommitment: fixture.statusPolicyContentCommitment,
+    };
   }
 
   private buildVerifierAuthorizationRecord(
@@ -1877,6 +3333,11 @@ export class LocalTrustRegistryIntegrationHarness {
       resourceId: input.resourceId,
       policyId: this.policyId,
       trustLevel: input.trustLevel,
+      ...(input.role === "issuer"
+        ? { statusPolicyBindingCommitment: bytes32Hex(
+          (record as ContractIssuerAuthorizationRecord).statusPolicyBindingCommitment,
+        ) }
+        : {}),
       status,
       proposedAt: timestampForSequence(record.proposedAtSequence),
       ...(record.authorizedAtSequence > 0n
@@ -1893,6 +3354,102 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
+  private policyRevisionAtSequence(sequence: bigint): (typeof this.policyRevisions)[number] {
+    const revision = [...this.policyRevisions]
+      .reverse()
+      .find((candidate) => candidate.effectiveFromSequence <= sequence);
+    if (revision === undefined) {
+      throw new Error("No governance policy revision applies to this sequence");
+    }
+    return revision;
+  }
+
+  private prepareEpochPublicationAction(input: {
+    statementLeafHash: string;
+    lastStatusSequence: bigint;
+    lifecycleEventRoot: string;
+  }): PreparedRegistryEpochPublicationAction {
+    this.assertSupportedContractFormat();
+    const epochId = createScopedIdentifier("epoch", this.registryId,
+      `seq-${input.lastStatusSequence.toString()}`);
+    const epochIdCommitment = bytes32Commitment(epochId);
+    const stateRoot = hashHexToBytes32(computeSingleStatementStateRoot(
+      input.statementLeafHash, input.lifecycleEventRoot,
+    ));
+    const eventRoot = hashHexToBytes32(input.lifecycleEventRoot);
+    const policyRoot = Uint8Array.from(this.policyRevisionAtSequence(input.lastStatusSequence).commitment);
+    const validFromSequence = input.lastStatusSequence;
+    const validUntilSequence = input.lastStatusSequence + 60n;
+    return {
+      epochId,
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      epochIdCommitment,
+      policyCommitment: Uint8Array.from(this.simulator.getLedger().governancePolicyCommitment),
+      actionKind: Uint8Array.from(CREATE_EPOCH_ACTION_KIND),
+      actionPayloadHash: computeCreateEpochCommitmentPayloadHash(
+        epochIdCommitment, stateRoot, eventRoot, policyRoot,
+        validFromSequence, validUntilSequence,
+      ),
+      actionSequence: this.simulator.getLedger().governanceActionCount,
+      stateRoot,
+      eventRoot,
+      policyRoot,
+      validFromSequence,
+      validUntilSequence,
+    };
+  }
+
+  prepareRegistryEpochPublicationAction(label = "registry-current"): PreparedRegistryEpochPublicationAction {
+    const ledger = this.assertSupportedContractFormat();
+    const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
+    return this.prepareEpochPublicationAction({
+      statementLeafHash: computeRegistryStatementLeafHash({
+        registryId: this.registryId,
+        statementId,
+        statementStatus: this.registryRecord.status,
+        lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+      }),
+      lastStatusSequence: ledger.governanceActionCount,
+      lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
+    });
+  }
+
+  /** Compact verifies the active maintainer keys, signatures, policy, sequence, and quorum. */
+  executeRegistryEpochPublicationWithSignatures(
+    label: string,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): EpochCommitment {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Epoch publication requires a maintainer signature");
+    const prepared = this.prepareRegistryEpochPublicationAction(label);
+    const signersWithDids = signers.map((signer) => {
+      const maintainer = [...this.knownMaintainers.values()].find((candidate) =>
+        sameBytes(candidate.keyId, signer.keyId));
+      if (maintainer === undefined) throw new Error("Epoch signer is not a known maintainer");
+      return { signer, maintainer };
+    }).sort((left, right) => compareMaintainerKeyIds(
+      left.signer.keyId, right.signer.keyId,
+    ));
+    const eventHash = this.simulator.publishEpochCommitment(
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.epochIdCommitment, prepared.stateRoot, prepared.eventRoot,
+      prepared.policyRoot, prepared.validFromSequence, prepared.validUntilSequence,
+      signers.slice(1),
+    );
+    this.epochPublicationWitnesses.set(prepared.epochId, {
+      eventHash: bytes32Hex(eventHash),
+      signatures: signersWithDids.map(({ signer, maintainer }) => ({
+        keyId: `${maintainer.subjectDid}#key-1`,
+        algorithm: "jubjub-schnorr" as const,
+        signature: bytes32Hex(encodeJubjubSignature(signer.signature)),
+      })),
+    });
+    return this.buildEpochCommitment(prepared.epochId,
+      this.simulator.getEpochCommitment(prepared.epochIdCommitment));
+  }
+
   private ensurePublishedEpochCommitment(input: {
     statementId: string;
     statementLeafHash: string;
@@ -1900,77 +3457,68 @@ export class LocalTrustRegistryIntegrationHarness {
     lifecycleEventRoot: string;
     statementStatus: string;
   }): EpochCommitment {
-    const epochId = createScopedIdentifier(
-      "epoch",
-      this.registryId,
-      `seq-${input.lastStatusSequence.toString()}`,
-    );
-    const epochIdCommitment = bytes32Commitment(epochId);
-    const epochValidFromSequence = input.lastStatusSequence;
-    const epochValidUntilSequence = input.lastStatusSequence + 60n;
-    const stateRoot = computeSingleStatementStateRoot(
-      input.statementLeafHash,
-      input.lifecycleEventRoot,
-    );
-    const eventRoot = input.lifecycleEventRoot;
-    const policyRoot = bytes32Hex(this.governancePolicyCommitment);
+    const prepared = this.prepareEpochPublicationAction(input);
 
     let record: ContractEpochCommitmentRecord;
     try {
-      record = this.simulator.getEpochCommitment(epochIdCommitment);
+      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (!/not registered/i.test(message)) {
         throw error;
       }
 
-      const actionSequence = this.simulator.getLedger().governanceActionCount;
-      const signature = signMaintainerActionFromSeed(
+      const signature = this.signMaintainerActionFromSeed(
         this.bootstrapMaintainer.seed,
-        this.registryIdCommitment,
-        CREATE_EPOCH_ACTION_KIND,
-        computeCreateEpochCommitmentPayloadHash(
-          epochIdCommitment,
-          hashHexToBytes32(stateRoot),
-          hashHexToBytes32(eventRoot),
-          hashHexToBytes32(policyRoot),
-          epochValidFromSequence,
-          epochValidUntilSequence,
-        ),
-        actionSequence,
+        prepared.registryId,
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
       );
       const coMaintainers = this.activeDefaultQuorumCoMaintainers();
-      this.simulator.publishEpochCommitment(
+      const coAuthorizers = this.maintainerCoAuthorizers(
+        coMaintainers,
+        prepared.actionKind,
+        prepared.actionPayloadHash,
+        prepared.actionSequence,
+      );
+      const eventHash = this.simulator.publishEpochCommitment(
         this.bootstrapMaintainer.keyId,
         this.bootstrapPublicKey,
         signature,
-        epochIdCommitment,
-        hashHexToBytes32(stateRoot),
-        hashHexToBytes32(eventRoot),
-        hashHexToBytes32(policyRoot),
-        epochValidFromSequence,
-        epochValidUntilSequence,
-        this.maintainerCoAuthorizers(
-          coMaintainers,
-          CREATE_EPOCH_ACTION_KIND,
-          computeCreateEpochCommitmentPayloadHash(
-            epochIdCommitment,
-            hashHexToBytes32(stateRoot),
-            hashHexToBytes32(eventRoot),
-            hashHexToBytes32(policyRoot),
-            epochValidFromSequence,
-            epochValidUntilSequence,
-          ),
-          actionSequence,
-        ),
+        prepared.epochIdCommitment,
+        prepared.stateRoot,
+        prepared.eventRoot,
+        prepared.policyRoot,
+        prepared.validFromSequence,
+        prepared.validUntilSequence,
+        coAuthorizers,
       );
-      record = this.simulator.getEpochCommitment(epochIdCommitment);
+      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
+      this.epochPublicationWitnesses.set(prepared.epochId, {
+        eventHash: bytes32Hex(eventHash),
+        signatures: [
+          {
+            keyId: `${this.maintainerDid}#key-1`,
+            algorithm: "jubjub-schnorr" as const,
+            signature: bytes32Hex(encodeJubjubSignature(signature)),
+          },
+          ...coMaintainers.map((maintainer, index) => ({
+            keyId: `${maintainer.subjectDid}#key-1`,
+            algorithm: "jubjub-schnorr" as const,
+            signature: bytes32Hex(encodeJubjubSignature(coAuthorizers[index]!.signature)),
+          })),
+        ].sort((left, right) => compareMaintainerKeyIds(
+          bytes32Commitment(left.keyId), bytes32Commitment(right.keyId),
+        )),
+      });
     }
 
-    return this.buildEpochCommitment(epochId, record);
+    return this.buildEpochCommitment(prepared.epochId, record);
   }
 
   publishRegistryEpoch(label = "registry-current"): EpochCommitment {
+    const ledger = this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.ensurePublishedEpochCommitment({
       statementId,
@@ -1980,16 +3528,42 @@ export class LocalTrustRegistryIntegrationHarness {
         statementStatus: this.registryRecord.status,
         lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       }),
-      lastStatusSequence: this.simulator.getLedger().governanceActionCount,
+      lastStatusSequence: ledger.governanceActionCount,
       lifecycleEventRoot: this.registryRecord.lifecycleEventRoot,
       statementStatus: this.registryRecord.status,
     });
+  }
+
+  getEpochPublicationWitness(epochId: string): {
+    eventHash: string;
+    signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
+  } {
+    const witness = this.epochPublicationWitnesses.get(epochId);
+    if (witness === undefined) {
+      throw new Error("Epoch publication witness is not available in this simulator session");
+    }
+    const record = this.simulator.getEpochCommitment(bytes32Commitment(epochId));
+    if (bytes32Hex(record.publicationEventHash) !== witness.eventHash) {
+      throw new Error("Epoch publication witness does not match the ledger event");
+    }
+    return {
+      eventHash: witness.eventHash,
+      signatures: witness.signatures.map((signer) => ({ ...signer })),
+    };
+  }
+
+  getPublishedEpochCommitment(epochId: string): EpochCommitment {
+    return this.buildEpochCommitment(epochId,
+      this.simulator.getEpochCommitment(bytes32Commitment(epochId)));
   }
 
   private buildEpochCommitment(
     epochId: string,
     record: ContractEpochCommitmentRecord,
   ): EpochCommitment {
+    const primary = [...this.knownMaintainers.values()].find((maintainer) =>
+      sameBytes(maintainer.keyId, record.maintainerKeyId));
+    if (primary === undefined) throw new Error("Epoch primary signer is not a known maintainer");
     return EpochCommitmentSchema.parse({
       epochId,
       registryId: this.registryId,
@@ -2000,7 +3574,7 @@ export class LocalTrustRegistryIntegrationHarness {
       validUntil: timestampForSequence(record.validUntilSequence),
       maintainerSignatures: [
         {
-          keyId: `${this.maintainerDid}#key-1`,
+          keyId: `${primary.subjectDid}#key-1`,
           algorithm: "jubjub-schnorr",
           signature: bytes32Hex(
             encodeJubjubSignature({
@@ -2019,6 +3593,7 @@ export class LocalTrustRegistryIntegrationHarness {
     authorization?: AuthorizationRecord;
     recognition?: RecognitionRecord;
     referencedStatusRegistryId?: string;
+    statusPolicyBinding?: IssuerStatusPolicyBinding;
   }): TrustRegistryEvidenceBundle {
     const bundleRole = input.authorization?.role ?? "recognition";
     const bundleSubjectId =
@@ -2039,6 +3614,10 @@ export class LocalTrustRegistryIntegrationHarness {
       lifecycleEventRoot: lifecycleEventRoot ?? sha256Hex("missing"),
       statementStatus: statementStatus ?? "unknown",
     });
+    const policyRevision = this.policyRevisionAtSequence(input.lastStatusSequence);
+    if (epoch.policyRoot !== bytes32Hex(policyRevision.commitment)) {
+      throw new Error("Published epoch does not match the historical policy revision");
+    }
 
     return TrustRegistryEvidenceBundleSchema.parse({
       bundleId: createScopedIdentifier(
@@ -2049,7 +3628,7 @@ export class LocalTrustRegistryIntegrationHarness {
       generatedAt: epoch.validFrom,
       registryId: this.registryId,
       subjectDid: input.subjectDid,
-      policy: this.policyRecordValue,
+      policy: policyRevision.record,
       epoch,
       inclusionProof: {
         proofType: "merkle-inclusion",
@@ -2061,8 +3640,10 @@ export class LocalTrustRegistryIntegrationHarness {
       ...(input.authorization !== undefined
         ? {
             authorization: input.authorization,
-            referencedStatusRegistryId: input.referencedStatusRegistryId,
-            referencedStatusPolicyUri: "https://registry.example/status-policy",
+            ...(input.referencedStatusRegistryId !== undefined
+              ? { referencedStatusRegistryId: input.referencedStatusRegistryId }
+              : {}),
+            statusPolicyBinding: input.statusPolicyBinding,
           }
         : {}),
       ...(input.recognition !== undefined

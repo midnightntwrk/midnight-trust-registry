@@ -74,6 +74,14 @@ Required fields:
 ### Governance Policy
 
 A governance policy describes who may change the registry and under which process.
+The [0.1.0 reference profile](milestone-0.1.0.md) rejects all-member
+maintainer thresholds and active-target self-votes on removal. A policy
+reduction and suspension are one old-quorum-signed atomic recovery action when
+used to suspend an active maintainer. A standalone policy revision followed by
+removal is not a safe recovery procedure because it exposes an intermediate
+reduced quorum. The old quorum is the larger of the default and emergency
+thresholds; the target cannot sign. No implicit recovery authority exists in
+this profile.
 
 Required fields:
 
@@ -115,9 +123,13 @@ and validation logic, not by the JSON Schema alone.
 
 ### Participant
 
-A participant is a DID-identified issuer, verifier, maintainer, or authority.
+A participant is a DID-identified root governor, registry maintainer, authority,
+issuer, verifier, or auditor. The root governor initializes the first
+maintainer set; it does not bypass the governed application and quorum flow for
+later membership changes. A recognized external authority is a peer trust
+statement, not automatically a local authority authorization.
 
-Required fields:
+Core participant record fields:
 
 - `participantId`
 - `participantDid`
@@ -129,18 +141,22 @@ Required fields:
 - `metadataUri`
 - `status`
 - `effectiveFrom`
+- `lifecycleEventRoot`
+
+Lifecycle-dependent fields, present only when the corresponding transition
+has occurred:
+
 - `effectiveUntil`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `lifecycleEventRoot`
 
 ### Authorization
 
 An authorization grants a participant a scoped right inside one registry.
 
-Required fields:
+Core authorization record fields:
 
 - `authorizationId`
 - `registryId`
@@ -152,29 +168,45 @@ Required fields:
 - `trustLevel`
 - `status`
 - `proposedAt`
-- `authorizedAt`
-- `activeFrom`
+- `evidenceHash`
+- `lifecycleEventRoot`
+
+The issuer role also requires `statusPolicyBindingCommitment`. The
+`authorizedAt` field is required after proposal; `activeFrom` is required for
+active or historical grants. Other lifecycle timestamps are conditional:
+
 - `issuedAt`
+- `effectiveUntil`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `evidenceHash`
-- `lifecycleEventRoot`
 
-`trustLevel` is policy-defined in v1. The registry record stores the value selected by the governing policy, and the evidence bundle must include the policy version that defines the scale. A later schema pass should decide whether common scales become enums or remain policy-local strings.
+`trustLevel` is policy-defined rather than a global enum. The registry record
+stores the value selected by the governing policy, and the evidence bundle
+must identify the policy version that defines its scale.
 
-An authorization produced from a governed application MUST bind an
-`applicationEvidenceCommitment`, evidence-verifier identity, verification
-window, and immutable policy version. The normative envelope, privacy rules,
-and contract inputs are defined in the
+Issuer, verifier, auditor, and non-bootstrap maintainer applications MUST bind
+the signed `applicationEvidenceCommitment`, evidence-verifier identity,
+verification window, and policy version. The proposal record's `evidenceHash`
+refers to that commitment; the bootstrap maintainer entry has no applicant VP
+and uses its explicitly defined initialization evidence instead. The normative
+envelope, privacy rules, and contract inputs are defined in the
 [Application Evidence Protocol](application-evidence.md).
+
+Approval and activation MUST preserve the proposal's `evidenceHash`; replacing
+the application commitment during those transitions requires a new proposal.
+Later suspension, revocation, and archival actions MAY replace the current
+record's `evidenceHash` with action-specific evidence. They MUST NOT rewrite
+the original proposal commitment in the append-only
+[lifecycle events](#6-state-model). The current record and its
+historical proposal answer different questions.
 
 ### Recognition
 
 Recognition records that a registry accepts an external authority or registry for a scoped domain. Recognition is not the same as local authorization.
 
-Required fields:
+Core recognition record fields:
 
 - `recognitionId`
 - `registryId`
@@ -183,17 +215,28 @@ Required fields:
 - `scope`
 - `policyId`
 - `trustLevel`
-- `effectiveFrom`
-- `effectiveUntil`
 - `evidenceHash`
 - `status`
 - `proposedAt`
-- `authorizedAt`
+- `lifecycleEventRoot`
+
+`authorizedAt` is required after proposal, and `effectiveFrom` is required
+for active or historical recognition. Other lifecycle timestamps are
+conditional:
+
+- `effectiveUntil`
 - `suspendedAt`
 - `revokedAt`
 - `supersededAt`
 - `archivedAt`
-- `lifecycleEventRoot`
+
+Authorization and activation MUST preserve the recognition proposal's
+`evidenceHash`; different proposal evidence requires a new recognition
+proposal. Recognition does not use the local application-evidence envelope or
+`applicationEvidenceCommitment`. Later suspension, revocation, and archival
+MAY replace the current record's `evidenceHash` with action-specific evidence,
+but MUST preserve the original proposal in the append-only
+[lifecycle events](#6-state-model).
 
 ### Resource Authorization
 
@@ -211,6 +254,10 @@ V1 issuer and verifier scopes use exact canonical identifiers. Wildcard,
 delegation, version-range, and transitive external matching are excluded until
 a later policy version explicitly defines them. See
 [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md).
+Verifier and auditor grants use a composite resource ID derived from the entire
+role-specific request scope, not the bare request-profile ID. Purpose and
+credential-scope commitment therefore participate in current authorization
+keys. See [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md).
 
 Verifier-scoped resources:
 
@@ -243,6 +290,16 @@ Required fields:
 - `validUntil`
 - `maintainerSignatures`
 
+For the 0.1.0 format-one epoch record, this list has exactly one signature:
+the ledger retains signer 1's key and signature for the epoch anchor. The
+governed publish action can require a larger maintainer quorum, but this bundle
+alone does not prove the entire quorum. Multi-signer epoch provenance requires
+an explicit ledger-bound signer set and a revised bundle format.
+The contract rejects an all-zero governance policy commitment at bootstrap and
+policy revision. Each epoch record carries the nonzero publication policy
+commitment from the ledger; off-chain verifiers reject a missing, malformed, or
+all-zero value before checking the signature.
+
 ## 6. State Model
 
 Registry objects use an explicit lifecycle:
@@ -266,12 +323,18 @@ The expected Compact contract split is:
 | Surface | Purpose |
 | --- | --- |
 | Root governance registry | Creates registries and installs governance policy roots. |
-| Participant registry | Tracks maintainers, authorities, issuers, and verifiers. |
-| Authorization registry | Tracks role-scoped issuer and verifier authorization. |
+| Participant registry | Tracks governors, maintainers, authorities, issuers, verifiers, and auditors. |
+| Authorization registry | Tracks role-scoped issuer, verifier, auditor, maintainer, and local authority authorization. |
 | Recognition registry | Tracks recognized external authorities and registries. |
 | Epoch anchor | Publishes state roots and maintainer signatures for query/evidence packages. |
 
 Status and revocation stay in the VC status registry. TR records can require a status method, but they do not replace revocation state.
+
+The format-one generic maintainer audit circuit records only the fixed
+`tr:audit:generic` action kind and a signed payload hash. It does not change a
+participant lifecycle record. Lifecycle and epoch event kinds are emitted only
+by their corresponding state-transition circuits; a caller cannot supply one
+through the generic audit circuit.
 
 ## 8. Query and Evidence Surfaces
 
@@ -287,9 +350,18 @@ Minimum query answers:
 - Participant metadata by DID.
 - Issuer authorization for a credential resource.
 - Verifier authorization for a request profile.
+- Auditor authorization for an exact audit request scope.
 - Recognized authority for a scoped domain.
 - Historical state at an epoch or timestamp.
 - Evidence bundle for a decision.
+
+The Midnight operator query projection MUST keep issuer, verifier, and auditor
+entries role-disjoint. Verifier and auditor queries MUST use the complete
+canonical request-resource ID; a bare request-profile ID is not sufficient.
+Historical auditor evidence may remain queryable after archival, but it is not
+a current active grant. TRQP `issue` and `verify` map only to issuer and
+verifier respectively; this specification does not invent a TRQP auditor
+action.
 
 Minimum evidence bundle fields:
 
@@ -302,6 +374,13 @@ Minimum evidence bundle fields:
 - Epoch commitment
 - Inclusion proof or signed registry statement
 - Relevant maintainer signatures
+
+Free bundle-verification helpers check internal proof consistency against the
+epoch record, maintainer key, and registry commitment supplied by the caller.
+They do not establish that those inputs came from an accepted format-one
+ledger. Relying parties must authenticate that provenance and historical key
+status independently, or use a ledger-bound client that does so before
+interpreting bundle records.
 
 ## 9. DID and VC Integration
 
