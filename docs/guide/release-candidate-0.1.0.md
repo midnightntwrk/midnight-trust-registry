@@ -43,10 +43,12 @@ The manifest lists artifact bytes and source inputs, plus a sorted
 metadata to the SHA-256 of its packed `keys/<circuit>.verifier` bytes. Generation
 rejects missing, extra, renamed, or source-mismatched keys. Manifest-backed
 smoke verifies the complete mapping against the packed contract before
-installing packages. A public deployment additionally needs finalized on-chain
-verifier-key readback compared with this mapping and an approved
-maintenance-authority model (#213); the manifest alone cannot certify the
-deployed code. A matching tarball digest does not by itself prove that every
+installing packages. A host-invoked deployment adapter now compares the
+finalized on-chain verifier-key catalog with this mapping and confirms its
+initial single-key maintenance authority at the same checkpoint. This is not
+an independent public-network readback or approval of that authority model;
+#213 remains blocking. The manifest alone cannot certify the deployed code.
+A matching tarball digest does not by itself prove that every
 generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
 tree before producing the manifest. The manifest does not authenticate its own

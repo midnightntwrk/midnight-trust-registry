@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
-import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
+import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
-import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
 
 import { deployPublicTrustRegistry } from "../public-network-deployment.js";
@@ -54,15 +55,34 @@ const receipt = {
   blockHash: finalized.slice(2),
   blockHeight: 12,
 };
+const maintenanceSigningKey = sampleSigningKey();
+const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits);
+const verifierKeys = Object.fromEntries(circuitNames.map((name) => [name, Buffer.from(`verifier:${name}`)]));
+const releaseManifest = {
+  format: "tr-release-candidate-manifest-v2" as const,
+  verifierKeySha256: Object.fromEntries(circuitNames.map((name) => [
+    name, createHash("sha256").update(verifierKeys[name]!).digest("hex"),
+  ])),
+};
 let observedPolicyOverride: Uint8Array | null = null;
 let observedRegistryDidOverride: Uint8Array | null = null;
 let observedMaintainerDidOverride: Uint8Array | null = null;
+let observedVerifierKeyOverride: Uint8Array | null = null;
+let observedMissingOperation = false;
+let observedExtraOperation = false;
+let observedAuthorityOverride: string | null = null;
+let observedAuthorityThreshold = 1;
 
 beforeEach(() => {
   vi.clearAllMocks();
   observedPolicyOverride = null;
   observedRegistryDidOverride = null;
   observedMaintainerDidOverride = null;
+  observedVerifierKeyOverride = null;
+  observedMissingOperation = false;
+  observedExtraOperation = false;
+  observedAuthorityOverride = null;
+  observedAuthorityThreshold = 1;
   setNetworkId("preview");
   mocks.indexerPublicDataProvider.mockReturnValue({ queryContractState: mocks.queryContractState });
   mocks.deployContract.mockImplementation(async (_providers, options) => {
@@ -78,19 +98,34 @@ beforeEach(() => {
       networkIdCommitment: options.args[8],
       contractAddress: address,
     });
-    mocks.queryContractState.mockResolvedValue({ data: simulator.circuitContext.currentQueryContext.state });
+    mocks.queryContractState.mockResolvedValue({
+      data: simulator.circuitContext.currentQueryContext.state,
+      operations: () => observedMissingOperation ? circuitNames.slice(1)
+        : observedExtraOperation ? [...circuitNames, "__proto__"] : circuitNames,
+      operation: (name: string) => ({
+        verifierKey: name === "__proto__" ? Buffer.from("unexpected-verifier-key")
+          : name === circuitNames[0] && observedVerifierKeyOverride !== null
+            ? observedVerifierKeyOverride : verifierKeys[name],
+      }),
+      maintenanceAuthority: {
+        committee: [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
+        threshold: observedAuthorityThreshold,
+        counter: 0n,
+      },
+    });
     return { deployTxData: { public: receipt, private: { neverSerialize: true } } };
   });
 });
 
 afterEach(() => setNetworkId("undeployed"));
 
-const deploy = (overrides: Partial<typeof network> = {}, input = bootstrap) =>
+const deploy = (overrides: Partial<typeof network> = {}, input = bootstrap, manifest = releaseManifest) =>
   deployPublicTrustRegistry({
     network: { ...network, ...overrides },
     bootstrap: input,
+    releaseManifest: manifest,
     providers: {} as never,
-    contractMaintenanceSigningKey: sampleSigningKey(),
+    contractMaintenanceSigningKey: maintenanceSigningKey,
   });
 
 describe("public Trust Registry deployment", () => {
@@ -115,6 +150,7 @@ describe("public Trust Registry deployment", () => {
     expect(mocks.queryContractState).toHaveBeenCalledWith(address, {
       type: "blockHash", blockHash: finalized.slice(2),
     });
+    expect(mocks.queryContractState).toHaveBeenCalledTimes(1);
     expect(result.receipt).toEqual({
       networkId: "preview", contractAddress: `0x${address}`,
       txId: receipt.txId, blockHash: finalized, blockHeight: 12,
@@ -129,6 +165,10 @@ describe("public Trust Registry deployment", () => {
       expect(result.readback.state.registryDidCommitment).toBe(bytes32Hex(bootstrap.registryDidCommitment));
       expect(result.readback.state.bootstrapMaintainer?.didCommitment)
         .toBe(bytes32Hex(bootstrap.maintainerDidCommitment));
+      expect(result.readback.state.verifierKeySha256).toEqual(releaseManifest.verifierKeySha256);
+      expect(result.readback.state.maintenanceAuthority).toEqual({
+        committee: [`0x${signatureVerifyingKey(maintenanceSigningKey)}`], threshold: 1, counter: 0n,
+      });
     }
   });
 
@@ -148,6 +188,22 @@ describe("public Trust Registry deployment", () => {
       .rejects.toThrow("Bootstrap maintainer threshold must be one");
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incomplete release verifier-key catalog before contacting the network", async () => {
+    const incomplete = { ...releaseManifest, verifierKeySha256: { [circuitNames[0]!]: releaseManifest.verifierKeySha256[circuitNames[0]!]! } };
+    await expect(deploy({}, bootstrap, incomplete)).rejects.toThrow(/invalid or incomplete verifier-key catalog/u);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
+  it("does not verify against a release manifest with a substituted key hash", async () => {
+    const name = circuitNames[0]!;
+    const substituted = {
+      ...releaseManifest,
+      verifierKeySha256: { ...releaseManifest.verifierKeySha256, [name]: "a".repeat(64) },
+    };
+    expect((await deploy({}, bootstrap, substituted)).readback.status).toBe("mismatch");
   });
 
   it("returns a public receipt when the indexer has not caught up, without suggesting redeployment", async () => {
@@ -176,6 +232,25 @@ describe("public Trust Registry deployment", () => {
     expect((await deploy()).readback.status).toBe("mismatch");
     observedRegistryDidOverride = null;
     observedMaintainerDidOverride = bytes32Commitment("did:midnight:preview:other-maintainer");
+    expect((await deploy()).readback.status).toBe("mismatch");
+  });
+
+  it("does not verify a replaced or missing finalized verifier key", async () => {
+    observedVerifierKeyOverride = Buffer.from("substituted-verifier-key");
+    expect((await deploy()).readback.status).toBe("mismatch");
+    observedVerifierKeyOverride = null;
+    observedMissingOperation = true;
+    expect((await deploy()).readback.status).toBe("mismatch");
+    observedMissingOperation = false;
+    observedExtraOperation = true;
+    expect((await deploy()).readback.status).toBe("mismatch");
+  });
+
+  it("does not verify a replaced maintenance key or threshold", async () => {
+    observedAuthorityOverride = signatureVerifyingKey(sampleSigningKey());
+    expect((await deploy()).readback.status).toBe("mismatch");
+    observedAuthorityOverride = null;
+    observedAuthorityThreshold = 2;
     expect((await deploy()).readback.status).toBe("mismatch");
   });
 });

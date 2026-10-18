@@ -1499,6 +1499,13 @@ identity, key, active status, and joining sequence to that comparison;
 the action-signing reader remains narrower by design. The preceding
 `c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.
 
+The local #213 continuation requires a complete V2 release-manifest
+verifier-key catalog before deployment, reads operation verifier-key hashes
+and maintenance authority alongside the constructor ledger at one finalized
+checkpoint, and withholds `verified` for missing, extra, or substituted keys
+or a replaced initial authority. These checks are local adapter hardening,
+not an approved public authority model or independent finality proof.
+
 ## 2026-10-17: local decision-evidence continuation
 
 PRs #205 and #207 are merged into `milestone-0.1.0`. The configurable

@@ -2,14 +2,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
-import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import { signatureVerifyingKey, type JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import { deployContract, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
-import type { FinalizedRegistryBootstrapState } from "./finalized-deployment-action-reader.js";
+import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
 import { createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
 import {
   createPublicNetworkDeploymentActionReader,
@@ -39,10 +39,15 @@ export type PublicRegistryDeploymentReceipt = {
 
 export type PublicRegistryDeploymentResult = {
   receipt: PublicRegistryDeploymentReceipt;
-  readback: { status: "verified"; state: FinalizedRegistryBootstrapState }
+  readback: { status: "verified"; state: FinalizedRegistryDeploymentImage }
     | { status: "pending" }
     | { status: "unavailable" }
-    | { status: "mismatch"; state: FinalizedRegistryBootstrapState };
+    | { status: "mismatch"; state: FinalizedRegistryDeploymentImage };
+};
+
+export type ReleaseVerifierKeyManifest = {
+  format: "tr-release-candidate-manifest-v2";
+  verifierKeySha256: Readonly<Record<string, string>>;
 };
 
 const commitment = (value: Uint8Array, label: string): Uint8Array => {
@@ -61,6 +66,7 @@ const contractAssetsPath = resolve(
 export async function deployPublicTrustRegistry(input: {
   network: PublicNetworkDeploymentActionReaderConfig;
   bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
 }): Promise<PublicRegistryDeploymentResult> {
@@ -81,6 +87,15 @@ export async function deployPublicTrustRegistry(input: {
   const maintainerId = commitment(bootstrap.maintainerId, "Maintainer id");
   const maintainerDid = commitment(bootstrap.maintainerDidCommitment, "Maintainer DID");
   const maintainerKeyId = commitment(bootstrap.maintainerKeyId, "Maintainer key id");
+  const expectedKeys = input.releaseManifest?.verifierKeySha256;
+  const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
+  if (input.releaseManifest?.format !== "tr-release-candidate-manifest-v2"
+    || expectedKeys === null || typeof expectedKeys !== "object" || Array.isArray(expectedKeys)
+    || Object.keys(expectedKeys).sort().join("\0") !== circuitNames.join("\0")
+    || circuitNames.some((name) => !/^[0-9a-f]{64}$/u.test(expectedKeys[name] ?? ""))) {
+    throw new Error("Release manifest has an invalid or incomplete verifier-key catalog");
+  }
+  const expectedAuthorityKey = `0x${signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase()}`;
 
   const checkpoint = await createRpcFinalizedCheckpointSource(network).readCurrentFinalizedCheckpoint();
   if (checkpoint === null || checkpoint.networkId !== network.networkId) {
@@ -113,9 +128,9 @@ export async function deployPublicTrustRegistry(input: {
     blockHash: `0x${publicTx.blockHash}`,
     blockHeight: publicTx.blockHeight,
   };
-  let state: FinalizedRegistryBootstrapState | null;
+  let state: FinalizedRegistryDeploymentImage | null;
   try {
-    state = await reader.readCurrentFinalizedBootstrapState(receipt.contractAddress, maintainerKeyId);
+    state = await reader.readCurrentFinalizedDeploymentImage(receipt.contractAddress, maintainerKeyId);
   } catch {
     // The transaction has already been submitted; preserve its public receipt for later inspection.
     return { receipt, readback: { status: "unavailable" } };
@@ -141,6 +156,12 @@ export async function deployPublicTrustRegistry(input: {
     && state.bootstrapMaintainer.publicKey.x === bootstrap.maintainerPublicKey.x
     && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
     && state.bootstrapMaintainer.status === MaintainerStatus.active
-    && state.bootstrapMaintainer.joinedAtSequence === 0n;
+    && state.bootstrapMaintainer.joinedAtSequence === 0n
+    && Object.keys(state.verifierKeySha256).sort().join("\0") === circuitNames.join("\0")
+    && circuitNames.every((name) => state.verifierKeySha256[name] === expectedKeys[name])
+    && state.maintenanceAuthority.committee.length === 1
+    && state.maintenanceAuthority.committee[0] === expectedAuthorityKey
+    && state.maintenanceAuthority.threshold === 1
+    && state.maintenanceAuthority.counter === 0n;
   return { receipt, readback: verified ? { status: "verified", state } : { status: "mismatch", state } };
 }

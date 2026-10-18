@@ -92,15 +92,20 @@ deployment transaction data or manages wallet/key custody.
 
 The returned public receipt is retained even if the finalized readback is
 `pending` (indexer lag), `unavailable` (read error), or `mismatch` (observed
-ledger disagrees). Only `verified` means the observed registry ID, deployment
-network commitment, active policy, and initialization action count of one
-match the supplied constructor inputs at a pinned finalized block. A non-
+deployment image disagrees). The host must supply the V2 release manifest's
+complete per-circuit verifier-key SHA-256 catalog. Only `verified` means the
+observed constructor ledger, every deployed verifier key, and the initial
+single-key maintenance authority match the inputs and release catalog at one
+pinned finalized block. A non-
 verified result must be investigated with read-only inspection using the
 receipt, **not** retried as a fresh deployment. This is still not public-
 network qualification: no funded deployment was performed, the host providers
 and RPC/indexer are trusted, and a readback from one indexer is not a
 cryptographic proof of canonical state. Issue #200 remains open until an
 operator-approved live deployment and independent finality/replay checks.
+Matching the initial maintenance key does not approve retaining that
+single-key authority for public use. Issue #213 still requires an authority
+model decision, post-configuration finalized readback, and independent review.
 The bootstrap-specific read also compares the registry DID commitment, policy
 version, all three initial thresholds, active maintainer count, and the
 bootstrap maintainer's ID, DID, key ID, public key, active status, and joined

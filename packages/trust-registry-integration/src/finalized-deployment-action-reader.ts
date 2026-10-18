@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
-import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import type { ContractState, JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedDeploymentActionState,
@@ -37,12 +38,25 @@ export type FinalizedRegistryBootstrapState = FinalizedDeploymentActionState & {
   } | null;
 };
 
+export type FinalizedRegistryDeploymentImage = FinalizedRegistryBootstrapState & {
+  verifierKeySha256: Readonly<Record<string, string>>;
+  maintenanceAuthority: {
+    committee: readonly string[];
+    threshold: number;
+    counter: bigint;
+  };
+};
+
 export type FinalizedRegistryBootstrapReader = TrustedDeploymentActionReader & {
   readCurrentFinalizedLedger(contractAddress: string): Promise<FinalizedRegistryLedgerView | null>;
   readCurrentFinalizedBootstrapState(
     contractAddress: string,
     bootstrapMaintainerKeyId: Uint8Array,
   ): Promise<FinalizedRegistryBootstrapState | null>;
+  readCurrentFinalizedDeploymentImage(
+    contractAddress: string,
+    bootstrapMaintainerKeyId: Uint8Array,
+  ): Promise<FinalizedRegistryDeploymentImage | null>;
 };
 
 export type FinalizedRegistryLedgerView = {
@@ -60,6 +74,31 @@ const canonicalAddress = (value: string): string => {
     throw new Error("A nonzero 32-byte deployed contract address is required");
   }
   return value.toLowerCase();
+};
+
+const deploymentImage = (state: ContractState) => {
+  const entries: Array<readonly [string, string]> = [];
+  const seen = new Set<string>();
+  for (const name of state.operations()) {
+    if (typeof name !== "string" || name.length === 0 || seen.has(name)) {
+      throw new Error("Finalized contract has an invalid operation catalog");
+    }
+    seen.add(name);
+    const key = state.operation(name)?.verifierKey;
+    if (key === undefined || key.length === 0) {
+      throw new Error(`Finalized contract operation has no verifier key: ${name}`);
+    }
+    entries.push([name, createHash("sha256").update(key).digest("hex")]);
+  }
+  const authority = state.maintenanceAuthority;
+  return {
+    verifierKeySha256: Object.fromEntries(entries),
+    maintenanceAuthority: {
+      committee: authority.committee.map((key) => `0x${key.toLowerCase()}`),
+      threshold: authority.threshold,
+      counter: authority.counter,
+    },
+  };
 };
 
 /** Reads actual Compact ledger fields at a trusted finalized checkpoint, not an indexed evidence claim. */
@@ -95,7 +134,37 @@ export function createCheckpointedDeploymentActionReader(input: {
       governancePolicyCommitment: bytes32Hex(ledger.governancePolicyCommitment),
       governanceActionSequence: ledger.governanceActionCount,
     };
-    return { actionState, ledger };
+    return { actionState, ledger, contractState: state };
+  };
+  const readBootstrapState = async (contractAddress: string, bootstrapMaintainerKeyId: Uint8Array) => {
+    if (bootstrapMaintainerKeyId.length !== 32) {
+      throw new Error("Bootstrap maintainer key id must be 32 bytes");
+    }
+    const observed = await readState(contractAddress);
+    if (observed === null) return null;
+    const { ledger, actionState } = observed;
+    const maintainer = ledger.maintainerRecords.member(bootstrapMaintainerKeyId)
+      ? ledger.maintainerRecords.lookup(bootstrapMaintainerKeyId)
+      : null;
+    const bootstrap: FinalizedRegistryBootstrapState = {
+      ...actionState,
+      contractVersion: ledger.contractVersion,
+      registryDidCommitment: bytes32Hex(ledger.registryDidCommitment),
+      governancePolicyVersion: ledger.governancePolicyVersion,
+      maintainerThreshold: ledger.maintainerThreshold,
+      emergencyMaintainerThreshold: ledger.emergencyMaintainerThreshold,
+      archivalMaintainerThreshold: ledger.archivalMaintainerThreshold,
+      activeMaintainerCount: ledger.activeMaintainerCount,
+      bootstrapMaintainer: maintainer === null ? null : {
+        maintainerId: bytes32Hex(maintainer.maintainerId),
+        didCommitment: bytes32Hex(maintainer.didCommitment),
+        keyId: bytes32Hex(maintainer.keyId),
+        publicKey: maintainer.publicKey,
+        status: maintainer.status,
+        joinedAtSequence: maintainer.joinedAtSequence,
+      },
+    };
+    return { bootstrap, contractState: observed.contractState };
   };
   return {
     async readCurrentFinalizedLedger(contractAddress) {
@@ -111,32 +180,13 @@ export function createCheckpointedDeploymentActionReader(input: {
       return (await readState(contractAddress))?.actionState ?? null;
     },
     async readCurrentFinalizedBootstrapState(contractAddress, bootstrapMaintainerKeyId) {
-      if (bootstrapMaintainerKeyId.length !== 32) {
-        throw new Error("Bootstrap maintainer key id must be 32 bytes");
-      }
-      const observed = await readState(contractAddress);
-      if (observed === null) return null;
-      const { ledger, actionState } = observed;
-      const maintainer = ledger.maintainerRecords.member(bootstrapMaintainerKeyId)
-        ? ledger.maintainerRecords.lookup(bootstrapMaintainerKeyId)
-        : null;
-      return {
-        ...actionState,
-        contractVersion: ledger.contractVersion,
-        registryDidCommitment: bytes32Hex(ledger.registryDidCommitment),
-        governancePolicyVersion: ledger.governancePolicyVersion,
-        maintainerThreshold: ledger.maintainerThreshold,
-        emergencyMaintainerThreshold: ledger.emergencyMaintainerThreshold,
-        archivalMaintainerThreshold: ledger.archivalMaintainerThreshold,
-        activeMaintainerCount: ledger.activeMaintainerCount,
-        bootstrapMaintainer: maintainer === null ? null : {
-          maintainerId: bytes32Hex(maintainer.maintainerId),
-          didCommitment: bytes32Hex(maintainer.didCommitment),
-          keyId: bytes32Hex(maintainer.keyId),
-          publicKey: maintainer.publicKey,
-          status: maintainer.status,
-          joinedAtSequence: maintainer.joinedAtSequence,
-        },
+      return (await readBootstrapState(contractAddress, bootstrapMaintainerKeyId))?.bootstrap ?? null;
+    },
+    async readCurrentFinalizedDeploymentImage(contractAddress, bootstrapMaintainerKeyId) {
+      const observed = await readBootstrapState(contractAddress, bootstrapMaintainerKeyId);
+      return observed === null ? null : {
+        ...observed.bootstrap,
+        ...deploymentImage(observed.contractState),
       };
     },
   };
