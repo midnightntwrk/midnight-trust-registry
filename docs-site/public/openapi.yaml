@@ -66,6 +66,46 @@ x-responses:
     '503': { $ref: '#/components/responses/PortUnavailable' }
 components:
   schemas:
+    ProposalEvidenceSnapshot:
+      type: object
+      description: >-
+        Finalized-ledger projection only. Consumers must independently establish
+        ledger finality and inclusion. The retained verifier signature is checked;
+        current key lifecycle is not proposal-time status.
+      required: [role, authorizationId, eventHash, evidenceCommitment, verifierAuthorizationId,
+        verifierDidCommitment, verifierKeyIdCommitment, verifierSuite, policyCommitment,
+        policyVersion, verifierPublicKey, verifierSignature, subjectDidCommitment,
+        grantPolicyIdCommitment, proposedAtSequence, boundActionPayloadHash, signatureVerified]
+      properties:
+        role: { type: string, enum: [issuer, verifier, auditor, maintainer, recognition] }
+        authorizationId: { type: string }
+        eventHash: { $ref: '#/components/schemas/Hex32' }
+        evidenceCommitment: { $ref: '#/components/schemas/Hex32' }
+        verifierAuthorizationId: { $ref: '#/components/schemas/Hex32' }
+        verifierDidCommitment: { $ref: '#/components/schemas/Hex32' }
+        verifierKeyIdCommitment: { $ref: '#/components/schemas/Hex32' }
+        verifierSuite: { $ref: '#/components/schemas/Hex32' }
+        policyCommitment: { $ref: '#/components/schemas/Hex32' }
+        policyVersion: { type: string, pattern: '^[0-9]+$' }
+        verifierPublicKey: { $ref: '#/components/schemas/JubjubPoint' }
+        subjectDidCommitment: { $ref: '#/components/schemas/Hex32' }
+        grantPolicyIdCommitment: { $ref: '#/components/schemas/Hex32' }
+        proposedAtSequence: { type: string, pattern: '^[0-9]+$' }
+        boundActionPayloadHash: { $ref: '#/components/schemas/Hex32' }
+        signatureVerified: { type: boolean, const: true }
+        verifierSignature:
+          type: object
+          required: [announcement, response]
+          properties:
+            announcement: { $ref: '#/components/schemas/JubjubPoint' }
+            response: { type: string, pattern: '^[0-9]+$' }
+    Hex32: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+    JubjubPoint:
+      type: object
+      required: [x, y]
+      properties:
+        x: { type: string, pattern: '^[0-9]+$' }
+        y: { type: string, pattern: '^[0-9]+$' }
     Problem:
       type: object
       required: [type, title, status]
@@ -455,6 +495,22 @@ paths:
       summary: Observe matching proposal without resubmission
       description: Available for issuer, verifier, auditor, and maintainer ports; recognition has a separate private recovery route.
       responses: *governedResponses
+  /v1/governed/{role}/{id}/proposal/evidence:
+    parameters: [*governedRole, *id]
+    get:
+      tags: [Query]
+      summary: Project proposal verifier and policy evidence from a finalized ledger view
+      description: >-
+        Optional host-injected finalized ledger reader. This response is not a
+        standalone finality or inclusion proof; absent records do
+        not prove a submitted transaction failed.
+      responses:
+        '200':
+          description: Proposal evidence snapshot
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProposalEvidenceSnapshot' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
   /v1/governed/recognition/{id}/proposal/resolve:
     parameters: [*id]
     post:

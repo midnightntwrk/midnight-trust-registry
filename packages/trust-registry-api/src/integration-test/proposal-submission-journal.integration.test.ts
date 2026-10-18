@@ -19,7 +19,7 @@ const otherCommitment = `0x${"22".repeat(32)}`;
 const eventHash = `0x${"33".repeat(32)}`;
 const otherEventHash = `0x${"44".repeat(32)}`;
 const authorizationId = "auth:journal:test:v1";
-const roles: GovernedProposalSubmissionRole[] = ["issuer", "verifier", "auditor", "maintainer"];
+const roles: GovernedProposalSubmissionRole[] = ["issuer", "verifier", "auditor", "maintainer", "recognition"];
 
 describe("private governed proposal submission journal", () => {
   let directory: string;
@@ -59,26 +59,26 @@ describe("private governed proposal submission journal", () => {
     }]);
   });
 
-  it("holds an ambiguous response across restart and lagging finalized reads", async () => {
+  it.each(roles)("holds an ambiguous %s response across restart and lagging finalized reads", async (role) => {
     const first = new FileProposalSubmissionJournal(path);
     let executions = 0;
-    await expect(first.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+    await expect(first.executeOnce(role, authorizationId, evidenceCommitment, async () => {
       executions += 1;
       throw new Error("response lost after submission");
     })).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
     const reopened = new FileProposalSubmissionJournal(path);
-    expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
-    await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+    expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment, async () => {
       executions += 1;
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executions).toBe(1);
-    expect(await reopened.reconcile("issuer", authorizationId, async () => null)).toMatchObject({ state: "reserved" });
-    await expect(reopened.reconcile("issuer", authorizationId, async () => {
+    expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "reserved" });
+    await expect(reopened.reconcile(role, authorizationId, async () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
-    expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "reserved" });
-    expect(await reopened.reconcile("issuer", authorizationId,
+    expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved" });
+    expect(await reopened.reconcile(role, authorizationId,
       async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
   });
 

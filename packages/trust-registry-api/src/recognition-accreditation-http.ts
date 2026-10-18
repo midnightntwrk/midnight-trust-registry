@@ -37,7 +37,7 @@ export interface RecognitionAccreditationHttpPort {
   challengeStore: ApplicationChallengeStore;
   /** Must be the same physical store as challengeStore for atomic one-use acceptance. */
   admissionStore?: RecognitionAdmissionStore;
-  /** The embedding server must authenticate access before any request body is read. */
+  /** Denials must throw RecognitionAccreditationAuthorizationDeniedError; other failures are unavailable. */
   authorizeRequest(recognitionId: string, request: IncomingMessage): Promise<void>;
   /** Must read policy and commitment from trusted current ledger state, never the applicant request. */
   resolveCurrentContext(recognitionId: string): Promise<{
@@ -47,6 +47,13 @@ export interface RecognitionAccreditationHttpPort {
     resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
     statusSource: RecognitionAccreditationStatusSource;
   } | null>;
+}
+
+export class RecognitionAccreditationAuthorizationDeniedError extends Error {
+  constructor() {
+    super("recognition accreditation forbidden");
+    this.name = "RecognitionAccreditationAuthorizationDeniedError";
+  }
 }
 
 export class RecognitionAccreditationHttpError extends Error {

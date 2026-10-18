@@ -1577,3 +1577,54 @@ cross-contract call or authenticated public-network finality. Full
 integration on the earlier release-candidate tree was still generating
 Compact proving keys when this checkpoint was written, so it is not evidence
 for the new stack head.
+
+The next local stack adds a packaged recognition VC/VP accreditation and
+governed-proposal journey (`bb8021b`) and then an independently finalized
+proposal-evidence read projection (`2d63fa9`) and optional HTTP query
+(`8312507`). The read projects the existing immutable proposal record and
+registered evidence-verifier key for issuer, verifier, auditor, maintainer,
+and recognition roles. The HTTP route is disabled without a finalized-ledger
+reader and distinguishes a missing record from an unavailable reader. It does
+not independently prove finality, inclusion, or proposal-time key status;
+#67 must not be closed solely from this projection. A follow-on local slice
+reconstructs the role-specific action payload from the authorization record
+and verifies the retained JubJub signature against the registered key. The local light
+lane, API integration suite, docs/OpenAPI build, packed recognition actor
+smoke, and low-level audit passed for the corresponding local slices. A full
+integration run at `bb8021b` later passed in the separate release-validation
+worktree; that result must not be attributed to a later stack head.
+
+The later local audit stack adds signature reconstruction for all five
+proposal roles (`c3a3dde`), a tarball-only recognition report with signer,
+policy, epoch, and rejection commitments (`c8d03ed`), and a simulator
+regression proving that a proposal's retained signature still verifies after
+its evidence-verifier key is retired (`18d4db5`). The new read surface is a
+projection over a caller-supplied finalized ledger; it verifies the proposal
+signature and record joins, but does not prove that the supplied ledger is
+final or that its map entries have independent inclusion proofs. The four
+packed membership journeys and recognition report passed from clean tarball
+installation, API integration passed 67/67, and the light gate passed 20/20.
+No live status authority or public-network deployment is implied. The VC
+status-registry package in the sibling repository remains private and its
+README explicitly rejects production use pending authority and non-membership
+gates; do not satisfy #90 by consuming that prototype. A clean 4.5 GB
+worktree at a commit already contained in this stack was removed while its
+branch ref was preserved.
+
+The full `./run.sh integration` at signed `bb8021b` passed after roughly 90
+minutes, including 66 proof circuits, API/adapter integration, and the
+governed and signed actor demos. A rerun at later `0a7ab85` encountered the
+same 66 ZKIR hashes but `compact compile` deleted the existing key directory
+and started regenerating all keys. It was stopped after about 12 minutes as
+free space fell to 25 GiB; the generated contract outputs in that clean
+validation worktree were removed, and a separate clean 14 GiB ancestor
+worktree was retired without deleting its branch ref. Do not count that
+interrupted rerun as a pass or rerun full compilation merely to check
+TypeScript-only changes. The current local stack instead passed the light
+gate, packaged five-actor smoke, docs build, API integration, and audit.
+The packed recognition actor now checks the public evidence route's 200,
+404, and 503 behavior; the proposal projection test verifies all five roles
+after evidence-verifier key retirement and rejects a substituted historical
+public key. Before release, qualify the final clean candidate with a full
+integration run and address redundant key generation without weakening proof
+or package-content checks.

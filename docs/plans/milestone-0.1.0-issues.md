@@ -261,14 +261,15 @@ not the older transcript-digest draft.
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
       The local compiled consumer pins the authority in constructor ledger
-      state and rejects wrong-domain installation; production anchor
-      deployment and the complete circuit-level negative matrix remain open.
+      state and rejects wrong-domain installation, method/key substitution,
+      stale sequence, DID-version rollback, and revoked-to-active replay.
+      Production anchor deployment remains open.
 - [ ] In the consumer fixture, use the VC composed
       `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
-      The local consumer exercises both circuits, including positive signatures
-      and wrong-scope/forged-signature rejections. Both local descriptors now
+      The local consumer exercises both circuits, including positive signatures,
+      wrong-scope and forged-signature rejections. Both local descriptors now
       derive from simulator TR decisions; production finality and governed
       scope mappings remain open.
 - [ ] Document asynchronous revocation delivery and the distinction between

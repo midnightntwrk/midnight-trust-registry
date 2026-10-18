@@ -292,15 +292,36 @@ governed proposal resolution port can recover a lost HTTP submit receipt by
 reading the Compact proposal evidence record and matching its evidence
 commitment to the admitted application. The API package exports
 `resolveCompactProposalObservation` for issuer, verifier, auditor, maintainer,
-and recognition proposal records. The recognition HTTP resolution route
+and recognition proposal records.
+The API package also exports `resolveCompactProposalEvidenceSnapshot` for all
+five roles. Given an independently finalized ledger reader, it joins the
+immutable proposal record to its registered verifier key and returns the DID,
+key, suite, policy snapshot, signature, commitment, and governance event.
+It checks the matching authorization record's ID and evidence commitment and
+projects the subject DID and grant-policy commitments. It reconstructs the
+role-specific bound action payload from that record and verifies the retained
+JubJub signature against the registered key before returning the snapshot.
+The retired historical key remains usable for checking its earlier signature;
+its present status does not retroactively authorize a new proposal.
+This projection is not itself a finality or inclusion proof, and
+the key's present lifecycle status must not be substituted for its status at
+proposal time. Hosts with a finalized reader can expose the projection through
+`GET /v1/governed/:role/:id/proposal/evidence`; a 404 in that view does not
+prove a transaction failed. The recognition HTTP resolution route
 requires private request authorization and the exact accepted accreditation
 receipt, application binding, and evidence commitment. It may recover an
 observed event after the receipt window has passed, but cannot authorize a new
-proposal. The applicant portal exposes the authority challenge, externally
-signed assertion plus accreditation VP submission, accepted-receipt lookup,
-and proposal recovery only through an authenticated same-origin host. It
-clears the raw submission form after use and does not store the VP in browser
-storage. Recovery sends only the accepted receipt ID and evidence commitment,
+proposal. A configured recognition submission journal reserves the accepted
+evidence before Compact submission; it requires a side-effect-free
+current-ledger preflight so known-invalid signatures do not consume a
+reservation. A lost response remains reserved until a matching finalized
+record is observed, and absence at the current finalized head is not proof
+that retry is safe. The applicant portal exposes the authority challenge,
+externally signed assertion plus accreditation VP submission,
+accepted-receipt lookup, and proposal recovery only through an authenticated
+same-origin host. It clears the raw submission form after use and does not
+store the VP in browser storage. Recovery sends only the accepted receipt ID
+and evidence commitment,
 not the underlying VP or a token in the URL or browser storage.
 The caller MUST provide an independently finalized ledger view and the expected registry
 ID; the resolver checks the latter against Compact state. An unconfirmed

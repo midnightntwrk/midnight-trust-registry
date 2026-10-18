@@ -44,7 +44,7 @@ export const RECOGNITION_VP_FIXTURE_ANCHOR = RecognitionAccreditorAnchorSchema.p
   statusAuthorityDid,
   statusAuthorityMethodId: `${statusAuthorityDid}#assertion-1`,
   recognizedRegistryId: "registry:external:trusted",
-  scopeResourceType: "credentialfamily",
+  scopeResourceType: "credential-family",
   scopeResourceId: "credential-family:example:v1",
   effectiveFrom: "2026-05-20T00:00:00.000Z",
   effectiveUntil: "2026-05-21T00:00:00.000Z",
