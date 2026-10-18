@@ -162,7 +162,7 @@ for (const role of roles) {
         assert.equal((await queryTrqp(at)).authorized, false);
       });
 
-      test(`${role.name}-historical-trqp-after-${stage.name === "suspended" ? "suspension" : "revocation"}`, async (context) => {
+      test(`${role.name}-historical-after-${stage.name === "suspended" ? "suspension" : "revocation"}-trqp`, async (context) => {
         const { activeAt, evaluate, queryTrqp, change } =
           await startTemporalCase(context, role, `isolated-verifier-history-${stage.name}-trqp`);
         if (stage.name === "revoked") change(role.suspend);

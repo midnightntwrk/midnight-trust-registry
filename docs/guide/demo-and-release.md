@@ -295,6 +295,11 @@ Issue #216 is extracting the demo cases into independent tests with fresh
 fixtures and positive controls. The current runner has 66 such tests across
 Compact/integration/client, public HTTP, and TRQP adapter boundaries; it does not yet replace
 the 171-case demo or make every monolithic setup failure independent.
+After building the light packages, run `pnpm run check:adversarial-parity` to
+execute both surfaces and compare their stable IDs. It rejects duplicate or
+unknown isolated IDs and lists the 105 demo cases not yet isolated. The
+`--require-full` option also fails while any demo case remains unextracted;
+use it before removing a demo path, not as a passing current gate.
 
 ## Artifact Boundaries
 
