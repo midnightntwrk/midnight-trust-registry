@@ -128,7 +128,7 @@ const startCase = async (context, role, label) => {
     assert.equal(result.status, 201, JSON.stringify(result.body));
     return result.body;
   };
-  const submit = async (challengeValue, overrides = {}) => {
+  const submit = async (challengeValue, overrides = {}, transformPresentation = (value) => value) => {
     const proof = await createApplicationVpScenarioFixture(challengeValue.nonce, {
       subjectDid: target.subjectDid,
       evidenceVerifierDid: harness.evidenceVerifier.did,
@@ -140,7 +140,7 @@ const startCase = async (context, role, label) => {
     });
     const submission = {
       nonce: challengeValue.nonce, challengeHash: challengeValue.challengeHash,
-      presentation: proof.input.submission,
+      presentation: transformPresentation(proof.input.submission),
     };
     return { response: await post("submissions", submission), submission };
   };
@@ -192,3 +192,24 @@ for (const invalid of [
     assert.ok(fixture.accepted());
   });
 }
+
+test("issuer-vp-holder-method-substitution", async (context) => {
+  const fixture = await startCase(context, roles[0], "isolated-issuer-holder-method-substitution");
+  const issued = await fixture.challenge();
+  const rejected = await fixture.submit(issued, {}, (presentation) => {
+    const method = presentation.presentationProof.signerVerificationMethodRef;
+    const methodId = method.methodId;
+    return { ...presentation, presentationProof: {
+      ...presentation.presentationProof,
+      signerVerificationMethodRef: {
+        ...method,
+        methodId: `${methodId.slice(0, -1)}${methodId.endsWith("0") ? "1" : "0"}`,
+      },
+    } };
+  });
+  assertProblem(rejected.response, 403, "application-vp-rejected");
+  assert.equal(fixture.accepted(), undefined);
+  const accepted = await fixture.submit(issued);
+  assert.equal(accepted.response.status, 202, JSON.stringify(accepted.response.body));
+  assert.ok(fixture.accepted());
+});

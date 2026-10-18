@@ -132,7 +132,7 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
-const expectedAdversarialCaseCount = 171;
+const expectedAdversarialCaseCount = 174;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -418,6 +418,25 @@ try {
     trusted: true,
     statusAtTime: "active",
   });
+  const trqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      entity_id: historicalIssuer.subjectDid,
+      authority_id: revisedPolicySnapshot.registry.registryDid,
+      action: "issue",
+      resource: historicalIssuer.resourceId,
+      context: { time: historicalInstant },
+    }),
+  });
+  const historicalTrqpDecision = await expectHttp(trqpResponse, 200);
+  assert.equal(historicalTrqpDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
+  assert.equal(historicalTrqpDecision.bundle.policy.version, oldEvidence.policy.version);
+  adversarialMatrix.expectDecision(historicalTrqpDecision, {
+    id: "issuer-historical-trqp-after-threshold-change",
+    invariant: "TRQP retains the old issuer policy and epoch after a threshold revision",
+    boundary: "adapter", trusted: historicalDecision.trustedAtTime,
+  });
 } finally {
   await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
 }
@@ -498,12 +517,21 @@ adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSi
 assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
 policyHarness.approveVerifier(revisedPolicyVerifier);
 policyHarness.activateVerifier(revisedPolicyVerifier);
+const revisedPolicyVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(revisedPolicyVerifier);
 adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
-  policyHarness.evaluateCurrentVerifierDecision(revisedPolicyVerifier), {},
+  revisedPolicyVerifierBundle, {},
 ), {
   id: "verifier-current-policy-after-threshold-change",
   invariant: "The verifier can be activated under the revised maintainer quorum",
   boundary: "client",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyVerifierAuthorizationBundle(
+  { ...revisedPolicyVerifierBundle, policy: { ...revisedPolicyVerifierBundle.policy, version: "v9" } }, {},
+), {
+  id: "verifier-uncommitted-policy-version",
+  invariant: "A verifier cannot substitute an uncommitted policy version after threshold revision",
+  boundary: "client", messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
 });
 const revisedPolicyAuditor = createAuditorScenarioFixture("governed-demo-policy-auditor");
 policyHarness.proposeAuditor(revisedPolicyAuditor);
@@ -1367,6 +1395,26 @@ try {
       challengeHash: challenge.challengeHash,
       presentation: proof.input.submission,
     };
+    if (spec.role === "issuer") {
+      const method = submission.presentation.presentationProof.signerVerificationMethodRef;
+      await adversarialMatrix.expectHttp(await post("submissions", {
+        ...submission,
+        presentation: {
+          ...submission.presentation,
+          presentationProof: {
+            ...submission.presentation.presentationProof,
+            signerVerificationMethodRef: {
+              ...method, methodId: changeLastHexNibble(method.methodId),
+            },
+          },
+        },
+      }), {
+        id: "issuer-vp-holder-method-substitution",
+        invariant: "A VP signer method reference cannot be changed after the holder signs",
+        boundary: "api", status: 403, problemType: "application-vp-rejected",
+      });
+      assert.equal(persistedEvidence.has(applicationId), false);
+    }
     // Recovery reads the accepted record; it must not repeat VP verification.
     assert.equal((await post("submissions", submission)).status, 202);
     const submitted = await expectHttp(await getReceipt(), 200);

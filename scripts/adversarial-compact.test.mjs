@@ -320,6 +320,25 @@ test("issuer-uncommitted-policy-version", () => {
   assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
 });
 
+test("verifier-uncommitted-policy-version", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-verifier-policy-version");
+  const second = createMaintainerScenarioFixture("isolated-verifier-policy-second");
+  const third = createMaintainerScenarioFixture("isolated-verifier-policy-third");
+  const verifier = createVerifierScenarioFixture("isolated-verifier-policy-target");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.proposeVerifier(verifier, [second]);
+  harness.approveVerifier(verifier, [second]);
+  harness.activateVerifier(verifier, [second]);
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  const bundle = harness.evaluateCurrentVerifierDecision(verifier);
+  assert.ok(client.verifyVerifierAuthorizationBundle(bundle, {}));
+  assert.throws(() => client.verifyVerifierAuthorizationBundle({
+    ...bundle, policy: { ...bundle.policy, version: "v9" },
+  }, {}), /not committed to the ledger/iu);
+});
+
 test("issuer-historical-proof-tampered-after-policy-revision", () => {
   const { client, historical } = revisedPolicyEvidence("isolated-historical-proof-tamper");
   const sibling = historical.inclusionProof.path[0];

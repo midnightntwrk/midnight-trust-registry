@@ -127,14 +127,14 @@ test("issuer-active-trqp", async (context) => {
   assert.equal(trqpDecision.authorized, publicDecision.trustedAtTime);
 });
 
-test("issuer-historical-api-after-threshold-change", async (context) => {
+const startHistoricalThresholdApi = async (context, label) => {
   const { harness, issuer, base, refresh } =
-    await startIssuerApi(context, "isolated-historical-threshold-api");
+    await startIssuerApi(context, label);
   const old = harness.evaluateCurrentIssuerDecision(issuer);
   const oldAt = new Date(Date.parse(old.epoch.validFrom) + 1).toISOString();
-  const second = createMaintainerScenarioFixture("isolated-threshold-api-second");
-  const third = createMaintainerScenarioFixture("isolated-threshold-api-third");
-  const currentIssuer = createIssuerScenarioFixture("isolated-threshold-api-current");
+  const second = createMaintainerScenarioFixture(`${label}-second`);
+  const third = createMaintainerScenarioFixture(`${label}-third`);
+  const currentIssuer = createIssuerScenarioFixture(`${label}-current`);
   harness.authorizeMaintainer(second);
   harness.authorizeMaintainer(third);
   harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
@@ -142,9 +142,15 @@ test("issuer-historical-api-after-threshold-change", async (context) => {
   harness.approveIssuer(currentIssuer, [second]);
   harness.activateIssuer(currentIssuer, [second]);
   refresh({
-    label: "isolated-historical-threshold-api",
+    label,
     issuers: [{ fixture: issuer, label: "historical" }, { fixture: currentIssuer, label: "current" }],
   });
+  return { harness, issuer, base, old, oldAt, currentIssuer };
+};
+
+test("issuer-historical-api-after-threshold-change", async (context) => {
+  const { harness, issuer, base, old, oldAt, currentIssuer } =
+    await startHistoricalThresholdApi(context, "isolated-historical-threshold-api");
   const response = await fetch(`${base}/v1/authorizations/evaluate/evidence`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -158,6 +164,27 @@ test("issuer-historical-api-after-threshold-change", async (context) => {
   assert.equal(decision.statusAtTime, "active");
   assert.equal(decision.bundle.policy.version, old.policy.version);
   assert.notEqual(decision.bundle.policy.version,
+    harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
+});
+
+test("issuer-historical-trqp-after-threshold-change", async (context) => {
+  const { harness, issuer, base, old, oldAt, currentIssuer } =
+    await startHistoricalThresholdApi(context, "isolated-historical-threshold-trqp");
+  const response = await fetch(`${base}/v1/trqp/authorizations/evidence`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      entity_id: issuer.subjectDid,
+      authority_id: harness.registryRecord.registryDid,
+      action: "issue", resource: issuer.resourceId,
+      context: { time: oldAt },
+    }),
+  });
+  assert.equal(response.status, 200);
+  const answer = await response.json();
+  assert.equal(answer.authorized, true);
+  assert.equal(answer.bundle.epoch.epochId, old.epoch.epochId);
+  assert.equal(answer.bundle.policy.version, old.policy.version);
+  assert.notEqual(answer.bundle.policy.version,
     harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
 });
 

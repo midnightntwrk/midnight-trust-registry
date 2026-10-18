@@ -257,7 +257,7 @@ Each recorded case names the violated invariant, boundary, expected category,
 observed result, and a `passed` or `failed` status. The report includes
 `summary.total`, `summary.passed`, and `summary.failed`. A failed case records
 a fixed, redacted reason rather than a response body or thrown message. The
-governed demo checks that the report still contains 171 cases and exits
+governed demo checks that the report still contains 174 cases and exits
 nonzero if any recorded case fails or the count changes. API cases assert the
 exact problem-type slug as well as
 HTTP status; TRQP adapter cases assert the exact problem type and status.
@@ -291,7 +291,7 @@ node scripts/demo-governed-registry.mjs > /tmp/tr-governed-report.json
 The `adversarialMatrix` member is the checked case report; the other members
 are the demo transcript. The output is deterministic in case IDs and categories,
 but local epoch identifiers and event hashes are fixture-dependent.
-Issue #216 extracted the 171 demo cases into independent tests with fresh
+Issue #216 extracted the demo cases into independent tests with fresh
 fixtures and positive controls across Compact/integration/client, public HTTP,
 and TRQP adapter boundaries. The governed demo and its JSON report remain;
 unrelated top-level setup assertions can still abort that monolithic demo.
