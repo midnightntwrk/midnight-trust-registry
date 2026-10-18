@@ -27,6 +27,7 @@ import {
   createIssuerScenarioFixture,
   createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
+  createRecognitionScenarioFixture,
   createVerifierAuthorizationScopeFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
@@ -395,5 +396,48 @@ for (const role of [
     ), /Invalid Jubjub Schnorr signature/u);
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     harness[role.execute](fixture, evidence, signatures, verifierSignature);
+  });
+}
+
+for (const substitution of [
+  {
+    id: "compact-recognition-external-registry-substitution",
+    field: "recognizedRegistryIdCommitment",
+    value: "registry:external:substituted:v1",
+  },
+  {
+    id: "compact-recognition-resource-substitution",
+    field: "scopeResourceIdCommitment",
+    value: "credential-family:substituted:v1",
+  },
+]) {
+  test(substitution.id, () => {
+    const harness = new LocalTrustRegistryIntegrationHarness(`isolated-${substitution.id}`);
+    const second = createMaintainerScenarioFixture(`isolated-${substitution.id}-second`);
+    const third = createMaintainerScenarioFixture(`isolated-${substitution.id}-third`);
+    const recognition = createRecognitionScenarioFixture(`isolated-${substitution.id}-recognition`);
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const prepared = harness.prepareRecognitionProposalAction(recognition);
+    const verifierSignature = harness.signRecognitionProposalEvidence(prepared);
+    const signers = [signAction(harness, second, prepared), signAction(harness, third, prepared)];
+    const propose = (overrides = {}) => harness.simulator.proposeRecognition(
+      signers[0].keyId, signers[0].publicKey, signers[0].signature,
+      recognition.recognitionIdCommitment,
+      recognition.recognizedAuthorityDidCommitment,
+      overrides.recognizedRegistryIdCommitment ?? recognition.recognizedRegistryIdCommitment,
+      recognition.scopeResourceTypeCommitment,
+      overrides.scopeResourceIdCommitment ?? recognition.scopeResourceIdCommitment,
+      prepared.policyCommitment, bytes32Commitment(recognition.trustLevel),
+      prepared.evidenceHash, prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment, verifierSignature, signers.slice(1),
+    );
+    const before = harness.simulator.getLedger().governanceActionCount;
+    assert.throws(() => propose({ [substitution.field]: bytes32Commitment(substitution.value) }),
+      /signature|payload/iu);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    propose();
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
   });
 }
