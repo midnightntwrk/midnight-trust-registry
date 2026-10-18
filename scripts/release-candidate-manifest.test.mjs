@@ -159,6 +159,7 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
   assert.throws(() => assertFullPackedContract(paths.map((path) => path.replace("proveA.verifier", "renamed.verifier")), info),
     /verification key for proveA/u);
   assert.throws(() => assertFullPackedContract(paths.slice(1), info), /contract-info/u);
+  assert.throws(() => assertFullPackedContract([...paths, paths.at(-1)], info), /duplicate archive paths/u);
 });
 
 test("manifest smoke mode refuses invalid evidence before package installation", () => {

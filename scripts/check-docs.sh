@@ -87,5 +87,6 @@ if problems:
 PY
 
 node scripts/check-milestone-lifecycle.mjs
+node --test scripts/check-milestone-lifecycle.test.mjs
 
 echo "documentation check passed"

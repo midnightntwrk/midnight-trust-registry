@@ -4,6 +4,7 @@ set -euo pipefail
 registry="${REGISTRY:-https://registry.npmjs.org}"
 npm_tag="${NPM_TAG:-next}"
 version="${VERSION:-}"
+tarball_dir="${TARBALL_DIR:-artifacts/npm-release}"
 
 if [[ -z "${NODE_AUTH_TOKEN:-${NPM_TOKEN:-}}" ]]; then
   echo "::error::NODE_AUTH_TOKEN or NPM_TOKEN is required to publish packages." >&2
@@ -36,6 +37,11 @@ while IFS= read -r workspace; do
       process.stdout.write(name);
     ' "${workspace}"
   )"
+  tarball="${tarball_dir}/$(node -e 'const [name, version] = process.argv.slice(1); process.stdout.write(`${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`)' "${package_name}" "${version}")"
+  if [[ ! -s "${tarball}" ]]; then
+    echo "::error::Packed tarball is missing or empty: ${tarball}" >&2
+    exit 1
+  fi
 
   published_version="$(published_version_for_package "${package_name}")"
   if [[ "${published_version}" == "${version}" ]]; then
@@ -43,6 +49,6 @@ while IFS= read -r workspace; do
     continue
   fi
 
-  echo "[publish-npm-packages] Publishing ${package_name}@${version} with npm tag ${npm_tag}"
-  pnpm --filter "./${workspace}" publish --no-git-checks --access public --registry "${registry}" --tag "${npm_tag}"
+  echo "[publish-npm-packages] Publishing tested tarball ${tarball} with npm tag ${npm_tag}"
+  npm publish "${tarball}" --ignore-scripts --access public --registry "${registry}" --tag "${npm_tag}"
 done < <(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)

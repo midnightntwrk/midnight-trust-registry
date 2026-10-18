@@ -2,7 +2,8 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,9 +48,18 @@ const verifierKeyEntry = (name) => `${CONTRACT_PREFIX}/keys/${name}.verifier`;
 function verifierKeyHashes(tarball, contractInfo) {
   const entries = packedEntries(tarball);
   assertFullPackedContract(entries, contractInfo);
-  return Object.fromEntries(proofCircuitNames(contractInfo).sort().map((name) => [
-    name, hashPackedTarEntry(tarball, verifierKeyEntry(name)),
-  ]));
+  const names = proofCircuitNames(contractInfo).sort();
+  const temporary = mkdtempSync(join(tmpdir(), "tr-verifier-keys-"));
+  try {
+    run("tar", ["-xzf", tarball, "-C", temporary, ...names.map(verifierKeyEntry)]);
+    return Object.fromEntries(names.map((name) => {
+      const keyPath = join(temporary, verifierKeyEntry(name));
+      if (!lstatSync(keyPath).isFile()) throw new Error(`Packed verifier key is not a regular file: ${name}`);
+      return [name, sha256(keyPath)];
+    }));
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 export function buildReleaseCandidateManifest(input) {
@@ -124,6 +134,10 @@ export function buildReleaseCandidateManifest(input) {
 }
 
 export function assertFullPackedContract(paths, contractInfo) {
+  const listed = paths.filter((path) => path.length > 0);
+  if (new Set(listed).size !== listed.length) {
+    throw new Error("Packed contract contains duplicate archive paths");
+  }
   const files = paths.map((path) => path.replace(/^package\//u, ""));
   const required = "dist/managed/trust-registry/compiler/contract-info.json";
   if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
