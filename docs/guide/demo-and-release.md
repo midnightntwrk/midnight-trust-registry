@@ -291,16 +291,15 @@ node scripts/demo-governed-registry.mjs > /tmp/tr-governed-report.json
 The `adversarialMatrix` member is the checked case report; the other members
 are the demo transcript. The output is deterministic in case IDs and categories,
 but local epoch identifiers and event hashes are fixture-dependent.
-Issue #216 is extracting the demo cases into independent tests with fresh
-fixtures and positive controls. The current runner has 148 such tests across
-Compact/integration/client, public HTTP, and TRQP adapter boundaries; it does not yet replace
-the 171-case demo or make every monolithic setup failure independent.
-After building the light packages, run `pnpm run check:adversarial-parity` to
-execute both surfaces and compare their stable IDs. It rejects duplicate or
-unknown isolated IDs and lists the 23 demo cases not yet isolated. ID parity
-does not replace review of each test's boundary and invariant. The
-`--require-full` option also fails while any demo case remains unextracted;
-use it before removing a demo path, not as a passing current gate.
+Issue #216 extracted the 171 demo cases into independent tests with fresh
+fixtures and positive controls across Compact/integration/client, public HTTP,
+and TRQP adapter boundaries. The governed demo and its JSON report remain;
+unrelated top-level setup assertions can still abort that monolithic demo.
+After building the light packages, run
+`pnpm run check:adversarial-parity -- --require-full` to execute both surfaces
+and compare their stable IDs. The strict checker rejects duplicate, unknown,
+or missing isolated IDs and runs in `./run.sh --light`. Matching IDs do not
+replace review of each test's boundary and invariant.
 
 ## Artifact Boundaries
 

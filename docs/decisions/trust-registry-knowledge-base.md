@@ -1650,12 +1650,10 @@ Issue #216's local runner extraction is stacked above release qualification,
 not merged into a release candidate. The governed-demo matrix now records
 per-case `passed`/`failed` status, a redacted failure reason, and aggregate
 counts; it fails the process if the checked demo count differs from 171 or if
-any recorded case fails. Eighty-two named cases have independent Node test
-fixtures so far, including revised-policy client and Compact behavior,
-public HTTP lookup/lifecycle behavior, and TRQP decision parity. The full 171-case demo remains, and
-top-level setup assertions can still abort it; do not call the extraction
-complete until those remaining cases are isolated and case parity is proved.
-The local parity checker executes both surfaces and currently reports 148
-matching IDs with 23 remaining. It rejects duplicate or unknown extracted
-IDs, while its strict mode requires every demo ID before paths can be removed.
-Matching IDs do not alone prove equivalent boundary or invariant coverage.
+any recorded case fails. All 171 named cases now have independent Node test
+fixtures across Compact/integration/client, public HTTP, and TRQP boundaries.
+The full 171-case demo remains; unrelated top-level setup assertions can still
+abort it. The local strict parity checker executes both surfaces and reports
+171 matching IDs with none missing. It rejects duplicate or unknown extracted
+IDs and runs in the light gate. Matching IDs do not alone prove equivalent
+boundary or invariant coverage.
