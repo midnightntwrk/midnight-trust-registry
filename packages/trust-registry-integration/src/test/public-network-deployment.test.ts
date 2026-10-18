@@ -70,8 +70,11 @@ let observedMaintainerDidOverride: Uint8Array | null = null;
 let observedVerifierKeyOverride: Uint8Array | null = null;
 let observedMissingOperation = false;
 let observedExtraOperation = false;
+let observedDuplicateOperation = false;
+let observedEmptyVerifierKey = false;
 let observedAuthorityOverride: string | null = null;
 let observedAuthorityThreshold = 1;
+let observedAuthorityCounter = 0n;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,8 +84,11 @@ beforeEach(() => {
   observedVerifierKeyOverride = null;
   observedMissingOperation = false;
   observedExtraOperation = false;
+  observedDuplicateOperation = false;
+  observedEmptyVerifierKey = false;
   observedAuthorityOverride = null;
   observedAuthorityThreshold = 1;
+  observedAuthorityCounter = 0n;
   setNetworkId("preview");
   mocks.indexerPublicDataProvider.mockReturnValue({ queryContractState: mocks.queryContractState });
   mocks.deployContract.mockImplementation(async (_providers, options) => {
@@ -101,16 +107,18 @@ beforeEach(() => {
     mocks.queryContractState.mockResolvedValue({
       data: simulator.circuitContext.currentQueryContext.state,
       operations: () => observedMissingOperation ? circuitNames.slice(1)
-        : observedExtraOperation ? [...circuitNames, "__proto__"] : circuitNames,
+        : observedExtraOperation ? [...circuitNames, "__proto__"]
+          : observedDuplicateOperation ? [...circuitNames, circuitNames[0]] : circuitNames,
       operation: (name: string) => ({
-        verifierKey: name === "__proto__" ? Buffer.from("unexpected-verifier-key")
+        verifierKey: name === circuitNames[0] && observedEmptyVerifierKey ? Buffer.alloc(0)
+          : name === "__proto__" ? Buffer.from("unexpected-verifier-key")
           : name === circuitNames[0] && observedVerifierKeyOverride !== null
             ? observedVerifierKeyOverride : verifierKeys[name],
       }),
       maintenanceAuthority: {
         committee: [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
         threshold: observedAuthorityThreshold,
-        counter: 0n,
+        counter: observedAuthorityCounter,
       },
     });
     return { deployTxData: { public: receipt, private: { neverSerialize: true } } };
@@ -197,6 +205,24 @@ describe("public Trust Registry deployment", () => {
     expect(mocks.deployContract).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { format: "wrong", verifierKeySha256: releaseManifest.verifierKeySha256 },
+    { format: releaseManifest.format, verifierKeySha256: null },
+    { format: releaseManifest.format, verifierKeySha256: [] },
+    { format: releaseManifest.format, verifierKeySha256: { ...releaseManifest.verifierKeySha256, extra: "a".repeat(64) } },
+    { format: releaseManifest.format, verifierKeySha256: {
+      ...releaseManifest.verifierKeySha256, [circuitNames[0]!]: "A".repeat(64),
+    } },
+    { format: releaseManifest.format, verifierKeySha256: {
+      ...releaseManifest.verifierKeySha256, [circuitNames[0]!]: "a".repeat(63),
+    } },
+  ])("rejects malformed release manifest %# before contacting the network", async (manifest) => {
+    await expect(deploy({}, bootstrap, manifest as typeof releaseManifest))
+      .rejects.toThrow(/invalid or incomplete verifier-key catalog/u);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
   it("does not verify against a release manifest with a substituted key hash", async () => {
     const name = circuitNames[0]!;
     const substituted = {
@@ -252,5 +278,16 @@ describe("public Trust Registry deployment", () => {
     observedAuthorityOverride = null;
     observedAuthorityThreshold = 2;
     expect((await deploy()).readback.status).toBe("mismatch");
+    observedAuthorityThreshold = 1;
+    observedAuthorityCounter = 1n;
+    expect((await deploy()).readback.status).toBe("mismatch");
+  });
+
+  it("reports malformed finalized operations as an invalid image, not indexer unavailability", async () => {
+    observedEmptyVerifierKey = true;
+    expect((await deploy()).readback).toEqual({ status: "invalid-image" });
+    observedEmptyVerifierKey = false;
+    observedDuplicateOperation = true;
+    expect((await deploy()).readback).toEqual({ status: "invalid-image" });
   });
 });

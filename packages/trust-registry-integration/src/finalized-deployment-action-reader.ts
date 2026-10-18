@@ -66,6 +66,13 @@ export type FinalizedRegistryLedgerView = {
   ledger: Ledger;
 };
 
+export class FinalizedDeploymentImageInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FinalizedDeploymentImageInvalidError";
+  }
+}
+
 const bytes32Hex = (value: Uint8Array): string =>
   `0x${Buffer.from(value).toString("hex")}`;
 
@@ -81,12 +88,12 @@ const deploymentImage = (state: ContractState) => {
   const seen = new Set<string>();
   for (const name of state.operations()) {
     if (typeof name !== "string" || name.length === 0 || seen.has(name)) {
-      throw new Error("Finalized contract has an invalid operation catalog");
+      throw new FinalizedDeploymentImageInvalidError("Finalized contract has an invalid operation catalog");
     }
     seen.add(name);
     const key = state.operation(name)?.verifierKey;
     if (key === undefined || key.length === 0) {
-      throw new Error(`Finalized contract operation has no verifier key: ${name}`);
+      throw new FinalizedDeploymentImageInvalidError(`Finalized contract operation has no verifier key: ${name}`);
     }
     entries.push([name, createHash("sha256").update(key).digest("hex")]);
   }

@@ -91,8 +91,9 @@ Trust Registry governance quorum key. The adapter never returns private
 deployment transaction data or manages wallet/key custody.
 
 The returned public receipt is retained even if the finalized readback is
-`pending` (indexer lag), `unavailable` (read error), or `mismatch` (observed
-deployment image disagrees). The host must supply the V2 release manifest's
+`pending` (indexer lag), `unavailable` (read error), `invalid-image`
+(malformed operation catalog), or `mismatch` (well-formed observed deployment
+image disagrees). The host must supply the V2 release manifest's
 complete per-circuit verifier-key SHA-256 catalog. Only `verified` means the
 observed constructor ledger, every deployed verifier key, and the initial
 single-key maintenance authority match the inputs and release catalog at one

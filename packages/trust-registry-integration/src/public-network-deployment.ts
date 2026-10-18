@@ -9,7 +9,7 @@ import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-ru
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
-import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
+import { FinalizedDeploymentImageInvalidError, type FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
 import { createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
 import {
   createPublicNetworkDeploymentActionReader,
@@ -42,6 +42,7 @@ export type PublicRegistryDeploymentResult = {
   readback: { status: "verified"; state: FinalizedRegistryDeploymentImage }
     | { status: "pending" }
     | { status: "unavailable" }
+    | { status: "invalid-image" }
     | { status: "mismatch"; state: FinalizedRegistryDeploymentImage };
 };
 
@@ -131,9 +132,10 @@ export async function deployPublicTrustRegistry(input: {
   let state: FinalizedRegistryDeploymentImage | null;
   try {
     state = await reader.readCurrentFinalizedDeploymentImage(receipt.contractAddress, maintainerKeyId);
-  } catch {
+  } catch (error) {
     // The transaction has already been submitted; preserve its public receipt for later inspection.
-    return { receipt, readback: { status: "unavailable" } };
+    return { receipt, readback: { status: error instanceof FinalizedDeploymentImageInvalidError
+      ? "invalid-image" : "unavailable" } };
   }
   if (state === null) return { receipt, readback: { status: "pending" } };
   const verified = state.networkId === network.networkId

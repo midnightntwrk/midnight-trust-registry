@@ -1487,7 +1487,7 @@ network, RPC/indexer endpoints, and approved genesis pin are configurable for
 Preview, Preprod, and Mainnet; no live wallet or deployment is bundled. It
 checks the configured SDK network and pinned node genesis before submission,
 then keeps only the public deployment receipt. Finalized readback can be
-verified, pending, unavailable, or mismatched; any non-verified result retains
+verified, pending, unavailable, invalid, or mismatched; any non-verified result retains
 the receipt for read-only investigation rather than inviting redeployment.
 Initialization is governance action count one, not zero. Five focused adapter
 tests and the local 20/20 light gate passed. The host providers and indexer
@@ -1505,6 +1505,11 @@ and maintenance authority alongside the constructor ledger at one finalized
 checkpoint, and withholds `verified` for missing, extra, or substituted keys
 or a replaced initial authority. These checks are local adapter hardening,
 not an approved public authority model or independent finality proof.
+The full-integration reader test serializes and deserializes a real generated
+verifier key through `ContractState` before comparing its SHA-256 with the
+finalized-image readback. A malformed operation catalog reports
+`invalid-image`, not transient `unavailable`; missing and extra valid
+operations report `mismatch`.
 
 ## 2026-10-17: local decision-evidence continuation
 
