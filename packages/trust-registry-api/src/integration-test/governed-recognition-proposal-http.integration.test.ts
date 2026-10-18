@@ -30,6 +30,7 @@ import {
 
 import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
+import { RecognitionAccreditationAuthorizationDeniedError } from "../recognition-accreditation-http.js";
 import {
   GovernedRecognitionProposalRejectedError,
   type GovernedRecognitionProposalPort,
@@ -244,7 +245,7 @@ describe("governed recognition proposal HTTP", () => {
         challengeStore: admissionStore,
         admissionStore,
         authorizeRequest: async () => {
-          if (!recoveryAuthorized) throw new Error("private recovery denied");
+          if (!recoveryAuthorized) throw new RecognitionAccreditationAuthorizationDeniedError();
         },
         resolveCurrentContext: async () => null,
       },

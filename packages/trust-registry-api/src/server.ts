@@ -140,6 +140,7 @@ import {
   type ApplicationVpHttpPort,
 } from "./application-vp-http.js";
 import {
+  RecognitionAccreditationAuthorizationDeniedError,
   RecognitionAccreditationHttpError,
   createRecognitionAccreditationHttpService,
   type RecognitionAccreditationHttpPort,
@@ -785,6 +786,23 @@ export const createTrustRegistryApiServer = (
       () => Date.parse(options.clock?.() ?? new Date().toISOString()),
     );
 
+  const authorizeRecognitionRequest = async (recognitionId: string, request: IncomingMessage): Promise<void> => {
+    if (options.recognitionAccreditation === undefined) {
+      throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+        "recognition accreditation unavailable");
+    }
+    try {
+      await options.recognitionAccreditation.authorizeRequest(recognitionId, request);
+    } catch (error) {
+      if (error instanceof RecognitionAccreditationAuthorizationDeniedError) {
+        throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
+          "recognition accreditation forbidden");
+      }
+      throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
+        "recognition accreditation unavailable");
+    }
+  };
+
   const requireProposalAdmission = async (
     role: "issuer" | "verifier" | "auditor" | "maintainer",
     authorizationId: string,
@@ -940,12 +958,7 @@ export const createTrustRegistryApiServer = (
             throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
               "recognition accreditation unavailable");
           }
-          try {
-            await options.recognitionAccreditation.authorizeRequest(segments[3]!, request);
-          } catch {
-            throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
-              "recognition accreditation forbidden");
-          }
+          await authorizeRecognitionRequest(segments[3]!, request);
         }
         if (options.readFinalizedProposalLedger === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
@@ -1110,12 +1123,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
             "recognition accreditation unavailable");
         }
-        try {
-          await options.recognitionAccreditation.authorizeRequest(segments[2]!, request);
-        } catch {
-          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
-            "recognition accreditation forbidden");
-        }
+        await authorizeRecognitionRequest(segments[2]!, request);
         try {
           writeJson(response, 200, await recognitionAccreditation.accepted(segments[2]!), false);
           return;
@@ -1135,12 +1143,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "recognition-accreditation-unavailable", 503,
             "recognition accreditation unavailable");
         }
-        try {
-          await options.recognitionAccreditation.authorizeRequest(segments[2]!, request);
-        } catch {
-          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
-            "recognition accreditation forbidden");
-        }
+        await authorizeRecognitionRequest(segments[2]!, request);
         try {
           const raw = await readRequestBody(request, problemBaseUri);
           let body: unknown;
@@ -1173,12 +1176,7 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
             "governed proposal resolution unavailable");
         }
-        try {
-          await options.recognitionAccreditation.authorizeRequest(recognitionId, request);
-        } catch {
-          throw jsonProblem(problemBaseUri, "recognition-accreditation-forbidden", 403,
-            "recognition accreditation forbidden");
-        }
+        await authorizeRecognitionRequest(recognitionId, request);
         const body = await parseJsonBody(request,
           (value) => GovernedRecognitionProposalPrepareRequestSchema.parse(value), problemBaseUri);
         let binding: RecognitionAuthorityChallengeBinding;
