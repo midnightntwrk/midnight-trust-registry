@@ -70,6 +70,16 @@ const revisedPolicyEvidence = (label) => {
   return { client, historical, current };
 };
 
+const activeIssuerEvidence = (label) => {
+  const harness = new LocalTrustRegistryIntegrationHarness(label);
+  const issuer = createIssuerScenarioFixture(`${label}-issuer`);
+  harness.authorizeIssuer(issuer);
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+  assert.ok(client.verifyIssuerAuthorizationBundle(bundle, { expectedRegistryId: harness.registryId }));
+  return { harness, issuer, client, bundle };
+};
+
 test("compact-self-voted-maintainer-suspension", () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-self-suspension");
   const before = harness.simulator.getLedger().governanceActionCount;
@@ -383,5 +393,88 @@ for (const role of [
       const membership = harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment);
       assert.equal(membership.status, AuthorizationStatus.active);
     }
+  });
+}
+
+test("issuer-tampered-merkle-path", () => {
+  const { harness, client, bundle } = activeIssuerEvidence("isolated-issuer-path");
+  const sibling = bundle.inclusionProof.path[0];
+  assert.ok(sibling);
+  const changed = `${sibling.slice(0, -1)}${sibling.endsWith("0") ? "1" : "0"}`;
+  assert.throws(() => client.verifyIssuerAuthorizationBundle({
+    ...bundle,
+    inclusionProof: { ...bundle.inclusionProof, path: [changed] },
+  }, { expectedRegistryId: harness.registryId }), /event sibling/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(bundle, { expectedRegistryId: harness.registryId }));
+});
+
+test("issuer-wrong-credential-family", () => {
+  const { client, bundle } = activeIssuerEvidence("isolated-issuer-resource");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(bundle, {
+    expectedResourceId: "credential-family:unknown",
+  }), /issuer authorization resource mismatch/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(bundle, {}));
+});
+
+test("verifier-wrong-request-profile", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-verifier-resource");
+  const verifier = createVerifierScenarioFixture("isolated-verifier-profile");
+  harness.authorizeVerifier(verifier);
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  const bundle = harness.evaluateCurrentVerifierDecision(verifier);
+  assert.ok(client.verifyVerifierAuthorizationBundle(bundle, {}));
+  assert.throws(() => client.verifyVerifierAuthorizationBundle(bundle, {
+    expectedResourceId: "request-profile:unknown",
+  }), /verifier authorization resource mismatch/iu);
+  assert.ok(client.verifyVerifierAuthorizationBundle(bundle, {}));
+});
+
+test("issuer-wrong-registry", () => {
+  const { harness, client, bundle } = activeIssuerEvidence("isolated-issuer-registry");
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(bundle, {
+    expectedRegistryId: "registry:wrong",
+  }), /registry mismatch/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(bundle, { expectedRegistryId: harness.registryId }));
+});
+
+test("issuer-expired-epoch", () => {
+  const { harness, client, bundle } = activeIssuerEvidence("isolated-issuer-epoch");
+  const afterExpiry = new Date(Date.parse(bundle.epoch.validUntil) + 1).toISOString();
+  assert.throws(() => client.verifyIssuerAuthorizationBundle(bundle, {
+    expectedRegistryId: harness.registryId,
+    evaluationTime: afterExpiry,
+  }), /epoch|expired|valid/iu);
+  assert.ok(client.verifyIssuerAuthorizationBundle(bundle, { expectedRegistryId: harness.registryId }));
+});
+
+for (const lifecycle of [
+  { name: "suspended", transition: "suspendIssuer" },
+  { name: "revoked", transition: "revokeIssuer" },
+]) {
+  const changedIssuer = (label) => {
+    const fixture = activeIssuerEvidence(label);
+    fixture.harness[lifecycle.transition](fixture.issuer);
+    const latest = fixture.harness.buildIssuerHistoricalEvidence(fixture.issuer);
+    assert.equal(latest.authorization.status, lifecycle.name);
+    return { ...fixture, latest };
+  };
+
+  test(`issuer-${lifecycle.name}`, () => {
+    const { harness, client, latest, bundle } = changedIssuer(`isolated-issuer-${lifecycle.name}`);
+    assert.throws(() => client.verifyIssuerAuthorizationBundle(latest, {
+      expectedRegistryId: harness.registryId,
+    }), /not active/iu);
+    assert.ok(client.verifyIssuerAuthorizationBundle(bundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: bundle.authorization.activeFrom,
+    }));
+  });
+
+  test(`issuer-historical-after-${lifecycle.name === "suspended" ? "suspension" : "revocation"}`, () => {
+    const { harness, client, bundle } = changedIssuer(`isolated-issuer-history-${lifecycle.name}`);
+    assert.ok(client.verifyIssuerAuthorizationBundle(bundle, {
+      expectedRegistryId: harness.registryId,
+      evaluationTime: bundle.authorization.activeFrom,
+    }));
   });
 }
