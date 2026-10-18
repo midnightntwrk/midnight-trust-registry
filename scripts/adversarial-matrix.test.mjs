@@ -154,6 +154,25 @@ test("does not record an unmatched or absent thrown rejection", () => {
   assert.deepEqual(matrix.report().cases, []);
 });
 
+test("records async rejections without leaking errors and rejects missing failures", async () => {
+  const matrix = new AdversarialMatrix({ collectFailures: true });
+  const expected = {
+    invariant: "Recognition intake must reject invalid signed evidence",
+    boundary: "integration",
+    messagePattern: /signature is invalid/u,
+    category: "recognition-signature-mismatch",
+  };
+  await matrix.expectRejected(async () => { throw new Error("signature is invalid for secret assertion"); }, {
+    ...expected, id: "async-rejection",
+  });
+  await matrix.expectRejected(async () => {}, { ...expected, id: "async-missing-rejection" });
+  assert.deepEqual(matrix.report().cases.map(({ id, status, reason }) => [id, status, reason]), [
+    ["async-rejection", "passed", undefined],
+    ["async-missing-rejection", "failed", "rejection-assertion-failed"],
+  ]);
+  assert.equal(JSON.stringify(matrix.report()).includes("secret"), false);
+});
+
 test("does not record a rejected historical verification", () => {
   const matrix = new AdversarialMatrix();
   assert.throws(() => matrix.expectVerified(() => { throw new Error("invalid proof"); }, {

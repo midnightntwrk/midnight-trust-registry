@@ -94,6 +94,25 @@ export class AdversarialMatrix {
     }
   }
 
+  async expectRejected(operation, { id, invariant, boundary, messagePattern, category }) {
+    try {
+      assert.ok(["integration", "client", "adapter"].includes(boundary));
+      assert.ok(messagePattern instanceof RegExp);
+      assert.match(category, /^[a-z][a-z0-9-]+$/u);
+      let failure;
+      try {
+        await operation();
+      } catch (error) {
+        failure = error;
+      }
+      assert.ok(failure instanceof Error, "Expected an Error rejection");
+      assert.match(failure.message, messagePattern);
+      this.#record({ id, invariant, boundary, expected: category, observed: `matched:${failure.name}`, status: "passed" });
+    } catch (error) {
+      this.#failure({ id, invariant, boundary }, category, "rejection-assertion-failed", error);
+    }
+  }
+
   expectVerified(operation, { id, invariant, boundary }) {
     try {
       assert.ok(["integration", "client", "adapter"].includes(boundary));
