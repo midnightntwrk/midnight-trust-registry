@@ -7,7 +7,10 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
 } from "../contracts/trust-registry/dist/index.js";
 import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
+import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
+import { computeApplicationEvidenceCommitment } from "../packages/trust-registry-domain/dist/index.js";
 import {
+  createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
@@ -126,4 +129,106 @@ test("denied-proposal-requires-quorum", () => {
     issuer, "archive", [signAction(harness, second, prepared), signAction(harness, third, prepared)],
   );
   assert.equal(archived.length, 32);
+});
+
+test("denied-proposal-is-not-trust", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-archived-proposal");
+  const issuer = createIssuerScenarioFixture("isolated-archived-issuer");
+  harness.proposeIssuer(issuer);
+  harness.archiveIssuer(issuer);
+  const bundle = harness.buildIssuerHistoricalEvidence(issuer);
+  assert.equal(bundle.authorization.status, "archived");
+  assert.equal(bundle.authorization.authorizedAt, undefined);
+  assert.throws(() => new TrustRegistrySimulatorClient(harness.simulator)
+    .verifyIssuerAuthorizationBundle(bundle, {}), /not active/iu);
+});
+
+test("issuer-signed-wrong-policy-id", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-wrong-evidence-policy");
+  const issuer = createIssuerScenarioFixture("isolated-wrong-evidence-policy-issuer");
+  const evidence = harness.createApplicationEvidence({
+    applicationId: issuer.authorizationId,
+    subjectDid: issuer.subjectDid,
+    role: "issuer",
+    scope: createIssuerAuthorizationScopeFixture(issuer),
+    governedResource: { type: "credentialFamily", id: issuer.resourceId },
+  });
+  const envelope = { ...evidence.envelope, policyId: "policy:wrong:v1" };
+  const commitment = computeApplicationEvidenceCommitment(envelope);
+  const signed = {
+    envelope,
+    commitment,
+    signature: harness.signApplicationEvidenceCommitment(commitment),
+  };
+  assert.equal(harness.verifyApplicationEvidenceSignature(
+    signed.commitment, signed.signature, harness.evidenceVerifier,
+  ), true);
+  const before = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.proposeIssuerWithApplicationEvidence(issuer, signed), /policyId does not match/iu);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
+});
+
+test("issuer-expired-signed-application-evidence", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-expired-evidence");
+  const issuer = createIssuerScenarioFixture("isolated-expired-evidence-issuer");
+  const evidence = harness.createApplicationEvidence({
+    applicationId: issuer.authorizationId,
+    subjectDid: issuer.subjectDid,
+    role: "issuer",
+    scope: createIssuerAuthorizationScopeFixture(issuer),
+    governedResource: { type: "credentialFamily", id: issuer.resourceId },
+  });
+  harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
+  const before = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.proposeIssuerWithApplicationEvidence(issuer, evidence), /evidence is expired/iu);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  const fresh = harness.createApplicationEvidence({
+    applicationId: issuer.authorizationId,
+    subjectDid: issuer.subjectDid,
+    role: "issuer",
+    scope: createIssuerAuthorizationScopeFixture(issuer),
+    governedResource: { type: "credentialFamily", id: issuer.resourceId },
+  });
+  harness.proposeIssuerWithApplicationEvidence(issuer, fresh);
+});
+
+test("integration-old-policy-application-preflight", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-old-policy-application");
+  const second = createMaintainerScenarioFixture("isolated-old-policy-second");
+  const third = createMaintainerScenarioFixture("isolated-old-policy-third");
+  const issuer = createIssuerScenarioFixture("isolated-old-policy-issuer");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.proposeIssuer(issuer);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const before = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.prepareIssuerDecisionAction(issuer, "approve"), /policyVersion does not match/iu);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  const current = createIssuerScenarioFixture("isolated-current-policy-issuer");
+  harness.proposeIssuer(current, [second]);
+  harness.approveIssuer(current, [second]);
+});
+
+test("compact-old-policy-signature-replay", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-old-policy-signature");
+  const second = createMaintainerScenarioFixture("isolated-old-signature-second");
+  const third = createMaintainerScenarioFixture("isolated-old-signature-third");
+  const issuer = createIssuerScenarioFixture("isolated-old-signature-issuer");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.proposeIssuer(issuer);
+  const prepared = harness.prepareIssuerDecisionAction(issuer, "approve");
+  const oldSignature = signAction(harness, second, prepared);
+  const oldCoSignature = signAction(harness, third, prepared);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const before = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.simulator.authorizeIssuerAuthorization(
+    oldSignature.keyId, oldSignature.publicKey, oldSignature.signature,
+    issuer.authorizationIdCommitment, prepared.evidenceHash, [oldCoSignature],
+  ), /signature|policy|assert|maintainer/iu);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  const current = createIssuerScenarioFixture("isolated-current-signature-issuer");
+  harness.proposeIssuer(current, [second]);
+  harness.approveIssuer(current, [second]);
 });
