@@ -3,12 +3,21 @@ import { Buffer } from "node:buffer";
 import { test } from "node:test";
 
 import {
+  computeAuditorEvidenceBoundProposalPayloadHash,
+  computeCreateAuditorAuthorizationPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
+  computeCreateMaintainerMembershipPayloadHash,
+  computeCreateVerifierAuthorizationPayloadHash,
   computeIssuerEvidenceBoundProposalPayloadHash,
+  computeMaintainerEvidenceBoundProposalPayloadHash,
+  computeVerifierEvidenceBoundProposalPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  verifyAuditorProposalEvidenceSignature,
   verifyIssuerProposalEvidenceSignature,
+  verifyMaintainerProposalEvidenceSignature,
+  verifyVerifierProposalEvidenceSignature,
 } from "../contracts/trust-registry/dist/index.js";
 import { bytes32Commitment } from "../packages/trust-registry-client/dist/index.js";
 import {
@@ -238,6 +247,10 @@ for (const role of [
     prepare: "prepareVerifierProposalAction",
     sign: "signVerifierProposalEvidence",
     execute: "executeVerifierProposalWithSignatures",
+    createPayload: computeCreateVerifierAuthorizationPayloadHash,
+    bindPayload: computeVerifierEvidenceBoundProposalPayloadHash,
+    verifySignature: verifyVerifierProposalEvidenceSignature,
+    raw: "proposeVerifierAuthorization",
   },
   {
     name: "auditor",
@@ -248,6 +261,10 @@ for (const role of [
     prepare: "prepareAuditorProposalAction",
     sign: "signAuditorProposalEvidence",
     execute: "executeAuditorProposalWithSignatures",
+    createPayload: computeCreateAuditorAuthorizationPayloadHash,
+    bindPayload: computeAuditorEvidenceBoundProposalPayloadHash,
+    verifySignature: verifyAuditorProposalEvidenceSignature,
+    raw: "proposeAuditorAuthorization",
   },
   {
     name: "maintainer",
@@ -258,6 +275,10 @@ for (const role of [
     prepare: "prepareMaintainerProposalAction",
     sign: "signMaintainerProposalEvidence",
     execute: "executeMaintainerProposalWithSignatures",
+    createPayload: computeCreateMaintainerMembershipPayloadHash,
+    bindPayload: computeMaintainerEvidenceBoundProposalPayloadHash,
+    verifySignature: verifyMaintainerProposalEvidenceSignature,
+    raw: "proposeMaintainerMembership",
   },
 ]) {
   const proposal = (label) => {
@@ -278,7 +299,30 @@ for (const role of [
     const prepared = harness[role.prepare](fixture, evidence);
     const verifierSignature = harness[role.sign](prepared);
     const signatures = [signAction(harness, second, prepared), signAction(harness, third, prepared)];
-    return { harness, fixture, evidence, verifierSignature, signatures };
+    return { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third };
+  };
+
+  const submitRaw = (harness, fixture, prepared, verifierSignature, signers) => {
+    const [primary, ...coSigners] = signers;
+    assert.ok(primary);
+    const authorization = [primary.keyId, primary.publicKey, primary.signature];
+    const verifier = [prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment, verifierSignature, coSigners];
+    if (role.name === "maintainer") {
+      return harness.simulator[role.raw](
+        ...authorization, fixture.maintainerIdCommitment,
+        fixture.subjectDidCommitment, fixture.keyId,
+        deriveJubjubPublicKeyFromSeed(fixture.seed), prepared.policyCommitment,
+        bytes32Commitment(fixture.trustLevel), prepared.evidenceHash, ...verifier,
+      );
+    }
+    return harness.simulator[role.raw](
+      ...authorization, fixture.authorizationIdCommitment,
+      fixture.subjectDidCommitment, fixture.requestResourceIdCommitment,
+      fixture.allowedAttributeSetCommitment, fixture.allowedPredicateSetCommitment,
+      fixture.disclosureLevelCommitment, prepared.policyCommitment,
+      bytes32Commitment(fixture.trustLevel), prepared.evidenceHash, ...verifier,
+    );
   };
 
   test(`compact-${role.name}-proposal-insufficient-quorum`, () => {
@@ -299,6 +343,56 @@ for (const role of [
     assert.throws(() => harness[role.execute](
       fixture, evidence, [signatures[0], signatures[0]], verifierSignature,
     ), /Maintainer signer keys must be sorted/u);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    harness[role.execute](fixture, evidence, signatures, verifierSignature);
+  });
+
+  test(`compact-${role.name}-proposal-altered-evidence-hash`, () => {
+    const { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third } =
+      proposal(`isolated-${role.name}-proposal-evidence-substitution`);
+    const alteredHash = Uint8Array.from(prepared.evidenceHash);
+    alteredHash[0] ^= 1;
+    const baseHash = role.name === "maintainer"
+      ? role.createPayload(
+        fixture.maintainerIdCommitment, fixture.subjectDidCommitment,
+        fixture.keyId, deriveJubjubPublicKeyFromSeed(fixture.seed),
+        prepared.policyCommitment, bytes32Commitment(fixture.trustLevel), alteredHash,
+      )
+      : role.createPayload(
+        fixture.authorizationIdCommitment, fixture.subjectDidCommitment,
+        fixture.requestResourceIdCommitment, fixture.allowedAttributeSetCommitment,
+        fixture.allowedPredicateSetCommitment, fixture.disclosureLevelCommitment,
+        prepared.policyCommitment, bytes32Commitment(fixture.trustLevel), alteredHash,
+      );
+    const altered = {
+      ...prepared,
+      evidenceHash: alteredHash,
+      actionPayloadHash: role.bindPayload(
+        baseHash, prepared.evidenceVerifierAuthorizationId,
+        prepared.evidenceVerifierKeyIdCommitment,
+        prepared.policyCommitment, prepared.policyVersion,
+      ),
+    };
+    const alteredVerifierSignature = harness[role.sign](altered);
+    const verifierKey = harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
+    assert.equal(role.verifySignature(
+      verifierKey.publicKey, altered.registryId, altered.evidenceVerifierKeyIdCommitment,
+      altered.actionPayloadHash, alteredVerifierSignature,
+    ), true);
+    const before = harness.simulator.getLedger().governanceActionCount;
+    const originalContext = harness.simulator.circuitContext;
+    try {
+      submitRaw(harness, fixture, altered, alteredVerifierSignature, [
+        signAction(harness, second, altered), signAction(harness, third, altered),
+      ]);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+    } finally {
+      harness.simulator.circuitContext = originalContext;
+    }
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    assert.throws(() => submitRaw(
+      harness, fixture, altered, alteredVerifierSignature, signatures,
+    ), /Invalid Jubjub Schnorr signature/u);
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });

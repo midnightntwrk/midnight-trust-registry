@@ -1655,7 +1655,7 @@ fixtures so far, including revised-policy client and Compact behavior,
 public HTTP lookup/lifecycle behavior, and TRQP decision parity. The full 171-case demo remains, and
 top-level setup assertions can still abort it; do not call the extraction
 complete until those remaining cases are isolated and case parity is proved.
-The local parity checker executes both surfaces and currently reports 82
-matching IDs with 89 remaining. It rejects duplicate or unknown extracted
+The local parity checker executes both surfaces and currently reports 100
+matching IDs with 71 remaining. It rejects duplicate or unknown extracted
 IDs, while its strict mode requires every demo ID before paths can be removed.
 Matching IDs do not alone prove equivalent boundary or invariant coverage.
