@@ -113,15 +113,24 @@ asserts the `workspace-locked` problem, then retries after release. This is a
 same-host, shared-filesystem exclusion guarantee only: it is not a distributed
 lock or crash-durable transaction protocol. Operators must inspect stale locks
 before removal.
-Workspace format 2 stores each consumed signed-mutation nonce identity as a
-SHA-256 key with the signed intent's expiry. Entries remain replay-protected
+Workspace format 3 stores each consumed signed-mutation nonce identity as a
+SHA-256 key with a hashed actor identity and the signed intent's expiry.
+Entries remain replay-protected
 until that expiry (at most five minutes after issue) and are pruned during the
-next successful exclusive mutation. Lookup is keyed, not a scan. At 10,000
-simultaneously live nonces the API returns `503 mutation-nonce-capacity` rather
-than evicting a valid replay marker. The capacity is a local reference-gateway
-limit, not a ledger or network throughput claim. Version-1 pre-release
-workspaces are rejected explicitly and must be recreated from trusted source
-data; there is no compatibility default or silent migration.
+next successful exclusive mutation. Lookup is keyed, not a scan. A single
+actor may retain at most 512 live nonces; that actor receives
+`429 mutation-actor-nonce-capacity` without blocking other actors. At 10,000
+simultaneously live nonces across actors the API returns
+`503 mutation-nonce-capacity` rather than evicting a valid replay marker.
+These are local reference-gateway limits, not ledger or network throughput
+claims. Workspace formats 1 and 2 are unsupported pre-release snapshots and
+must be recreated from trusted source data; there is no compatibility default
+or silent migration.
+The persisted nonce clock records the latest successful signed mutation. If
+the host clock moves backward, the gateway returns
+`503 mutation-nonce-clock-rollback` without consuming an intent. Operators
+must correct the clock and confirm it has reached the recorded timestamp;
+never delete nonce history or lower the recorded clock to resume writes.
 `node scripts/bench-mutation-nonce-lookups.mjs` measures the in-memory lookup
 shape at 10,000 entries. On Node 24.14.0/darwin-arm64, 5,000 last-key lookups
 took 0.17 ms keyed versus 647.2 ms with the former array scan. This is an

@@ -240,18 +240,39 @@ export type TrustRegistryOperatorSnapshot = z.infer<
 >;
 
 export const MAX_CONSUMED_MUTATION_NONCES = 10_000;
+export const MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR = 512;
+
+const CanonicalNonceTimestampSchema = z.string().datetime({ offset: false }).refine((value) =>
+  Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value);
+
+export const ConsumedMutationNonceSchema = z.object({
+  actorKey: z.string().regex(/^0x[0-9a-f]{64}$/u),
+  expiresAt: CanonicalNonceTimestampSchema,
+});
 
 export const TrustRegistryOperatorWorkspaceSchema = z.object({
-  workspaceVersion: z.literal("2"),
+  workspaceVersion: z.literal("3"),
   updatedAt: z.string().datetime({ offset: true }),
   registryLabel: SnapshotEntryLabelSchema,
   operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),
   consumedMutationNonces: z.record(
     z.string().regex(/^0x[0-9a-f]{64}$/u),
-    z.string().datetime({ offset: false }).refine((value) =>
-      Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value),
-  ).refine((entries) => Object.keys(entries).length <= MAX_CONSUMED_MUTATION_NONCES,
-    "Too many unexpired mutation nonces"),
+    ConsumedMutationNonceSchema,
+  ).superRefine((entries, ctx) => {
+    if (Object.keys(entries).length > MAX_CONSUMED_MUTATION_NONCES) {
+      ctx.addIssue({ code: "custom", message: "Too many unexpired mutation nonces" });
+    }
+    const byActor = new Map<string, number>();
+    for (const entry of Object.values(entries)) {
+      const count = (byActor.get(entry.actorKey) ?? 0) + 1;
+      if (count > MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR) {
+        ctx.addIssue({ code: "custom", message: "Too many unexpired mutation nonces for one actor" });
+        break;
+      }
+      byActor.set(entry.actorKey, count);
+    }
+  }),
+  mutationNonceClock: CanonicalNonceTimestampSchema.nullable(),
   snapshot: TrustRegistryOperatorSnapshotSchema,
 });
 

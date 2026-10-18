@@ -1428,6 +1428,14 @@ rejected. This is reference gateway replay retention, not an on-chain nonce
 store or public-network throughput guarantee. Fake-clock, restart, concurrent
 HTTP, schema-capacity, and keyed-lookup tests belong to this slice; keep it
 local until a coherent functional stack is ready for review.
+The later local #202 hardening uses workspace format 3. It records actor-key
+hashes with expiry, caps each actor at 512 live nonces while retaining the
+10,000-entry global limit, and persists a nonce-clock high-water mark. A
+backward host clock fails closed instead of reviving pruned intents. Formats 1
+and 2 are explicitly rejected; operators must rebuild pre-release snapshots
+from trusted source data rather than deleting nonce history or moving the
+high-water mark backward. Cross-actor saturation and clock rollback have
+pure-state and HTTP tests; this remains a local reference-gateway guarantee.
 The same local integration-light run exposed a governed-demo temporal-dead-zone
 error: an early threshold-removal adversarial case implicitly used the later
 main `harness`. Passing `lastActiveHarness` explicitly restores the intended
