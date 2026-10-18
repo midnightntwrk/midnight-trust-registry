@@ -201,6 +201,83 @@ describe("Compact-backed policy revision over HTTP", () => {
     }
   }, 120_000);
 
+  it("retains an old-policy issuer decision through the historical HTTP evidence route", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("policy-http-history");
+    const issuer = createIssuerScenarioFixture("policy-http-history-issuer");
+    harness.authorizeIssuer(issuer);
+    const fixtures = { label: "policy-http-history", issuers: [{ fixture: issuer, label: "issuer" }] };
+    const beforeRevision = publishSimulatorSnapshot(harness, fixtures);
+    const oldBundle = beforeRevision.issuerEntries[0]?.evidence;
+    if (oldBundle?.authorization === undefined) throw new Error("Active issuer evidence missing");
+    const oldEpochStart = Date.parse(oldBundle.epoch.validFrom);
+    const oldEpochEnd = Date.parse(oldBundle.epoch.validUntil);
+    const historicalInstant = new Date(oldEpochStart + 1).toISOString();
+    expect(Date.parse(historicalInstant)).toBeGreaterThan(oldEpochStart);
+    expect(Date.parse(historicalInstant)).toBeLessThan(oldEpochEnd);
+
+    const second = createMaintainerScenarioFixture("policy-http-history-second");
+    const third = createMaintainerScenarioFixture("policy-http-history-third");
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    harness.revokeIssuer(issuer, [second]);
+    const snapshot = publishSimulatorSnapshot(harness, fixtures, beforeRevision);
+    expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    expect(snapshot.evidenceArchive).toContainEqual(oldBundle);
+    expect(Date.parse(snapshot.issuerEntries[0]?.evidence.epoch.validFrom ?? "")).toBeGreaterThan(
+      Date.parse(historicalInstant),
+    );
+    expect(snapshot.policy.policyId).toBe(oldBundle.policy.policyId);
+    expect(snapshot.policy.version).not.toBe(oldBundle.policy.version);
+
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => snapshot },
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const base = `http://127.0.0.1:${address.port}`;
+      const historical = await fetch(`${base}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer",
+          subjectDid: issuer.subjectDid,
+          resourceId: issuer.resourceId,
+          at: historicalInstant,
+        }),
+      });
+      expect(historical.status).toBe(200);
+      const answer = await historical.json();
+      expect(answer.trustedAtTime).toBe(true);
+      expect(answer.bundle.authorization.status).toBe("active");
+      expect(answer.bundle.epoch.epochId).toBe(oldBundle.epoch.epochId);
+      expect(answer.bundle.policy.policyId).toBe(oldBundle.policy.policyId);
+      expect(answer.bundle.policy.version).toBe(oldBundle.policy.version);
+      expect(answer.bundle.policy.version).not.toBe(snapshot.policy.version);
+
+      const trqp = await fetch(`${base}/v1/trqp/authorizations/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: issuer.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: issuer.resourceId,
+          context: { time: historicalInstant },
+        }),
+      });
+      expect(trqp.status).toBe(200);
+      const trqpAnswer = await trqp.json();
+      expect(trqpAnswer.authorized).toBe(true);
+      expect(trqpAnswer.bundle.epoch.epochId).toBe(oldBundle.epoch.epochId);
+      expect(trqpAnswer.bundle.policy.version).toBe(oldBundle.policy.version);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 120_000);
+
   it("atomically recovers a maintainer through old-quorum external signatures", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("policy-http-atomic-recovery");
     const second = createMaintainerScenarioFixture("policy-http-recovery-second");
