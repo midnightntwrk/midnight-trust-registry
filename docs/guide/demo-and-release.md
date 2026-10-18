@@ -257,7 +257,7 @@ Each recorded case names the violated invariant, boundary, expected category,
 observed result, and a `passed` or `failed` status. The report includes
 `summary.total`, `summary.passed`, and `summary.failed`. A failed case records
 a fixed, redacted reason rather than a response body or thrown message. The
-governed demo checks that the report still contains 180 cases and exits
+governed demo checks that the report still contains 186 cases and exits
 nonzero if any recorded case fails or the count changes. API cases assert the
 exact problem-type slug as well as
 HTTP status; TRQP adapter cases assert the exact problem type and status.

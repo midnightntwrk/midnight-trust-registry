@@ -134,7 +134,7 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
-const expectedAdversarialCaseCount = 180;
+const expectedAdversarialCaseCount = 186;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -508,6 +508,18 @@ policyHarness.proposeVerifier(revisedPolicyVerifier);
 const verifierApproval = policyHarness.prepareVerifierDecisionAction(revisedPolicyVerifier, "approve");
 const beforeVerifierRejection = policyHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
+  revisedPolicyVerifier, "approve", [
+    signCompact(policySecond, verifierApproval, policyHarness, formerPolicyCommitment),
+    signCompact(policyThird, verifierApproval, policyHarness, formerPolicyCommitment),
+  ],
+), {
+  id: "compact-verifier-old-policy-signature-replay",
+  invariant: "Former-policy verifier approval signatures cannot authorize a revised-policy action",
+  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
+adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
   revisedPolicyVerifier, "approve", [signCompact(policySecond, verifierApproval, policyHarness)],
 ), {
   id: "verifier-revised-policy-insufficient-quorum",
@@ -540,6 +552,18 @@ policyHarness.proposeAuditor(revisedPolicyAuditor);
 const auditorApproval = policyHarness.prepareAuditorDecisionAction(revisedPolicyAuditor, "approve");
 const beforeAuditorRejection = policyHarness.simulator.getLedger().governanceActionCount;
 adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
+  revisedPolicyAuditor, "approve", [
+    signCompact(policySecond, auditorApproval, policyHarness, formerPolicyCommitment),
+    signCompact(policyThird, auditorApproval, policyHarness, formerPolicyCommitment),
+  ],
+), {
+  id: "compact-auditor-old-policy-signature-replay",
+  invariant: "Former-policy auditor approval signatures cannot authorize a revised-policy action",
+  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
+adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
   revisedPolicyAuditor, "approve", [signCompact(policySecond, auditorApproval, policyHarness)],
 ), {
   id: "auditor-revised-policy-insufficient-quorum",
@@ -562,6 +586,18 @@ const revisedPolicyMaintainer = createMaintainerScenarioFixture("governed-demo-p
 policyHarness.proposeMaintainer(revisedPolicyMaintainer);
 const maintainerApproval = policyHarness.prepareMaintainerDecisionAction(revisedPolicyMaintainer, "approve");
 const beforeMaintainerRejection = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
+  revisedPolicyMaintainer, "approve", [
+    signCompact(policySecond, maintainerApproval, policyHarness, formerPolicyCommitment),
+    signCompact(policyThird, maintainerApproval, policyHarness, formerPolicyCommitment),
+  ],
+), {
+  id: "compact-maintainer-old-policy-signature-replay",
+  invariant: "Former-policy maintainer approval signatures cannot authorize a revised-policy action",
+  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
 adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
   revisedPolicyMaintainer, "approve", [signCompact(policySecond, maintainerApproval, policyHarness)],
 ), {
@@ -1725,6 +1761,26 @@ try {
     category: "proposal-evidence-substitution-rejected",
   });
   assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
+  const changedIssuerScope = {
+    ...issuer, resourceIdCommitment: bytes32Commitment("credential-family:substituted:v1"),
+  };
+  const changedIssuerPrepared = withAlteredProposalEvidence(
+    "issuer", changedIssuerScope, compactIssuerProposal, compactIssuerProposal.evidenceHash,
+  );
+  const changedIssuerVerifierSignature = harness.signIssuerProposalEvidence(changedIssuerPrepared);
+  assertValidProposalVerifierSignature("issuer", changedIssuerPrepared, changedIssuerVerifierSignature);
+  assertFreshProposalCanExecute("issuer", changedIssuerScope, changedIssuerPrepared,
+    changedIssuerVerifierSignature);
+  adversarialMatrix.expectThrown(() => submitRawProposal(
+    "issuer", changedIssuerScope, changedIssuerPrepared, changedIssuerVerifierSignature,
+    [proposalPrimary, proposalCoSigner],
+  ), {
+    id: "compact-issuer-proposal-scope-substitution",
+    invariant: "Issuer proposal signatures cannot be reused for another credential family scope",
+    boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+    category: "proposal-scope-substitution-rejected",
+  });
+  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
   adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
     issuer, issuerEvidence, [proposalPrimary], verifierSignature, expectedIssuerEvidence,
   ), {
@@ -1901,6 +1957,25 @@ try {
         boundary: "compact",
         messagePattern: /Invalid Jubjub Schnorr signature/u,
         category: "proposal-evidence-substitution-rejected",
+      });
+      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+      const changedScope = role === "verifier"
+        ? { ...fixture, allowedAttributeSetCommitment: bytes32Commitment("verifier:substituted-attributes") }
+        : { ...fixture, requestResourceIdCommitment: bytes32Commitment("auditor:substituted-request") };
+      const changedPrepared = withAlteredProposalEvidence(
+        role, changedScope, compactPrepared, compactPrepared.evidenceHash,
+      );
+      const changedVerifierSignature = target.signEvidence(changedPrepared);
+      assertValidProposalVerifierSignature(role, changedPrepared, changedVerifierSignature);
+      assertFreshProposalCanExecute(role, changedScope, changedPrepared, changedVerifierSignature);
+      adversarialMatrix.expectThrown(() => submitRawProposal(
+        role, changedScope, changedPrepared, changedVerifierSignature,
+        [compactSigner, signCompact(third, compactPrepared)],
+      ), {
+        id: `compact-${role}-proposal-scope-substitution`,
+        invariant: `A ${role} proposal quorum cannot be reused for a changed request scope`,
+        boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+        category: "proposal-scope-substitution-rejected",
       });
       assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
     }

@@ -274,6 +274,37 @@ test("compact-old-policy-signature-replay", () => {
   assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
 });
 
+for (const role of [
+  { name: "verifier", fixture: createVerifierScenarioFixture },
+  { name: "auditor", fixture: createAuditorScenarioFixture },
+  { name: "maintainer", fixture: createMaintainerScenarioFixture },
+]) {
+  test(`compact-${role.name}-old-policy-signature-replay`, () => {
+    const label = `isolated-${role.name}-old-policy-replay`;
+    const harness = new LocalTrustRegistryIntegrationHarness(label);
+    const second = createMaintainerScenarioFixture(`${label}-second`);
+    const third = createMaintainerScenarioFixture(`${label}-third`);
+    const target = role.fixture(`${label}-target`);
+    harness.authorizeMaintainer(second);
+    harness.authorizeMaintainer(third);
+    const formerPolicyCommitment = Buffer.from(harness.simulator.getLedger().governancePolicyCommitment);
+    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const capitalized = `${role.name[0].toUpperCase()}${role.name.slice(1)}`;
+    harness[`propose${capitalized}`](target, [second]);
+    const prepared = harness[`prepare${capitalized}DecisionAction`](target, "approve");
+    const before = harness.simulator.getLedger().governanceActionCount;
+    assert.throws(() => harness[`execute${capitalized}DecisionWithSignatures`](target, "approve", [
+      signAction(harness, second, prepared, formerPolicyCommitment),
+      signAction(harness, third, prepared, formerPolicyCommitment),
+    ]), /Invalid Jubjub Schnorr signature/u);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+    harness[`execute${capitalized}DecisionWithSignatures`](target, "approve", [
+      signAction(harness, second, prepared), signAction(harness, third, prepared),
+    ]);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+  });
+}
+
 test("compact-recovery-policy-headroom-required", () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-recovery-headroom");
   const second = createMaintainerScenarioFixture("isolated-recovery-second");

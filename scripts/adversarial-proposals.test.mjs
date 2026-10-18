@@ -155,6 +155,44 @@ test("compact-issuer-proposal-altered-evidence-hash", () => {
   harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
+test("compact-issuer-proposal-scope-substitution", () => {
+  const { harness, issuer, evidence, prepared, signatures, verifierSignature } =
+    issuerProposal("isolated-issuer-proposal-scope-substitution");
+  const changed = { ...issuer, resourceIdCommitment: bytes32Commitment("credential-family:substituted:v1") };
+  const baseHash = computeCreateIssuerAuthorizationPayloadHash(
+    changed.authorizationIdCommitment, changed.subjectDidCommitment,
+    changed.resourceType, changed.resourceIdCommitment,
+    prepared.policyCommitment, prepared.statusPolicyBindingCommitment,
+    bytes32Commitment(changed.trustLevel), prepared.evidenceHash,
+  );
+  const altered = {
+    ...prepared,
+    actionPayloadHash: computeIssuerEvidenceBoundProposalPayloadHash(
+      baseHash, prepared.evidenceVerifierAuthorizationId,
+      prepared.evidenceVerifierKeyIdCommitment, prepared.policyCommitment, prepared.policyVersion,
+    ),
+  };
+  const changedVerifierSignature = harness.signIssuerProposalEvidence(altered);
+  const second = createMaintainerScenarioFixture("isolated-issuer-proposal-scope-substitution-second");
+  const third = createMaintainerScenarioFixture("isolated-issuer-proposal-scope-substitution-third");
+  const before = harness.simulator.getLedger().governanceActionCount;
+  const originalContext = harness.simulator.circuitContext;
+  try {
+    submitRawIssuerProposal(harness, changed, altered, changedVerifierSignature, [
+      signAction(harness, second, altered), signAction(harness, third, altered),
+    ]);
+    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+  } finally {
+    harness.simulator.circuitContext = originalContext;
+  }
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.throws(() => submitRawIssuerProposal(
+    harness, changed, altered, changedVerifierSignature, signatures,
+  ), /Invalid Jubjub Schnorr signature/u);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+});
+
 test("issuer-unauthorized-evidence-verifier-compact", () => {
   const { harness, issuer, evidence, prepared, verifierSignature, signatures } =
     issuerProposal("isolated-issuer-unauthorized-verifier");
@@ -397,6 +435,46 @@ for (const role of [
     assert.equal(harness.simulator.getLedger().governanceActionCount, before);
     harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });
+
+  if (role.name === "verifier" || role.name === "auditor") {
+    test(`compact-${role.name}-proposal-scope-substitution`, () => {
+      const label = `isolated-${role.name}-proposal-scope-substitution`;
+      const { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third } = proposal(label);
+      const changed = role.name === "verifier"
+        ? { ...fixture, allowedAttributeSetCommitment: bytes32Commitment("verifier:substituted-attributes") }
+        : { ...fixture, requestResourceIdCommitment: bytes32Commitment("auditor:substituted-request") };
+      const baseHash = role.createPayload(
+        changed.authorizationIdCommitment, changed.subjectDidCommitment,
+        changed.requestResourceIdCommitment, changed.allowedAttributeSetCommitment,
+        changed.allowedPredicateSetCommitment, changed.disclosureLevelCommitment,
+        prepared.policyCommitment, bytes32Commitment(changed.trustLevel), prepared.evidenceHash,
+      );
+      const altered = {
+        ...prepared,
+        actionPayloadHash: role.bindPayload(
+          baseHash, prepared.evidenceVerifierAuthorizationId,
+          prepared.evidenceVerifierKeyIdCommitment, prepared.policyCommitment, prepared.policyVersion,
+        ),
+      };
+      const changedVerifierSignature = harness[role.sign](altered);
+      const before = harness.simulator.getLedger().governanceActionCount;
+      const originalContext = harness.simulator.circuitContext;
+      try {
+        submitRaw(harness, changed, altered, changedVerifierSignature, [
+          signAction(harness, second, altered), signAction(harness, third, altered),
+        ]);
+        assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+      } finally {
+        harness.simulator.circuitContext = originalContext;
+      }
+      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+      assert.throws(() => submitRaw(
+        harness, changed, altered, changedVerifierSignature, signatures,
+      ), /Invalid Jubjub Schnorr signature/u);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+      harness[role.execute](fixture, evidence, signatures, verifierSignature);
+    });
+  }
 }
 
 for (const substitution of [
