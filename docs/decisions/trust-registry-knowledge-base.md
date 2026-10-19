@@ -1811,3 +1811,30 @@ docker exec tr-standalone-node-restore-smoke curl -sf -H 'Content-Type: applicat
   http://localhost:9944
 docker stop tr-standalone-node-restore-smoke
 ```
+
+### Pinned standalone install-bundle candidate
+
+From signed/DCO source `0ae03ca857f9aedb101f47c29e5e98c93b1d082e`, the
+local bundle builder packed ten packages with the preserved full 66-circuit
+contract artifacts, exported three digest-pinned arm64 image archives, and
+copied all 18 Ledger 8 proof-parameter files into a new ignored
+`artifacts/standalone-install/<source SHA>/` directory. The byte-level
+verifier passed. Subsequent archive inspection found that `docker save` of a
+digest-only image produced `RepoTags: null`; a loader that assumed Docker's
+image ID was the config digest failed on this Docker Desktop containerd
+store, where `docker load` reported the OCI manifest digest instead. The
+loader was corrected to accept only either verified digest and then create
+an explicit source-SHA-scoped local tag. On the existing daemon, all three
+archives loaded, their IDs matched verified archive metadata, and local tags
+were created. The offline Compose overlay resolved those tags and disables
+pulls. The bundle and local tags remain available for inspection.
+
+This is **candidate-byte integrity and existing-daemon load evidence**, not
+an approved software supply-chain provenance decision or a clean offline
+installation. The daemon already held the upstream images, and neither a
+fresh-host `docker load` nor a pull-disabled full-stack restart was run.
+The bundle binds the earlier source SHA above; after subsequent source
+changes, generate a new bundle from the final clean signed commit. A
+release-qualified install additionally needs pinned local DID, VC/status,
+API/browser and wallet components, an independently approved install
+manifest, and an offline restart with egress denied.

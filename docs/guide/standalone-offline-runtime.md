@@ -91,10 +91,25 @@ parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
-The image reference is an operator-approved pin; archive hashing alone cannot
-prove that the archive came from that registry digest. Record independent
-registry-digest verification at acquisition, and prove `docker load` plus
-restart from those bytes with image pulls disabled. Include pinned runtime,
+The verifier also checks each tagless OCI archive's internal manifest digest
+against the approved image reference and its arm64 config bytes. It does not
+establish who approved the reference or prove origin from the registry;
+record independent registry-digest verification at acquisition.
+
+On a clean offline host, run
+`node scripts/load-standalone-install-images.mjs <verified-bundle-directory>`.
+It rechecks the bundle, loads archives without pulling, verifies each Docker
+image ID against the archived config bytes, and creates source-SHA-scoped
+local tags. Reject a tag already bound to different bytes. Set
+`TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
+tags. Then use both `deploy/standalone/compose.yml` and
+`deploy/standalone/compose.offline.yml` with `docker compose -f
+deploy/standalone/compose.yml -f deploy/standalone/compose.offline.yml up
+--pull never -d --wait`; the overlay sets `pull_policy: never` for every image. Do this
+on a separate clean host or daemon and capture load output, image IDs, restart
+logs, and denied-egress evidence. A load against this development host, where
+the upstream images are already present, does **not** prove clean offline
+installation. Include pinned runtime,
 browser, DID/VC/status, Compose, and toolchain dependencies in the operator
 install record; this three-image inventory alone is not a complete install or
 qualification result.

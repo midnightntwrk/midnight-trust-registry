@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createReadStream } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
@@ -43,6 +44,54 @@ async function sha256(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
+}
+
+function archiveMember(archive, member) {
+  return execFileSync("tar", ["-xOf", archive, member], {
+    encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
+  });
+}
+
+export function installedImageIdFromArchive(archive, reference) {
+  const expected = reference.split("@sha256:")[1];
+  let index;
+  try {
+    index = JSON.parse(archiveMember(archive, "index.json"));
+  } catch {
+    throw new Error("Container archive lacks a readable OCI index");
+  }
+  if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
+    || index.manifests[0]?.digest !== `sha256:${expected}`) {
+    throw new Error("Container archive OCI manifest digest disagrees with the approved image pin");
+  }
+  const manifest = archiveMember(archive, `blobs/sha256/${expected}`);
+  if (createHash("sha256").update(manifest).digest("hex") !== expected) {
+    throw new Error("Container archive OCI manifest bytes disagree with the approved image pin");
+  }
+  let legacy;
+  let oci;
+  try {
+    legacy = JSON.parse(archiveMember(archive, "manifest.json"));
+    oci = JSON.parse(manifest);
+  } catch {
+    throw new Error("Container archive lacks a readable image config manifest");
+  }
+  const configPath = legacy?.length === 1 ? legacy[0]?.Config : undefined;
+  const configDigest = /^blobs\/sha256\/([0-9a-f]{64})$/u.exec(configPath ?? "")?.[1];
+  if (!configDigest || oci?.config?.digest !== `sha256:${configDigest}`) {
+    throw new Error("Container archive config digest disagrees with the OCI manifest");
+  }
+  if (legacy[0].RepoTags !== null && legacy[0].RepoTags?.length !== 0) {
+    throw new Error("Container archive must not contain implicit image tags");
+  }
+  const config = archiveMember(archive, configPath);
+  if (createHash("sha256").update(config).digest("hex") !== configDigest) {
+    throw new Error("Container archive image config bytes disagree with the OCI manifest");
+  }
+  if (JSON.parse(config)?.architecture !== "arm64") {
+    throw new Error("Container archive must contain the approved arm64 image");
+  }
+  return `sha256:${configDigest}`;
 }
 
 async function regularFiles(directory, prefix = "") {
@@ -97,6 +146,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (await sha256(archive) !== image.archiveSha256) {
       throw new Error(`Container archive hash mismatch: ${image.role}`);
     }
+    installedImageIdFromArchive(archive, image.reference);
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {

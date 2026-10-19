@@ -33,7 +33,7 @@
     "artifacts:release-manifest": "node scripts/release-candidate-manifest.mjs",
     "packed-artifacts:smoke": "node scripts/smoke-packed-artifacts.mjs",
     "published-artifacts:smoke": "node scripts/smoke-published-artifacts.mjs",
-    "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/check-standalone-install.test.mjs scripts/build-standalone-install.test.mjs",
+    "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/check-standalone-install.test.mjs scripts/build-standalone-install.test.mjs scripts/load-standalone-install-images.test.mjs",
     "artifacts:standalone-install": "node scripts/build-standalone-install.mjs",
     "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs scripts/local-ledger-deploy.test.mjs",
     "test:standalone-topology": "node --test scripts/check-standalone-topology.test.mjs",
