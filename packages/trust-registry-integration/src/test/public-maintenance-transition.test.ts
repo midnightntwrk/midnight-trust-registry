@@ -11,17 +11,23 @@ import { deriveJubjubPublicKeyFromSeed, MaintainerStatus, TrustRegistryContract,
 import type { FinalizedRegistryDeploymentImage } from "../finalized-deployment-action-reader.js";
 import {
   prepareCommitteeTransitionFromFinalizedImage,
+  prepareLocalNetworkCommitteeTransition,
   preparePublicNetworkCommitteeTransition,
   type CommitteeTransitionApproval,
+  type LocalCommitteeTransitionApproval,
 } from "../public-maintenance-transition.js";
 
 const mocks = vi.hoisted(() => ({
   createReader: vi.fn(),
+  createLocalReader: vi.fn(),
   readImage: vi.fn(),
 }));
 
 vi.mock("../public-network-deployment-action-reader.js", () => ({
   createPublicNetworkDeploymentActionReader: mocks.createReader,
+}));
+vi.mock("../local-network-deployment-action-reader.js", () => ({
+  createLocalNetworkDeploymentActionReader: mocks.createLocalReader,
 }));
 
 const address = `0x${"a".repeat(64)}`;
@@ -101,12 +107,67 @@ const image = (): FinalizedRegistryDeploymentImage => ({
     committee: [bootstrapVerifyingKey], threshold: 1, counter: 0n,
   },
 });
+const localApproval = (): LocalCommitteeTransitionApproval => ({
+  ...approval(),
+  network: {
+    networkId: "undeployed",
+    rpcUrl: "http://node:9944",
+    indexerHttpUrl: "http://indexer:8080/graphql",
+    indexerWsUrl: "ws://indexer:8080/graphql/ws",
+    expectedGenesisHash: `0x${"c".repeat(64)}`,
+    allowedHosts: ["node", "indexer"],
+  },
+  receipt: { ...approval().receipt, networkId: "undeployed" },
+  bootstrap: {
+    ...bootstrap,
+    registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
+    maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:bootstrap"),
+  },
+});
+const localImage = (): FinalizedRegistryDeploymentImage => ({
+  ...image(),
+  networkId: "undeployed",
+  deploymentNetworkIdCommitment: bytes32Hex(bytes32Commitment("undeployed")),
+  registryDidCommitment: bytes32Hex(bytes32Commitment("did:midnight:undeployed:registry")),
+  bootstrapMaintainer: {
+    ...image().bootstrapMaintainer!,
+    didCommitment: bytes32Hex(bytes32Commitment("did:midnight:undeployed:bootstrap")),
+  },
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
   setNetworkId("preprod");
   mocks.createReader.mockReturnValue({ readCurrentFinalizedDeploymentImage: mocks.readImage });
+  mocks.createLocalReader.mockReturnValue({ readCurrentFinalizedDeploymentImage: mocks.readImage });
   mocks.readImage.mockResolvedValue(image());
+});
+
+describe("local maintenance committee transition", () => {
+  it("uses only the local finalized reader and signs a counter-one undeployed update", async () => {
+    setNetworkId("undeployed");
+    mocks.readImage.mockResolvedValueOnce(localImage());
+    const input = localApproval();
+    const plan = await prepareLocalNetworkCommitteeTransition(input);
+    expect(mocks.createLocalReader).toHaveBeenCalledWith(input.network);
+    expect(mocks.createReader).not.toHaveBeenCalled();
+    expect(plan.networkId).toBe("undeployed");
+    expect(plan.nextAuthorityCounter).toBe(1n);
+    const tx = plan.authorize(signData(bootstrapKey, plan.dataToSign));
+    expect(tx.serialize().length).toBeGreaterThan(0);
+  });
+
+  it("rejects wrong local image, missing image, wrong SDK network, and public relabeling", async () => {
+    setNetworkId("undeployed");
+    const input = localApproval();
+    mocks.readImage.mockResolvedValueOnce({ ...localImage(), networkId: "preprod" });
+    await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/image disagrees/u);
+    mocks.readImage.mockResolvedValueOnce(null);
+    await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/image is unavailable/u);
+    await expect(preparePublicNetworkCommitteeTransition(input as never)).rejects.toThrow(/does not accept/u);
+    setNetworkId("preprod");
+    await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/undeployed network/u);
+  });
 });
 
 describe("public maintenance committee transition", () => {

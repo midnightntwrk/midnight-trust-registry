@@ -4,18 +4,60 @@ import { join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
-import { FileMaintenanceTransitionJournal, submitPublicNetworkCommitteeTransition } from "../public-maintenance-submission.js";
+import {
+  FileMaintenanceTransitionJournal,
+  submitLocalNetworkCommitteeTransition,
+  submitPublicNetworkCommitteeTransition,
+} from "../public-maintenance-submission.js";
 import type { PreparedCommitteeTransition } from "../public-maintenance-transition.js";
 
-const mocks = vi.hoisted(() => ({ prepare: vi.fn() }));
+const mocks = vi.hoisted(() => ({ prepare: vi.fn(), prepareLocal: vi.fn() }));
 vi.mock("../public-maintenance-transition.js", () => ({
   preparePublicNetworkCommitteeTransition: mocks.prepare,
+  prepareLocalNetworkCommitteeTransition: mocks.prepareLocal,
 }));
 
 const directories: string[] = [];
 afterEach(async () => {
   vi.clearAllMocks();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+it("submits the local update only after the local planner and durable reservation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-submit-"));
+  directories.push(directory);
+  const journal = new FileMaintenanceTransitionJournal(join(directory, "transition.json"));
+  const events: string[] = [];
+  mocks.prepareLocal.mockImplementation(async () => {
+    events.push("local-readback");
+    return {
+      networkId: "undeployed",
+      contractAddress: `0x${"a".repeat(64)}`,
+      finalizedBlockHash: `0x${"b".repeat(64)}`,
+      committeeVerifyingKeys: [`0x${"c".repeat(64)}`, `0x${"d".repeat(64)}`, `0x${"e".repeat(64)}`],
+      threshold: 2,
+      currentAuthorityCounter: 0n,
+      nextAuthorityCounter: 1n,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      dataToSign: Uint8Array.from([1, 2, 3]),
+      authorize: () => { events.push("authorize"); return { kind: "local-maintenance" }; },
+    };
+  });
+  const providers = {
+    proofProvider: { proveTx: async () => {
+      expect((await journal.inspect())?.reservation.networkId).toBe("undeployed");
+      events.push("prove");
+      return "proven";
+    } },
+    walletProvider: { balanceTx: async () => "balanced" },
+    midnightProvider: { submitTx: async () => "tx-local" },
+  };
+  await expect(submitLocalNetworkCommitteeTransition({
+    approval: {} as never, signature: {} as never, journal, providers: providers as never,
+  })).resolves.toBe("tx-local");
+  expect(events).toEqual(["local-readback", "authorize", "prove"]);
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect((await journal.inspect())?.submitted?.txId).toBe("tx-local");
 });
 
 it("reserves after fresh readback and signature verification, before prove/balance/submit", async () => {

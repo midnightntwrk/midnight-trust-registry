@@ -310,6 +310,39 @@ export async function readPostDeploymentPublicTrustRegistry(input: {
   governance: PublicRegistryGovernancePin;
   maintenancePolicy: PublicRegistryMaintenancePolicy;
 }): Promise<PublicRegistryDeploymentReadback> {
+  return readPostDeploymentPinnedTrustRegistry({
+    ...input,
+    readerFactory: () => createPublicNetworkDeploymentActionReader(input.network),
+  });
+}
+
+/** Rechecks the local committee only at a genesis-pinned `undeployed` finalized checkpoint. */
+export async function readPostDeploymentLocalTrustRegistry(input: {
+  network: LocalNetworkDeploymentActionReaderConfig;
+  receipt: PublicRegistryDeploymentReceipt;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  governance: PublicRegistryGovernancePin;
+  maintenancePolicy: PublicRegistryMaintenancePolicy;
+}): Promise<PublicRegistryDeploymentReadback> {
+  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
+    throw new Error("Local post-deployment readback requires the undeployed network");
+  }
+  return readPostDeploymentPinnedTrustRegistry({
+    ...input,
+    readerFactory: () => createLocalNetworkDeploymentActionReader(input.network),
+  });
+}
+
+async function readPostDeploymentPinnedTrustRegistry(input: {
+  network: { networkId: string };
+  receipt: PublicRegistryDeploymentReceipt;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  governance: PublicRegistryGovernancePin;
+  maintenancePolicy: PublicRegistryMaintenancePolicy;
+  readerFactory: () => Promise<FinalizedRegistryBootstrapReader>;
+}): Promise<PublicRegistryDeploymentReadback> {
   const { network, receipt, bootstrap, governance, maintenancePolicy } = input;
   validateMaintenancePolicy(maintenancePolicy);
   commitment(governance.policyCommitment, "Governance policy");
@@ -324,7 +357,7 @@ export async function readPostDeploymentPublicTrustRegistry(input: {
   if (receipt.networkId !== network.networkId || !/^0x[0-9a-f]{64}$/u.test(receipt.contractAddress)) {
     throw new Error("Deployment receipt does not match the pinned network or address format");
   }
-  const reader = await createPublicNetworkDeploymentActionReader(network);
+  const reader = await input.readerFactory();
   let state: FinalizedRegistryDeploymentImage | null;
   try {
     state = await reader.readCurrentFinalizedDeploymentImage(receipt.contractAddress, bootstrap.maintainerKeyId);

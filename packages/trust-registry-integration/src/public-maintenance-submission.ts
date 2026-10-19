@@ -9,8 +9,10 @@ import { z } from "zod";
 import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
 import {
+  prepareLocalNetworkCommitteeTransition,
   preparePublicNetworkCommitteeTransition,
   type CommitteeTransitionApproval,
+  type LocalCommitteeTransitionApproval,
   type PreparedCommitteeTransition,
 } from "./public-maintenance-transition.js";
 
@@ -180,6 +182,18 @@ export async function submitPublicNetworkCommitteeTransition(input: {
   providers: ContractProviders<RegistryContract>;
 }): Promise<string> {
   const plan = await preparePublicNetworkCommitteeTransition(input.approval);
+  const tx = plan.authorize(input.signature);
+  return input.journal.executeOnce(plan, () => submitTxAsync(input.providers, { unprovenTx: tx }));
+}
+
+/** Local-only analogue; the same one-attempt journal rule applies across restarts. */
+export async function submitLocalNetworkCommitteeTransition(input: {
+  approval: LocalCommitteeTransitionApproval;
+  signature: Signature;
+  journal: FileMaintenanceTransitionJournal;
+  providers: ContractProviders<RegistryContract>;
+}): Promise<string> {
+  const plan = await prepareLocalNetworkCommitteeTransition(input.approval);
   const tx = plan.authorize(input.signature);
   return input.journal.executeOnce(plan, () => submitTxAsync(input.providers, { unprovenTx: tx }));
 }

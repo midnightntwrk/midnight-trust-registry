@@ -51,11 +51,19 @@ handling is also outside the allowlist check, so egress denial is required
 even for configured readback URLs. Use single-label aliases only on the
 isolated container network. The public adapter still rejects `undeployed`;
 do not relabel the local network as
-Preprod. These helpers do not install or run a local node, persist the receipt
-for the operator, prove egress denial, or complete the maintenance-committee
-transition. The initial single-key authority remains unsafe for release.
-Durably record the deployment receipt and approve committee keys before
-claiming a supported local deployment. The current API's file-backed
+Preprod. The local `prepareLocalNetworkCommitteeTransition`,
+`submitLocalNetworkCommitteeTransition`, and
+`reconcileLocalNetworkCommitteeTransition` helpers plan the Ledger 8
+committee replacement from a finalized local image, reserve one durable
+submission attempt, and inspect finalized readback without authorizing an
+automatic retry. `readPostDeploymentLocalTrustRegistry` verifies the
+post-transition image through the local reader. These helpers do not install
+or run a local node, persist the deployment receipt for the operator, prove
+egress denial, or demonstrate a live maintenance transaction. The initial
+single-key authority remains unsafe for release until a separately approved
+committee is observed after finality. Durably record the deployment receipt,
+committee approval, and journal before claiming a supported local deployment.
+The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.
 The genesis pin alone may not distinguish a fresh local node from one reset
 to the same chain specification: persist and verify chain state, receipts,

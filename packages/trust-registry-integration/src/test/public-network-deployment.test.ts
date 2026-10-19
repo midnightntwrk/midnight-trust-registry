@@ -10,6 +10,7 @@ import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/
 import {
   deployLocalTrustRegistry,
   deployPublicTrustRegistry,
+  readPostDeploymentLocalTrustRegistry,
   readPostDeploymentPublicTrustRegistry,
 } from "../public-network-deployment.js";
 
@@ -200,6 +201,46 @@ describe("isolated local Trust Registry deployment", () => {
     await expect(deploy({ networkId: "undeployed" as never }))
       .rejects.toThrow(/Unsupported public Midnight network/u);
     expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
+  it("keeps local post-deployment readback on the local reader and rejects SDK relabeling", async () => {
+    setNetworkId("undeployed");
+    const deployed = await deployLocal();
+    const localBootstrap = {
+      ...bootstrap,
+      registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
+      maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
+    };
+    const readback = () => readPostDeploymentLocalTrustRegistry({
+      network: localNetwork,
+      receipt: deployed.receipt,
+      bootstrap: localBootstrap,
+      releaseManifest,
+      governance: {
+        policyCommitment: localBootstrap.governancePolicyCommitment,
+        policyVersion: 1n, actionSequence: 1n,
+        maintainerThreshold: 1n, activeMaintainerCount: 1n,
+      },
+      maintenancePolicy: { mode: "immutable" },
+    });
+    expect((await readback()).status).toBe("unsafe-maintenance-authority");
+    observedAuthorityCommittee = [];
+    observedAuthorityCounter = 1n;
+    expect((await readback()).status).toBe("verified");
+    setNetworkId("preprod");
+    await expect(readback()).rejects.toThrow(/undeployed network/u);
+    await expect(readPostDeploymentPublicTrustRegistry({
+      network: { ...network, networkId: "preprod" },
+      receipt: deployed.receipt,
+      bootstrap: localBootstrap,
+      releaseManifest,
+      governance: {
+        policyCommitment: localBootstrap.governancePolicyCommitment,
+        policyVersion: 1n, actionSequence: 1n,
+        maintainerThreshold: 1n, activeMaintainerCount: 1n,
+      },
+      maintenancePolicy: { mode: "immutable" },
+    })).rejects.toThrow(/receipt does not match/u);
   });
 });
 

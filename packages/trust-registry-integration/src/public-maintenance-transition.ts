@@ -12,6 +12,10 @@ import { Transaction } from "@midnight-ntwrk/midnight-js-types";
 
 import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
 import {
+  createLocalNetworkDeploymentActionReader,
+  type LocalNetworkDeploymentActionReaderConfig,
+} from "./local-network-deployment-action-reader.js";
+import {
   matchesPinnedRegistryImage,
   validateMaintenancePolicy,
   type PublicRegistryBootstrap,
@@ -25,8 +29,8 @@ import {
   type PublicNetworkDeploymentActionReaderConfig,
 } from "./public-network-deployment-action-reader.js";
 
-export type CommitteeTransitionApproval = {
-  network: PublicNetworkDeploymentActionReaderConfig;
+export type CommitteeTransitionApproval<Network extends { networkId: string } = PublicNetworkDeploymentActionReaderConfig> = {
+  network: Network;
   receipt: PublicRegistryDeploymentReceipt;
   bootstrap: PublicRegistryBootstrap;
   releaseManifest: ReleaseVerifierKeyManifest;
@@ -35,6 +39,8 @@ export type CommitteeTransitionApproval = {
   bootstrapMaintenanceVerifyingKey: string;
   expiresAt: Date;
 };
+
+export type LocalCommitteeTransitionApproval = CommitteeTransitionApproval<LocalNetworkDeploymentActionReaderConfig>;
 
 export type PreparedCommitteeTransition = {
   networkId: string;
@@ -55,7 +61,7 @@ const HASH = /^0x[0-9a-f]{64}$/u;
 
 /** Builds a single-use committee transition from a separately pinned finalized image. */
 export function prepareCommitteeTransitionFromFinalizedImage(
-  input: CommitteeTransitionApproval,
+  input: CommitteeTransitionApproval<{ networkId: string }>,
   image: FinalizedRegistryDeploymentImage,
 ): PreparedCommitteeTransition {
   const { network, receipt, bootstrap, governance, maintenancePolicy } = input;
@@ -143,6 +149,9 @@ export function prepareCommitteeTransitionFromFinalizedImage(
 export async function preparePublicNetworkCommitteeTransition(
   input: CommitteeTransitionApproval,
 ): Promise<PreparedCommitteeTransition> {
+  if ((input.network.networkId as string) === "undeployed") {
+    throw new Error("Public committee transition does not accept the undeployed network");
+  }
   if (getNetworkId() !== input.network.networkId) {
     throw new Error("Midnight.js network does not match the approved transition network");
   }
@@ -152,5 +161,21 @@ export async function preparePublicNetworkCommitteeTransition(
     input.bootstrap.maintainerKeyId,
   );
   if (image === null) throw new Error("Finalized deployment image is unavailable");
+  return prepareCommitteeTransitionFromFinalizedImage(input, image);
+}
+
+/** Prepares a local-only transition using a genesis-pinned `undeployed` finalized image. */
+export async function prepareLocalNetworkCommitteeTransition(
+  input: LocalCommitteeTransitionApproval,
+): Promise<PreparedCommitteeTransition> {
+  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
+    throw new Error("Local committee transition requires the undeployed network");
+  }
+  const reader = await createLocalNetworkDeploymentActionReader(input.network);
+  const image = await reader.readCurrentFinalizedDeploymentImage(
+    input.receipt.contractAddress,
+    input.bootstrap.maintainerKeyId,
+  );
+  if (image === null) throw new Error("Finalized local deployment image is unavailable");
   return prepareCommitteeTransitionFromFinalizedImage(input, image);
 }

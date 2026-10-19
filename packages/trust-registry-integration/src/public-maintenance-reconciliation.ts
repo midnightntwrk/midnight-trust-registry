@@ -4,11 +4,15 @@ import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
 import {
+  readPostDeploymentLocalTrustRegistry,
   readPostDeploymentPublicTrustRegistry,
   validateMaintenancePolicy,
   type PublicRegistryDeploymentReadback,
 } from "./public-network-deployment.js";
-import type { CommitteeTransitionApproval } from "./public-maintenance-transition.js";
+import type {
+  CommitteeTransitionApproval,
+  LocalCommitteeTransitionApproval,
+} from "./public-maintenance-transition.js";
 import { FileMaintenanceTransitionJournal } from "./public-maintenance-submission.js";
 
 const HASH = /^[0-9a-f]{64}$/u;
@@ -19,14 +23,42 @@ export type MaintenanceTransitionReconciliation =
   | { status: "unavailable" | "pending" | "invalid-image" | "stale-checkpoint" | "unresolved" | "conflict" | "observed";
       txId: string | null; finalizedBlockHash: string | null; };
 
-/** Reports finalized state only; no result from this function permits an automatic retry. */
-export async function reconcilePublicNetworkCommitteeTransition(input: {
-  approval: CommitteeTransitionApproval;
+type ReconciliationInput<Network extends { networkId: string }> = {
+  approval: CommitteeTransitionApproval<Network>;
   journal: FileMaintenanceTransitionJournal;
   /** Independently retained from the exact plan shown to the maintenance custodian. */
   approvedUpdateSha256: string;
   approvedFinalizedBlockHash: string;
-}): Promise<MaintenanceTransitionReconciliation> {
+};
+
+/** Reports finalized state only; no result from this function permits an automatic retry. */
+export async function reconcilePublicNetworkCommitteeTransition(
+  input: ReconciliationInput<CommitteeTransitionApproval["network"]>,
+): Promise<MaintenanceTransitionReconciliation> {
+  if ((input.approval.network.networkId as string) === "undeployed") {
+    throw new Error("Public reconciliation does not accept the undeployed network");
+  }
+  return reconcilePinnedCommitteeTransition(input, () => readPostDeploymentPublicTrustRegistry({
+    ...input.approval,
+  }));
+}
+
+/** Uses only the local genesis-pinned readback; never authorizes a retry. */
+export async function reconcileLocalNetworkCommitteeTransition(
+  input: ReconciliationInput<LocalCommitteeTransitionApproval["network"]>,
+): Promise<MaintenanceTransitionReconciliation> {
+  if (input.approval.network.networkId !== "undeployed") {
+    throw new Error("Local reconciliation requires the undeployed network");
+  }
+  return reconcilePinnedCommitteeTransition(input, () => readPostDeploymentLocalTrustRegistry({
+    ...input.approval,
+  }));
+}
+
+async function reconcilePinnedCommitteeTransition(
+  input: ReconciliationInput<{ networkId: string }>,
+  readPostDeployment: () => Promise<PublicRegistryDeploymentReadback>,
+): Promise<MaintenanceTransitionReconciliation> {
   const { approval } = input;
   if (getNetworkId() !== approval.network.networkId || approval.receipt.networkId !== approval.network.networkId) {
     throw new Error("Midnight.js network does not match the approved transition network");
@@ -66,14 +98,7 @@ export async function reconcilePublicNetworkCommitteeTransition(input: {
     throw new Error("Maintenance journal disagrees with independently approved transition evidence");
   }
   const txId = submitted?.txId ?? null;
-  const readback: PublicRegistryDeploymentReadback = await readPostDeploymentPublicTrustRegistry({
-    network: approval.network,
-    receipt: approval.receipt,
-    bootstrap: approval.bootstrap,
-    releaseManifest: approval.releaseManifest,
-    governance: approval.governance,
-    maintenancePolicy: approval.maintenancePolicy,
-  });
+  const readback = await readPostDeployment();
   if (readback.status === "pending" || readback.status === "unavailable" || readback.status === "invalid-image") {
     return { status: readback.status, txId, finalizedBlockHash: null };
   }

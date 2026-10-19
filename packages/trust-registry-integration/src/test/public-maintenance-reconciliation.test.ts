@@ -9,14 +9,22 @@ import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
-import { reconcilePublicNetworkCommitteeTransition } from "../public-maintenance-reconciliation.js";
+import {
+  reconcileLocalNetworkCommitteeTransition,
+  reconcilePublicNetworkCommitteeTransition,
+} from "../public-maintenance-reconciliation.js";
 import { FileMaintenanceTransitionJournal } from "../public-maintenance-submission.js";
-import type { CommitteeTransitionApproval, PreparedCommitteeTransition } from "../public-maintenance-transition.js";
+import type {
+  CommitteeTransitionApproval,
+  LocalCommitteeTransitionApproval,
+  PreparedCommitteeTransition,
+} from "../public-maintenance-transition.js";
 
-const mocks = vi.hoisted(() => ({ readback: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readback: vi.fn(), localReadback: vi.fn() }));
 vi.mock("../public-network-deployment.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../public-network-deployment.js")>(),
   readPostDeploymentPublicTrustRegistry: mocks.readback,
+  readPostDeploymentLocalTrustRegistry: mocks.localReadback,
 }));
 
 const address = `0x${"a".repeat(64)}`;
@@ -38,8 +46,13 @@ const approval = (): CommitteeTransitionApproval => ({
   bootstrapMaintenanceVerifyingKey: bootstrapKey,
   expiresAt: new Date(Date.now() + 5 * 60_000),
 }) as unknown as CommitteeTransitionApproval;
-const plan = (input: CommitteeTransitionApproval): PreparedCommitteeTransition => ({
-  networkId: "preprod",
+const localApproval = (): LocalCommitteeTransitionApproval => ({
+  ...approval(),
+  network: { networkId: "undeployed" },
+  receipt: { networkId: "undeployed", contractAddress: address },
+}) as LocalCommitteeTransitionApproval;
+const plan = (input: CommitteeTransitionApproval | LocalCommitteeTransitionApproval): PreparedCommitteeTransition => ({
+  networkId: input.network.networkId,
   contractAddress: address,
   finalizedBlockHash: blockHash,
   committeeVerifyingKeys: committee,
@@ -52,7 +65,7 @@ const plan = (input: CommitteeTransitionApproval): PreparedCommitteeTransition =
 });
 const journal = async (
   reserve: boolean,
-  input: CommitteeTransitionApproval,
+  input: CommitteeTransitionApproval | LocalCommitteeTransitionApproval,
   recordTxId = true,
 ): Promise<FileMaintenanceTransitionJournal> => {
   const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-reconcile-"));
@@ -73,10 +86,59 @@ const reconcile = (input: CommitteeTransitionApproval, file: FileMaintenanceTran
   reconcilePublicNetworkCommitteeTransition({
     approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
   });
+const reconcileLocal = (input: LocalCommitteeTransitionApproval, file: FileMaintenanceTransitionJournal) =>
+  reconcileLocalNetworkCommitteeTransition({
+    approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
   setNetworkId("preprod");
+});
+
+describe("local maintenance transition reconciliation", () => {
+  it("observes the finalized local committee without using public readback or inferring transaction provenance", async () => {
+    setNetworkId("undeployed");
+    const input = localApproval();
+    const file = await journal(true, input);
+    mocks.localReadback.mockResolvedValue({ status: "verified", state: image(1n, committee) });
+    await expect(reconcileLocal(input, file)).resolves.toEqual({
+      status: "observed", txId: "tx-123", finalizedBlockHash: `0x${"1".repeat(64)}`,
+    });
+    expect(mocks.localReadback).toHaveBeenCalledWith(expect.objectContaining({
+      network: input.network, receipt: input.receipt, maintenancePolicy: input.maintenancePolicy,
+    }));
+    expect(mocks.readback).not.toHaveBeenCalled();
+  });
+
+  it("keeps a local attempt unresolved until the committee is finalized", async () => {
+    setNetworkId("undeployed");
+    const input = localApproval();
+    const file = await journal(true, input, false);
+    mocks.localReadback.mockResolvedValue({ status: "unsafe-maintenance-authority", state: image(0n, [bootstrapKey]) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "unresolved", txId: null });
+    mocks.localReadback.mockResolvedValue({ status: "pending" });
+    await expect(reconcileLocal(input, file)).resolves.toEqual({
+      status: "pending", txId: null, finalizedBlockHash: null,
+    });
+  });
+
+  it("rejects local network and journal-pin substitution before readback", async () => {
+    setNetworkId("undeployed");
+    const input = localApproval();
+    const file = await journal(true, input);
+    await expect(reconcileLocalNetworkCommitteeTransition({
+      approval: input, journal: file, approvedUpdateSha256: "0".repeat(64),
+      approvedFinalizedBlockHash: blockHash,
+    })).rejects.toThrow(/disagrees/u);
+    input.receipt.networkId = "preprod";
+    await expect(reconcileLocal(input, file)).rejects.toThrow(/network/u);
+    input.receipt.networkId = "undeployed";
+    setNetworkId("preprod");
+    await expect(reconcileLocal(input, file)).rejects.toThrow(/network/u);
+    expect(mocks.localReadback).not.toHaveBeenCalled();
+    expect(mocks.readback).not.toHaveBeenCalled();
+  });
 });
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
