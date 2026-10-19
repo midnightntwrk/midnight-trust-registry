@@ -3,9 +3,11 @@ import { Buffer } from "node:buffer";
 import { MidnightNetwork } from "@midnight-ntwrk/midnight-did";
 import {
   deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
   createMidnightDidLedgerFixture,
@@ -20,9 +22,11 @@ import {
 } from "../did-bound-evidence-verifier-policy-port.js";
 import {
   GovernedPolicyActionRejectedError,
+  type PreparedGovernedPolicyAction,
   type GovernedEvidenceVerifierTransitionInput,
   type GovernedPolicyActionPort,
 } from "../governed-policy-actions.js";
+import { createTrustRegistryApiServer } from "../server.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
@@ -36,6 +40,7 @@ const setup = () => {
   const did = harness.evidenceVerifier.did;
   const methodId = `${did}#assertion-rotation-1`;
   let currentKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(42));
+  let resolverUnavailable = false;
   let executions = 0;
   let reads = 0;
   let payloadOverride: Uint8Array | undefined;
@@ -69,6 +74,7 @@ const setup = () => {
     resolver: {
       resolveResult: async (subject) => {
         reads += 1;
+        if (resolverUnavailable) throw new Error("DID reader offline");
         return createMidnightDidResolver([
           createMidnightDidLedgerFixture(did, {
             schnorrJubjubAssertionMethods: [{ id: "assertion-rotation-1", publicKey: currentKey }],
@@ -104,6 +110,7 @@ const setup = () => {
   return {
     harness, input, port, prepared, signer, newAuthorizationId,
     setCurrentKey: (key: typeof currentKey) => { currentKey = key; },
+    setResolverUnavailable: (unavailable: boolean) => { resolverUnavailable = unavailable; },
     setPayloadOverride: (payload: Uint8Array) => { payloadOverride = payload; },
     reads: () => reads,
     executions: () => executions,
@@ -179,5 +186,65 @@ describe("DID-bound governed evidence-verifier policy port", () => {
     await expect(port.prepareEvidenceVerifier()).resolves.toBeDefined();
     candidateKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(43));
     await expect(port.prepareEvidenceVerifier()).rejects.toBeInstanceOf(GovernedPolicyActionRejectedError);
+  });
+
+  it("maps DID authority failures at the governed HTTP boundary and still executes a valid rotation", async () => {
+    const state = setup();
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(state.harness, {
+        label: "did-guarded-policy-http",
+      }) },
+      governedPolicyActions: state.port,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const endpoint = `http://127.0.0.1:${address.port}/v1/governed/policy/evidence-verifier/rotate`;
+      if (state.input.action !== "rotate") throw new Error("rotation fixture required");
+      const rotation = {
+        authorizationId: state.input.authorizationId,
+        reasonHash: state.input.reasonHash,
+        newAuthorizationId: state.input.newAuthorizationId,
+        newKeyIdCommitment: state.input.newKeyIdCommitment,
+        newPublicKey: state.input.newPublicKey,
+      };
+      const post = (path: string, body: unknown) => fetch(`${endpoint}/${path}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      state.setResolverUnavailable(true);
+      const unavailable = await post("prepare", rotation);
+      expect(unavailable.status).toBe(503);
+      expect((await unavailable.json()).type).toMatch(/evidence-verifier-did-unavailable/u);
+      expect(state.executions()).toBe(0);
+      state.setResolverUnavailable(false);
+      state.setCurrentKey(deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(43)));
+      const rejected = await post("prepare", rotation);
+      expect(rejected.status).toBe(403);
+      expect((await rejected.json()).type).toMatch(/governed-policy-rejected/u);
+      expect(state.executions()).toBe(0);
+      state.setCurrentKey(deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(42)));
+      const ready = await post("prepare", rotation);
+      expect(ready.status).toBe(200);
+      const prepared = await ready.json() as PreparedGovernedPolicyAction;
+      const signer = {
+        keyId: hex(state.signer.keyId),
+        publicKey: {
+          x: state.signer.publicKey.x.toString(),
+          y: state.signer.publicKey.y.toString(),
+        },
+        signature: hex(encodeJubjubSignature(state.signer.signature)),
+      };
+      const rotated = await post("submit", { ...rotation, prepared, signers: [signer] });
+      expect(rotated.status).toBe(202);
+      expect(state.executions()).toBe(1);
+      expect(state.harness.simulator.getEvidenceVerifierKey(state.newAuthorizationId).status)
+        .toBe(EvidenceVerifierKeyStatus.active);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      }));
+    }
   });
 });
