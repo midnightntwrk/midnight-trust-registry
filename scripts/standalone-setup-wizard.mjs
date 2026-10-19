@@ -2,7 +2,7 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { open, lstat, mkdir, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { link, open, lstat, mkdir, readFile, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,7 @@ import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { observeStandaloneRestartSnapshot } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -85,13 +86,21 @@ async function writeRecord(root, record) {
 }
 
 async function writePrivateSnapshot(path, bytes) {
-  const file = await open(path, "wx", 0o600);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const file = await open(temporary, "wx", 0o600);
   try {
     await file.writeFile(bytes);
     await file.sync();
   } finally {
     await file.close();
   }
+  try {
+    await link(temporary, path);
+  } catch (error) {
+    await unlink(temporary);
+    throw error;
+  }
+  await unlink(temporary);
 }
 
 async function withLock(directory, action) {
@@ -313,6 +322,46 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     await writeRecord(root, record);
     return { project: config.project, state: record.stack.state,
       observation: record.stack.observation };
+  });
+}
+
+export async function collectStandaloneGenesisCandidate(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.install.verified?.runtimeComposeSha256 || !record.stack?.observation
+      || record.ledgerObservation || record.genesisApproval || record.deployment) {
+      throw new Error("Collect a candidate only from an observed v3 stack before recording a genesis pin");
+    }
+    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root);
+    if (snapshot.project !== record.stack.project
+      || snapshot.sourceRevision !== record.sourceRevision
+      || snapshot.installInventorySha256 !== record.install.inventorySha256
+      || !SHA256.test(snapshot.observerSha256 ?? "")
+      || !HASH.test(snapshot.genesisHash ?? "")
+      || /^0x0{64}$/u.test(snapshot.genesisHash)
+      || !HASH.test(snapshot.finalizedHash ?? "")
+      || !Number.isSafeInteger(snapshot.finalizedHeight) || snapshot.finalizedHeight < 1
+      || !Number.isFinite(Date.parse(snapshot.observedAt ?? ""))
+      || new Date(Date.parse(snapshot.observedAt)).toISOString() !== snapshot.observedAt) {
+      throw new Error("Untrusted node candidate disagrees with the observed install");
+    }
+    const candidate = {
+      format: "tr-local-genesis-candidate-v1",
+      sourceRevision: record.sourceRevision,
+      installInventorySha256: record.install.inventorySha256,
+      project: record.stack.project,
+      networkId: "undeployed",
+      nodeReportedGenesisHash: snapshot.genesisHash,
+      nodeReportedFinalizedBlockHash: snapshot.finalizedHash,
+      nodeReportedFinalizedHeight: snapshot.finalizedHeight,
+      observerSha256: snapshot.observerSha256,
+      observedAt: snapshot.observedAt,
+      status: "untrusted-node-observation-independent-review-required",
+    };
+    const path = join(root, "genesis-candidate.untrusted.json");
+    const bytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+    await writePrivateSnapshot(path, bytes);
+    return { path, candidateSha256: sha256(bytes), status: candidate.status };
   });
 }
 
@@ -1572,8 +1621,8 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -1583,6 +1632,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     })));
   }
   else if (command === "observe-stack") console.log(JSON.stringify(await observeStandaloneStack(directory)));
+  else if (command === "collect-genesis-candidate") {
+    console.log(JSON.stringify(await collectStandaloneGenesisCandidate(directory)));
+  }
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "draft-genesis" && input) {
     const proposal = JSON.parse(await regularBytes(resolve(input)));

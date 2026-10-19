@@ -19,6 +19,7 @@ import {
   approveStandaloneGenesis,
   attemptStandaloneDeployment,
   attemptStandaloneVerifierKeyInsertion,
+  collectStandaloneGenesisCandidate,
   initializeStandaloneSetup,
   observeStandaloneLedger,
   observeStandaloneStack,
@@ -409,6 +410,51 @@ test("wizard records only selected ledger-bridge topology and egress observation
   await assert.rejects(observeStandaloneStack(f.directory, {
     observeTopology: async () => { throw new Error("must not inspect topology"); },
   }), /cannot change after local-ledger observation/u);
+});
+
+test("genesis candidate is untrusted, non-overwriting, and cannot approve the node's own hash", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, preparedInputsMatched: true,
+      verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
+    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const observed = { project, sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+    finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+    observedAt: "2026-10-20T00:00:00.000Z" };
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => ({ ...observed, sourceRevision: "f".repeat(40) }),
+  }), /candidate disagrees/u);
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => ({ ...observed, genesisHash: `0x${"0".repeat(64)}` }),
+  }), /candidate disagrees/u);
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => ({ ...observed, observedAt: "2026-10-20" }),
+  }), /candidate disagrees/u);
+  const collected = await collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => observed,
+  });
+  const file = JSON.parse(await readFile(collected.path, "utf8"));
+  assert.equal(file.nodeReportedGenesisHash, expectedGenesisHash);
+  assert.equal(file.status, "untrusted-node-observation-independent-review-required");
+  assert.equal((await lstat(collected.path)).mode & 0o077, 0);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => observed,
+  }), { code: "EEXIST" });
+  assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-candidate.untrusted.json.")), false);
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => observed,
+  }), /before recording a genesis pin/u);
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {

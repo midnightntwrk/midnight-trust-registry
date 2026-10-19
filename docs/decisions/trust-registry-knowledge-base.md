@@ -2084,6 +2084,10 @@ files; independent review and detached human signatures still determine
 authority, and drafting never advances the approval state.
 The draft approval time is supplied as public reviewer metadata and is part
 of the exact bytes later signed; the machine does not invent an approval time.
+The wizard can collect a private, non-overwriting genesis **candidate** from
+the verified live ledger bridge. It labels the hash as node-reported and
+does not record a pin or approval; independent chain-spec review and detached
+human signature remain required before deployment.
 New wizard stacks require a v3 install bundle pinning both base and offline
 Compose bytes as well as archived image references. V2 bundles remain readable
 for historical smoke evidence only; the runtime operator must use the verified

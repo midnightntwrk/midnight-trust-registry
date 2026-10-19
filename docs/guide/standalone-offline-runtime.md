@@ -408,6 +408,8 @@ node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup-d
 docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f /absolute/verified-install-bundle/compose.yml config -q
 # After the operator starts the reviewed Compose plan, record live ledger-bridge checks:
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
+# Optional: collect the node's untrusted genesis candidate for independent review.
+node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
 # A human reviewer independently checks and signs the exact unsigned draft bytes.
@@ -465,6 +467,16 @@ stops until the operator starts the reviewed stack and explicitly requests
 a genesis pin until that stack observation exists. Legacy v2 records can still
 be observed for historical smoke, not RC qualification. This step does not approve
 genesis, attest actor egress, verify a contract readback, or qualify a release.
+
+`collect-genesis-candidate` is an optional, non-overwriting first-run aid. It
+rechecks the live v3 stack and writes `genesis-candidate.untrusted.json` in the
+private setup directory, recording the **node-reported** genesis hash,
+finalized checkpoint, install source and inventory, and observer-script hash.
+It does not create an approved pin, change `localLedger` status, or authorize
+deployment. An independent reviewer must compare the candidate with the
+pinned chain specification through a channel other than this node, approve
+the exact pin and source, and provide a detached signature and public GPG
+fingerprint. Do not treat matching this candidate as independent verification.
 
 `draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
 `reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
