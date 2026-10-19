@@ -28,9 +28,11 @@ off-curve points, wrong signing keys, and unsupported algorithm labels. The
 configured mutation HTTP boundary additionally verifies redacted 400/401
 outcomes and no nonce consumption for malformed or noncanonical signatures;
 the one-use VP intake asserts a retired DID method is detected after signing
-and before proposal. #101 remains open for full cross-surface final-head review,
-multi-key selection and rotation, and exact key-reference authentication with
-#67/#79.
+and before proposal. DID-level two-key fixtures also test exact method
+selection and rejection after rotation in mutation-intent and VP evidence ports.
+#101 remains open for full cross-surface final-head review, policy-authorized
+multi-key selection in Compact, and exact ledger key-reference authentication
+with #67/#79. DID-method membership alone is not registry authorization.
 
 The singleton rule is a fail-closed client constraint, not a claim that the
 governance quorum consists of one maintainer. Multi-signature epoch provenance
