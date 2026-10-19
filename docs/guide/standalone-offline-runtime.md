@@ -241,6 +241,16 @@ setup. Establish and document a controlled local-only access path before
 running this host CLI; do not attach a public network or claim egress-denied
 runtime from a temporarily connected installation container.
 
+Run `node scripts/check-standalone-topology.mjs` against the dedicated
+`tr-standalone-local-smoke` project after the offline cold start. It reads
+Docker metadata without changing containers or volumes and fails on extra
+network attachments, missing persistence mounts, a writable proof cache,
+fetch-enabled proof server, or non-digest-pinned images. Its JSON deliberately
+reports `egressDenied: "not-verified"` and `actorJourneys: "not-run"`: an
+internal bridge is a useful precondition, not proof of denied external DNS or
+egress for the wallet, API, browser, and backup processes. Capture firewall
+logs and run real actor journeys under the release egress policy separately.
+
 The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.
 The genesis pin alone may not distinguish a fresh local node from one reset
