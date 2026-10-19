@@ -1763,3 +1763,51 @@ bindings were not published to the host. Host-side deployment therefore
 needs a separately controlled access path; offline E2E must run with that
 egress-capable path removed and all required services inside the trust
 boundary. #198 remains draft.
+
+### Isolated node-volume restore smoke
+
+The stopped-node snapshot preserved at the ignored
+`artifacts/standalone-node-chain/` (302 MiB) was copied read-only into a new
+Docker volume, `tr-standalone-node-restore-smoke`. A separate container of
+the pinned node image `midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220`
+booted that volume at `/node/chain` with `--network none`, `CFG_PRESET=dev`,
+and the same configured sidechain block beneficiary as the dedicated stack.
+No sibling passport container or live Trust Registry volume was changed.
+
+From inside the temporary container, `chain_getBlockHash(0)` returned the
+recorded genesis
+`0xe624f91737add2cf1a6658b3cf3a5524d633faea8c943702b435820316d9e21e`,
+and `chain_getBlockHash(118)` returned the recorded pre-snapshot block
+`0xd16811b96a9f9e567b92f46d84130b0ed29edf4075e1e7fec93fc5d484f33e17`.
+The restored node also answered `chain_getFinalizedHead`. The temporary node
+was then stopped; its container and volume remain for inspection. The active
+three-service dedicated stack still passed `check-standalone-topology.mjs`
+afterward. This is evidence of **same-host node-state restore and historical
+block readback only**. The checkpoint was not independently authenticated;
+there was no indexer/API/wallet restore, second-host test, contract receipt,
+conflict injection, or ambiguous-transaction recovery. The full RC
+backup/recovery gate remains open.
+
+The following commands record this run. For a repeat, substitute a **new**
+volume and container name throughout; `docker volume create` does not fail
+if a volume already exists. Never target the live
+`tr-standalone-local-smoke_node-data` volume or overwrite the preserved
+snapshot:
+
+```sh
+docker volume create tr-standalone-node-restore-smoke
+docker run --rm --network none --entrypoint /bin/sh \
+  --mount type=bind,src="$PWD/artifacts/standalone-node-chain",dst=/source,readonly \
+  --mount type=volume,src=tr-standalone-node-restore-smoke,dst=/target \
+  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
+  -c 'cp -a /source/. /target/ && test -d /target/chains && test -d /target/ledger_storage'
+docker run -d --name tr-standalone-node-restore-smoke --network none \
+  --mount type=volume,src=tr-standalone-node-restore-smoke,dst=/node/chain \
+  --env CFG_PRESET=dev \
+  --env SIDECHAIN_BLOCK_BENEFICIARY=04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e \
+  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220
+docker exec tr-standalone-node-restore-smoke curl -sf -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"chain_getBlockHash","params":[118]}' \
+  http://localhost:9944
+docker stop tr-standalone-node-restore-smoke
+```
