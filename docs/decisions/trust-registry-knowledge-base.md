@@ -47,6 +47,13 @@ shorter-lived and more action-oriented than the normative specification.
   replacement DID-key authentication and authorized finalized-ledger reads;
   the Compact-backed integration test uses the simulator port only. This is
   not a public-network authority adapter and does not close #67.
+- A further local #67 adapter checks the active Compact evidence-verifier
+  record against one resolved Midnight DID assertion method, including the
+  expected network, DID/method commitments, prime-order public key, and DID
+  version floor. Rotation tests reject the old DID method, accept the new one,
+  and reject a suspended registry key. Callers still need a trusted finalized
+  DID reader and must invoke the check at both prepare and submit; this local
+  adapter is not proof of public-network finality.
 
 ## October 15 2026 Delivery Checkpoint
 

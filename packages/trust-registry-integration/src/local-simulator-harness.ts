@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
+import { MidnightNetwork, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 
 import {
   compareMaintainerKeyIds,
@@ -114,6 +114,7 @@ import {
   type VerifierScenarioFixture,
 } from "./fixtures.js";
 import { prepareVcAuthorityKeyRegistration } from "./vc-authority-registration.js";
+import { verifyEvidenceVerifierDidKeyBinding } from "./evidence-verifier-did-key.js";
 import type { VcAuthorityDomain } from "./vc-signer-authorization.js";
 import {
   recognitionAuthorityEvidenceBytes,
@@ -552,6 +553,22 @@ export class LocalTrustRegistryIntegrationHarness {
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
+  }
+
+  async verifyCurrentEvidenceVerifierDidKey(
+    resolver: Pick<MidnightDIDResolverInterface, "resolveResult">,
+    expectedNetwork: MidnightNetwork,
+  ): Promise<{ didStateVersion: bigint }> {
+    const record = this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
+    if (record.status !== EvidenceVerifierKeyStatus.active) {
+      throw new Error("Evidence verifier key is not active");
+    }
+    const methodId = this.evidenceVerifier.keyIds[0];
+    if (methodId === undefined) throw new Error("Evidence verifier assertion method is missing");
+    return verifyEvidenceVerifierDidKeyBinding({
+      resolver, expectedNetwork, did: this.evidenceVerifier.did,
+      verificationMethodId: methodId, registered: record,
+    });
   }
 
   prepareEvidenceVerifierRegistrationAction(): PreparedEvidenceVerifierRegistrationAction {

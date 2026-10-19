@@ -295,6 +295,15 @@ compares the port's exact action context to the request, and checks external
 maintainer signatures. It returns 503 without that port. A stale submit MUST
 NOT be forwarded as a second Compact action. The local simulator port is not
 a production DID-key authority or finalized-ledger reader.
+The integration package exposes `verifyEvidenceVerifierDidKeyBinding` for
+that port's preflight: it resolves one current Midnight DID state, requires a
+native assertion method on the expected network, and compares its prime-order
+JubJub point and the SHA-256 DID and absolute-method commitments with the
+registered Compact key. The same check MUST be repeated against an
+independently finalized DID state immediately before execution; the returned
+DID version can be used as a minimum-version guard. This adapter does not
+itself establish DID or registry finality, authorize a maintainer vote, or
+replace Compact's active-key and policy checks.
 Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional
