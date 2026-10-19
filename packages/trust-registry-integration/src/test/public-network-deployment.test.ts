@@ -7,7 +7,7 @@ import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-cl
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
 
-import { deployPublicTrustRegistry } from "../public-network-deployment.js";
+import { deployPublicTrustRegistry, readPostDeploymentPublicTrustRegistry } from "../public-network-deployment.js";
 
 const mocks = vi.hoisted(() => ({
   deployContract: vi.fn(),
@@ -73,6 +73,7 @@ let observedExtraOperation = false;
 let observedDuplicateOperation = false;
 let observedEmptyVerifierKey = false;
 let observedAuthorityOverride: string | null = null;
+let observedAuthorityCommittee: string[] | null = null;
 let observedAuthorityThreshold = 1;
 let observedAuthorityCounter = 0n;
 
@@ -87,6 +88,7 @@ beforeEach(() => {
   observedDuplicateOperation = false;
   observedEmptyVerifierKey = false;
   observedAuthorityOverride = null;
+  observedAuthorityCommittee = null;
   observedAuthorityThreshold = 1;
   observedAuthorityCounter = 0n;
   setNetworkId("preview");
@@ -104,7 +106,7 @@ beforeEach(() => {
       networkIdCommitment: options.args[8],
       contractAddress: address,
     });
-    mocks.queryContractState.mockResolvedValue({
+    mocks.queryContractState.mockImplementation(async () => ({
       data: simulator.circuitContext.currentQueryContext.state,
       operations: () => observedMissingOperation ? circuitNames.slice(1)
         : observedExtraOperation ? [...circuitNames, "__proto__"]
@@ -116,11 +118,12 @@ beforeEach(() => {
             ? observedVerifierKeyOverride : verifierKeys[name],
       }),
       maintenanceAuthority: {
-        committee: [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
+        committee: observedAuthorityCommittee
+          ?? [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
         threshold: observedAuthorityThreshold,
         counter: observedAuthorityCounter,
       },
-    });
+    }));
     return { deployTxData: { public: receipt, private: { neverSerialize: true } } };
   });
 });
@@ -137,7 +140,7 @@ const deploy = (overrides: Partial<typeof network> = {}, input = bootstrap, mani
   });
 
 describe("public Trust Registry deployment", () => {
-  it("submits constructor-bound inputs and verifies finalized readback without leaking private deploy data", async () => {
+  it("submits constructor-bound inputs but does not approve the initial single-key authority", async () => {
     const result = await deploy();
     expect(mocks.deployContract).toHaveBeenCalledTimes(1);
     expect(mocks.deployContract.mock.calls[0]?.[1]).toMatchObject({
@@ -163,11 +166,11 @@ describe("public Trust Registry deployment", () => {
       networkId: "preview", contractAddress: `0x${address}`,
       txId: receipt.txId, blockHash: finalized, blockHeight: 12,
     });
-    expect(result.readback.status).toBe("verified");
+    expect(result.readback.status).toBe("unsafe-maintenance-authority");
     expect(JSON.stringify(result, (_key, value: unknown) =>
       typeof value === "bigint" ? value.toString() : value,
     )).not.toContain("neverSerialize");
-    if (result.readback.status === "verified") {
+    if (result.readback.status === "unsafe-maintenance-authority") {
       expect(result.readback.state.registryIdCommitment).toBe(bytes32Hex(bytes32Commitment(registryId)));
       expect(result.readback.state.finalizedBlockHash).toBe(finalized);
       expect(result.readback.state.registryDidCommitment).toBe(bytes32Hex(bootstrap.registryDidCommitment));
@@ -281,6 +284,86 @@ describe("public Trust Registry deployment", () => {
     observedAuthorityThreshold = 1;
     observedAuthorityCounter = 1n;
     expect((await deploy()).readback.status).toBe("mismatch");
+  });
+
+  it("verifies only a finalized, explicitly pinned post-deployment maintenance policy", async () => {
+    const deployed = await deploy();
+    expect(deployed.readback.status).toBe("unsafe-maintenance-authority");
+    const readback = () => readPostDeploymentPublicTrustRegistry({
+      network,
+      receipt: deployed.receipt,
+      bootstrap,
+      releaseManifest,
+      governance: {
+        policyCommitment: bootstrap.governancePolicyCommitment,
+        policyVersion: 1n,
+        actionSequence: 1n,
+        maintainerThreshold: 1n,
+        activeMaintainerCount: 1n,
+      },
+      maintenancePolicy: { mode: "immutable" },
+    });
+    expect((await readback()).status).toBe("unsafe-maintenance-authority");
+    observedAuthorityCommittee = [];
+    observedAuthorityThreshold = 0;
+    observedAuthorityCounter = 1n;
+    expect((await readback()).status).toBe("verified");
+    observedAuthorityCommittee = [`0x${"1".repeat(64)}`];
+    observedAuthorityThreshold = 1;
+    expect((await readback()).status).toBe("unsafe-maintenance-authority");
+    observedAuthorityCommittee = [];
+    observedAuthorityThreshold = 0;
+    observedVerifierKeyOverride = Buffer.from("replacement-verifier-key");
+    expect((await readback()).status).toBe("mismatch");
+    observedVerifierKeyOverride = null;
+    observedAuthorityCounter = 0n;
+    expect((await readback()).status).toBe("mismatch");
+  });
+
+  it("rejects a stale governance image despite a matching multi-party authority", async () => {
+    const deployed = await deploy();
+    const verifyingKeys = [
+      `0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`, `0x${"3".repeat(64)}`,
+    ];
+    const governance = {
+      policyCommitment: bootstrap.governancePolicyCommitment,
+      policyVersion: 1n, actionSequence: 1n,
+      maintainerThreshold: 2n, activeMaintainerCount: 3n,
+    };
+    const readback = (pin = governance) => readPostDeploymentPublicTrustRegistry({
+      network, receipt: deployed.receipt, bootstrap, releaseManifest,
+      governance: pin,
+      maintenancePolicy: { mode: "committee", verifyingKeys, threshold: 2 },
+    });
+    observedAuthorityCommittee = verifyingKeys;
+    observedAuthorityThreshold = 2;
+    observedAuthorityCounter = 1n;
+    expect((await readback()).status).toBe("mismatch");
+    expect((await readback({ ...governance, actionSequence: 2n })).status).toBe("mismatch");
+  });
+
+  it("rejects a single-party committee policy before readback", async () => {
+    const deployed = await deploy();
+    const common = {
+      network, receipt: deployed.receipt, bootstrap, releaseManifest,
+      governance: {
+        policyCommitment: bootstrap.governancePolicyCommitment,
+        policyVersion: 1n, actionSequence: 1n,
+        maintainerThreshold: 1n, activeMaintainerCount: 1n,
+      },
+    };
+    await expect(readPostDeploymentPublicTrustRegistry({
+      ...common,
+      maintenancePolicy: { mode: "committee", verifyingKeys: [
+        `0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`, `0x${"3".repeat(64)}`,
+      ], threshold: 1 },
+    })).rejects.toThrow(/multi-party threshold/u);
+    await expect(readPostDeploymentPublicTrustRegistry({
+      ...common,
+      maintenancePolicy: { mode: "committee", verifyingKeys: [
+        `0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`, `0x${"3".repeat(64)}`,
+      ], threshold: 2 },
+    })).rejects.toThrow(/multi-party governance pin/u);
   });
 
   it("reports malformed finalized operations as an invalid image, not indexer unavailability", async () => {
