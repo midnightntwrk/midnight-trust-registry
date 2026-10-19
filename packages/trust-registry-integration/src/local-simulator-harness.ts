@@ -408,7 +408,7 @@ export class LocalTrustRegistryIntegrationHarness {
     eventHash: string;
     signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
   }>();
-  private readonly issuerApplicationEvidence = new Map<string, {
+  private readonly acceptedApplicationEvidence = new Map<string, {
     evidence: ApplicationEvidenceSubmission;
     challengeHash: string;
   }>();
@@ -763,6 +763,59 @@ export class LocalTrustRegistryIntegrationHarness {
       (commitment, signature, verifier) => this.verifyApplicationEvidenceSignature(commitment, signature, verifier),
     );
     return hashHexToBytes32(parsed.commitment);
+  }
+
+  private acceptedEvidenceKey(role: ApplicationEvidenceRole, applicationId: string): string {
+    return `${role}\0${applicationId}`;
+  }
+
+  private retainAcceptedApplicationEvidence(
+    role: ApplicationEvidenceRole,
+    applicationId: string,
+    accepted: {
+      evidence: ApplicationEvidenceSubmission;
+      challengeHash: string;
+    },
+  ): void {
+    this.acceptedApplicationEvidence.set(this.acceptedEvidenceKey(role, applicationId), accepted);
+  }
+
+  private snapshotAcceptedApplicationEvidence(
+    evidence: ApplicationEvidenceSubmission,
+    expected: SimulatorApplicationEvidenceExpectation,
+  ): { evidence: ApplicationEvidenceSubmission; challengeHash: string } {
+    return {
+      evidence: structuredClone(evidence),
+      challengeHash: structuredClone(expected).challengeHash,
+    };
+  }
+
+  private recheckAcceptedApplicationEvidence(input: {
+    role: ApplicationEvidenceRole;
+    applicationId: string;
+    subjectDid: string;
+    scope: AuthorizationScope;
+    governedResource: GovernedResource;
+    proposalCommitment: Uint8Array;
+  }): void {
+    const accepted = this.acceptedApplicationEvidence.get(
+      this.acceptedEvidenceKey(input.role, input.applicationId),
+    );
+    if (accepted === undefined) {
+      throw new Error(`${input.role} application evidence is unavailable for approval or activation`);
+    }
+    const commitment = this.assertApplicationEvidence({
+      evidence: accepted.evidence,
+      applicationId: input.applicationId,
+      subjectDid: input.subjectDid,
+      role: input.role,
+      scope: input.scope,
+      challengeHash: accepted.challengeHash,
+      governedResource: input.governedResource,
+    });
+    if (!Buffer.from(commitment).equals(Buffer.from(input.proposalCommitment))) {
+      throw new Error(`${input.role} application evidence no longer matches the governed proposal`);
+    }
   }
 
   private buildPolicyRecord(
@@ -1405,8 +1458,9 @@ export class LocalTrustRegistryIntegrationHarness {
     if (primary === undefined) throw new Error("Maintainer proposal requires a maintainer signature");
     const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
+    const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
 
-    return this.simulator.proposeMaintainerMembership(
+    const eventHash = this.simulator.proposeMaintainerMembership(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -1422,6 +1476,8 @@ export class LocalTrustRegistryIntegrationHarness {
       verifierSignature,
       signers.slice(1),
     );
+    this.retainAcceptedApplicationEvidence("maintainer", fixture.maintainerId, accepted);
+    return eventHash;
   }
 
   prepareMaintainerDecisionAction(
@@ -1430,6 +1486,17 @@ export class LocalTrustRegistryIntegrationHarness {
   ): PreparedMaintainerAction {
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported maintainer decision action");
+    }
+    if (action === "approve" || action === "activate") {
+      this.recheckAcceptedApplicationEvidence({
+        role: "maintainer",
+        applicationId: fixture.maintainerId,
+        subjectDid: fixture.subjectDid,
+        scope: createMaintainerAuthorizationScopeFixture(this.registryId),
+        governedResource: { type: "registry", id: this.registryId },
+        proposalCommitment: this.simulator.getMaintainerProposalEvidence(fixture.maintainerIdCommitment)
+          .evidenceCommitment,
+      });
     }
     const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
     const ledger = this.simulator.getLedger();
@@ -1670,6 +1737,7 @@ export class LocalTrustRegistryIntegrationHarness {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Issuer proposal requires a maintainer signature");
     const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+    const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
     const eventHash = this.simulator.proposeIssuerAuthorization(
       primary.keyId,
       primary.publicKey,
@@ -1687,31 +1755,20 @@ export class LocalTrustRegistryIntegrationHarness {
       verifierSignature,
       signers.slice(1),
     );
-    this.issuerApplicationEvidence.set(fixture.authorizationId, {
-      evidence,
-      challengeHash: expectedEvidence.challengeHash,
-    });
+    this.retainAcceptedApplicationEvidence("issuer", fixture.authorizationId, accepted);
     return eventHash;
   }
 
   private recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): void {
-    const accepted = this.issuerApplicationEvidence.get(fixture.authorizationId);
-    if (accepted === undefined) {
-      throw new Error("Issuer application evidence is unavailable for approval or activation");
-    }
-    const commitment = this.assertApplicationEvidence({
-      evidence: accepted.evidence,
+    this.recheckAcceptedApplicationEvidence({
+      role: "issuer",
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
-      role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(fixture),
-      challengeHash: accepted.challengeHash,
       governedResource: issuerGovernedResource(fixture),
+      proposalCommitment: this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment)
+        .evidenceCommitment,
     });
-    const proposal = this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment);
-    if (!Buffer.from(commitment).equals(Buffer.from(proposal.evidenceCommitment))) {
-      throw new Error("Issuer application evidence no longer matches the governed proposal");
-    }
   }
 
   prepareIssuerDecisionAction(
@@ -2004,7 +2061,8 @@ export class LocalTrustRegistryIntegrationHarness {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Verifier proposal requires a maintainer signature");
     const prepared = this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
-    return this.simulator.proposeVerifierAuthorization(
+    const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
+    const eventHash = this.simulator.proposeVerifierAuthorization(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -2022,6 +2080,8 @@ export class LocalTrustRegistryIntegrationHarness {
       verifierSignature,
       signers.slice(1),
     );
+    this.retainAcceptedApplicationEvidence("verifier", fixture.authorizationId, accepted);
+    return eventHash;
   }
 
   prepareVerifierDecisionAction(
@@ -2030,6 +2090,17 @@ export class LocalTrustRegistryIntegrationHarness {
   ): PreparedIssuerDecisionAction {
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported verifier decision action");
+    }
+    if (action === "approve" || action === "activate") {
+      this.recheckAcceptedApplicationEvidence({
+        role: "verifier",
+        applicationId: fixture.authorizationId,
+        subjectDid: fixture.subjectDid,
+        scope: createVerifierAuthorizationScopeFixture(fixture),
+        governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+        proposalCommitment: this.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment)
+          .evidenceCommitment,
+      });
     }
     const current = this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
     const ledger = this.simulator.getLedger();
@@ -2477,7 +2548,8 @@ export class LocalTrustRegistryIntegrationHarness {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Auditor proposal requires a maintainer signature");
     const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
-    return this.simulator.proposeAuditorAuthorization(
+    const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
+    const eventHash = this.simulator.proposeAuditorAuthorization(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -2495,6 +2567,8 @@ export class LocalTrustRegistryIntegrationHarness {
       verifierSignature,
       signers.slice(1),
     );
+    this.retainAcceptedApplicationEvidence("auditor", fixture.authorizationId, accepted);
+    return eventHash;
   }
 
   prepareAuditorDecisionAction(
@@ -2503,6 +2577,17 @@ export class LocalTrustRegistryIntegrationHarness {
   ): PreparedIssuerDecisionAction {
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported auditor decision action");
+    }
+    if (action === "approve" || action === "activate") {
+      this.recheckAcceptedApplicationEvidence({
+        role: "auditor",
+        applicationId: fixture.authorizationId,
+        subjectDid: fixture.subjectDid,
+        scope: createAuditorAuthorizationScopeFixture(fixture),
+        governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
+        proposalCommitment: this.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment)
+          .evidenceCommitment,
+      });
     }
     const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
     const ledger = this.simulator.getLedger();

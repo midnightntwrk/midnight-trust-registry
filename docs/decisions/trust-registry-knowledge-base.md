@@ -29,6 +29,12 @@ shorter-lived and more action-oriented than the normative specification.
   authenticated recovery/export, and full integration qualification. Public
   deployment and 0.1.0 promotion remain separately gated by #200/#213 and
   the concrete VC status-authority dependency in #90.
+- The stacked local #67 preflight work retains accepted application evidence
+  for each of the four applicant roles only after a successful Compact
+  proposal. Before preparing approval or activation signatures, the simulator
+  harness rechecks the current evidence policy and the proposal commitment.
+  It closes the reported stale-policy signing-preparation gap, but does not
+  substitute for production DID/key authority or finalized-ledger reads.
 
 ## October 15 2026 Delivery Checkpoint
 
