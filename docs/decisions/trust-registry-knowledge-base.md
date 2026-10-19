@@ -2074,6 +2074,11 @@ New wizard stacks require a v3 install bundle pinning both base and offline
 Compose bytes as well as archived image references. V2 bundles remain readable
 for historical smoke evidence only; the runtime operator must use the verified
 bundle copies, not mutable checkout files.
+Wizard-driven stack observation matches the running indexer credentials and
+proof-cache bind source against the prepared private environment without
+recording secret values. It also rejects extra mounts and privileged services.
+This is still ledger-bridge topology evidence, not full actor egress or
+contract deployment evidence.
 The host access relay is installation-only and must attach to the selected
 project with distinct loopback host ports; the original smoke relay recipe
 cannot be reused unchanged for a concurrent qualification project.

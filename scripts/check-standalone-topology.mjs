@@ -47,6 +47,13 @@ function requireMount(container, destination, type, expectedWritable = true, exp
   }
 }
 
+function requirePreparedInput(container, name, value) {
+  const matches = container.Config?.Env?.filter((entry) => entry.startsWith(`${name}=`)) ?? [];
+  if (matches.length !== 1 || matches[0] !== `${name}=${value}`) {
+    throw new Error("Running service does not match the prepared private stack environment");
+  }
+}
+
 function requireLoopbackBinding(container, service, port) {
   const bindings = container.HostConfig?.PortBindings;
   const target = PORTS[service].target;
@@ -59,7 +66,12 @@ function requireLoopbackBinding(container, service, port) {
 }
 
 /** A read-only topology observation, not a packet-level proof of denied egress. */
-export function checkStandaloneTopology(network, containers, config = standaloneStackConfig({})) {
+export function checkStandaloneTopology(network, containers, config = standaloneStackConfig({}), expected) {
+  if (expected && (typeof expected.proofParamsDir !== "string" || !expected.proofParamsDir.startsWith("/")
+    || typeof expected.indexerPassword !== "string" || expected.indexerPassword.length === 0
+    || typeof expected.indexerSecret !== "string" || expected.indexerSecret.length === 0)) {
+    throw new Error("Prepared private stack inputs are incomplete");
+  }
   if (network?.Name !== config.network || network.Internal !== true
     || network.Driver !== "bridge" || network.EnableIPv6 !== false
     || network.Labels?.["com.docker.compose.project"] !== config.project) {
@@ -85,6 +97,12 @@ export function checkStandaloneTopology(network, containers, config = standalone
       || !DIGEST_IMAGE.test(container.Config.Image)) {
       throw new Error("Dedicated service is missing, unhealthy, or not digest-pinned");
     }
+    if (container.HostConfig?.Privileged === true || (container.HostConfig?.CapAdd?.length ?? 0) > 0) {
+      throw new Error("Dedicated service has elevated container privileges");
+    }
+    if (container.Mounts?.length !== 1) {
+      throw new Error("Dedicated service has an unexpected mount");
+    }
     const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
     if (networks.length !== 1 || networks[0] !== config.network
       || container.NetworkSettings.Networks[config.network].NetworkID !== network.Id) {
@@ -93,17 +111,28 @@ export function checkStandaloneTopology(network, containers, config = standalone
     requireLoopbackBinding(container, service, config.ports[service]);
     if (service === "node") requireMount(container, "/node/chain", "volume", true,
       `${config.project}_node-data`);
-    if (service === "indexer") requireMount(container, "/data", "volume", true,
-      `${config.project}_indexer-data`);
+    if (service === "indexer") {
+      requireMount(container, "/data", "volume", true, `${config.project}_indexer-data`);
+      if (expected) {
+        for (const name of ["APP__INFRA__STORAGE__PASSWORD", "APP__INFRA__PUB_SUB__PASSWORD",
+          "APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD"]) {
+          requirePreparedInput(container, name, expected.indexerPassword);
+        }
+        requirePreparedInput(container, "APP__INFRA__SECRET", expected.indexerSecret);
+      }
+    }
     if (service === "proof-server") {
       requireMount(container, "/.cache/midnight/zk-params", "bind", false);
+      if (expected && container.Mounts[0].Source !== expected.proofParamsDir) {
+        throw new Error("Running proof cache differs from the prepared install path");
+      }
       if (!container.Config.Env?.includes("MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS=true")) {
         throw new Error("Proof server is not in no-fetch mode");
       }
     }
     observed.push(service);
   }
-  if (observed.sort().join("\0") !== SERVICES.sort().join("\0")) {
+  if (observed.sort().join("\0") !== [...SERVICES].sort().join("\0")) {
     throw new Error("Dedicated service set is incomplete");
   }
   return {
@@ -113,6 +142,7 @@ export function checkStandaloneTopology(network, containers, config = standalone
     services: observed,
     internalNetworkOnly: true,
     proofParameterCacheReadOnly: true,
+    ...(expected ? { preparedInputsMatched: true } : {}),
     egressDenied: "not-verified",
     actorJourneys: "not-run",
   };
@@ -123,7 +153,7 @@ async function docker(args) {
   return stdout;
 }
 
-export async function observeStandaloneTopology(config = standaloneStackConfig()) {
+export async function observeStandaloneTopology(config = standaloneStackConfig(), expected) {
   const ids = (await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${config.project}`]))
     .trim().split("\n").filter(Boolean);
   if (ids.length !== SERVICES.length) {
@@ -131,7 +161,7 @@ export async function observeStandaloneTopology(config = standaloneStackConfig()
   }
   const [network] = JSON.parse(await docker(["network", "inspect", config.network]));
   const containers = JSON.parse(await docker(["inspect", ...ids]));
-  return checkStandaloneTopology(network, containers, config);
+  return checkStandaloneTopology(network, containers, config, expected);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

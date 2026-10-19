@@ -176,7 +176,12 @@ selected project even if one override is accidentally omitted. The checks
 reject a mismatch between `COMPOSE_PROJECT_NAME` and `TR_STACK_NAME`. Empty project
 or port variables fail closed in the checks. The checks reject an unexpected project,
 public or extra port binding, wrong loopback port, extra network attachment,
-or missing persistent mount. A config-only render and a healthy new node do
+missing or extra mount, or elevated container privilege. Wizard-driven
+`observe-stack` also compares the running indexer's three storage passwords
+and secret and the proof server's bind source against the prepared private
+`stack.env`; its observation records only a match flag, never secret values.
+A direct topology check without that private input cannot attest the match.
+A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat
 the first-run approvals for that instance. Never use `down -v` on either
@@ -430,7 +435,8 @@ An older v2 bundle remains historical smoke evidence, not a new wizard setup
 input. A v3 bundle built from the chosen release source revision is still only
 candidate bytes; it does not by itself support an RC qualification claim.
 `observe-stack` checks the selected live project's topology and canary HTTPS/DNS
-egress behavior, then appends timestamped ledger-bridge evidence. It refuses
+egress behavior, including prepared private-input matching, then appends
+timestamped ledger-bridge evidence. It refuses
 to replace evidence after genesis observation or deployment begins. In the
 interactive wizard, leaving stack preparation blank stops the session before
 the genesis-pin prompt. This step does not approve

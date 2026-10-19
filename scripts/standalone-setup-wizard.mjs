@@ -259,7 +259,22 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       || selected.TR_PROOF_PORT !== config.ports["proof-server"]) {
       throw new Error("Prepared stack environment disagrees with the setup record");
     }
-    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config);
+    let proofParamsDir;
+    try {
+      proofParamsDir = JSON.parse(selected.TR_PROOF_PARAMS_DIR);
+    } catch {
+      throw new Error("Prepared proof-parameter path is malformed");
+    }
+    if (proofParamsDir !== join(record.install.bundle, "proof-params")
+      || !/^[0-9a-f]{48}$/u.test(selected.TR_INDEXER_PASSWORD ?? "")
+      || !/^[0-9a-f]{64}$/u.test(selected.TR_INDEXER_SECRET ?? "")) {
+      throw new Error("Prepared private stack inputs disagree with the install bundle");
+    }
+    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
+      proofParamsDir,
+      indexerPassword: selected.TR_INDEXER_PASSWORD,
+      indexerSecret: selected.TR_INDEXER_SECRET,
+    });
     const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
       env: {
         TR_STACK_NAME: config.project,

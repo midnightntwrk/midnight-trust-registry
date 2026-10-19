@@ -260,10 +260,13 @@ test("wizard records only selected ledger-bridge topology and egress observation
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
   const result = await observeStandaloneStack(f.directory, {
-    observeTopology: async (config) => {
+    observeTopology: async (config, expected) => {
       assert.equal(config.project, project);
+      assert.match(expected.proofParamsDir, /\/proof-params$/u);
+      assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
+      assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
       return { kind: "standalone-runtime-topology-observation", project,
-        egressDenied: "not-verified", actorJourneys: "not-run" };
+        preparedInputsMatched: true, egressDenied: "not-verified", actorJourneys: "not-run" };
     },
     observeEgress: async ({ env }) => {
       assert.equal(env.TR_STACK_NAME, project);
