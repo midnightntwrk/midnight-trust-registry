@@ -19,11 +19,16 @@ import {
   type DeploymentAttemptIntent,
 } from "../deployment-attempt-journal.js";
 
-const mocks = vi.hoisted(() => ({ deployPublic: vi.fn(), deployLocal: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  deployPublic: vi.fn(), deployLocal: vi.fn(), verifyInstalledVerifierKeyAssets: vi.fn(),
+}));
 vi.mock("../public-network-deployment.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../public-network-deployment.js")>(),
   deployPublicTrustRegistry: mocks.deployPublic,
   deployLocalTrustRegistry: mocks.deployLocal,
+}));
+vi.mock("../verifier-asset-preflight.js", () => ({
+  verifyInstalledVerifierKeyAssets: mocks.verifyInstalledVerifierKeyAssets,
 }));
 
 const genesis = `0x${"b".repeat(64)}`;
@@ -216,5 +221,17 @@ describe("deployment attempt journal", () => {
       ...intent(), providers: {} as never, journal: await journal(),
       network: { ...localNetwork, fetchImpl: vi.fn() as never } as never,
     })).rejects.toThrow(/does not accept the undeployed/u);
+  });
+
+  it("does not reserve a deployment when installed verifier assets disagree", async () => {
+    setNetworkId("undeployed");
+    const localJournal = await journal();
+    mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
+    await expect(deployLocalTrustRegistryOnce({
+      ...intent(), providers: {} as never, journal: localJournal,
+      network: { ...localNetwork, fetchImpl: vi.fn() as never },
+    })).rejects.toThrow(/verifier mismatch/u);
+    expect(await localJournal.inspect()).toBeNull();
+    expect(mocks.deployLocal).not.toHaveBeenCalled();
   });
 });

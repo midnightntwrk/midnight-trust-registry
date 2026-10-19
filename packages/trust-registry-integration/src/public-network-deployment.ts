@@ -24,6 +24,7 @@ import {
   createPublicNetworkDeploymentActionReader,
   type PublicNetworkDeploymentActionReaderConfig,
 } from "./public-network-deployment-action-reader.js";
+import { verifyInstalledVerifierKeyAssets } from "./verifier-asset-preflight.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
 
@@ -228,6 +229,7 @@ async function deployPinnedTrustRegistry(input: {
   const maintainerDid = commitment(bootstrap.maintainerDidCommitment, "Maintainer DID");
   const maintainerKeyId = commitment(bootstrap.maintainerKeyId, "Maintainer key id");
   const catalog = verifierKeyCatalog(input.releaseManifest);
+  await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   const expectedAuthorityKey = `0x${signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase()}`;
 
   const checkpoint = await input.checkpointSource.readCurrentFinalizedCheckpoint();

@@ -18,11 +18,15 @@ const mocks = vi.hoisted(() => ({
   deployContract: vi.fn(),
   indexerPublicDataProvider: vi.fn(),
   queryContractState: vi.fn(),
+  verifyInstalledVerifierKeyAssets: vi.fn(),
 }));
 
 vi.mock("@midnight-ntwrk/midnight-js-contracts", () => ({ deployContract: mocks.deployContract }));
 vi.mock("@midnight-ntwrk/midnight-js-indexer-public-data-provider", () => ({
   indexerPublicDataProvider: mocks.indexerPublicDataProvider,
+}));
+vi.mock("../verifier-asset-preflight.js", () => ({
+  verifyInstalledVerifierKeyAssets: mocks.verifyInstalledVerifierKeyAssets,
 }));
 
 const address = "a".repeat(64);
@@ -166,6 +170,12 @@ const deployLocal = (overrides: Partial<typeof localNetwork> = {}) => deployLoca
 });
 
 describe("isolated local Trust Registry deployment", () => {
+  it("rejects changed installed verifier assets before submitting", async () => {
+    setNetworkId("undeployed");
+    mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
+    await expect(deployLocal()).rejects.toThrow(/verifier mismatch/u);
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
   it("deploys with the undeployed domain and reads back finalized constructor and key hashes", async () => {
     setNetworkId("undeployed");
     const result = await deployLocal();

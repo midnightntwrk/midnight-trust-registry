@@ -126,7 +126,13 @@ automatic retry. `readPostDeploymentLocalTrustRegistry` verifies the
 post-transition image through the local reader. For an operator deployment,
 use `deployLocalTrustRegistryOnce` with an exact source SHA and a
 `FileDeploymentAttemptJournal` in a pre-provisioned private directory. It
-reserves one attempt before the SDK call and retains the public receipt if the
+checks that the installed contract's complete verifier-key inventory and file
+hashes match the approved release manifest **before** reserving the attempt;
+direct `deployLocalTrustRegistry` calls make the same check before broadcast.
+This does not authenticate where the installed package came from, replace
+the pinned install-artifact check, or eliminate a file-replacement race on a
+writable installation. Keep the installed package read-only for the operator.
+The journal reserves one attempt before the SDK call and retains the public receipt if the
 adapter returns. A missing receipt after reservation means an unknown outcome,
 not permission to redeploy; inspect the original intent and finalized local
 chain state before a human recovery decision. These helpers do not install or
@@ -135,6 +141,11 @@ transaction. The initial
 single-key authority remains unsafe for release until a separately approved
 committee is observed after finality. Durably record the deployment receipt,
 committee approval, and journal before claiming a supported local deployment.
+The operator's 1-of-3 committee choice is for a **development smoke only**;
+the release helpers intentionally reject it as an approved multi-party
+policy. Do not use that smoke result to close the RC maintenance gate. The
+final threshold, three distinct public keys, custody assignments, and human
+approval remain required before a release-qualified transition.
 The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.
 The genesis pin alone may not distinguish a fresh local node from one reset

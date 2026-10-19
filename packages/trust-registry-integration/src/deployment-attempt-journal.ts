@@ -20,6 +20,7 @@ import {
 } from "./public-network-deployment.js";
 import type { LocalNetworkDeploymentActionReaderConfig } from "./local-network-deployment-action-reader.js";
 import type { PublicNetworkDeploymentActionReaderConfig } from "./public-network-deployment-action-reader.js";
+import { verifyInstalledVerifierKeyAssets } from "./verifier-asset-preflight.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
 
@@ -287,6 +288,7 @@ export async function deployPublicTrustRegistryOnce(input: {
   if ((input.network.networkId as string) === "undeployed") {
     throw new Error("Public deployment journal does not accept the undeployed network");
   }
+  await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployPublicTrustRegistry(input));
 }
 
@@ -303,5 +305,6 @@ export async function deployLocalTrustRegistryOnce(input: {
   if (input.network.networkId !== "undeployed") {
     throw new Error("Local deployment journal requires the undeployed network");
   }
+  await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistry(input));
 }
