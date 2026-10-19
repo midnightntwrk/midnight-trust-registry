@@ -88,6 +88,25 @@ balancing failures, requires read-only reconciliation of the journal and
 independently finalized network state before any operator-approved new
 attempt. Do not delete or rotate the journal merely to bypass the reservation.
 
+For reconciliation, retain the exact update SHA-256 and finalized checkpoint
+hash that the custodian approved, then call
+`reconcilePublicNetworkCommitteeTransition` with those pins, the original
+approval, and the journal. `observed` means the finalized image has the
+approved committee at counter one; it does **not** establish that the
+journaled transaction ID caused the change. Independently correlate that ID
+with finalized transaction data. `unresolved` means the bootstrap authority
+is still visible at a different finalized checkpoint; expiry alone does not make
+a new attempt safe because readback could lag. `stale-checkpoint` means the
+reader returned the original planning checkpoint, so it says nothing about
+subsequent inclusion. `not-reserved` performs no network read and does not
+prove no other host submitted. `pending`, `unavailable`, and `invalid-image`
+require investigation. `conflict` freezes the transition for review; it can
+also reflect an unrelated governance change after the approved pin, not
+necessarily a malicious maintenance update. If the `.submitted` write failed,
+retain `MaintenanceTransitionOutcomeUnknownError.txId` separately because
+reconciliation will report `txId: null`. None of these statuses authorizes
+automatic retry or journal deletion.
+
 This is **not yet a completed production recovery workflow**. The custodian
 and host must durably retain the approved plan, signature provenance, receipt,
 and recovery decision, and must independently verify finality and post-update

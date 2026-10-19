@@ -106,8 +106,10 @@ governance. The [administrator runbook](../guide/preprod-admin-qualification.md)
 records the approval inputs and stop conditions. The actual committee keys,
 threshold, and genesis pin remain unapproved. The local Ledger 8 committee
 update builder and single-host submission journal prevent blind retries but
-do not supply complete recovery, independent finality, or a live Preprod
-transition; selection of a model does not close #213.
+the read-only reconciliation helper only classifies the finalized authority
+image. These components do not supply transaction-provenance recovery,
+independent finality review, or a live Preprod transition; selection of a
+model does not close #213.
 
 After an operator-approved maintenance transition, use
 `readPostDeploymentPublicTrustRegistry` with an independently pinned governance

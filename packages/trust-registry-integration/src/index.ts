@@ -31,6 +31,8 @@ export {
   submitPublicNetworkCommitteeTransition,
 } from "./public-maintenance-submission.js";
 export type { MaintenanceTransitionJournalEntry } from "./public-maintenance-submission.js";
+export { reconcilePublicNetworkCommitteeTransition } from "./public-maintenance-reconciliation.js";
+export type { MaintenanceTransitionReconciliation } from "./public-maintenance-reconciliation.js";
 export * from "./vc-scope.js";
 export * from "./vc-authority-signer.js";
 export * from "./vc-authority-registration.js";
