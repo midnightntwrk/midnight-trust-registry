@@ -98,7 +98,7 @@ test("compact-issuer-proposal-insufficient-quorum", () => {
   harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-test("compact-issuer-proposal-duplicate-signer", () => {
+test("client-issuer-proposal-duplicate-signer", () => {
   const { harness, issuer, evidence, verifierSignature, signatures } =
     issuerProposal("isolated-issuer-proposal-duplicate");
   const before = harness.simulator.getLedger().governanceActionCount;
@@ -375,7 +375,7 @@ for (const role of [
     harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });
 
-  test(`compact-${role.name}-proposal-duplicate-signer`, () => {
+  test(`client-${role.name}-proposal-duplicate-signer`, () => {
     const { harness, fixture, evidence, verifierSignature, signatures } =
       proposal(`isolated-${role.name}-proposal-duplicate`);
     const before = harness.simulator.getLedger().governanceActionCount;

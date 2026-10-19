@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- expose a production canonical maintainer-bundle builder and use it in the
+  simulator; duplicate IDs now fail before Compact execution with a specific
+  error, while direct Compact callers still face strict signer ordering.
+  Epoch evidence rejects noncanonical signer sets before Schnorr verification
 - reject all-member maintainer thresholds and removals that would strand the
   remaining quorum; add a single old-quorum-authorized action that updates
   policy and suspends a maintainer atomically, without an intermediate

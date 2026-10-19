@@ -206,6 +206,24 @@ describe("decision epoch publication signatures", () => {
     }, publicationEventHash, accepted, context)).toThrow(/distinct active maintainer/u);
   });
 
+  it("checks first-signer and accepted event commitments before Schnorr verification", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    const signatures = epoch.quorum.signatures.map((signer) => ({
+      ...signer, signature: `0x${"0".repeat(signer.signature.length - 2)}`,
+    }));
+    const invalid = { ...epoch, quorum: { ...epoch.quorum, signatures } };
+    expect(() => assertDecisionEpochPublicationSignatures(invalid, publicationEventHash, accepted, {
+      ...context,
+      firstSignerKeyIdCommitment: context.activeMaintainersAtPublication[1]!.keyIdCommitment,
+    })).toThrow(/first signer/u);
+    expect(() => assertDecisionEpochPublicationSignatures(invalid, A, {
+      ...accepted, publicationEventHash: A,
+    }, context)).toThrow(/signer set does not match the accepted event/u);
+    expect(() => assertDecisionEpochPublicationSignatures(
+      invalid, publicationEventHash, accepted, context,
+    )).toThrow(/signature encoding is invalid/u);
+  });
+
   it("rejects changed publication preimages, threshold, first signer, and event", () => {
     const { epoch, accepted, context, publicationEventHash } = fixture();
     for (const changed of [

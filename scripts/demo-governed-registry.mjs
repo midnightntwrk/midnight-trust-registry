@@ -1793,9 +1793,9 @@ try {
   adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
     issuer, issuerEvidence, [proposalPrimary, proposalPrimary], verifierSignature, expectedIssuerEvidence,
   ), {
-    id: "compact-issuer-proposal-duplicate-signer",
-    invariant: "Compact cannot count the same maintainer twice for an issuer proposal",
-    boundary: "compact",
+    id: "client-issuer-proposal-duplicate-signer",
+    invariant: "The canonical bundle builder rejects a repeated maintainer before Compact execution",
+    boundary: "client",
     messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
     category: "proposal-duplicate-signer-rejected",
   });
@@ -1932,9 +1932,9 @@ try {
       category: "proposal-quorum-rejected",
     });
     adversarialMatrix.expectThrown(() => target.execute(evidence, [compactSigner, compactSigner], signature), {
-      id: `compact-${role}-proposal-duplicate-signer`,
-      invariant: `Compact cannot count the same maintainer twice for a ${role} proposal`,
-      boundary: "compact",
+      id: `client-${role}-proposal-duplicate-signer`,
+      invariant: `The canonical bundle builder rejects a repeated ${role} proposal signer before Compact execution`,
+      boundary: "client",
       messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
       category: "proposal-duplicate-signer-rejected",
     });

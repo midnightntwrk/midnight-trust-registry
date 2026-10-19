@@ -6,6 +6,9 @@ uses that builder; the transaction submitter is not necessarily the first
 canonical signer. The epoch-evidence client rejects duplicate, out-of-order, or
 event-hash-mismatched signer sets before Schnorr verification, but still checks
 every signature for accepted evidence.
+The simulator adversarial matrix labels duplicate-bundle rejections as a
+client-side boundary; a separate direct circuit test confirms equal signer
+IDs still fail Compact's strict ordering check without advancing state.
 
 The Compact action path already checks adjacent signer IDs with strict `<`
 before `finalizeAuthorizedMaintainerAction` calls the internal signer-set hash.

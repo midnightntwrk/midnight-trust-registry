@@ -2303,6 +2303,18 @@ describe("trust registry contract", () => {
       },
       auditPayload,
     )).toThrow(/Maintainer signer keys must be sorted/);
+    expect(() => simulator.contract.impureCircuits.authorizeMaintainerAuditEvent(
+      simulator.circuitContext,
+      {
+        signerCount: 2n,
+        signer1: auditSigners[0]!,
+        signer2: auditSigners[0]!,
+        signer3: emptySigner,
+        signer4: emptySigner,
+        signer5: emptySigner,
+      },
+      auditPayload,
+    )).toThrow(/Maintainer signer keys must be sorted/);
     expect(simulator.getLedger().governanceActionCount).toBe(auditSequence);
 
     const issuer = createIssuerAuthorizationFixture("quorum");

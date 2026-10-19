@@ -41,6 +41,23 @@ describe("canonical maintainer authorization bundles", () => {
     ));
   });
 
+  it("matches Compact's strict ordering within and across 128-bit limbs", () => {
+    const zero = new Uint8Array(32);
+    for (const [lowByte, highByte] of [[0, 1], [14, 15], [15, 16]] as const) {
+      const low = new Uint8Array(32);
+      const high = new Uint8Array(32);
+      low[lowByte] = 255;
+      high[highByte] = 1;
+      const bundle = buildCanonicalMaintainerAuthorizationBundle([signer(high), signer(low)]);
+      expect(bundle.signer1.keyId).toBe(low);
+      expect(bundle.signer2.keyId).toBe(high);
+      expect(() => pureCircuits.maintainerSignerSetHash(2n, low, high, zero, zero, zero))
+        .not.toThrow();
+      expect(() => pureCircuits.maintainerSignerSetHash(2n, high, low, zero, zero, zero))
+        .toThrow(/must be sorted/u);
+    }
+  });
+
   it("rejects empty, oversized, duplicate, and malformed signer sets", () => {
     const keyId = new Uint8Array(32).fill(1);
     expect(() => buildCanonicalMaintainerAuthorizationBundle([])).toThrow(/1 to 5/u);
