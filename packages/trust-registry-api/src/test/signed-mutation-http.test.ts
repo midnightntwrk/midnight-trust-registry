@@ -20,6 +20,7 @@ import {
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
+  JUBJUB_ORDER,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
@@ -228,6 +229,31 @@ describe("DID-signed HTTP mutation journey", () => {
       ...signedSubmit.signature, value: `0x${"00".repeat(96)}`,
     } });
     expect(wrongSignature.status).toBe(401);
+    expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
+    const validSignature = signedSubmit.signature.value;
+    const signedPoint = signJubjubPayloadFromSeed(applicantSeed, mutationIntentDigestBytes(applicantIntent));
+    const encoded = (signature: typeof signedPoint) =>
+      `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
+    const malformedSignatures = [
+      { value: validSignature.slice(0, -1), status: 400 },
+      { value: validSignature.toUpperCase(), status: 400 },
+      { value: `${validSignature.slice(0, -1)}g`, status: 400 },
+      { value: encoded({ ...signedPoint, response: signedPoint.response + JUBJUB_ORDER }), status: 401 },
+      { value: encoded({ ...signedPoint, announcement: { x: 3n, y: 5n } }), status: 401 },
+      { value: encoded({ ...signedPoint, announcement: { x: 0n, y: 1n } }), status: 401 },
+    ];
+    for (const { value, status } of malformedSignatures) {
+      const response = await post({ ...signedSubmit, signature: { ...signedSubmit.signature, value } });
+      expect(response.status).toBe(status);
+      if (status === 401) expect((await response.json()).type).toMatch(/signed-intent-rejected/u);
+      const unchanged = await loadWorkspaceFromFile(workspacePath);
+      expect(unchanged.operations).toHaveLength(0);
+      expect(Object.keys(unchanged.consumedMutationNonces)).toHaveLength(0);
+    }
+    const wrongKey = await post({ ...signedSubmit, signature: {
+      ...signedSubmit.signature, keyId: `${wrongApplicantDid}#assertion-1`,
+    } });
+    expect(wrongKey.status).toBe(401);
     expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
     const wrongActorIntent = buildIntent(initial, submit, wrongApplicantDid, "applicant", "34");
     expect((await post({ intent: wrongActorIntent, signature: signatureFor(wrongActorIntent, applicantSeed), operation: submit })).status).toBe(403);

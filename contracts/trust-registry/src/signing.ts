@@ -77,7 +77,8 @@ const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): bo
 
 export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJubjubSignature => {
   if (
-    value.length !== 2 + JUBJUB_SIGNATURE_LENGTH_BYTES * 2
+    typeof value !== "string"
+    || value.length !== 2 + JUBJUB_SIGNATURE_LENGTH_BYTES * 2
     || !/^0x[0-9a-f]+$/u.test(value)
   ) {
     throw new Error("Jubjub signature encoding is invalid");

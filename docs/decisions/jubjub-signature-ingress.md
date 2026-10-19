@@ -5,10 +5,13 @@ Status: bounded pre-release audit slice; #101 remains open.
 | Boundary | Current check | Remaining trust condition |
 | --- | --- | --- |
 | Governed Compact action | `verifyAuthorizedMaintainerSigner` matches an active registered key and invokes the DID Schnorr verification circuit over a deployment-, policy-, action-, and sequence-bound digest. | A real transaction submission path still needs adversarial witness tests, authenticated network selection, and public error handling. |
-| Simulator application evidence | The local harness checks the expected verifier key reference, decodes exact lowercase 96-byte hex, rejects noncanonical scalars/coordinates, and verifies the domain-bound commitment signature. | The key is a simulator fixture. Governed DID key authorization and real VC/VP verification remain #67/#76 work. |
+| API governed proposal and lifecycle votes | Request schemas constrain signer IDs, points, and signature encodings. The shared decoder rejects noncanonical signatures; preflight checks duplicate IDs and deployment-bound vote digests before the configured port submits. | Supplied public keys are not authority by themselves. The port and Compact circuit must check active registered keys, policy, quorum, and exact action context. Public mutation admission remains gated by #77/#167. |
+| API DID-signed mutation intents | The configured `/v1/mutations` route parses a strict intent and signature, resolves the selected DID method for the required relationship, checks prime-order key and canonical signature, then rechecks nonce, workspace revision, scope, actor, and operation inside the atomic write boundary. Malformed wire syntax returns 400; a well-formed invalid signature returns a redacted 401 without consuming the nonce. | The resolver must provide authentic DID state. A valid signature does not grant a registry role or make reserved maintainer actions executable; public exposure remains gated by #77/#167. |
+| VP evidence attestation | The integration port verifies the evidence signer against its DID assertion method before and after signing, decodes the exact canonical signature, and checks its commitment before one-use intake can propose. | The configured VC/VP and status authority sources must be authenticated and durable; #76/#90 remain release gates. |
+| Simulator application evidence | The local harness checks the expected verifier key reference, decodes exact lowercase 96-byte hex, rejects noncanonical scalars/coordinates, and verifies the domain-bound commitment signature. | The key is a simulator fixture, not independent DID or VC/VP authorization. |
 | Client epoch bundle | The client requires exactly one signature for the current single-signer epoch record, accepts only the Jubjub algorithm, decodes exact lowercase 96-byte hex, and verifies it under the supplied maintainer public key and committed publication policy. Bad points fail closed instead of escaping as runtime traps. | The caller must pin the ledger epoch and public key. The bundle's textual DID key reference is not yet authenticated against the ledger byte key ID; #79 must supply that mapping before producing a VC signer descriptor. |
 | Simulator epoch assertion | The harness applies the same decoder and algorithm check against its ledger maintainer key. | This is local evidence validation, not an independent network trust anchor. |
-| API, CLI, TRQP, federation | They currently consume or project local registry evidence rather than accepting raw Jubjub transaction signatures as a public write gateway. | #77 owns DID-signed mutation intents. #79 owns independent proof verification before adapter publication. |
+| CLI, TRQP, federation | They consume or project registry evidence rather than acting as an independent public signature-verification gateway. | #79 owns independently pinned proof verification before adapter publication. |
 
 The domain `MaintainerSignatureSchema` permits several planned algorithms, so
 the shared record schema does not silently reinterpret all signature strings
@@ -21,9 +24,13 @@ actions. Neither TypeScript preflight nor a caller-provided key reference is a
 substitute for that circuit or a pinned registry key.
 
 The current negative fixtures cover bad encodings, response malleability,
-off-curve points, wrong signing keys, and unsupported algorithm labels. #101
-remains open for public gateway inventory, multi-key selection and rotation,
-and exact key-reference authentication with #67/#79.
+off-curve points, wrong signing keys, and unsupported algorithm labels. The
+configured mutation HTTP boundary additionally verifies redacted 400/401
+outcomes and no nonce consumption for malformed or noncanonical signatures;
+the one-use VP intake asserts a retired DID method is detected after signing
+and before proposal. #101 remains open for full cross-surface final-head review,
+multi-key selection and rotation, and exact key-reference authentication with
+#67/#79.
 
 The singleton rule is a fail-closed client constraint, not a claim that the
 governance quorum consists of one maintainer. Multi-signature epoch provenance

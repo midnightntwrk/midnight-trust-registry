@@ -167,6 +167,7 @@ describe("application evidence commitment signing", () => {
     const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
 
     expect(decodeCanonicalJubjubSignatureHex(encoded)).toEqual(signature);
+    expect(() => decodeCanonicalJubjubSignatureHex(null as unknown as string)).toThrow(/encoding is invalid/);
     for (const malformed of [
       encoded.slice(0, -1),
       encoded.toUpperCase(),
