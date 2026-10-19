@@ -28,6 +28,15 @@ same invariant is **not yet** exercised at every relevant boundary, so issue
 #60 remains open. Compact simulator failures are not proof of a submitted
 Midnight transaction; the fixture uses deterministic local time and finality.
 
+`pnpm run adversarial:report` runs the isolated Node test cases and writes a
+`tr-adversarial-case-report-v1` JSON object to stdout. Its sorted case results
+include a stable pass/fail reason code; a failing case does not stop later
+cases. The command exits nonzero on a failed case or a count other than 186.
+`pnpm run check:adversarial-parity -- --require-full` additionally compares
+those isolated case IDs with the governed demo's machine-readable matrix.
+The demo remains useful as one sequential actor journey, but its independent
+case report is the regression gate when an earlier journey step fails.
+
 The governed demo also emits `actorReport` in
 `tr-actor-evidence-report-v1` format. It records one active decision for each
 issuer, verifier, auditor, recognition, and maintainer actor, with policy

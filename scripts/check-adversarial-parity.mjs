@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 const root = dirname(scripts);
-const testFiles = readdirSync(scripts)
-  .filter((name) => /^adversarial-.*\.test\.mjs$/u.test(name) && name !== "adversarial-matrix.test.mjs")
-  .map((name) => join(scripts, name));
-assert.ok(testFiles.length > 0, "No isolated adversarial test files found");
-
 const run = (args) => {
   const result = spawnSync(process.execPath, args, {
     cwd: root,
@@ -33,8 +28,9 @@ assert.equal(report.summary.failed, 0);
 const demoIds = report.cases.map(({ id }) => id);
 assert.equal(new Set(demoIds).size, demoIds.length, "Governed demo has duplicate case IDs");
 
-const tap = run(["--test", "--test-reporter=tap", ...testFiles]);
-const extractedIds = [...tap.matchAll(/^# Subtest: ([a-z][a-z0-9-]+)$/gmu)].map((match) => match[1]);
+const isolatedReport = runIsolatedAdversarialCases();
+assert.equal(isolatedReport.summary.failed, 0, "Isolated adversarial tests failed");
+const extractedIds = isolatedReport.cases.map(({ id }) => id);
 assert.ok(extractedIds.length > 0, "No named isolated adversarial tests were reported");
 assert.equal(new Set(extractedIds).size, extractedIds.length, "Isolated tests have duplicate case IDs");
 const extracted = new Set(extractedIds);
