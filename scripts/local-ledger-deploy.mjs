@@ -11,6 +11,7 @@ import {
   deployLocalTrustRegistryOnce,
   deployLocalTrustRegistryStagedOnce,
   FileDeploymentAttemptJournal,
+  reconcileLocalStagedDeployment,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
@@ -59,9 +60,14 @@ async function regularFile(path) {
 }
 
 /** The provider module is privileged code; the approved hash is checked before import. */
-export async function runLocalDeployment(plan, dependencies = {}) {
+async function loadApprovedDeploymentMaterial(plan, dependencies, approval = {}) {
   validateLocalDeploymentPlan(plan);
-  const manifest = JSON.parse((await regularFile(plan.releaseManifestPath)).toString("utf8"));
+  const manifestBytes = await regularFile(plan.releaseManifestPath);
+  if (approval.expectedReleaseManifestSha256
+    && createHash("sha256").update(manifestBytes).digest("hex") !== approval.expectedReleaseManifestSha256) {
+    throw new Error("Release manifest bytes changed after setup approval");
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || manifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
@@ -89,6 +95,11 @@ export async function runLocalDeployment(plan, dependencies = {}) {
   const material = await module.createLocalDeploymentMaterial({
     network: plan.network, releaseManifest: manifest,
   });
+  return { manifest, material };
+}
+
+export async function runLocalDeployment(plan, dependencies = {}) {
+  const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies);
   try {
     if (!material || typeof material !== "object" || !material.bootstrap
       || !material.providers || !material.contractMaintenanceSigningKey) {
@@ -121,6 +132,68 @@ export async function runLocalDeployment(plan, dependencies = {}) {
       } catch {
         // Never hide a submitted receipt behind a wallet shutdown error.
         console.error("Provider cleanup failed; inspect the journal and local chain before any action");
+      }
+    }
+  }
+}
+
+/** Inspects the original journal and finalized image; never enters the SDK deploy path. */
+export async function reconcileLocalDeployment(plan, dependencies = {}, approval = {}) {
+  if (plan?.format !== "tr-local-staged-deployment-plan-v1") {
+    throw new Error("Read-only deployment reconciliation requires a staged local plan");
+  }
+  const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies, approval);
+  try {
+    if (!material || typeof material !== "object" || !material.bootstrap
+      || !material.contractMaintenanceSigningKey) {
+      throw new Error("Approved provider did not return staged bootstrap and maintenance key");
+    }
+    const entry = await (dependencies.inspectDeployment ?? (async (intent) =>
+      new FileDeploymentAttemptJournal(plan.journalPath).inspectApproved(intent)))({
+      network: plan.network,
+      bootstrap: material.bootstrap,
+      releaseManifest: manifest,
+      contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
+      sourceRevision: plan.sourceRevision,
+      initialVerifierKeyName: plan.initialVerifierKeyName,
+    });
+    if (entry === null) throw new Error("No approved staged deployment reservation exists");
+    if (entry.submitted === null) {
+      if (approval.expectedDeploymentReceipt) {
+        throw new Error("Deployment journal lost the setup-recorded receipt; preserve both records for recovery");
+      }
+      return { kind: "local-deployment-reconciliation", readbackStatus: "unknown-no-receipt" };
+    }
+    const receipt = {
+      networkId: entry.submitted.networkId,
+      contractAddress: entry.submitted.contractAddress,
+      txId: entry.submitted.txId,
+      blockHash: entry.submitted.blockHash,
+      blockHeight: entry.submitted.blockHeight,
+    };
+    if (approval.expectedDeploymentReceipt
+      && ["networkId", "contractAddress", "txId", "blockHash", "blockHeight"]
+        .some((field) => receipt[field] !== approval.expectedDeploymentReceipt[field])) {
+      throw new Error("Deployment journal receipt disagrees with the setup-recorded receipt");
+    }
+    const readback = await (dependencies.readback ?? reconcileLocalStagedDeployment)({
+      network: plan.network,
+      receipt,
+      bootstrap: material.bootstrap,
+      releaseManifest: manifest,
+      initialVerifierKeyName: plan.initialVerifierKeyName,
+      bootstrapMaintenanceVerifyingKey: entry.reservation.bootstrapMaintenanceVerifyingKey,
+    });
+    return { kind: "local-deployment-reconciliation", receipt,
+      receiptAttribution: "journal-recorded-not-independently-inclusion-verified",
+      readbackStatus: readback.status,
+      ...(readback.finalizedBlockHash ? { finalizedBlockHash: readback.finalizedBlockHash } : {}) };
+  } finally {
+    if (typeof material?.stop === "function") {
+      try {
+        await material.stop();
+      } catch {
+        console.error("Provider cleanup failed; preserve the deployment journal and inspect the local chain");
       }
     }
   }

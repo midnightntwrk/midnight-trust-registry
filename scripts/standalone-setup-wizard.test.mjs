@@ -16,6 +16,7 @@ import {
   attemptStandaloneVerifierKeyInsertion,
   initializeStandaloneSetup,
   observeStandaloneLedger,
+  reconcileStandaloneDeployment,
   reconcileStandaloneVerifierKeyInsertion,
   standaloneSetupStatus,
   verifyDetachedReviewerSignature,
@@ -25,6 +26,7 @@ const sourceRevision = "a".repeat(40);
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
 const governanceFingerprint = "B".repeat(40);
+const journalAttribution = "journal-recorded-not-independently-inclusion-verified";
 const stagedReceipt = {
   networkId: "undeployed",
   contractAddress: `0x${"c".repeat(64)}`, blockHash: `0x${"d".repeat(64)}`,
@@ -262,6 +264,130 @@ test("wizard rejects a staged status without a deployment receipt", async () => 
     verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not submit"),
   }), /finalized staged bootstrap/u);
   assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys, []);
+});
+
+test("read-only deployment reconciliation promotes a pending staged receipt only after verified readback", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "pending", receipt: stagedReceipt }),
+  });
+  const setupPath = join(f.directory, "setup-record.json");
+  const olderRecord = JSON.parse(await readFile(setupPath, "utf8"));
+  delete olderRecord.deployment.stagedPlan;
+  await writeFile(setupPath, JSON.stringify(olderRecord));
+  const changedPlan = join(f.directory, "changed-deployment-plan.json");
+  await writeFile(changedPlan, JSON.stringify({
+    ...plan, format: "tr-local-staged-deployment-plan-v1",
+    initialVerifierKeyName: "anotherKey", releaseManifestPath: f.releaseManifestPath,
+  }));
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, changedPlan, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => assert.fail("must not inspect changed plan"),
+  }), /disagrees with the reserved staged deployment/u);
+  let reads = 0;
+  const result = await reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async (_plan, approval) => {
+      reads += 1;
+      assert.deepEqual(approval.expectedDeploymentReceipt, stagedReceipt);
+      assert.equal(approval.expectedReleaseManifestSha256,
+        createHash("sha256").update(await readFile(f.releaseManifestPath)).digest("hex"));
+      return { kind: "local-deployment-reconciliation", receipt: stagedReceipt,
+        receiptAttribution: journalAttribution,
+        readbackStatus: "staged-bootstrap-pending", finalizedBlockHash: `0x${"f".repeat(64)}` };
+    },
+  });
+  assert.equal(result.readbackStatus, "staged-bootstrap-pending");
+  assert.equal(reads, 1);
+  const reconciledRecord = JSON.parse(await readFile(setupPath, "utf8"));
+  assert.equal(reconciledRecord.deployment.stagedPlan.initialVerifierKeyName,
+    f.insertionPlan.initialVerifierKeyName);
+  assert.equal(reconciledRecord.deployment.readbackHistory[0].readbackStatus, "pending");
+  assert.equal(reconciledRecord.deployment.result.finalizedBlockHash, `0x${"f".repeat(64)}`);
+  assert.equal(reconciledRecord.deployment.result.receiptAttribution, journalAttribution);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+  await attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => ({ readbackStatus: "verified" }),
+  });
+  assert.equal((await standaloneSetupStatus(f.directory)).stagedVerifierKeys[0].state, "verified");
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => assert.fail("must not downgrade advanced bootstrap"),
+  }), /bootstrap already advanced/u);
+  const keyReadback = await reconcileStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    reconcile: async () => ({ readback: { status: "verified" } }),
+  });
+  assert.equal(keyReadback.readback.status, "verified");
+});
+
+test("a deployment with no receipt remains reserved after read-only reconciliation", async () => {
+  const f = await stagedFixture();
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => { throw new Error("unknown wallet outcome"); },
+  }), /outcome is unknown/u);
+  const result = await reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => ({ kind: "local-deployment-reconciliation",
+      readbackStatus: "unknown-no-receipt" }),
+  });
+  assert.equal(result.readbackStatus, "unknown-no-receipt");
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "unknown");
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not insert"),
+  }), /finalized staged bootstrap/u);
+});
+
+test("wizard rejects a changed reconciliation receipt without promoting deployment", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "pending", receipt: stagedReceipt }),
+  });
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => ({ kind: "local-deployment-reconciliation",
+      receipt: { ...stagedReceipt, blockHash: `0x${"1".repeat(64)}` },
+      receiptAttribution: journalAttribution,
+      readbackStatus: "staged-bootstrap-pending" }),
+  }), /changed the setup-recorded receipt/u);
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => ({ kind: "local-deployment-reconciliation",
+      receipt: stagedReceipt, receiptAttribution: "independently-verified",
+      readbackStatus: "staged-bootstrap-pending" }),
+  }), /invalid observation/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.deployment.result.readbackStatus, "pending");
+});
+
+test("wizard retains earlier mismatched readbacks when a later read is pending", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "pending", receipt: stagedReceipt }),
+  });
+  let status = "mismatch";
+  const reconcile = async () => reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    reconcileDeployment: async () => ({ kind: "local-deployment-reconciliation",
+      receipt: stagedReceipt, receiptAttribution: journalAttribution,
+      readbackStatus: status }),
+  });
+  assert.equal((await reconcile()).readbackStatus, "mismatch");
+  status = "pending";
+  assert.equal((await reconcile()).readbackStatus, "pending");
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.deepEqual(record.deployment.readbackHistory.map((entry) => entry.readbackStatus),
+    ["pending", "mismatch"]);
+  assert.equal(record.deployment.result.readbackStatus, "pending");
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
 });
 
 test("wizard reserves one staged insertion and requires read-only reconciliation before the next", async () => {

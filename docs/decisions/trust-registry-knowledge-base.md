@@ -1946,6 +1946,13 @@ one operator-invoked per-circuit insertion bound to that plan at a time. A separ
 operator orchestration rather than local-ledger qualification evidence; the
 pending development attempt still requires independent reconciliation and a
 human recovery decision before any new submission.
-The next local slice must add read-only deployment reconciliation for an
-initial receipt whose finalized readback lagged; the wizard currently leaves
-that setup reserved and does not offer a retry or manual status override.
+The wizard also has read-only staged-deployment reconciliation for an initial
+receipt whose finalized readback lagged. It requires the exact original plan
+bytes, original journal intent, pinned manifest and provider, and the
+genesis-pinned finalized one-key image. A journal without a receipt stays
+unknown and reserved; neither this path nor the key-insertion path retries
+or overrides an ambiguous submission. Receipt metadata is journal-attributed,
+not independent transaction-inclusion evidence, and reconciliation stops once
+the staged bootstrap or key installation has advanced. The earlier unresolved full-constructor
+development attempt remains subject to independent reconciliation and a
+human recovery decision.

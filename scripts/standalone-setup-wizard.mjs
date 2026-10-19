@@ -15,7 +15,9 @@ import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protoc
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
-import { runLocalDeployment, validateLocalDeploymentPlan } from "./local-ledger-deploy.mjs";
+import {
+  reconcileLocalDeployment, runLocalDeployment, validateLocalDeploymentPlan,
+} from "./local-ledger-deploy.mjs";
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
@@ -26,6 +28,11 @@ const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const execFileAsync = promisify(execFile);
+const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === "undeployed"
+  && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
+  && HASH.test(receipt.blockHash)
+  && typeof receipt.txId === "string" && receipt.txId.length > 0
+  && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
 
 async function regularBytes(path) {
   const stat = await lstat(path);
@@ -367,17 +374,98 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
   });
 }
 
+export async function reconcileStandaloneDeployment(directory, planPath, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.deployment || !record.genesisApproval) {
+      throw new Error("A reserved deployment and approved genesis are required for reconciliation");
+    }
+    if (record.deployment.result?.readbackStatus === "staged-bootstrap-pending"
+      || Object.keys(record.verifierKeyInsertions ?? {}).length > 0) {
+      throw new Error("Staged bootstrap already advanced; reconcile verifier keys instead of downgrading deployment state");
+    }
+    const planBytes = await regularBytes(resolve(planPath));
+    const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
+    if (plan.format !== "tr-local-staged-deployment-plan-v1"
+      || sha256(planBytes) !== record.deployment.planSha256
+      || plan.journalPath !== record.deployment.journalPath
+      || plan.sourceRevision !== record.sourceRevision
+      || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || plan.network.rpcUrl !== record.ledgerObservation.rpcUrl
+      || JSON.stringify(plan.network.allowedHosts) !== JSON.stringify(record.ledgerObservation.allowedHosts)) {
+      throw new Error("Reconciliation plan disagrees with the reserved staged deployment");
+    }
+    const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (verified.sourceRevision !== record.sourceRevision
+      || sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed bundle changed since setup verification");
+    }
+    const packageManifest = JSON.parse(inventory).packageManifest;
+    const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
+    const planManifest = await regularBytes(plan.releaseManifestPath);
+    if (sha256(bundleManifest) !== sha256(planManifest)) {
+      throw new Error("Deployment release manifest disagrees with the verified install bundle");
+    }
+    const approval = {
+      expectedReleaseManifestSha256: sha256(planManifest),
+      ...(record.deployment.result?.receipt
+        ? { expectedDeploymentReceipt: record.deployment.result.receipt } : {}),
+    };
+    const result = await (dependencies.reconcileDeployment ?? ((approvedPlan, expected) =>
+      reconcileLocalDeployment(approvedPlan, {}, expected)))(plan, approval);
+    if (!["staged-bootstrap-pending", "pending", "invalid-image", "unavailable", "mismatch", "unknown-no-receipt"]
+      .includes(result?.readbackStatus)
+      || (result.readbackStatus === "unknown-no-receipt"
+        && (result.receipt !== undefined || approval.expectedDeploymentReceipt))
+      || (result.readbackStatus !== "unknown-no-receipt"
+        && (!validLocalDeploymentReceipt(result.receipt)
+          || result.receiptAttribution !== "journal-recorded-not-independently-inclusion-verified"))
+      || (result.finalizedBlockHash !== undefined
+        && !HASH.test(result.finalizedBlockHash))) {
+      throw new Error("Deployment reconciliation returned an invalid observation");
+    }
+    if (approval.expectedDeploymentReceipt
+      && ["networkId", "contractAddress", "txId", "blockHash", "blockHeight"]
+        .some((field) => result.receipt?.[field] !== approval.expectedDeploymentReceipt[field])) {
+      throw new Error("Deployment reconciliation changed the setup-recorded receipt");
+    }
+    if (result.receipt) {
+      const readbackHistory = [...(record.deployment.readbackHistory ?? [])];
+      if (readbackHistory.length >= 256) {
+        throw new Error("Deployment reconciliation history is full; preserve the setup record for operator review");
+      }
+      if (record.deployment.result) readbackHistory.push(record.deployment.result);
+      record.deployment = {
+        ...record.deployment, state: "observed",
+        readbackHistory,
+        stagedPlan: record.deployment.stagedPlan ?? {
+          initialVerifierKeyName: plan.initialVerifierKeyName,
+          network: plan.network,
+          providerModulePath: plan.providerModulePath,
+          providerModuleSha256: plan.providerModuleSha256,
+          releaseManifestPath: plan.releaseManifestPath,
+        },
+        result: {
+          kind: "local-deployment-submission-observation",
+          sourceRevision: plan.sourceRevision,
+          receipt: result.receipt,
+          readbackStatus: result.readbackStatus,
+          receiptAttribution: result.receiptAttribution,
+          ...(result.finalizedBlockHash
+            ? { finalizedBlockHash: result.finalizedBlockHash } : {}),
+        },
+      };
+      await writeRecord(root, record);
+    }
+    return result;
+  });
+}
+
 async function approvedInsertionPlan(record, planPath, dependencies) {
   if (record.deployment?.state !== "observed"
     || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-    || record.deployment.result?.receipt?.networkId !== "undeployed"
-    || !HASH.test(record.deployment.result?.receipt?.contractAddress)
-    || /^0x0{64}$/u.test(record.deployment.result?.receipt?.contractAddress)
-    || !HASH.test(record.deployment.result?.receipt?.blockHash)
-    || typeof record.deployment.result?.receipt?.txId !== "string"
-    || record.deployment.result.receipt.txId.length === 0
-    || !Number.isSafeInteger(record.deployment.result?.receipt?.blockHeight)
-    || record.deployment.result.receipt.blockHeight < 0
+    || !validLocalDeploymentReceipt(record.deployment.result?.receipt)
     || !record.deployment.stagedPlan || !record.genesisApproval) {
     throw new Error("A finalized staged bootstrap and approved genesis are required before key insertion");
   }
@@ -555,8 +643,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "insert-key", "reconcile-key", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|insert-key|reconcile-key|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -568,6 +656,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(await approveStandaloneCommittee(directory, input, signature, keyring, fingerprint)));
   }
   else if (command === "deploy" && input) console.log(JSON.stringify(await attemptStandaloneDeployment(directory, input)));
+  else if (command === "reconcile-deploy" && input) {
+    const result = await reconcileStandaloneDeployment(directory, input);
+    console.log(JSON.stringify(result));
+    if (result.readbackStatus !== "staged-bootstrap-pending") process.exitCode = 2;
+  }
   else if (command === "insert-key" && input) {
     const result = await attemptStandaloneVerifierKeyInsertion(directory, input);
     console.log(JSON.stringify(result));

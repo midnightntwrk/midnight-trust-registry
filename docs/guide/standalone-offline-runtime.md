@@ -349,6 +349,8 @@ node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directo
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+# Re-read a reserved staged deployment without submitting, if first readback lagged:
+node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 # Only after a staged deployment receipt and finalized staged-bootstrap readback:
 node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
 # Read-only recovery for that same plan; never resubmits:
@@ -452,11 +454,34 @@ Even a failure known to occur before submission leaves a wizard reservation
 that requires operator investigation; do not remove it or create a fresh setup
 to bypass recovery.
 If the initial staged deployment returned a receipt but its first finalized
-readback was `pending` or `unavailable`, this wizard slice cannot yet promote
-it to staged-bootstrap readiness. Preserve the deployment journal and setup
-record, inspect finality independently, and wait for a dedicated read-only
-deployment-reconciliation command; do not hand-edit the record or submit a
-second deployment. A `failed-on-chain`, `mismatch`, or
+readback was `pending` or `unavailable`, use `reconcile-deploy` with the
+**same original plan bytes**. It rechecks the pinned source, genesis, provider
+module, bundle manifest, deployment journal, and any receipt already recorded
+by the wizard, then reads the one-key image at a genesis-pinned finalized
+checkpoint. It updates the local observation only if a complete public receipt
+is present; `staged-bootstrap-pending` means the expected one-key bootstrap
+was observed, **not** full-key or release qualification. If the journal has no
+submission receipt, reconciliation reports `unknown-no-receipt` and leaves
+the setup reserved; absence of a receipt does not prove absence of submission.
+The hash-pinned provider module may initialize or synchronize local wallet
+state while assembling the approved bootstrap material; this code path does
+not call an SDK submit method, but the provider module still requires review.
+The receipt's transaction ID, block hash, and height come from the private
+journal and are not independently proven included by the state readback;
+the reconciliation result labels this attribution explicitly. Once a
+staged-bootstrap readback is recorded or any key insertion has started,
+`reconcile-deploy` refuses to run, so a later indexer lag or installed key
+cannot downgrade the recorded bootstrap. Use `reconcile-key` for key recovery.
+The private setup record retains earlier readback observations, including
+`mismatch` and `invalid-image`, instead of overwriting that audit history with
+a later pending observation.
+If the setup record already contained a receipt but the journal no longer
+does, reconciliation fails rather than downgrading it to unknown; preserve both
+records for investigation.
+This command cannot reconcile the earlier unresolved **full-constructor**
+development attempt. Preserve its journal and seek a human recovery decision;
+do not hand-edit the record or submit a second deployment. A
+`failed-on-chain`, `mismatch`, or
 `observed-without-receipt` key also requires an explicit human recovery
 decision; it cannot be skipped to install later keys.
 The wizard does not generate or itself approve a genesis hash, provider module,
