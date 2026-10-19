@@ -2123,8 +2123,13 @@ approval; an ambiguous no-receipt attempt cannot pass this gate.
 
 The 0.1.0 Helm backlog (#218) depends on a runnable, ledger-backed API image,
 not just Kubernetes templates. The current standalone Compose files start only
-node, indexer, and proof server; no Trust Registry API or portal OCI images are
-built by this repository. The API executable still accepts snapshot/workspace
+node, indexer, and proof server. A local, unpushed signed slice through
+`bbee90e` now builds two static portal OCI archives from a clean signed export,
+records asset and archive hashes, and avoids remote Turbo cache reads/writes.
+Both portal roles passed read-only, network-isolated startup at `b0f3844`;
+admin rebuilt from `bbee90e`. This proves packaging behavior, not cluster
+qualification or offline actor journeys. There is still no Trust Registry API
+OCI image, and the API executable still accepts snapshot/workspace
 files. Two local, unpushed signed slices (`e0e564d`, `844a18e`) provide
 Compact/evidence projection checks and an injectable read-only source that
 requires a trusted finalized local reader and an approved SHA-256 pin of the
