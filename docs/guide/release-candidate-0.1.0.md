@@ -74,6 +74,15 @@ for supported status profiles; it is not a consumable published dependency or
 an approved #90 adapter. The registry never stores raw VCs,
 VPs, holder identifiers, or presentation activity.
 
+Preprod is the selected first public qualification target, with a
+governance-aligned threshold maintenance committee. The
+[administrator runbook](preprod-admin-qualification.md) is a stop-gated
+procedure, not evidence that the deployment or committee transition occurred.
+The [standalone offline-runtime plan](standalone-offline-runtime.md) separately
+requires online installation followed by an egress-denied, self-hosted local
+ledger and application journey. It is not satisfied by the simulator fixture
+or by Preprod results.
+
 Native non-Midnight DID methods, secp256k1/P-256/Ed25519 verification inside
 the Compact contract, transitive federation trust, a distributed API writer,
 live VC status verification, and synchronous deployed Ledger 8 cross-contract
