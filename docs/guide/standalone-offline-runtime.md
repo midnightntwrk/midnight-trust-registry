@@ -61,6 +61,20 @@ qualification result.
 
 ## Offline Runtime Boundary
 
+The repository includes `deploy/standalone/compose.yml` as an **isolated
+development smoke stack**, derived from a pinned `midnight-examples` revision.
+It uses arm64 image digests, separate `tr-standalone-local-smoke` volumes, an
+internal container network, and loopback ports 29944 (node), 28088 (indexer),
+and 26300 (proof server). Provision `TR_INDEXER_PASSWORD` and
+`TR_INDEXER_SECRET` in a private, untracked environment file before running
+`docker compose --env-file <private-env-file> -f deploy/standalone/compose.yml
+up -d --wait`. Never run `down -v` against a ledger whose history is evidence.
+The image digests identify upstream bytes, not an approved distribution
+channel. This Compose file does not start the Trust Registry API, portals,
+wallet, DID/VC/status authority, or egress-denial harness and does not close
+any release gate by itself. Validate that `/data` actually retains node and
+indexer state before using the volumes for restart/restore evidence.
+
 The local Midnight network uses network ID `undeployed`, not `preprod`. The
 upstream local-dev stack exposes node RPC, indexer, and proof-server services
 on loopback by default. Bind them to an isolated network, not public
