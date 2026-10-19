@@ -2073,6 +2073,11 @@ stops before a genesis pin can be recorded out of order.
 After preparation, both interactive and explicit genesis observation require
 the selected stack to have a recorded live topology and ledger-bridge egress
 observation first. The wizard never starts that stack implicitly.
+The first-run CLI can draft unsigned genesis and release-committee approval
+documents from observed setup pins plus public reviewer/custody metadata. It
+rejects a smoke-only 1-of-3 roster and writes private, non-overwriting draft
+files; independent review and detached human signatures still determine
+authority, and drafting never advances the approval state.
 New wizard stacks require a v3 install bundle pinning both base and offline
 Compose bytes as well as archived image references. V2 bundles remain readable
 for historical smoke evidence only; the runtime operator must use the verified

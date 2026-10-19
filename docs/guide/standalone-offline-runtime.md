@@ -399,8 +399,12 @@ docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-stan
 # After the operator starts the reviewed Compose plan, record live ledger-bridge checks:
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
-node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
-node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
+# A human reviewer independently checks and signs the exact unsigned draft bytes.
+node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/private/setup-directory/genesis-approval.unsigned.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
+node scripts/standalone-setup-wizard.mjs draft-committee /absolute/private/setup-directory /absolute/committee-review-metadata.json
+# Governance independently reviews the public keys, custody roles, and threshold before signing.
+node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/private/setup-directory/committee-approval.unsigned.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 # Re-read a reserved staged deployment without submitting, if first readback lagged:
 node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
@@ -444,6 +448,18 @@ stops until the operator starts the reviewed stack and explicitly requests
 `observe-stack`; the separate `observe` command refuses a genesis pin until
 that stack observation exists. This step does not approve
 genesis, attest actor egress, verify a contract readback, or qualify a release.
+
+`draft-genesis` accepts a JSON object with exactly `reviewerFingerprint` and
+`reviewedReference`. `draft-committee` accepts those fields plus
+`maintenancePolicy` and `custodians` in the approval shapes below. Both commands
+derive the source, install, and genesis binding from the private setup record;
+they create mode-0600 `*.unsigned.json` files in that directory without
+overwriting an earlier draft. The printed state is
+`unsigned-human-review-required`, not approval. Reviewers must independently
+verify the references, committee public keys, threshold, and custody records,
+then sign the **exact bytes** of the draft they accept. The operator passes that
+same file and detached signature to `approve-genesis` or `approve-committee`.
+The wizard does not create reviewer authority, private keys, or signatures.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
 match the installed source and observed genesis, and requires a detached

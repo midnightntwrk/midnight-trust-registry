@@ -11,6 +11,8 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 
 import {
   assertUnusedStandaloneProject,
+  draftStandaloneGenesisApproval,
+  draftStandaloneCommitteeApproval,
   approveStandaloneCommittee,
   approveStandaloneCommitteeDeployment,
   approveStandaloneCommitteeRecovery,
@@ -218,6 +220,75 @@ test("wizard records staged-byte verification but leaves RC gates open", async (
   assert.equal(status.maintenanceApproval, "pending");
   await writeFile(join(directory, ".setup.lock"), "interrupted");
   assert.equal((await standaloneSetupStatus(directory)).setupLock, "present-inspect-before-removal");
+});
+
+test("unsigned genesis draft binds observed bytes but does not approve them", async () => {
+  const f = await fixture();
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+  }), /Observe genesis before drafting/u);
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+    privateKey: "must-not-be-accepted",
+  }), /canonical reviewer fingerprint/u);
+  const result = await draftStandaloneGenesisApproval(f.directory, {
+    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+  });
+  assert.equal(result.state, "unsigned-human-review-required");
+  assert.equal((await lstat(result.path)).mode & 0o077, 0);
+  const bytes = await readFile(result.path);
+  const document = JSON.parse(bytes);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(document.installInventorySha256, record.install.inventorySha256);
+  assert.equal(document.pinSha256, record.ledgerObservation.pinSha256);
+  assert.equal(document.expectedGenesisHash, expectedGenesisHash);
+  assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(record.genesisApproval, undefined);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+  }), /EEXIST/u);
+  const approved = await approveStandaloneGenesis(f.directory, result.path, f.signaturePath,
+    f.keyring, reviewerFingerprint, { verifySignature: async () => {} });
+  assert.equal(approved.documentSha256, result.documentSha256);
+});
+
+test("unsigned committee draft requires an approved genesis and release-grade custody", async () => {
+  const f = await fixture();
+  const proposal = { reviewerFingerprint: governanceFingerprint,
+    reviewedReference: "governance-decision:local-release-committee" };
+  await assert.rejects(draftStandaloneCommitteeApproval(f.directory, proposal), /Approve genesis/u);
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await approve(f);
+  const { document } = await committeeDocument(f);
+  const releaseProposal = { ...proposal,
+    maintenancePolicy: document.maintenancePolicy, custodians: document.custodians };
+  await assert.rejects(draftStandaloneCommitteeApproval(f.directory, {
+    ...releaseProposal, maintenancePolicy: { ...document.maintenancePolicy, threshold: 1 },
+  }), /threshold/u);
+  await assert.rejects(draftStandaloneCommitteeApproval(f.directory, {
+    ...releaseProposal, custodians: document.custodians.map((entry) => ({ ...entry, holderRole: "shared" })),
+  }), /distinct holder roles/u);
+  const result = await draftStandaloneCommitteeApproval(f.directory, releaseProposal);
+  assert.equal(result.state, "unsigned-human-review-required");
+  assert.equal((await lstat(result.path)).mode & 0o077, 0);
+  const bytes = await readFile(result.path);
+  const draft = JSON.parse(bytes);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(draft.genesisApprovalSha256, record.genesisApproval.documentSha256);
+  assert.deepEqual(draft.maintenancePolicy, document.maintenancePolicy);
+  assert.deepEqual(draft.custodians, document.custodians);
+  assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(record.committeeApproval, undefined);
+  const approved = await approveStandaloneCommittee(f.directory, result.path,
+    join(f.directory, "committee-approval.sig"), f.keyring, governanceFingerprint,
+    { verifySignature: async () => {} });
+  assert.equal(approved.documentSha256, result.documentSha256);
+  assert.equal(approved.threshold, 2);
 });
 
 test("wizard prepares a private isolated stack without starting or approving it", async () => {

@@ -347,6 +347,101 @@ export async function verifyDetachedReviewerSignature(
   }
 }
 
+function reviewerProposal(proposal, fields) {
+  if (proposal === null || typeof proposal !== "object" || Array.isArray(proposal)
+    || Object.keys(proposal).sort().join("\0") !== fields.sort().join("\0")
+    || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
+    || typeof proposal.reviewedReference !== "string"
+    || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512) {
+    throw new Error("A canonical reviewer fingerprint and independent review reference are required");
+  }
+}
+
+export async function draftStandaloneGenesisApproval(directory, proposal) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.ledgerObservation || record.genesisApproval || record.deployment) {
+      throw new Error("Observe genesis before drafting its approval; do not replace an approved or reserved decision");
+    }
+    if (record.stack && !record.stack.observation) {
+      throw new Error("Observe the prepared local stack before drafting its genesis approval");
+    }
+    reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference"]);
+    const document = {
+      format: "tr-local-genesis-approval-v1",
+      sourceRevision: record.sourceRevision,
+      installInventorySha256: record.install.inventorySha256,
+      networkId: "undeployed",
+      pinSha256: record.ledgerObservation.pinSha256,
+      expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
+      rpcUrl: record.ledgerObservation.rpcUrl,
+      reviewerFingerprint: proposal.reviewerFingerprint,
+      reviewedReference: proposal.reviewedReference,
+      approvedAt: new Date().toISOString(),
+    };
+    const path = join(root, "genesis-approval.unsigned.json");
+    const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
+    await writePrivateSnapshot(path, bytes);
+    return { path, documentSha256: sha256(bytes), state: "unsigned-human-review-required" };
+  });
+}
+
+function validateReleaseCommittee(maintenancePolicy, custodians) {
+  if (maintenancePolicy === null || typeof maintenancePolicy !== "object"
+    || Array.isArray(maintenancePolicy)
+    || maintenancePolicy.mode !== "committee"
+    || !Array.isArray(maintenancePolicy.verifyingKeys)
+    || Object.keys(maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys") {
+    throw new Error("Release maintenance approval requires a canonical committee policy");
+  }
+  validateMaintenancePolicy(maintenancePolicy);
+  const keys = maintenancePolicy.verifyingKeys;
+  try {
+    new ContractMaintenanceAuthority(keys.map((key) => key.slice(2)), maintenancePolicy.threshold, 1n);
+  } catch {
+    throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
+  }
+  if (!Array.isArray(custodians) || custodians.length !== keys.length
+    || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)
+      || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
+      || entry.verifyingKey !== keys[index]
+      || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
+      || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8
+      || entry.custodyReference.length > 512)
+    || new Set(custodians.map((entry) => entry.holderRole)).size !== keys.length) {
+    throw new Error("Committee custody must bind distinct holder roles to every approved public key");
+  }
+}
+
+export async function draftStandaloneCommitteeApproval(directory, proposal) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.genesisApproval || record.committeeApproval || record.deployment) {
+      throw new Error("Approve genesis before drafting a committee; do not replace an approved or reserved roster");
+    }
+    reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference",
+      "maintenancePolicy", "custodians"]);
+    validateReleaseCommittee(proposal.maintenancePolicy, proposal.custodians);
+    const document = {
+      format: "tr-local-committee-approval-v1",
+      sourceRevision: record.sourceRevision,
+      installInventorySha256: record.install.inventorySha256,
+      genesisApprovalSha256: record.genesisApproval.documentSha256,
+      networkId: "undeployed",
+      expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
+      reviewerFingerprint: proposal.reviewerFingerprint,
+      reviewedReference: proposal.reviewedReference,
+      approvedAt: new Date().toISOString(),
+      maintenancePolicy: proposal.maintenancePolicy,
+      custodians: proposal.custodians,
+    };
+    const path = join(root, "committee-approval.unsigned.json");
+    const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
+    await writePrivateSnapshot(path, bytes);
+    return { path, documentSha256: sha256(bytes), state: "unsigned-human-review-required" };
+  });
+}
+
 async function verifiedApprovalEvidence(
   root, label, document, signature, keyringDirectory, expectedFingerprint, dependencies,
 ) {
@@ -461,33 +556,7 @@ export async function approveStandaloneCommittee(
       || approvedAt > Date.now() + 5 * 60_000) {
       throw new Error("Committee approval does not bind the approved install and genesis");
     }
-    if (approval.maintenancePolicy === null || typeof approval.maintenancePolicy !== "object"
-      || Array.isArray(approval.maintenancePolicy)
-      || approval.maintenancePolicy.mode !== "committee"
-      || !Array.isArray(approval.maintenancePolicy.verifyingKeys)
-      || Object.keys(approval.maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys") {
-      throw new Error("Release maintenance approval requires a canonical committee policy");
-    }
-    validateMaintenancePolicy(approval.maintenancePolicy);
-    const keys = approval.maintenancePolicy.verifyingKeys;
-    try {
-      new ContractMaintenanceAuthority(
-        keys.map((key) => key.slice(2)), approval.maintenancePolicy.threshold, 1n,
-      );
-    } catch {
-      throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
-    }
-    const custodians = approval.custodians;
-    if (!Array.isArray(custodians) || custodians.length !== keys.length
-      || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)
-        || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
-        || entry.verifyingKey !== keys[index]
-        || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
-        || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8
-        || entry.custodyReference.length > 512)
-      || new Set(custodians.map((entry) => entry.holderRole)).size !== keys.length) {
-      throw new Error("Committee custody must bind distinct holder roles to every approved public key");
-    }
+    validateReleaseCommittee(approval.maintenancePolicy, approval.custodians);
     const evidence = await verifiedApprovalEvidence(
       root, "committee", document, signature, keyringDirectory, expectedFingerprint, dependencies,
     );
@@ -496,7 +565,7 @@ export async function approveStandaloneCommittee(
       approvedAt: approval.approvedAt,
       reviewedReference: approval.reviewedReference,
       maintenancePolicy: approval.maintenancePolicy,
-      custodians,
+      custodians: approval.custodians,
     };
     await writeRecord(root, record);
     return {
@@ -504,7 +573,7 @@ export async function approveStandaloneCommittee(
       documentSha256: evidence.documentSha256,
       signatureSha256: evidence.signatureSha256,
       threshold: approval.maintenancePolicy.threshold,
-      committeeSize: keys.length,
+      committeeSize: approval.maintenancePolicy.verifyingKeys.length,
     };
   });
 }
@@ -1476,8 +1545,8 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -1488,8 +1557,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   else if (command === "observe-stack") console.log(JSON.stringify(await observeStandaloneStack(directory)));
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
+  else if (command === "draft-genesis" && input) {
+    const proposal = JSON.parse(await regularBytes(resolve(input)));
+    console.log(JSON.stringify(await draftStandaloneGenesisApproval(directory, proposal)));
+  }
   else if (command === "approve-genesis" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneGenesis(directory, input, signature, keyring, fingerprint)));
+  }
+  else if (command === "draft-committee" && input) {
+    const proposal = JSON.parse(await regularBytes(resolve(input)));
+    console.log(JSON.stringify(await draftStandaloneCommitteeApproval(directory, proposal)));
   }
   else if (command === "approve-committee" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneCommittee(directory, input, signature, keyring, fingerprint)));
