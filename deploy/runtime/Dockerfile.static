@@ -1,0 +1,11 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG ROLE
+ENV NODE_ENV=production TR_STATIC_ROLE=${ROLE}
+WORKDIR /app
+COPY public/ /app/public/
+COPY serve-static.mjs entrypoint.mjs /app/
+USER 1000:1000
+EXPOSE 4173
+CMD ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"]
