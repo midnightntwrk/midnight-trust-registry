@@ -67,8 +67,11 @@ workspace snapshot, HTTP `202`, nor a received evidence bundle is finality.
 No funded public deployment or independent network qualification has been
 performed. The deployment and checkpoint adapters are configurable, but they
 do not supply a wallet, node-finality proof, or operator approval. The current
-local status source is fixture-backed; the VC status-registry package is not
-yet a consumable published dependency. The registry never stores raw VCs,
+local status source is fixture-backed. The VC status-registry package exists
+only as a private reference-tier prototype and explicitly requires its
+authenticated-authority, accepted-root/non-membership, and trusted-time gates
+for supported status profiles; it is not a consumable published dependency or
+an approved #90 adapter. The registry never stores raw VCs,
 VPs, holder identifiers, or presentation activity.
 
 Native non-Midnight DID methods, secp256k1/P-256/Ed25519 verification inside
