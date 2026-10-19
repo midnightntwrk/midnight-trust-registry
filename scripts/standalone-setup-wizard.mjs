@@ -706,6 +706,7 @@ export async function prepareStandaloneCommitteeTransition(directory, requestPat
       threshold: prepared.threshold,
       expiresAt: prepared.expiresAt,
       dataToSignHex: `0x${Buffer.from(prepared.dataToSign).toString("hex")}`,
+      updateSha256: sha256(prepared.dataToSign),
       submission: "not-attempted",
     };
   });

@@ -192,8 +192,19 @@ export async function submitLocalNetworkCommitteeTransition(input: {
   signature: Signature;
   journal: FileMaintenanceTransitionJournal;
   providers: ContractProviders<RegistryContract>;
+  approvedUpdateSha256: string;
+  approvedFinalizedBlockHash: string;
 }): Promise<string> {
+  if (!/^[0-9a-f]{64}$/u.test(input.approvedUpdateSha256)
+    || !/^0x[0-9a-f]{64}$/u.test(input.approvedFinalizedBlockHash)
+    || /^0x0{64}$/u.test(input.approvedFinalizedBlockHash)) {
+    throw new Error("Approved local maintenance signing pins are invalid");
+  }
   const plan = await prepareLocalNetworkCommitteeTransition(input.approval);
+  if (plan.finalizedBlockHash !== input.approvedFinalizedBlockHash
+    || createHash("sha256").update(plan.dataToSign).digest("hex") !== input.approvedUpdateSha256) {
+    throw new Error("Fresh local maintenance plan disagrees with the approved signing request");
+  }
   const tx = plan.authorize(input.signature);
   return input.journal.executeOnce(plan, () => submitTxAsync(input.providers, { unprovenTx: tx }));
 }

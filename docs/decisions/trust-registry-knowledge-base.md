@@ -1980,3 +1980,8 @@ after signed roster approval and verified readback for every staged key.
 It returns the exact SDK data-to-sign and finalized image pin. These are
 mocked-provider/unit checks until a real deployment, external bootstrap
 signature, one-attempt submission, and finalized committee readback occur.
+The local maintenance submission API now requires the independently retained
+SHA-256 of those signable bytes and the finalized checkpoint hash. It re-reads
+the current image and rejects either mismatch before authorizing the signature
+or reserving a one-attempt journal. This guard does not itself wire submission
+into the wizard or qualify the local deployment.

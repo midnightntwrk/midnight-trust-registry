@@ -312,6 +312,7 @@ test("wizard prepares only a complete staged transition under the signed release
   });
   assert.equal(prepared.kind, "local-committee-transition-signing-request");
   assert.equal(prepared.dataToSignHex, "0x010203");
+  assert.equal(prepared.updateSha256, createHash("sha256").update(Uint8Array.from([1, 2, 3])).digest("hex"));
   assert.equal(prepared.currentAuthorityCounter, "2");
   assert.equal(prepared.submission, "not-attempted");
   assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,

@@ -465,7 +465,9 @@ release manifest, original staged receipt, and every per-key `verified`
 readback. The local finality reader then checks the complete current
 verifier-key image, bootstrap authority counter, approved 2-of-3-or-stronger
 committee, and governance pins before the wizard emits `dataToSignHex` with
-the finalized block hash and approval hashes. Neither the request nor its
+the `updateSha256`, finalized block hash, and approval hashes. Preserve these
+pins with the separately signed bytes: a later local submission must reject a
+fresh plan if either the update hash or finalized checkpoint differs. Neither the request nor its
 output contains a private key. The wizard does not yet accept a signature,
 reserve a maintenance transaction, or claim the transition occurred. Keep
 the bootstrap key under approved custody; do not use the public smoke wallet
