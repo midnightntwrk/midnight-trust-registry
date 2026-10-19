@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { open, lstat, mkdir, readFile, realpath, rename, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -18,6 +18,8 @@ import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protoc
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
+import { standaloneStackConfig } from "./check-standalone-topology.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -35,6 +37,7 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const execFileAsync = promisify(execFile);
+const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.yml");
 const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === "undeployed"
   && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
   && HASH.test(receipt.blockHash) && !/^0x0{64}$/u.test(receipt.blockHash)
@@ -118,6 +121,86 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   };
   await writeRecord(root, record);
   return record;
+}
+
+export async function assertUnusedStandaloneProject(project, command = execFileAsync) {
+  const options = { timeout: 10_000, maxBuffer: 1024 * 1024 };
+  const [containers, networks, volumes] = await Promise.all([
+    command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`], options),
+    command("docker", ["network", "ls", "--format", "{{.Name}}"], options),
+    command("docker", ["volume", "ls", "--format", "{{.Name}}"], options),
+  ]);
+  const names = (result) => result.stdout.trim().split("\n").filter(Boolean);
+  if (names(containers).length > 0 || names(networks).includes(`${project}_ledger`)
+    || names(volumes).includes(`${project}_node-data`)
+    || names(volumes).includes(`${project}_indexer-data`)) {
+    throw new Error("Selected local Compose project already has containers, a network, or persistent volumes");
+  }
+}
+
+export async function prepareStandaloneStack(directory, requested, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (record.stack || record.ledgerObservation || record.deployment) {
+      throw new Error("Stack configuration is already prepared or local-ledger observation has started");
+    }
+    if (!requested || typeof requested.project !== "string"
+      || typeof requested.nodePort !== "string"
+      || typeof requested.indexerPort !== "string"
+      || typeof requested.proofPort !== "string") {
+      throw new Error("An explicit local stack project and three loopback ports are required");
+    }
+    const config = standaloneStackConfig({
+      TR_STACK_NAME: requested.project,
+      COMPOSE_PROJECT_NAME: requested.project,
+      TR_NODE_PORT: requested.nodePort,
+      TR_INDEXER_PORT: requested.indexerPort,
+      TR_PROOF_PORT: requested.proofPort,
+    });
+    const inventoryBytes = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventoryBytes) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since setup verification");
+    }
+    const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    if (verified.sourceRevision !== record.sourceRevision) {
+      throw new Error("Verified install source revision changed");
+    }
+    const installedImages = JSON.parse(inventoryBytes).images;
+    const pinnedImages = pinnedStandaloneImages((await readFile(composePath)).toString("utf8"));
+    if (!Array.isArray(installedImages) || installedImages.length !== pinnedImages.length
+      || pinnedImages.some(({ role, reference }) => !installedImages.some((image) =>
+        image.role === role && image.reference === reference))) {
+      throw new Error("Current Compose images differ from the verified install bundle");
+    }
+    await (dependencies.assertProjectUnused ?? assertUnusedStandaloneProject)(config.project);
+    const proofDirectory = join(record.install.bundle, "proof-params");
+    if (!(await lstat(proofDirectory)).isDirectory()
+      || !/^[A-Za-z0-9_./ -]+$/u.test(proofDirectory)) {
+      throw new Error("Pinned proof-parameter path is not safe for a Compose environment file");
+    }
+    const envFile = join(root, "stack.env");
+    const envBytes = Buffer.from([
+      `TR_STACK_NAME=${config.project}`,
+      `COMPOSE_PROJECT_NAME=${config.project}`,
+      `TR_NODE_PORT=${config.ports.node}`,
+      `TR_INDEXER_PORT=${config.ports.indexer}`,
+      `TR_PROOF_PORT=${config.ports["proof-server"]}`,
+      `TR_PROOF_PARAMS_DIR=${JSON.stringify(proofDirectory)}`,
+      `TR_INDEXER_PASSWORD=${randomBytes(24).toString("hex")}`,
+      `TR_INDEXER_SECRET=${randomBytes(32).toString("hex")}`,
+      "",
+    ].join("\n"));
+    await writePrivateSnapshot(envFile, envBytes);
+    record.stack = {
+      project: config.project,
+      ports: config.ports,
+      envFileSha256: sha256(envBytes),
+      preparedAt: new Date().toISOString(),
+      state: "prepared-not-started",
+    };
+    await writeRecord(root, record);
+    return { project: config.project, ports: config.ports, envFile, state: record.stack.state };
+  });
 }
 
 export async function observeStandaloneLedger(directory, pinPath, dependencies = {}) {
@@ -1187,6 +1270,7 @@ export async function standaloneSetupStatus(directory) {
     format: FORMAT,
     sourceRevision: record.sourceRevision,
     install: "verified-staged-bytes-only",
+    stackConfiguration: record.stack?.state ?? "pending",
     localLedger: record.genesisApproval ? "operator-pinned-reviewer-signature-verified"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
@@ -1218,6 +1302,15 @@ async function interactive(directory) {
       record = await initializeStandaloneSetup(directory, bundle);
     }
     if (!record.ledgerObservation) {
+      if (!record.stack) {
+        const project = await io.question("New local Compose project (blank to defer): ");
+        if (project) {
+          const nodePort = await io.question("Unused node loopback port: ");
+          const indexerPort = await io.question("Unused indexer loopback port: ");
+          const proofPort = await io.question("Unused proof-server loopback port: ");
+          await prepareStandaloneStack(directory, { project, nodePort, indexerPort, proofPort });
+        }
+      }
       const pin = await io.question("Candidate local genesis pin JSON (blank to stop): ");
       if (pin) await observeStandaloneLedger(directory, pin);
     }
@@ -1269,11 +1362,16 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
+  else if (command === "prepare-stack" && input && signature && keyring && fingerprint) {
+    console.log(JSON.stringify(await prepareStandaloneStack(directory, {
+      project: input, nodePort: signature, indexerPort: keyring, proofPort: fingerprint,
+    })));
+  }
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "approve-genesis" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneGenesis(directory, input, signature, keyring, fingerprint)));

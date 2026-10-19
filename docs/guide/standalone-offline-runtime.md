@@ -378,6 +378,9 @@ each installation; do not reuse a prior attempt's directory:
 node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
 # Or run each step separately for an auditable operator session:
 node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
+node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup-directory tr-standalone-local-qualification 39944 38088 36300
+# Review the selected project, loopback ports, and distinct volumes before starting it:
+docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f deploy/standalone/compose.yml config -q
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
@@ -398,6 +401,20 @@ node scripts/standalone-setup-wizard.mjs submit-committee /absolute/private/setu
 node scripts/standalone-setup-wizard.mjs reconcile-committee /absolute/private/setup-directory /absolute/committee-transition-request.json /absolute/committee-signing-request.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
+
+`prepare-stack` re-verifies the install bundle, requires its pinned image
+references to match the current Compose file, and creates a mode-0600
+`stack.env` with fresh random indexer credentials and the bundle's checked
+proof-parameter path. Its output and setup record omit the credentials. It
+does not start Compose. It refuses a project with existing containers, ledger
+network, or node/indexer volumes; the operator must still confirm that the
+loopback ports are unused before `up` and keep the Docker context unchanged.
+Export the selected project and
+port variables in the shell when running topology and egress checks; Compose's
+`--env-file` alone does not configure those separate processes. Keep the
+private file for restart and restore, and do not reuse it for another ledger.
+An older verified bundle can be used for development smoke, but only a bundle
+built from the chosen release source revision can support RC qualification.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
 match the installed source and observed genesis, and requires a detached

@@ -2055,6 +2055,15 @@ The new genesis and first-run approvals remain independent. A rendered Compose
 plan or healthy containers do not count as deployment, offline actor-journey,
 or restore evidence.
 
+The first-run wizard now prepares a private Compose environment from a
+re-verified install bundle. It binds the selected project and loopback ports,
+checks the current Compose image pins and the absence of existing project
+containers, network, and persistent volumes, and generates fresh indexer credentials
+without printing them or storing them in the public setup record. This is
+configuration preparation only: an operator still checks that the project and
+ports are unused, starts the stack, approves the independently observed
+genesis, and collects actual finalized deployment and offline-journey evidence.
+
 The first-run release committee roster is approved before deployment and
 therefore cannot itself name the actual contract. A separate detached
 governance approval after staged finalized readback now binds the roster hash,

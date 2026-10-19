@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- prepare a private first-run standalone Compose environment from a verified
+  install bundle without starting the ledger or advancing release approvals
 - allow a separate named local qualification Compose project with distinct
   loopback ports and volumes, while topology and egress checks verify the
   selected project and reject public or unexpected port bindings

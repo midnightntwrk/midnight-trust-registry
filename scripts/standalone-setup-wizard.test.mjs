@@ -10,6 +10,7 @@ import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact
 import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
+  assertUnusedStandaloneProject,
   approveStandaloneCommittee,
   approveStandaloneCommitteeDeployment,
   approveStandaloneCommitteeRecovery,
@@ -18,6 +19,7 @@ import {
   attemptStandaloneVerifierKeyInsertion,
   initializeStandaloneSetup,
   observeStandaloneLedger,
+  prepareStandaloneStack,
   prepareStandaloneCommitteeTransition,
   reconcileStandaloneCommitteeTransition,
   reconcileStandaloneDeployment,
@@ -26,6 +28,7 @@ import {
   submitStandaloneCommitteeTransition,
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
+import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 
 const sourceRevision = "a".repeat(40);
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
@@ -66,8 +69,11 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tr-wizard-test-"));
   const bundle = join(root, "bundle");
   await mkdir(bundle);
-  await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision, packageManifest: "release-manifest.json" }));
+  const images = pinnedStandaloneImages(await readFile(new URL("../deploy/standalone/compose.yml", import.meta.url), "utf8"));
+  await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
+    packageManifest: "release-manifest.json", images }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
+  await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision }));
   const directory = join(root, "private-setup");
@@ -107,6 +113,9 @@ async function approve(f) {
     } },
   );
 }
+
+const stackDependencies = (f) => ({ verifyBundle: f.verifyBundle,
+  assertProjectUnused: async () => {} });
 
 async function committeeDocument(f, overrides = {}) {
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
@@ -194,6 +203,76 @@ test("wizard records staged-byte verification but leaves RC gates open", async (
   assert.equal(status.maintenanceApproval, "pending");
   await writeFile(join(directory, ".setup.lock"), "interrupted");
   assert.equal((await standaloneSetupStatus(directory)).setupLock, "present-inspect-before-removal");
+});
+
+test("wizard prepares a private isolated stack without starting or approving it", async () => {
+  const f = await fixture();
+  const requested = { project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" };
+  const result = await prepareStandaloneStack(f.directory, requested, stackDependencies(f));
+  assert.equal(result.project, requested.project);
+  assert.equal(result.state, "prepared-not-started");
+  assert.equal((await lstat(result.envFile)).mode & 0o077, 0);
+  const env = await readFile(result.envFile, "utf8");
+  assert.match(env, /TR_STACK_NAME=tr-standalone-local-qualification/u);
+  assert.match(env, /TR_NODE_PORT=39944/u);
+  assert.match(env, /TR_PROOF_PARAMS_DIR=".*\/proof-params"/u);
+  assert.match(env, /TR_INDEXER_PASSWORD=[0-9a-f]{48}/u);
+  assert.match(env, /TR_INDEXER_SECRET=[0-9a-f]{64}/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.stack.state, "prepared-not-started");
+  assert.ok(!JSON.stringify(record).includes(env.match(/TR_INDEXER_SECRET=([0-9a-f]{64})/u)[1]));
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.stackConfiguration, "prepared-not-started");
+  assert.equal(status.localLedger, "pending");
+  assert.equal(status.releaseQualified, false);
+  await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
+    /already prepared/u);
+});
+
+test("wizard rejects unsafe stack names, reused ports, and changed install bytes", async () => {
+  const f = await fixture();
+  const requested = { project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" };
+  await assert.rejects(prepareStandaloneStack(f.directory, { ...requested,
+    project: "mn-passport-sdk-localnet" }, stackDependencies(f)), /namespace/u);
+  await assert.rejects(prepareStandaloneStack(f.directory, { ...requested,
+    proofPort: "39944" }, stackDependencies(f)), /distinct/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const inventoryPath = join(record.install.bundle, "install-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  inventory.images[0].reference = `midnightntwrk/test@sha256:${"f".repeat(64)}`;
+  await writeFile(inventoryPath, JSON.stringify(inventory));
+  await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
+    /inventory changed/u);
+  record.install.inventorySha256 = createHash("sha256")
+    .update(await readFile(inventoryPath)).digest("hex");
+  await writeFile(join(f.directory, "setup-record.json"), JSON.stringify(record));
+  await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
+    /Compose images differ/u);
+  await assert.rejects(lstat(join(f.directory, "stack.env")), { code: "ENOENT" });
+});
+
+test("wizard refuses a Compose project with existing containers or persistent resources", async () => {
+  const project = "tr-standalone-local-qualification";
+  const results = [
+    { role: 0, existing: "container-id\n" },
+    { role: 1, existing: `${project}_ledger\n` },
+    { role: 2, existing: `${project}_node-data\n` },
+    { role: 2, existing: `${project}_indexer-data\n` },
+  ];
+  for (const { role: selectedRole, existing } of results) {
+    let calls = 0;
+    await assert.rejects(assertUnusedStandaloneProject(project, async (_program, args) => {
+      const role = args[0] === "ps" ? 0 : args[0] === "network" ? 1 : 2;
+      calls += 1;
+      return { stdout: role === selectedRole ? existing : "" };
+    }), /already has/u);
+    assert.equal(calls, 3);
+  }
+  await assert.doesNotReject(assertUnusedStandaloneProject(project,
+    async (_program, args) => ({ stdout: args[0] === "volume"
+      ? "other-project_node-data\n" : "" })));
 });
 
 test("an observed submission is still not a finalized or release-qualified deployment", async () => {
