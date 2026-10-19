@@ -23,9 +23,8 @@ are complete, compares represented record fields, and verifies each included
 evidence bundle against its Compact epoch and publication signer. It does not
 authenticate the checkpoint or prove that off-chain metadata, request-scope
 preimages, DID/VC status authority, or a historical archive is complete. The
-current CLI still serves snapshot/workspace sources only; these checks are not
-wired to a release-qualified API mode, and simulator tests are not deployment
-evidence.
+CLI now has a separate guarded, read-only local-ledger mode, but simulator
+tests are not deployment evidence and this mode is not yet release-qualified.
 
 `createLocalLedgerBoundSource` can be injected into the HTTP server for
 read-only queries. It requires a pinned local-deployment address, a reader that
@@ -35,10 +34,41 @@ genesis, an independently approved SHA-256 digest of the exact snapshot file
 sequences to timestamps.
 It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
-approved digest or the finalized Compact projection. The CLI does not
-construct these trust inputs. This injectable source has only test-double
-coverage so far; it is not proof of a real local-ledger deployment, finalized
-readback, offline actor journey, or 0.1.0 release qualification.
+approved digest or the finalized Compact projection. The CLI constructs these
+inputs from an operator-signed runtime plan and the local checkpoint/indexer
+reader. This source still has only simulator and test-double coverage, not
+proof of a real local-ledger deployment, finalized readback, offline actor
+journey, or 0.1.0 release qualification.
+
+For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v1`
+JSON plan. The operator supplies the exact plan, detached signature, a private
+public-key keyring, and the out-of-band approved signing-key fingerprint:
+
+```sh
+trust-registry-api serve \
+  --local-ledger-plan /run/trust-registry/api-plan.json \
+  --local-ledger-signature /run/trust-registry/api-plan.sig \
+  --local-ledger-keyring /run/trust-registry/reviewer-keyring \
+  --local-ledger-reviewer '<approved-40-character-GPG-signing-key-fingerprint>' \
+  --host 127.0.0.1 --port 4400
+```
+
+The plan pins `undeployed`, the source revision, absolute install-inventory,
+release-manifest and snapshot paths plus their SHA-256 digests, nonzero approved
+genesis and contract hashes, exact local RPC/indexer endpoints and allowed
+hosts, and a nonempty governance-sequence-to-UTC-timestamp map. The CLI checks
+the detached signature and install bytes, constructs the pinned local reader,
+and requires a successful finalized Compact readback and snapshot match before
+listening. Every query rechecks the snapshot digest and finalized projection;
+missing sequence timestamps fail closed. File-backed snapshot/workspace mode
+cannot be combined with local-ledger mode, and demo mutations are forbidden.
+
+The signed map is an operator attestation, not proof that timestamps were
+derived from authenticated ledger history. The plan's `sourceRevision` is not
+yet bound to a reviewed running API image. No live local deployment, signer
+journey, DID/VC/status authority, egress-denied browser flow, or restart/restore
+test has been completed through this CLI. Do not expose it as the 0.1.0 RC API
+until those independent gates and the first-run approval workflow are complete.
 
 Current route set:
 

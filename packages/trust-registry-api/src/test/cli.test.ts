@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { parseTrustRegistryApiCliArgs } from "../cli.js";
 
 describe("API CLI binding", () => {
+  const localArgs = ["serve", "--local-ledger-plan", "/run/api-plan.json",
+    "--local-ledger-signature", "/run/api-plan.sig",
+    "--local-ledger-keyring", "/run/keyring",
+    "--local-ledger-reviewer", "A".repeat(40)];
+
+  it("requires complete local reviewer evidence and never combines local mode with demo files", () => {
+    expect(parseTrustRegistryApiCliArgs(localArgs).localLedgerPlanPath).toBe("/run/api-plan.json");
+    for (const args of [
+      ["serve", "--local-ledger-plan", "/run/api-plan.json"],
+      [...localArgs, "--snapshot", "fixture.json"],
+      [...localArgs, "--workspace", "workspace.json"],
+      [...localArgs, "--unsafe-demo-mutations"],
+      ["serve", "--snapshot", "fixture.json", "--local-ledger-signature", "/run/api-plan.sig"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

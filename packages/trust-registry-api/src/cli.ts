@@ -4,14 +4,21 @@ import {
   createSnapshotFileSource,
   createWorkspaceFileSource,
 } from "./source.js";
+import {
+  createApprovedLocalLedgerRuntimeSource,
+  loadApprovedLocalLedgerRuntimePlan,
+} from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
 
 const HELP_TEXT = `Usage:
-  trust-registry-api serve (--snapshot PATH | --workspace PATH) [--host HOST] [--port PORT] [--unsafe-demo-mutations]
+  trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
+    [--local-ledger-signature PATH --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT]
+    [--unsafe-demo-mutations]
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
   trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
+  trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567
 `;
 
 export type TrustRegistryApiCliOptions = {
@@ -19,6 +26,10 @@ export type TrustRegistryApiCliOptions = {
   port: number;
   snapshotPath?: string;
   workspacePath?: string;
+  localLedgerPlanPath?: string;
+  localLedgerSignaturePath?: string;
+  localLedgerKeyringDirectory?: string;
+  localLedgerReviewerFingerprint?: string;
   unsafeDemoMutations?: boolean;
 };
 
@@ -74,6 +85,20 @@ export const parseTrustRegistryApiCliArgs = (
         options.workspacePath = workspacePath;
         break;
       }
+      case "--local-ledger-plan":
+      case "--local-ledger-signature":
+      case "--local-ledger-keyring":
+      case "--local-ledger-reviewer": {
+        const value = args.shift();
+        if (value === undefined || value.length === 0) {
+          throw new Error(`${arg} requires a value\n\n${HELP_TEXT}`);
+        }
+        if (arg === "--local-ledger-plan") options.localLedgerPlanPath = value;
+        if (arg === "--local-ledger-signature") options.localLedgerSignaturePath = value;
+        if (arg === "--local-ledger-keyring") options.localLedgerKeyringDirectory = value;
+        if (arg === "--local-ledger-reviewer") options.localLedgerReviewerFingerprint = value;
+        break;
+      }
       case "--unsafe-demo-mutations":
         options.unsafeDemoMutations = true;
         break;
@@ -85,16 +110,18 @@ export const parseTrustRegistryApiCliArgs = (
     }
   }
 
-  if (
-    (options.snapshotPath === undefined && options.workspacePath === undefined)
-    || (
-      options.snapshotPath !== undefined
-      && options.workspacePath !== undefined
-    )
-  ) {
+  if ([options.snapshotPath, options.workspacePath, options.localLedgerPlanPath]
+    .filter((value) => value !== undefined).length !== 1) {
     throw new Error(
-      `exactly one of --snapshot or --workspace is required\n\n${HELP_TEXT}`,
+      `exactly one of --snapshot, --workspace, or --local-ledger-plan is required\n\n${HELP_TEXT}`,
     );
+  }
+  const localEvidence = [options.localLedgerSignaturePath, options.localLedgerKeyringDirectory,
+    options.localLedgerReviewerFingerprint];
+  if (options.localLedgerPlanPath !== undefined
+    ? localEvidence.some((value) => value === undefined) || options.unsafeDemoMutations === true
+    : localEvidence.some((value) => value !== undefined)) {
+    throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
     throw new Error(`invalid port: ${String(options.port)}\n\n${HELP_TEXT}`);
@@ -116,8 +143,19 @@ export const runTrustRegistryApiCli = async (
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<void> => {
   const options = parseTrustRegistryApiCliArgs(argv);
-  const source =
-    options.snapshotPath !== undefined
+  const source = options.localLedgerPlanPath !== undefined
+    ? await (async () => {
+      const plan = await loadApprovedLocalLedgerRuntimePlan({
+        planPath: options.localLedgerPlanPath!,
+        signaturePath: options.localLedgerSignaturePath!,
+        keyringDirectory: options.localLedgerKeyringDirectory!,
+        reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      });
+      const localSource = await createApprovedLocalLedgerRuntimeSource(plan);
+      await localSource.loadSnapshot();
+      return localSource;
+    })()
+    : options.snapshotPath !== undefined
       ? createSnapshotFileSource(options.snapshotPath)
       : createWorkspaceFileSource(options.workspacePath!);
 
