@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - prepare a private first-run standalone Compose environment from a verified
   install bundle and record explicit ledger-bridge topology/egress observations
   without advancing deployment or release approvals
+- document a nonconflicting, selected-project installation relay for concurrent
+  local stacks; it must be removed before offline runtime qualification
 - allow a separate named local qualification Compose project with distinct
   loopback ports and volumes, while topology and egress checks verify the
   selected project and reject public or unexpected port bindings

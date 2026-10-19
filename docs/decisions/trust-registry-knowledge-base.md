@@ -2066,6 +2066,9 @@ genesis, and collects actual finalized deployment and offline-journey evidence.
 The explicit observation step records live topology and canary egress checks
 for that selected ledger bridge without implying that the full actor stack is
 offline or that a contract has been deployed.
+The host access relay is installation-only and must attach to the selected
+project with distinct loopback host ports; the original smoke relay recipe
+cannot be reused unchanged for a concurrent qualification project.
 
 The first-run release committee roster is approved before deployment and
 therefore cannot itself name the actual contract. A separate detached
