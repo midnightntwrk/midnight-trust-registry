@@ -152,6 +152,10 @@ Current coverage:
   metadata outside the signed authorization leaf and must not be treated as
   authenticated status-policy evidence. The VC scope is derived from the
   verified registry scope, never supplied as a separate caller-selected hash.
+  An issuer VC signer candidate requires an active grant for the exact `schema`
+  resource; a credential-family, schema-version, definition, or status-method
+  grant is not implicitly delegated to that schema. Withdrawal of the selected
+  schema grant prevents a new active descriptor.
   Issuer package and schema IDs are SHA-256 of respectively
   `tr:vc-schema-package:v1:` plus the exact family ID and
   `tr:vc-schema-id:v1:` plus the exact schema ID. Only `major.minor.0` with

@@ -29,7 +29,7 @@ import {
   verifyMaintainerProposalEvidenceSignature,
   verifyVerifierProposalEvidenceSignature,
 } from "../contracts/trust-registry/dist/index.js";
-import { AuthorizationStatus } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
+import { AuthorizationStatus, IssuerResourceType } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
 import { createMaintainerFixture } from "../contracts/trust-registry/dist/testing.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import {
@@ -624,7 +624,7 @@ const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo
 const second = createMaintainerScenarioFixture("governed-demo-second");
 const third = createMaintainerScenarioFixture("governed-demo-third");
 const candidate = createMaintainerScenarioFixture("governed-demo-candidate");
-const issuer = createIssuerScenarioFixture("governed-demo-issuer");
+const issuer = createIssuerScenarioFixture("governed-demo-issuer", IssuerResourceType.schema);
 const verifier = createVerifierScenarioFixture("governed-demo-verifier");
 const auditor = createAuditorScenarioFixture("governed-demo-auditor");
 const recognitionAuthoritySeed = new Uint8Array(32).fill(116);
@@ -878,7 +878,7 @@ const applicantSpecs = [
     id: issuer.authorizationId,
     subjectDid: issuer.subjectDid,
     scope: createIssuerAuthorizationScopeFixture(issuer),
-    governedResource: { type: "credentialFamily", id: issuer.resourceId },
+    governedResource: { type: "schema", id: issuer.resourceId },
   },
   {
     role: "verifier",
