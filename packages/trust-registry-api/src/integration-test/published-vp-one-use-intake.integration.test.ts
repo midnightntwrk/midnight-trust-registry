@@ -96,14 +96,12 @@ describe("published VP proof through one-use application intake", () => {
     const retired = createMidnightDidResolver([
       createMidnightDidLedgerFixture(verifierDid, { verificationMethodId: "assertion-2" }),
     ]);
-    const signer = {
-      ...fixture.signer,
-      signCommitment: async (keyId: Uint8Array, commitment: Uint8Array) => {
-        const signature = await fixture.signer.signCommitment(keyId, commitment);
-        vi.spyOn(fixture.input.resolver, "resolveResult").mockImplementation((did) => retired.resolveResult(did));
-        return signature;
-      },
-    };
+    const signCommitment = vi.fn(async (keyId: Uint8Array, commitment: Uint8Array) => {
+      const signature = await fixture.signer.signCommitment(keyId, commitment);
+      vi.spyOn(fixture.input.resolver, "resolveResult").mockImplementation((did) => retired.resolveResult(did));
+      return signature;
+    });
+    const signer = { ...fixture.signer, signCommitment };
     const ports = await createApplicationVpIntakePorts({
       resolver: fixture.input.resolver,
       family: fixture.input.family,
@@ -122,7 +120,8 @@ describe("published VP proof through one-use application intake", () => {
       authorizedVerifiers: [{ did: signer.did, keyIds: [signer.keyId], algorithms: ["jubjub-schnorr" as const] }],
       evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
       propose,
-    })).rejects.toThrow();
+    })).rejects.toThrow(/Verification method is absent from the DID document: #assertion-1/u);
+    expect(signCommitment).toHaveBeenCalledOnce();
     expect(propose).not.toHaveBeenCalled();
   });
 });
