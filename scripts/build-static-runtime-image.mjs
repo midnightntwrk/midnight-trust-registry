@@ -20,7 +20,7 @@ const roles = {
 
 export function validateStaticImageInput(role, baseImage, platform, outputDirectory,
   expectedSourceRevision, approvedSignerFingerprint) {
-  if (!(role in roles) || !DIGEST_IMAGE.test(baseImage)
+  if (!Object.hasOwn(roles, role) || !DIGEST_IMAGE.test(baseImage)
     || !["linux/arm64", "linux/amd64"].includes(platform)
     || typeof outputDirectory !== "string" || !outputDirectory.startsWith("/")
     || !REVISION.test(expectedSourceRevision)
@@ -30,9 +30,10 @@ export function validateStaticImageInput(role, baseImage, platform, outputDirect
   }
 }
 
-function run(command, args, { capture = false, cwd = root } = {}) {
+function run(command, args, { capture = false, cwd = root, env = process.env } = {}) {
   const result = spawnSync(command, args, {
     cwd,
+    env,
     encoding: "utf8",
     stdio: capture ? "pipe" : "inherit",
   });
@@ -40,6 +41,44 @@ function run(command, args, { capture = false, cwd = root } = {}) {
     throw new Error(`${command} failed${capture ? `: ${result.stderr?.trim() ?? ""}` : ""}`);
   }
   return result.stdout?.trim() ?? "";
+}
+
+function cleanBuildEnvironment() {
+  const allowed = ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"];
+  const env = Object.fromEntries(allowed.filter((key) => process.env[key] !== undefined)
+    .map((key) => [key, process.env[key]]));
+  return { ...env, CI: "true", TURBO_TELEMETRY_DISABLED: "1" };
+}
+
+export function assertApprovedSourceEvidence(evidence, expectedRevision, approvedSignerFingerprint) {
+  if (evidence.revision !== expectedRevision || evidence.status !== "") {
+    throw new Error("Static image build requires a clean source revision");
+  }
+  if (!evidence.validSignature) {
+    throw new Error("Source revision must have a valid OpenPGP signature");
+  }
+  const verifiedFingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/mu.exec(evidence.verificationOutput)?.[1];
+  if (verifiedFingerprint !== approvedSignerFingerprint) {
+    throw new Error("Source revision signature does not match the approved signer");
+  }
+  if (!/^Signed-off-by: .+ <[^<>]+>$/mu.test(evidence.message)) {
+    throw new Error("Static image build requires a DCO-signed source revision");
+  }
+  return verifiedFingerprint;
+}
+
+export function assertNoExportAttributes(attributesOutput) {
+  const fields = attributesOutput.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (fields.length % 3 !== 0) throw new Error("Malformed Git attribute output");
+  for (let index = 0; index < fields.length; index += 3) {
+    if (!["export-ignore", "export-subst"].includes(fields[index + 1])
+      || fields[index + 2] !== "unspecified") {
+      throw new Error(`Unsigned or export-modifying Git attribute for ${fields[index]}`);
+    }
+  }
 }
 
 async function fileSha256(path) {
@@ -83,23 +122,20 @@ export async function buildStaticRuntimeImage(input) {
   validateStaticImageInput(input.role, input.baseImage, input.platform, input.outputDirectory,
     input.expectedSourceRevision, input.approvedSignerFingerprint);
   const revision = run("git", ["rev-parse", "HEAD"], { capture: true });
-  if (revision !== input.expectedSourceRevision
-    || run("git", ["status", "--porcelain", "--untracked-files=all"], { capture: true }) !== "") {
-    throw new Error("Static image build requires a clean source revision");
-  }
+  const status = run("git", ["status", "--porcelain", "--untracked-files=all"], { capture: true });
   const verification = spawnSync("git", ["-c", "gpg.program=gpg", "-c", "gpg.format=openpgp",
-    "verify-commit", "--raw", "HEAD"], { cwd: root, encoding: "utf8" });
-  if (verification.status !== 0 || verification.error) {
-    throw new Error("Source revision must have a valid OpenPGP signature");
-  }
-  const verificationOutput = `${verification.stdout ?? ""}\n${verification.stderr ?? ""}`;
-  const verifiedFingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/mu.exec(verificationOutput)?.[1];
-  if (verifiedFingerprint !== input.approvedSignerFingerprint) {
-    throw new Error("Source revision signature does not match the approved signer");
-  }
-  if (!/^Signed-off-by: .+ <[^<>]+>$/mu.test(run("git", ["show", "-s", "--format=%B", "HEAD"], { capture: true }))) {
-    throw new Error("Static image build requires a DCO-signed source revision");
-  }
+    "verify-commit", "--raw", revision], { cwd: root, encoding: "utf8" });
+  const verifiedFingerprint = assertApprovedSourceEvidence({
+    revision,
+    status,
+    validSignature: verification.status === 0 && !verification.error,
+    verificationOutput: `${verification.stdout ?? ""}\n${verification.stderr ?? ""}`,
+    message: run("git", ["show", "-s", "--format=%B", revision], { capture: true }),
+  }, input.expectedSourceRevision, input.approvedSignerFingerprint);
+  const trackedPaths = run("git", ["ls-tree", "-r", "--name-only", "-z", revision],
+    { capture: true }).split("\0").filter(Boolean);
+  assertNoExportAttributes(run("git", ["check-attr", "-z", "export-ignore", "export-subst",
+    "--", ...trackedPaths], { capture: true }));
   const temporary = await mkdtemp(join(tmpdir(), `tr-static-${input.role}-`));
   try {
     const source = join(temporary, "source");
@@ -109,8 +145,10 @@ export async function buildStaticRuntimeImage(input) {
     const archive = join(temporary, "source.tar");
     run("git", ["archive", "--format=tar", "--output", archive, revision]);
     run("tar", ["-xf", archive, "-C", source]);
-    run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source });
-    run("pnpm", ["exec", "turbo", "run", "build:light", "--filter", roles[input.role]], { cwd: source });
+    const env = cleanBuildEnvironment();
+    run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source, env });
+    run("pnpm", ["exec", "turbo", "run", "build:light", "--filter", roles[input.role],
+      "--cache=local:w,remote:"], { cwd: source, env });
     const dist = join(source, "packages",
       `trust-registry-${input.role === "admin" ? "admin-console" : "applicant-portal"}`, "dist");
     const selectedAssets = await staticAssetManifest(dist);
