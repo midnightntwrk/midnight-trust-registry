@@ -1863,3 +1863,16 @@ changes, generate a new bundle from the final clean signed commit. A
 release-qualified install additionally needs pinned local DID, VC/status,
 API/browser and wallet components, an independently approved install
 manifest, and an offline restart with egress denied.
+
+### First-run setup wizard boundary
+
+The initial local setup CLI verifies the staged bundle, records a progressing
+local node observation against an operator-supplied genesis pin, and reserves
+one deployment attempt before entering the existing deployment adapter. Its
+private, resumable record refuses another attempt after reservation, including
+an unknown SDK outcome. The status report deliberately leaves independent
+genesis/committee approval, offline actor journeys, restore, and security
+review pending. This is workflow scaffolding, not live deployment evidence;
+the smoke wallet and 1-of-3 committee remain development-only. Next work is
+to bind independently approved first-setup decisions and a real provider to
+this workflow, then capture finalized deployment and offline evidence.

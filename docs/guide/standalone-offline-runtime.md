@@ -262,6 +262,38 @@ private journal and finalized local chain, then obtain a human recovery
 decision. The accompanying unit tests mock providers and do not constitute
 local deployment or offline qualification evidence.
 
+### First-run setup wizard (initial slice)
+
+The local CLI wraps the existing install verifier, genesis preflight, and
+one-attempt deployment entry point. Create a **new private directory** for
+each installation; do not reuse a prior attempt's directory:
+
+```sh
+node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
+# Or run each step separately for an auditable operator session:
+node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
+node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/approved-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
+```
+
+The wizard verifies staged bytes, checks that the pin and deployment plan
+match the installed source and observed genesis, and saves a mode-0600 setup
+record in a mode-0700 directory. It reserves a deployment attempt **before**
+calling the provider. If the process exits, the provider fails, or the receipt
+is unclear, do not invoke `deploy` again against that setup; inspect the
+deployment journal and finalized chain, then obtain a human recovery decision.
+The wizard does not generate or approve a genesis hash, provider module,
+funded wallet, committee roster, threshold, or key custody. A public local
+genesis wallet and 1-of-3 committee are permitted only for a development
+smoke, never as RC approval. Independent genesis and final committee approvals
+must be collected during first setup from the responsible humans, not inferred
+from the node's own response or a typed acknowledgement. Later wizard slices
+must bind those approvals to the evidence record and execute finalized
+maintenance readback, offline actor journeys, and recovery qualification.
+`status` deliberately keeps these gates pending even if deployment returns a
+receipt; it does not produce a release-qualified verdict.
+
 The dedicated internal Docker network used in development does not expose its
 configured loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
