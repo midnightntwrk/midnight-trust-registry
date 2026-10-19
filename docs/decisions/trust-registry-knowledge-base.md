@@ -2090,9 +2090,12 @@ for historical smoke evidence only; the runtime operator must use the verified
 bundle copies, not mutable checkout files.
 Wizard-driven stack observation matches the running indexer credentials and
 proof-cache bind source against the prepared private environment without
-recording secret values. It also rejects extra mounts and privileged services.
-This is still ledger-bridge topology evidence, not full actor egress or
-contract deployment evidence.
+recording secret values. For v3, it additionally matches running image IDs
+to the checked archives and Docker Compose's recorded config-file paths to
+the verified bundle; source-scoped offline tags require all three services
+and the two-file overlay. It also rejects extra mounts and privileged services.
+These are ledger-bridge observations, not proof of a clean-host install,
+packet-level egress denial, full actor journeys, or contract deployment.
 The host access relay is installation-only and must attach to the selected
 project with distinct loopback host ports; the original smoke relay recipe
 cannot be reused unchanged for a concurrent qualification project.
