@@ -49,10 +49,13 @@ event hash of any outstanding reservation would exceed the byte limit.
 authorization IDs or evidence commitments. An operator should alert before
 either writable limit or the 64-archive limit is reached.
 
-Under the journal lock, `rotateObserved()` copies only `observed` attempts to
-an immutable segment and keeps every `reserved` or `submitted` attempt in a
-new writable segment. It syncs the segments before atomically replacing the
-manifest. A crash before the manifest replacement leaves unreferenced files,
+Under the journal lock, `rotateObserved(readFinalized)` rechecks every
+`observed` attempt against the supplied independently authenticated finalized
+reader. A missing or conflicting observation stops rotation without changing
+the journal. It then copies only those attempts to a write-once segment and
+keeps every `reserved` or `submitted` attempt in a new writable segment. It
+syncs the segments before atomically replacing the manifest. A crash before
+the manifest replacement leaves unreferenced files,
 not a new authorization to submit. A crash afterward uses the committed
 manifest; missing, altered, duplicate, or non-observed archived records fail
 closed. Every lookup and write searches archived IDs as well as the writable
@@ -66,7 +69,7 @@ Local operator procedure:
    manifest, every referenced segment, and any unresolved original journal.
 2. Check `inspectCapacity()` and reconcile pending attempts against an
    independently authenticated finalized reader. Do not retry absent records.
-3. Call `rotateObserved()` under the same journal path, then reopen the journal
+3. Call `rotateObserved(readFinalized)` under the same journal path, then reopen the journal
    and confirm that archived IDs remain non-submittable and pending IDs retain
    their previous state. Resume submissions only after that check passes.
 4. If startup fails, stop submissions and restore the complete backup set;

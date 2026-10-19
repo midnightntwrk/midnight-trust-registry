@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-15
+Updated: 2026-10-19
 
 ## Purpose
 
@@ -11,6 +11,24 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 19 2026 Local Journal Recovery Checkpoint
+
+- The unpublished `codex/trust-registry-proposal-journal-recovery` branch adds
+  operator-triggered rotation for the private proposal journal. Observed
+  attempts move to bounded, digest-checked segments; reserved and submitted
+  attempts remain writable, and all historical role/authorization IDs remain
+  non-submittable. Capacity metrics expose counts and projected receipt bytes
+  without exposing proposal evidence. Focused tests cover restart, lost
+  responses, corrupt archives, concurrent writers, and byte-boundary refusal.
+- Rotation now requires a caller-supplied independently finalized reader to
+  recheck every observed row before a manifest change. An absent, conflicting,
+  or unavailable read stops rotation without dropping the attempt. This is a
+  local trusted-storage protocol, not a distributed lock or a network-finality
+  implementation. Issue #193 stays open for cross-host coordination,
+  authenticated recovery/export, and full integration qualification. Public
+  deployment and 0.1.0 promotion remain separately gated by #200/#213 and
+  the concrete VC status-authority dependency in #90.
 
 ## October 15 2026 Delivery Checkpoint
 

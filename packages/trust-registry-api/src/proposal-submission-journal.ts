@@ -46,6 +46,10 @@ const ManifestSchema = z.strictObject({
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
 export type ProposalSubmissionAttempt = z.infer<typeof AttemptSchema>;
+export type FinalizedProposalReader = (
+  role: GovernedProposalSubmissionRole,
+  authorizationId: string,
+) => Promise<GovernedProposalObservation | null>;
 type JournalState = z.infer<typeof StateSchema>;
 type Manifest = z.infer<typeof ManifestSchema>;
 type JournalStorage = {
@@ -112,7 +116,7 @@ export interface ProposalSubmissionJournal {
   reconcile(
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
-    readFinalized: (role: GovernedProposalSubmissionRole, authorizationId: string) => Promise<GovernedProposalObservation | null>,
+    readFinalized: FinalizedProposalReader,
   ): Promise<ProposalSubmissionAttempt>;
 }
 
@@ -209,14 +213,21 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
   }
 
-  /** Rotate only finalized observations. Unknown outcomes remain in the writable segment. */
-  async rotateObserved(): Promise<{ archived: number; pending: number }> {
+  /** Recheck every observation against a finalized reader before archiving it. */
+  async rotateObserved(readFinalized: FinalizedProposalReader): Promise<{ archived: number; pending: number }> {
     return this.withWrite(async () => {
       const storage = await this.readStorage();
       const observed = storage.active.attempts.filter((attempt) => attempt.state === "observed");
       const pending = storage.active.attempts.filter((attempt) => attempt.state !== "observed");
       if (observed.length === 0) return { archived: 0, pending: pending.length };
       if ((storage.manifest?.archives.length ?? 0) >= MAX_ARCHIVES) throw new ProposalSubmissionCapacityError();
+      for (const attempt of observed) {
+        const rawObservation = await readFinalized(attempt.role, attempt.authorizationId);
+        if (rawObservation === null) throw new ProposalSubmissionConflictError();
+        const observation = GovernedProposalObservationSchema.parse(rawObservation);
+        if (observation.evidenceCommitment !== attempt.evidenceCommitment
+          || observation.eventHash !== attempt.eventHash) throw new ProposalSubmissionConflictError();
+      }
       const archive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: observed }));
       const nextActive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: pending }));
       const archives = storage.manifest === null
@@ -233,7 +244,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   async reconcile(
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
-    readFinalized: (role: GovernedProposalSubmissionRole, authorizationId: string) => Promise<GovernedProposalObservation | null>,
+    readFinalized: FinalizedProposalReader,
   ): Promise<ProposalSubmissionAttempt> {
     const current = await this.read(role, authorizationId);
     if (current === null) throw new ProposalSubmissionConflictError();

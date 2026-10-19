@@ -203,7 +203,8 @@ describe("private governed proposal submission journal", () => {
       throw new Error("response lost");
     })).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
 
-    expect(await journal.rotateObserved()).toEqual({ archived: 1, pending: 1 });
+    expect(await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 1 });
     const reopened = new FileProposalSubmissionJournal(path);
     expect(await reopened.inspectCapacity()).toMatchObject({
       activeEntries: 1, pendingEntries: 1, archivedEntries: 1, archiveCount: 1,
@@ -224,11 +225,36 @@ describe("private governed proposal submission journal", () => {
     expect(await reopened.reconcile("issuer", "unknown-outcome",
       async () => ({ eventHash: otherEventHash, evidenceCommitment })))
       .toMatchObject({ state: "observed", eventHash: otherEventHash });
-    expect(await reopened.rotateObserved()).toEqual({ archived: 1, pending: 0 });
+    expect(await reopened.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
     expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "observed" });
     expect(await reopened.inspectCapacity()).toMatchObject({
       activeEntries: 0, pendingEntries: 0, archivedEntries: 2, archiveCount: 2,
     });
+  });
+
+  it("requires matching finalized evidence for every row before changing the journal", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    const before = await readFile(path, "utf8");
+    await expect(journal.rotateObserved(async () => null))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.rotateObserved(async () => {
+      throw new Error("finality reader unavailable");
+    })).rejects.toThrow("finality reader unavailable");
+    expect(await readFile(path, "utf8")).toBe(before);
+    expect(await journal.inspectCapacity()).toMatchObject({ activeEntries: 1, archiveCount: 0 });
+    let readRole: string | undefined;
+    let readId: string | undefined;
+    await journal.rotateObserved(async (role, id) => {
+      readRole = role;
+      readId = id;
+      return { eventHash, evidenceCommitment };
+    });
+    expect([readRole, readId]).toEqual(["issuer", authorizationId]);
   });
 
   it("crosses the entry limit only after durable rotation and still rejects archived duplicates", async () => {
@@ -243,7 +269,8 @@ describe("private governed proposal submission journal", () => {
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
     expect(executions).toBe(0);
-    expect(await journal.rotateObserved()).toEqual({ archived: 10_000, pending: 0 });
+    expect(await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 10_000, pending: 0 });
     expect(await journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
       executions += 1;
       return { eventHash };
@@ -262,7 +289,7 @@ describe("private governed proposal submission journal", () => {
     await writeFile(join(directory, "journal.json.00000000-0000-0000-0000-000000000000.segment"),
       "orphaned before manifest commit", { mode: 0o600 });
     expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "observed" });
-    await journal.rotateObserved();
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
     const manifest = JSON.parse(await readFile(path, "utf8")) as {
       archives: Array<{ file: string }>;
     };
@@ -283,7 +310,7 @@ describe("private governed proposal submission journal", () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
     await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
-    await journal.rotateObserved();
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
     const left = new FileProposalSubmissionJournal(path);
     const right = new FileProposalSubmissionJournal(path);
     let executions = 0;
@@ -302,7 +329,7 @@ describe("private governed proposal submission journal", () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
     await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
-    await journal.rotateObserved();
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
     const manifest = JSON.parse(await readFile(path, "utf8")) as {
       active: { file: string; sha256: string };
     };
