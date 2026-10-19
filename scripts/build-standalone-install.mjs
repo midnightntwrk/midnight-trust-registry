@@ -33,7 +33,7 @@ async function sha256(path) {
 
 export function pinnedStandaloneImages(composeSource) {
   const compose = yaml.load(composeSource);
-  if (compose?.name !== "tr-standalone-local-smoke"
+  if (compose?.name !== "${TR_STACK_NAME:-tr-standalone-local-smoke}"
     || Object.keys(compose?.services ?? {}).sort().join("\0") !== [...ROLES].sort().join("\0")) {
     throw new Error("Standalone Compose must name the dedicated project and exactly three services");
   }

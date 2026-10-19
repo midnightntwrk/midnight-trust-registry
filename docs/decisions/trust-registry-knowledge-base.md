@@ -2045,6 +2045,16 @@ finalized range is useful evidence but does not rule out provider ambiguity,
 later inclusion, or a candidate contract outside the observed range; an
 independent operator must still decide recovery.
 
+The standalone Compose profile can now be run under an explicit second
+`tr-standalone-local-*` project with distinct loopback ports. This creates
+separate named node/indexer volumes and avoids resetting the preserved
+ambiguous smoke ledger. The topology verifier checks the selected project,
+internal-only bridge, expected services and persistence, pinned images, and
+exact loopback-only port bindings; the egress probe targets that same project.
+The new genesis and first-run approvals remain independent. A rendered Compose
+plan or healthy containers do not count as deployment, offline actor-journey,
+or restore evidence.
+
 The first-run release committee roster is approved before deployment and
 therefore cannot itself name the actual contract. A separate detached
 governance approval after staged finalized readback now binds the roster hash,

@@ -6,11 +6,9 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import { observeStandaloneTopology } from "./check-standalone-topology.mjs";
+import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 
 const run = promisify(execFile);
-const PROJECT = "tr-standalone-local-smoke";
-const NETWORK = `${PROJECT}_ledger`;
 const CANARY = "example.com";
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9./_-]*@sha256:[0-9a-f]{64}$/u;
 
@@ -96,9 +94,10 @@ export function validateEgressProbe({ controlRoute, isolatedRoute, controlCode, 
 export async function observeStandaloneEgress(dependencies = {}) {
   const command = dependencies.dockerCommand ?? docker;
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
-  await topology();
+  const config = standaloneStackConfig(dependencies.env ?? process.env);
+  await topology(config);
   const image = (await command([
-    "inspect", "--format", "{{.Config.Image}}", `${PROJECT}-node-1`,
+    "inspect", "--format", "{{.Config.Image}}", `${config.project}-node-1`,
   ])).stdout.trim();
   if (!DIGEST_IMAGE.test(image)) throw new Error("Probe image is not digest-pinned");
 
@@ -111,13 +110,13 @@ export async function observeStandaloneEgress(dependencies = {}) {
     "--connect-timeout", "5", "--max-time", "10", "-fsSI", `https://${CANARY}`,
   ];
   const controlRoute = await runInNetwork(command, image, "bridge", "cat", ["/proc/net/route"]);
-  const isolatedRoute = await runInNetwork(command, image, NETWORK, "cat", ["/proc/net/route"]);
+  const isolatedRoute = await runInNetwork(command, image, config.network, "cat", ["/proc/net/route"]);
   if (controlRoute.code !== 0 || isolatedRoute.code !== 0) {
     throw new Error("Could not inspect probe route tables");
   }
   const control = await runInNetwork(command, image, "bridge", "curl", curlArgs);
-  const isolated = await runInNetwork(command, image, NETWORK, "curl", curlArgs);
-  const isolatedDns = await runInNetwork(command, image, NETWORK, "getent", ["ahostsv4", CANARY]);
+  const isolated = await runInNetwork(command, image, config.network, "curl", curlArgs);
+  const isolatedDns = await runInNetwork(command, image, config.network, "getent", ["ahostsv4", CANARY]);
   validateEgressProbe({
     controlRoute: controlRoute.stdout,
     isolatedRoute: isolatedRoute.stdout,
@@ -126,11 +125,11 @@ export async function observeStandaloneEgress(dependencies = {}) {
     isolatedDnsCode: isolatedDns.code,
     isolatedDnsOutput: isolatedDns.stdout,
   });
-  await topology();
+  await topology(config);
   return {
     kind: "standalone-ledger-egress-probe",
     observedAt: new Date().toISOString(),
-    project: PROJECT,
+    project: config.project,
     image,
     canary: CANARY,
     canaryAddress: address,

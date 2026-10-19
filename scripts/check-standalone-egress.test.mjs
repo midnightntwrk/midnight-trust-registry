@@ -67,6 +67,7 @@ test("requires a valid IPv4 canary address", () => {
 test("orchestrates restricted probes and checks topology before and after", async () => {
   const calls = [];
   let observations = 0;
+  const project = "tr-standalone-local-qualification";
   const image = `midnightntwrk/midnight-node@sha256:${"a".repeat(64)}`;
   const dockerCommand = async (args) => {
     calls.push(args);
@@ -81,10 +82,17 @@ test("orchestrates restricted probes and checks topology before and after", asyn
     throw new Error("unexpected Docker call");
   };
   const result = await observeStandaloneEgress({
-    dockerCommand, observeTopology: async () => { observations += 1; },
+    dockerCommand, env: { TR_STACK_NAME: project, TR_NODE_PORT: "39944",
+      TR_INDEXER_PORT: "38088", TR_PROOF_PORT: "36300" },
+    observeTopology: async (config) => {
+      observations += 1;
+      assert.equal(config.project, project);
+    },
   });
   assert.equal(observations, 2);
+  assert.equal(result.project, project);
   assert.equal(result.internalBridgeCanaryDnsResolutionDenied, true);
+  assert.equal(calls[0].at(-1), `${project}-node-1`);
   assert.equal(calls.filter((args) => args[0] === "run").length, 6);
   for (const args of calls.filter((entry) => entry[0] === "run")) {
     assert.ok(args.includes("--read-only"));
@@ -92,6 +100,7 @@ test("orchestrates restricted probes and checks topology before and after", asyn
     assert.deepEqual(args.slice(args.indexOf("--user"), args.indexOf("--user") + 2),
       ["--user", "65534:65534"]);
     assert.ok(args.includes("--cap-drop"));
+    assert.ok(["bridge", `${project}_ledger`].includes(args[args.indexOf("--network") + 1]));
   }
 });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { checkStandaloneTopology } from "./check-standalone-topology.mjs";
+import { checkStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 
 const project = "tr-standalone-local-smoke";
 const ledger = `${project}_ledger`;
@@ -20,10 +20,14 @@ const container = (service) => ({
     Env: service === "proof-server" ? ["MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS=true"] : [],
   },
   State: { Running: true, Paused: false, Health: { Status: "healthy" } },
+  HostConfig: { PortBindings: { [service === "node" ? "9944/tcp"
+    : service === "indexer" ? "8088/tcp" : "6300/tcp"]: [{ HostIp: "127.0.0.1",
+    HostPort: service === "node" ? "29944" : service === "indexer" ? "28088" : "26300" }] } },
   NetworkSettings: { Networks: { [ledger]: { NetworkID: "ledger-id" } } },
   Mounts: [service === "proof-server"
     ? { Destination: "/.cache/midnight/zk-params", Type: "bind", RW: false }
-    : { Destination: service === "node" ? "/node/chain" : "/data", Type: "volume", RW: true }],
+    : { Destination: service === "node" ? "/node/chain" : "/data", Type: "volume", RW: true,
+      Name: `${project}_${service === "node" ? "node-data" : "indexer-data"}` }],
 });
 const containers = ["node", "indexer", "proof-server"].map(container);
 
@@ -72,4 +76,46 @@ test("rejects extra, unhealthy, and unpinned services", () => {
   const floating = structuredClone(containers);
   floating[0].Config.Image = "midnightntwrk/midnight-node:latest";
   assert.throws(() => checkStandaloneTopology(network, floating), /digest-pinned/u);
+});
+
+test("validates an alternate isolated project and distinct loopback ports", () => {
+  const config = standaloneStackConfig({ TR_STACK_NAME: "tr-standalone-local-qualification",
+    TR_NODE_PORT: "39944", TR_INDEXER_PORT: "38088", TR_PROOF_PORT: "36300" });
+  const alternateNetwork = structuredClone(network);
+  alternateNetwork.Name = config.network;
+  alternateNetwork.Labels["com.docker.compose.project"] = config.project;
+  const alternateContainers = structuredClone(containers);
+  for (const item of alternateContainers) {
+    const service = item.Config.Labels["com.docker.compose.service"];
+    item.Config.Labels["com.docker.compose.project"] = config.project;
+    item.NetworkSettings.Networks = { [config.network]: { NetworkID: network.Id } };
+    Object.values(item.HostConfig.PortBindings)[0][0].HostPort = config.ports[service];
+    if (service !== "proof-server") {
+      item.Mounts[0].Name = `${config.project}_${service === "node" ? "node-data" : "indexer-data"}`;
+    }
+  }
+  assert.equal(checkStandaloneTopology(alternateNetwork, alternateContainers, config).project,
+    "tr-standalone-local-qualification");
+  assert.throws(() => checkStandaloneTopology(alternateNetwork, alternateContainers), /internal IPv4/u);
+  assert.throws(() => standaloneStackConfig({ TR_STACK_NAME: "mn-passport-sdk-localnet" }), /namespace/u);
+  assert.throws(() => standaloneStackConfig({ TR_STACK_NAME: "tr-standalone-local-qualification",
+    COMPOSE_PROJECT_NAME: project }), /must match/u);
+  assert.throws(() => standaloneStackConfig({ TR_STACK_NAME: "tr-standalone-local-qualification",
+    TR_NODE_PORT: "38088", TR_INDEXER_PORT: "38088" }), /distinct/u);
+  assert.throws(() => standaloneStackConfig({ TR_NODE_PORT: "0" }), /Invalid private loopback/u);
+});
+
+test("rejects public or extra port bindings and mismatched private ports", () => {
+  const publicBinding = structuredClone(containers);
+  publicBinding[0].HostConfig.PortBindings["9944/tcp"][0].HostIp = "0.0.0.0";
+  assert.throws(() => checkStandaloneTopology(network, publicBinding), /approved loopback/u);
+  const extraBinding = structuredClone(containers);
+  extraBinding[1].HostConfig.PortBindings["9999/tcp"] = [{ HostIp: "127.0.0.1", HostPort: "39999" }];
+  assert.throws(() => checkStandaloneTopology(network, extraBinding), /approved loopback/u);
+  const changedPort = structuredClone(containers);
+  changedPort[2].HostConfig.PortBindings["6300/tcp"][0].HostPort = "36300";
+  assert.throws(() => checkStandaloneTopology(network, changedPort), /approved loopback/u);
+  const sharedVolume = structuredClone(containers);
+  sharedVolume[0].Mounts[0].Name = "tr-standalone-local-other_node-data";
+  assert.throws(() => checkStandaloneTopology(network, sharedVolume), /mount drifted/u);
 });

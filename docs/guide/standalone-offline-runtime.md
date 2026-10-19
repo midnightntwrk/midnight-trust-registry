@@ -139,6 +139,39 @@ any release gate by itself. The node chain belongs under `/node/chain`; the
 indexer SQLite state belongs under `/data`. Validate both named volumes across
 restarts before using them for restore evidence.
 
+To prepare an independent qualification instance without resetting an
+ambiguous smoke ledger, choose a new `tr-standalone-local-*` project and three
+distinct unused loopback ports. Compose's `-p` option isolates the node and
+indexer volumes; do not copy or reuse the old setup directory, wallet state,
+genesis approval, or deployment journal. For example, with a new private env
+file containing the required secrets and pinned proof-parameter path:
+
+```sh
+export TR_STACK_NAME=tr-standalone-local-qualification
+export COMPOSE_PROJECT_NAME="$TR_STACK_NAME"
+export TR_NODE_PORT=39944 TR_INDEXER_PORT=38088 TR_PROOF_PORT=36300
+docker compose --env-file <new-private-env-file> -p "$TR_STACK_NAME" \
+  -f deploy/standalone/compose.yml config -q
+# Start only after reviewing the project name, ports, and distinct volume names:
+docker compose --env-file <new-private-env-file> -p "$TR_STACK_NAME" \
+  -f deploy/standalone/compose.yml up -d --wait
+node scripts/check-standalone-topology.mjs
+pnpm run check:standalone-egress
+```
+
+Keep `TR_STACK_NAME` and the port variables exported in the shell for Compose
+and both checks; putting them only in the private env file is insufficient for
+the checks. `COMPOSE_PROJECT_NAME` and the explicit `-p` provide the same
+selected project even if one override is accidentally omitted. The checks
+reject a mismatch between `COMPOSE_PROJECT_NAME` and `TR_STACK_NAME`. Empty project
+or port variables fail closed in the checks. The checks reject an unexpected project,
+public or extra port binding, wrong loopback port, extra network attachment,
+or missing persistent mount. A config-only render and a healthy new node do
+not prove a local contract deployment, finalized readback, denied egress for
+other processes, or release qualification. Review the new genesis and repeat
+the first-run approvals for that instance. Never use `down -v` on either
+project while its history is evidence.
+
 The local Midnight network uses network ID `undeployed`, not `preprod`. The
 dedicated smoke stack keeps node RPC, indexer, and proof-server services on
 its internal bridge. On Docker Desktop, that bridge does **not** publish the
@@ -766,11 +799,13 @@ or that the operator may retry. Independently inspect provider history,
 finality, mempool, and any candidate contract state before a signed recovery
 decision. Stop and remove the relay after collecting the observation.
 
-Run `node scripts/check-standalone-topology.mjs` against the dedicated
-`tr-standalone-local-smoke` project after the offline cold start. It reads
+Run `node scripts/check-standalone-topology.mjs` against the selected
+`TR_STACK_NAME` project (the default is `tr-standalone-local-smoke`) after the
+offline cold start. It reads
 Docker metadata without changing containers or volumes and fails on extra
 network attachments, missing persistence mounts, a writable proof cache,
-fetch-enabled proof server, or non-digest-pinned images. Its JSON deliberately
+fetch-enabled proof server, non-loopback or unexpected published ports, or
+non-digest-pinned images. Its JSON deliberately
 reports `egressDenied: "not-verified"` and `actorJourneys: "not-run"`: an
 internal bridge is a useful precondition, not proof of denied external DNS or
 egress for the wallet, API, browser, and backup processes. Capture firewall

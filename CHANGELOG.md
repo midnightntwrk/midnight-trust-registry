@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- allow a separate named local qualification Compose project with distinct
+  loopback ports and volumes, while topology and egress checks verify the
+  selected project and reject public or unexpected port bindings
 - require a second, detached governance approval that binds the release
   maintenance roster to the staged deployment receipt, contract address,
   reserved plan, and pinned release manifest after finalized bootstrap readback
