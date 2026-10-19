@@ -294,6 +294,25 @@ maintenance readback, offline actor journeys, and recovery qualification.
 `status` deliberately keeps these gates pending even if deployment returns a
 receipt; it does not produce a release-qualified verdict.
 
+For a **development-only** real-ledger deployment smoke, the repository-owned
+`scripts/local-smoke-provider.mjs` implements the provider-module interface.
+Use it only against the dedicated `undeployed` loopback stack, with the public
+local genesis wallet seed documented by `midnight-examples`. Set
+`TR_SMOKE_WALLET_SEED` to that public seed, `TR_SMOKE_STATE_DIR` to the private
+setup directory, and `TR_SMOKE_PROOF_URL` to the temporary loopback proof
+relay. The module rejects public-network IDs, non-loopback endpoints, a
+different wallet seed, and a non-private state directory. It saves a random
+bootstrap maintenance signing key as `smoke-maintenance-key` (mode 0600)
+before wallet submission. Keep that file with the one-attempt journal for
+reconciliation; do not commit, distribute, or log it. It uses an in-memory
+contract private-state provider and is **not** a production wallet/custody or
+restart/restore solution. The approved deployment plan must point to this
+module by absolute path and its exact SHA-256, and to the verified bundle's
+release manifest. The wizard binds that manifest and the plan's network to
+the observed setup before reserving the attempt. Running this smoke can
+produce local-ledger evidence only after a real receipt and finalized readback;
+the 1-of-3 transition and release approvals remain separate, open gates.
+
 The dedicated internal Docker network used in development does not expose its
 configured loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary

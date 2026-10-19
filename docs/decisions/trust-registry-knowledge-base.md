@@ -1876,3 +1876,12 @@ review pending. This is workflow scaffolding, not live deployment evidence;
 the smoke wallet and 1-of-3 committee remain development-only. Next work is
 to bind independently approved first-setup decisions and a real provider to
 this workflow, then capture finalized deployment and offline evidence.
+
+The next local development slice adds a repository-owned, loopback-only
+provider for the documented public genesis wallet. It persists a random
+bootstrap maintenance key in the setup directory before use, but relies on
+in-memory contract private state. It is suitable only for a one-time real
+local-ledger submission smoke, not release custody, maintenance transition,
+or restart/restore evidence. The `ws` SDK dependency is pinned to a patched
+8.21 version because the initially selected 8.20 release failed the low-level
+audit gate; the workspace override also patches the indexer-provider path.
