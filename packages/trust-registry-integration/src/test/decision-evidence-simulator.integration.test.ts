@@ -1367,6 +1367,27 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).toThrow(/current grant mismatch/u);
+    await expect(issueVcSignerAuthorizationFromTrustedDecision({
+      evidence,
+      selection: context.selection,
+      readers: {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          ...context,
+          decisionPoint: {
+            ...context.decisionPoint,
+            currentGrant: {
+              ...context.decisionPoint.currentGrant,
+              lifecycleEventRoot: hex(suspended.lifecycleEventHash),
+              status: "suspended",
+            },
+          },
+        }),
+      },
+      method: binding,
+      anchor: authorityAnchor,
+      signer: async () => { throw new Error("Withdrawn schema reached authority key custody"); },
+    })).rejects.toThrow(/current grant mismatch/u);
 
     harness.suspendVcAuthorityKey(authorityKeyIdCommitment, bytes32Commitment("vc-authority:suspension-reason"));
     expect(harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
