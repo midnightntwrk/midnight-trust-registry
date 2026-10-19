@@ -35,6 +35,10 @@ export const PreparedGovernedPolicyActionSchema = z.strictObject({
   nextPolicyVersion: ScalarSchema.optional(),
   authorizationId: Bytes32Schema.optional(),
   keyIdCommitment: Bytes32Schema.optional(),
+  newAuthorizationId: Bytes32Schema.optional(),
+  newKeyIdCommitment: Bytes32Schema.optional(),
+  newPublicKey: z.strictObject({ x: ScalarSchema, y: ScalarSchema }).optional(),
+  reasonHash: Bytes32Schema.optional(),
   policyVersion: ScalarSchema.optional(),
   maintainerId: Bytes32Schema.optional(),
   previousLifecycleEventHash: Bytes32Schema.optional(),
@@ -56,12 +60,40 @@ export const GovernedEvidenceVerifierSubmitRequestSchema = z.strictObject({
   signers: GovernedMembershipSignersSchema,
 });
 
+export const GovernedEvidenceVerifierStatusPrepareRequestSchema = z.strictObject({
+  authorizationId: Bytes32Schema,
+  reasonHash: Bytes32Schema,
+});
+export const GovernedEvidenceVerifierRotationPrepareRequestSchema = GovernedEvidenceVerifierStatusPrepareRequestSchema
+  .extend({
+    newAuthorizationId: Bytes32Schema,
+    newKeyIdCommitment: Bytes32Schema,
+    newPublicKey: z.strictObject({ x: ScalarSchema, y: ScalarSchema }),
+  });
+export const PreparedGovernedEvidenceVerifierStatusSchema = PreparedGovernedPolicyActionSchema.extend({
+  authorizationId: Bytes32Schema,
+  previousLifecycleEventHash: Bytes32Schema,
+  reasonHash: Bytes32Schema,
+});
+export const PreparedGovernedEvidenceVerifierRotationSchema = PreparedGovernedEvidenceVerifierStatusSchema.extend({
+  newAuthorizationId: Bytes32Schema,
+  newKeyIdCommitment: Bytes32Schema,
+  newPublicKey: z.strictObject({ x: ScalarSchema, y: ScalarSchema }),
+});
+export const GovernedEvidenceVerifierStatusSubmitRequestSchema = GovernedEvidenceVerifierStatusPrepareRequestSchema
+  .extend({ prepared: PreparedGovernedEvidenceVerifierStatusSchema, signers: GovernedMembershipSignersSchema });
+export const GovernedEvidenceVerifierRotationSubmitRequestSchema = GovernedEvidenceVerifierRotationPrepareRequestSchema
+  .extend({ prepared: PreparedGovernedEvidenceVerifierRotationSchema, signers: GovernedMembershipSignersSchema });
+
 export const GovernedPolicyActionReceiptSchema = z.strictObject({ eventHash: Bytes32Schema });
 
 export type GovernedThresholds = z.infer<typeof GovernedThresholdsSchema>;
 export type PreparedGovernedPolicyAction = z.infer<typeof PreparedGovernedPolicyActionSchema>;
 export type GovernedThresholdSubmitRequest = z.infer<typeof GovernedThresholdSubmitRequestSchema>;
 export type GovernedEvidenceVerifierSubmitRequest = z.infer<typeof GovernedEvidenceVerifierSubmitRequestSchema>;
+export type GovernedEvidenceVerifierTransitionInput =
+  | ({ action: "suspend" | "revoke" } & z.infer<typeof GovernedEvidenceVerifierStatusPrepareRequestSchema>)
+  | ({ action: "rotate" } & z.infer<typeof GovernedEvidenceVerifierRotationPrepareRequestSchema>);
 export type GovernedPolicyActionReceipt = z.infer<typeof GovernedPolicyActionReceiptSchema>;
 
 export type GovernedPolicyActionContext = {
@@ -76,6 +108,10 @@ export type GovernedPolicyActionContext = {
   nextPolicyVersion?: bigint;
   authorizationId?: Uint8Array;
   keyIdCommitment?: Uint8Array;
+  newAuthorizationId?: Uint8Array;
+  newKeyIdCommitment?: Uint8Array;
+  newPublicKey?: { x: bigint; y: bigint };
+  reasonHash?: Uint8Array;
   policyVersion?: bigint;
   maintainerId?: Uint8Array;
   previousLifecycleEventHash?: Uint8Array;
@@ -90,6 +126,14 @@ export type GovernedPolicyActionPort = {
   ): Promise<GovernedPolicyActionReceipt>;
   prepareEvidenceVerifier(): Promise<GovernedPolicyActionContext>;
   executeEvidenceVerifier(signers: readonly GovernedMembershipSigner[]): Promise<GovernedPolicyActionReceipt>;
+  /** Implementations must authenticate replacement DID-key ownership and recheck the ledger at execution. */
+  prepareEvidenceVerifierTransition?(
+    input: GovernedEvidenceVerifierTransitionInput,
+  ): Promise<GovernedPolicyActionContext>;
+  executeEvidenceVerifierTransition?(
+    input: GovernedEvidenceVerifierTransitionInput,
+    signers: readonly GovernedMembershipSigner[],
+  ): Promise<GovernedPolicyActionReceipt>;
   prepareMaintainerRecovery?(
     maintainerId: string,
     evidenceHash: string,
@@ -136,6 +180,20 @@ export const serializeGovernedPolicyAction = (
   }),
   ...(context.keyIdCommitment === undefined ? {} : {
     keyIdCommitment: bytes32Hex(context.keyIdCommitment),
+  }),
+  ...(context.newAuthorizationId === undefined ? {} : {
+    newAuthorizationId: bytes32Hex(context.newAuthorizationId),
+  }),
+  ...(context.newKeyIdCommitment === undefined ? {} : {
+    newKeyIdCommitment: bytes32Hex(context.newKeyIdCommitment),
+  }),
+  ...(context.newPublicKey === undefined ? {} : {
+    newPublicKey: {
+      x: context.newPublicKey.x.toString(), y: context.newPublicKey.y.toString(),
+    },
+  }),
+  ...(context.reasonHash === undefined ? {} : {
+    reasonHash: bytes32Hex(context.reasonHash),
   }),
   ...(context.policyVersion === undefined ? {} : {
     policyVersion: context.policyVersion.toString(),

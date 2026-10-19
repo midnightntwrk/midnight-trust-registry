@@ -309,6 +309,22 @@ export type PreparedEvidenceVerifierRegistrationAction = {
   policyVersion: bigint;
 };
 
+export type PreparedEvidenceVerifierTransitionAction = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  policyCommitment: Uint8Array;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  authorizationId: Uint8Array;
+  previousLifecycleEventHash: Uint8Array;
+  reasonHash: Uint8Array;
+  newAuthorizationId?: Uint8Array;
+  newKeyIdCommitment?: Uint8Array;
+  newPublicKey?: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
+};
+
 const defaultGovernedResource = (scope: AuthorizationScope): GovernedResource => {
   if (scope.role === "issuer") throw new Error("Issuer application evidence requires an explicit governed resource");
   if (scope.role === "maintainer") return { type: "registry", id: scope.registryId };
@@ -597,7 +613,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  rotateEvidenceVerifierKey(label: string): Uint8Array {
+  prepareEvidenceVerifierRotationAction(label: string): PreparedEvidenceVerifierTransitionAction {
     if (!/^[a-z][a-z0-9-]*$/.test(label)) {
       throw new Error("Evidence-verifier rotation label must be lowercase ASCII");
     }
@@ -612,6 +628,9 @@ export class LocalTrustRegistryIntegrationHarness {
     ));
     const oldAuthorizationId = this.currentEvidenceVerifierAuthorizationId;
     const oldRecord = this.simulator.getEvidenceVerifierKey(oldAuthorizationId);
+    if (oldRecord.status !== EvidenceVerifierKeyStatus.active) {
+      throw new Error("Evidence verifier key must be active to rotate");
+    }
     const ledger = this.simulator.getLedger();
     const newPayloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
       authorizationId,
@@ -626,58 +645,130 @@ export class LocalTrustRegistryIntegrationHarness {
     const payloadHash = computeRotateEvidenceVerifierKeyPayloadHash(
       oldAuthorizationId, oldRecord.lifecycleEventHash, newPayloadHash, reasonHash,
     );
-    const actionSequence = ledger.governanceActionCount;
-    const eventHash = this.simulator.rotateEvidenceVerifierKey(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
-        ROTATE_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, actionSequence,
-      ),
-      oldAuthorizationId,
-      authorizationId,
-      keyIdCommitment,
-      publicKey,
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(ROTATE_EVIDENCE_VERIFIER_ACTION_KIND),
+      actionPayloadHash: payloadHash,
+      actionSequence: ledger.governanceActionCount,
+      authorizationId: oldAuthorizationId,
+      previousLifecycleEventHash: Uint8Array.from(oldRecord.lifecycleEventHash),
       reasonHash,
-      this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
-        ROTATE_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, actionSequence,
-      ),
+      newAuthorizationId: authorizationId,
+      newKeyIdCommitment: keyIdCommitment,
+      newPublicKey: publicKey,
+    };
+  }
+
+  executeEvidenceVerifierRotationWithSignatures(
+    label: string,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Evidence-verifier rotation requires a maintainer signature");
+    const prepared = this.prepareEvidenceVerifierRotationAction(label);
+    const nextRotation = this.evidenceVerifierRotationCount + 1;
+    const replacement = createMaintainerFixture(`evidence-verifier-${label}`, 41 + nextRotation);
+    const eventHash = this.simulator.rotateEvidenceVerifierKey(
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.authorizationId, prepared.newAuthorizationId!, prepared.newKeyIdCommitment!,
+      prepared.newPublicKey!, prepared.reasonHash, signers.slice(1),
     );
-    this.currentEvidenceVerifierAuthorizationId = authorizationId;
-    this.currentEvidenceVerifierKeyIdCommitment = keyIdCommitment;
+    this.currentEvidenceVerifierAuthorizationId = prepared.newAuthorizationId!;
+    this.currentEvidenceVerifierKeyIdCommitment = prepared.newKeyIdCommitment!;
     this.evidenceVerifierKey = replacement;
-    this.evidenceVerifierPublicKey = publicKey;
+    this.evidenceVerifierPublicKey = prepared.newPublicKey!;
     this.evidenceVerifierRotationCount = nextRotation;
-    this.evidenceVerifier.keyIds = [keyId];
+    this.evidenceVerifier.keyIds = [`${this.evidenceVerifier.did}#assertion-rotation-${nextRotation}`];
     return eventHash;
   }
 
-  private changeEvidenceVerifierKeyStatus(action: "suspend" | "revoke", label: string): Uint8Array {
+  rotateEvidenceVerifierKey(label: string): Uint8Array {
+    const prepared = this.prepareEvidenceVerifierRotationAction(label);
+    return this.executeEvidenceVerifierRotationWithSignatures(label, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
+  }
+
+  prepareEvidenceVerifierStatusAction(
+    action: "suspend" | "revoke", label: string,
+  ): PreparedEvidenceVerifierTransitionAction {
     if (!/^[a-z][a-z0-9-]*$/.test(label)) {
       throw new Error("Evidence-verifier status reason must be lowercase ASCII");
     }
     const authorizationId = this.currentEvidenceVerifierAuthorizationId;
     const record = this.simulator.getEvidenceVerifierKey(authorizationId);
+    if (action === "suspend" && record.status !== EvidenceVerifierKeyStatus.active) {
+      throw new Error("Evidence verifier key must be active to suspend");
+    }
+    if (action === "revoke" && record.status !== EvidenceVerifierKeyStatus.active
+      && record.status !== EvidenceVerifierKeyStatus.suspended) {
+      throw new Error("Evidence verifier key must be active or suspended to revoke");
+    }
     const reasonHash = bytes32Commitment(`evidence-verifier-key:${action}:${label}`);
     const payloadHash = computeUpdateEvidenceVerifierKeyPayloadHash(
       authorizationId, record.lifecycleEventHash, reasonHash,
     );
     const actionKind = action === "suspend"
       ? SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND : REVOKE_EVIDENCE_VERIFIER_ACTION_KIND;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const ledger = this.simulator.getLedger();
+    return {
+      registryId: Uint8Array.from(this.registryIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
+      contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
+      actionKind: Uint8Array.from(actionKind),
+      actionPayloadHash: payloadHash,
+      actionSequence: ledger.governanceActionCount,
+      authorizationId,
+      previousLifecycleEventHash: Uint8Array.from(record.lifecycleEventHash),
+      reasonHash,
+    };
+  }
+
+  executeEvidenceVerifierStatusWithSignatures(
+    action: "suspend" | "revoke", label: string,
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Uint8Array {
+    const primary = signers[0];
+    if (primary === undefined) throw new Error("Evidence-verifier status change requires a maintainer signature");
+    const prepared = this.prepareEvidenceVerifierStatusAction(action, label);
     const circuit = action === "suspend"
       ? this.simulator.suspendEvidenceVerifierKey.bind(this.simulator)
       : this.simulator.revokeEvidenceVerifierKey.bind(this.simulator);
     return circuit(
-      this.bootstrapMaintainer.keyId,
-      this.bootstrapPublicKey,
-      this.bootstrapActionSignature(actionKind, payloadHash, actionSequence),
-      authorizationId,
-      reasonHash,
-      this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(), actionKind, payloadHash, actionSequence,
-      ),
+      primary.keyId, primary.publicKey, primary.signature,
+      prepared.authorizationId, prepared.reasonHash, signers.slice(1),
     );
+  }
+
+  private changeEvidenceVerifierKeyStatus(action: "suspend" | "revoke", label: string): Uint8Array {
+    const prepared = this.prepareEvidenceVerifierStatusAction(action, label);
+    return this.executeEvidenceVerifierStatusWithSignatures(action, label, [
+      {
+        keyId: this.bootstrapMaintainer.keyId,
+        publicKey: this.bootstrapPublicKey,
+        signature: this.bootstrapActionSignature(
+          prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+        ),
+      },
+      ...this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
+      ),
+    ]);
   }
 
   suspendEvidenceVerifierKey(label: string): Uint8Array {

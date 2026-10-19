@@ -285,6 +285,16 @@ registered under the new policy through
 fresh external signatures. Both actions recheck current ledger state; the
 second action is not automatically signed or atomic with the first. Until it
 succeeds, new application evidence is not authorized by the revised policy.
+Governed evidence-verifier key rotation, suspension, and revocation use
+`POST /v1/governed/policy/evidence-verifier/{rotate,suspend,revoke}/{prepare,submit}`.
+Rotation requests carry the old authorization ID, reason commitment, new
+authorization and key-ID commitments, and JubJub public key. A configured
+port MUST authenticate the replacement assertion method under the verifier
+DID and verify current ledger state; the API only validates the wire shape,
+compares the port's exact action context to the request, and checks external
+maintainer signatures. It returns 503 without that port. A stale submit MUST
+NOT be forwarded as a second Compact action. The local simulator port is not
+a production DID-key authority or finalized-ledger reader.
 Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional

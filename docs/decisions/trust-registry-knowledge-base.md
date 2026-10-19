@@ -40,6 +40,13 @@ shorter-lived and more action-oriented than the normative specification.
   suspended or revoked keys fail before proposal or decision signing. This
   closes the reported stale-policy signing-preparation gap in the simulator,
   but does not substitute for production DID/key authority or finalized-ledger reads.
+- The next local #67 slice adds strict prepare/submit HTTP requests for
+  evidence-verifier key rotation, suspension, and revocation. The submitted
+  context must match a fresh Compact preparation before external maintainer
+  signatures are admitted. The injected port remains responsible for
+  replacement DID-key authentication and authorized finalized-ledger reads;
+  the Compact-backed integration test uses the simulator port only. This is
+  not a public-network authority adapter and does not close #67.
 
 ## October 15 2026 Delivery Checkpoint
 
