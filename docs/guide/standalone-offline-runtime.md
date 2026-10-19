@@ -12,9 +12,11 @@ trustworthy by itself.
 
 ## Install While Online
 
-1. Pin a reviewed version of
-   [midnight-local-dev](https://github.com/midnightntwrk/midnight-local-dev)
-   and its node, indexer, and proof-server image digests. Install Node.js,
+1. Pin a reviewed version of the maintained
+   [midnight-examples](https://github.com/midnightntwrk/midnight-examples)
+   local-network tooling and its node, indexer, and proof-server image digests.
+   The older `midnight-local-dev` repository is archived; do not install an
+   unreviewed floating version from it. Install Node.js,
    pnpm dependencies, Docker Compose, and the signed Trust Registry packages
    while online. Record the exact versions, image digests, manifest hash, and
    software bill of materials. Do not rely on floating image tags at restart.
@@ -26,6 +28,36 @@ trustworthy by itself.
 3. Provision distinct local wallet, proof-server, node, indexer, API, admin
    console, and applicant-portal identities. Keep wallet seeds, maintenance
    keys, API credentials, and proof inputs out of images, fixtures, and logs.
+
+The staged install directory must contain `install-inventory.json`, the
+release-candidate package manifest and its ten tarballs, and separate OCI image
+archives for node, indexer, and proof server. Use this shape, replacing every
+placeholder with approved exact values:
+
+```json
+{
+  "format": "tr-standalone-install-v1",
+  "sourceRevision": "<40-character signed source SHA>",
+  "packageManifest": "release-candidate-manifest.json",
+  "artifactDirectory": "artifacts/npm",
+  "images": [
+    { "role": "node", "reference": "registry.example/node@sha256:<digest>", "archive": "images/node.tar", "archiveSha256": "<archive sha256>" },
+    { "role": "indexer", "reference": "registry.example/indexer@sha256:<digest>", "archive": "images/indexer.tar", "archiveSha256": "<archive sha256>" },
+    { "role": "proof-server", "reference": "registry.example/proof-server@sha256:<digest>", "archive": "images/proof-server.tar", "archiveSha256": "<archive sha256>" }
+  ]
+}
+```
+
+Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
+disconnecting and after transfer. It verifies the package manifest against
+the packed contract and hashes each image archive without network access.
+The image reference is an operator-approved pin; archive hashing alone cannot
+prove that the archive came from that registry digest. Record independent
+registry-digest verification at acquisition, and prove `docker load` plus
+restart from those bytes with image pulls disabled. Include pinned runtime,
+browser, DID/VC/status, Compose, and toolchain dependencies in the operator
+install record; this three-image inventory alone is not a complete install or
+qualification result.
 
 ## Offline Runtime Boundary
 
@@ -98,10 +130,11 @@ head yields `pending`, not qualification evidence.
    operator instructions, and an independent security review. Do not call the
    profile supported until these checks pass on a clean install.
 
-The official [Midnight local-dev project](https://github.com/midnightntwrk/midnight-local-dev)
-documents its container startup and funding flow. Its development genesis
-wallet and mnemonic examples are not production secrets or public-network
-security guidance.
+The archived [Midnight local-dev project](https://github.com/midnightntwrk/midnight-local-dev)
+documents a historical container and funding flow, but points to
+[`midnight-examples`](https://github.com/midnightntwrk/midnight-examples)
+for maintained tooling. Development genesis wallets and mnemonic examples are
+not production secrets or public-network security guidance.
 
 ## Evidence Ledger And Stop Rules
 
