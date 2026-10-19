@@ -16,6 +16,7 @@ const network = {
 };
 const container = (service) => ({
   Id: `${service}-id`,
+  Image: `sha256:${"a".repeat(64)}`,
   Config: {
     Image: `midnightntwrk/${service}@sha256:${"a".repeat(64)}`,
     Labels: { "com.docker.compose.project": project, "com.docker.compose.service": service },
@@ -95,6 +96,50 @@ test("matches prepared private inputs without returning their values", () => {
     /prepared private stack environment/u);
 });
 
+test("explicit private-input requirement rejects missing wizard values", () => {
+  assert.throws(() => checkStandaloneTopology(network, containers, standaloneStackConfig({}),
+    { requirePrivateInputs: true }), /Prepared private stack inputs are incomplete/u);
+});
+
+test("accepts only verified source-scoped offline image tags and bundle Compose labels", () => {
+  const expectedBundle = { sourceRevision: "b".repeat(40), allowOffline: true,
+    composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml"],
+    images: containers.map((item) => ({ role: item.Config.Labels["com.docker.compose.service"],
+      reference: item.Config.Image, acceptedIds: [item.Image] })) };
+  const direct = structuredClone(containers);
+  for (const item of direct) {
+    item.Config.Labels["com.docker.compose.project.config_files"] = "/bundle/compose.yml";
+  }
+  assert.equal(checkStandaloneTopology(network, direct, standaloneStackConfig({}), expectedBundle)
+    .verifiedImageIdsMatched, true);
+  const offline = structuredClone(direct);
+  for (const item of offline) {
+    const role = item.Config.Labels["com.docker.compose.service"];
+    item.Config.Image = `tr-standalone/${role}:sha-${expectedBundle.sourceRevision}`;
+    item.Config.Labels["com.docker.compose.project.config_files"] =
+      expectedBundle.composeFiles.join(",");
+  }
+  const result = checkStandaloneTopology(network, offline, standaloneStackConfig({}), expectedBundle);
+  assert.equal(result.verifiedImageIdsMatched, true);
+  assert.equal(result.bundleComposeFilesMatched, true);
+  const wrongId = structuredClone(offline);
+  wrongId[0].Image = `sha256:${"c".repeat(64)}`;
+  assert.throws(() => checkStandaloneTopology(network, wrongId, standaloneStackConfig({}), expectedBundle),
+    /image differs/u);
+  const wrongTag = structuredClone(offline);
+  wrongTag[0].Config.Image = "tr-standalone/node:latest";
+  assert.throws(() => checkStandaloneTopology(network, wrongTag, standaloneStackConfig({}), expectedBundle),
+    /image differs/u);
+  const wrongFiles = structuredClone(offline);
+  wrongFiles[0].Config.Labels["com.docker.compose.project.config_files"] = "/checkout/compose.yml";
+  assert.throws(() => checkStandaloneTopology(network, wrongFiles, standaloneStackConfig({}), expectedBundle),
+    /verified bundle Compose files/u);
+  const mixed = structuredClone(offline);
+  mixed[0].Config.Image = expectedBundle.images[0].reference;
+  assert.throws(() => checkStandaloneTopology(network, mixed, standaloneStackConfig({}), expectedBundle),
+    /two-file Compose overlay/u);
+});
+
 test("rejects unexpected mounts and elevated container privileges", () => {
   const extra = structuredClone(containers);
   extra[0].Mounts.push({ Destination: "/host", Type: "bind", RW: true });
@@ -105,7 +150,7 @@ test("rejects unexpected mounts and elevated container privileges", () => {
   const capAdd = structuredClone(containers);
   capAdd[2].HostConfig.CapAdd = ["SYS_ADMIN"];
   assert.throws(() => checkStandaloneTopology(network, capAdd), /elevated container privileges/u);
-  for (const field of ["PidMode", "IpcMode", "UsernsMode"]) {
+  for (const field of ["PidMode", "IpcMode", "UsernsMode", "CgroupnsMode"]) {
     const hostNamespace = structuredClone(containers);
     hostNamespace[0].HostConfig[field] = "host";
     assert.throws(() => checkStandaloneTopology(network, hostNamespace), /elevated container privileges/u);
@@ -115,7 +160,8 @@ test("rejects unexpected mounts and elevated container privileges", () => {
     device[1].HostConfig[field] = [{ PathOnHost: "/dev/example" }];
     assert.throws(() => checkStandaloneTopology(network, device), /elevated container privileges/u);
   }
-  for (const option of ["seccomp=unconfined", "apparmor=unconfined"]) {
+  for (const option of ["seccomp=unconfined", "apparmor=unconfined",
+    "seccomp:unconfined", "apparmor:unconfined", "systempaths:unconfined", "label=disable"]) {
     const unconfined = structuredClone(containers);
     unconfined[2].HostConfig.SecurityOpt = [option];
     assert.throws(() => checkStandaloneTopology(network, unconfined), /elevated container privileges/u);

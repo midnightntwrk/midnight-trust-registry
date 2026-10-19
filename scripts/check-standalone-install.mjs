@@ -152,7 +152,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     }
     const pinnedImages = pinnedStandaloneImages(await readFile(composeFile, "utf8"));
     if (pinnedImages.some(({ role, reference }) => !inventory.images.some((image) =>
-      image.role === role && image.reference === reference))) {
+      image?.role === role && image.reference === reference))) {
       throw new Error("Standalone image inventory disagrees with the runtime Compose pin");
     }
     runtimeComposeSha256 = inventory.runtimeCompose.sha256;
@@ -177,6 +177,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     throw new Error("Artifact directory escapes the install bundle");
   }
   verifyPackages(packageManifest, artifactRoot);
+  const verifiedImages = [];
   for (const image of inventory.images) {
     if (!IMAGE.test(image.reference) || !SHA256.test(image.archiveSha256)) {
       throw new Error(`Unpinned or invalid container image: ${image.role}`);
@@ -185,7 +186,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (await sha256(archive) !== image.archiveSha256) {
       throw new Error(`Container archive hash mismatch: ${image.role}`);
     }
-    installedImageIdFromArchive(archive, image.reference);
+    const configId = installedImageIdFromArchive(archive, image.reference);
+    verifiedImages.push({ role: image.role, reference: image.reference,
+      acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
@@ -215,6 +218,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     proofParameterCount: parameterFiles.length,
     runtimeComposeSha256,
     runtimeOfflineComposeSha256,
+    images: verifiedImages,
   };
 }
 

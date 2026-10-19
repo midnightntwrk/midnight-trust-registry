@@ -97,6 +97,8 @@ async function fixture(format = "tr-standalone-install-v2") {
   await writeFile(planPath, JSON.stringify({ ...plan, releaseManifestPath }));
   const verifyBundle = async () => ({ sourceRevision, packageCount: 10, imageRoles: ["node", "indexer", "proof-server"],
     proofParameterCount: 18,
+    images: images.map(({ role, reference }) => ({ role, reference,
+      acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
     runtimeComposeSha256: format === "tr-standalone-install-v3" ? composeSha256 : null,
     runtimeOfflineComposeSha256: format === "tr-standalone-install-v3" ? offlineComposeSha256 : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
@@ -368,6 +370,10 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.match(expected.proofParamsDir, /\/proof-params$/u);
       assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
       assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
+      assert.equal(expected.requirePrivateInputs, true);
+      assert.equal(expected.sourceRevision, sourceRevision);
+      assert.equal(expected.images.length, 3);
+      assert.equal(expected.composeFiles.length, 2);
       return { kind: "standalone-runtime-topology-observation", project,
         preparedInputsMatched: true, egressDenied: "not-verified", actorJourneys: "not-run" };
     },

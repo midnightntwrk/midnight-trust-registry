@@ -230,16 +230,26 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     if (record.ledgerObservation || record.deployment) {
       throw new Error("Stack observations cannot change after local-ledger observation begins");
     }
+    const observations = record.stack.observations ?? (record.stack.observation
+      ? [record.stack.observation] : []);
+    if (!Array.isArray(observations) || observations.length >= 20) {
+      throw new Error("Stack observation history is full or malformed");
+    }
+    if (record.install.verified?.runtimeComposeSha256
+      && !Array.isArray(record.install.verified.images)) {
+      throw new Error("Verified v3 install image identities are missing from setup");
+    }
     const envBytes = await regularBytes(join(root, "stack.env"));
     if (sha256(envBytes) !== record.stack.envFileSha256) {
       throw new Error("Prepared stack environment changed since setup");
     }
     if (record.stack.composeSha256
-      && sha256(await readFile(join(record.install.bundle, "compose.yml"))) !== record.stack.composeSha256) {
+      && sha256(await regularBytes(join(record.install.bundle, "compose.yml")))
+        !== record.stack.composeSha256) {
       throw new Error("Runtime Compose changed since stack preparation");
     }
     if (record.stack.offlineComposeSha256
-      && sha256(await readFile(join(record.install.bundle, "compose.offline.yml")))
+      && sha256(await regularBytes(join(record.install.bundle, "compose.offline.yml")))
         !== record.stack.offlineComposeSha256) {
       throw new Error("Offline Compose changed since stack preparation");
     }
@@ -273,9 +283,17 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       throw new Error("Prepared private stack inputs disagree with the install bundle");
     }
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
+      requirePrivateInputs: true,
       proofParamsDir,
       indexerPassword: selected.TR_INDEXER_PASSWORD,
       indexerSecret: selected.TR_INDEXER_SECRET,
+      ...(record.install.verified?.runtimeComposeSha256 ? {
+        sourceRevision: record.sourceRevision,
+        images: record.install.verified.images,
+        allowOffline: true,
+        composeFiles: [join(record.install.bundle, "compose.yml"),
+          join(record.install.bundle, "compose.offline.yml")],
+      } : {}),
     });
     const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
       env: {
@@ -288,11 +306,6 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     });
     if (topology.project !== config.project || egress.project !== config.project) {
       throw new Error("Stack observations disagree with the selected project");
-    }
-    const observations = record.stack.observations ?? (record.stack.observation
-      ? [record.stack.observation] : []);
-    if (!Array.isArray(observations) || observations.length >= 20) {
-      throw new Error("Stack observation history is full or malformed");
     }
     record.stack.observation = { observedAt: new Date().toISOString(), topology, egress };
     record.stack.observations = [...observations, record.stack.observation];

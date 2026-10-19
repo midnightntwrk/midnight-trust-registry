@@ -124,6 +124,16 @@ browser, DID/VC/status, Compose, and toolchain dependencies in the operator
 install record; this three-image inventory alone is not a complete install or
 qualification result.
 
+With the selected `TR_STACK_NAME` and loopback ports exported, run
+`node scripts/check-standalone-topology.mjs <verified-bundle-directory>`
+against the running ledger bridge. Bundle-aware observation matches each
+container's image ID to the checked archive and requires Docker Compose's
+recorded config-file paths to point into that bundle. Source-scoped local tags
+are accepted only when all three services use the verified two-file offline
+overlay. Running the check without a bundle is a historical digest-reference
+smoke check, not pinned-install evidence. Neither form proves a clean-host
+install, packet-level egress denial, actor journeys, or release qualification.
+
 ## Offline Runtime Boundary
 
 The repository includes `deploy/standalone/compose.yml` as an **isolated
@@ -440,7 +450,11 @@ input. A v3 bundle built from the chosen release source revision is still only
 candidate bytes; it does not by itself support an RC qualification claim.
 `observe-stack` checks the selected live project's topology and canary HTTPS/DNS
 egress behavior, including prepared private-input matching and unchanged
-bundled Compose bytes, then appends timestamped ledger-bridge evidence. At
+bundled Compose bytes. For v3, it also matches the verified archive image IDs,
+source-scoped offline tags, and Docker Compose's recorded bundle paths before
+appending timestamped ledger-bridge evidence. A v3 setup record created before
+image identities were recorded cannot be upgraded in place; begin a fresh
+setup directory rather than replacing its evidence. At
 most 20 pre-genesis observations are retained; investigate drift before that
 limit instead of silently replacing earlier evidence. It refuses
 to replace evidence after genesis observation or deployment begins. In the
