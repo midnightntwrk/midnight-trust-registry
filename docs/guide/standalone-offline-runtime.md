@@ -188,6 +188,59 @@ the release helpers intentionally reject it as an approved multi-party
 policy. Do not use that smoke result to close the RC maintenance gate. The
 final threshold, three distinct public keys, custody assignments, and human
 approval remain required before a release-qualified transition.
+
+### Local deployment operator CLI
+
+`node scripts/local-ledger-deploy.mjs <approved-plan.json>` is a guarded entry
+point for a **real** local-ledger submission. Build the integration package and
+verify the installed release artifact first. The plan is a private, absolute
+path JSON file with exactly these fields (replace every placeholder):
+
+```json
+{
+  "format": "tr-local-deployment-plan-v1",
+  "sourceRevision": "<40-character approved git commit>",
+  "network": {
+    "networkId": "undeployed",
+    "rpcUrl": "http://127.0.0.1:<checkpoint-port>",
+    "indexerHttpUrl": "http://127.0.0.1:<indexer-port>/graphql",
+    "indexerWsUrl": "ws://127.0.0.1:<indexer-port>/graphql/ws",
+    "expectedGenesisHash": "0x<64-character independently approved hash>",
+    "allowedHosts": ["127.0.0.1"]
+  },
+  "releaseManifestPath": "/absolute/read-only/release-manifest.json",
+  "providerModulePath": "/absolute/read-only/approved-provider.mjs",
+  "providerModuleSha256": "<64-character approved SHA-256 of module bytes>",
+  "journalPath": "/absolute/private/deployment-attempt.json"
+}
+```
+
+The approved provider module exports async `createLocalDeploymentMaterial({
+network, releaseManifest })` and returns `{ bootstrap, providers,
+contractMaintenanceSigningKey, stop? }`. It owns the funded local wallet and
+all opaque Midnight.js provider endpoints; no wallet seed, signing key, or
+mnemonic belongs in the plan or CLI output. The module is privileged code, not
+a data file: review its transitive imports, approve its SHA-256, install it
+read-only, and enforce process-level egress controls. A file hash checked
+before dynamic import does not eliminate a replacement race on writable
+storage. Use a pre-provisioned private journal directory and retain it with
+the receipt and ledger evidence. The CLI checks the manifest source, module
+hash, endpoint allowlist, and live genesis/finalized-head preflight before
+loading the provider. The deployment helper checks installed verifier-key
+assets before reserving its single attempt. The printed JSON is only a public
+receipt and readback **status**, not proof that the image finalized or that
+the maintenance authority is approved. An error or absent receipt after a
+journal reservation is an unknown outcome; never rerun blindly. Inspect the
+private journal and finalized local chain, then obtain a human recovery
+decision. The accompanying unit tests mock providers and do not constitute
+local deployment or offline qualification evidence.
+
+The dedicated internal Docker network used in development does not currently
+expose its configured loopback ports to the host on the tested Docker Desktop
+setup. Establish and document a controlled local-only access path before
+running this host CLI; do not attach a public network or claim egress-denied
+runtime from a temporarily connected installation container.
+
 The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.
 The genesis pin alone may not distinguish a fresh local node from one reset

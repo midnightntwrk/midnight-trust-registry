@@ -34,7 +34,7 @@
     "packed-artifacts:smoke": "node scripts/smoke-packed-artifacts.mjs",
     "published-artifacts:smoke": "node scripts/smoke-published-artifacts.mjs",
     "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/check-standalone-install.test.mjs",
-    "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs",
+    "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs scripts/local-ledger-deploy.test.mjs",
     "test:demo-smoke-scripts": "node --test scripts/actor-evidence-report.test.mjs scripts/adversarial-admission-api.test.mjs scripts/adversarial-api.test.mjs scripts/adversarial-case-report.test.mjs scripts/adversarial-compact.test.mjs scripts/adversarial-governance-api.test.mjs scripts/adversarial-matrix.test.mjs scripts/adversarial-policy-api.test.mjs scripts/adversarial-proposal-api.test.mjs scripts/adversarial-proposals.test.mjs scripts/adversarial-recognition-intake.test.mjs scripts/adversarial-recognition.test.mjs scripts/adversarial-temporal.test.mjs scripts/adversarial-trqp.test.mjs scripts/adversarial-vp-api.test.mjs scripts/demo-smoke-assets.test.mjs scripts/demo-smoke-process.test.mjs scripts/serve-static.test.mjs",
     "adversarial:report": "node scripts/adversarial-case-report.mjs",
     "check:adversarial-parity": "node scripts/check-adversarial-parity.mjs",
@@ -74,6 +74,7 @@
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
     "@midnight-ntwrk/credential-compact": "0.2.0",
     "@midnight-ntwrk/credential-did-midnight": "0.2.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",
