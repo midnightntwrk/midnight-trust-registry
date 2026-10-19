@@ -484,6 +484,18 @@ reviewer has supplied the pin. Re-running collection does not overwrite an
 existing candidate; preserve the first file and investigate any changed node
 observation in a separate evidence record.
 
+For the pinned local node image, `CFG_PRESET=dev` selects the embedded
+`/res/cfg/dev.toml`, which references
+`/res/genesis/genesis_block_undeployed.mn` and
+`/res/genesis/genesis_state_undeployed.mn`. The operator can give the reviewer
+the image digest, these file hashes, and the digest of
+`/midnight-node build-spec --dev --raw --disable-default-bootnode` output as
+reproducibility evidence. All of those values still come from the running
+image; they are **not** an independent source for the approved genesis hash.
+The reviewer must obtain the reviewed chain specification and node artifact
+provenance through a separately controlled channel, derive or verify its
+genesis hash independently, then sign the exact pin and source reference.
+
 `draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
 `reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
 `draft-committee` accepts those fields plus
