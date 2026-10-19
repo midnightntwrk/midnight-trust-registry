@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
@@ -12,6 +12,7 @@ import {
   verifyApplicationStatusDecisionWitness,
   type SignedApplicationStatusStatement,
 } from "../application-status-attestation.js";
+import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createApplicationVpScenarioFixture, VP_FIXTURE_NONCE, VP_FIXTURE_TIME_MS } from "../vp-scenario-fixtures.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
@@ -107,6 +108,27 @@ describe("DID-signed application status attestation", () => {
     const { source, request, replace, statement } = await fixture();
     replace({ ...statement, observedAt: new Date(VP_FIXTURE_TIME_MS + 1000).toISOString() }, false);
     await expect(source(request)).rejects.toThrow(/signature/u);
+  });
+
+  it("rejects a forged identity-key status assertion without a signing secret", async () => {
+    const { request, signed } = await fixture();
+    const authorityDid = request.binding.statusAuthorityVerificationMethod.split("#")[0]!;
+    const resolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(authorityDid, {
+        schnorrJubjubAssertionMethods: [{ id: "assertion-1", publicKey: { x: 0n, y: 1n } }],
+      }),
+    ]);
+    const nonce = 7n;
+    const forged = {
+      ...signed,
+      proof: { ...signed.proof, signature: hex(encodeJubjubSignature({
+        announcement: deriveJubjubPublicKey(nonce), response: nonce,
+      })) },
+    };
+    const source = createAttestedApplicationStatusSource({
+      resolver, fetchAttestation: async () => forged,
+    });
+    await expect(source(request)).rejects.toThrow(/signature or DID binding is invalid/u);
   });
 
   it.each([

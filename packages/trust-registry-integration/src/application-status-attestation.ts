@@ -2,12 +2,12 @@ import { Buffer } from "node:buffer";
 
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
-import { verifyJubjubDigest, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { decodeCanonicalJubjubSignatureHex } from "@midnight-ntwrk/trust-registry-contract";
+import type { JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { canonicalizeJson, IssuerStatusPolicyBindingSchema, sha256Hex, type IssuerStatusPolicyBinding } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";
+import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 
 const Hash = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const Timestamp = z.string().datetime({ offset: true });
@@ -135,10 +135,10 @@ export function createAttestedApplicationStatusSource(input: {
     if (!Buffer.from(pinnedRef.controllerAddress.bytes).equals(Buffer.from(method.verificationMethodRef.controllerAddress.bytes))
       || !Buffer.from(pinnedRef.methodId).equals(Buffer.from(method.verificationMethodRef.methodId))
       || !didStateVersionId
-      || !verifyJubjubDigest(
+      || !verifyDidJubjubSignature(
         method.publicKey,
         applicationStatusAttestationDigest(statement),
-        decodeCanonicalJubjubSignatureHex(signed.proof.signature),
+        signed.proof.signature,
       )) {
       throw new Error("Application status attestation signature or DID binding is invalid");
     }

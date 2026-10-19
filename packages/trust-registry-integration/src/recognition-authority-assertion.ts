@@ -2,8 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
-import { verifyJubjubDigest, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { decodeCanonicalJubjubSignatureHex } from "@midnight-ntwrk/trust-registry-contract";
+import type { JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   HashHexSchema,
   RecognitionAuthorityAssertionSchema,
@@ -14,6 +13,8 @@ import {
   type RecognitionAuthorityAssertion,
   type SignedRecognitionAuthorityAssertion,
 } from "@midnight-ntwrk/trust-registry-domain";
+
+import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 
 const MAX_FUTURE_SKEW_MS = 60_000;
 
@@ -100,11 +101,10 @@ export async function verifyRecognitionAuthorityAssertion(input: {
     verificationMethodId: methodId,
     relationship: "assertionMethod",
   });
-  const signature = decodeCanonicalJubjubSignatureHex(signed.proof.signature);
-  if (!verifyJubjubDigest(
+  if (!verifyDidJubjubSignature(
     method.publicKey,
     recognitionAuthorityAssertionDigest(statement, methodId),
-    signature,
+    signed.proof.signature,
   )) {
     throw new Error("Recognition authority assertion signature is invalid");
   }

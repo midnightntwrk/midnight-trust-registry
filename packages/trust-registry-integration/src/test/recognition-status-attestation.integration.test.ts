@@ -1,5 +1,9 @@
+import { Buffer } from "node:buffer";
+
+import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
 
+import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import {
   createRecognitionAccreditationVpScenarioFixture,
   RECOGNITION_VP_FIXTURE_TIME_MS,
@@ -70,5 +74,34 @@ describe("policy-pinned signed recognition status", () => {
       evaluatedAtMs: NOW,
       nonce: fixture.input.nonce,
     })).rejects.toThrow(/pinned request/u);
+  });
+
+  it("rejects a forged identity-key status assertion without a signing secret", async () => {
+    const fixture = await createRecognitionAccreditationVpScenarioFixture();
+    const authorityDid = fixture.input.anchor.statusAuthorityDid;
+    const resolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(authorityDid, {
+        schnorrJubjubAssertionMethods: [{ id: "assertion-1", publicKey: { x: 0n, y: 1n } }],
+      }),
+    ]);
+    const nonce = 7n;
+    const forged = {
+      ...fixture.signedStatusAttestation,
+      proof: {
+        ...fixture.signedStatusAttestation.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature({
+          announcement: deriveJubjubPublicKey(nonce), response: nonce,
+        })).toString("hex")}`,
+      },
+    };
+    const source = createAttestedRecognitionStatusSource({
+      resolver, fetchAttestation: async () => forged,
+    });
+    await expect(source.verifyPinnedStatus({
+      anchor: fixture.input.anchor,
+      statusHandleCommitment: fixture.claims.statusHandleCommitment,
+      evaluatedAtMs: NOW,
+      nonce: fixture.input.nonce,
+    })).rejects.toThrow(/signature is invalid/u);
   });
 });

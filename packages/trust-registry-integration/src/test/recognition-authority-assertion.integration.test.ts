@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
@@ -156,5 +156,26 @@ describe("Midnight DID recognition authority assertion", () => {
     await expect(verifyRecognitionAuthorityAssertion({
       signed, expected, resolver: authenticationOnly,
     })).rejects.toThrow();
+  });
+
+  it("rejects a forged identity-key assertion with no signing secret", async () => {
+    const identityResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(authorityDid, {
+        schnorrJubjubAssertionMethods: [{ id: "assert-1", publicKey: { x: 0n, y: 1n } }],
+      }),
+    ]);
+    const nonce = 7n;
+    const forged = {
+      ...signed,
+      proof: {
+        ...signed.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature({
+          announcement: deriveJubjubPublicKey(nonce), response: nonce,
+        })).toString("hex")}`,
+      },
+    };
+    await expect(verifyRecognitionAuthorityAssertion({
+      signed: forged, expected, resolver: identityResolver,
+    })).rejects.toThrow(/signature is invalid/u);
   });
 });
