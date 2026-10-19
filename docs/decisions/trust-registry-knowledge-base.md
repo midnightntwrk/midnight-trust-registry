@@ -1812,6 +1812,31 @@ docker exec tr-standalone-node-restore-smoke curl -sf -H 'Content-Type: applicat
 docker stop tr-standalone-node-restore-smoke
 ```
 
+### Isolated indexer-volume restore smoke
+
+On the same dedicated local stack, the active indexer reported block height
+`682` with hash
+`8b71180425ff4e750f998929cfe359fc1bffbf64e6a7062d40f1921f56ac7f9b`.
+Only `tr-standalone-local-smoke-indexer-1` was stopped while its `/data`
+volume was copied read-only to a new
+`tr-standalone-indexer-restore-smoke` volume (about 7.8 MiB). The original
+indexer was restarted and returned healthy. A separate instance of the same
+pinned indexer image booted from the copied volume, without published ports,
+on the dedicated internal ledger network. Its GraphQL query
+`block(offset: { height: 682 }) { height hash }` returned the exact recorded
+hash. The restarted active indexer returned the same historical result. The
+temporary restored indexer was stopped, and the active node/indexer/prover
+stack still passed `check-standalone-topology.mjs`. Both copied volume and
+stopped container remain for inspection.
+
+This demonstrates **same-host indexer volume restore and historical block
+readback**, not a clean-host backup/restore. The restored indexer connected to
+the still-running local node and could have resynchronized missing data; the
+test did not prove independent database completeness. No Trust Registry
+contract, API workspace, wallet state, VC status authority, backup integrity
+signature, cross-host restore, conflict injection, or ambiguous-transaction
+recovery was exercised. The full RC recovery gate remains open.
+
 ### Pinned standalone install-bundle candidate
 
 From signed/DCO source `0ae03ca857f9aedb101f47c29e5e98c93b1d082e`, the
