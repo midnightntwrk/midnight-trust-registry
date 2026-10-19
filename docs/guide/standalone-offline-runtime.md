@@ -1,10 +1,10 @@
 # Standalone Offline Runtime Qualification
 
-Status: qualification plan, not a claim that the full stack is deployed or
+Status: **0.1.0 release-candidate gate**, not a claim that the full stack is deployed or
 supported offline. Online access is allowed during installation; after setup,
 the running Trust Registry must not depend on public network services.
 
-This profile is separate from Preprod qualification. A local Compact simulator
+Preprod qualification is deferred to a later public-network release. A local Compact simulator
 and loopback HTTP actor journey are useful development evidence, but are not a
 deployed standalone Midnight ledger or a substitute for public-network
 finality. Offline operation also does not make a local node or status authority
@@ -102,3 +102,25 @@ The official [Midnight local-dev project](https://github.com/midnightntwrk/midni
 documents its container startup and funding flow. Its development genesis
 wallet and mnemonic examples are not production secrets or public-network
 security guidance.
+
+## Evidence Ledger And Stop Rules
+
+The release owner must bind every item below to one signed source SHA and one
+reviewed install manifest. Preserve raw receipts, finalized checkpoint hashes,
+container image digests, package hashes, commands, timestamps, and reviewer
+decisions in an access-controlled evidence bundle. Redact secrets, but do not
+replace network or transaction identifiers with simulator identifiers.
+
+| Gate | Evidence required | Owner input or stop condition |
+| --- | --- | --- |
+| Pinned installation | Reviewed local-dev source revision, exact image digests, package tarball hashes, compiler/toolchain versions, SBOM, and verified clean-install record | Operator approves artifact source and distribution channel; floating tags or an unverified pull stop qualification |
+| Real local deployment | Dedicated local node and funded wallet, out-of-band genesis pin, one-attempt journal, transaction receipt, independently finalized checkpoint and constructor/verifier-key readback | Operator supplies isolated ledger, wallet custody and genesis approval; simulator or mocked-provider output is not evidence |
+| Threshold maintenance | Governance-approved public committee keys, threshold, custody assignments, signed transition plan, submission receipt, finalized readback and adversarial rejection checks | Governance must approve roster/threshold and at least threshold key holders must participate; bootstrap key alone stops release |
+| Offline actor journeys | Egress-deny policy and logs covering host, containers, browser and proof server; issuer, verifier, auditor, maintainer, recognition, DID/VC/status and TRQP evidence on the deployed local ledger | Operator supplies local DID/VC/status authority and proof service; fixture-backed status cannot be reported as live verification |
+| Restart and recovery | Independent service restarts, ledger/history and key continuity, restore on a second isolated host, stale/conflicting checkpoint rejection and ambiguous-transaction reconciliation | Operator supplies backup custody and an approved recovery decision; resetting to identical genesis without history continuity fails |
+| Independent review | Exact-head security review of contracts, adapters, custody, egress, install provenance, and recovery evidence, with disposition of findings | A reviewer independent of implementation and release-owner sign-off are mandatory |
+
+The gates are conjunctive. An unresolved safety finding stays blocking even if
+filed as a follow-up. Keep draft promotion PR #198 draft until its scope and
+release gates are explicitly updated and independently reviewed. Nothing in
+this plan authorizes a public-network release or a Preprod deployment.

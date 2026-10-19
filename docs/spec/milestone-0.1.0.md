@@ -1,6 +1,6 @@
 # Trust Registry 0.1.0 Reference Profile
 
-Status: proposed release contract
+Status: proposed local/offline release contract; qualification incomplete
 Target: `0.1.0` on `develop`
 
 This profile narrows the [general specification](trust-registry.md) and the
@@ -11,7 +11,7 @@ reference implementation. `MUST` describes the behavior required to claim
 
 ## 1. Outcome And Boundary
 
-From a clean checkout, an engineer can run a local Midnight simulator journey
+From a clean install, an operator can run a self-hosted Midnight ledger journey
 in which a `did:midnight` applicant proves eligibility with a Midnight VC/VP,
 an authorized evidence verifier signs a commitment, a quorum of maintainers
 approves the exact application, an epoch anchors the decision, and a relying
@@ -20,10 +20,12 @@ The same journey MUST expose applicant, maintainer, and query operations through
 the documented API and local applications. Negative cases MUST fail at the
 boundary where the violated rule is enforced.
 
-0.1.0 is a reference profile, not a claim of live network deployment or
-production service operation. The simulator is a test double for Midnight
-ledger execution. Tests MUST say when finality is simulated. Production
-deployment, public multi-tenant hosting, arbitrary DID methods, native
+0.1.0 is a self-hosted local/offline runtime profile, not a public-network or
+multi-tenant service claim. Installation may use the network; qualification and
+normal operation must succeed with external egress denied. Simulator and
+mocked-provider tests remain development evidence, never local deployment,
+finality, recovery, or offline-runtime evidence. Live Preprod qualification
+is deferred to a later public-network release. Arbitrary DID methods, native
 secp256k1/P-256/Ed25519 contract verification, transitive federation trust,
 and Ledger 8 synchronous cross-contract calls are outside this milestone.
 
@@ -171,7 +173,8 @@ executes under a dummy address, so its separately domain-separated initial
 event commits the declared network but cannot prove the eventual address.
 Signers MUST authenticate that the declared network matches the actual target
 deployment. The current Compact runtime does not prove that correspondence
-on-chain; public-network qualification remains an open release gate.
+on-chain; local qualification must verify the target independently, while
+public-network qualification is deferred to a later release.
 
 The 0.1.0 authorization lifecycle has these reachable transitions:
 
@@ -444,6 +447,12 @@ maintainer.
   `pnpm run demo:smoke`, artifact packing/smoke, and a fresh-checkout 0.1.0
   scenario pass. A release candidate has a source revision, Compact compiler
   version, artifact hashes, and an explicit list of deferred capabilities.
+- The [standalone qualification](../guide/standalone-offline-runtime.md) passes
+  on pinned install artifacts: real local-ledger deployment and independently
+  finalized readback, an approved threshold-maintenance transition, offline
+  end-to-end actor journeys with egress denied, service restart and backup/
+  restore recovery, and independent security review. Simulator and provider
+  mocks do not satisfy this gate.
 
 ## 10. References
 

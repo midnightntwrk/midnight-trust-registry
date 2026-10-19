@@ -3,7 +3,8 @@
 Status: operator runbook draft. No Preprod deployment or threshold-authority
 transition has been executed. This is not release approval.
 
-The selected first public qualification target is **Preprod**. The approved
+Preprod is the selected target for a later public-network release, not the
+self-hosted local/offline 0.1.0 release candidate. The approved
 maintenance model is a threshold committee aligned with Trust Registry
 governance. The administrator executes the deployment and transition; an
 independent reviewer approves the pins and reads the finalized result.

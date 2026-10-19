@@ -7,7 +7,8 @@ indexes local tests and the remaining issue-closure work.
 
 ## Intended Reference Profile
 
-This candidate is a local Midnight simulator reference for a `did:midnight`
+This candidate targets a self-hosted local Midnight ledger and offline runtime
+for a `did:midnight`
 applicant. An authorized evidence verifier checks a challenge-bound Midnight
 VC/VP fixture off-ledger and signs a redacted application commitment. A
 policy-bound quorum of maintainers proposes, approves, and activates an exact
@@ -35,8 +36,17 @@ signed/DCO source SHA and attach results from that exact tree for:
    `pnpm run artifacts:release-manifest` after a full Compact build.
 4. A clean consumer install using the approved manifest with
    `pnpm run packed-artifacts:smoke -- --manifest <path> --actor-journey --vc-consumer`.
-5. Exact-head CI results, independent review, release owner sign-off, and a
-   recorded recovery/rollback decision.
+5. A real local-ledger deployment with an operator-approved genesis pin,
+   independently finalized receipt and readback, and a finalized transition
+   from the bootstrap key to an approved threshold-maintenance committee.
+6. Online installation from pinned packages and image digests, followed by
+   issuer, verifier, auditor, maintainer, and recognition journeys with
+   external egress denied for all runtime processes and containers.
+7. Independent restart, backup/restore, ambiguous-outcome recovery, and
+   historical-evidence checks on the same pinned local chain.
+8. Exact-head CI results, independent security review, release owner sign-off,
+   and a recorded recovery/rollback decision. Simulator and mocked-provider
+   tests satisfy none of the live local deployment gates above.
 
 The manifest lists artifact bytes and source inputs, plus a sorted
 `verifierKeySha256` mapping from every proof-circuit name in generated Compact
@@ -46,8 +56,8 @@ smoke verifies the complete mapping against the packed contract before
 installing packages. A host-invoked deployment adapter now compares the
 finalized on-chain verifier-key catalog with this mapping and confirms its
 initial single-key maintenance authority at the same checkpoint. This is not
-an independent public-network readback or approval of that authority model;
-#213 remains blocking. The manifest alone cannot certify the deployed code.
+an independent local-ledger readback or approval of that authority model;
+the local maintenance transition remains blocking. The manifest alone cannot certify the deployed code.
 A matching tarball digest does not by itself prove that every
 generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
@@ -64,8 +74,8 @@ authenticate the configured network, deployed contract, finalized ledger and
 DID state, historical publication signer context, and time mapping. Neither a
 workspace snapshot, HTTP `202`, nor a received evidence bundle is finality.
 
-No funded public deployment or independent network qualification has been
-performed. The deployment and checkpoint adapters are configurable, but they
+No independent local-ledger deployment or offline-runtime qualification has
+been performed. The deployment and checkpoint adapters are configurable, but they
 do not supply a wallet, node-finality proof, or operator approval. The current
 local status source is fixture-backed. The VC status-registry package exists
 only as a private reference-tier prototype and explicitly requires its
@@ -74,18 +84,20 @@ for supported status profiles; it is not a consumable published dependency or
 an approved #90 adapter. The registry never stores raw VCs,
 VPs, holder identifiers, or presentation activity.
 
-Preprod is the selected first public qualification target, with a
+Preprod is deferred to a later public-network release, with a
 governance-aligned threshold maintenance committee. The
 [administrator runbook](preprod-admin-qualification.md) is a stop-gated
 procedure, not evidence that the deployment or committee transition occurred.
-The [standalone offline-runtime plan](standalone-offline-runtime.md) separately
+The [standalone offline-runtime plan](standalone-offline-runtime.md) is the
+0.1.0 release gate and
 requires online installation followed by an egress-denied, self-hosted local
 ledger and application journey. It is not satisfied by the simulator fixture
-or by Preprod results.
+or by future Preprod results. Draft promotion PR #198 stays draft unless its
+scope and release gates are explicitly updated and reviewed.
 
 Native non-Midnight DID methods, secp256k1/P-256/Ed25519 verification inside
 the Compact contract, transitive federation trust, a distributed API writer,
-live VC status verification, and synchronous deployed Ledger 8 cross-contract
+public-network VC status verification, and synchronous deployed Ledger 8 cross-contract
 consumption are not claimed by this candidate.
 
 ## Owner And Recovery Decision
