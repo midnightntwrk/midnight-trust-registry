@@ -355,6 +355,8 @@ node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setu
 node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
 # Read-only recovery for that same plan; never resubmits:
 node scripts/standalone-setup-wizard.mjs reconcile-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
+# Only after every staged key has verified finalized readback:
+node scripts/standalone-setup-wizard.mjs prepare-committee /absolute/private/setup-directory /absolute/committee-transition-request.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
@@ -426,6 +428,48 @@ the governance reviewer's authority and custody evidence. A recorded roster
 does not submit or verify a contract maintenance transition. The wizard shows
 `roster-signature-verified-transition-pending` until a later transition flow
 binds the deployment receipt and finalized ledger image to this policy.
+
+`prepare-committee` is that flow's **read-only signing step**, not the
+submission. Its public request JSON has exactly these fields; the bootstrap
+and governance values must reflect the operator-approved deployment and the
+current finalized ledger, not the example values below:
+
+```json
+{
+  "format": "tr-local-committee-transition-request-v1",
+  "sourceRevision": "<approved 40-character source SHA>",
+  "bootstrapMaintenanceVerifyingKey": "0x<approved bootstrap maintenance key>",
+  "expiresAt": "<ISO-8601 time within the next ten minutes>",
+  "bootstrap": {
+    "registryId": "<approved registry ID>",
+    "registryDidCommitment": "0x<bytes32>",
+    "governancePolicyCommitment": "0x<bytes32>",
+    "maintainerId": "0x<bytes32>",
+    "maintainerDidCommitment": "0x<bytes32>",
+    "maintainerKeyId": "0x<bytes32>",
+    "maintainerPublicKey": { "x": "<decimal>", "y": "<decimal>" },
+    "maintainerThreshold": "<decimal>"
+  },
+  "governance": {
+    "policyCommitment": "0x<bytes32>",
+    "policyVersion": "<decimal>",
+    "actionSequence": "<decimal>",
+    "maintainerThreshold": "<decimal>",
+    "activeMaintainerCount": "<decimal>"
+  }
+}
+```
+
+The wizard rechecks the stored signed roster, verified install bundle and
+release manifest, original staged receipt, and every per-key `verified`
+readback. The local finality reader then checks the complete current
+verifier-key image, bootstrap authority counter, approved 2-of-3-or-stronger
+committee, and governance pins before the wizard emits `dataToSignHex` with
+the finalized block hash and approval hashes. Neither the request nor its
+output contains a private key. The wizard does not yet accept a signature,
+reserve a maintenance transaction, or claim the transition occurred. Keep
+the bootstrap key under approved custody; do not use the public smoke wallet
+or 1-of-3 smoke roster as a release authority.
 
 The wizard saves a mode-0600 setup record in a mode-0700 directory. It
 reserves a deployment attempt **before**

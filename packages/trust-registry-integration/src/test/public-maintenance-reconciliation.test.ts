@@ -31,10 +31,10 @@ const address = `0x${"a".repeat(64)}`;
 const blockHash = `0x${"b".repeat(64)}`;
 const bootstrapKey = `0x${signatureVerifyingKey(sampleSigningKey())}`;
 const committee = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
-const dataToSign = new MaintenanceUpdate(address.slice(2), [
-  new ReplaceAuthority(new ContractMaintenanceAuthority(committee.map((key) => key.slice(2)), 2, 1n)),
-], 0n).dataToSign;
-const updateSha256 = createHash("sha256").update(dataToSign).digest("hex");
+const updateData = (counter: bigint) => new MaintenanceUpdate(address.slice(2), [
+  new ReplaceAuthority(new ContractMaintenanceAuthority(committee.map((key) => key.slice(2)), 2, counter + 1n)),
+], counter).dataToSign;
+const updateSha256 = (counter: bigint) => createHash("sha256").update(updateData(counter)).digest("hex");
 const directories: string[] = [];
 const approval = (): CommitteeTransitionApproval => ({
   network: { networkId: "preprod" },
@@ -60,7 +60,7 @@ const plan = (input: CommitteeTransitionApproval | LocalCommitteeTransitionAppro
   currentAuthorityCounter: input.stagedVerifierKeyInstallation ? 2n : 0n,
   nextAuthorityCounter: input.stagedVerifierKeyInstallation ? 3n : 1n,
   expiresAt: input.expiresAt.toISOString(),
-  dataToSign,
+  dataToSign: updateData(input.stagedVerifierKeyInstallation ? 2n : 0n),
   authorize: () => { throw new Error("not used by reconciliation tests"); },
 });
 const journal = async (
@@ -84,11 +84,13 @@ const image = (counter: bigint, keys: string[]) => ({
 });
 const reconcile = (input: CommitteeTransitionApproval, file: FileMaintenanceTransitionJournal) =>
   reconcilePublicNetworkCommitteeTransition({
-    approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
+    approval: input, journal: file, approvedUpdateSha256: updateSha256(0n), approvedFinalizedBlockHash: blockHash,
   });
 const reconcileLocal = (input: LocalCommitteeTransitionApproval, file: FileMaintenanceTransitionJournal) =>
   reconcileLocalNetworkCommitteeTransition({
-    approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
+    approval: input, journal: file,
+    approvedUpdateSha256: updateSha256(input.stagedVerifierKeyInstallation ? 2n : 0n),
+    approvedFinalizedBlockHash: blockHash,
   });
 
 beforeEach(() => {
@@ -101,6 +103,10 @@ describe("local maintenance transition reconciliation", () => {
     setNetworkId("undeployed");
     const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
     const file = await journal(true, input);
+    await expect(reconcileLocalNetworkCommitteeTransition({
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
+      approvedFinalizedBlockHash: blockHash,
+    })).rejects.toThrow(/disagrees/u);
     mocks.localReadback.mockResolvedValue({ status: "verified", state: image(3n, committee) });
     await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "observed" });
     mocks.localReadback.mockResolvedValue({ status: "unsafe-maintenance-authority",
@@ -230,7 +236,7 @@ describe("public maintenance transition reconciliation", () => {
       approvedFinalizedBlockHash: blockHash,
     })).rejects.toThrow(/disagrees/u);
     await expect(reconcilePublicNetworkCommitteeTransition({
-      approval: input, journal: file, approvedUpdateSha256: updateSha256,
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
       approvedFinalizedBlockHash: `0x${"9".repeat(64)}`,
     })).rejects.toThrow(/disagrees/u);
     input.receipt.contractAddress = `0x${"8".repeat(64)}`;
@@ -252,7 +258,7 @@ describe("public maintenance transition reconciliation", () => {
       approvedFinalizedBlockHash: blockHash,
     })).rejects.toThrow(/pins are invalid/u);
     await expect(reconcilePublicNetworkCommitteeTransition({
-      approval: input, journal: file, approvedUpdateSha256: updateSha256,
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
       approvedFinalizedBlockHash: `0x${"0".repeat(64)}`,
     })).rejects.toThrow(/pins are invalid/u);
     input.receipt.contractAddress = `0x${"0".repeat(64)}`;

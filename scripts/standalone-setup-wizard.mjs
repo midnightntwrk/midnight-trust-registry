@@ -9,9 +9,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
-  validateMaintenancePolicy, VerifierKeyInsertionOutcomeUnknownError,
+  prepareLocalNetworkCommitteeTransition, validateMaintenancePolicy,
+  VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
@@ -26,11 +28,12 @@ const FORMAT = "tr-standalone-setup-v1";
 const RECORD = "setup-record.json";
 const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const execFileAsync = promisify(execFile);
 const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === "undeployed"
   && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
-  && HASH.test(receipt.blockHash)
+  && HASH.test(receipt.blockHash) && !/^0x0{64}$/u.test(receipt.blockHash)
   && typeof receipt.txId === "string" && receipt.txId.length > 0
   && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
 
@@ -566,6 +569,148 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
   });
 }
 
+const exactFields = (value, fields) => value !== null && typeof value === "object"
+  && !Array.isArray(value)
+  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
+const bytes32 = (value) => {
+  if (!HASH.test(value) || /^0x0{64}$/u.test(value)) {
+    throw new Error("Committee transition request contains an invalid public commitment");
+  }
+  return Buffer.from(value.slice(2), "hex");
+};
+const integer = (value) => {
+  if (typeof value !== "string" || !DECIMAL.test(value)) {
+    throw new Error("Committee transition request contains an invalid decimal counter");
+  }
+  return BigInt(value);
+};
+
+export async function prepareStandaloneCommitteeTransition(directory, requestPath, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const staged = record.deployment?.stagedPlan;
+    const receipt = record.deployment?.result?.receipt;
+    if (!record.genesisApproval || !record.committeeApproval || !staged
+      || record.deployment?.state !== "observed"
+      || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
+      || !validLocalDeploymentReceipt(receipt)) {
+      throw new Error("Approved committee and finalized staged deployment are required");
+    }
+    const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
+    const signedApproval = JSON.parse(approvalBytes.toString("utf8"));
+    if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
+      || signedApproval.sourceRevision !== record.sourceRevision
+      || signedApproval.installInventorySha256 !== record.install.inventorySha256
+      || signedApproval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
+      || signedApproval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || JSON.stringify(signedApproval.maintenancePolicy)
+        !== JSON.stringify(record.committeeApproval.maintenancePolicy)) {
+      throw new Error("Stored committee approval disagrees with signed approval bytes");
+    }
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since committee approval");
+    }
+    const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    if (verified.sourceRevision !== record.sourceRevision) {
+      throw new Error("Installed bundle source revision changed since committee approval");
+    }
+    const manifestPath = join(record.install.bundle, JSON.parse(inventory).packageManifest);
+    const manifestBytes = await regularBytes(manifestPath);
+    const deployedManifestBytes = await regularBytes(staged.releaseManifestPath);
+    if (sha256(manifestBytes) !== sha256(deployedManifestBytes)) {
+      throw new Error("Staged deployment manifest disagrees with approved install bytes");
+    }
+    const manifest = JSON.parse(manifestBytes);
+    if (manifest.format !== "tr-release-candidate-manifest-v2"
+      || manifest.sourceRevision !== record.sourceRevision) {
+      throw new Error("Staged deployment manifest has an invalid source or format");
+    }
+    const catalog = Object.keys(manifest.verifierKeySha256 ?? {});
+    const expectedInsertions = catalog.filter((name) => name !== staged.initialVerifierKeyName).sort();
+    const insertions = record.verifierKeyInsertions ?? {};
+    if (catalog.length < 2 || !catalog.includes(staged.initialVerifierKeyName)
+      || Object.keys(insertions).sort().join("\0") !== expectedInsertions.join("\0")
+      || expectedInsertions.some((name) => insertions[name].state !== "verified")) {
+      throw new Error("Every staged verifier key must have verified finalized readback");
+    }
+    const requestBytes = await regularBytes(resolve(requestPath));
+    const request = JSON.parse(requestBytes);
+    if (!exactFields(request, ["bootstrap", "bootstrapMaintenanceVerifyingKey", "expiresAt",
+      "format", "governance", "sourceRevision"])
+      || request.format !== "tr-local-committee-transition-request-v1"
+      || request.sourceRevision !== record.sourceRevision
+      || !HASH.test(request.bootstrapMaintenanceVerifyingKey)
+      || !exactFields(request.bootstrap, ["governancePolicyCommitment", "maintainerDidCommitment",
+        "maintainerId", "maintainerKeyId", "maintainerPublicKey", "maintainerThreshold",
+        "registryDidCommitment", "registryId"])
+      || !exactFields(request.bootstrap.maintainerPublicKey, ["x", "y"])
+      || typeof request.bootstrap.registryId !== "string"
+      || !exactFields(request.governance, ["actionSequence", "activeMaintainerCount",
+        "maintainerThreshold", "policyCommitment", "policyVersion"])) {
+      throw new Error("Committee transition request has an invalid shape or source revision");
+    }
+    const approval = {
+      network: staged.network,
+      receipt,
+      bootstrap: {
+        registryId: request.bootstrap.registryId,
+        registryDidCommitment: bytes32(request.bootstrap.registryDidCommitment),
+        governancePolicyCommitment: bytes32(request.bootstrap.governancePolicyCommitment),
+        maintainerId: bytes32(request.bootstrap.maintainerId),
+        maintainerDidCommitment: bytes32(request.bootstrap.maintainerDidCommitment),
+        maintainerKeyId: bytes32(request.bootstrap.maintainerKeyId),
+        maintainerPublicKey: {
+          x: integer(request.bootstrap.maintainerPublicKey.x),
+          y: integer(request.bootstrap.maintainerPublicKey.y),
+        },
+        maintainerThreshold: integer(request.bootstrap.maintainerThreshold),
+      },
+      releaseManifest: manifest,
+      governance: {
+        policyCommitment: bytes32(request.governance.policyCommitment),
+        policyVersion: integer(request.governance.policyVersion),
+        actionSequence: integer(request.governance.actionSequence),
+        maintainerThreshold: integer(request.governance.maintainerThreshold),
+        activeMaintainerCount: integer(request.governance.activeMaintainerCount),
+      },
+      maintenancePolicy: record.committeeApproval.maintenancePolicy,
+      bootstrapMaintenanceVerifyingKey: request.bootstrapMaintenanceVerifyingKey,
+      stagedVerifierKeyInstallation: true,
+      expiresAt: new Date(request.expiresAt),
+    };
+    setNetworkId("undeployed");
+    const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
+    if (prepared.networkId !== "undeployed" || prepared.contractAddress !== receipt.contractAddress
+      || !HASH.test(prepared.finalizedBlockHash) || /^0x0{64}$/u.test(prepared.finalizedBlockHash)
+      || prepared.currentAuthorityCounter !== BigInt(catalog.length - 1)
+      || prepared.nextAuthorityCounter !== BigInt(catalog.length)
+      || prepared.threshold !== record.committeeApproval.maintenancePolicy.threshold
+      || JSON.stringify(prepared.committeeVerifyingKeys)
+        !== JSON.stringify(record.committeeApproval.maintenancePolicy.verifyingKeys)
+      || prepared.expiresAt !== approval.expiresAt.toISOString()
+      || !(prepared.dataToSign instanceof Uint8Array) || prepared.dataToSign.length === 0) {
+      throw new Error("Finalized committee transition plan disagrees with approved setup state");
+    }
+    return {
+      kind: "local-committee-transition-signing-request",
+      sourceRevision: record.sourceRevision,
+      committeeApprovalSha256: record.committeeApproval.documentSha256,
+      requestSha256: sha256(requestBytes),
+      releaseManifestSha256: sha256(manifestBytes),
+      contractAddress: prepared.contractAddress,
+      finalizedBlockHash: prepared.finalizedBlockHash,
+      currentAuthorityCounter: prepared.currentAuthorityCounter.toString(),
+      nextAuthorityCounter: prepared.nextAuthorityCounter.toString(),
+      committeeVerifyingKeys: prepared.committeeVerifyingKeys,
+      threshold: prepared.threshold,
+      expiresAt: prepared.expiresAt,
+      dataToSignHex: `0x${Buffer.from(prepared.dataToSign).toString("hex")}`,
+      submission: "not-attempted",
+    };
+  });
+}
+
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
   let lockPresent = false;
@@ -643,8 +788,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -670,6 +815,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const result = await reconcileStandaloneVerifierKeyInsertion(directory, input);
     console.log(JSON.stringify(result));
     if (result.readback.status !== "verified") process.exitCode = 2;
+  }
+  else if (command === "prepare-committee" && input) {
+    console.log(JSON.stringify(await prepareStandaloneCommitteeTransition(directory, input), null, 2));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);

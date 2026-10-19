@@ -1969,3 +1969,14 @@ destinations or protocols are blocked. This is canary-specific ledger-bridge
 evidence only, not proof that the wallet, API, browser, backup processes, or
 actor journeys run without egress. The API executable
 still uses a file-backed workspace; it is not yet a live Compact gateway.
+
+The staged local maintenance reconciliation had a latent counter mismatch:
+its signed-update hash was rebuilt at counter zero even when installed
+verifier keys had advanced the authority counter. The corrected read-only
+path derives both the old and next counter from the pinned manifest catalog;
+the staged regression now uses the actual counter-bound bytes. The first-run
+wizard can also prepare, but not submit, the local maintenance transition
+after signed roster approval and verified readback for every staged key.
+It returns the exact SDK data-to-sign and finalized image pin. These are
+mocked-provider/unit checks until a real deployment, external bootstrap
+signature, one-attempt submission, and finalized committee readback occur.

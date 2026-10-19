@@ -70,13 +70,15 @@ async function reconcilePinnedCommitteeTransition(
     throw new Error("Approved maintenance transition evidence pins are invalid");
   }
   validateMaintenancePolicy(approval.maintenancePolicy);
+  const expectedCounter = approval.stagedVerifierKeyInstallation
+    ? BigInt(Object.keys(approval.releaseManifest.verifierKeySha256).length - 1) : 0n;
   const authority = new ContractMaintenanceAuthority(
     approval.maintenancePolicy.verifyingKeys.map((key) => key.slice(2)),
     approval.maintenancePolicy.threshold,
-    1n,
+    expectedCounter + 1n,
   );
   const update = new MaintenanceUpdate(
-    approval.receipt.contractAddress.slice(2), [new ReplaceAuthority(authority)], 0n,
+    approval.receipt.contractAddress.slice(2), [new ReplaceAuthority(authority)], expectedCounter,
   );
   const computedUpdateSha256 = createHash("sha256").update(update.dataToSign).digest("hex");
   if (computedUpdateSha256 !== input.approvedUpdateSha256) {
@@ -85,8 +87,6 @@ async function reconcilePinnedCommitteeTransition(
   const entry = await input.journal.inspect();
   if (entry === null) return { status: "not-reserved" };
   const { reservation, submitted } = entry;
-  const expectedCounter = approval.stagedVerifierKeyInstallation
-    ? BigInt(Object.keys(approval.releaseManifest.verifierKeySha256).length - 1) : 0n;
   if (reservation.networkId !== approval.network.networkId
     || reservation.contractAddress !== approval.receipt.contractAddress
     || reservation.finalizedBlockHash !== input.approvedFinalizedBlockHash

@@ -16,6 +16,7 @@ import {
   attemptStandaloneVerifierKeyInsertion,
   initializeStandaloneSetup,
   observeStandaloneLedger,
+  prepareStandaloneCommitteeTransition,
   reconcileStandaloneDeployment,
   reconcileStandaloneVerifierKeyInsertion,
   standaloneSetupStatus,
@@ -240,6 +241,105 @@ async function stagedFixture() {
   await writeFile(insertionPlanPath, JSON.stringify(insertionPlan));
   return { ...f, insertionPlanPath, insertionPlan };
 }
+
+async function committeeTransitionFixture() {
+  const f = await stagedFixture();
+  const manifest = {
+    format: "tr-release-candidate-manifest-v2", sourceRevision,
+    verifierKeySha256: { initialKey: "a".repeat(64), nextKey: "b".repeat(64), laterKey: "c".repeat(64) },
+  };
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  await writeFile(join(record.install.bundle, "release-manifest.json"), JSON.stringify(manifest));
+  await writeFile(f.releaseManifestPath, JSON.stringify(manifest));
+  await approveCommittee(f);
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "staged-bootstrap-pending", receipt: stagedReceipt }),
+  });
+  const requestPath = join(f.directory, "committee-transition-request.json");
+  const request = {
+    format: "tr-local-committee-transition-request-v1", sourceRevision,
+    bootstrapMaintenanceVerifyingKey: `0x${signatureVerifyingKey(sampleSigningKey())}`,
+    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    bootstrap: {
+      registryId: "registry:midnight:undeployed:test",
+      registryDidCommitment: `0x${"1".repeat(64)}`,
+      governancePolicyCommitment: `0x${"2".repeat(64)}`,
+      maintainerId: `0x${"3".repeat(64)}`,
+      maintainerDidCommitment: `0x${"4".repeat(64)}`,
+      maintainerKeyId: `0x${"5".repeat(64)}`,
+      maintainerPublicKey: { x: "7", y: "8" },
+      maintainerThreshold: "1",
+    },
+    governance: {
+      policyCommitment: `0x${"6".repeat(64)}`, policyVersion: "2",
+      actionSequence: "4", maintainerThreshold: "2", activeMaintainerCount: "3",
+    },
+  };
+  await writeFile(requestPath, JSON.stringify(request));
+  return { ...f, requestPath, request, manifest };
+}
+
+test("wizard prepares only a complete staged transition under the signed release roster", async () => {
+  const f = await committeeTransitionFixture();
+  const prepareTransition = async (approval) => {
+    const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+    assert.deepEqual(approval.maintenancePolicy, record.committeeApproval.maintenancePolicy);
+    assert.equal(approval.stagedVerifierKeyInstallation, true);
+    assert.deepEqual(approval.receipt, stagedReceipt);
+    assert.deepEqual(approval.releaseManifest, f.manifest);
+    assert.equal(approval.bootstrap.maintainerThreshold, 1n);
+    assert.equal(approval.governance.activeMaintainerCount, 3n);
+    return {
+      networkId: "undeployed", contractAddress: stagedReceipt.contractAddress,
+      finalizedBlockHash: `0x${"e".repeat(64)}`,
+      currentAuthorityCounter: 2n, nextAuthorityCounter: 3n,
+      committeeVerifyingKeys: approval.maintenancePolicy.verifyingKeys,
+      threshold: approval.maintenancePolicy.threshold,
+      expiresAt: approval.expiresAt.toISOString(), dataToSign: Uint8Array.from([1, 2, 3]),
+    };
+  };
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("incomplete catalog"),
+  }), /Every staged verifier key/u);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.verifierKeyInsertions = { nextKey: { state: "verified" }, laterKey: { state: "verified" } };
+  await writeFile(recordPath, JSON.stringify(record));
+  const prepared = await prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition,
+  });
+  assert.equal(prepared.kind, "local-committee-transition-signing-request");
+  assert.equal(prepared.dataToSignHex, "0x010203");
+  assert.equal(prepared.currentAuthorityCounter, "2");
+  assert.equal(prepared.submission, "not-attempted");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "roster-signature-verified-transition-pending");
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+  const changed = { ...f.request, sourceRevision: "f".repeat(40) };
+  await writeFile(f.requestPath, JSON.stringify(changed));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed request"),
+  }), /invalid shape or source revision/u);
+});
+
+test("wizard rejects a changed roster or incomplete key insertion before transition prepare", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.verifierKeyInsertions = { nextKey: { state: "verified" }, laterKey: { state: "pending" } };
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("pending key"),
+  }), /Every staged verifier key/u);
+  record.verifierKeyInsertions.laterKey.state = "verified";
+  record.committeeApproval.maintenancePolicy.threshold = 3;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed roster"),
+  }), /disagrees with signed approval bytes/u);
+});
 
 test("wizard requires finalized staged bootstrap and binds insertion to verified install", async () => {
   const f = await stagedFixture();
