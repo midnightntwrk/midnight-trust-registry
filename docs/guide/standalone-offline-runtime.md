@@ -262,6 +262,25 @@ private journal and finalized local chain, then obtain a human recovery
 decision. The accompanying unit tests mock providers and do not constitute
 local deployment or offline qualification evidence.
 
+The full constructor may exceed the local Ledger transaction block limit when
+all release verifier keys are embedded at once. For a separately approved,
+new installation only, the operator may change the plan format to
+`tr-local-staged-deployment-plan-v1` and add
+`"initialVerifierKeyName": "authorizeMaintainerAuditEvent"` (or another
+approved name in the pinned release catalog). This is an explicit alternative,
+not an automatic fallback from a failed full attempt. The staged plan uses a
+distinct one-attempt intent hash, still verifies the complete installed key
+catalog before reservation, and deploys exactly the chosen initial verifier
+key. A successful finalized readback reports `staged-bootstrap-pending`, **not**
+release qualification. The remaining keys must be installed in individually
+journaled maintenance transactions, read back after finality, and matched to
+the entire release manifest before committee transition and actor journeys.
+Neither this CLI nor the first-run wizard yet performs that completion. Never
+use a new staged plan to bypass an unresolved reservation from an earlier
+attempt; reconcile the earlier journal and chain with a human recovery decision
+first. The development-only public genesis wallet and 1-of-3 committee remain
+unsuitable for release approval.
+
 ### First-run setup wizard (initial slice)
 
 The local CLI wraps the existing install verifier, genesis preflight, and

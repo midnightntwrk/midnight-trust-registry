@@ -43,11 +43,37 @@ const plan = {
 
 test("rejects malformed local deployment plans", () => {
   assert.equal(validateLocalDeploymentPlan(plan), plan);
+  const staged = { ...plan, format: "tr-local-staged-deployment-plan-v1",
+    initialVerifierKeyName: "authorizeMaintainerAuditEvent" };
+  assert.equal(validateLocalDeploymentPlan(staged), staged);
+  assert.throws(() => validateLocalDeploymentPlan({ ...staged, initialVerifierKeyName: "" }), /exact source/u);
+  assert.throws(() => validateLocalDeploymentPlan({ ...plan, initialVerifierKeyName: "authorizeMaintainerAuditEvent" }), /exact source/u);
+  assert.throws(() => validateLocalDeploymentPlan({ ...staged, format: plan.format }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, network: {
     ...plan.network, networkId: "preprod",
   } }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, extra: true }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, journalPath: "relative.json" }), /exact source/u);
+});
+
+test("staged plan passes its circuit pin without changing the full-plan path", async () => {
+  const staged = { ...plan, format: "tr-local-staged-deployment-plan-v1",
+    initialVerifierKeyName: "authorizeMaintainerAuditEvent" };
+  const result = await runLocalDeployment(staged, {
+    validateEndpoints: async () => {},
+    observe: async () => {},
+    loadProvider: async () => ({ createLocalDeploymentMaterial: async () => ({
+      bootstrap: { registryId: "test" }, providers: { marker: "provider" },
+      contractMaintenanceSigningKey: "private-test-key",
+    }) }),
+    deployOnce: async (input) => {
+      assert.equal(input.initialVerifierKeyName, staged.initialVerifierKeyName);
+      assert.ok(input.journal instanceof FileDeploymentAttemptJournal);
+      return { receipt: { networkId: "undeployed", txId: "tx-staged" },
+        readback: { status: "staged-bootstrap-pending" } };
+    },
+  });
+  assert.equal(result.readbackStatus, "staged-bootstrap-pending");
 });
 
 test("checks module bytes and source before any network or provider call", async () => {

@@ -9,6 +9,7 @@ import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import {
   createLocalNetworkDeploymentActionReader,
   deployLocalTrustRegistryOnce,
+  deployLocalTrustRegistryStagedOnce,
   FileDeploymentAttemptJournal,
 } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -19,6 +20,7 @@ const REVISION = /^[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const PLAN_FIELDS = ["format", "journalPath", "network", "providerModulePath",
   "providerModuleSha256", "releaseManifestPath", "sourceRevision"];
+const STAGED_PLAN_FIELDS = [...PLAN_FIELDS, "initialVerifierKeyName"];
 const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
   "indexerWsUrl", "networkId", "rpcUrl"];
 
@@ -26,7 +28,12 @@ const exactFields = (value, fields) => value !== null && typeof value === "objec
   && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
 export function validateLocalDeploymentPlan(plan) {
-  if (!exactFields(plan, PLAN_FIELDS) || plan.format !== "tr-local-deployment-plan-v1"
+  const full = exactFields(plan, PLAN_FIELDS) && plan.format === "tr-local-deployment-plan-v1";
+  const staged = exactFields(plan, STAGED_PLAN_FIELDS)
+    && plan.format === "tr-local-staged-deployment-plan-v1"
+    && typeof plan.initialVerifierKeyName === "string"
+    && /^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(plan.initialVerifierKeyName);
+  if ((!full && !staged)
     || !REVISION.test(plan.sourceRevision) || !SHA256.test(plan.providerModuleSha256)
     || !exactFields(plan.network, NETWORK_FIELDS)
     || plan.network.networkId !== "undeployed"
@@ -87,13 +94,18 @@ export async function runLocalDeployment(plan, dependencies = {}) {
       || !material.providers || !material.contractMaintenanceSigningKey) {
       throw new Error("Provider module did not return bootstrap, providers, and maintenance signing key");
     }
-    const result = await (dependencies.deployOnce ?? deployLocalTrustRegistryOnce)({
+    const deployOnce = dependencies.deployOnce ?? (plan.format === "tr-local-staged-deployment-plan-v1"
+      ? deployLocalTrustRegistryStagedOnce : deployLocalTrustRegistryOnce);
+    const result = await deployOnce({
       network: plan.network,
       bootstrap: material.bootstrap,
       releaseManifest: manifest,
       providers: material.providers,
       contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
       sourceRevision: plan.sourceRevision,
+      ...(plan.format === "tr-local-staged-deployment-plan-v1" ? {
+        initialVerifierKeyName: plan.initialVerifierKeyName,
+      } : {}),
       journal: new FileDeploymentAttemptJournal(plan.journalPath),
     });
     return {

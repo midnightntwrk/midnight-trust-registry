@@ -15,17 +15,20 @@ import {
   DeploymentAttemptOutcomeUnknownError,
   FileDeploymentAttemptJournal,
   deployLocalTrustRegistryOnce,
+  deployLocalTrustRegistryStagedOnce,
   deployPublicTrustRegistryOnce,
   type DeploymentAttemptIntent,
 } from "../deployment-attempt-journal.js";
 
 const mocks = vi.hoisted(() => ({
-  deployPublic: vi.fn(), deployLocal: vi.fn(), verifyInstalledVerifierKeyAssets: vi.fn(),
+  deployPublic: vi.fn(), deployLocal: vi.fn(), deployStaged: vi.fn(),
+  verifyInstalledVerifierKeyAssets: vi.fn(),
 }));
 vi.mock("../public-network-deployment.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../public-network-deployment.js")>(),
   deployPublicTrustRegistry: mocks.deployPublic,
   deployLocalTrustRegistry: mocks.deployLocal,
+  deployLocalTrustRegistryStaged: mocks.deployStaged,
 }));
 vi.mock("../verifier-asset-preflight.js", () => ({
   verifyInstalledVerifierKeyAssets: mocks.verifyInstalledVerifierKeyAssets,
@@ -233,5 +236,31 @@ describe("deployment attempt journal", () => {
     })).rejects.toThrow(/verifier mismatch/u);
     expect(await localJournal.inspect()).toBeNull();
     expect(mocks.deployLocal).not.toHaveBeenCalled();
+  });
+
+  it("binds a staged local attempt to the approved initial circuit", async () => {
+    setNetworkId("undeployed");
+    const initialVerifierKeyName = Object.keys(releaseManifest.verifierKeySha256)[0]!;
+    const input = {
+      ...intent(), providers: {} as never, journal: await journal(),
+      network: { ...localNetwork, fetchImpl: vi.fn() as never },
+      initialVerifierKeyName,
+    };
+    mocks.deployStaged.mockResolvedValue(result("undeployed"));
+    await expect(deployLocalTrustRegistryStagedOnce(input)).resolves.toEqual(result("undeployed"));
+    expect(mocks.deployStaged).toHaveBeenCalledOnce();
+    await expect(input.journal.inspectApproved(input)).resolves.not.toBeNull();
+    await expect(input.journal.inspectApproved({
+      ...input, initialVerifierKeyName: Object.keys(releaseManifest.verifierKeySha256)[1]!,
+    })).rejects.toBeInstanceOf(DeploymentAttemptJournalInvalidError);
+    const fullIntent = { ...intent(), network: input.network };
+    await expect(input.journal.inspectApproved(fullIntent))
+      .rejects.toBeInstanceOf(DeploymentAttemptJournalInvalidError);
+    const invalidJournal = await journal();
+    await expect(deployLocalTrustRegistryStagedOnce({
+      ...input, journal: invalidJournal, initialVerifierKeyName: "notAReleaseCircuit",
+    })).rejects.toThrow(/catalog circuit/u);
+    expect(await invalidJournal.inspect()).toBeNull();
+    expect(mocks.deployStaged).toHaveBeenCalledOnce();
   });
 });

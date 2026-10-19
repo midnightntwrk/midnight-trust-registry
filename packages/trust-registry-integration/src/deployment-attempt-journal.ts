@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import {
   deployLocalTrustRegistry,
+  deployLocalTrustRegistryStaged,
   deployPublicTrustRegistry,
   PublicRegistryBootstrap,
   PublicRegistryDeploymentResult,
@@ -64,6 +65,7 @@ export type DeploymentAttemptIntent = {
   releaseManifest: ReleaseVerifierKeyManifest;
   contractMaintenanceSigningKey: SigningKey;
   sourceRevision: string;
+  initialVerifierKeyName?: string;
 };
 
 export class DeploymentAttemptAlreadyReservedError extends Error {
@@ -119,6 +121,10 @@ function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reserva
     || verifierKeySha256.some(([, hash]) => !Sha256.safeParse(hash).success)) {
     throw new Error("Deployment verifier-key catalog is invalid or incomplete");
   }
+  if (intent.initialVerifierKeyName !== undefined
+    && (network.networkId !== "undeployed" || !circuitNames.includes(intent.initialVerifierKeyName))) {
+    throw new Error("Staged verifier key requires a catalog circuit on the undeployed network");
+  }
   const publicIntent = {
     networkId: network.networkId,
     rpcUrl: network.rpcUrl,
@@ -140,6 +146,9 @@ function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reserva
     maintainerThreshold: bootstrap.maintainerThreshold.toString(),
     bootstrapMaintenanceVerifyingKey: `0x${signatureVerifyingKey(intent.contractMaintenanceSigningKey).toLowerCase()}`,
     verifierKeySha256,
+    ...(intent.initialVerifierKeyName === undefined ? {} : {
+      initialVerifierKeyName: intent.initialVerifierKeyName,
+    }),
   };
   return Reservation.parse({
     version: 1,
@@ -307,4 +316,22 @@ export async function deployLocalTrustRegistryOnce(input: {
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistry(input));
+}
+
+/** A staged local bootstrap is still one attempt and never counts as completed key installation. */
+export async function deployLocalTrustRegistryStagedOnce(input: {
+  network: LocalNetworkDeploymentActionReaderConfig;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  providers: ContractProviders<RegistryContract>;
+  contractMaintenanceSigningKey: SigningKey;
+  sourceRevision: string;
+  initialVerifierKeyName: string;
+  journal: FileDeploymentAttemptJournal;
+}): Promise<PublicRegistryDeploymentResult> {
+  if (input.network.networkId !== "undeployed") {
+    throw new Error("Staged local deployment journal requires the undeployed network");
+  }
+  await verifyInstalledVerifierKeyAssets(input.releaseManifest);
+  return input.journal.executeOnce(input, () => deployLocalTrustRegistryStaged(input));
 }

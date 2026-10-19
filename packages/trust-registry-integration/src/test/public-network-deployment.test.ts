@@ -9,9 +9,11 @@ import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/
 
 import {
   deployLocalTrustRegistry,
+  deployLocalTrustRegistryStaged,
   deployPublicTrustRegistry,
   readPostDeploymentLocalTrustRegistry,
   readPostDeploymentPublicTrustRegistry,
+  stagedBootstrapContract,
 } from "../public-network-deployment.js";
 
 const mocks = vi.hoisted(() => ({
@@ -85,6 +87,7 @@ let observedAuthorityOverride: string | null = null;
 let observedAuthorityCommittee: string[] | null = null;
 let observedAuthorityThreshold = 1;
 let observedAuthorityCounter = 0n;
+let observedCircuitNames = circuitNames;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -100,6 +103,7 @@ beforeEach(() => {
   observedAuthorityCommittee = null;
   observedAuthorityThreshold = 1;
   observedAuthorityCounter = 0n;
+  observedCircuitNames = circuitNames;
   setNetworkId("preview");
   mocks.indexerPublicDataProvider.mockReturnValue({ queryContractState: mocks.queryContractState });
   mocks.deployContract.mockImplementation(async (_providers, options) => {
@@ -117,9 +121,9 @@ beforeEach(() => {
     });
     mocks.queryContractState.mockImplementation(async () => ({
       data: simulator.circuitContext.currentQueryContext.state,
-      operations: () => observedMissingOperation ? circuitNames.slice(1)
-        : observedExtraOperation ? [...circuitNames, "__proto__"]
-          : observedDuplicateOperation ? [...circuitNames, circuitNames[0]] : circuitNames,
+      operations: () => observedMissingOperation ? observedCircuitNames.slice(1)
+        : observedExtraOperation ? [...observedCircuitNames, "__proto__"]
+          : observedDuplicateOperation ? [...observedCircuitNames, observedCircuitNames[0]] : observedCircuitNames,
       operation: (name: string) => ({
         verifierKey: name === circuitNames[0] && observedEmptyVerifierKey ? Buffer.alloc(0)
           : name === "__proto__" ? Buffer.from("unexpected-verifier-key")
@@ -170,6 +174,36 @@ const deployLocal = (overrides: Partial<typeof localNetwork> = {}) => deployLoca
 });
 
 describe("isolated local Trust Registry deployment", () => {
+  it("stages only the approved initial verifier key and leaves release gates pending", async () => {
+    setNetworkId("undeployed");
+    const initialVerifierKeyName = circuitNames[0]!;
+    observedCircuitNames = [initialVerifierKeyName];
+    const staged = stagedBootstrapContract(initialVerifierKeyName);
+    expect(Object.keys(new staged(trustRegistryWitnesses).provableCircuits)).toEqual([initialVerifierKeyName]);
+    expect(Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits))
+      .toHaveLength(circuitNames.length);
+    const result = await deployLocalTrustRegistryStaged({
+      network: localNetwork,
+      bootstrap: {
+        ...bootstrap,
+        registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
+        maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
+      },
+      releaseManifest,
+      providers: {} as never,
+      contractMaintenanceSigningKey: maintenanceSigningKey,
+      initialVerifierKeyName,
+    });
+    expect(result.readback.status).toBe("staged-bootstrap-pending");
+    if (result.readback.status === "staged-bootstrap-pending") {
+      expect(result.readback.state.verifierKeySha256).toEqual({
+        [initialVerifierKeyName]: releaseManifest.verifierKeySha256[initialVerifierKeyName],
+      });
+    }
+    expect(() => stagedBootstrapContract("notAReleaseCircuit"))
+      .toThrow(/release-catalog circuit/u);
+  });
+
   it("rejects changed installed verifier assets before submitting", async () => {
     setNetworkId("undeployed");
     mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
