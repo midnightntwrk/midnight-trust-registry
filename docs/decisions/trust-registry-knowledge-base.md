@@ -2063,6 +2063,9 @@ without printing them or storing them in the public setup record. This is
 configuration preparation only: an operator still checks that the project and
 ports are unused, starts the stack, approves the independently observed
 genesis, and collects actual finalized deployment and offline-journey evidence.
+The explicit observation step records live topology and canary egress checks
+for that selected ledger bridge without implying that the full actor stack is
+offline or that a contract has been deployed.
 
 The first-run release committee roster is approved before deployment and
 therefore cannot itself name the actual contract. A separate detached

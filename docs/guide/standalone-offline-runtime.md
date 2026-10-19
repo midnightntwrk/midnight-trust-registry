@@ -381,6 +381,8 @@ node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory 
 node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup-directory tr-standalone-local-qualification 39944 38088 36300
 # Review the selected project, loopback ports, and distinct volumes before starting it:
 docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f deploy/standalone/compose.yml config -q
+# After the operator starts the reviewed Compose plan, record live ledger-bridge checks:
+node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
@@ -415,6 +417,9 @@ port variables in the shell when running topology and egress checks; Compose's
 private file for restart and restore, and do not reuse it for another ledger.
 An older verified bundle can be used for development smoke, but only a bundle
 built from the chosen release source revision can support RC qualification.
+`observe-stack` checks the selected live project's topology and canary HTTPS/DNS
+egress behavior, then records only ledger-bridge evidence. It does not approve
+genesis, attest actor egress, verify a contract readback, or qualify a release.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
 match the installed source and observed genesis, and requires a detached

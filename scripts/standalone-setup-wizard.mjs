@@ -19,7 +19,8 @@ import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
-import { standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
+import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -196,10 +197,56 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       ports: config.ports,
       envFileSha256: sha256(envBytes),
       preparedAt: new Date().toISOString(),
-      state: "prepared-not-started",
+      state: "prepared-runtime-unobserved",
     };
     await writeRecord(root, record);
     return { project: config.project, ports: config.ports, envFile, state: record.stack.state };
+  });
+}
+
+export async function observeStandaloneStack(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.stack) throw new Error("Prepare an isolated stack before observing it");
+    const envBytes = await regularBytes(join(root, "stack.env"));
+    if (sha256(envBytes) !== record.stack.envFileSha256) {
+      throw new Error("Prepared stack environment changed since setup");
+    }
+    const config = standaloneStackConfig({
+      TR_STACK_NAME: record.stack.project,
+      COMPOSE_PROJECT_NAME: record.stack.project,
+      TR_NODE_PORT: record.stack.ports.node,
+      TR_INDEXER_PORT: record.stack.ports.indexer,
+      TR_PROOF_PORT: record.stack.ports["proof-server"],
+    });
+    const lines = envBytes.toString("utf8").trimEnd().split("\n");
+    const entries = lines.map((line) => line.split("=", 2));
+    const selected = Object.fromEntries(entries);
+    if (entries.length !== 8 || Object.keys(selected).length !== 8
+      || selected.TR_STACK_NAME !== config.project
+      || selected.COMPOSE_PROJECT_NAME !== config.project
+      || selected.TR_NODE_PORT !== config.ports.node
+      || selected.TR_INDEXER_PORT !== config.ports.indexer
+      || selected.TR_PROOF_PORT !== config.ports["proof-server"]) {
+      throw new Error("Prepared stack environment disagrees with the setup record");
+    }
+    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config);
+    const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
+      env: {
+        TR_STACK_NAME: config.project,
+        COMPOSE_PROJECT_NAME: config.project,
+        TR_NODE_PORT: config.ports.node,
+        TR_INDEXER_PORT: config.ports.indexer,
+        TR_PROOF_PORT: config.ports["proof-server"],
+      },
+    });
+    if (topology.project !== config.project || egress.project !== config.project) {
+      throw new Error("Stack observations disagree with the selected project");
+    }
+    record.stack.observation = { topology, egress };
+    record.stack.state = "observed-ledger-bridge-only";
+    await writeRecord(root, record);
+    return { project: config.project, state: record.stack.state, topology, egress };
   });
 }
 
@@ -1270,7 +1317,8 @@ export async function standaloneSetupStatus(directory) {
     format: FORMAT,
     sourceRevision: record.sourceRevision,
     install: "verified-staged-bytes-only",
-    stackConfiguration: record.stack?.state ?? "pending",
+    stackConfiguration: record.stack?.observation ? "observed-ledger-bridge-only"
+      : record.stack ? "prepared-runtime-unobserved" : "pending",
     localLedger: record.genesisApproval ? "operator-pinned-reviewer-signature-verified"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
@@ -1362,8 +1410,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -1372,6 +1420,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       project: input, nodePort: signature, indexerPort: keyring, proofPort: fingerprint,
     })));
   }
+  else if (command === "observe-stack") console.log(JSON.stringify(await observeStandaloneStack(directory)));
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "approve-genesis" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneGenesis(directory, input, signature, keyring, fingerprint)));

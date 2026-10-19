@@ -19,6 +19,7 @@ import {
   attemptStandaloneVerifierKeyInsertion,
   initializeStandaloneSetup,
   observeStandaloneLedger,
+  observeStandaloneStack,
   prepareStandaloneStack,
   prepareStandaloneCommitteeTransition,
   reconcileStandaloneCommitteeTransition,
@@ -211,7 +212,7 @@ test("wizard prepares a private isolated stack without starting or approving it"
     indexerPort: "38088", proofPort: "36300" };
   const result = await prepareStandaloneStack(f.directory, requested, stackDependencies(f));
   assert.equal(result.project, requested.project);
-  assert.equal(result.state, "prepared-not-started");
+  assert.equal(result.state, "prepared-runtime-unobserved");
   assert.equal((await lstat(result.envFile)).mode & 0o077, 0);
   const env = await readFile(result.envFile, "utf8");
   assert.match(env, /TR_STACK_NAME=tr-standalone-local-qualification/u);
@@ -220,14 +221,70 @@ test("wizard prepares a private isolated stack without starting or approving it"
   assert.match(env, /TR_INDEXER_PASSWORD=[0-9a-f]{48}/u);
   assert.match(env, /TR_INDEXER_SECRET=[0-9a-f]{64}/u);
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
-  assert.equal(record.stack.state, "prepared-not-started");
+  assert.equal(record.stack.state, "prepared-runtime-unobserved");
   assert.ok(!JSON.stringify(record).includes(env.match(/TR_INDEXER_SECRET=([0-9a-f]{64})/u)[1]));
   const status = await standaloneSetupStatus(f.directory);
-  assert.equal(status.stackConfiguration, "prepared-not-started");
+  assert.equal(status.stackConfiguration, "prepared-runtime-unobserved");
   assert.equal(status.localLedger, "pending");
   assert.equal(status.releaseQualified, false);
   await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
     /already prepared/u);
+});
+
+test("wizard records only selected ledger-bridge topology and egress observations", async () => {
+  const f = await fixture();
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  const result = await observeStandaloneStack(f.directory, {
+    observeTopology: async (config) => {
+      assert.equal(config.project, project);
+      return { kind: "standalone-runtime-topology-observation", project,
+        egressDenied: "not-verified", actorJourneys: "not-run" };
+    },
+    observeEgress: async ({ env }) => {
+      assert.equal(env.TR_STACK_NAME, project);
+      assert.equal(env.TR_NODE_PORT, "39944");
+      return { kind: "standalone-ledger-egress-probe", project,
+        scope: "canary HTTPS and DNS on ledger bridge only" };
+    },
+  });
+  assert.equal(result.state, "observed-ledger-bridge-only");
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.stackConfiguration, "observed-ledger-bridge-only");
+  assert.equal(status.localLedger, "pending");
+  assert.equal(status.deployment, "pending");
+  assert.equal(status.offlineJourneys, "pending");
+  assert.equal(status.releaseQualified, false);
+});
+
+test("wizard rejects a changed private stack environment before observation", async () => {
+  const f = await fixture();
+  const prepared = await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  await writeFile(prepared.envFile, "TR_STACK_NAME=other\n");
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => { throw new Error("must not inspect topology"); },
+  }), /environment changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration,
+    "prepared-runtime-unobserved");
+});
+
+test("wizard refuses to attribute a stack observation to changed setup metadata", async () => {
+  const f = await fixture();
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.stack.project = "tr-standalone-local-other";
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => { throw new Error("must not inspect topology"); },
+  }), /disagrees with the setup record/u);
 });
 
 test("wizard rejects unsafe stack names, reused ports, and changed install bytes", async () => {
