@@ -30,13 +30,14 @@ trustworthy by itself.
    keys, API credentials, and proof inputs out of images, fixtures, and logs.
 
 The staged install directory must contain `install-inventory.json`, the
-release-candidate package manifest and its ten tarballs, and separate OCI image
-archives for node, indexer, and proof server. Use this shape, replacing every
+release-candidate package manifest and its ten tarballs, separate OCI image
+archives for node, indexer, and proof server, and the proof server's verified
+Ledger 8 public-parameter cache. Use this shape, replacing every
 placeholder with approved exact values:
 
 ```json
 {
-  "format": "tr-standalone-install-v1",
+  "format": "tr-standalone-install-v2",
   "sourceRevision": "<40-character signed source SHA>",
   "packageManifest": "release-candidate-manifest.json",
   "artifactDirectory": "artifacts/npm",
@@ -44,13 +45,40 @@ placeholder with approved exact values:
     { "role": "node", "reference": "registry.example/node@sha256:<digest>", "archive": "images/node.tar", "archiveSha256": "<archive sha256>" },
     { "role": "indexer", "reference": "registry.example/indexer@sha256:<digest>", "archive": "images/indexer.tar", "archiveSha256": "<archive sha256>" },
     { "role": "proof-server", "reference": "registry.example/proof-server@sha256:<digest>", "archive": "images/proof-server.tar", "archiveSha256": "<archive sha256>" }
-  ]
+  ],
+  "proofParameters": {
+    "directory": "proof-params",
+    "files": [
+      { "path": "bls_midnight_2p10", "sha256": "<sha256>" },
+      { "path": "bls_midnight_2p11", "sha256": "<sha256>" },
+      { "path": "bls_midnight_2p12", "sha256": "<sha256>" },
+      { "path": "bls_midnight_2p13", "sha256": "<sha256>" },
+      { "path": "bls_midnight_2p14", "sha256": "<sha256>" },
+      { "path": "bls_midnight_2p15", "sha256": "<sha256>" },
+      { "path": "dust/9/spend.prover", "sha256": "<sha256>" },
+      { "path": "dust/9/spend.verifier", "sha256": "<sha256>" },
+      { "path": "dust/9/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/9/spend.prover", "sha256": "<sha256>" },
+      { "path": "zswap/9/spend.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/9/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/9/output.prover", "sha256": "<sha256>" },
+      { "path": "zswap/9/output.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/9/output.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/9/sign.prover", "sha256": "<sha256>" },
+      { "path": "zswap/9/sign.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/9/sign.bzkir", "sha256": "<sha256>" }
+    ]
+  }
 }
 ```
 
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
-the packed contract and hashes each image archive without network access.
+the packed contract and hashes each image archive and all 18 required proof
+parameter files without network access. A missing, extra, linked, or altered
+parameter file fails the check. The proof server verifies downloaded parameter
+contents during online installation; keep the checked cache as a read-only
+runtime input, not as an unpinned writable container layer.
 The image reference is an operator-approved pin; archive hashing alone cannot
 prove that the archive came from that registry digest. Record independent
 registry-digest verification at acquisition, and prove `docker load` plus
@@ -64,21 +92,35 @@ qualification result.
 The repository includes `deploy/standalone/compose.yml` as an **isolated
 development smoke stack**, derived from a pinned `midnight-examples` revision.
 It uses arm64 image digests, separate `tr-standalone-local-smoke` volumes, an
-internal container network, and loopback ports 29944 (node), 28088 (indexer),
-and 26300 (proof server). Provision `TR_INDEXER_PASSWORD` and
-`TR_INDEXER_SECRET` in a private, untracked environment file before running
+internal container network, and a read-only proof-parameter bind mount.
+Provision `TR_INDEXER_PASSWORD`, a 64-character hex `TR_INDEXER_SECRET`, and
+an absolute `TR_PROOF_PARAMS_DIR` pointing to the checked cache in a private,
+untracked environment file before running
 `docker compose --env-file <private-env-file> -f deploy/standalone/compose.yml
 up -d --wait`. Never run `down -v` against a ledger whose history is evidence.
+During online installation only, the dedicated proof-server container may be
+temporarily attached to an egress-capable network to fetch and verify its
+public parameters. Copy `/.cache/midnight/zk-params` to the checked install
+bundle, then disconnect that network and recreate the proof container with
+`TR_PROOF_PARAMS_DIR` mounted. The runtime Compose configuration disables
+parameter fetching. A cold start alone does not prove cache completeness;
+verify the exact 18-file inventory before running a real proof.
 The image digests identify upstream bytes, not an approved distribution
 channel. This Compose file does not start the Trust Registry API, portals,
 wallet, DID/VC/status authority, or egress-denial harness and does not close
-any release gate by itself. Validate that `/data` actually retains node and
-indexer state before using the volumes for restart/restore evidence.
+any release gate by itself. The node chain belongs under `/node/chain`; the
+indexer SQLite state belongs under `/data`. Validate both named volumes across
+restarts before using them for restore evidence.
 
 The local Midnight network uses network ID `undeployed`, not `preprod`. The
-dedicated smoke stack exposes node RPC, indexer, and proof-server services
-on loopback by default. Bind them to an isolated network, not public
-interfaces. Start and fund local accounts before disabling egress. A local
+dedicated smoke stack keeps node RPC, indexer, and proof-server services on
+its internal bridge. On Docker Desktop, that bridge does **not** publish the
+configured loopback ports to the host, even though Compose records the port
+bindings. Probe service aliases from a container on the isolated network;
+host-side preflight/deployment needs a separately controlled temporary access
+path and cannot be counted as an offline journey while that path permits
+egress. Do not expose these endpoints on public interfaces. Start and fund
+local accounts before disabling egress. A local
 proof server sees witness data and must remain inside the same trust boundary.
 
 Before any deployment, have an operator approve a genesis hash through a

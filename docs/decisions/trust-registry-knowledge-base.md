@@ -1733,3 +1733,33 @@ rejections, including a signature invalidated by a changed resolved Midnight
 DID assertion key. Each isolated case preserves a fresh challenge and then
 accepts the original valid proofs. These are local fixture-backed checks, not
 independent external accreditation or public-network finality evidence.
+
+## Dedicated Local Ledger Smoke, 2026-10-19
+
+The `tr-standalone-local-smoke` project pulled its three pinned Ledger 8
+images and started a dedicated node, indexer, and proof server without
+touching the sibling passport localnet. The indexer required a 64-character
+hex secret. The proof server could not fetch its verified public parameters
+on the internal bridge; it fetched them during a temporary online
+installation phase, and its 18-file cache was copied to a preserved local
+artifact directory. After removing the temporary external network, a
+recreated proof container started with that cache mounted read-only and
+parameter fetching disabled; a peer on the internal bridge returned proof
+server version `8.1.0`. This is an offline cold-start observation, not a
+successful proof or end-to-end actor journey.
+
+The node image wrote its chain under `/node/chain`, not the original `/data`
+volume mount. After stopping the dedicated node and indexer, the chain was
+copied from the stopped container into the named node volume and Compose was
+corrected to mount `/node/chain`. The recreated node reported the same genesis
+hash `0xe624f91737add2cf1a6658b3cf3a5524d633faea8c943702b435820316d9e21e`
+and still served the pre-stop finalized block
+`0xd16811b96a9f9e567b92f46d84130b0ed29edf4075e1e7fec93fc5d484f33e17`
+at height `0x76`; the indexer returned to healthy. These are local RPC and
+container observations, not an independently approved genesis, authenticated
+finality proof, contract deployment, backup restore, or release qualification.
+On the tested Docker Desktop internal bridge, configured loopback port
+bindings were not published to the host. Host-side deployment therefore
+needs a separately controlled access path; offline E2E must run with that
+egress-capable path removed and all required services inside the trust
+boundary. #198 remains draft.

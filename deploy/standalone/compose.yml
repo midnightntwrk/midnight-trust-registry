@@ -11,7 +11,7 @@ services:
       - "127.0.0.1:29944:9944"
     networks: [ledger]
     volumes:
-      - node-data:/data
+      - node-data:/node/chain
     environment:
       CFG_PRESET: dev
       SIDECHAIN_BLOCK_BENEFICIARY: 04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e
@@ -63,8 +63,11 @@ services:
     ports:
       - "127.0.0.1:26300:6300"
     networks: [ledger]
+    volumes:
+      - ${TR_PROOF_PARAMS_DIR:?absolute path to pinned proof parameters required}:/.cache/midnight/zk-params:ro
     environment:
       RUST_BACKTRACE: full
+      MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS: "true"
 
 networks:
   ledger:
