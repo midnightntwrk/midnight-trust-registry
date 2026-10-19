@@ -8,8 +8,12 @@ const ledger = `${project}_ledger`;
 const network = {
   Name: ledger, Id: "ledger-id", Internal: true, Driver: "bridge", EnableIPv6: false,
   Labels: { "com.docker.compose.project": project },
+  Containers: Object.fromEntries(["node", "indexer", "proof-server"].map((service) => [
+    `${service}-id`, { Name: `${project}-${service}-1` },
+  ])),
 };
 const container = (service) => ({
+  Id: `${service}-id`,
   Config: {
     Image: `midnightntwrk/${service}@sha256:${"a".repeat(64)}`,
     Labels: { "com.docker.compose.project": project, "com.docker.compose.service": service },
@@ -37,6 +41,12 @@ test("rejects external attachment and network drift", () => {
   const attached = structuredClone(containers);
   attached[0].NetworkSettings.Networks.bridge = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneTopology(network, attached), /non-internal/u);
+  const relay = structuredClone(network);
+  relay.Containers["relay-id"] = { Name: "tr-standalone-install-relay" };
+  assert.throws(() => checkStandaloneTopology(relay, containers), /extra container attachment/u);
+  const detached = structuredClone(network);
+  delete detached.Containers["node-id"];
+  assert.throws(() => checkStandaloneTopology(detached, containers), /missing or extra/u);
 });
 
 test("rejects writable proof cache, fetch mode, and persistence drift", () => {

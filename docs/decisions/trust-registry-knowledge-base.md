@@ -1956,3 +1956,13 @@ not independent transaction-inclusion evidence, and reconciliation stops once
 the staged bootstrap or key installation has advanced. The earlier unresolved full-constructor
 development attempt remains subject to independent reconciliation and a
 human recovery decision.
+
+The dedicated offline ledger topology check now rejects *any* extra network
+attachment, including the temporary installation relay, rather than checking
+only the three Compose service containers. A live controlled egress probe on
+the dedicated stack used the same pinned node image and IP-pinned HTTPS canary
+on Docker's normal and internal bridges: the normal bridge reached the canary,
+the internal bridge returned a connection error and had no default route.
+This is ledger-bridge evidence only, not proof that the wallet, API, browser,
+backup processes, or actor journeys run without egress. The API executable
+still uses a file-backed workspace; it is not yet a live Compact gateway.

@@ -28,6 +28,12 @@ export function checkStandaloneTopology(network, containers) {
   if (!Array.isArray(containers) || containers.length !== SERVICES.length) {
     throw new Error("Dedicated stack must contain exactly three services");
   }
+  const attachedIds = Object.keys(network.Containers ?? {}).sort();
+  const serviceIds = containers.map((container) => container.Id).sort();
+  if (attachedIds.length !== SERVICES.length
+    || attachedIds.some((id, index) => id !== serviceIds[index])) {
+    throw new Error("Dedicated ledger network has a missing or extra container attachment");
+  }
   const observed = [];
   for (const container of containers) {
     const labels = container.Config?.Labels;
