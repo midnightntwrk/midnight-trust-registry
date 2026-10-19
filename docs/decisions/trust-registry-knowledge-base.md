@@ -1962,7 +1962,10 @@ attachment, including the temporary installation relay, rather than checking
 only the three Compose service containers. A live controlled egress probe on
 the dedicated stack used the same pinned node image and IP-pinned HTTPS canary
 on Docker's normal and internal bridges: the normal bridge reached the canary,
-the internal bridge returned a connection error and had no default route.
-This is ledger-bridge evidence only, not proof that the wallet, API, browser,
-backup processes, or actor journeys run without egress. The API executable
+the internal bridge returned a connection error, could not resolve that
+canary's DNS name, and had no `/0` or `/1` route. The probe contacts the
+external third-party host `example.com`; it does not prove that other
+destinations or protocols are blocked. This is canary-specific ledger-bridge
+evidence only, not proof that the wallet, API, browser, backup processes, or
+actor journeys run without egress. The API executable
 still uses a file-backed workspace; it is not yet a live Compact gateway.

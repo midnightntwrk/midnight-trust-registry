@@ -47,6 +47,9 @@ test("rejects external attachment and network drift", () => {
   const detached = structuredClone(network);
   delete detached.Containers["node-id"];
   assert.throws(() => checkStandaloneTopology(detached, containers), /missing or extra/u);
+  const anonymous = structuredClone(containers);
+  delete anonymous[0].Id;
+  assert.throws(() => checkStandaloneTopology(network, anonymous), /missing or extra/u);
 });
 
 test("rejects writable proof cache, fetch mode, and persistence drift", () => {

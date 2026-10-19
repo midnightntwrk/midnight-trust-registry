@@ -559,21 +559,22 @@ logs and run real actor journeys under the release egress policy separately.
 The topology check also requires the network's complete attachment list to
 match the three pinned services. A temporary installation relay or another
 container attached to the ledger bridge fails the check. To test one
-outbound path with a positive control, while the installation network is
-available and the relay is absent, run:
+outbound path with a positive control, while Docker's normal bridge can reach
+the public internet and the relay is absent, run:
 
 ```sh
 pnpm run check:standalone-egress
 ```
 
-This uses the pinned local node image as an ephemeral probe on Docker's normal
-bridge and then on the dedicated internal bridge. Both requests target the
-same DNS-resolved IPv4 address using HTTPS with proxy bypass; the control
-must succeed, the internal connection must fail, and only the control may
-have a default route. The command changes no ledger data or service mounts.
-Its evidence is limited to this canary and the ledger bridge. It does not
-verify wallet, API, browser, backup, other host egress paths, or actor
-journeys, and it does not replace firewall logs or an offline end-to-end run.
+This contacts the external third-party host `example.com` from a restricted
+ephemeral copy of the pinned node image on Docker's normal bridge. The same
+IP-pinned HTTPS request must then fail on the dedicated internal bridge,
+and the canary's DNS lookup must fail there as well. The control must have a
+broad outbound route; the internal probe must have no `/0` or `/1` route.
+The command changes no ledger data or service mounts. Its evidence is limited
+to this canary and the ledger bridge. It does not verify wallet, API, browser,
+backup, other host egress paths, or actor journeys, and it does not replace
+firewall logs or an offline end-to-end run.
 
 The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.

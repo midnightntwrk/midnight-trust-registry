@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
@@ -25,26 +26,61 @@ async function docker(args, allowFailure = false) {
   }
 }
 
-function runInNetwork(image, network, entrypoint, args) {
-  return docker([
-    "run", "--rm", "--pull", "never", "--network", network,
-    "--entrypoint", entrypoint, image, ...args,
-  ], true);
+async function runInNetwork(command, image, network, entrypoint, args) {
+  const name = `tr-egress-probe-${randomUUID()}`;
+  try {
+    const result = await command([
+      "run", "--rm", "--name", name, "--pull", "never", "--read-only", "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges", "--user", "65534:65534", "--network", network,
+      "--entrypoint", entrypoint, image, ...args,
+    ], true);
+    if (result.code >= 125) throw new Error("Docker could not start the egress probe container");
+    return result;
+  } catch (error) {
+    await command(["rm", "-f", name], true).catch(() => {});
+    throw error;
+  }
 }
 
-export function hasDefaultRoute(routeTable) {
+export function hasBroadOutboundRoute(routeTable) {
   return routeTable.split("\n").slice(1).some((line) => {
     const columns = line.trim().split(/\s+/u);
-    return columns.length >= 4 && columns[1] === "00000000" && columns[3] === "0003";
+    if (columns.length < 8 || !/^[0-9a-fA-F]{8}$/u.test(columns[7])) return false;
+    const mask = Number.parseInt(columns[7], 16);
+    return (mask === 0 || (mask & (mask - 1)) === 0) && mask !== 0xffffffff;
   });
 }
 
-export function validateEgressProbe({ controlRoute, isolatedRoute, controlCode, isolatedCode }) {
-  if (!hasDefaultRoute(controlRoute)) {
-    throw new Error("Positive-control container has no default route");
+export function hasValidRouteTable(routeTable) {
+  const lines = routeTable.trim().split("\n");
+  if (!/^Iface\s+Destination\s+Gateway\s+Flags\s+/u.test(lines[0] ?? "")
+    || lines.length < 2) return false;
+  return lines.slice(1).every((line) => {
+    const columns = line.trim().split(/\s+/u);
+    return columns.length >= 8
+      && /^[0-9a-fA-F]{8}$/u.test(columns[1])
+      && /^[0-9a-fA-F]{8}$/u.test(columns[7]);
+  });
+}
+
+export function parseCanaryAddress(output) {
+  const address = output.match(/^((?:\d{1,3}\.){3}\d{1,3})\s/mu)?.[1];
+  if (!address || address.split(".").some((part) => Number(part) > 255)) {
+    throw new Error("Canary did not resolve to an IPv4 address");
   }
-  if (hasDefaultRoute(isolatedRoute)) {
-    throw new Error("Isolated ledger network unexpectedly has a default route");
+  return address;
+}
+
+export function validateEgressProbe({ controlRoute, isolatedRoute, controlCode, isolatedCode,
+  isolatedDnsCode, isolatedDnsOutput }) {
+  if (!hasValidRouteTable(controlRoute) || !hasValidRouteTable(isolatedRoute)) {
+    throw new Error("Probe route table is empty or malformed");
+  }
+  if (!hasBroadOutboundRoute(controlRoute)) {
+    throw new Error("Positive-control container has no broad outbound route");
+  }
+  if (hasBroadOutboundRoute(isolatedRoute)) {
+    throw new Error("Isolated ledger network unexpectedly has a broad outbound route");
   }
   if (controlCode !== 0) {
     throw new Error("Positive-control HTTPS request did not succeed");
@@ -52,40 +88,45 @@ export function validateEgressProbe({ controlRoute, isolatedRoute, controlCode, 
   if (isolatedCode !== 7) {
     throw new Error("Isolated HTTPS request did not fail with a connection error");
   }
+  if (isolatedDnsCode !== 2 || isolatedDnsOutput.trim() !== "") {
+    throw new Error("Isolated canary DNS resolution was not denied");
+  }
 }
 
-export async function observeStandaloneEgress() {
-  await observeStandaloneTopology();
-  const image = (await docker([
+export async function observeStandaloneEgress(dependencies = {}) {
+  const command = dependencies.dockerCommand ?? docker;
+  const topology = dependencies.observeTopology ?? observeStandaloneTopology;
+  await topology();
+  const image = (await command([
     "inspect", "--format", "{{.Config.Image}}", `${PROJECT}-node-1`,
   ])).stdout.trim();
   if (!DIGEST_IMAGE.test(image)) throw new Error("Probe image is not digest-pinned");
 
-  const addresses = await runInNetwork(image, "bridge", "getent", ["ahostsv4", CANARY]);
+  const addresses = await runInNetwork(command, image, "bridge", "getent", ["ahostsv4", CANARY]);
   if (addresses.code !== 0) throw new Error("Canary DNS resolution failed on control bridge");
-  const address = addresses.stdout.match(/^((?:\d{1,3}\.){3}\d{1,3})\s/mu)?.[1];
-  if (!address || address.split(".").some((part) => Number(part) > 255)) {
-    throw new Error("Canary did not resolve to an IPv4 address");
-  }
+  const address = parseCanaryAddress(addresses.stdout);
 
   const curlArgs = [
     "--noproxy", "*", "--resolve", `${CANARY}:443:${address}`,
     "--connect-timeout", "5", "--max-time", "10", "-fsSI", `https://${CANARY}`,
   ];
-  const controlRoute = await runInNetwork(image, "bridge", "cat", ["/proc/net/route"]);
-  const isolatedRoute = await runInNetwork(image, NETWORK, "cat", ["/proc/net/route"]);
+  const controlRoute = await runInNetwork(command, image, "bridge", "cat", ["/proc/net/route"]);
+  const isolatedRoute = await runInNetwork(command, image, NETWORK, "cat", ["/proc/net/route"]);
   if (controlRoute.code !== 0 || isolatedRoute.code !== 0) {
     throw new Error("Could not inspect probe route tables");
   }
-  const control = await runInNetwork(image, "bridge", "curl", curlArgs);
-  const isolated = await runInNetwork(image, NETWORK, "curl", curlArgs);
+  const control = await runInNetwork(command, image, "bridge", "curl", curlArgs);
+  const isolated = await runInNetwork(command, image, NETWORK, "curl", curlArgs);
+  const isolatedDns = await runInNetwork(command, image, NETWORK, "getent", ["ahostsv4", CANARY]);
   validateEgressProbe({
     controlRoute: controlRoute.stdout,
     isolatedRoute: isolatedRoute.stdout,
     controlCode: control.code,
     isolatedCode: isolated.code,
+    isolatedDnsCode: isolatedDns.code,
+    isolatedDnsOutput: isolatedDns.stdout,
   });
-  await observeStandaloneTopology();
+  await topology();
   return {
     kind: "standalone-ledger-egress-probe",
     observedAt: new Date().toISOString(),
@@ -95,8 +136,9 @@ export async function observeStandaloneEgress() {
     canaryAddress: address,
     controlHttpsReachable: true,
     internalBridgeHttpsConnectionDenied: true,
-    internalBridgeHasDefaultRoute: false,
-    scope: "ledger bridge only; wallet, API, browser, backups, and actor journeys not verified",
+    internalBridgeCanaryDnsResolutionDenied: true,
+    internalBridgeBroadOutboundRouteAbsent: true,
+    scope: "canary HTTPS and DNS on ledger bridge only; wallet, API, browser, backups, and actor journeys not verified",
   };
 }
 
