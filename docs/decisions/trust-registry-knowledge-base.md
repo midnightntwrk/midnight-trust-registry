@@ -2096,6 +2096,12 @@ the verified bundle; source-scoped offline tags require all three services
 and the two-file overlay. It also rejects extra mounts and privileged services.
 These are ledger-bridge observations, not proof of a clean-host install,
 packet-level egress denial, full actor journeys, or contract deployment.
+The separate restart observer captures an immutable private baseline and
+compares service start times, persistent volume creation times, the same
+historical finalized block hash, and later finality after operator-controlled
+restarts. It also binds the observer script hash. A pre-deployment smoke does
+not establish contract, wallet, API, actor, or cross-host restore continuity;
+those remain separate RC gates.
 The host access relay is installation-only and must attach to the selected
 project with distinct loopback host ports; the original smoke relay recipe
 cannot be reused unchanged for a concurrent qualification project.

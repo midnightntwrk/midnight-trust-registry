@@ -923,6 +923,37 @@ to the same chain specification: persist and verify chain state, receipts,
 and finalized history across restarts. A node without a progressing finalized
 head yields `pending`, not qualification evidence.
 
+### Ledger-bridge restart observation
+
+After recording a v3 `observe-stack` result, capture one non-overwriting
+baseline in the private setup directory. Restart the selected project's
+services **one at a time**, checking health between commands, then verify:
+
+```sh
+node scripts/check-standalone-restart.mjs capture /absolute/private/setup-directory
+docker restart <selected-project>-node-1
+# Wait for the node health check, then restart the indexer and wait for health.
+docker restart <selected-project>-indexer-1
+docker restart <selected-project>-proof-server-1
+node scripts/check-standalone-restart.mjs verify /absolute/private/setup-directory
+```
+
+The observer rechecks the verified v3 bundle, private prepared inputs, live
+container image IDs and Compose paths, and the same named volumes. Verification
+requires each service's container ID to remain stable and start time to advance, the earlier finalized block to
+retain its hash at the same height, and finality to progress afterward. It
+records the observer script hash separately from the bundle source SHA. The
+private `restart-baseline.json` and `restart-verification.json` files are
+created once with mode 0600; do not overwrite them to retry a failure. Retain
+the explicit restart command log and investigate failed or ambiguous results.
+Never use `down -v` on a ledger whose history is evidence.
+
+This is **ledger-bridge continuity only**. A pre-deployment run is a development
+smoke, not RC evidence. Even after deployment, this helper does not read back
+the contract, wallet keys, API state, browser journeys, or backup media; it
+does not exercise cross-host restore, prove independent service restarts from
+the command log alone, or close the restart/recovery release gate.
+
 ## Acceptance Test Before Claiming Support
 
 1. Complete installation online, then block external DNS and egress while
