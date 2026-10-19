@@ -357,6 +357,10 @@ node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-dire
 node scripts/standalone-setup-wizard.mjs reconcile-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
 # Only after every staged key has verified finalized readback:
 node scripts/standalone-setup-wizard.mjs prepare-committee /absolute/private/setup-directory /absolute/committee-transition-request.json
+# Save the prepare-committee JSON output as an exact signing-request file; sign dataToSignHex externally.
+node scripts/standalone-setup-wizard.mjs submit-committee /absolute/private/setup-directory /absolute/committee-transition-request.json /absolute/committee-signing-request.json /absolute/committee-signature.json
+# Read-only recovery; never submits or retries the maintenance transaction:
+node scripts/standalone-setup-wizard.mjs reconcile-committee /absolute/private/setup-directory /absolute/committee-transition-request.json /absolute/committee-signing-request.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
@@ -467,11 +471,55 @@ verifier-key image, bootstrap authority counter, approved 2-of-3-or-stronger
 committee, and governance pins before the wizard emits `dataToSignHex` with
 the `updateSha256`, finalized block hash, and approval hashes. Preserve these
 pins with the separately signed bytes: a later local submission must reject a
-fresh plan if either the update hash or finalized checkpoint differs. Neither the request nor its
-output contains a private key. The wizard does not yet accept a signature,
-reserve a maintenance transaction, or claim the transition occurred. Keep
-the bootstrap key under approved custody; do not use the public smoke wallet
-or 1-of-3 smoke roster as a release authority.
+fresh plan if its update hash differs. A newer finalized head is allowed only
+when a fresh finalized readback still matches the approved full registry image
+and exact signable update; the journal retains both the originally approved
+checkpoint and the current submission checkpoint. Neither
+the request nor its output contains a private key. The signature file has
+exactly this shape:
+
+```json
+{
+  "format": "tr-local-committee-signature-v1",
+  "updateSha256": "<updateSha256 from the saved signing request>",
+  "signature": "0x<128 lowercase hex characters from an external bootstrap signer>"
+}
+```
+
+`submit-committee` re-prepares against the live finalized image, requires the
+saved signing request to match every field except the advancing finalized-head
+hash, and verifies the bootstrap signature
+before reservation, and records a one-attempt private maintenance journal
+before proving or submitting. A changed signable payload requires a new
+signing request and signature. If a caught preflight error leaves **no journal
+reservation**, the wizard records `aborted-before-journal` and permits an
+explicit new attempt; it retains the aborted record in history. A present or
+unreadable journal is **unknown**, never permission to retry.
+`reconcile-committee` uses the original
+request and signing-request hashes, journal, and finalized readback without
+submitting. A returned transaction ID is journal-attributed; it is not
+independent inclusion evidence. The wizard never marks the release qualified
+merely because this transition is observed. Keep the bootstrap key under
+approved custody; do not use the public smoke wallet or 1-of-3 smoke roster
+as a release authority.
+
+If the process exits between the wizard reservation and the journal write,
+reconciliation reports `recovery-required-no-journal`. An absent journal after
+a crash is not proof that no transaction was sent or that a record was not
+lost. The wizard will not retry this state automatically: preserve the setup
+directory, inspect the finalized chain and expiry, and obtain an independent
+human recovery decision before any new installation attempt. Reconciliation
+history and `maintenanceTransitionAlert` retain conflicts even if later reads
+temporarily fail or show the expected authority. If a journal-recorded
+transaction ID is lost, the status reports a conflict rather than treating it
+as a harmless pre-journal abort. A broadcast ID returned during a failed
+response write is retained as `reportedTxId`, not accepted as inclusion proof.
+
+The pinned provider module must export `createLocalMaintenanceMaterial` to
+return contract providers and optional `stop()` cleanup. This factory must
+not load or create the bootstrap maintenance signing key; the signer supplies
+only the external signature file. The documented public-wallet smoke provider
+implements this keyless maintenance factory, but remains development-only.
 
 The wizard saves a mode-0600 setup record in a mode-0700 directory. It
 reserves a deployment attempt **before**

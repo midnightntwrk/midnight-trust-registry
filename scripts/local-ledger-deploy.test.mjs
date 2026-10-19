@@ -8,7 +8,8 @@ import { after, test } from "node:test";
 import { FileDeploymentAttemptJournal } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
-  reconcileLocalDeployment, runLocalDeployment, validateLocalDeploymentPlan,
+  loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
+  validateLocalDeploymentPlan,
 } from "./local-ledger-deploy.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "tr-local-deploy-plan-"));
@@ -76,6 +77,20 @@ test("staged plan passes its circuit pin without changing the full-plan path", a
     },
   });
   assert.equal(result.readbackStatus, "staged-bootstrap-pending");
+});
+
+test("maintenance provider loading never calls the deployment key factory", async () => {
+  let deploymentFactoryCalls = 0;
+  const result = await loadApprovedMaintenanceMaterial(plan, {
+    validateEndpoints: async () => {},
+    observe: async () => {},
+    loadProvider: async () => ({
+      createLocalDeploymentMaterial: async () => { deploymentFactoryCalls += 1; throw new Error("key opened"); },
+      createLocalMaintenanceMaterial: async () => ({ providers: { marker: "keyless" } }),
+    }),
+  });
+  assert.equal(result.material.providers.marker, "keyless");
+  assert.equal(deploymentFactoryCalls, 0);
 });
 
 test("checks module bytes and source before any network or provider call", async () => {

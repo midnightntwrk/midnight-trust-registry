@@ -17,9 +17,11 @@ import {
   initializeStandaloneSetup,
   observeStandaloneLedger,
   prepareStandaloneCommitteeTransition,
+  reconcileStandaloneCommitteeTransition,
   reconcileStandaloneDeployment,
   reconcileStandaloneVerifierKeyInsertion,
   standaloneSetupStatus,
+  submitStandaloneCommitteeTransition,
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
 
@@ -323,6 +325,297 @@ test("wizard prepares only a complete staged transition under the signed release
   await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
     verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed request"),
   }), /invalid shape or source revision/u);
+});
+
+async function preparedCommitteeFixture() {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.verifierKeyInsertions = { nextKey: { state: "verified" }, laterKey: { state: "verified" } };
+  await writeFile(recordPath, JSON.stringify(record));
+  const prepareTransition = async (approval) => ({
+    networkId: "undeployed", contractAddress: stagedReceipt.contractAddress,
+    finalizedBlockHash: `0x${"e".repeat(64)}`,
+    currentAuthorityCounter: 2n, nextAuthorityCounter: 3n,
+    committeeVerifyingKeys: approval.maintenancePolicy.verifyingKeys,
+    threshold: approval.maintenancePolicy.threshold,
+    expiresAt: approval.expiresAt.toISOString(), dataToSign: Uint8Array.from([1, 2, 3]),
+    authorize: (signature) => {
+      if (signature !== "a".repeat(128)) throw new Error("invalid bootstrap signature");
+      return { kind: "signed-maintenance" };
+    },
+  });
+  const dependencies = { verifyBundle: f.verifyBundle, prepareTransition };
+  const signingRequest = await prepareStandaloneCommitteeTransition(f.directory, f.requestPath, dependencies);
+  const signingRequestPath = join(f.directory, "committee-signing-request.json");
+  const signaturePath = join(f.directory, "committee-signature.json");
+  await writeFile(signingRequestPath, JSON.stringify(signingRequest));
+  await writeFile(signaturePath, JSON.stringify({
+    format: "tr-local-committee-signature-v1",
+    updateSha256: signingRequest.updateSha256,
+    signature: `0x${"a".repeat(128)}`,
+  }));
+  return { ...f, signingRequest, signingRequestPath, signaturePath, dependencies };
+}
+
+test("wizard reserves a committee submission once and reconciles without resubmission", async () => {
+  const f = await preparedCommitteeFixture();
+  let submissions = 0;
+  const dependencies = {
+    ...f.dependencies,
+    loadMaterial: async () => ({ material: { providers: {}, stop: async () => {} } }),
+    submit: async (input) => {
+      assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "reserved");
+      assert.equal(input.approvedUpdateSha256, f.signingRequest.updateSha256);
+      assert.equal(input.approvedFinalizedBlockHash, f.signingRequest.finalizedBlockHash);
+      submissions += 1;
+      return "maintenance-tx";
+    },
+  };
+  assert.deepEqual(await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, dependencies,
+  ), { kind: "local-committee-transition-submission", txId: "maintenance-tx",
+    finalizedReadback: "pending" });
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "submitted");
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, dependencies,
+  ), /already reserved/u);
+  const readback = await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async (input) => {
+        assert.equal(input.approvedUpdateSha256, f.signingRequest.updateSha256);
+        return { status: "observed", txId: "maintenance-tx", finalizedBlockHash: `0x${"f".repeat(64)}` };
+      },
+    },
+  );
+  assert.equal(readback.status, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status: "pending", txId: "maintenance-tx", finalizedBlockHash: null }),
+    },
+  );
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "observed");
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status: "conflict", txId: "maintenance-tx",
+        finalizedBlockHash: `0x${"f".repeat(64)}` }),
+    },
+  );
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransitionAlert, "conflict");
+  const recorded = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.deepEqual(recorded.maintenanceAttempt.reconciliationHistory.map((entry) => entry.status),
+    ["observed", "pending", "conflict"]);
+  await assert.rejects(reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status: "observed", txId: "different-tx",
+        finalizedBlockHash: `0x${"f".repeat(64)}` }),
+    },
+  ), /inconsistent with the reserved attempt/u);
+  assert.equal(submissions, 1);
+});
+
+test("changed signing bytes and invalid external signature fail before committee reservation", async () => {
+  const f = await preparedCommitteeFixture();
+  await writeFile(f.signingRequestPath, JSON.stringify({
+    ...f.signingRequest, updateSha256: "f".repeat(64),
+  }));
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
+  ), /disagrees with fresh finalized/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "pending");
+  await writeFile(f.signingRequestPath, JSON.stringify(f.signingRequest));
+  await writeFile(f.signaturePath, JSON.stringify({
+    format: "tr-local-committee-signature-v1",
+    updateSha256: f.signingRequest.updateSha256,
+    signature: `0x${"b".repeat(128)}`,
+  }));
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
+  ), /invalid bootstrap signature/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "pending");
+});
+
+test("unknown committee submission stays reserved and reconciliation cannot claim finality without a receipt", async () => {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async (input) => input.journal.executeOnce(
+        await f.dependencies.prepareTransition(input.approval),
+        async () => { throw new Error("ambiguous transport"); },
+        input.approvedFinalizedBlockHash,
+      ),
+    },
+  ), /outcome is unknown/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "unknown");
+  const result = await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status: "observed", txId: null,
+        finalizedBlockHash: `0x${"f".repeat(64)}` }) },
+  );
+  assert.equal(result.status, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "observed-without-receipt");
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
+  ), /already reserved/u);
+});
+
+test("failed provider preflight with no journal permits an explicit new attempt", async () => {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies, loadMaterial: async () => { throw new Error("wallet not funded"); },
+    },
+  ), /before journal reservation/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "aborted-before-journal");
+  await assert.rejects(reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.dependencies,
+  ), /No maintenance journal was reserved/u);
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async () => "maintenance-tx-after-preflight",
+    },
+  );
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceHistory[0].state, "aborted-before-journal");
+  assert.equal(record.maintenanceAttempt.state, "submitted");
+});
+
+test("a crash window with no journal requires independent recovery instead of retry", async () => {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies, loadMaterial: async () => { throw new Error("preflight"); },
+    },
+  ), /before journal reservation/u);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt.state = "reserved";
+  await writeFile(recordPath, JSON.stringify(record));
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "not-reserved" }) },
+  );
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceTransition, "recovery-required-no-journal");
+  assert.equal(status.maintenanceTransitionAlert, "independent-human-recovery-required");
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
+  ), /independent human recovery approval/u);
+});
+
+test("a missing journal after submission is recorded as a conflict", async () => {
+  const f = await preparedCommitteeFixture();
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async () => "maintenance-recorded-tx",
+    },
+  );
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "not-reserved" }) },
+  );
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceTransition, "conflict");
+  assert.equal(status.maintenanceTransitionAlert, "journal-missing-after-submission");
+});
+
+test("an unknown outcome retains a reported transaction ID without claiming inclusion", async () => {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async (input) => {
+        await input.journal.executeOnce(await f.dependencies.prepareTransition(input.approval),
+          async () => "tx-reported", input.approvedFinalizedBlockHash);
+        throw Object.assign(new Error("response recording failed"), { txId: "tx-reported" });
+      },
+    },
+  ), /outcome is unknown/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceAttempt.state, "unknown");
+  assert.equal(record.maintenanceAttempt.reportedTxId, "tx-reported");
+  assert.equal(record.maintenanceAttempt.txId, undefined);
+});
+
+test("a journal lost after an unknown outcome is not treated as a pre-journal crash", async () => {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async (input) => input.journal.executeOnce(
+        await f.dependencies.prepareTransition(input.approval),
+        async () => { throw new Error("lost response"); }, input.approvedFinalizedBlockHash,
+      ),
+    },
+  ), /outcome is unknown/u);
+  await rm(join(f.directory, "committee-transition.json"));
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "not-reserved" }) },
+  );
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceTransition, "conflict");
+  assert.equal(status.maintenanceTransitionAlert, "journal-missing-after-submission");
+});
+
+test("a conflict remains visible after a later expected readback", async () => {
+  const f = await preparedCommitteeFixture();
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async () => "maintenance-conflict-tx",
+    },
+  );
+  const reconcile = async (status) => reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status, txId: "maintenance-conflict-tx",
+        finalizedBlockHash: `0x${"f".repeat(64)}` }),
+    },
+  );
+  await reconcile("conflict");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "conflict");
+  await reconcile("observed");
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceTransition, "conflict");
+  assert.equal(status.maintenanceTransitionAlert, "conflict");
+  assert.equal(status.maintenanceLastReadback, "observed");
+});
+
+test("a newer finalized head can retain the original approved checkpoint", async () => {
+  const f = await preparedCommitteeFixture();
+  const oldPrepare = f.dependencies.prepareTransition;
+  let approvedCheckpoint;
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      prepareTransition: async (approval) => ({ ...await oldPrepare(approval),
+        finalizedBlockHash: `0x${"f".repeat(64)}` }),
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async (input) => {
+        approvedCheckpoint = input.approvedFinalizedBlockHash;
+        return "maintenance-tx-new-head";
+      },
+    },
+  );
+  assert.equal(approvedCheckpoint, f.signingRequest.finalizedBlockHash);
 });
 
 test("wizard rejects a changed roster or incomplete key insertion before transition prepare", async () => {

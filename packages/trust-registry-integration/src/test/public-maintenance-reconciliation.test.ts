@@ -99,6 +99,21 @@ beforeEach(() => {
 });
 
 describe("local maintenance transition reconciliation", () => {
+  it("binds the approved checkpoint separately from a newer submission head", async () => {
+    setNetworkId("undeployed");
+    const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
+    const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-reconcile-"));
+    directories.push(directory);
+    const file = new FileMaintenanceTransitionJournal(join(directory, "transition.json"));
+    await file.executeOnce({ ...plan(input), finalizedBlockHash: `0x${"c".repeat(64)}` },
+      async () => "tx-new-head", blockHash);
+    expect((await file.inspect())?.reservation.approvedFinalizedBlockHash).toBe(blockHash);
+    mocks.localReadback.mockResolvedValue({ status: "verified", state: image(3n, committee) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({
+      status: "observed", txId: "tx-new-head",
+    });
+  });
+
   it("uses the staged key counter rather than assuming counter zero", async () => {
     setNetworkId("undeployed");
     const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };

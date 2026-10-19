@@ -1982,6 +1982,37 @@ mocked-provider/unit checks until a real deployment, external bootstrap
 signature, one-attempt submission, and finalized committee readback occur.
 The local maintenance submission API now requires the independently retained
 SHA-256 of those signable bytes and the finalized checkpoint hash. It re-reads
-the current image and rejects either mismatch before authorizing the signature
-or reserving a one-attempt journal. This guard does not itself wire submission
-into the wizard or qualify the local deployment.
+the current image and rejects a changed signable update before authorizing
+the signature or reserving a one-attempt journal. The approved checkpoint is
+retained separately from the fresh submission head. This guard does not itself
+qualify the local deployment.
+
+The first-run wizard now accepts a detached raw Ledger bootstrap signature
+over the exact saved signing request, then reserves a private one-attempt
+maintenance journal before using the approved provider module. Its separate
+reconciliation step is read-only and retains ambiguous attempts instead of
+retrying. A submitted transaction is not a finalized committee readback, and
+an observed maintenance authority alone is not independent transaction
+inclusion or a release qualification. The unresolved full-constructor local
+attempt is untouched.
+
+The maintenance provider factory is separate from deployment material and
+does not load or create the bootstrap signing key; only the external signature
+is passed into the handoff.
+
+The approved finalized checkpoint is preserved separately from the current
+submission checkpoint because the local chain continues finalizing blocks
+during external signing and wallet synchronization. A fresh finalized full
+image and unchanged maintenance update are required before reservation.
+Caught preflight failures with no journal are recorded as aborted and may be
+explicitly retried; an unreadable or present journal remains ambiguous. A
+process crash before the journal write is different: an absent journal alone
+does not prove non-submission, so the wizard reports
+`recovery-required-no-journal` and requires independent human recovery. The
+wizard retains bounded reconciliation history, protects observed and conflict
+states from later weak reads, and surfaces a separate alert for a new conflict
+after an observed transition.
+The journal-presence flag distinguishes a lost journal after an unknown
+submission from the pre-journal crash window. A returned transaction ID that
+could not be durably written is retained as reported evidence, not accepted as
+finalized inclusion.

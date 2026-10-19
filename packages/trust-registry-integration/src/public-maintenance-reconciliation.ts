@@ -89,7 +89,8 @@ async function reconcilePinnedCommitteeTransition(
   const { reservation, submitted } = entry;
   if (reservation.networkId !== approval.network.networkId
     || reservation.contractAddress !== approval.receipt.contractAddress
-    || reservation.finalizedBlockHash !== input.approvedFinalizedBlockHash
+    || (reservation.approvedFinalizedBlockHash ?? reservation.finalizedBlockHash)
+      !== input.approvedFinalizedBlockHash
     || reservation.updateSha256 !== input.approvedUpdateSha256
     || reservation.currentAuthorityCounter !== expectedCounter.toString()
     || reservation.nextAuthorityCounter !== (expectedCounter + 1n).toString()

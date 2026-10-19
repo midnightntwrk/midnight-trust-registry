@@ -64,7 +64,7 @@ it("submits the local update only after the local planner and durable reservatio
   expect((await journal.inspect())?.submitted?.txId).toBe("tx-local");
 });
 
-it("rejects a changed local signing request or finalized checkpoint before reservation", async () => {
+it("rejects a changed local signing request or malformed approved checkpoint before reservation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-submit-"));
   directories.push(directory);
   const journal = new FileMaintenanceTransitionJournal(join(directory, "transition.json"));
@@ -86,13 +86,38 @@ it("rejects a changed local signing request or finalized checkpoint before reser
     ...input, approvedUpdateSha256: "a".repeat(64),
   })).rejects.toThrow(/disagrees with the approved signing request/u);
   await expect(submitLocalNetworkCommitteeTransition({
-    ...input, approvedFinalizedBlockHash: `0x${"c".repeat(64)}`,
-  })).rejects.toThrow(/disagrees with the approved signing request/u);
-  await expect(submitLocalNetworkCommitteeTransition({
     ...input, approvedFinalizedBlockHash: `0x${"0".repeat(64)}`,
   })).rejects.toThrow(/signing pins are invalid/u);
   expect(authorize).not.toHaveBeenCalled();
   expect(await journal.inspect()).toBeNull();
+});
+
+it("accepts a newer finalized head when the approved maintenance update is unchanged", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-submit-"));
+  directories.push(directory);
+  const journal = new FileMaintenanceTransitionJournal(join(directory, "transition.json"));
+  mocks.prepareLocal.mockResolvedValue({
+    networkId: "undeployed", contractAddress: `0x${"a".repeat(64)}`,
+    finalizedBlockHash: `0x${"c".repeat(64)}`,
+    committeeVerifyingKeys: [`0x${"d".repeat(64)}`, `0x${"e".repeat(64)}`, `0x${"f".repeat(64)}`],
+    threshold: 2, currentAuthorityCounter: 2n, nextAuthorityCounter: 3n,
+    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    dataToSign: Uint8Array.from([1, 2, 3]),
+    authorize: () => ({ kind: "signed-maintenance" }),
+  });
+  const providers = {
+    proofProvider: { proveTx: async () => "proven" },
+    walletProvider: { balanceTx: async () => "balanced" },
+    midnightProvider: { submitTx: async () => "tx-local" },
+  };
+  await submitLocalNetworkCommitteeTransition({
+    approval: {} as never, signature: {} as never, journal, providers: providers as never,
+    approvedUpdateSha256: localUpdateSha256,
+    approvedFinalizedBlockHash: `0x${"b".repeat(64)}`,
+  });
+  const reservation = (await journal.inspect())?.reservation;
+  expect(reservation?.approvedFinalizedBlockHash).toBe(`0x${"b".repeat(64)}`);
+  expect(reservation?.finalizedBlockHash).toBe(`0x${"c".repeat(64)}`);
 });
 
 it("reserves after fresh readback and signature verification, before prove/balance/submit", async () => {

@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
-  prepareLocalNetworkCommitteeTransition, validateMaintenancePolicy,
+  FileMaintenanceTransitionJournal, prepareLocalNetworkCommitteeTransition,
+  reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
+  validateMaintenancePolicy,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
@@ -18,7 +20,8 @@ import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
-  reconcileLocalDeployment, runLocalDeployment, validateLocalDeploymentPlan,
+  loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
+  validateLocalDeploymentPlan,
 } from "./local-ledger-deploy.mjs";
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
@@ -585,9 +588,7 @@ const integer = (value) => {
   return BigInt(value);
 };
 
-export async function prepareStandaloneCommitteeTransition(directory, requestPath, dependencies = {}) {
-  return withLock(directory, async (root) => {
-    const { record } = await readRecord(root);
+async function readApprovedCommitteeTransition(record, requestPath, dependencies = {}) {
     const staged = record.deployment?.stagedPlan;
     const receipt = record.deployment?.result?.receipt;
     if (!record.genesisApproval || !record.committeeApproval || !staged
@@ -679,9 +680,16 @@ export async function prepareStandaloneCommitteeTransition(directory, requestPat
       stagedVerifierKeyInstallation: true,
       expiresAt: new Date(request.expiresAt),
     };
+    return { approval, requestBytes, manifestBytes, catalog };
+}
+
+async function approvedStandaloneCommitteeTransition(record, requestPath, dependencies = {}) {
+    const { approval, requestBytes, manifestBytes, catalog } = await readApprovedCommitteeTransition(
+      record, requestPath, dependencies,
+    );
     setNetworkId("undeployed");
     const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
-    if (prepared.networkId !== "undeployed" || prepared.contractAddress !== receipt.contractAddress
+    if (prepared.networkId !== "undeployed" || prepared.contractAddress !== approval.receipt.contractAddress
       || !HASH.test(prepared.finalizedBlockHash) || /^0x0{64}$/u.test(prepared.finalizedBlockHash)
       || prepared.currentAuthorityCounter !== BigInt(catalog.length - 1)
       || prepared.nextAuthorityCounter !== BigInt(catalog.length)
@@ -692,7 +700,7 @@ export async function prepareStandaloneCommitteeTransition(directory, requestPat
       || !(prepared.dataToSign instanceof Uint8Array) || prepared.dataToSign.length === 0) {
       throw new Error("Finalized committee transition plan disagrees with approved setup state");
     }
-    return {
+    const signingRequest = {
       kind: "local-committee-transition-signing-request",
       sourceRevision: record.sourceRevision,
       committeeApprovalSha256: record.committeeApproval.documentSha256,
@@ -709,6 +717,205 @@ export async function prepareStandaloneCommitteeTransition(directory, requestPat
       updateSha256: sha256(prepared.dataToSign),
       submission: "not-attempted",
     };
+    return { approval, signingRequest, requestBytes, prepared };
+}
+
+export async function prepareStandaloneCommitteeTransition(directory, requestPath, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const { signingRequest } = await approvedStandaloneCommitteeTransition(
+      record, requestPath, dependencies,
+    );
+    return signingRequest;
+  });
+}
+
+const SIGNATURE = /^0x[0-9a-f]{128}$/u;
+const signingRequestMatches = (saved, fresh) => exactFields(saved, Object.keys(fresh))
+  && HASH.test(saved.finalizedBlockHash) && !/^0x0{64}$/u.test(saved.finalizedBlockHash)
+  && Object.keys(fresh).filter((field) => field !== "finalizedBlockHash")
+    .every((field) => JSON.stringify(saved[field]) === JSON.stringify(fresh[field]));
+
+export async function submitStandaloneCommitteeTransition(
+  directory, requestPath, signingRequestPath, signaturePath, dependencies = {},
+) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (record.maintenanceAttempt?.state === "aborted-before-journal") {
+      const priorJournal = new FileMaintenanceTransitionJournal(record.maintenanceAttempt.journalPath);
+      if (await priorJournal.inspect() !== null) {
+        throw new Error("Aborted maintenance attempt has a journal; preserve it for recovery");
+      }
+      const history = record.maintenanceHistory ?? [];
+      if (history.length >= 32) throw new Error("Maintenance attempt history is full; preserve it for review");
+      history.push(record.maintenanceAttempt);
+      record.maintenanceHistory = history;
+      delete record.maintenanceAttempt;
+    } else if (record.maintenanceAttempt) {
+      if (record.maintenanceAttempt.state === "recovery-required-no-journal") {
+        throw new Error("Maintenance crash window requires independent human recovery approval before a new attempt");
+      }
+      throw new Error("Maintenance transition already reserved; reconcile without resubmitting");
+    }
+    const { approval, signingRequest, requestBytes, prepared } = await approvedStandaloneCommitteeTransition(
+      record, requestPath, dependencies,
+    );
+    const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
+    const savedSigningRequest = JSON.parse(signingRequestBytes);
+    if (!signingRequestMatches(savedSigningRequest, signingRequest)) {
+      throw new Error("Saved signing request disagrees with fresh finalized maintenance evidence");
+    }
+    const signatureBytes = await regularBytes(resolve(signaturePath));
+    const signed = JSON.parse(signatureBytes);
+    if (!exactFields(signed, ["format", "signature", "updateSha256"])
+      || signed.format !== "tr-local-committee-signature-v1"
+      || signed.updateSha256 !== signingRequest.updateSha256
+      || !SIGNATURE.test(signed.signature)) {
+      throw new Error("External bootstrap signature does not match the approved signing request");
+    }
+    const signature = signed.signature.slice(2);
+    prepared.authorize(signature);
+    const journalPath = join(root, "committee-transition.json");
+    const journal = new FileMaintenanceTransitionJournal(journalPath);
+    if (await journal.inspect() !== null) {
+      throw new Error("Maintenance journal already exists; reconcile the previous attempt");
+    }
+    record.maintenanceAttempt = {
+      state: "reserved",
+      requestSha256: sha256(requestBytes),
+      signingRequestSha256: sha256(signingRequestBytes),
+      signatureSha256: sha256(signatureBytes),
+      updateSha256: signingRequest.updateSha256,
+      finalizedBlockHash: savedSigningRequest.finalizedBlockHash,
+      journalPath,
+      reservedAt: new Date().toISOString(),
+    };
+    await writeRecord(root, record);
+    let material;
+    try {
+      const staged = record.deployment.stagedPlan;
+      const plan = validateLocalDeploymentPlan({
+        format: "tr-local-staged-deployment-plan-v1",
+        sourceRevision: record.sourceRevision,
+        network: staged.network,
+        providerModulePath: staged.providerModulePath,
+        providerModuleSha256: staged.providerModuleSha256,
+        releaseManifestPath: staged.releaseManifestPath,
+        initialVerifierKeyName: staged.initialVerifierKeyName,
+        journalPath: record.deployment.journalPath,
+      });
+      ({ material } = await (dependencies.loadMaterial ?? loadApprovedMaintenanceMaterial)(
+        plan, dependencies, { expectedReleaseManifestSha256: signingRequest.releaseManifestSha256 },
+      ));
+      if (!material?.providers) throw new Error("Approved provider module did not return contract providers");
+      const txId = await (dependencies.submit ?? submitLocalNetworkCommitteeTransition)({
+        approval, signature, journal, providers: material.providers,
+        approvedUpdateSha256: signingRequest.updateSha256,
+        approvedFinalizedBlockHash: savedSigningRequest.finalizedBlockHash,
+      });
+      if (typeof txId !== "string" || txId.length === 0 || txId.length > 512) {
+        throw new Error("Maintenance submission did not return a bounded transaction ID");
+      }
+      record.maintenanceAttempt = { ...record.maintenanceAttempt, state: "submitted", txId };
+      await writeRecord(root, record);
+      return { kind: "local-committee-transition-submission", txId, finalizedReadback: "pending" };
+    } catch (error) {
+      let journalReserved = true;
+      try { journalReserved = await journal.inspect() !== null; } catch { /* An unreadable journal is unknown. */ }
+      record.maintenanceAttempt = { ...record.maintenanceAttempt,
+        state: journalReserved ? "unknown" : "aborted-before-journal",
+        journalReserved,
+        ...(journalReserved && typeof error?.txId === "string"
+          && error.txId.length > 0 && error.txId.length <= 512
+          ? { reportedTxId: error.txId } : {}) };
+      await writeRecord(root, record);
+      if (!journalReserved) {
+        throw new Error("Maintenance preflight stopped before journal reservation; inspect setup and prepare again");
+      }
+      throw new Error("Maintenance outcome is unknown; preserve the journal and reconcile, never retry blindly");
+    } finally {
+      if (typeof material?.stop === "function") {
+        try { await material.stop(); } catch {
+          console.error("Provider cleanup failed; preserve the maintenance journal");
+        }
+      }
+    }
+  });
+}
+
+export async function reconcileStandaloneCommitteeTransition(
+  directory, requestPath, signingRequestPath, dependencies = {},
+) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const attempt = record.maintenanceAttempt;
+    if (!attempt) throw new Error("A reserved committee transition is required for reconciliation");
+    if (attempt.state === "aborted-before-journal") {
+      throw new Error("No maintenance journal was reserved; prepare a new signing request instead");
+    }
+    const { approval, requestBytes } = await readApprovedCommitteeTransition(record, requestPath, dependencies);
+    const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
+    const signingRequest = JSON.parse(signingRequestBytes);
+    if (sha256(requestBytes) !== attempt.requestSha256
+      || sha256(signingRequestBytes) !== attempt.signingRequestSha256
+      || signingRequest.updateSha256 !== attempt.updateSha256
+      || signingRequest.finalizedBlockHash !== attempt.finalizedBlockHash
+      || attempt.journalPath !== join(root, "committee-transition.json")) {
+      throw new Error("Maintenance reconciliation disagrees with the reserved signing request");
+    }
+    setNetworkId("undeployed");
+    const result = await (dependencies.reconcile ?? reconcileLocalNetworkCommitteeTransition)({
+      approval,
+      journal: new FileMaintenanceTransitionJournal(attempt.journalPath),
+      approvedUpdateSha256: attempt.updateSha256,
+      approvedFinalizedBlockHash: attempt.finalizedBlockHash,
+    });
+    if (!["not-reserved", "unavailable", "pending", "invalid-image", "stale-checkpoint",
+      "unresolved", "conflict", "observed"].includes(result?.status)) {
+      throw new Error("Maintenance reconciliation returned an invalid status");
+    }
+    if ((result.txId !== null && result.txId !== undefined
+        && (typeof result.txId !== "string" || result.txId.length === 0 || result.txId.length > 512))
+      || (attempt.txId && result.txId && result.txId !== attempt.txId)
+      || (result.status === "observed"
+        && (!HASH.test(result.finalizedBlockHash) || /^0x0{64}$/u.test(result.finalizedBlockHash)))) {
+      throw new Error("Maintenance reconciliation returned evidence inconsistent with the reserved attempt");
+    }
+    const history = attempt.reconciliationHistory ?? [];
+    if (history.length >= 256) {
+      throw new Error("Maintenance reconciliation history is full; preserve the setup record for review");
+    }
+    history.push(result);
+    attempt.reconciliationHistory = history;
+    if (result.status === "not-reserved") {
+      if (attempt.txId || attempt.journalReserved
+        || ["observed", "observed-without-receipt", "conflict"].includes(attempt.state)) {
+        attempt.alert = "journal-missing-after-submission";
+        if (!["observed", "observed-without-receipt"].includes(attempt.state)) attempt.state = "conflict";
+      } else {
+        attempt.state = "recovery-required-no-journal";
+        attempt.alert = "independent-human-recovery-required";
+      }
+    } else if (attempt.txId && !result.txId) {
+      attempt.alert = "journal-submitted-id-missing";
+      if (attempt.state !== "observed") attempt.state = "conflict";
+    } else if (result.status === "conflict") {
+      attempt.alert = "conflict";
+      if (attempt.state !== "observed") attempt.state = "conflict";
+    } else if (result.status === "stale-checkpoint") {
+      attempt.alert = "stale-checkpoint";
+      if (!["observed", "conflict"].includes(attempt.state)) attempt.state = "stale-checkpoint";
+    } else if (result.status === "observed") {
+      if (attempt.state !== "conflict") {
+        attempt.state = result.txId ? "observed" : "observed-without-receipt";
+      }
+    } else if (result.status === "unresolved") {
+      if (!["observed", "conflict"].includes(attempt.state)) attempt.state = "unresolved";
+    }
+    if (result.txId) attempt.txId = result.txId;
+    attempt.reconciliation = result;
+    await writeRecord(root, record);
+    return result;
   });
 }
 
@@ -732,6 +939,9 @@ export async function standaloneSetupStatus(directory) {
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
     maintenanceApproval: record.committeeApproval ? "roster-signature-verified-transition-pending" : "pending",
+    maintenanceTransition: record.maintenanceAttempt?.state ?? "pending",
+    maintenanceTransitionAlert: record.maintenanceAttempt?.alert ?? null,
+    maintenanceLastReadback: record.maintenanceAttempt?.reconciliation?.status ?? null,
     offlineJourneys: "pending",
     restartRestore: "pending",
     independentReview: "pending",
@@ -789,8 +999,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -819,6 +1029,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   else if (command === "prepare-committee" && input) {
     console.log(JSON.stringify(await prepareStandaloneCommitteeTransition(directory, input), null, 2));
+  }
+  else if (command === "submit-committee" && input && signature && keyring) {
+    console.log(JSON.stringify(await submitStandaloneCommitteeTransition(directory, input, signature, keyring)));
+  }
+  else if (command === "reconcile-committee" && input && signature) {
+    const result = await reconcileStandaloneCommitteeTransition(directory, input, signature);
+    console.log(JSON.stringify(result));
+    if (result.status !== "observed" || !result.txId) process.exitCode = 2;
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);

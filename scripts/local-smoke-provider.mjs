@@ -87,9 +87,8 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   return key;
 }
 
-export async function createLocalDeploymentMaterial({ network }, env = process.env) {
+async function createLocalWalletMaterial({ network }, env = process.env) {
   const config = validateLocalSmokeEnvironment(network, env);
-  const maintenanceKey = await loadOrCreateSmokeMaintenanceKey(config.stateDirectory);
   const nodeWs = new URL(network.rpcUrl);
   nodeWs.protocol = "ws:";
   const walletEnvironment = {
@@ -130,24 +129,37 @@ export async function createLocalDeploymentMaterial({ network }, env = process.e
       walletProvider: wallet,
       midnightProvider: wallet,
     };
-    const registryId = "registry:midnight:undeployed:smoke";
     return {
-      bootstrap: {
-        registryId,
-        registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry-smoke"),
-        governancePolicyCommitment: bytes32Commitment("policy:local-development-smoke"),
-        maintainerId: bytes32Commitment("maintainer:local-development-smoke"),
-        maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer-smoke"),
-        maintainerKeyId: bytes32Commitment("maintainer:local-development-smoke#key-1"),
-        maintainerPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(19)),
-        maintainerThreshold: 1n,
-      },
       providers,
-      contractMaintenanceSigningKey: maintenanceKey,
       stop: () => wallet.stop(),
     };
   } catch (error) {
     try { await wallet.stop(); } catch { /* Keep the original setup failure. */ }
     throw error;
   }
+}
+
+/** Maintenance uses an external signature; the provider must not open the bootstrap key. */
+export async function createLocalMaintenanceMaterial(input, env = process.env) {
+  return createLocalWalletMaterial(input, env);
+}
+
+export async function createLocalDeploymentMaterial(input, env = process.env) {
+  const config = validateLocalSmokeEnvironment(input.network, env);
+  const maintenanceKey = await loadOrCreateSmokeMaintenanceKey(config.stateDirectory);
+  const material = await createLocalWalletMaterial(input, env);
+  return {
+    ...material,
+    bootstrap: {
+      registryId: "registry:midnight:undeployed:smoke",
+      registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry-smoke"),
+      governancePolicyCommitment: bytes32Commitment("policy:local-development-smoke"),
+      maintainerId: bytes32Commitment("maintainer:local-development-smoke"),
+      maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer-smoke"),
+      maintainerKeyId: bytes32Commitment("maintainer:local-development-smoke#key-1"),
+      maintainerPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(19)),
+      maintainerThreshold: 1n,
+    },
+    contractMaintenanceSigningKey: maintenanceKey,
+  };
 }

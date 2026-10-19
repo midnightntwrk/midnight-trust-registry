@@ -60,7 +60,7 @@ async function regularFile(path) {
 }
 
 /** The provider module is privileged code; the approved hash is checked before import. */
-async function loadApprovedDeploymentMaterial(plan, dependencies, approval = {}) {
+async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   validateLocalDeploymentPlan(plan);
   const manifestBytes = await regularFile(plan.releaseManifestPath);
   if (approval.expectedReleaseManifestSha256
@@ -89,13 +89,21 @@ async function loadApprovedDeploymentMaterial(plan, dependencies, approval = {})
   const module = await (dependencies.loadProvider ?? ((path) => import(pathToFileURL(path).href)))(
     plan.providerModulePath,
   );
-  if (typeof module.createLocalDeploymentMaterial !== "function") {
-    throw new Error("Approved provider module must export createLocalDeploymentMaterial");
+  if (typeof module[factoryName] !== "function") {
+    throw new Error(`Approved provider module must export ${factoryName}`);
   }
-  const material = await module.createLocalDeploymentMaterial({
+  const material = await module[factoryName]({
     network: plan.network, releaseManifest: manifest,
   });
   return { manifest, material };
+}
+
+export async function loadApprovedDeploymentMaterial(plan, dependencies = {}, approval = {}) {
+  return loadApprovedMaterial(plan, dependencies, approval, "createLocalDeploymentMaterial");
+}
+
+export async function loadApprovedMaintenanceMaterial(plan, dependencies = {}, approval = {}) {
+  return loadApprovedMaterial(plan, dependencies, approval, "createLocalMaintenanceMaterial");
 }
 
 export async function runLocalDeployment(plan, dependencies = {}) {
