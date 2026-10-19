@@ -40,7 +40,7 @@ const approval = (): CommitteeTransitionApproval => ({
   network: { networkId: "preprod" },
   receipt: { networkId: "preprod", contractAddress: address },
   bootstrap: {},
-  releaseManifest: {},
+  releaseManifest: { verifierKeySha256: { first: "a", second: "b", third: "c" } },
   governance: {},
   maintenancePolicy: { mode: "committee", verifyingKeys: committee, threshold: 2 },
   bootstrapMaintenanceVerifyingKey: bootstrapKey,
@@ -57,8 +57,8 @@ const plan = (input: CommitteeTransitionApproval | LocalCommitteeTransitionAppro
   finalizedBlockHash: blockHash,
   committeeVerifyingKeys: committee,
   threshold: 2,
-  currentAuthorityCounter: 0n,
-  nextAuthorityCounter: 1n,
+  currentAuthorityCounter: input.stagedVerifierKeyInstallation ? 2n : 0n,
+  nextAuthorityCounter: input.stagedVerifierKeyInstallation ? 3n : 1n,
   expiresAt: input.expiresAt.toISOString(),
   dataToSign,
   authorize: () => { throw new Error("not used by reconciliation tests"); },
@@ -97,6 +97,17 @@ beforeEach(() => {
 });
 
 describe("local maintenance transition reconciliation", () => {
+  it("uses the staged key counter rather than assuming counter zero", async () => {
+    setNetworkId("undeployed");
+    const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
+    const file = await journal(true, input);
+    mocks.localReadback.mockResolvedValue({ status: "verified", state: image(3n, committee) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "observed" });
+    mocks.localReadback.mockResolvedValue({ status: "unsafe-maintenance-authority",
+      state: image(2n, [bootstrapKey]) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "unresolved" });
+  });
+
   it("observes the finalized local committee without using public readback or inferring transaction provenance", async () => {
     setNetworkId("undeployed");
     const input = localApproval();

@@ -1906,3 +1906,35 @@ The recorded status is **roster signature verified, transition pending**; no loc
 maintenance transaction or finalized readback has occurred. Reviewer
 authority, real key custody, transition submission, and release qualification
 remain operator and independent-review gates.
+
+### Staged local verifier-key installation boundary
+
+The first development-only local deployment attempt reserved its private
+one-attempt journal and exited after wallet synchronization without returning a
+deployment receipt. A read-only scan of finalized blocks around the
+reservation found no transactions, but that does not prove the attempt never
+reached the network. The journal and diagnostics are preserved privately;
+reconciliation and a human recovery decision are required before another
+deployment attempt. No live Trust Registry deployment is yet qualified.
+
+Unsubmitted SDK diagnostics against the dedicated local node, indexer, and
+prover found that the full 66-circuit constructor proved but failed wallet
+balancing with `exceeded block limit in transaction fee computation`. The same
+path with one verifier-key circuit proved and balanced, without submission.
+This motivates an explicit staged bootstrap, not a silent retry or evidence of
+successful deployment. The initial transaction installs one pinned verifier
+key; subsequent keys must be inserted one at a time in sorted catalog order
+with a distinct durable journal, approved signing key, and finalized key-hash
+readback. The maintenance authority counter starts at zero and advances once
+per insertion. A staged committee transition expects the exact catalog-size
+minus-one counter, while a full-constructor transition still expects zero.
+
+The repository now has a local-only staged plan, per-key insertion and
+read-only reconciliation CLI, and tests with injected providers. These tests
+exercise journal and approval boundaries but are **not** live-ledger, offline
+egress, restart, or recovery evidence. A failed or ambiguous insertion remains
+reserved; no automatic retry or journal deletion is supported. The public
+genesis wallet and 1-of-3 smoke committee remain development-only. Release
+qualification still needs an approved operator, reviewed install bytes,
+finalized deployment and every key readback, approved threshold committee,
+offline actor journeys, restart/restore, and independent security review.

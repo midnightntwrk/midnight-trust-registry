@@ -85,12 +85,14 @@ async function reconcilePinnedCommitteeTransition(
   const entry = await input.journal.inspect();
   if (entry === null) return { status: "not-reserved" };
   const { reservation, submitted } = entry;
+  const expectedCounter = approval.stagedVerifierKeyInstallation
+    ? BigInt(Object.keys(approval.releaseManifest.verifierKeySha256).length - 1) : 0n;
   if (reservation.networkId !== approval.network.networkId
     || reservation.contractAddress !== approval.receipt.contractAddress
     || reservation.finalizedBlockHash !== input.approvedFinalizedBlockHash
     || reservation.updateSha256 !== input.approvedUpdateSha256
-    || reservation.currentAuthorityCounter !== "0"
-    || reservation.nextAuthorityCounter !== "1"
+    || reservation.currentAuthorityCounter !== expectedCounter.toString()
+    || reservation.nextAuthorityCounter !== (expectedCounter + 1n).toString()
     || reservation.expiresAt !== approval.expiresAt.toISOString()
     || reservation.threshold !== approval.maintenancePolicy.threshold
     || reservation.committeeVerifyingKeys.length !== approval.maintenancePolicy.verifyingKeys.length
@@ -106,17 +108,17 @@ async function reconcilePinnedCommitteeTransition(
   if (state.finalizedBlockHash === input.approvedFinalizedBlockHash) {
     const current = state.maintenanceAuthority;
     return { status: readback.status === "unsafe-maintenance-authority"
-      && current.counter === 0n && current.threshold === 1
+      && current.counter === expectedCounter && current.threshold === 1
       && current.committee.length === 1
       && current.committee[0] === approval.bootstrapMaintenanceVerifyingKey
       ? "stale-checkpoint" : "conflict", txId, finalizedBlockHash: state.finalizedBlockHash };
   }
-  if (readback.status === "verified" && state.maintenanceAuthority.counter === 1n) {
+  if (readback.status === "verified" && state.maintenanceAuthority.counter === expectedCounter + 1n) {
     return { status: "observed", txId, finalizedBlockHash: state.finalizedBlockHash };
   }
   const current = state.maintenanceAuthority;
   if (readback.status === "unsafe-maintenance-authority"
-    && current.counter === 0n && current.threshold === 1
+    && current.counter === expectedCounter && current.threshold === 1
     && current.committee.length === 1
     && current.committee[0] === approval.bootstrapMaintenanceVerifyingKey) {
     return { status: "unresolved", txId, finalizedBlockHash: state.finalizedBlockHash };

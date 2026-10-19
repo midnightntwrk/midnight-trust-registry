@@ -144,6 +144,32 @@ beforeEach(() => {
 });
 
 describe("local maintenance committee transition", () => {
+  it("requires explicit staged mode and the exact post-insertion counter", () => {
+    setNetworkId("undeployed");
+    const expectedCounter = BigInt(Object.keys(verifierKeySha256).length - 1);
+    const stagedImage = {
+      ...localImage(), maintenanceAuthority: {
+        committee: [bootstrapVerifyingKey], threshold: 1, counter: expectedCounter,
+      },
+    };
+    expect(() => prepareCommitteeTransitionFromFinalizedImage(localApproval(), stagedImage))
+      .toThrow(/expected counter/u);
+    const staged = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
+    const plan = prepareCommitteeTransitionFromFinalizedImage(staged, stagedImage);
+    expect(plan.currentAuthorityCounter).toBe(expectedCounter);
+    expect(plan.nextAuthorityCounter).toBe(expectedCounter + 1n);
+    expect(plan.authorize(signData(bootstrapKey, plan.dataToSign)).serialize().length).toBeGreaterThan(0);
+    expect(() => prepareCommitteeTransitionFromFinalizedImage(staged, {
+      ...stagedImage, maintenanceAuthority: {
+        ...stagedImage.maintenanceAuthority, counter: expectedCounter + 1n,
+      },
+    })).toThrow(/expected counter/u);
+    setNetworkId("preprod");
+    expect(() => prepareCommitteeTransitionFromFinalizedImage({
+      ...approval(), stagedVerifierKeyInstallation: true,
+    }, image())).toThrow(/local-only/u);
+  });
+
   it("uses only the local finalized reader and signs a counter-one undeployed update", async () => {
     setNetworkId("undeployed");
     mocks.readImage.mockResolvedValueOnce(localImage());

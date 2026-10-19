@@ -53,3 +53,29 @@ export async function verifyInstalledVerifierKeyAssets(
     }
   }
 }
+
+/** Rechecks the selected bytes after catalog preflight so the submitted key matches its pin. */
+export async function readPinnedInstalledVerifierKey(
+  manifest: ReleaseVerifierKeyManifest,
+  name: string,
+  assetsPath = installedAssetsPath,
+): Promise<Uint8Array> {
+  await verifyInstalledVerifierKeyAssets(manifest, assetsPath);
+  if (!Object.hasOwn(manifest.verifierKeySha256, name)) {
+    throw new Error("Selected verifier key is not in the release catalog");
+  }
+  const handle = await open(join(assetsPath, "keys", `${name}.verifier`), constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
+      throw new Error("Selected verifier key is not a bounded regular file");
+    }
+    const bytes = new Uint8Array(await handle.readFile());
+    if (createHash("sha256").update(bytes).digest("hex") !== manifest.verifierKeySha256[name]) {
+      throw new Error("Selected verifier key changed after catalog preflight");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
