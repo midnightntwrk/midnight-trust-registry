@@ -8,12 +8,17 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
+import {
+  validateMaintenancePolicy, VerifierKeyInsertionOutcomeUnknownError,
+} from "@midnight-ntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { runLocalDeployment, validateLocalDeploymentPlan } from "./local-ledger-deploy.mjs";
+import {
+  runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
+} from "./local-ledger-insert-verifier-key.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const RECORD = "setup-record.json";
@@ -339,6 +344,13 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       state: "reserved",
       planSha256: sha256(planBytes),
       journalPath: plan.journalPath,
+      stagedPlan: plan.format === "tr-local-staged-deployment-plan-v1" ? {
+        initialVerifierKeyName: plan.initialVerifierKeyName,
+        network: plan.network,
+        providerModulePath: plan.providerModulePath,
+        providerModuleSha256: plan.providerModuleSha256,
+        releaseManifestPath: plan.releaseManifestPath,
+      } : null,
       reservedAt: new Date().toISOString(),
     };
     await writeRecord(root, record);
@@ -352,6 +364,117 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       await writeRecord(root, record);
       throw new Error("Deployment outcome is unknown; inspect the journal and finalized chain, never retry blindly");
     }
+  });
+}
+
+async function approvedInsertionPlan(record, planPath, dependencies) {
+  if (record.deployment?.state !== "observed"
+    || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
+    || record.deployment.result?.receipt?.networkId !== "undeployed"
+    || !HASH.test(record.deployment.result?.receipt?.contractAddress)
+    || /^0x0{64}$/u.test(record.deployment.result?.receipt?.contractAddress)
+    || !HASH.test(record.deployment.result?.receipt?.blockHash)
+    || typeof record.deployment.result?.receipt?.txId !== "string"
+    || record.deployment.result.receipt.txId.length === 0
+    || !Number.isSafeInteger(record.deployment.result?.receipt?.blockHeight)
+    || record.deployment.result.receipt.blockHeight < 0
+    || !record.deployment.stagedPlan || !record.genesisApproval) {
+    throw new Error("A finalized staged bootstrap and approved genesis are required before key insertion");
+  }
+  const planBytes = await regularBytes(resolve(planPath));
+  const plan = validateLocalVerifierKeyInsertionPlan(JSON.parse(planBytes));
+  const staged = record.deployment.stagedPlan;
+  if (plan.sourceRevision !== record.sourceRevision
+    || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+    || plan.network.rpcUrl !== record.ledgerObservation.rpcUrl
+    || JSON.stringify(plan.network.allowedHosts) !== JSON.stringify(record.ledgerObservation.allowedHosts)
+    || plan.network.indexerHttpUrl !== staged.network.indexerHttpUrl
+    || plan.network.indexerWsUrl !== staged.network.indexerWsUrl
+    || plan.deploymentJournalPath !== record.deployment.journalPath
+    || plan.initialVerifierKeyName !== staged.initialVerifierKeyName
+    || plan.providerModulePath !== staged.providerModulePath
+    || plan.providerModuleSha256 !== staged.providerModuleSha256
+    || plan.releaseManifestPath !== staged.releaseManifestPath) {
+    throw new Error("Insertion plan disagrees with the approved staged deployment");
+  }
+  const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+  const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+  if (verified.sourceRevision !== record.sourceRevision
+    || sha256(inventory) !== record.install.inventorySha256) {
+    throw new Error("Installed bundle changed since setup verification");
+  }
+  const packageManifest = JSON.parse(inventory).packageManifest;
+  const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
+  const planManifest = await regularBytes(plan.releaseManifestPath);
+  if (sha256(bundleManifest) !== sha256(planManifest)) {
+    throw new Error("Insertion release manifest disagrees with the verified install bundle");
+  }
+  return { plan, planSha256: sha256(planBytes), releaseManifestSha256: sha256(planManifest) };
+}
+
+export async function attemptStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const { plan, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(record, planPath, dependencies);
+    const attempts = record.verifierKeyInsertions ?? {};
+    if (Object.hasOwn(attempts, plan.circuitName)
+      || Object.values(attempts).some((entry) => entry.state !== "verified")) {
+      throw new Error("Prior verifier-key insertion is reserved or unresolved; reconcile without resubmitting");
+    }
+    record.verifierKeyInsertions = attempts;
+    attempts[plan.circuitName] = {
+      state: "reserved", planSha256, journalPath: plan.journalPath,
+      reservedAt: new Date().toISOString(),
+    };
+    await writeRecord(root, record);
+    try {
+      const approval = {
+        expectedDeploymentReceipt: record.deployment.result.receipt,
+        expectedReleaseManifestSha256: releaseManifestSha256,
+      };
+      const result = await (dependencies.insert ?? ((approvedPlan, expected) =>
+        runLocalVerifierKeyInsertion(approvedPlan, {}, "submit", expected)))(plan, approval);
+      if (!["verified", "pending", "absent", "mismatch"].includes(result?.readbackStatus)) {
+        throw new Error("Insertion did not return a recognized finalized-readback status");
+      }
+      const state = result.readbackStatus;
+      attempts[plan.circuitName] = { ...attempts[plan.circuitName], state, result };
+      await writeRecord(root, record);
+      return result;
+    } catch (error) {
+      attempts[plan.circuitName] = {
+        ...attempts[plan.circuitName], state: "unknown",
+        ...(error instanceof VerifierKeyInsertionOutcomeUnknownError && error.receipt
+          ? { receipt: error.receipt } : {}),
+      };
+      await writeRecord(root, record);
+      throw new Error("Verifier-key insertion outcome is unknown; reconcile the journal and finalized chain, never retry blindly");
+    }
+  });
+}
+
+export async function reconcileStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const { plan, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(record, planPath, dependencies);
+    const attempt = record.verifierKeyInsertions?.[plan.circuitName];
+    if (!attempt || attempt.planSha256 !== planSha256 || attempt.journalPath !== plan.journalPath) {
+      throw new Error("No matching reserved verifier-key insertion exists");
+    }
+    const approval = {
+      expectedDeploymentReceipt: record.deployment.result.receipt,
+      expectedReleaseManifestSha256: releaseManifestSha256,
+    };
+    const result = await (dependencies.reconcile ?? ((approvedPlan, expected) =>
+      runLocalVerifierKeyInsertion(approvedPlan, {}, "reconcile", expected)))(plan, approval);
+    if (!["verified", "failed-on-chain", "observed-without-receipt", "pending", "absent", "mismatch"]
+      .includes(result?.readback?.status)) {
+      throw new Error("Reconciliation did not return a recognized finalized-readback status");
+    }
+    attempt.state = result.readback.status;
+    attempt.result = result;
+    await writeRecord(root, record);
+    return result;
   });
 }
 
@@ -371,6 +494,8 @@ export async function standaloneSetupStatus(directory) {
     localLedger: record.genesisApproval ? "operator-pinned-reviewer-signature-verified"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
+    stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
+      .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
     maintenanceApproval: record.committeeApproval ? "roster-signature-verified-transition-pending" : "pending",
     offlineJourneys: "pending",
@@ -430,8 +555,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "insert-key", "reconcile-key", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|insert-key|reconcile-key|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -443,6 +568,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(await approveStandaloneCommittee(directory, input, signature, keyring, fingerprint)));
   }
   else if (command === "deploy" && input) console.log(JSON.stringify(await attemptStandaloneDeployment(directory, input)));
+  else if (command === "insert-key" && input) {
+    const result = await attemptStandaloneVerifierKeyInsertion(directory, input);
+    console.log(JSON.stringify(result));
+    if (result.readbackStatus !== "verified") process.exitCode = 2;
+  }
+  else if (command === "reconcile-key" && input) {
+    const result = await reconcileStandaloneVerifierKeyInsertion(directory, input);
+    console.log(JSON.stringify(result));
+    if (result.readback.status !== "verified") process.exitCode = 2;
+  }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);
 }

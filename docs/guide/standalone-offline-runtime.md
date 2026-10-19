@@ -349,6 +349,10 @@ node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directo
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+# Only after a staged deployment receipt and finalized staged-bootstrap readback:
+node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
+# Read-only recovery for that same plan; never resubmits:
+node scripts/standalone-setup-wizard.mjs reconcile-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
@@ -430,6 +434,31 @@ If `status` reports `setupLock: present-inspect-before-removal` after an
 interruption, first establish that no wizard process is running, then inspect
 the setup record, one-attempt journal, and finalized chain. Do not remove a
 stale lock or create a new setup solely to repeat an uncertain submission.
+For staged deployment, `insert-key` also requires the original recorded
+deployment receipt and `staged-bootstrap-pending` finalized readback. It binds
+the insertion plan to the exact approved source, genesis, RPC and indexer
+endpoints, provider module hash, staged initial key, original deployment
+journal, and verified bundle manifest before making a separate one-attempt
+reservation. The insertion CLI rechecks the manifest bytes and compares the
+journal's deployment receipt with the wizard's recorded receipt before any
+submission. The underlying insertion CLI still checks the live finalized
+image and per-circuit journal. A pending, failed, or ambiguous key blocks the
+next key; use `reconcile-key` with the **same plan** for read-only observation.
+Neither command deletes a reservation or authorizes a retry. The wizard reports
+per-key states and retains any public receipt recovered from an ambiguous
+submission, but never upgrades `releaseQualified` from these observations.
+`insert-key` and `reconcile-key` exit nonzero unless the result is `verified`.
+Even a failure known to occur before submission leaves a wizard reservation
+that requires operator investigation; do not remove it or create a fresh setup
+to bypass recovery.
+If the initial staged deployment returned a receipt but its first finalized
+readback was `pending` or `unavailable`, this wizard slice cannot yet promote
+it to staged-bootstrap readiness. Preserve the deployment journal and setup
+record, inspect finality independently, and wait for a dedicated read-only
+deployment-reconciliation command; do not hand-edit the record or submit a
+second deployment. A `failed-on-chain`, `mismatch`, or
+`observed-without-receipt` key also requires an explicit human recovery
+decision; it cannot be skipped to install later keys.
 The wizard does not generate or itself approve a genesis hash, provider module,
 funded wallet, committee roster, threshold, or key custody. A public local
 genesis wallet and 1-of-3 committee are permitted only for a development

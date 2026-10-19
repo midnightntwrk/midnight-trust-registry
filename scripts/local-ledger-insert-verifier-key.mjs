@@ -60,10 +60,15 @@ async function regularFile(path) {
   return readFile(path);
 }
 
-export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode = "submit") {
+export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode = "submit", approval = {}) {
   validateLocalVerifierKeyInsertionPlan(plan);
   if (mode !== "submit" && mode !== "reconcile") throw new Error("Unsupported insertion mode");
-  const manifest = JSON.parse((await regularFile(plan.releaseManifestPath)).toString("utf8"));
+  const manifestBytes = await regularFile(plan.releaseManifestPath);
+  if (approval.expectedReleaseManifestSha256
+    && createHash("sha256").update(manifestBytes).digest("hex") !== approval.expectedReleaseManifestSha256) {
+    throw new Error("Release manifest bytes changed after setup approval");
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || manifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
@@ -107,6 +112,11 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
     });
     if (deployment?.submitted === null || deployment?.submitted === undefined) {
       throw new Error("A finalized staged deployment receipt is required before key insertion");
+    }
+    if (approval.expectedDeploymentReceipt
+      && ["networkId", "contractAddress", "txId", "blockHash", "blockHeight"]
+        .some((field) => deployment.submitted[field] !== approval.expectedDeploymentReceipt[field])) {
+      throw new Error("Deployment journal receipt disagrees with the setup-approved receipt");
     }
     const receipt = {
       networkId: deployment.submitted.networkId,

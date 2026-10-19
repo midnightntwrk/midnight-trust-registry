@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -125,4 +125,35 @@ test("missing staged receipt stops before insertion and still closes provider", 
   deps.submit = async () => { steps.push("submit"); };
   await assert.rejects(runLocalVerifierKeyInsertion(plan, deps), /finalized staged deployment receipt/u);
   assert.deepEqual(steps, ["endpoints", "genesis", "provider", "deployment-journal", "stop"]);
+});
+
+test("wizard approval rejects changed manifest or deployment receipt before insertion", async () => {
+  const steps = [];
+  const deps = dependencies(steps);
+  deps.submit = async () => { steps.push("submit"); };
+  const manifestSha256 = createHash("sha256").update(await readFile(manifestPath)).digest("hex");
+  const expectedDeploymentReceipt = {
+    networkId: "undeployed", contractAddress: `0x${"e".repeat(64)}`,
+    txId: "deploy-tx", blockHash: `0x${"f".repeat(64)}`, blockHeight: 10,
+  };
+  await assert.rejects(runLocalVerifierKeyInsertion(plan, deps, "submit", {
+    expectedReleaseManifestSha256: "0".repeat(64), expectedDeploymentReceipt,
+  }), /manifest bytes changed/u);
+  assert.deepEqual(steps, []);
+  await assert.rejects(runLocalVerifierKeyInsertion(plan, deps, "submit", {
+    expectedReleaseManifestSha256: manifestSha256,
+    expectedDeploymentReceipt: { ...expectedDeploymentReceipt, contractAddress: `0x${"1".repeat(64)}` },
+  }), /journal receipt disagrees/u);
+  assert.deepEqual(steps, ["endpoints", "genesis", "provider", "deployment-journal", "stop"]);
+  assert.equal(steps.includes("submit"), false);
+  steps.length = 0;
+  deps.submit = async () => {
+    steps.push("submit");
+    return { receipt: { txId: "insert-tx" }, readback: "verified" };
+  };
+  const result = await runLocalVerifierKeyInsertion(plan, deps, "submit", {
+    expectedReleaseManifestSha256: manifestSha256, expectedDeploymentReceipt,
+  });
+  assert.equal(result.readbackStatus, "verified");
+  assert.deepEqual(steps, ["endpoints", "genesis", "provider", "deployment-journal", "submit", "stop"]);
 });

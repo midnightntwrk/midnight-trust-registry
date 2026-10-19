@@ -7,13 +7,16 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   approveStandaloneCommittee,
   approveStandaloneGenesis,
   attemptStandaloneDeployment,
+  attemptStandaloneVerifierKeyInsertion,
   initializeStandaloneSetup,
   observeStandaloneLedger,
+  reconcileStandaloneVerifierKeyInsertion,
   standaloneSetupStatus,
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
@@ -22,6 +25,11 @@ const sourceRevision = "a".repeat(40);
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
 const governanceFingerprint = "B".repeat(40);
+const stagedReceipt = {
+  networkId: "undeployed",
+  contractAddress: `0x${"c".repeat(64)}`, blockHash: `0x${"d".repeat(64)}`,
+  blockHeight: 10, txId: "staged-deployment-tx",
+};
 const pin = {
   format: "tr-local-ledger-pin-v1",
   networkId: "undeployed",
@@ -204,6 +212,148 @@ test("wizard rejects a changed deployment genesis before reserving", async () =>
   } }));
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, { verifyBundle }), /disagrees/u);
   assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
+});
+
+async function stagedFixture() {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await approve(f);
+  await writeFile(f.planPath, JSON.stringify({
+    ...plan, format: "tr-local-staged-deployment-plan-v1",
+    initialVerifierKeyName: "initialKey", releaseManifestPath: f.releaseManifestPath,
+  }));
+  const insertionPlanPath = join(f.directory, "insertion-plan.json");
+  const insertionPlan = {
+    format: "tr-local-verifier-key-insertion-plan-v1",
+    sourceRevision, network: plan.network,
+    releaseManifestPath: f.releaseManifestPath,
+    providerModulePath: plan.providerModulePath,
+    providerModuleSha256: plan.providerModuleSha256,
+    deploymentJournalPath: plan.journalPath,
+    journalPath: "/private/verifier-nextKey.json",
+    initialVerifierKeyName: "initialKey", circuitName: "nextKey",
+  };
+  await writeFile(insertionPlanPath, JSON.stringify(insertionPlan));
+  return { ...f, insertionPlanPath, insertionPlan };
+}
+
+test("wizard requires finalized staged bootstrap and binds insertion to verified install", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation", readbackStatus: "pending" }),
+  });
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not submit"),
+  }), /finalized staged bootstrap/u);
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys, []);
+});
+
+test("wizard rejects a staged status without a deployment receipt", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "staged-bootstrap-pending" }),
+  });
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not submit"),
+  }), /finalized staged bootstrap/u);
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys, []);
+});
+
+test("wizard reserves one staged insertion and requires read-only reconciliation before the next", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "staged-bootstrap-pending", receipt: stagedReceipt }),
+  });
+  let calls = 0;
+  const first = await attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    insert: async (_plan, approval) => {
+      calls += 1;
+      assert.deepEqual(approval.expectedDeploymentReceipt, stagedReceipt);
+      assert.equal(approval.expectedReleaseManifestSha256,
+        createHash("sha256").update(await readFile(f.releaseManifestPath)).digest("hex"));
+      return { readbackStatus: "pending" };
+    },
+  });
+  assert.equal(first.readbackStatus, "pending");
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys,
+    [{ circuitName: "nextKey", state: "pending" }]);
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => { calls += 1; },
+  }), /reserved or unresolved/u);
+  assert.equal(calls, 1);
+  const readback = await reconcileStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    reconcile: async () => ({ readback: { status: "verified" } }),
+  });
+  assert.equal(readback.readback.status, "verified");
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys,
+    [{ circuitName: "nextKey", state: "verified" }]);
+  const nextPath = join(f.directory, "next-insertion-plan.json");
+  await writeFile(nextPath, JSON.stringify({ ...f.insertionPlan,
+    circuitName: "laterKey", journalPath: "/private/verifier-laterKey.json" }));
+  await attemptStandaloneVerifierKeyInsertion(f.directory, nextPath, {
+    verifyBundle: f.verifyBundle,
+    insert: async () => ({ readbackStatus: "verified" }),
+  });
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys,
+    [{ circuitName: "nextKey", state: "verified" }, { circuitName: "laterKey", state: "verified" }]);
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+});
+
+test("wizard preserves an ambiguous insertion and rejects changed approval bytes", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "staged-bootstrap-pending", receipt: stagedReceipt }),
+  });
+  const changedPath = join(f.directory, "changed-insertion-plan.json");
+  await writeFile(changedPath, JSON.stringify({ ...f.insertionPlan, providerModuleSha256: "d".repeat(64) }));
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, changedPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not submit"),
+  }), /disagrees with the approved staged deployment/u);
+  await writeFile(changedPath, JSON.stringify({ ...f.insertionPlan, network: {
+    ...f.insertionPlan.network, indexerHttpUrl: "http://127.0.0.1:28089/api/v4/graphql",
+  } }));
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, changedPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not submit"),
+  }), /disagrees with the approved staged deployment/u);
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys, []);
+  const publicReceipt = { outcome: "succeeded", txId: "insert-tx",
+    blockHash: `0x${"e".repeat(64)}`, blockHeight: 12 };
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    insert: async () => { throw new VerifierKeyInsertionOutcomeUnknownError(
+      new Error("private wallet details"), publicReceipt,
+    ); },
+  }), /outcome is unknown/u);
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys,
+    [{ circuitName: "nextKey", state: "unknown" }]);
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle, insert: async () => assert.fail("must not resubmit"),
+  }), /reserved or unresolved/u);
+  assert.doesNotMatch(await readFile(join(f.directory, "setup-record.json"), "utf8"), /private wallet details/u);
+  const saved = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.deepEqual(saved.verifierKeyInsertions.nextKey.receipt, publicReceipt);
+  await assert.rejects(reconcileStandaloneVerifierKeyInsertion(f.directory, changedPath, {
+    verifyBundle: f.verifyBundle,
+    reconcile: async () => assert.fail("must not reconcile a changed plan"),
+  }), /disagrees with the approved staged deployment/u);
+  const result = await reconcileStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    reconcile: async () => ({ readback: { status: "observed-without-receipt" } }),
+  });
+  assert.equal(result.readback.status, "observed-without-receipt");
+  assert.equal((await standaloneSetupStatus(f.directory)).stagedVerifierKeys[0].state,
+    "observed-without-receipt");
 });
 
 test("genesis approval rejects changed source pins and cannot be replaced after acceptance", async () => {

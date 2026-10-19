@@ -1938,3 +1938,14 @@ genesis wallet and 1-of-3 smoke committee remain development-only. Release
 qualification still needs an approved operator, reviewed install bytes,
 finalized deployment and every key readback, approved threshold committee,
 offline actor journeys, restart/restore, and independent security review.
+
+The first-run wizard now records the staged deployment plan's endpoint and
+provider pins, requires its finalized staged-bootstrap receipt, and permits
+one operator-invoked per-circuit insertion bound to that plan at a time. A separate
+`reconcile-key` path is read-only and preserves ambiguous journals. This is
+operator orchestration rather than local-ledger qualification evidence; the
+pending development attempt still requires independent reconciliation and a
+human recovery decision before any new submission.
+The next local slice must add read-only deployment reconciliation for an
+initial receipt whose finalized readback lagged; the wizard currently leaves
+that setup reserved and does not offer a retry or manual status override.
