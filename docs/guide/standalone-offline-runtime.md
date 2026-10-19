@@ -272,24 +272,58 @@ each installation; do not reuse a prior attempt's directory:
 node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
 # Or run each step separately for an auditable operator session:
 node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
-node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/approved-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
-match the installed source and observed genesis, and saves a mode-0600 setup
-record in a mode-0700 directory. It reserves a deployment attempt **before**
+match the installed source and observed genesis, and requires a detached
+reviewer signature before deployment. The signed JSON has exactly these fields:
+
+```json
+{
+  "format": "tr-local-genesis-approval-v1",
+  "sourceRevision": "<signed source SHA from setup-record.json>",
+  "installInventorySha256": "<inventory hash from setup-record.json>",
+  "networkId": "undeployed",
+  "pinSha256": "<candidate pin hash from setup-record.json>",
+  "expectedGenesisHash": "0x<approved 64-character genesis hash>",
+  "rpcUrl": "<observed loopback RPC URL>",
+  "reviewerFingerprint": "<40-character uppercase GPG signing-key fingerprint>",
+  "reviewedReference": "<independent chain-spec or genesis evidence reference>",
+  "approvedAt": "<ISO-8601 time after setup initialization>"
+}
+```
+
+The reviewer compares the candidate genesis to independently obtained
+chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
+and sends the detached signature and public signing key to the operator.
+The operator obtains the expected fingerprint through an independently
+approved channel, imports the public key into a mode-0700 local GPG keyring,
+and runs `approve-genesis`. The wizard does not download keys or establish
+reviewer authority from a typed fingerprint: the release owner must separately
+verify the key owner and the provenance of `reviewedReference`. It checks
+the signature, signer fingerprint, source, inventory, genesis, and setup time,
+then preserves the signed bytes in the private setup record. An observation
+cannot be replaced after approval.
+
+The wizard saves a mode-0600 setup record in a mode-0700 directory. It
+reserves a deployment attempt **before**
 calling the provider. If the process exits, the provider fails, or the receipt
 is unclear, do not invoke `deploy` again against that setup; inspect the
 deployment journal and finalized chain, then obtain a human recovery decision.
-The wizard does not generate or approve a genesis hash, provider module,
+If `status` reports `setupLock: present-inspect-before-removal` after an
+interruption, first establish that no wizard process is running, then inspect
+the setup record, one-attempt journal, and finalized chain. Do not remove a
+stale lock or create a new setup solely to repeat an uncertain submission.
+The wizard does not generate or itself approve a genesis hash, provider module,
 funded wallet, committee roster, threshold, or key custody. A public local
 genesis wallet and 1-of-3 committee are permitted only for a development
-smoke, never as RC approval. Independent genesis and final committee approvals
-must be collected during first setup from the responsible humans, not inferred
-from the node's own response or a typed acknowledgement. Later wizard slices
-must bind those approvals to the evidence record and execute finalized
+smoke, never as RC approval. Final committee approval must be collected during
+first setup from responsible humans, not inferred from a typed acknowledgement.
+Later wizard slices must bind the committee decision to the evidence record and execute finalized
 maintenance readback, offline actor journeys, and recovery qualification.
 `status` deliberately keeps these gates pending even if deployment returns a
 receipt; it does not produce a release-qualified verdict.

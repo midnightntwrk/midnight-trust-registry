@@ -1885,3 +1885,13 @@ local-ledger submission smoke, not release custody, maintenance transition,
 or restart/restore evidence. The `ws` SDK dependency is pinned to a patched
 8.21 version because the initially selected 8.20 release failed the low-level
 audit gate; the workspace override also patches the indexer-provider path.
+
+The first-run wizard now refuses deployment until it records a detached GPG
+signature over the source SHA, install-inventory hash, observed genesis, and
+loopback RPC endpoint. It checks the exact signing-key fingerprint from a
+private operator-supplied public keyring and preserves signed bytes in the
+setup record. This is a signature and binding check, not a claim that the
+operator-entered fingerprint represents an independently authorized reviewer;
+the release owner must approve that trust anchor out of band. Committee
+approval, finalized maintenance readback, offline journeys, and independent
+security review remain open.
