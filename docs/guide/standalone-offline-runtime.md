@@ -57,9 +57,15 @@ Preprod. The local `prepareLocalNetworkCommitteeTransition`,
 committee replacement from a finalized local image, reserve one durable
 submission attempt, and inspect finalized readback without authorizing an
 automatic retry. `readPostDeploymentLocalTrustRegistry` verifies the
-post-transition image through the local reader. These helpers do not install
-or run a local node, persist the deployment receipt for the operator, prove
-egress denial, or demonstrate a live maintenance transaction. The initial
+post-transition image through the local reader. For an operator deployment,
+use `deployLocalTrustRegistryOnce` with an exact source SHA and a
+`FileDeploymentAttemptJournal` in a pre-provisioned private directory. It
+reserves one attempt before the SDK call and retains the public receipt if the
+adapter returns. A missing receipt after reservation means an unknown outcome,
+not permission to redeploy; inspect the original intent and finalized local
+chain state before a human recovery decision. These helpers do not install or
+run a local node, prove egress denial, or demonstrate a live maintenance
+transaction. The initial
 single-key authority remains unsafe for release until a separately approved
 committee is observed after finality. Durably record the deployment receipt,
 committee approval, and journal before claiming a supported local deployment.

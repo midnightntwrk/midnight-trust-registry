@@ -45,11 +45,15 @@ include it in diagnostic output.
    Authenticate the pinned node's genesis and finalized head independently of
    the indexer. Stop on any network, genesis, TLS, or finality mismatch.
 2. Supply the approved bootstrap inputs, full release manifest, funded
-   providers, and temporary maintenance signing key to the host-invoked
-   `deployPublicTrustRegistry` adapter. There is deliberately no default
-   wallet-handling CLI. Record the public transaction ID, block hash, height,
-   and contract address immediately; redact private transaction and provider
-   data.
+   providers, temporary maintenance signing key, exact source SHA, and a
+   `FileDeploymentAttemptJournal` to the host-invoked
+   `deployPublicTrustRegistryOnce` adapter. There is deliberately no default
+   wallet-handling CLI. Provision one stable journal path per intended
+   deployment inside a private (0700), locally owned directory before
+   invoking it. The journal records the public intent pin before entering
+   the SDK deployment call and durably records the public receipt after the
+   adapter returns. It never stores signing keys or private transaction data.
+   Do not call the unjournaled deployment adapter in this operator workflow.
 3. Read the deployed image at a finalized block hash. A matching bootstrap
    result is intentionally `unsafe-maintenance-authority`, because the SDK
    initially installs one key. `pending`, `unavailable`, `invalid-image`, and
@@ -58,6 +62,18 @@ include it in diagnostic output.
 4. Independently compare the registry identity, constructor commitments,
    operation catalog, every verifier-key hash, bootstrap maintainer, and
    single-key maintenance authority with the approved manifest and receipt.
+
+A reserved deployment with no receipt has an **unknown outcome**, even when
+the SDK reported a proving error: it may have broadcast before the response
+was lost. Do not delete the journal or call deployment again automatically.
+Use `inspectApproved` with the original approved inputs to reject changed
+network, genesis, source, constructor, key, or endpoint pins, then investigate
+the independently finalized chain and provider transaction history. If the
+receipt validation or write failed, `DeploymentAttemptOutcomeUnknownError.result`
+may contain the public receipt and readback; retain both separately. The journal is single-host
+coordination, not a cross-host lock or transaction-inclusion proof. Provider
+internals and their endpoint configuration remain opaque to the adapter and
+require separate approval. A human must authorize any recovery attempt.
 
 ## Committee Transition Gate
 
