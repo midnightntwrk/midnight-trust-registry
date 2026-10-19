@@ -90,8 +90,9 @@ const verifierKeyCatalog = (manifest: ReleaseVerifierKeyManifest): {
 };
 
 const authorityIsUnsafe = (state: FinalizedRegistryDeploymentImage): boolean =>
-  state.maintenanceAuthority.committee.length > 0
-  && (state.maintenanceAuthority.threshold < 2 || state.maintenanceAuthority.committee.length < 3);
+  state.maintenanceAuthority.threshold === 0
+  || (state.maintenanceAuthority.committee.length > 0
+    && (state.maintenanceAuthority.threshold < 2 || state.maintenanceAuthority.committee.length < 3));
 
 const validateMaintenancePolicy = (policy: PublicRegistryMaintenancePolicy): void => {
   if (policy.mode === "immutable") return;
@@ -111,7 +112,7 @@ const matchesMaintenancePolicy = (
   const authority = state.maintenanceAuthority;
   if (authority.counter < 1n) return false;
   if (policy.mode === "immutable") {
-    return authority.committee.length === 0 && authority.threshold === 0;
+    return authority.committee.length === 0 && authority.threshold === 1;
   }
   return authority.threshold === policy.threshold
     && authority.committee.length === policy.verifyingKeys.length

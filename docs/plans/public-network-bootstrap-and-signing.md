@@ -107,7 +107,8 @@ then requires the finalized authority, governance fields, bootstrap record,
 and every verifier-key hash to match those pins. A committee policy requires
 at least three distinct keys and a threshold of at least two, aligned with a
 multi-party governance pin; the immutable policy requires an empty committee
-and zero threshold. The helper does not perform the transition or approve key
+and threshold one, so the required signatures exceed available members. A
+zero threshold is unsafe, not immutable. The helper does not perform the transition or approve key
 custody. Its readback is still not public-network qualification: no funded
 deployment was performed, the host providers and RPC/indexer are trusted, and
 one indexer is not a cryptographic proof of canonical state. #200 and #213

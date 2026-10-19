@@ -307,12 +307,14 @@ describe("public Trust Registry deployment", () => {
     observedAuthorityCommittee = [];
     observedAuthorityThreshold = 0;
     observedAuthorityCounter = 1n;
+    expect((await readback()).status).toBe("unsafe-maintenance-authority");
+    observedAuthorityThreshold = 1;
     expect((await readback()).status).toBe("verified");
     observedAuthorityCommittee = [`0x${"1".repeat(64)}`];
     observedAuthorityThreshold = 1;
     expect((await readback()).status).toBe("unsafe-maintenance-authority");
     observedAuthorityCommittee = [];
-    observedAuthorityThreshold = 0;
+    observedAuthorityThreshold = 1;
     observedVerifierKeyOverride = Buffer.from("replacement-verifier-key");
     expect((await readback()).status).toBe("mismatch");
     observedVerifierKeyOverride = null;
