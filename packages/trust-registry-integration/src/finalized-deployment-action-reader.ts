@@ -113,12 +113,27 @@ export function createCheckpointedDeploymentActionReader(input: {
   publicDataProvider: Pick<PublicDataProvider, "queryContractState">;
   checkpointSource: TrustedFinalizedCheckpointSource;
 }): FinalizedRegistryBootstrapReader {
+  return createDeploymentActionReader(input, false);
+}
+
+/** Local-only reader for the isolated `undeployed` network; never use for public qualification. */
+export function createLocalCheckpointedDeploymentActionReader(input: {
+  publicDataProvider: Pick<PublicDataProvider, "queryContractState">;
+  checkpointSource: TrustedFinalizedCheckpointSource;
+}): FinalizedRegistryBootstrapReader {
+  return createDeploymentActionReader(input, true);
+}
+
+function createDeploymentActionReader(input: {
+  publicDataProvider: Pick<PublicDataProvider, "queryContractState">;
+  checkpointSource: TrustedFinalizedCheckpointSource;
+}, localOnly: boolean): FinalizedRegistryBootstrapReader {
   const readState = async (contractAddress: string) => {
     const address = canonicalAddress(contractAddress);
     const checkpoint = await input.checkpointSource.readCurrentFinalizedCheckpoint();
     if (checkpoint === null) return null;
     if (!/^[a-z][a-z0-9-]*$/u.test(checkpoint.networkId)
-      || checkpoint.networkId === "undeployed"
+      || (localOnly ? checkpoint.networkId !== "undeployed" : checkpoint.networkId === "undeployed")
       || !/^[0-9a-fA-F]{64}$/u.test(checkpoint.blockHash)
       || /^0{64}$/u.test(checkpoint.blockHash)) {
       throw new Error("Trusted finalized checkpoint is malformed");

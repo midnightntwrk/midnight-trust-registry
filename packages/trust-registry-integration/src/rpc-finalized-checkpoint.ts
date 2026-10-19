@@ -2,6 +2,7 @@ import type {
   FinalizedNetworkCheckpoint,
   TrustedFinalizedCheckpointSource,
 } from "./finalized-deployment-action-reader.js";
+import { localNetworkEndpoint } from "./local-network-endpoints.js";
 
 const HASH = /^0x[0-9a-fA-F]{64}$/u;
 const ZERO = /^0x0{64}$/u;
@@ -33,6 +34,13 @@ export type RpcFinalizedCheckpointConfig = {
   fetchImpl?: typeof fetch;
 };
 
+export type LocalRpcFinalizedCheckpointConfig = {
+  rpcUrl: string;
+  expectedGenesisHash: string;
+  allowedHosts: readonly string[];
+  fetchImpl?: typeof fetch;
+};
+
 /** Trusts a pinned HTTPS node for finality and checks its genesis before reading the finalized head. */
 export function createRpcFinalizedCheckpointSource(
   config: RpcFinalizedCheckpointConfig,
@@ -40,7 +48,21 @@ export function createRpcFinalizedCheckpointSource(
   if (!["preview", "preprod", "mainnet"].includes(config.networkId)) {
     throw new Error("Unsupported public Midnight network");
   }
-  const endpoint = rpcEndpoint(config.rpcUrl);
+  return createPinnedCheckpointSource(config, rpcEndpoint(config.rpcUrl));
+}
+
+/** Trusts an operator-pinned local node; host isolation is a separate deployment requirement. */
+export function createLocalRpcFinalizedCheckpointSource(
+  config: LocalRpcFinalizedCheckpointConfig,
+): TrustedFinalizedCheckpointSource {
+  const endpoint = new URL(localNetworkEndpoint(config.rpcUrl, config.allowedHosts, ["http:", "https:"]));
+  return createPinnedCheckpointSource({ ...config, networkId: "undeployed" }, endpoint);
+}
+
+function createPinnedCheckpointSource(
+  config: { networkId: string; expectedGenesisHash: string; fetchImpl?: typeof fetch },
+  endpoint: URL,
+): TrustedFinalizedCheckpointSource {
   const expectedGenesisHash = canonicalHash(config.expectedGenesisHash, "Expected genesis hash");
   const fetchImpl = config.fetchImpl ?? fetch;
 
@@ -49,6 +71,7 @@ export function createRpcFinalizedCheckpointSource(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) throw new Error("Finality RPC request failed");

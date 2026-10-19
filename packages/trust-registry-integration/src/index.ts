@@ -20,6 +20,7 @@ export * from "./vc-signer-authorization.js";
 export * from "./finalized-deployment-action-reader.js";
 export * from "./rpc-finalized-checkpoint.js";
 export * from "./public-network-deployment-action-reader.js";
+export * from "./local-network-deployment-action-reader.js";
 export * from "./public-network-deployment.js";
 export { preparePublicNetworkCommitteeTransition } from "./public-maintenance-transition.js";
 export type { CommitteeTransitionApproval, PreparedCommitteeTransition } from "./public-maintenance-transition.js";

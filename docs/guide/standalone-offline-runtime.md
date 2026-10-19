@@ -37,13 +37,30 @@ proof server sees witness data and must remain inside the same trust boundary.
 
 The Trust Registry API and browser surfaces must use only the local network,
 local DID/VC/status data, and locally persisted workspace state. An offline
-deployment adapter must authenticate the local network genesis, deploy the
-compiled contract, persist its receipt, and read back the finalized contract
-image. The current public adapter rejects `undeployed` and remote plaintext
-endpoints by design; do not bypass it by relabeling the local network as
-Preprod. A separate reviewed local adapter and provider configuration are
-still required. The current API's file-backed simulator mode may be used for
-demonstrations, but must be labeled fixture-only.
+deployment must authenticate the local network genesis, deploy the compiled
+contract, persist its receipt, and read back the finalized contract image.
+`deployLocalTrustRegistry` and `createLocalNetworkDeploymentActionReader`
+provide a distinct `undeployed` path with an out-of-band genesis pin and an
+explicit private-host allowlist for the checkpoint RPC and readback indexer
+endpoints. The caller-supplied Midnight.js wallet, proving, and submission
+providers are opaque to these helpers and **are not covered by that
+allowlist**. Pin their endpoint configuration separately and enforce egress
+denial for the complete process and container network; syntax checks on local
+aliases do not prove where DNS resolves them. The indexer client's own redirect
+handling is also outside the allowlist check, so egress denial is required
+even for configured readback URLs. Use single-label aliases only on the
+isolated container network. The public adapter still rejects `undeployed`;
+do not relabel the local network as
+Preprod. These helpers do not install or run a local node, persist the receipt
+for the operator, prove egress denial, or complete the maintenance-committee
+transition. The initial single-key authority remains unsafe for release.
+Durably record the deployment receipt and approve committee keys before
+claiming a supported local deployment. The current API's file-backed
+simulator mode may be used for demonstrations, but must be labeled fixture-only.
+The genesis pin alone may not distinguish a fresh local node from one reset
+to the same chain specification: persist and verify chain state, receipts,
+and finalized history across restarts. A node without a progressing finalized
+head yields `pending`, not qualification evidence.
 
 ## Acceptance Test Before Claiming Support
 

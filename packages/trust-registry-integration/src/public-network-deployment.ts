@@ -9,8 +9,17 @@ import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-ru
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
-import { FinalizedDeploymentImageInvalidError, type FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
-import { createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
+import {
+  FinalizedDeploymentImageInvalidError,
+  type FinalizedRegistryBootstrapReader,
+  type FinalizedRegistryDeploymentImage,
+  type TrustedFinalizedCheckpointSource,
+} from "./finalized-deployment-action-reader.js";
+import {
+  createLocalNetworkDeploymentActionReader,
+  type LocalNetworkDeploymentActionReaderConfig,
+} from "./local-network-deployment-action-reader.js";
+import { createLocalRpcFinalizedCheckpointSource, createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
 import {
   createPublicNetworkDeploymentActionReader,
   type PublicNetworkDeploymentActionReaderConfig,
@@ -169,6 +178,38 @@ export async function deployPublicTrustRegistry(input: {
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
 }): Promise<PublicRegistryDeploymentResult> {
+  return deployPinnedTrustRegistry({
+    ...input,
+    checkpointSource: createRpcFinalizedCheckpointSource(input.network),
+    readerFactory: () => createPublicNetworkDeploymentActionReader(input.network),
+  });
+}
+
+/** Deploys only to an isolated local network with a separately approved genesis pin. */
+export async function deployLocalTrustRegistry(input: {
+  network: LocalNetworkDeploymentActionReaderConfig;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  providers: ContractProviders<RegistryContract>;
+  contractMaintenanceSigningKey: SigningKey;
+}): Promise<PublicRegistryDeploymentResult> {
+  if (input.network.networkId !== "undeployed") throw new Error("Local deployment requires the undeployed network");
+  return deployPinnedTrustRegistry({
+    ...input,
+    checkpointSource: createLocalRpcFinalizedCheckpointSource(input.network),
+    readerFactory: () => createLocalNetworkDeploymentActionReader(input.network),
+  });
+}
+
+async function deployPinnedTrustRegistry(input: {
+  network: { networkId: string };
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  providers: ContractProviders<RegistryContract>;
+  contractMaintenanceSigningKey: SigningKey;
+  checkpointSource: TrustedFinalizedCheckpointSource;
+  readerFactory: () => Promise<FinalizedRegistryBootstrapReader>;
+}): Promise<PublicRegistryDeploymentResult> {
   const { network, bootstrap } = input;
   if (getNetworkId() !== network.networkId) {
     throw new Error("Midnight.js network does not match the pinned deployment network");
@@ -189,11 +230,11 @@ export async function deployPublicTrustRegistry(input: {
   const catalog = verifierKeyCatalog(input.releaseManifest);
   const expectedAuthorityKey = `0x${signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase()}`;
 
-  const checkpoint = await createRpcFinalizedCheckpointSource(network).readCurrentFinalizedCheckpoint();
+  const checkpoint = await input.checkpointSource.readCurrentFinalizedCheckpoint();
   if (checkpoint === null || checkpoint.networkId !== network.networkId) {
     throw new Error("Pinned network finality checkpoint is unavailable");
   }
-  const reader = await createPublicNetworkDeploymentActionReader(network);
+  const reader = await input.readerFactory();
   const compiled = CompiledContract.make(
     "trust-registry",
     TrustRegistryContract.Contract<TrustRegistryPrivateState>,
