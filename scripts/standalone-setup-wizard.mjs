@@ -741,7 +741,14 @@ export async function submitStandaloneCommitteeTransition(
 ) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
-    if (record.maintenanceAttempt?.state === "aborted-before-journal") {
+    const priorRecoveredAttempt = record.maintenanceAttempt?.state === "recovered-no-journal-approved"
+      ? record.maintenanceAttempt : null;
+    if (["aborted-before-journal", "recovered-no-journal-approved"]
+      .includes(record.maintenanceAttempt?.state)) {
+      if (record.maintenanceAttempt.state === "recovered-no-journal-approved"
+        && !record.maintenanceAttempt.recoveryApproval) {
+        throw new Error("Maintenance recovery approval evidence is missing");
+      }
       const priorJournal = new FileMaintenanceTransitionJournal(record.maintenanceAttempt.journalPath);
       if (await priorJournal.inspect() !== null) {
         throw new Error("Aborted maintenance attempt has a journal; preserve it for recovery");
@@ -760,10 +767,22 @@ export async function submitStandaloneCommitteeTransition(
     const { approval, signingRequest, requestBytes, prepared } = await approvedStandaloneCommitteeTransition(
       record, requestPath, dependencies,
     );
+    if (priorRecoveredAttempt
+      && (sha256(requestBytes) === priorRecoveredAttempt.requestSha256
+        || signingRequest.finalizedBlockHash === priorRecoveredAttempt.finalizedBlockHash
+        || Date.parse(signingRequest.expiresAt)
+          <= Date.parse(priorRecoveredAttempt.recoveryApproval.approvedAt))) {
+      throw new Error("Human-recovered maintenance requires a fresh request and signing window");
+    }
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
     const savedSigningRequest = JSON.parse(signingRequestBytes);
     if (!signingRequestMatches(savedSigningRequest, signingRequest)) {
       throw new Error("Saved signing request disagrees with fresh finalized maintenance evidence");
+    }
+    if (priorRecoveredAttempt
+      && savedSigningRequest.finalizedBlockHash
+        === priorRecoveredAttempt.finalizedBlockHash) {
+      throw new Error("Recovered maintenance attempt cannot reuse the abandoned finalized checkpoint");
     }
     const signatureBytes = await regularBytes(resolve(signaturePath));
     const signed = JSON.parse(signatureBytes);
@@ -887,7 +906,12 @@ export async function reconcileStandaloneCommitteeTransition(
     }
     history.push(result);
     attempt.reconciliationHistory = history;
-    if (result.status === "not-reserved") {
+    if (attempt.state === "recovered-no-journal-approved") {
+      if (result.status !== "not-reserved" || result.txId) {
+        attempt.state = "conflict";
+        attempt.alert = "post-recovery-evidence-contradiction";
+      }
+    } else if (result.status === "not-reserved") {
       if (attempt.txId || attempt.journalReserved
         || ["observed", "observed-without-receipt", "conflict"].includes(attempt.state)) {
         attempt.alert = "journal-missing-after-submission";
@@ -916,6 +940,108 @@ export async function reconcileStandaloneCommitteeTransition(
     attempt.reconciliation = result;
     await writeRecord(root, record);
     return result;
+  });
+}
+
+export async function approveStandaloneCommitteeRecovery(
+  directory, requestPath, signingRequestPath, documentPath, signaturePath,
+  keyringDirectory, expectedFingerprint, dependencies = {},
+) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const attempt = record.maintenanceAttempt;
+    if (attempt?.state !== "recovery-required-no-journal"
+      || attempt.txId || attempt.reportedTxId || attempt.journalReserved
+      || attempt.journalPath !== join(root, "committee-transition.json")) {
+      throw new Error("Only an unresolved pre-journal crash window can receive recovery approval");
+    }
+    const journal = new FileMaintenanceTransitionJournal(attempt.journalPath);
+    if (await journal.inspect() !== null) {
+      throw new Error("Maintenance journal exists; a no-journal recovery decision is forbidden");
+    }
+    const { approval, requestBytes, catalog } = await readApprovedCommitteeTransition(
+      record, requestPath, dependencies,
+    );
+    const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
+    const signingRequest = JSON.parse(signingRequestBytes);
+    if (sha256(requestBytes) !== attempt.requestSha256
+      || sha256(signingRequestBytes) !== attempt.signingRequestSha256
+      || signingRequest.updateSha256 !== attempt.updateSha256
+      || signingRequest.finalizedBlockHash !== attempt.finalizedBlockHash
+      || signingRequest.expiresAt !== approval.expiresAt.toISOString()) {
+      throw new Error("Recovery evidence disagrees with the original approved maintenance attempt");
+    }
+    const now = (dependencies.now ?? Date.now)();
+    const expiredAt = approval.expiresAt.getTime();
+    if (!Number.isSafeInteger(now) || !Number.isFinite(expiredAt)
+      || now < expiredAt + 10 * 60_000) {
+      throw new Error("Original maintenance signing window must expire before recovery approval");
+    }
+    setNetworkId("undeployed");
+    const freshApproval = { ...approval, expiresAt: new Date(now + 5 * 60_000) };
+    const fresh = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(freshApproval);
+    if (fresh.networkId !== "undeployed" || fresh.contractAddress !== approval.receipt.contractAddress
+      || !HASH.test(fresh.finalizedBlockHash) || /^0x0{64}$/u.test(fresh.finalizedBlockHash)
+      || fresh.finalizedBlockHash === attempt.finalizedBlockHash
+      || fresh.currentAuthorityCounter !== BigInt(catalog.length - 1)
+      || fresh.nextAuthorityCounter !== BigInt(catalog.length)
+      || fresh.threshold !== record.committeeApproval.maintenancePolicy.threshold
+      || JSON.stringify(fresh.committeeVerifyingKeys)
+        !== JSON.stringify(record.committeeApproval.maintenancePolicy.verifyingKeys)
+      || fresh.expiresAt !== freshApproval.expiresAt.toISOString()
+      || !(fresh.dataToSign instanceof Uint8Array)
+      || sha256(fresh.dataToSign) !== attempt.updateSha256) {
+      throw new Error("Finalized registry image changed or did not advance after the abandoned attempt");
+    }
+    const document = await regularBytes(resolve(documentPath));
+    const signature = await regularBytes(resolve(signaturePath));
+    if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
+      throw new Error("Maintenance recovery decision or signature exceeds the bounded evidence size");
+    }
+    const decision = JSON.parse(document);
+    const approvedAt = Date.parse(decision?.approvedAt);
+    const reservedAt = Date.parse(attempt.reservedAt);
+    if (!exactFields(decision, ["approvedAt", "approvedFinalizedBlockHash", "decision",
+      "expiredAt", "format", "requestSha256", "reviewedReference", "reviewerFingerprint",
+      "recoveryFinalizedBlockHash", "signingRequestSha256", "sourceRevision", "updateSha256"])
+      || decision.format !== "tr-local-maintenance-no-journal-recovery-v1"
+      || decision.decision !== "authorize-new-attempt-after-absent-journal"
+      || decision.sourceRevision !== record.sourceRevision
+      || decision.requestSha256 !== attempt.requestSha256
+      || decision.signingRequestSha256 !== attempt.signingRequestSha256
+      || decision.updateSha256 !== attempt.updateSha256
+      || decision.approvedFinalizedBlockHash !== attempt.finalizedBlockHash
+      || !HASH.test(decision.recoveryFinalizedBlockHash)
+      || /^0x0{64}$/u.test(decision.recoveryFinalizedBlockHash)
+      || decision.recoveryFinalizedBlockHash === attempt.finalizedBlockHash
+      || decision.expiredAt !== approval.expiresAt.toISOString()
+      || decision.reviewerFingerprint !== expectedFingerprint
+      || expectedFingerprint !== record.committeeApproval.reviewerFingerprint
+      || typeof decision.reviewedReference !== "string"
+      || decision.reviewedReference.length < 8 || decision.reviewedReference.length > 512
+      || !Number.isFinite(approvedAt) || !Number.isFinite(reservedAt)
+      || approvedAt < expiredAt + 10 * 60_000
+      || approvedAt > now + 60_000 || approvedAt < reservedAt) {
+      throw new Error("Signed maintenance recovery decision does not bind the expired attempt and approved reviewer");
+    }
+    const evidence = await verifiedApprovalEvidence(
+      root, "maintenance-recovery", document, signature, keyringDirectory,
+      expectedFingerprint, dependencies,
+    );
+    attempt.recoveryApproval = {
+      ...evidence, approvedAt: decision.approvedAt,
+      reviewedReference: decision.reviewedReference,
+      reviewerFinalizedBlockHash: decision.recoveryFinalizedBlockHash,
+      recoveryFinalizedBlockHash: fresh.finalizedBlockHash,
+    };
+    attempt.state = "recovered-no-journal-approved";
+    attempt.alert = "human-recovered-no-journal";
+    await writeRecord(root, record);
+    return {
+      state: attempt.state,
+      recoveryApprovalSha256: evidence.documentSha256,
+      recoveryFinalizedBlockHash: fresh.finalizedBlockHash,
+    };
   });
 }
 
@@ -998,9 +1124,9 @@ async function interactive(directory) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|status> <private-setup-dir> [inputs]");
+  const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -1037,6 +1163,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const result = await reconcileStandaloneCommitteeTransition(directory, input, signature);
     console.log(JSON.stringify(result));
     if (result.status !== "observed" || !result.txId) process.exitCode = 2;
+  }
+  else if (command === "approve-committee-recovery" && input && signature && keyring
+    && fingerprint && extra && more) {
+    console.log(JSON.stringify(await approveStandaloneCommitteeRecovery(
+      directory, input, signature, keyring, fingerprint, extra, more,
+    )));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);

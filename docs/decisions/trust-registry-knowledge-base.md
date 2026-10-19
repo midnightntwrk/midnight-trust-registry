@@ -2016,3 +2016,19 @@ The journal-presence flag distinguishes a lost journal after an unknown
 submission from the pre-journal crash window. A returned transaction ID that
 could not be durably written is retained as reported evidence, not accepted as
 finalized inclusion.
+
+The pre-journal crash window now has a narrow manual recovery path. Only an
+independently signed governance decision can unlock a second attempt, after
+the original intent's expiry plus a grace period, absent journal and
+transaction attribution, and a fresh finalized readback of the unchanged
+bootstrap authority. The reviewer attests to a later finalized checkpoint and
+their independent journal/mempool/chain inspection; the wizard also observes
+an advancing head but cannot prove the reviewer's checkpoint is its ancestor.
+The next saved signing request must be distinct and cannot reuse the abandoned
+checkpoint. Reconciliation that contradicts the absence finding changes the
+state to conflict rather than silently undoing approval. The maintenance
+signature authenticates `MaintenanceUpdate.dataToSign`, not transaction intent
+expiry: a new intent window does not invalidate the old signature. Keep the
+signature file under bootstrap custody until the authority counter advances.
+This workflow does not qualify a real local deployment or replace the human
+security and operator gates.

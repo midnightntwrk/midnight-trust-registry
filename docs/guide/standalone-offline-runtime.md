@@ -508,7 +508,59 @@ reconciliation reports `recovery-required-no-journal`. An absent journal after
 a crash is not proof that no transaction was sent or that a record was not
 lost. The wizard will not retry this state automatically: preserve the setup
 directory, inspect the finalized chain and expiry, and obtain an independent
-human recovery decision before any new installation attempt. Reconciliation
+human recovery decision before any new installation attempt. After the
+original signing window has expired for at least ten minutes, the approved
+governance reviewer can sign this exact decision document with their pinned
+GPG key (the same reviewer key approved for the committee roster):
+
+```json
+{
+  "format": "tr-local-maintenance-no-journal-recovery-v1",
+  "decision": "authorize-new-attempt-after-absent-journal",
+  "sourceRevision": "<source revision in setup status>",
+  "requestSha256": "<original request hash from setup status>",
+  "signingRequestSha256": "<original signing-request hash from setup status>",
+  "updateSha256": "<original update hash from setup status>",
+  "approvedFinalizedBlockHash": "<original finalized checkpoint from setup status>",
+  "recoveryFinalizedBlockHash": "<later finalized checkpoint independently inspected by the reviewer>",
+  "expiredAt": "<original request expiry in ISO-8601 UTC>",
+  "reviewerFingerprint": "<pinned governance signing fingerprint>",
+  "reviewedReference": "<bounded reference to independent finalized-chain and journal inspection>",
+  "approvedAt": "<reviewer approval time in ISO-8601 UTC>"
+}
+```
+
+Use the original request and signing-request files, not replacements, for
+approval. The reviewer must independently inspect the journal, mempool and
+finalized chain, and establish that the original intent expired in **ledger
+time** without a maintenance transition. A changed finalized head alone is
+not proof. Account for local clock skew relative to the node. The wizard
+requires a nonzero reviewer-attested later checkpoint, independently sees an
+advancing finalized head with the same signable registry image, finds no
+journal, and verifies the detached signature before recording this decision.
+It cannot prove that the reviewer-attested checkpoint is an ancestor of its
+live head; that is part of the independent review evidence:
+
+```sh
+node scripts/standalone-setup-wizard.mjs approve-committee-recovery /absolute/private/setup-directory /absolute/original-committee-transition-request.json /absolute/original-committee-signing-request.json /absolute/recovery-decision.json /absolute/recovery-decision.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+```
+
+Approval unlocks only a new attempt. Create a request with a later expiry,
+run `prepare-committee` again against the live finalized head, save its
+output without changing the checkpoint hash, and call
+`submit-committee` with the external
+bootstrap signature for the approved update. The maintenance update hash does
+**not** include the intent expiry: a later expiry does not cryptographically
+invalidate the original signature, and an old signature file remains usable
+while the bootstrap counter is unchanged. Keep that file under approved key
+custody, or securely destroy it after the committee transition finalizes.
+The safety condition for retry is the independent finding that the earlier
+intent expired on-ledger and the authority counter stayed unchanged, not a
+claim of fresh signature bytes. The recovered attempt remains in bounded
+history; the wizard never resubmits it or treats approval as evidence of a
+finalized transition. If independent inspection
+cannot rule out an unknown broadcast, retain the blocked state and escalate
+to the operator/security reviewer instead of signing the decision. Reconciliation
 history and `maintenanceTransitionAlert` retain conflicts even if later reads
 temporarily fail or show the expected authority. If a journal-recorded
 transaction ID is lost, the status reports a conflict rather than treating it

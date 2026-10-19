@@ -11,6 +11,7 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 
 import {
   approveStandaloneCommittee,
+  approveStandaloneCommitteeRecovery,
   approveStandaloneGenesis,
   attemptStandaloneDeployment,
   attemptStandaloneVerifierKeyInsertion,
@@ -358,6 +359,53 @@ async function preparedCommitteeFixture() {
   return { ...f, signingRequest, signingRequestPath, signaturePath, dependencies };
 }
 
+async function recoveryRequiredFixture() {
+  const f = await preparedCommitteeFixture();
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies, loadMaterial: async () => { throw new Error("preflight"); },
+    },
+  ), /before journal reservation/u);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt.state = "reserved";
+  await writeFile(recordPath, JSON.stringify(record));
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "not-reserved" }) },
+  );
+  const updated = JSON.parse(await readFile(recordPath, "utf8"));
+  const now = Date.parse(f.request.expiresAt) + 11 * 60_000;
+  const decision = {
+    format: "tr-local-maintenance-no-journal-recovery-v1",
+    decision: "authorize-new-attempt-after-absent-journal",
+    sourceRevision,
+    requestSha256: updated.maintenanceAttempt.requestSha256,
+    signingRequestSha256: updated.maintenanceAttempt.signingRequestSha256,
+    updateSha256: updated.maintenanceAttempt.updateSha256,
+    approvedFinalizedBlockHash: updated.maintenanceAttempt.finalizedBlockHash,
+    recoveryFinalizedBlockHash: `0x${"f".repeat(64)}`,
+    expiredAt: f.request.expiresAt,
+    reviewerFingerprint: governanceFingerprint,
+    reviewedReference: "independent-local-finalized-chain-scan:case-1",
+    approvedAt: new Date(now).toISOString(),
+  };
+  const decisionPath = join(f.directory, "committee-recovery-decision.json");
+  const decisionSignaturePath = join(f.directory, "committee-recovery-decision.sig");
+  await writeFile(decisionPath, JSON.stringify(decision));
+  await writeFile(decisionSignaturePath, "test-only-recovery-signature");
+  const dependencies = {
+    verifyBundle: f.verifyBundle,
+    prepareTransition: async (approval) => ({ ...await f.dependencies.prepareTransition(approval),
+      finalizedBlockHash: `0x${"f".repeat(64)}` }),
+    now: () => now,
+    verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+      assert.equal(fingerprint, governanceFingerprint);
+    },
+  };
+  return { ...f, decision, decisionPath, decisionSignaturePath, now, dependencies };
+}
+
 test("wizard reserves a committee submission once and reconciles without resubmission", async () => {
   const f = await preparedCommitteeFixture();
   let submissions = 0;
@@ -513,6 +561,193 @@ test("a crash window with no journal requires independent recovery instead of re
   await assert.rejects(submitStandaloneCommitteeTransition(
     f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
   ), /independent human recovery approval/u);
+});
+
+test("signed governance recovery unlocks only a fresh maintenance signing window", async () => {
+  const f = await recoveryRequiredFixture();
+  await writeFile(f.decisionPath, JSON.stringify({ ...f.decision,
+    recoveryFinalizedBlockHash: `0x${"d".repeat(64)}` }));
+  const result = await approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  );
+  assert.equal(result.state, "recovered-no-journal-approved");
+  assert.equal(result.recoveryFinalizedBlockHash, `0x${"f".repeat(64)}`);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceAttempt.recoveryApproval.reviewerFingerprint, governanceFingerprint);
+  assert.equal(record.maintenanceAttempt.recoveryApproval.reviewerFinalizedBlockHash,
+    `0x${"d".repeat(64)}`);
+  assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, f.dependencies,
+  ), /fresh request and signing window/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovered-no-journal-approved");
+});
+
+test("recovery permits one new signed request and retains the recovered attempt", async () => {
+  const f = await recoveryRequiredFixture();
+  await approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  );
+  const newRequest = { ...f.request, expiresAt: new Date(f.now + 15 * 60_000).toISOString() };
+  await writeFile(f.requestPath, JSON.stringify(newRequest));
+  const newDependencies = {
+    ...f.dependencies,
+    prepareTransition: async (approval) => ({
+      ...await f.dependencies.prepareTransition(approval),
+      finalizedBlockHash: `0x${"f".repeat(64)}`,
+    }),
+    loadMaterial: async () => ({ material: { providers: {} } }),
+    submit: async () => "fresh-recovery-transaction",
+  };
+  const signingRequest = await prepareStandaloneCommitteeTransition(
+    f.directory, f.requestPath, newDependencies,
+  );
+  assert.equal(signingRequest.updateSha256, f.signingRequest.updateSha256);
+  await writeFile(f.signingRequestPath, JSON.stringify(signingRequest));
+  await writeFile(f.signaturePath, JSON.stringify({
+    format: "tr-local-committee-signature-v1",
+    updateSha256: signingRequest.updateSha256,
+    signature: `0x${"a".repeat(128)}`,
+  }));
+  const result = await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, newDependencies,
+  );
+  assert.equal(result.txId, "fresh-recovery-transaction");
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceHistory.at(-1).state, "recovered-no-journal-approved");
+  assert.equal(record.maintenanceAttempt.state, "submitted");
+});
+
+test("reconciliation preserves recovery approval only while journal absence remains confirmed", async () => {
+  const f = await recoveryRequiredFixture();
+  await approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  );
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "not-reserved" }) },
+  );
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovered-no-journal-approved");
+  await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath,
+    { verifyBundle: f.verifyBundle, reconcile: async () => ({ status: "unresolved" }) },
+  );
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceAttempt.state, "conflict");
+  assert.equal(record.maintenanceAttempt.alert, "post-recovery-evidence-contradiction");
+});
+
+test("recovered submission rejects the abandoned saved checkpoint", async () => {
+  const f = await recoveryRequiredFixture();
+  await approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  );
+  await writeFile(f.requestPath, JSON.stringify({
+    ...f.request, expiresAt: new Date(f.now + 15 * 60_000).toISOString(),
+  }));
+  const dependencies = {
+    ...f.dependencies,
+    prepareTransition: async (approval) => ({
+      ...await f.dependencies.prepareTransition(approval),
+      finalizedBlockHash: `0x${"f".repeat(64)}`,
+    }),
+  };
+  const signingRequest = await prepareStandaloneCommitteeTransition(
+    f.directory, f.requestPath, dependencies,
+  );
+  await writeFile(f.signingRequestPath, JSON.stringify({ ...signingRequest,
+    finalizedBlockHash: f.signingRequest.finalizedBlockHash }));
+  await assert.rejects(submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, dependencies,
+  ), /cannot reuse the abandoned finalized checkpoint/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovered-no-journal-approved");
+});
+
+test("recovery rejects early, changed-image, and changed-decision evidence", async () => {
+  const f = await recoveryRequiredFixture();
+  const args = [f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint];
+  await assert.rejects(approveStandaloneCommitteeRecovery(...args, {
+    ...f.dependencies, now: () => Date.parse(f.request.expiresAt) + 5 * 60_000,
+  }), /must expire/u);
+  await assert.rejects(approveStandaloneCommitteeRecovery(...args, {
+    ...f.dependencies,
+    prepareTransition: async (approval) => ({ ...await f.dependencies.prepareTransition(approval),
+      dataToSign: Uint8Array.from([9, 9, 9]) }),
+  }), /Finalized registry image changed/u);
+  await writeFile(f.decisionPath, JSON.stringify({ ...f.decision, updateSha256: "0".repeat(64) }));
+  await assert.rejects(approveStandaloneCommitteeRecovery(...args, f.dependencies),
+    /does not bind the expired attempt/u);
+  await writeFile(f.decisionPath, JSON.stringify({ ...f.decision,
+    recoveryFinalizedBlockHash: f.signingRequest.finalizedBlockHash }));
+  await assert.rejects(approveStandaloneCommitteeRecovery(...args, f.dependencies),
+    /does not bind the expired attempt/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovery-required-no-journal");
+});
+
+test("failed governance signature leaves maintenance recovery blocked", async () => {
+  const f = await recoveryRequiredFixture();
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, {
+      ...f.dependencies,
+      verifySignature: async () => { throw new Error("invalid detached signature"); },
+    },
+  ), /invalid detached signature/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.maintenanceAttempt.state, "recovery-required-no-journal");
+  assert.equal(record.maintenanceAttempt.recoveryApproval, undefined);
+});
+
+test("recovery refuses a present journal, attributed transaction, or unchanged finalized head", async () => {
+  const journalFixture = await recoveryRequiredFixture();
+  await writeFile(join(journalFixture.directory, "committee-transition.json"), "{}");
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    journalFixture.directory, journalFixture.requestPath, journalFixture.signingRequestPath,
+    journalFixture.decisionPath, journalFixture.decisionSignaturePath,
+    journalFixture.keyring, governanceFingerprint, journalFixture.dependencies,
+  ));
+
+  const attributedFixture = await recoveryRequiredFixture();
+  const recordPath = join(attributedFixture.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt.reportedTxId = "possibly-broadcast";
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    attributedFixture.directory, attributedFixture.requestPath,
+    attributedFixture.signingRequestPath, attributedFixture.decisionPath,
+    attributedFixture.decisionSignaturePath, attributedFixture.keyring,
+    governanceFingerprint, attributedFixture.dependencies,
+  ), /Only an unresolved pre-journal crash window/u);
+
+  const staleFixture = await recoveryRequiredFixture();
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    staleFixture.directory, staleFixture.requestPath, staleFixture.signingRequestPath,
+    staleFixture.decisionPath, staleFixture.decisionSignaturePath, staleFixture.keyring,
+    governanceFingerprint, { ...staleFixture.dependencies,
+      prepareTransition: async (approval) => ({
+        ...await staleFixture.dependencies.prepareTransition(approval),
+        finalizedBlockHash: staleFixture.signingRequest.finalizedBlockHash,
+      }) },
+  ), /Finalized registry image changed/u);
+});
+
+test("recovery refuses a reviewer fingerprint different from the approved roster", async () => {
+  const f = await recoveryRequiredFixture();
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, reviewerFingerprint, f.dependencies,
+  ), /does not bind the expired attempt/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovery-required-no-journal");
 });
 
 test("a missing journal after submission is recorded as a conflict", async () => {

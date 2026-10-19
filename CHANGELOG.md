@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require signed governance approval before retrying a local maintenance
+  transition after a crash with no journal; bind the decision to the expired
+  attempt and an independently reviewed finalized checkpoint, retain the
+  recovered attempt in history, and block retry if later reconciliation
+  contradicts the absence finding. Intent expiry is not part of the signed
+  maintenance update, so the original signature remains sensitive until the
+  bootstrap authority counter advances
 - expose a production canonical maintainer-bundle builder and use it in the
   simulator; duplicate IDs now fail before Compact execution with a specific
   error, while direct Compact callers still face strict signer ordering.
