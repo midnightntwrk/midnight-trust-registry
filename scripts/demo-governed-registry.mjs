@@ -1874,10 +1874,10 @@ try {
   adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [compactSigner, compactSigner],
   ), {
-    id: "compact-issuer-duplicate-signer",
-    invariant: "Compact rejects duplicate maintainer signatures as one quorum vote",
-    boundary: "compact",
-    messagePattern: /quorum|threshold|assert|signature|maintainer|duplicate/iu,
+    id: "client-issuer-duplicate-signer",
+    invariant: "The canonical bundle builder rejects a repeated issuer approval signer before Compact execution",
+    boundary: "client",
+    messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
     category: "duplicate-signer-rejected",
   });
   adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(

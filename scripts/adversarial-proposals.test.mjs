@@ -253,13 +253,13 @@ test("compact-issuer-insufficient-quorum", () => {
   harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
 
-test("compact-issuer-duplicate-signer", () => {
+test("client-issuer-duplicate-signer", () => {
   const { harness, issuer, approvalSignatures } =
     pendingIssuerApproval("isolated-issuer-approval-duplicate");
   const before = harness.simulator.getLedger().governanceActionCount;
   assert.throws(() => harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [approvalSignatures[0], approvalSignatures[0]],
-  ), /quorum|threshold|assert|signature|maintainer|duplicate/iu);
+  ), /Maintainer authorization bundle contains a duplicate key ID/u);
   assert.equal(harness.simulator.getLedger().governanceActionCount, before);
   harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
