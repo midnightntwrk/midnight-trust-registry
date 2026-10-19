@@ -2070,6 +2070,9 @@ Repeated pre-genesis checks retain timestamped history instead of overwriting
 earlier evidence; further stack observations are refused once ledger observation
 or deployment begins. Deferring stack preparation in the interactive wizard
 stops before a genesis pin can be recorded out of order.
+After preparation, both interactive and explicit genesis observation require
+the selected stack to have a recorded live topology and ledger-bridge egress
+observation first. The wizard never starts that stack implicitly.
 New wizard stacks require a v3 install bundle pinning both base and offline
 Compose bytes as well as archived image references. V2 bundles remain readable
 for historical smoke evidence only; the runtime operator must use the verified

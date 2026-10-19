@@ -306,6 +306,9 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     const { record } = await readRecord(root);
     if (record.deployment) throw new Error("Cannot replace the genesis pin after deployment was reserved");
     if (record.genesisApproval) throw new Error("Cannot replace the genesis observation after reviewer approval");
+    if (record.stack && !record.stack.observation) {
+      throw new Error("Observe the prepared local stack before recording its genesis pin");
+    }
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
     if (sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed inventory changed since setup verification");
@@ -1390,7 +1393,7 @@ export async function standaloneSetupStatus(directory) {
 }
 
 export async function runStandaloneSetupInteractive(
-  directory, io = createInterface({ input: process.stdin, output: process.stdout }),
+  directory, io = createInterface({ input: process.stdin, output: process.stdout }), dependencies = {},
 ) {
   try {
     let record;
@@ -1412,6 +1415,15 @@ export async function runStandaloneSetupInteractive(
         const indexerPort = await io.question("Unused indexer loopback port: ");
         const proofPort = await io.question("Unused proof-server loopback port: ");
         await prepareStandaloneStack(directory, { project, nodePort, indexerPort, proofPort });
+      }
+      ({ record } = await readRecord(directory));
+      if (!record.stack.observation) {
+        const ready = await io.question("Start the reviewed stack, then type OBSERVE STACK (blank to stop): ");
+        if (ready !== "OBSERVE STACK") {
+          console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
+          return;
+        }
+        await observeStandaloneStack(directory, dependencies.stackObservation);
       }
       const pin = await io.question("Candidate local genesis pin JSON (blank to stop): ");
       if (pin) await observeStandaloneLedger(directory, pin);

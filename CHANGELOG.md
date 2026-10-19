@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local stacks; it must be removed before offline runtime qualification
 - retain pre-genesis stack observation history and stop interactive setup when
   local stack preparation is deferred
+- require a prepared stack's live observation before its genesis pin can be
+  recorded, including through the explicit wizard command
 - pin both base and offline Compose bytes in v3 install bundles; new wizard
   stacks require those verified bytes and matching archived image references
 - verify wizard-prepared indexer credentials and proof-cache bind source against

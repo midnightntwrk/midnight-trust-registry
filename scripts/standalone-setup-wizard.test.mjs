@@ -317,6 +317,44 @@ test("interactive wizard stops when stack preparation is deferred", async () => 
   assert.equal(record.stack, undefined);
 });
 
+test("interactive wizard stops before genesis until the prepared stack is observed", async () => {
+  const f = await fixture();
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  const prompts = [];
+  await runStandaloneSetupInteractive(f.directory, {
+    question: async (prompt) => { prompts.push(prompt); return ""; },
+    close: () => {},
+  });
+  assert.deepEqual(prompts, ["Start the reviewed stack, then type OBSERVE STACK (blank to stop): "]);
+  assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration,
+    "prepared-runtime-unobserved");
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => { throw new Error("must not observe genesis"); },
+  }), /Observe the prepared local stack/u);
+
+  const answers = ["OBSERVE STACK", ""];
+  let topologyCalled = false;
+  await runStandaloneSetupInteractive(f.directory, {
+    question: async (prompt) => { prompts.push(prompt); return answers.shift(); },
+    close: () => {},
+  }, { stackObservation: {
+    observeTopology: async (_config, expected) => {
+      assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
+      topologyCalled = true;
+      return { project, preparedInputsMatched: true };
+    },
+    observeEgress: async () => ({ project, scope: "ledger bridge only" }),
+  } });
+  assert.equal(topologyCalled, true);
+  assert.equal(prompts.at(-1), "Candidate local genesis pin JSON (blank to stop): ");
+  assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration,
+    "observed-ledger-bridge-only");
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+});
+
 test("wizard rejects a changed private stack environment before observation", async () => {
   const f = await fixture();
   const prepared = await prepareStandaloneStack(f.directory, {

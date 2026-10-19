@@ -439,7 +439,10 @@ egress behavior, including prepared private-input matching, then appends
 timestamped ledger-bridge evidence. It refuses
 to replace evidence after genesis observation or deployment begins. In the
 interactive wizard, leaving stack preparation blank stops the session before
-the genesis-pin prompt. This step does not approve
+the genesis-pin prompt. Once a stack is prepared, the interactive wizard also
+stops until the operator starts the reviewed stack and explicitly requests
+`observe-stack`; the separate `observe` command refuses a genesis pin until
+that stack observation exists. This step does not approve
 genesis, attest actor egress, verify a contract readback, or qualify a release.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
