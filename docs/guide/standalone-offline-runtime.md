@@ -351,6 +351,8 @@ node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/set
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 # Re-read a reserved staged deployment without submitting, if first readback lagged:
 node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+# After independent review of the finalized contract address and receipt:
+node scripts/standalone-setup-wizard.mjs approve-committee-deployment /absolute/private/setup-directory /absolute/committee-deployment-approval.json /absolute/committee-deployment-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 # Only after a staged deployment receipt and finalized staged-bootstrap readback:
 node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
 # Read-only recovery for that same plan; never resubmits:
@@ -430,8 +432,48 @@ genesis, the setup host verifies the detached signature against an
 operator-pinned reviewer public key; the release owner must separately verify
 the governance reviewer's authority and custody evidence. A recorded roster
 does not submit or verify a contract maintenance transition. The wizard shows
-`roster-signature-verified-transition-pending` until a later transition flow
-binds the deployment receipt and finalized ledger image to this policy.
+`roster-signature-verified-deployment-binding-pending` until the governance
+reviewer signs a second approval for the actual deployment. That approval has
+exactly this JSON shape:
+
+```json
+{
+  "format": "tr-local-committee-deployment-approval-v1",
+  "sourceRevision": "<approved 40-character source SHA>",
+  "committeeApprovalSha256": "<signed roster document hash from setup-record.json>",
+  "deploymentPlanSha256": "<reserved staged plan hash from setup-record.json>",
+  "deploymentReceipt": {
+    "networkId": "undeployed",
+    "contractAddress": "0x<finalized contract address>",
+    "txId": "<deployment transaction ID>",
+    "blockHash": "0x<deployment block hash>",
+    "blockHeight": 1
+  },
+  "releaseManifestSha256": "<verified bundle release manifest hash>",
+  "expectedGenesisHash": "0x<approved local genesis hash>",
+  "reviewerFingerprint": "<same pinned governance reviewer fingerprint as the roster>",
+  "reviewedReference": "<independent deployment review or minutes reference>",
+  "approvedAt": "<canonical UTC ISO-8601 time after deployment reservation>"
+}
+```
+
+The reviewer independently inspects the plan, receipt, finalized on-ledger
+contract address and genesis, and pinned manifest before signing the exact
+bytes. The wizard verifies the detached signature against the pinned governance
+key, compares the receipt, source, plan, genesis, roster, and manifest against
+the preserved setup record, and retains the signed bytes privately. It
+does not re-read the chain at approval time or establish reviewer authority
+or independent inclusion by itself. A missing or ambiguous deployment receipt
+cannot receive this approval, and approval never authorizes a retry. Once
+recorded, `status` reports
+`deployment-bound-roster-signature-verified-transition-pending`; only then can
+the transition be prepared. Finalized maintenance readback and the other RC
+gates remain pending.
+If an older setup record already has a maintenance attempt, the wizard will
+not accept a retrospective deployment approval. It still permits read-only
+reconciliation of that saved attempt without the new binding; it will not
+prepare, resubmit, or automatically recover a new attempt from it. Preserve
+the original journal and obtain an operator-reviewed migration decision.
 
 `prepare-committee` is that flow's **read-only signing step**, not the
 submission. Its public request JSON has exactly these fields; the bootstrap
@@ -464,12 +506,13 @@ current finalized ledger, not the example values below:
 }
 ```
 
-The wizard rechecks the stored signed roster, verified install bundle and
+The wizard rechecks the signed roster and deployment binding, verified install bundle and
 release manifest, original staged receipt, and every per-key `verified`
 readback. The local finality reader then checks the complete current
 verifier-key image, bootstrap authority counter, approved 2-of-3-or-stronger
 committee, and governance pins before the wizard emits `dataToSignHex` with
-the `updateSha256`, finalized block hash, and approval hashes. Preserve these
+the `updateSha256`, finalized block hash, roster approval hash, and deployment
+binding approval hash. The reservation also pins the latter. Preserve these
 pins with the separately signed bytes: a later local submission must reject a
 fresh plan if its update hash differs. A newer finalized head is allowed only
 when a fresh finalized readback still matches the approved full registry image
@@ -635,8 +678,8 @@ funded wallet, committee roster, threshold, or key custody. A public local
 genesis wallet and 1-of-3 committee are permitted only for a development
 smoke, never as RC approval. Final committee approval must be collected during
 first setup from responsible humans, not inferred from a typed acknowledgement.
-Later wizard slices must bind the signed roster to a specific deployment and execute finalized
-maintenance readback, offline actor journeys, and recovery qualification.
+Later wizard slices must execute finalized maintenance readback, offline actor
+journeys, and recovery qualification.
 `status` deliberately keeps these gates pending even if deployment returns a
 receipt; it does not produce a release-qualified verdict.
 

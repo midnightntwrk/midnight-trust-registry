@@ -11,6 +11,7 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 
 import {
   approveStandaloneCommittee,
+  approveStandaloneCommitteeDeployment,
   approveStandaloneCommitteeRecovery,
   approveStandaloneGenesis,
   attemptStandaloneDeployment,
@@ -142,6 +143,40 @@ async function approveCommittee(f, overrides = {}) {
   });
 }
 
+async function committeeDeploymentDocument(f, overrides = {}) {
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const inventory = JSON.parse(await readFile(join(record.install.bundle, "install-inventory.json"), "utf8"));
+  const manifest = await readFile(join(record.install.bundle, inventory.packageManifest));
+  const document = {
+    format: "tr-local-committee-deployment-approval-v1",
+    sourceRevision,
+    committeeApprovalSha256: record.committeeApproval.documentSha256,
+    deploymentPlanSha256: record.deployment.planSha256,
+    deploymentReceipt: record.deployment.result.receipt,
+    releaseManifestSha256: createHash("sha256").update(manifest).digest("hex"),
+    expectedGenesisHash,
+    reviewerFingerprint: governanceFingerprint,
+    reviewedReference: "governance-decision:deployed-local-committee",
+    approvedAt: new Date().toISOString(),
+    ...overrides,
+  };
+  const path = join(f.directory, "committee-deployment-approval.json");
+  const signature = join(f.directory, "committee-deployment-approval.sig");
+  await writeFile(path, JSON.stringify(document));
+  await writeFile(signature, "test-only-committee-deployment-signature");
+  return { path, signature, document };
+}
+
+async function approveCommitteeDeployment(f, overrides = {}) {
+  const input = await committeeDeploymentDocument(f, overrides);
+  return approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifyBundle: f.verifyBundle, verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+      assert.equal(fingerprint, governanceFingerprint);
+    } },
+  );
+}
+
 test("wizard records staged-byte verification but leaves RC gates open", async () => {
   const { directory, pinPath } = await fixture();
   let status = await standaloneSetupStatus(directory);
@@ -260,6 +295,7 @@ async function committeeTransitionFixture() {
     deploy: async () => ({ kind: "local-deployment-submission-observation",
       readbackStatus: "staged-bootstrap-pending", receipt: stagedReceipt }),
   });
+  await approveCommitteeDeployment(f);
   const requestPath = join(f.directory, "committee-transition-request.json");
   const request = {
     format: "tr-local-committee-transition-request-v1", sourceRevision,
@@ -319,13 +355,135 @@ test("wizard prepares only a complete staged transition under the signed release
   assert.equal(prepared.currentAuthorityCounter, "2");
   assert.equal(prepared.submission, "not-attempted");
   assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
-    "roster-signature-verified-transition-pending");
+    "deployment-bound-roster-signature-verified-transition-pending");
   assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
   const changed = { ...f.request, sourceRevision: "f".repeat(40) };
   await writeFile(f.requestPath, JSON.stringify(changed));
   await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
     verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed request"),
   }), /invalid shape or source revision/u);
+});
+
+test("committee transition requires signed approval of this finalized deployment", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.verifierKeyInsertions = { nextKey: { state: "verified" }, laterKey: { state: "verified" } };
+  const binding = record.committeeDeploymentApproval;
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("unapproved deployment"),
+  }), /Approved committee and finalized staged deployment/u);
+
+  record.committeeDeploymentApproval = binding;
+  record.deployment.result.receipt = { ...stagedReceipt, contractAddress: `0x${"e".repeat(64)}` };
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed contract"),
+  }), /Signed committee deployment binding disagrees/u);
+
+  record.deployment.result.receipt = stagedReceipt;
+  record.committeeDeploymentApproval.documentSha256 = "f".repeat(64);
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed approval"),
+  }), /Signed committee deployment binding disagrees/u);
+});
+
+test("deployment binding rejects a wrong contract or governance reviewer before signature verification", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f, {
+    deploymentReceipt: { ...stagedReceipt, contractAddress: `0x${"e".repeat(64)}` },
+  });
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifyBundle: f.verifyBundle, verifySignature: async () => assert.fail("wrong contract") },
+  ), /does not bind the finalized install and contract/u);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, reviewerFingerprint,
+    { verifySignature: async () => assert.fail("wrong reviewer") },
+  ), /requires the pinned governance reviewer/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "roster-signature-verified-deployment-binding-pending");
+});
+
+test("deployment binding refuses pending readback and cannot be replaced after approval", async () => {
+  const f = await committeeTransitionFixture();
+  const input = await committeeDeploymentDocument(f);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifySignature: async () => assert.fail("duplicate approval") },
+  ), /already recorded/u);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  record.deployment.result.readbackStatus = "pending";
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifySignature: async () => assert.fail("pending readback") },
+  ), /finalized staged deployment/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "roster-signature-verified-deployment-binding-pending");
+});
+
+test("deployment binding rejects changed pins, malformed shape, and a missing reservation time", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  const changes = [
+    { committeeApprovalSha256: "f".repeat(64) },
+    { deploymentPlanSha256: "f".repeat(64) },
+    { releaseManifestSha256: "f".repeat(64) },
+    { deploymentReceipt: { ...stagedReceipt, extra: true } },
+    { unexpectedField: true },
+    { approvedAt: new Date(Date.parse(record.deployment.reservedAt) - 1_000).toISOString() },
+    { approvedAt: new Date(Date.now() + 1_000).toUTCString() },
+    { approvedAt: new Date(Date.now() + 10 * 60_000).toISOString() },
+  ];
+  for (const change of changes) {
+    const input = await committeeDeploymentDocument(f, change);
+    await assert.rejects(approveStandaloneCommitteeDeployment(
+      f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+      { verifyBundle: f.verifyBundle, verifySignature: async () => assert.fail("invalid binding") },
+    ), /does not bind the finalized install and contract/u);
+  }
+  delete record.deployment.reservedAt;
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifyBundle: f.verifyBundle, verifySignature: async () => assert.fail("missing reservation time") },
+  ), /does not bind the finalized install and contract/u);
+});
+
+test("deployment binding verifies the installed bundle and release manifest before approval", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifyBundle: async () => ({ sourceRevision: "f".repeat(40) }),
+      verifySignature: async () => assert.fail("changed bundle") },
+  ), /source revision changed/u);
+  const malformed = JSON.stringify({ ...f.manifest, format: "invalid" });
+  await writeFile(join(record.install.bundle, "release-manifest.json"), malformed);
+  await writeFile(f.releaseManifestPath, malformed);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifyBundle: f.verifyBundle,
+      verifySignature: async () => assert.fail("invalid manifest") },
+  ), /invalid source or format/u);
 });
 
 async function preparedCommitteeFixture() {
@@ -348,6 +506,8 @@ async function preparedCommitteeFixture() {
   });
   const dependencies = { verifyBundle: f.verifyBundle, prepareTransition };
   const signingRequest = await prepareStandaloneCommitteeTransition(f.directory, f.requestPath, dependencies);
+  assert.equal(signingRequest.committeeDeploymentApprovalSha256,
+    record.committeeDeploymentApproval.documentSha256);
   const signingRequestPath = join(f.directory, "committee-signing-request.json");
   const signaturePath = join(f.directory, "committee-signature.json");
   await writeFile(signingRequestPath, JSON.stringify(signingRequest));
@@ -425,6 +585,9 @@ test("wizard reserves a committee submission once and reconciles without resubmi
   ), { kind: "local-committee-transition-submission", txId: "maintenance-tx",
     finalizedReadback: "pending" });
   assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "submitted");
+  const reserved = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(reserved.maintenanceAttempt.committeeDeploymentApprovalSha256,
+    f.signingRequest.committeeDeploymentApprovalSha256);
   await assert.rejects(submitStandaloneCommitteeTransition(
     f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, dependencies,
   ), /already reserved/u);
@@ -467,6 +630,75 @@ test("wizard reserves a committee submission once and reconciles without resubmi
     },
   ), /inconsistent with the reserved attempt/u);
   assert.equal(submissions, 1);
+});
+
+test("legacy maintenance attempts remain read-only reconcilable without retrospective approval", async () => {
+  const f = await preparedCommitteeFixture();
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {}, stop: async () => {} } }),
+      submit: async () => "legacy-maintenance-tx",
+    },
+  );
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  delete record.maintenanceAttempt.committeeDeploymentApprovalSha256;
+  const saved = JSON.parse(await readFile(f.signingRequestPath, "utf8"));
+  delete saved.committeeDeploymentApprovalSha256;
+  const bytes = JSON.stringify(saved);
+  await writeFile(f.signingRequestPath, bytes);
+  record.maintenanceAttempt.signingRequestSha256 = createHash("sha256").update(bytes).digest("hex");
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f);
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
+    { verifySignature: async () => assert.fail("retrospective approval") },
+  ), /maintenance attempt already exists/u);
+  const result = await reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle,
+      reconcile: async () => ({ status: "observed", txId: "legacy-maintenance-tx",
+        finalizedBlockHash: `0x${"f".repeat(64)}` }),
+    },
+  );
+  assert.equal(result.status, "observed");
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "roster-signature-verified-deployment-binding-pending");
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle,
+    prepareTransition: async () => assert.fail("legacy prepare"),
+  }), /Approved committee and finalized staged deployment/u);
+});
+
+test("reconciliation rejects a partial deployment binding on an existing attempt", async () => {
+  const f = await preparedCommitteeFixture();
+  await submitStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {}, stop: async () => {} } }),
+      submit: async () => "maintenance-tx",
+    },
+  );
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  const binding = record.committeeDeploymentApproval;
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle, reconcile: async () => assert.fail("partial binding"),
+    },
+  ), /Approved committee and finalized staged deployment/u);
+  record.committeeDeploymentApproval = binding;
+  delete record.maintenanceAttempt.committeeDeploymentApprovalSha256;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(reconcileStandaloneCommitteeTransition(
+    f.directory, f.requestPath, f.signingRequestPath, {
+      verifyBundle: f.verifyBundle, reconcile: async () => assert.fail("partial attempt pin"),
+    },
+  ), /disagrees with the reserved signing request/u);
 });
 
 test("changed signing bytes and invalid external signature fail before committee reservation", async () => {
@@ -583,6 +815,31 @@ test("signed governance recovery unlocks only a fresh maintenance signing window
   ), /fresh request and signing window/u);
   assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
     "recovered-no-journal-approved");
+});
+
+test("recovery refuses an attempt whose deployment approval pin changed", async () => {
+  const f = await recoveryRequiredFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt.committeeDeploymentApprovalSha256 = "f".repeat(64);
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  ), /Recovery evidence disagrees/u);
+});
+
+test("legacy no-journal recovery requires an explicit migration decision", async () => {
+  const f = await recoveryRequiredFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  delete record.maintenanceAttempt.committeeDeploymentApprovalSha256;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, f.dependencies,
+  ), /operator-reviewed migration decision/u);
 });
 
 test("recovery permits one new signed request and retains the recovered attempt", async () => {
@@ -1134,7 +1391,7 @@ test("signed release committee roster binds three distinct custodians but not a 
   assert.equal(result.threshold, 2);
   assert.equal(result.committeeSize, 3);
   const status = await standaloneSetupStatus(f.directory);
-  assert.equal(status.maintenanceApproval, "roster-signature-verified-transition-pending");
+  assert.equal(status.maintenanceApproval, "roster-signature-verified-deployment-binding-pending");
   assert.equal(status.releaseQualified, false);
   await assert.rejects(approveCommittee(f), /already recorded/u);
 });

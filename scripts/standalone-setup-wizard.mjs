@@ -31,6 +31,7 @@ const FORMAT = "tr-standalone-setup-v1";
 const RECORD = "setup-record.json";
 const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const execFileAsync = promisify(execFile);
@@ -324,6 +325,98 @@ export async function approveStandaloneCommittee(
   });
 }
 
+export async function approveStandaloneCommitteeDeployment(
+  directory, documentPath, signaturePath, keyringDirectory, expectedFingerprint, dependencies = {},
+) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const deployment = record.deployment;
+    const receipt = deployment?.result?.receipt;
+    if (!record.committeeApproval || deployment?.state !== "observed"
+      || deployment.result?.readbackStatus !== "staged-bootstrap-pending"
+      || !deployment.stagedPlan || !validLocalDeploymentReceipt(receipt)) {
+      throw new Error("A signed roster and finalized staged deployment are required for committee binding");
+    }
+    if (record.committeeDeploymentApproval) {
+      throw new Error("Committee deployment binding is already recorded");
+    }
+    if (record.maintenanceAttempt || (record.maintenanceHistory?.length ?? 0) > 0) {
+      throw new Error("A maintenance attempt already exists; reconcile it without retrospective approval");
+    }
+    if (expectedFingerprint !== record.committeeApproval.reviewerFingerprint) {
+      throw new Error("Committee deployment binding requires the pinned governance reviewer");
+    }
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since committee approval");
+    }
+    const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    if (verified.sourceRevision !== record.sourceRevision) {
+      throw new Error("Installed bundle source revision changed since committee approval");
+    }
+    const manifestPath = join(record.install.bundle, JSON.parse(inventory).packageManifest);
+    const manifestBytes = await regularBytes(manifestPath);
+    const stagedManifestBytes = await regularBytes(deployment.stagedPlan.releaseManifestPath);
+    if (sha256(manifestBytes) !== sha256(stagedManifestBytes)) {
+      throw new Error("Staged deployment manifest disagrees with approved install bytes");
+    }
+    const manifest = JSON.parse(manifestBytes);
+    if (manifest.format !== "tr-release-candidate-manifest-v2"
+      || manifest.sourceRevision !== record.sourceRevision) {
+      throw new Error("Staged deployment manifest has an invalid source or format");
+    }
+    const document = await regularBytes(resolve(documentPath));
+    const signature = await regularBytes(resolve(signaturePath));
+    if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
+      throw new Error("Committee deployment approval document or signature exceeds the bounded evidence size");
+    }
+    const approval = JSON.parse(document);
+    const approvedAt = Date.parse(approval?.approvedAt);
+    const reservedAt = Date.parse(deployment.reservedAt);
+    const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
+    const expectedFields = ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
+      "deploymentReceipt", "expectedGenesisHash", "format", "releaseManifestSha256",
+      "reviewedReference", "reviewerFingerprint", "sourceRevision"];
+    if (!exactFields(approval, expectedFields)
+      || approval.format !== "tr-local-committee-deployment-approval-v1"
+      || approval.sourceRevision !== record.sourceRevision
+      || approval.committeeApprovalSha256 !== record.committeeApproval.documentSha256
+      || !SHA256.test(approval.committeeApprovalSha256)
+      || approval.deploymentPlanSha256 !== deployment.planSha256
+      || !SHA256.test(approval.deploymentPlanSha256)
+      || approval.releaseManifestSha256 !== sha256(manifestBytes)
+      || approval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || !exactFields(approval.deploymentReceipt, receiptFields)
+      || receiptFields.some((field) => approval.deploymentReceipt[field] !== receipt[field])
+      || approval.reviewerFingerprint !== expectedFingerprint
+      || typeof approval.reviewedReference !== "string"
+      || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
+      || !Number.isFinite(approvedAt)
+      || !Number.isFinite(reservedAt)
+      || approval.approvedAt !== new Date(approvedAt).toISOString()
+      || approvedAt < reservedAt
+      || approvedAt > Date.now() + 5 * 60_000) {
+      throw new Error("Committee deployment approval does not bind the finalized install and contract");
+    }
+    const evidence = await verifiedApprovalEvidence(
+      root, "committee-deployment", document, signature, keyringDirectory,
+      expectedFingerprint, dependencies,
+    );
+    record.committeeDeploymentApproval = {
+      ...evidence,
+      approvedAt: approval.approvedAt,
+      reviewedReference: approval.reviewedReference,
+    };
+    await writeRecord(root, record);
+    return {
+      reviewerFingerprint: expectedFingerprint,
+      documentSha256: evidence.documentSha256,
+      signatureSha256: evidence.signatureSha256,
+      contractAddress: receipt.contractAddress,
+    };
+  });
+}
+
 export async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -588,10 +681,11 @@ const integer = (value) => {
   return BigInt(value);
 };
 
-async function readApprovedCommitteeTransition(record, requestPath, dependencies = {}) {
+async function readApprovedCommitteeTransition(record, requestPath, dependencies = {}, legacyReadOnly = false) {
     const staged = record.deployment?.stagedPlan;
     const receipt = record.deployment?.result?.receipt;
-    if (!record.genesisApproval || !record.committeeApproval || !staged
+    if (!record.genesisApproval || !record.committeeApproval
+      || (!record.committeeDeploymentApproval && !legacyReadOnly) || !staged
       || record.deployment?.state !== "observed"
       || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
       || !validLocalDeploymentReceipt(receipt)) {
@@ -626,6 +720,23 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     if (manifest.format !== "tr-release-candidate-manifest-v2"
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
+    }
+    if (record.committeeDeploymentApproval) {
+      const bindingBytes = Buffer.from(record.committeeDeploymentApproval.documentBase64 ?? "", "base64");
+      const binding = JSON.parse(bindingBytes.toString("utf8"));
+      const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
+      if (sha256(bindingBytes) !== record.committeeDeploymentApproval.documentSha256
+        || binding.format !== "tr-local-committee-deployment-approval-v1"
+        || binding.sourceRevision !== record.sourceRevision
+        || binding.committeeApprovalSha256 !== record.committeeApproval.documentSha256
+        || binding.deploymentPlanSha256 !== record.deployment.planSha256
+        || binding.releaseManifestSha256 !== sha256(manifestBytes)
+        || binding.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+        || binding.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
+        || !exactFields(binding.deploymentReceipt, receiptFields)
+        || receiptFields.some((field) => binding.deploymentReceipt[field] !== receipt[field])) {
+        throw new Error("Signed committee deployment binding disagrees with current setup state");
+      }
     }
     const catalog = Object.keys(manifest.verifierKeySha256 ?? {});
     const expectedInsertions = catalog.filter((name) => name !== staged.initialVerifierKeyName).sort();
@@ -704,6 +815,7 @@ async function approvedStandaloneCommitteeTransition(record, requestPath, depend
       kind: "local-committee-transition-signing-request",
       sourceRevision: record.sourceRevision,
       committeeApprovalSha256: record.committeeApproval.documentSha256,
+      committeeDeploymentApprovalSha256: record.committeeDeploymentApproval.documentSha256,
       requestSha256: sha256(requestBytes),
       releaseManifestSha256: sha256(manifestBytes),
       contractAddress: prepared.contractAddress,
@@ -804,6 +916,7 @@ export async function submitStandaloneCommitteeTransition(
       requestSha256: sha256(requestBytes),
       signingRequestSha256: sha256(signingRequestBytes),
       signatureSha256: sha256(signatureBytes),
+      committeeDeploymentApprovalSha256: signingRequest.committeeDeploymentApprovalSha256,
       updateSha256: signingRequest.updateSha256,
       finalizedBlockHash: savedSigningRequest.finalizedBlockHash,
       journalPath,
@@ -872,13 +985,22 @@ export async function reconcileStandaloneCommitteeTransition(
     if (attempt.state === "aborted-before-journal") {
       throw new Error("No maintenance journal was reserved; prepare a new signing request instead");
     }
-    const { approval, requestBytes } = await readApprovedCommitteeTransition(record, requestPath, dependencies);
+    const legacyReadOnly = !record.committeeDeploymentApproval
+      && !attempt.committeeDeploymentApprovalSha256;
+    const { approval, requestBytes } = await readApprovedCommitteeTransition(
+      record, requestPath, dependencies, legacyReadOnly,
+    );
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
     const signingRequest = JSON.parse(signingRequestBytes);
     if (sha256(requestBytes) !== attempt.requestSha256
       || sha256(signingRequestBytes) !== attempt.signingRequestSha256
       || signingRequest.updateSha256 !== attempt.updateSha256
       || signingRequest.finalizedBlockHash !== attempt.finalizedBlockHash
+      || (record.committeeDeploymentApproval
+        && (attempt.committeeDeploymentApprovalSha256
+          !== record.committeeDeploymentApproval.documentSha256
+          || signingRequest.committeeDeploymentApprovalSha256
+            !== record.committeeDeploymentApproval.documentSha256))
       || attempt.journalPath !== join(root, "committee-transition.json")) {
       throw new Error("Maintenance reconciliation disagrees with the reserved signing request");
     }
@@ -950,6 +1072,9 @@ export async function approveStandaloneCommitteeRecovery(
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
     const attempt = record.maintenanceAttempt;
+    if (!record.committeeDeploymentApproval && !attempt?.committeeDeploymentApprovalSha256) {
+      throw new Error("Legacy maintenance recovery requires an operator-reviewed migration decision");
+    }
     if (attempt?.state !== "recovery-required-no-journal"
       || attempt.txId || attempt.reportedTxId || attempt.journalReserved
       || attempt.journalPath !== join(root, "committee-transition.json")) {
@@ -966,6 +1091,10 @@ export async function approveStandaloneCommitteeRecovery(
     const signingRequest = JSON.parse(signingRequestBytes);
     if (sha256(requestBytes) !== attempt.requestSha256
       || sha256(signingRequestBytes) !== attempt.signingRequestSha256
+      || attempt.committeeDeploymentApprovalSha256
+        !== record.committeeDeploymentApproval.documentSha256
+      || signingRequest.committeeDeploymentApprovalSha256
+        !== record.committeeDeploymentApproval.documentSha256
       || signingRequest.updateSha256 !== attempt.updateSha256
       || signingRequest.finalizedBlockHash !== attempt.finalizedBlockHash
       || signingRequest.expiresAt !== approval.expiresAt.toISOString()) {
@@ -1064,7 +1193,9 @@ export async function standaloneSetupStatus(directory) {
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
-    maintenanceApproval: record.committeeApproval ? "roster-signature-verified-transition-pending" : "pending",
+    maintenanceApproval: record.committeeDeploymentApproval
+      ? "deployment-bound-roster-signature-verified-transition-pending"
+      : record.committeeApproval ? "roster-signature-verified-deployment-binding-pending" : "pending",
     maintenanceTransition: record.maintenanceAttempt?.state ?? "pending",
     maintenanceTransitionAlert: record.maintenanceAttempt?.alert ?? null,
     maintenanceLastReadback: record.maintenanceAttempt?.reconciliation?.status ?? null,
@@ -1117,6 +1248,19 @@ async function interactive(directory) {
         await attemptStandaloneDeployment(directory, plan);
       }
     }
+    ({ record } = await readRecord(directory));
+    if (record.committeeApproval && !record.committeeDeploymentApproval
+      && record.deployment?.state === "observed"
+      && record.deployment.result?.readbackStatus === "staged-bootstrap-pending") {
+      const document = await io.question("Reviewer-signed deployment-bound committee approval JSON (blank to defer): ");
+      if (document) {
+        const signature = await io.question("Detached deployment approval signature file: ");
+        const keyring = await io.question("Private governance reviewer public-key keyring: ");
+        await approveStandaloneCommitteeDeployment(
+          directory, document, signature, keyring, record.committeeApproval.reviewerFingerprint,
+        );
+      }
+    }
     console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   } finally {
     io.close();
@@ -1125,8 +1269,8 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -1136,6 +1280,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   else if (command === "approve-committee" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneCommittee(directory, input, signature, keyring, fingerprint)));
+  }
+  else if (command === "approve-committee-deployment" && input && signature && keyring && fingerprint) {
+    console.log(JSON.stringify(await approveStandaloneCommitteeDeployment(
+      directory, input, signature, keyring, fingerprint,
+    )));
   }
   else if (command === "deploy" && input) console.log(JSON.stringify(await attemptStandaloneDeployment(directory, input)));
   else if (command === "reconcile-deploy" && input) {

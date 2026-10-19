@@ -2044,3 +2044,14 @@ enumeration. It refuses a submitted receipt and never authorizes retry. An empty
 finalized range is useful evidence but does not rule out provider ambiguity,
 later inclusion, or a candidate contract outside the observed range; an
 independent operator must still decide recovery.
+
+The first-run release committee roster is approved before deployment and
+therefore cannot itself name the actual contract. A separate detached
+governance approval after staged finalized readback now binds the roster hash,
+reserved deployment-plan hash, exact receipt and contract address, genesis,
+and verified release-manifest hash. The wizard requires this signed binding
+before preparing or submitting the threshold-maintenance handoff and rechecks
+it against the preserved setup state. The same pinned governance reviewer
+signs both approvals. It is not a substitute for independent receipt review,
+finalized maintenance readback, offline actor journeys, or human security
+approval; an ambiguous no-receipt attempt cannot pass this gate.

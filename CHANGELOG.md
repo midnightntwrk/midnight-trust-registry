@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require a second, detached governance approval that binds the release
+  maintenance roster to the staged deployment receipt, contract address,
+  reserved plan, and pinned release manifest after finalized bootstrap readback
+  and before preparing the
+  committee transition; missing or ambiguous receipts remain blocked, while
+  pre-existing attempts retain read-only reconciliation without retrospective
+  approval
 - add a read-only local deployment-attempt scanner that pins indexed block
   ancestry to the approved genesis and a captured finalized node head, reports
   public deployment candidates and pending-extrinsic count, and never treats
