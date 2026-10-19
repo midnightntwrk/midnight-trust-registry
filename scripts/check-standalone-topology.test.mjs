@@ -105,6 +105,21 @@ test("rejects unexpected mounts and elevated container privileges", () => {
   const capAdd = structuredClone(containers);
   capAdd[2].HostConfig.CapAdd = ["SYS_ADMIN"];
   assert.throws(() => checkStandaloneTopology(network, capAdd), /elevated container privileges/u);
+  for (const field of ["PidMode", "IpcMode", "UsernsMode"]) {
+    const hostNamespace = structuredClone(containers);
+    hostNamespace[0].HostConfig[field] = "host";
+    assert.throws(() => checkStandaloneTopology(network, hostNamespace), /elevated container privileges/u);
+  }
+  for (const field of ["Devices", "DeviceRequests"]) {
+    const device = structuredClone(containers);
+    device[1].HostConfig[field] = [{ PathOnHost: "/dev/example" }];
+    assert.throws(() => checkStandaloneTopology(network, device), /elevated container privileges/u);
+  }
+  for (const option of ["seccomp=unconfined", "apparmor=unconfined"]) {
+    const unconfined = structuredClone(containers);
+    unconfined[2].HostConfig.SecurityOpt = [option];
+    assert.throws(() => checkStandaloneTopology(network, unconfined), /elevated container privileges/u);
+  }
 });
 
 test("rejects extra, unhealthy, and unpinned services", () => {

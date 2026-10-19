@@ -97,7 +97,11 @@ export function checkStandaloneTopology(network, containers, config = standalone
       || !DIGEST_IMAGE.test(container.Config.Image)) {
       throw new Error("Dedicated service is missing, unhealthy, or not digest-pinned");
     }
-    if (container.HostConfig?.Privileged === true || (container.HostConfig?.CapAdd?.length ?? 0) > 0) {
+    const host = container.HostConfig;
+    if (host?.Privileged === true || (host?.CapAdd?.length ?? 0) > 0
+      || [host?.PidMode, host?.IpcMode, host?.UsernsMode].includes("host")
+      || (host?.Devices?.length ?? 0) > 0 || (host?.DeviceRequests?.length ?? 0) > 0
+      || (host?.SecurityOpt ?? []).some((option) => /^(?:seccomp|apparmor)=unconfined$/u.test(option))) {
       throw new Error("Dedicated service has elevated container privileges");
     }
     if (container.Mounts?.length !== 1) {

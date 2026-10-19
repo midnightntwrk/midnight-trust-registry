@@ -234,11 +234,13 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     if (sha256(envBytes) !== record.stack.envFileSha256) {
       throw new Error("Prepared stack environment changed since setup");
     }
-    if (record.stack.composeSha256 && sha256(await readFile(composePath)) !== record.stack.composeSha256) {
+    if (record.stack.composeSha256
+      && sha256(await readFile(join(record.install.bundle, "compose.yml"))) !== record.stack.composeSha256) {
       throw new Error("Runtime Compose changed since stack preparation");
     }
     if (record.stack.offlineComposeSha256
-      && sha256(await readFile(offlineComposePath)) !== record.stack.offlineComposeSha256) {
+      && sha256(await readFile(join(record.install.bundle, "compose.offline.yml")))
+        !== record.stack.offlineComposeSha256) {
       throw new Error("Offline Compose changed since stack preparation");
     }
     const config = standaloneStackConfig({
@@ -306,7 +308,7 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     const { record } = await readRecord(root);
     if (record.deployment) throw new Error("Cannot replace the genesis pin after deployment was reserved");
     if (record.genesisApproval) throw new Error("Cannot replace the genesis observation after reviewer approval");
-    if (record.stack && !record.stack.observation) {
+    if (record.install.verified?.runtimeComposeSha256 && !record.stack?.observation) {
       throw new Error("Observe the prepared local stack before recording its genesis pin");
     }
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
@@ -348,12 +350,16 @@ export async function verifyDetachedReviewerSignature(
 }
 
 function reviewerProposal(proposal, fields) {
+  const approvedAt = Date.parse(proposal?.approvedAt);
   if (proposal === null || typeof proposal !== "object" || Array.isArray(proposal)
     || Object.keys(proposal).sort().join("\0") !== fields.sort().join("\0")
     || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
     || typeof proposal.reviewedReference !== "string"
-    || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512) {
-    throw new Error("A canonical reviewer fingerprint and independent review reference are required");
+    || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512
+    || !Number.isFinite(approvedAt)
+    || new Date(approvedAt).toISOString() !== proposal.approvedAt
+    || approvedAt > Date.now() + 5 * 60_000) {
+    throw new Error("Canonical reviewer metadata and a human-supplied approval time are required");
   }
 }
 
@@ -363,10 +369,13 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
     if (!record.ledgerObservation || record.genesisApproval || record.deployment) {
       throw new Error("Observe genesis before drafting its approval; do not replace an approved or reserved decision");
     }
-    if (record.stack && !record.stack.observation) {
+    if (record.install.verified?.runtimeComposeSha256 && !record.stack?.observation) {
       throw new Error("Observe the prepared local stack before drafting its genesis approval");
     }
-    reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference"]);
+    reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference", "approvedAt"]);
+    if (Date.parse(proposal.approvedAt) < Date.parse(record.createdAt)) {
+      throw new Error("Genesis review time predates setup initialization");
+    }
     const document = {
       format: "tr-local-genesis-approval-v1",
       sourceRevision: record.sourceRevision,
@@ -377,7 +386,7 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
       rpcUrl: record.ledgerObservation.rpcUrl,
       reviewerFingerprint: proposal.reviewerFingerprint,
       reviewedReference: proposal.reviewedReference,
-      approvedAt: new Date().toISOString(),
+      approvedAt: proposal.approvedAt,
     };
     const path = join(root, "genesis-approval.unsigned.json");
     const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
@@ -420,7 +429,10 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
       throw new Error("Approve genesis before drafting a committee; do not replace an approved or reserved roster");
     }
     reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference",
-      "maintenancePolicy", "custodians"]);
+      "maintenancePolicy", "custodians", "approvedAt"]);
+    if (Date.parse(proposal.approvedAt) < Date.parse(record.genesisApproval.approvedAt)) {
+      throw new Error("Committee review time predates genesis approval");
+    }
     validateReleaseCommittee(proposal.maintenancePolicy, proposal.custodians);
     const document = {
       format: "tr-local-committee-approval-v1",
@@ -431,7 +443,7 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
       expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
       reviewerFingerprint: proposal.reviewerFingerprint,
       reviewedReference: proposal.reviewedReference,
-      approvedAt: new Date().toISOString(),
+      approvedAt: proposal.approvedAt,
       maintenancePolicy: proposal.maintenancePolicy,
       custodians: proposal.custodians,
     };
@@ -528,7 +540,9 @@ export async function approveStandaloneCommittee(
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
     if (!record.genesisApproval) throw new Error("Approve the local genesis before proposing a release committee");
-    if (record.committeeApproval) throw new Error("Committee roster approval is already recorded");
+    if (record.committeeApproval || record.deployment) {
+      throw new Error("Committee roster approval is already recorded or deployment reserved");
+    }
     if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Governance reviewer fingerprint must be canonical");
     const document = await regularBytes(resolve(documentPath));
     const signature = await regularBytes(resolve(signaturePath));

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { constants as fsConstants, createReadStream } from "node:fs";
 import {
   copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync,
 } from "node:fs";
@@ -63,9 +63,10 @@ export async function buildStandaloneInstall(options = {}) {
     { flag: "wx", mode: 0o600 });
   const composeSource = join(root, "deploy/standalone/compose.yml");
   const composeTarget = join(destination, "compose.yml");
-  copyFileSync(composeSource, composeTarget);
+  copyFileSync(composeSource, composeTarget, fsConstants.COPYFILE_EXCL);
   const offlineComposeTarget = join(destination, "compose.offline.yml");
-  copyFileSync(join(root, "deploy/standalone/compose.offline.yml"), offlineComposeTarget);
+  copyFileSync(join(root, "deploy/standalone/compose.offline.yml"), offlineComposeTarget,
+    fsConstants.COPYFILE_EXCL);
   const runtimeCompose = {
     path: "compose.yml", sha256: await sha256(composeTarget),
     offlinePath: "compose.offline.yml", offlineSha256: await sha256(offlineComposeTarget),

@@ -439,25 +439,30 @@ An older v2 bundle remains historical smoke evidence, not a new wizard setup
 input. A v3 bundle built from the chosen release source revision is still only
 candidate bytes; it does not by itself support an RC qualification claim.
 `observe-stack` checks the selected live project's topology and canary HTTPS/DNS
-egress behavior, including prepared private-input matching, then appends
-timestamped ledger-bridge evidence. It refuses
+egress behavior, including prepared private-input matching and unchanged
+bundled Compose bytes, then appends timestamped ledger-bridge evidence. At
+most 20 pre-genesis observations are retained; investigate drift before that
+limit instead of silently replacing earlier evidence. It refuses
 to replace evidence after genesis observation or deployment begins. In the
 interactive wizard, leaving stack preparation blank stops the session before
 the genesis-pin prompt. Once a stack is prepared, the interactive wizard also
 stops until the operator starts the reviewed stack and explicitly requests
-`observe-stack`; the separate `observe` command refuses a genesis pin until
-that stack observation exists. This step does not approve
+`observe-stack`; for v3 installs, the separate `observe` command also refuses
+a genesis pin until that stack observation exists. Legacy v2 records can still
+be observed for historical smoke, not RC qualification. This step does not approve
 genesis, attest actor egress, verify a contract readback, or qualify a release.
 
-`draft-genesis` accepts a JSON object with exactly `reviewerFingerprint` and
-`reviewedReference`. `draft-committee` accepts those fields plus
+`draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
+`reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
+`draft-committee` accepts those fields plus
 `maintenancePolicy` and `custodians` in the approval shapes below. Both commands
 derive the source, install, and genesis binding from the private setup record;
 they create mode-0600 `*.unsigned.json` files in that directory without
 overwriting an earlier draft. The printed state is
 `unsigned-human-review-required`, not approval. Reviewers must independently
 verify the references, committee public keys, threshold, and custody records,
-then sign the **exact bytes** of the draft they accept. The operator passes that
+including the approval time, then sign the **exact bytes** of the draft they
+accept. The operator passes that
 same file and detached signature to `approve-genesis` or `approve-committee`.
 The wizard does not create reviewer authority, private keys, or signatures.
 

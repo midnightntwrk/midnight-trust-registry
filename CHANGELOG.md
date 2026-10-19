@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded, including through the explicit wizard command
 - derive private unsigned genesis and release-committee approval drafts from
   observed setup pins and public reviewer inputs without auto-approving them
+- require live stack observation for v3 genesis paths, recheck bundled Compose
+  bytes, and require reviewer-supplied approval time in unsigned drafts
 - pin both base and offline Compose bytes in v3 install bundles; new wizard
   stacks require those verified bytes and matching archived image references
 - verify wizard-prepared indexer credentials and proof-cache bind source against

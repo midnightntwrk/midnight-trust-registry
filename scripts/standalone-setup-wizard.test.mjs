@@ -69,7 +69,7 @@ const plan = {
   journalPath: "/private/deployment-attempt.json",
 };
 
-async function fixture(format = "tr-standalone-install-v3") {
+async function fixture(format = "tr-standalone-install-v2") {
   const root = await mkdtemp(join(tmpdir(), "tr-wizard-test-"));
   const bundle = join(root, "bundle");
   await mkdir(bundle);
@@ -224,19 +224,22 @@ test("wizard records staged-byte verification but leaves RC gates open", async (
 
 test("unsigned genesis draft binds observed bytes but does not approve them", async () => {
   const f = await fixture();
+  const proposal = { reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+    approvedAt: new Date().toISOString() };
   await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
-    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+    ...proposal,
   }), /Observe genesis before drafting/u);
   await observeStandaloneLedger(f.directory, f.pinPath, {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
-    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+    reviewerFingerprint, reviewedReference: proposal.reviewedReference,
+  }), /human-supplied approval time/u);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    ...proposal,
     privateKey: "must-not-be-accepted",
-  }), /canonical reviewer fingerprint/u);
-  const result = await draftStandaloneGenesisApproval(f.directory, {
-    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
-  });
+  }), /Canonical reviewer metadata/u);
+  const result = await draftStandaloneGenesisApproval(f.directory, proposal);
   assert.equal(result.state, "unsigned-human-review-required");
   assert.equal((await lstat(result.path)).mode & 0o077, 0);
   const bytes = await readFile(result.path);
@@ -247,9 +250,7 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
   assert.equal(document.expectedGenesisHash, expectedGenesisHash);
   assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
   assert.equal(record.genesisApproval, undefined);
-  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
-    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
-  }), /EEXIST/u);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, proposal), /EEXIST/u);
   const approved = await approveStandaloneGenesis(f.directory, result.path, f.signaturePath,
     f.keyring, reviewerFingerprint, { verifySignature: async () => {} });
   assert.equal(approved.documentSha256, result.documentSha256);
@@ -258,7 +259,8 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
 test("unsigned committee draft requires an approved genesis and release-grade custody", async () => {
   const f = await fixture();
   const proposal = { reviewerFingerprint: governanceFingerprint,
-    reviewedReference: "governance-decision:local-release-committee" };
+    reviewedReference: "governance-decision:local-release-committee",
+    approvedAt: new Date().toISOString() };
   await assert.rejects(draftStandaloneCommitteeApproval(f.directory, proposal), /Approve genesis/u);
   await observeStandaloneLedger(f.directory, f.pinPath, {
     preflight: async () => ({ kind: "local-node-observation-only" }),
@@ -292,7 +294,7 @@ test("unsigned committee draft requires an approved genesis and release-grade cu
 });
 
 test("wizard prepares a private isolated stack without starting or approving it", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const requested = { project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" };
   const result = await prepareStandaloneStack(f.directory, requested, stackDependencies(f));
@@ -325,8 +327,38 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
 });
 
+test("v3 setup cannot record genesis or draft approval before stack observation", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const preflight = async () => { throw new Error("must not query node"); };
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, { preflight }),
+    /Observe the prepared local stack/u);
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, { preflight }),
+    /Observe the prepared local stack/u);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    reviewerFingerprint, reviewedReference: "independent-chain-spec:sha256:example",
+    approvedAt: new Date().toISOString(),
+  }), /Observe genesis before drafting/u);
+});
+
+test("stack observation rejects changed bundled Compose bytes", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  await writeFile(join(record.install.bundle, "compose.yml"), "name: altered\n");
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => { throw new Error("must not inspect Docker"); },
+  }), /Runtime Compose changed/u);
+});
+
 test("wizard records only selected ledger-bridge topology and egress observations", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
@@ -374,7 +406,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const prompts = [];
   let closed = false;
   await runStandaloneSetupInteractive(f.directory, {
@@ -389,7 +421,7 @@ test("interactive wizard stops when stack preparation is deferred", async () => 
 });
 
 test("interactive wizard stops before genesis until the prepared stack is observed", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
@@ -427,7 +459,7 @@ test("interactive wizard stops before genesis until the prepared stack is observ
 });
 
 test("wizard rejects a changed private stack environment before observation", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const prepared = await prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
@@ -441,7 +473,7 @@ test("wizard rejects a changed private stack environment before observation", as
 });
 
 test("wizard refuses to attribute a stack observation to changed setup metadata", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   await prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
@@ -456,7 +488,7 @@ test("wizard refuses to attribute a stack observation to changed setup metadata"
 });
 
 test("wizard rejects unsafe stack names, reused ports, and changed install bytes", async () => {
-  const f = await fixture();
+  const f = await fixture("tr-standalone-install-v3");
   const requested = { project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" };
   await assert.rejects(prepareStandaloneStack(f.directory, { ...requested,

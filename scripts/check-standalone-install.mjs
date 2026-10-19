@@ -14,6 +14,7 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ROLES = ["node", "indexer", "proof-server"];
 const IMAGE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
+
 export function pinnedStandaloneImages(composeSource) {
   const compose = yaml.load(composeSource);
   if (compose?.name !== "${TR_STACK_NAME:-tr-standalone-local-smoke}"
