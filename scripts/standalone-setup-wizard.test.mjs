@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  approveStandaloneCommittee,
   approveStandaloneGenesis,
   attemptStandaloneDeployment,
   initializeStandaloneSetup,
@@ -18,6 +19,7 @@ import {
 const sourceRevision = "a".repeat(40);
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
+const governanceFingerprint = "B".repeat(40);
 const pin = {
   format: "tr-local-ledger-pin-v1",
   networkId: "undeployed",
@@ -87,6 +89,41 @@ async function approve(f) {
       assert.equal(fingerprint, reviewerFingerprint);
     } },
   );
+}
+
+async function committeeDocument(f, overrides = {}) {
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const keys = ["1", "2", "3"].map((value) => `0x${value.repeat(64)}`);
+  const document = {
+    format: "tr-local-committee-approval-v1",
+    sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    genesisApprovalSha256: record.genesisApproval.documentSha256,
+    networkId: "undeployed",
+    expectedGenesisHash,
+    reviewerFingerprint: governanceFingerprint,
+    reviewedReference: "governance-decision:local-release-committee",
+    approvedAt: new Date().toISOString(),
+    maintenancePolicy: { mode: "committee", threshold: 2, verifyingKeys: keys },
+    custodians: keys.map((verifyingKey, index) => ({
+      verifyingKey, holderRole: `maintainer-${index + 1}`, custodyReference: `custody-record-${index + 1}`,
+    })),
+    ...overrides,
+  };
+  const path = join(f.directory, "committee-approval.json");
+  const signature = join(f.directory, "committee-approval.sig");
+  await writeFile(path, JSON.stringify(document));
+  await writeFile(signature, "test-only-committee-signature");
+  return { path, signature, document };
+}
+
+async function approveCommittee(f, overrides = {}) {
+  const input = await committeeDocument(f, overrides);
+  return approveStandaloneCommittee(f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
+    verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+      assert.equal(fingerprint, governanceFingerprint);
+    },
+  });
 }
 
 test("wizard records staged-byte verification but leaves RC gates open", async () => {
@@ -180,6 +217,34 @@ test("genesis approval rejects changed source pins and cannot be replaced after 
   await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   }), /after reviewer approval/u);
+});
+
+test("signed release committee roster binds three distinct custodians but not a transition", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  const result = await approveCommittee(f);
+  assert.equal(result.threshold, 2);
+  assert.equal(result.committeeSize, 3);
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceApproval, "roster-signature-verified-transition-pending");
+  assert.equal(status.releaseQualified, false);
+  await assert.rejects(approveCommittee(f), /already recorded/u);
+});
+
+test("smoke threshold and repeated custody roles cannot become release approval", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  await assert.rejects(approveCommittee(f, {
+    maintenancePolicy: { mode: "committee", threshold: 1,
+      verifyingKeys: ["1", "2", "3"].map((value) => `0x${value.repeat(64)}`) },
+  }), /multi-party threshold/u);
+  const input = await committeeDocument(f);
+  await assert.rejects(approveCommittee(f, {
+    custodians: input.document.custodians.map((custodian) => ({ ...custodian, holderRole: "same-maintainer" })),
+  }), /distinct holder roles/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval, "pending");
 });
 
 test("signature verification reads a private snapshot of the retained approval bytes", async () => {

@@ -274,6 +274,7 @@ node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/reviewer-approval.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
+node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/committee-approval.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
@@ -309,6 +310,44 @@ the signature, signer fingerprint, source, inventory, genesis, and setup time,
 then preserves the signed bytes in the private setup record. An observation
 cannot be replaced after approval.
 
+The governance reviewer can sign a separate first-setup **release roster**
+after genesis approval. Its exact JSON shape is:
+
+```json
+{
+  "format": "tr-local-committee-approval-v1",
+  "sourceRevision": "<signed source SHA from setup-record.json>",
+  "installInventorySha256": "<inventory hash from setup-record.json>",
+  "genesisApprovalSha256": "<signed genesis document hash from setup-record.json>",
+  "networkId": "undeployed",
+  "expectedGenesisHash": "0x<approved 64-character genesis hash>",
+  "reviewerFingerprint": "<40-character uppercase governance signing-key fingerprint>",
+  "reviewedReference": "<governance decision or minutes reference>",
+  "approvedAt": "<ISO-8601 time after genesis approval>",
+  "maintenancePolicy": {
+    "mode": "committee",
+    "threshold": 2,
+    "verifyingKeys": ["0x<key-1>", "0x<key-2>", "0x<key-3>"]
+  },
+  "custodians": [
+    { "verifyingKey": "0x<key-1>", "holderRole": "maintainer-1", "custodyReference": "<custody record>" },
+    { "verifyingKey": "0x<key-2>", "holderRole": "maintainer-2", "custodyReference": "<custody record>" },
+    { "verifyingKey": "0x<key-3>", "holderRole": "maintainer-3", "custodyReference": "<custody record>" }
+  ]
+}
+```
+
+Replace all placeholders with exact approved values. The signed roster must
+contain at least three distinct canonical public keys, a threshold of at least
+two, and distinct custody roles matched in key order. The 1-of-3 choice is
+**smoke-only** and intentionally fails this release approval step. As with
+genesis, the setup host verifies the detached signature against an
+operator-pinned reviewer public key; the release owner must separately verify
+the governance reviewer's authority and custody evidence. A recorded roster
+does not submit or verify a contract maintenance transition. The wizard shows
+`roster-signature-verified-transition-pending` until a later transition flow
+binds the deployment receipt and finalized ledger image to this policy.
+
 The wizard saves a mode-0600 setup record in a mode-0700 directory. It
 reserves a deployment attempt **before**
 calling the provider. If the process exits, the provider fails, or the receipt
@@ -323,7 +362,7 @@ funded wallet, committee roster, threshold, or key custody. A public local
 genesis wallet and 1-of-3 committee are permitted only for a development
 smoke, never as RC approval. Final committee approval must be collected during
 first setup from responsible humans, not inferred from a typed acknowledgement.
-Later wizard slices must bind the committee decision to the evidence record and execute finalized
+Later wizard slices must bind the signed roster to a specific deployment and execute finalized
 maintenance readback, offline actor journeys, and recovery qualification.
 `status` deliberately keeps these gates pending even if deployment returns a
 receipt; it does not produce a release-qualified verdict.

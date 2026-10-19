@@ -1895,3 +1895,13 @@ operator-entered fingerprint represents an independently authorized reviewer;
 the release owner must approve that trust anchor out of band. Committee
 approval, finalized maintenance readback, offline journeys, and independent
 security review remain open.
+
+The wizard also accepts a separately signed release committee roster after
+genesis approval. It uses the integration package's policy validator (three
+distinct keys minimum, threshold at least two), checks distinct custody-role
+references per key, and binds the signed document to the source, inventory,
+genesis, and genesis approval. A 1-of-3 smoke roster is rejected by this path.
+The recorded status is **roster signature verified, transition pending**; no local
+maintenance transaction or finalized readback has occurred. Reviewer
+authority, real key custody, transition submission, and release qualification
+remain operator and independent-review gates.

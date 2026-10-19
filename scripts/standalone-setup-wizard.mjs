@@ -8,6 +8,8 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
+
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { runLocalDeployment, validateLocalDeploymentPlan } from "./local-ledger-deploy.mjs";
@@ -141,6 +143,35 @@ export async function verifyDetachedReviewerSignature(
   }
 }
 
+async function verifiedApprovalEvidence(
+  root, label, document, signature, keyringDirectory, expectedFingerprint, dependencies,
+) {
+  if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
+    throw new Error(`${label} approval document or signature exceeds the bounded evidence size`);
+  }
+  const snapshot = join(root, `.${label}-approval-${randomUUID()}`);
+  const documentSnapshot = `${snapshot}.json`;
+  const signatureSnapshot = `${snapshot}.sig`;
+  try {
+    await writePrivateSnapshot(documentSnapshot, document);
+    await writePrivateSnapshot(signatureSnapshot, signature);
+    await (dependencies.verifySignature ?? verifyDetachedReviewerSignature)(
+      documentSnapshot, signatureSnapshot, resolve(keyringDirectory), expectedFingerprint,
+    );
+  } finally {
+    await unlink(documentSnapshot).catch(() => {});
+    await unlink(signatureSnapshot).catch(() => {});
+  }
+  return {
+    reviewerFingerprint: expectedFingerprint,
+    documentSha256: sha256(document),
+    signatureSha256: sha256(signature),
+    documentBase64: document.toString("base64"),
+    signatureBase64: signature.toString("base64"),
+    verification: "detached-signature-verified-against-operator-pinned-key",
+  };
+}
+
 export async function approveStandaloneGenesis(
   directory, documentPath, signaturePath, keyringDirectory, expectedFingerprint, dependencies = {},
 ) {
@@ -175,34 +206,94 @@ export async function approveStandaloneGenesis(
       || approvedAt > Date.now() + 5 * 60_000) {
       throw new Error("Reviewer approval does not bind the current install and observed genesis");
     }
-    const snapshot = join(root, `.genesis-approval-${randomUUID()}`);
-    const documentSnapshot = `${snapshot}.json`;
-    const signatureSnapshot = `${snapshot}.sig`;
-    try {
-      await writePrivateSnapshot(documentSnapshot, document);
-      await writePrivateSnapshot(signatureSnapshot, signature);
-      await (dependencies.verifySignature ?? verifyDetachedReviewerSignature)(
-        documentSnapshot, signatureSnapshot, resolve(keyringDirectory), expectedFingerprint,
-      );
-    } finally {
-      await unlink(documentSnapshot).catch(() => {});
-      await unlink(signatureSnapshot).catch(() => {});
-    }
+    const evidence = await verifiedApprovalEvidence(
+      root, "genesis", document, signature, keyringDirectory, expectedFingerprint, dependencies,
+    );
     record.genesisApproval = {
-      reviewerFingerprint: expectedFingerprint,
+      ...evidence,
       approvedAt: approval.approvedAt,
       reviewedReference: approval.reviewedReference,
-      documentSha256: sha256(document),
-      signatureSha256: sha256(signature),
-      documentBase64: document.toString("base64"),
-      signatureBase64: signature.toString("base64"),
-      verification: "detached-signature-verified-against-operator-pinned-key",
     };
     await writeRecord(root, record);
     return {
       reviewerFingerprint: expectedFingerprint,
       documentSha256: record.genesisApproval.documentSha256,
       signatureSha256: record.genesisApproval.signatureSha256,
+    };
+  });
+}
+
+export async function approveStandaloneCommittee(
+  directory, documentPath, signaturePath, keyringDirectory, expectedFingerprint, dependencies = {},
+) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.genesisApproval) throw new Error("Approve the local genesis before proposing a release committee");
+    if (record.committeeApproval) throw new Error("Committee roster approval is already recorded");
+    if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Governance reviewer fingerprint must be canonical");
+    const document = await regularBytes(resolve(documentPath));
+    const signature = await regularBytes(resolve(signaturePath));
+    if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
+      throw new Error("Committee approval document or signature exceeds the bounded evidence size");
+    }
+    const approval = JSON.parse(document);
+    const expectedFields = ["approvedAt", "custodians", "expectedGenesisHash", "format",
+      "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
+      "reviewedReference", "reviewerFingerprint", "sourceRevision"];
+    const approvedAt = Date.parse(approval?.approvedAt);
+    if (approval === null || typeof approval !== "object" || Array.isArray(approval)
+      || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
+      || approval.format !== "tr-local-committee-approval-v1"
+      || approval.sourceRevision !== record.sourceRevision
+      || approval.installInventorySha256 !== record.install.inventorySha256
+      || approval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
+      || approval.networkId !== "undeployed"
+      || approval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || approval.reviewerFingerprint !== expectedFingerprint
+      || typeof approval.reviewedReference !== "string"
+      || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
+      || !Number.isFinite(approvedAt)
+      || approvedAt < Date.parse(record.genesisApproval.approvedAt)
+      || approvedAt > Date.now() + 5 * 60_000) {
+      throw new Error("Committee approval does not bind the approved install and genesis");
+    }
+    if (approval.maintenancePolicy === null || typeof approval.maintenancePolicy !== "object"
+      || Array.isArray(approval.maintenancePolicy)
+      || approval.maintenancePolicy.mode !== "committee"
+      || !Array.isArray(approval.maintenancePolicy.verifyingKeys)
+      || Object.keys(approval.maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys") {
+      throw new Error("Release maintenance approval requires a canonical committee policy");
+    }
+    validateMaintenancePolicy(approval.maintenancePolicy);
+    const keys = approval.maintenancePolicy.verifyingKeys;
+    const custodians = approval.custodians;
+    if (!Array.isArray(custodians) || custodians.length !== keys.length
+      || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)
+        || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
+        || entry.verifyingKey !== keys[index]
+        || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
+        || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8
+        || entry.custodyReference.length > 512)
+      || new Set(custodians.map((entry) => entry.holderRole)).size !== keys.length) {
+      throw new Error("Committee custody must bind distinct holder roles to every approved public key");
+    }
+    const evidence = await verifiedApprovalEvidence(
+      root, "committee", document, signature, keyringDirectory, expectedFingerprint, dependencies,
+    );
+    record.committeeApproval = {
+      ...evidence,
+      approvedAt: approval.approvedAt,
+      reviewedReference: approval.reviewedReference,
+      maintenancePolicy: approval.maintenancePolicy,
+      custodians,
+    };
+    await writeRecord(root, record);
+    return {
+      reviewerFingerprint: expectedFingerprint,
+      documentSha256: evidence.documentSha256,
+      signatureSha256: evidence.signatureSha256,
+      threshold: approval.maintenancePolicy.threshold,
+      committeeSize: keys.length,
     };
   });
 }
@@ -273,7 +364,7 @@ export async function standaloneSetupStatus(directory) {
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
-    maintenanceApproval: "pending",
+    maintenanceApproval: record.committeeApproval ? "roster-signature-verified-transition-pending" : "pending",
     offlineJourneys: "pending",
     restartRestore: "pending",
     independentReview: "pending",
@@ -307,6 +398,16 @@ async function interactive(directory) {
       }
     }
     ({ record } = await readRecord(directory));
+    if (record.genesisApproval && !record.committeeApproval) {
+      const document = await io.question("Reviewer-signed release committee roster JSON (blank to defer): ");
+      if (document) {
+        const signature = await io.question("Detached committee signature file: ");
+        const keyring = await io.question("Private local GPG keyring with governance reviewer public key: ");
+        const fingerprint = await io.question("Pinned governance signing-key fingerprint (40 uppercase hex): ");
+        await approveStandaloneCommittee(directory, document, signature, keyring, fingerprint);
+      }
+    }
+    ({ record } = await readRecord(directory));
     if (record.genesisApproval && !record.deployment) {
       const plan = await io.question("Approved deployment plan JSON (blank to stop): ");
       if (plan && await io.question("Type DEPLOY ONCE to reserve one attempt: ") === "DEPLOY ONCE") {
@@ -321,14 +422,17 @@ async function interactive(directory) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint] = process.argv.slice(2);
-  if (!directory || !["run", "init", "observe", "approve-genesis", "deploy", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|deploy|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "observe", "approve-genesis", "approve-committee", "deploy", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|observe|approve-genesis|approve-committee|deploy|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await interactive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "approve-genesis" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneGenesis(directory, input, signature, keyring, fingerprint)));
+  }
+  else if (command === "approve-committee" && input && signature && keyring && fingerprint) {
+    console.log(JSON.stringify(await approveStandaloneCommittee(directory, input, signature, keyring, fingerprint)));
   }
   else if (command === "deploy" && input) console.log(JSON.stringify(await attemptStandaloneDeployment(directory, input)));
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
