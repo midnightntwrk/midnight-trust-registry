@@ -76,10 +76,30 @@ any release gate by itself. Validate that `/data` actually retains node and
 indexer state before using the volumes for restart/restore evidence.
 
 The local Midnight network uses network ID `undeployed`, not `preprod`. The
-upstream local-dev stack exposes node RPC, indexer, and proof-server services
+dedicated smoke stack exposes node RPC, indexer, and proof-server services
 on loopback by default. Bind them to an isolated network, not public
 interfaces. Start and fund local accounts before disabling egress. A local
 proof server sees witness data and must remain inside the same trust boundary.
+
+Before any deployment, have an operator approve a genesis hash through a
+channel independent of the node being queried. Save the following public pin
+as a regular JSON file, with the actual signed source SHA and approved hash:
+
+```json
+{
+  "format": "tr-local-ledger-pin-v1",
+  "networkId": "undeployed",
+  "sourceRevision": "<40-character signed source SHA>",
+  "rpcUrl": "http://127.0.0.1:29944",
+  "expectedGenesisHash": "0x<64-character approved genesis hash>",
+  "allowedHosts": ["127.0.0.1"]
+}
+```
+
+Run `node scripts/local-ledger-preflight.mjs <approved-pin.json>` after the
+integration package is built. It fails on a mismatched genesis or a finalized
+head still at genesis. Its output is **local node observation only**, not an
+independent finality proof, a contract deployment, or an approval of the pin.
 
 The Trust Registry API and browser surfaces must use only the local network,
 local DID/VC/status data, and locally persisted workspace state. An offline
