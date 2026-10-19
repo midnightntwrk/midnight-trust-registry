@@ -13,6 +13,8 @@ import {
   computeRecognitionEvidenceBoundProposalPayloadHash,
   computeCreateIssuerAuthorizationPayloadHash,
   computeCreateEvidenceVerifierKeyPayloadHash,
+  computeRotateEvidenceVerifierKeyPayloadHash,
+  computeUpdateEvidenceVerifierKeyPayloadHash,
   computeUpdateVcAuthorityKeyPayloadHash,
   computeCreateVerifierAuthorizationPayloadHash,
   computeUpdateAuditorAuthorizationPayloadHash,
@@ -47,6 +49,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
+  EvidenceVerifierKeyStatus,
   type AuditorAuthorizationRecord as ContractAuditorAuthorizationRecord,
   type EpochCommitmentRecord as ContractEpochCommitmentRecord,
   IssuerResourceType,
@@ -119,6 +122,9 @@ import {
 
 const PROPOSE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:propose");
 const REGISTER_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:register");
+const ROTATE_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:rotate");
+const SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:suspend");
+const REVOKE_EVIDENCE_VERIFIER_ACTION_KIND = encodeCompactActionKind("tr:evidence-verifier:revoke");
 const REGISTER_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:register");
 const SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND = encodeCompactActionKind("tr:vc-authority:key:suspend");
 const AUTHORIZE_ISSUER_ACTION_KIND = encodeCompactActionKind("tr:issuer:authorize");
@@ -396,10 +402,11 @@ export class LocalTrustRegistryIntegrationHarness {
   private currentEvidenceVerifierKeyIdCommitment!: Uint8Array;
 
   private readonly bootstrapMaintainer = createMaintainerFixture("bootstrap", 17);
-  private readonly evidenceVerifierKey = createMaintainerFixture("evidence-verifier", 41);
-  private readonly evidenceVerifierPublicKey = deriveJubjubPublicKeyFromSeed(
+  private evidenceVerifierKey = createMaintainerFixture("evidence-verifier", 41);
+  private evidenceVerifierPublicKey = deriveJubjubPublicKeyFromSeed(
     this.evidenceVerifierKey.seed,
   );
+  private evidenceVerifierRotationCount = 0;
   private readonly bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
     this.bootstrapMaintainer.seed,
   );
@@ -586,8 +593,99 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     this.currentEvidenceVerifierAuthorizationId = prepared.authorizationId;
     this.currentEvidenceVerifierKeyIdCommitment = prepared.keyIdCommitment;
-    if (this.evidenceVerifier.keyIds[0] !== keyId) this.evidenceVerifier.keyIds.unshift(keyId);
+    this.evidenceVerifier.keyIds = [keyId];
     return eventHash;
+  }
+
+  rotateEvidenceVerifierKey(label: string): Uint8Array {
+    if (!/^[a-z][a-z0-9-]*$/.test(label)) {
+      throw new Error("Evidence-verifier rotation label must be lowercase ASCII");
+    }
+    const nextRotation = this.evidenceVerifierRotationCount + 1;
+    if (nextRotation > 200) throw new Error("Evidence-verifier fixture rotation limit reached");
+    const replacement = createMaintainerFixture(`evidence-verifier-${label}`, 41 + nextRotation);
+    const publicKey = deriveJubjubPublicKeyFromSeed(replacement.seed);
+    const keyId = `${this.evidenceVerifier.did}#assertion-rotation-${nextRotation}`;
+    const keyIdCommitment = bytes32Commitment(keyId);
+    const authorizationId = bytes32Commitment(createScopedIdentifier(
+      "evidence-verifier-key", this.registryId, `rotation-${nextRotation}`,
+    ));
+    const oldAuthorizationId = this.currentEvidenceVerifierAuthorizationId;
+    const oldRecord = this.simulator.getEvidenceVerifierKey(oldAuthorizationId);
+    const ledger = this.simulator.getLedger();
+    const newPayloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
+      authorizationId,
+      oldRecord.verifierDidCommitment,
+      keyIdCommitment,
+      publicKey,
+      oldRecord.suite,
+      ledger.governancePolicyCommitment,
+      ledger.governancePolicyVersion,
+    );
+    const reasonHash = bytes32Commitment(`evidence-verifier-key:rotation:${nextRotation}:${label}`);
+    const payloadHash = computeRotateEvidenceVerifierKeyPayloadHash(
+      oldAuthorizationId, oldRecord.lifecycleEventHash, newPayloadHash, reasonHash,
+    );
+    const actionSequence = ledger.governanceActionCount;
+    const eventHash = this.simulator.rotateEvidenceVerifierKey(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(
+        ROTATE_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, actionSequence,
+      ),
+      oldAuthorizationId,
+      authorizationId,
+      keyIdCommitment,
+      publicKey,
+      reasonHash,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(),
+        ROTATE_EVIDENCE_VERIFIER_ACTION_KIND, payloadHash, actionSequence,
+      ),
+    );
+    this.currentEvidenceVerifierAuthorizationId = authorizationId;
+    this.currentEvidenceVerifierKeyIdCommitment = keyIdCommitment;
+    this.evidenceVerifierKey = replacement;
+    this.evidenceVerifierPublicKey = publicKey;
+    this.evidenceVerifierRotationCount = nextRotation;
+    this.evidenceVerifier.keyIds = [keyId];
+    return eventHash;
+  }
+
+  private changeEvidenceVerifierKeyStatus(action: "suspend" | "revoke", label: string): Uint8Array {
+    if (!/^[a-z][a-z0-9-]*$/.test(label)) {
+      throw new Error("Evidence-verifier status reason must be lowercase ASCII");
+    }
+    const authorizationId = this.currentEvidenceVerifierAuthorizationId;
+    const record = this.simulator.getEvidenceVerifierKey(authorizationId);
+    const reasonHash = bytes32Commitment(`evidence-verifier-key:${action}:${label}`);
+    const payloadHash = computeUpdateEvidenceVerifierKeyPayloadHash(
+      authorizationId, record.lifecycleEventHash, reasonHash,
+    );
+    const actionKind = action === "suspend"
+      ? SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND : REVOKE_EVIDENCE_VERIFIER_ACTION_KIND;
+    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const circuit = action === "suspend"
+      ? this.simulator.suspendEvidenceVerifierKey.bind(this.simulator)
+      : this.simulator.revokeEvidenceVerifierKey.bind(this.simulator);
+    return circuit(
+      this.bootstrapMaintainer.keyId,
+      this.bootstrapPublicKey,
+      this.bootstrapActionSignature(actionKind, payloadHash, actionSequence),
+      authorizationId,
+      reasonHash,
+      this.maintainerCoAuthorizers(
+        this.activeDefaultQuorumCoMaintainers(), actionKind, payloadHash, actionSequence,
+      ),
+    );
+  }
+
+  suspendEvidenceVerifierKey(label: string): Uint8Array {
+    return this.changeEvidenceVerifierKeyStatus("suspend", label);
+  }
+
+  revokeEvidenceVerifierKey(label: string): Uint8Array {
+    return this.changeEvidenceVerifierKeyStatus("revoke", label);
   }
 
   registerVcAuthorityKey(input: {
@@ -717,6 +815,18 @@ export class LocalTrustRegistryIntegrationHarness {
       signature.keyId !== this.evidenceVerifier.keyIds[0]
     ) return false;
     try {
+      const key = this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
+      const ledger = this.simulator.getLedger();
+      if (
+        key.status !== EvidenceVerifierKeyStatus.active
+        || !sameBytes(key.verifierDidCommitment, bytes32Commitment(verifier.did))
+        || !sameBytes(key.keyIdCommitment, bytes32Commitment(signature.keyId))
+        || !sameBytes(key.suite, labelToBytes32("jubjub-schnorr"))
+        || !sameBytes(key.policyCommitment, ledger.governancePolicyCommitment)
+        || key.policyVersion !== ledger.governancePolicyVersion
+        || key.publicKey.x !== this.evidenceVerifierPublicKey.x
+        || key.publicKey.y !== this.evidenceVerifierPublicKey.y
+      ) return false;
       // Invalid curve points can trap in the Compact runtime; reject untrusted signatures.
       return verifyApplicationEvidenceCommitmentSignature(
         this.evidenceVerifierPublicKey,

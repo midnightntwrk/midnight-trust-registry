@@ -33,8 +33,13 @@ shorter-lived and more action-oriented than the normative specification.
   for each of the four applicant roles only after a successful Compact
   proposal. Before preparing approval or activation signatures, the simulator
   harness rechecks the current evidence policy and the proposal commitment.
-  It closes the reported stale-policy signing-preparation gap, but does not
-  substitute for production DID/key authority or finalized-ledger reads.
+  A governed verifier-key rotation retires the old fixture key: pending
+  applications cannot prepare approval signatures, while fresh applications
+  use the replacement key across all four roles. The fixture verifier also
+  checks the governed key status and policy at signature admission, so
+  suspended or revoked keys fail before proposal or decision signing. This
+  closes the reported stale-policy signing-preparation gap in the simulator,
+  but does not substitute for production DID/key authority or finalized-ledger reads.
 
 ## October 15 2026 Delivery Checkpoint
 
