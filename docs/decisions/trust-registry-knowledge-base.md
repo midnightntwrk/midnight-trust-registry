@@ -54,6 +54,13 @@ shorter-lived and more action-oriented than the normative specification.
   and reject a suspended registry key. Callers still need a trusted finalized
   DID reader and must invoke the check at both prepare and submit; this local
   adapter is not proof of public-network finality.
+- The local #67 `createDidBoundEvidenceVerifierPolicyPort` wrapper now uses a
+  trusted candidate reader and DID resolver to check registration and rotation
+  at both prepare and execution, including the exact Compact payload hash.
+  Compact-backed tests cover a valid rotation, post-prepare DID-key change,
+  and mismatched replacement. The host must still supply independently
+  finalized DID/registry reads and serialize the final check with execution;
+  the wrapper alone is not a public-network authority adapter.
 
 ## October 15 2026 Delivery Checkpoint
 

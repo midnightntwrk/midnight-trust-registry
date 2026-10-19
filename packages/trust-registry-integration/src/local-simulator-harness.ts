@@ -321,6 +321,7 @@ export type PreparedEvidenceVerifierTransitionAction = {
   authorizationId: Uint8Array;
   previousLifecycleEventHash: Uint8Array;
   reasonHash: Uint8Array;
+  policyVersion?: bigint;
   newAuthorizationId?: Uint8Array;
   newKeyIdCommitment?: Uint8Array;
   newPublicKey?: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
@@ -673,6 +674,7 @@ export class LocalTrustRegistryIntegrationHarness {
       authorizationId: oldAuthorizationId,
       previousLifecycleEventHash: Uint8Array.from(oldRecord.lifecycleEventHash),
       reasonHash,
+      policyVersion: ledger.governancePolicyVersion,
       newAuthorizationId: authorizationId,
       newKeyIdCommitment: keyIdCommitment,
       newPublicKey: publicKey,

@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
+import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -665,6 +666,10 @@ const requireGovernedPolicyActions = (
 };
 
 const mapGovernedPolicyError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof EvidenceVerifierDidResolutionUnavailableError) {
+    throw jsonProblem(problemBaseUri, "evidence-verifier-did-unavailable", 503,
+      "evidence verifier DID resolution unavailable");
+  }
   if (error instanceof GovernedPolicyActionRejectedError) {
     throw jsonProblem(problemBaseUri, "governed-policy-rejected", 403,
       "governed policy action rejected");

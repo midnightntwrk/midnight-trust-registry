@@ -62,6 +62,16 @@ Current route set:
 - `POST /v1/governed/policy/thresholds/prepare` and `/submit` (optional Compact-backed port)
 - `POST /v1/governed/policy/evidence-verifier/prepare` and `/submit` (optional Compact-backed port)
 
+For governed evidence-verifier registration and rotation, a host may wrap its
+Compact-backed policy port with `createDidBoundEvidenceVerifierPolicyPort`.
+The wrapper checks the candidate Midnight DID assertion method, key and DID
+commitments, and exact Compact action payload at prepare and again before
+execution. Candidate readers must use trusted current registry state, and the
+resolver must read independently finalized DID state. The host must serialize
+the final authority check with execution; this wrapper does not itself prove
+public-network finality or supply a production authority source. DID resolution
+outage returns 503; a mismatched or retired method rejects the action.
+
 Authorization `:role` supports `issuer`, `verifier`, and `auditor`. Issuer
 lookups require a canonical `tr:issuer-resource:v1:<sha256>` ID; verifier and
 auditor lookups require a canonical `tr:request-resource:v1:<sha256>` ID

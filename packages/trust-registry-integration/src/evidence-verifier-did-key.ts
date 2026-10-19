@@ -19,13 +19,19 @@ export type EvidenceVerifierDidKeyRecord = {
   publicKey: { x: bigint; y: bigint };
 };
 
-export type EvidenceVerifierDidKeyBindingInput = {
+export type EvidenceVerifierDidKeyCandidate = Omit<EvidenceVerifierDidKeyRecord, "status">;
+
+export type ProposedEvidenceVerifierDidKeyBindingInput = {
   resolver: Resolver;
   expectedNetwork: MidnightNetwork;
   did: string;
   verificationMethodId: string;
-  registered: EvidenceVerifierDidKeyRecord;
+  candidate: EvidenceVerifierDidKeyCandidate;
   minimumDidStateVersion?: bigint;
+};
+
+export type EvidenceVerifierDidKeyBindingInput = Omit<ProposedEvidenceVerifierDidKeyBindingInput, "candidate"> & {
+  registered: EvidenceVerifierDidKeyRecord;
 };
 
 export class EvidenceVerifierDidKeyBindingError extends Error {
@@ -46,8 +52,8 @@ const matchesBytes32 = (actual: Uint8Array, expected: Uint8Array): boolean =>
   actual.length === 32 && timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 
 /** The resolver must read an independently finalized DID state; this does not establish finality itself. */
-export async function verifyEvidenceVerifierDidKeyBinding(
-  input: EvidenceVerifierDidKeyBindingInput,
+export async function verifyProposedEvidenceVerifierDidKeyBinding(
+  input: ProposedEvidenceVerifierDidKeyBindingInput,
 ): Promise<{ didStateVersion: bigint }> {
   let did: ReturnType<typeof parseMidnightDIDString>;
   try {
@@ -59,16 +65,13 @@ export async function verifyEvidenceVerifierDidKeyBinding(
   } catch {
     throw new EvidenceVerifierDidKeyBindingError("invalid or wrong-network DID");
   }
-  if (input.registered.status !== EvidenceVerifierKeyStatus.active) {
-    throw new EvidenceVerifierDidKeyBindingError("registered key is not active");
-  }
   if (!input.verificationMethodId.startsWith(`${did}#`)
     || input.verificationMethodId.slice(did.length + 1).length === 0
     || input.verificationMethodId.slice(did.length + 1).includes("#")
-    || !matchesBytes32(input.registered.verifierDidCommitment, bytes32Commitment(did))
-    || !matchesBytes32(input.registered.keyIdCommitment,
+    || !matchesBytes32(input.candidate.verifierDidCommitment, bytes32Commitment(did))
+    || !matchesBytes32(input.candidate.keyIdCommitment,
       bytes32Commitment(input.verificationMethodId))
-    || !isPrimeOrderJubjubPoint(input.registered.publicKey)) {
+    || !isPrimeOrderJubjubPoint(input.candidate.publicKey)) {
     throw new EvidenceVerifierDidKeyBindingError("method or registered commitment mismatch");
   }
   if (input.minimumDidStateVersion !== undefined
@@ -93,11 +96,29 @@ export async function verifyEvidenceVerifierDidKeyBinding(
   } catch {
     throw new EvidenceVerifierDidKeyBindingError("method is not a current DID assertion key");
   }
-  if (method.publicKey.x !== input.registered.publicKey.x
-    || method.publicKey.y !== input.registered.publicKey.y
+  if (method.publicKey.x !== input.candidate.publicKey.x
+    || method.publicKey.y !== input.candidate.publicKey.y
     || (input.minimumDidStateVersion !== undefined
       && method.didStateVersion < input.minimumDidStateVersion)) {
     throw new EvidenceVerifierDidKeyBindingError("resolved key or DID version mismatch");
   }
   return { didStateVersion: method.didStateVersion };
+}
+
+export async function verifyEvidenceVerifierDidKeyBinding(
+  input: EvidenceVerifierDidKeyBindingInput,
+): Promise<{ didStateVersion: bigint }> {
+  if (input.registered.status !== EvidenceVerifierKeyStatus.active) {
+    throw new EvidenceVerifierDidKeyBindingError("registered key is not active");
+  }
+  return verifyProposedEvidenceVerifierDidKeyBinding({
+    resolver: input.resolver,
+    expectedNetwork: input.expectedNetwork,
+    did: input.did,
+    verificationMethodId: input.verificationMethodId,
+    candidate: input.registered,
+    ...(input.minimumDidStateVersion === undefined ? {} : {
+      minimumDidStateVersion: input.minimumDidStateVersion,
+    }),
+  });
 }

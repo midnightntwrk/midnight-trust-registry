@@ -19,6 +19,7 @@ export * from "./proposal-submission-journal.js";
 export * from "./governed-membership-actions.js";
 export * from "./governed-epoch-publication.js";
 export * from "./governed-policy-actions.js";
+export * from "./did-bound-evidence-verifier-policy-port.js";
 export * from "./governed-proposal-observation.js";
 export * from "./compact-proposal-observation.js";
 export * from "./governed-issuer-proposals.js";
