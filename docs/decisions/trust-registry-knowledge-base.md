@@ -2066,6 +2066,14 @@ genesis, and collects actual finalized deployment and offline-journey evidence.
 The explicit observation step records live topology and canary egress checks
 for that selected ledger bridge without implying that the full actor stack is
 offline or that a contract has been deployed.
+Repeated pre-genesis checks retain timestamped history instead of overwriting
+earlier evidence; further stack observations are refused once ledger observation
+or deployment begins. Deferring stack preparation in the interactive wizard
+stops before a genesis pin can be recorded out of order.
+New wizard stacks require a v3 install bundle pinning both base and offline
+Compose bytes as well as archived image references. V2 bundles remain readable
+for historical smoke evidence only; the runtime operator must use the verified
+bundle copies, not mutable checkout files.
 The host access relay is installation-only and must attach to the selected
 project with distinct loopback host ports; the original smoke relay recipe
 cannot be reused unchanged for a concurrent qualification project.

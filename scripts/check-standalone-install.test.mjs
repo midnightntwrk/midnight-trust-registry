@@ -80,6 +80,42 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
   }
 });
 
+test("v3 install pins complete runtime Compose bytes", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services:\n  node:\n    pull_policy: never\n  indexer:\n    pull_policy: never\n  proof-server:\n    pull_policy: never\n");
+    inventory.format = "tr-standalone-install-v3";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const result = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(result.runtimeComposeSha256, sha(compose));
+    assert.equal(result.runtimeOfflineComposeSha256, sha(offlineCompose));
+    inventory.images[0].reference = reference("indexer");
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /image inventory disagrees/u);
+    inventory.images[0].reference = reference("node");
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await writeFile(join(root, "compose.offline.yml"), "services: {}\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /Compose bytes disagree/u);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    await writeFile(join(root, "compose.yml"), "name: altered\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /Compose bytes disagree/u);
+    await rm(join(root, "compose.yml"));
+    await symlink(join(root, "release.json"), join(root, "compose.yml"));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /not regular/u);
+    await rm(join(root, "compose.yml"));
+    inventory.runtimeCompose.path = "../outside.yml";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects altered, missing, extra, and symlinked proof parameters", async () => {
   const { root, inventory } = await fixture();
   try {

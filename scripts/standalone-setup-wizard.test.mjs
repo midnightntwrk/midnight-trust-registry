@@ -25,6 +25,7 @@ import {
   reconcileStandaloneCommitteeTransition,
   reconcileStandaloneDeployment,
   reconcileStandaloneVerifierKeyInsertion,
+  runStandaloneSetupInteractive,
   standaloneSetupStatus,
   submitStandaloneCommitteeTransition,
   verifyDetachedReviewerSignature,
@@ -66,14 +67,24 @@ const plan = {
   journalPath: "/private/deployment-attempt.json",
 };
 
-async function fixture() {
+async function fixture(format = "tr-standalone-install-v3") {
   const root = await mkdtemp(join(tmpdir(), "tr-wizard-test-"));
   const bundle = join(root, "bundle");
   await mkdir(bundle);
-  const images = pinnedStandaloneImages(await readFile(new URL("../deploy/standalone/compose.yml", import.meta.url), "utf8"));
+  const compose = await readFile(new URL("../deploy/standalone/compose.yml", import.meta.url));
+  const offlineCompose = await readFile(new URL("../deploy/standalone/compose.offline.yml", import.meta.url));
+  const composeSha256 = createHash("sha256").update(compose).digest("hex");
+  const offlineComposeSha256 = createHash("sha256").update(offlineCompose).digest("hex");
+  const images = pinnedStandaloneImages(compose.toString("utf8"));
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
-    packageManifest: "release-manifest.json", images }));
+    format, packageManifest: "release-manifest.json", images,
+    ...(format === "tr-standalone-install-v3" ? { runtimeCompose: {
+      path: "compose.yml", sha256: composeSha256,
+      offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
+    } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
+  await writeFile(join(bundle, "compose.yml"), compose);
+  await writeFile(join(bundle, "compose.offline.yml"), offlineCompose);
   await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision }));
@@ -82,7 +93,10 @@ async function fixture() {
   const planPath = join(root, "plan.json");
   await writeFile(pinPath, JSON.stringify(pin));
   await writeFile(planPath, JSON.stringify({ ...plan, releaseManifestPath }));
-  const verifyBundle = async () => ({ sourceRevision, packageCount: 10, imageRoles: ["node", "indexer", "proof-server"], proofParameterCount: 18 });
+  const verifyBundle = async () => ({ sourceRevision, packageCount: 10, imageRoles: ["node", "indexer", "proof-server"],
+    proofParameterCount: 18,
+    runtimeComposeSha256: format === "tr-standalone-install-v3" ? composeSha256 : null,
+    runtimeOfflineComposeSha256: format === "tr-standalone-install-v3" ? offlineComposeSha256 : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
@@ -231,6 +245,15 @@ test("wizard prepares a private isolated stack without starting or approving it"
     /already prepared/u);
 });
 
+test("wizard refuses historical v2 bundles for a new stack", async () => {
+  const f = await fixture("tr-standalone-install-v2");
+  await assert.rejects(prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f)), /requires a verified v3 runtime Compose pin/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
+});
+
 test("wizard records only selected ledger-bridge topology and egress observations", async () => {
   const f = await fixture();
   const project = "tr-standalone-local-qualification";
@@ -256,6 +279,39 @@ test("wizard records only selected ledger-bridge topology and egress observation
   assert.equal(status.deployment, "pending");
   assert.equal(status.offlineJourneys, "pending");
   assert.equal(status.releaseQualified, false);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.stack.observations.length, 1);
+  assert.ok(Number.isFinite(Date.parse(record.stack.observation.observedAt)));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project }),
+    observeEgress: async () => ({ project, canaryAddress: "192.0.2.1" }),
+  });
+  const repeated = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(repeated.stack.observations.length, 2);
+  assert.equal(repeated.stack.observations[0].egress.scope,
+    "canary HTTPS and DNS on ledger bridge only");
+  assert.equal(repeated.stack.observations[1].egress.canaryAddress, "192.0.2.1");
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => { throw new Error("must not inspect topology"); },
+  }), /cannot change after local-ledger observation/u);
+});
+
+test("interactive wizard stops when stack preparation is deferred", async () => {
+  const f = await fixture();
+  const prompts = [];
+  let closed = false;
+  await runStandaloneSetupInteractive(f.directory, {
+    question: async (prompt) => { prompts.push(prompt); return ""; },
+    close: () => { closed = true; },
+  });
+  assert.deepEqual(prompts, ["New local Compose project (blank to defer): "]);
+  assert.equal(closed, true);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.ledgerObservation, undefined);
+  assert.equal(record.stack, undefined);
 });
 
 test("wizard rejects a changed private stack environment before observation", async () => {
@@ -317,18 +373,21 @@ test("wizard refuses a Compose project with existing containers or persistent re
     { role: 1, existing: `${project}_ledger\n` },
     { role: 2, existing: `${project}_node-data\n` },
     { role: 2, existing: `${project}_indexer-data\n` },
+    { role: 3, existing: "leftover-egress-network\n" },
+    { role: 4, existing: "leftover-wallet-volume\n" },
   ];
   for (const { role: selectedRole, existing } of results) {
     let calls = 0;
     await assert.rejects(assertUnusedStandaloneProject(project, async (_program, args) => {
-      const role = args[0] === "ps" ? 0 : args[0] === "network" ? 1 : 2;
+      const role = args[0] === "ps" ? 0 : args[0] === "network"
+        ? (args.includes("--filter") ? 3 : 1) : (args.includes("--filter") ? 4 : 2);
       calls += 1;
       return { stdout: role === selectedRole ? existing : "" };
     }), /already has/u);
-    assert.equal(calls, 3);
+    assert.equal(calls, 5);
   }
   await assert.doesNotReject(assertUnusedStandaloneProject(project,
-    async (_program, args) => ({ stdout: args[0] === "volume"
+    async (_program, args) => ({ stdout: args[0] === "volume" && !args.includes("--filter")
       ? "other-project_node-data\n" : "" })));
 });
 

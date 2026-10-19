@@ -37,10 +37,16 @@ placeholder with approved exact values:
 
 ```json
 {
-  "format": "tr-standalone-install-v2",
+  "format": "tr-standalone-install-v3",
   "sourceRevision": "<40-character signed source SHA>",
-  "packageManifest": "release-candidate-manifest.json",
-  "artifactDirectory": "artifacts/npm",
+  "packageManifest": "release-manifest.json",
+  "artifactDirectory": "packages",
+  "runtimeCompose": {
+    "path": "compose.yml",
+    "sha256": "<sha256>",
+    "offlinePath": "compose.offline.yml",
+    "offlineSha256": "<sha256>"
+  },
   "images": [
     { "role": "node", "reference": "registry.example/node@sha256:<digest>", "archive": "images/node.tar", "archiveSha256": "<archive sha256>" },
     { "role": "indexer", "reference": "registry.example/indexer@sha256:<digest>", "archive": "images/indexer.tar", "archiveSha256": "<archive sha256>" },
@@ -77,7 +83,8 @@ contract artifacts already present, run `pnpm run artifacts:standalone-install`.
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
-three digest-pinned Compose images, writes the release and install manifests,
+three digest-pinned Compose images, copies and hashes both runtime Compose
+files, writes the release and install manifests,
 and runs the read-only bundle verifier. Retain the resulting directory and
 hashes as candidate bytes for operator approval. If the command fails, the
 partial directory is retained for inspection; use a new signed source commit
@@ -91,6 +98,9 @@ parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
+The v3 verifier also checks both Compose files and requires the base Compose
+image references to match the archived image inventory. V2 bundles remain
+verifiable as historical smoke artifacts but cannot prepare a new wizard stack.
 The verifier also checks each tagless OCI archive's internal manifest digest
 against the approved image reference and its arm64 config bytes. It does not
 establish who approved the reference or prove origin from the registry;
@@ -102,10 +112,10 @@ It rechecks the bundle, loads archives without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
 `TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
-tags. Then use both `deploy/standalone/compose.yml` and
-`deploy/standalone/compose.offline.yml` with `docker compose -f
-deploy/standalone/compose.yml -f deploy/standalone/compose.offline.yml up
---pull never -d --wait`; the overlay sets `pull_policy: never` for every image. Do this
+tags. Then use **both verified bundle copies**, not mutable checkout files,
+with `docker compose -f <verified-bundle>/compose.yml -f
+<verified-bundle>/compose.offline.yml up --pull never -d --wait`; the overlay
+sets `pull_policy: never` for every image. Do this
 on a separate clean host or daemon and capture load output, image IDs, restart
 logs, and denied-egress evidence. A load against this development host, where
 the upstream images are already present, does **not** prove clean offline
@@ -380,7 +390,7 @@ node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
 node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup-directory tr-standalone-local-qualification 39944 38088 36300
 # Review the selected project, loopback ports, and distinct volumes before starting it:
-docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f deploy/standalone/compose.yml config -q
+docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f /absolute/verified-install-bundle/compose.yml config -q
 # After the operator starts the reviewed Compose plan, record live ledger-bridge checks:
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
@@ -404,8 +414,9 @@ node scripts/standalone-setup-wizard.mjs reconcile-committee /absolute/private/s
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
-`prepare-stack` re-verifies the install bundle, requires its pinned image
-references to match the current Compose file, and creates a mode-0600
+`prepare-stack` re-verifies a v3 install bundle, requires both current Compose
+files to match its pinned bytes and its image inventory to match the base
+Compose image references, and creates a mode-0600
 `stack.env` with fresh random indexer credentials and the bundle's checked
 proof-parameter path. Its output and setup record omit the credentials. It
 does not start Compose. It refuses a project with existing containers, ledger
@@ -415,10 +426,14 @@ Export the selected project and
 port variables in the shell when running topology and egress checks; Compose's
 `--env-file` alone does not configure those separate processes. Keep the
 private file for restart and restore, and do not reuse it for another ledger.
-An older verified bundle can be used for development smoke, but only a bundle
-built from the chosen release source revision can support RC qualification.
+An older v2 bundle remains historical smoke evidence, not a new wizard setup
+input. A v3 bundle built from the chosen release source revision is still only
+candidate bytes; it does not by itself support an RC qualification claim.
 `observe-stack` checks the selected live project's topology and canary HTTPS/DNS
-egress behavior, then records only ledger-bridge evidence. It does not approve
+egress behavior, then appends timestamped ledger-bridge evidence. It refuses
+to replace evidence after genesis observation or deployment begins. In the
+interactive wizard, leaving stack preparation blank stops the session before
+the genesis-pin prompt. This step does not approve
 genesis, attest actor egress, verify a contract readback, or qualify a release.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
