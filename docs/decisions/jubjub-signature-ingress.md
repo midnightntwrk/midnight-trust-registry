@@ -19,8 +19,9 @@ the shared record schema does not silently reinterpret all signature strings
 as Jubjub. Strict wire decoding belongs at each Jubjub verification boundary.
 `decodeCanonicalJubjubSignatureHex` rejects missing prefixes, odd/truncated
 lengths, uppercase/non-hex input, out-of-range coordinates, and high response
-scalars. Structured TypeScript verification also returns `false` for malformed
-or off-curve inputs; only the Compact circuit decides governed on-ledger
+scalars. The shared point check also rejects identity and other low-order
+public keys and signature announcements. Structured TypeScript verification
+returns `false` for malformed or off-curve inputs; only the Compact circuit decides governed on-ledger
 actions. Neither TypeScript preflight nor a caller-provided key reference is a
 substitute for that circuit or a pinned registry key.
 
@@ -34,7 +35,10 @@ selection and rejection after rotation in mutation-intent and VP evidence ports.
 An adversarial fixture confirmed that raw Schnorr verification accepted a
 fabricated signature under an identity DID key. The three attestation paths now
 share a prime-order guard; identity, nonidentity low-order, off-curve, and
-high-response inputs are rejected in focused tests. #101 remains open for
+high-response inputs are rejected in focused tests. The same no-secret forgery
+also reached exported proposal-evidence verifier helpers before their public-key
+guards were unified; all issuer, verifier, auditor, maintainer, and recognition
+helpers now use the shared subgroup predicate. #101 remains open for
 full cross-surface final-head review, policy-authorized multi-key selection in
 Compact, and independently authenticated ledger/DID method evidence with
 #67/#79. DID-method membership alone is not registry authorization.

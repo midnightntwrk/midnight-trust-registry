@@ -1,5 +1,6 @@
 import {
   MAX_FIELD,
+  ecAdd,
   ecMul,
   type JubjubPoint,
 } from "@midnight-ntwrk/compact-runtime";
@@ -67,13 +68,23 @@ const isNonIdentityJubjubPoint = (point: JubjubPoint): boolean => {
   }
 };
 
+export const isPrimeOrderJubjubPoint = (point: JubjubPoint): boolean => {
+  if (!isNonIdentityJubjubPoint(point)) return false;
+  try {
+    const orderMultiple = ecAdd(ecMul(point, JUBJUB_ORDER - 1n), point);
+    return orderMultiple.x === 0n && orderMultiple.y === 1n;
+  } catch {
+    return false;
+  }
+};
+
 const isCanonicalJubjubSignature = (signature: TrustRegistryJubjubSignature): boolean =>
   signature !== null
   && signature !== undefined
   && typeof signature.response === "bigint"
   && signature.response >= 0n
   && signature.response < JUBJUB_ORDER
-  && isNonIdentityJubjubPoint(signature.announcement);
+  && isPrimeOrderJubjubPoint(signature.announcement);
 
 export const decodeCanonicalJubjubSignatureHex = (value: string): TrustRegistryJubjubSignature => {
   if (
@@ -168,7 +179,7 @@ export const verifyApplicationEvidenceCommitmentSignature = (
   commitment: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   const digest = applicationEvidenceSignatureDigest(keyIdCommitment, commitment);
   try {
     return verifyJubjubDigest(publicKey, digest, signature);
@@ -223,7 +234,7 @@ export const verifyIssuerProposalEvidenceSignature = (
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(
       publicKey,
@@ -283,7 +294,7 @@ export const verifyRecognitionProposalEvidenceSignature = (
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(
       publicKey,
@@ -343,7 +354,7 @@ export const verifyVerifierProposalEvidenceSignature = (
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(
       publicKey,
@@ -403,7 +414,7 @@ export const verifyAuditorProposalEvidenceSignature = (
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(
       publicKey,
@@ -463,7 +474,7 @@ export const verifyMaintainerProposalEvidenceSignature = (
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(
       publicKey,
@@ -890,7 +901,7 @@ const verifyMaintainerActionDigest = (
   digest: TrustRegistryActionDigest,
   signature: TrustRegistryJubjubSignature,
 ): boolean => {
-  if (!isNonIdentityJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
+  if (!isPrimeOrderJubjubPoint(publicKey) || !isCanonicalJubjubSignature(signature)) return false;
   try {
     return verifyJubjubDigest(publicKey, digest, signature);
   } catch {

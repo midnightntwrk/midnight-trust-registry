@@ -17,8 +17,11 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
   signVerifierProposalEvidenceFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
+  verifyAuditorProposalEvidenceSignature,
   verifyDeploymentBoundMaintainerAction,
   verifyIssuerProposalEvidenceSignature,
+  verifyMaintainerProposalEvidenceSignature,
+  verifyRecognitionProposalEvidenceSignature,
   verifyVerifierProposalEvidenceSignature,
 } from "../signing.js";
 
@@ -191,6 +194,14 @@ describe("application evidence commitment signing", () => {
       response: signature.response,
     })).toString("hex")}`;
     expect(() => decodeCanonicalJubjubSignatureHex(identityAnnouncement)).toThrow(/encoding is invalid/);
+    const lowOrderAnnouncement = `0x${Buffer.from(encodeJubjubSignature({
+      announcement: {
+        x: 0n,
+        y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+      },
+      response: signature.response,
+    })).toString("hex")}`;
+    expect(() => decodeCanonicalJubjubSignatureHex(lowOrderAnnouncement)).toThrow(/encoding is invalid/);
   });
 
   it("fails closed for malformed structured maintainer signatures", () => {
@@ -232,5 +243,21 @@ describe("application evidence commitment signing", () => {
     expect(verifyApplicationEvidenceCommitmentSignature(
       identity, keyIdCommitment, commitment, forged,
     )).toBe(false);
+    const registryId = new Uint8Array(32).fill(1);
+    const lowOrder = {
+      x: 0n,
+      y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+    };
+    for (const verify of [
+      verifyIssuerProposalEvidenceSignature,
+      verifyVerifierProposalEvidenceSignature,
+      verifyAuditorProposalEvidenceSignature,
+      verifyMaintainerProposalEvidenceSignature,
+      verifyRecognitionProposalEvidenceSignature,
+    ]) {
+      expect(verify(identity, registryId, keyIdCommitment, commitment, forged)).toBe(false);
+      expect(verify(lowOrder, registryId, keyIdCommitment, commitment, forged)).toBe(false);
+      expect(verify({ x: 3n, y: 5n }, registryId, keyIdCommitment, commitment, forged)).toBe(false);
+    }
   });
 });
