@@ -410,7 +410,7 @@ docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-stan
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 # Optional: collect the node's untrusted genesis candidate for independent review.
 node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup-directory
-node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/candidate-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/independently-reviewed-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
 # A human reviewer independently checks and signs the exact unsigned draft bytes.
 node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/private/setup-directory/genesis-approval.unsigned.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
@@ -477,6 +477,12 @@ deployment. An independent reviewer must compare the candidate with the
 pinned chain specification through a channel other than this node, approve
 the exact pin and source, and provide a detached signature and public GPG
 fingerprint. Do not treat matching this candidate as independent verification.
+The interactive `run` command offers this collection after `observe-stack`
+only when the operator types `COLLECT`; it then separately asks for an
+independently reviewed pin JSON. Leave that second prompt blank until the
+reviewer has supplied the pin. Re-running collection does not overwrite an
+existing candidate; preserve the first file and investigate any changed node
+observation in a separate evidence record.
 
 `draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
 `reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.

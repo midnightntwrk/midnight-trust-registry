@@ -490,7 +490,7 @@ test("interactive wizard stops before genesis until the prepared stack is observ
     preflight: async () => { throw new Error("must not observe genesis"); },
   }), /Observe the prepared local stack/u);
 
-  const answers = ["OBSERVE STACK", ""];
+  const answers = ["OBSERVE STACK", "", ""];
   let topologyCalled = false;
   await runStandaloneSetupInteractive(f.directory, {
     question: async (prompt) => { prompts.push(prompt); return answers.shift(); },
@@ -504,10 +504,46 @@ test("interactive wizard stops before genesis until the prepared stack is observ
     observeEgress: async () => ({ project, scope: "ledger bridge only" }),
   } });
   assert.equal(topologyCalled, true);
-  assert.equal(prompts.at(-1), "Candidate local genesis pin JSON (blank to stop): ");
+  assert.equal(prompts.at(-1), "Independently reviewed local genesis pin JSON (blank to stop): ");
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration,
     "observed-ledger-bridge-only");
   assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+});
+
+test("interactive wizard collects an untrusted genesis candidate without pinning or approving it", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, preparedInputsMatched: true,
+      verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
+    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const prompts = [];
+  const answers = ["COLLECT", ""];
+  await runStandaloneSetupInteractive(f.directory, {
+    question: async (prompt) => { prompts.push(prompt); return answers.shift(); },
+    close: () => {},
+  }, { candidateObservation: {
+    observeSnapshot: async () => ({ project, sourceRevision,
+      installInventorySha256: record.install.inventorySha256,
+      observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+      finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+      observedAt: "2026-10-20T00:00:00.000Z" }),
+  } });
+  assert.deepEqual(prompts, [
+    "Collect node-reported genesis candidate for independent review? Type COLLECT or leave blank: ",
+    "Independently reviewed local genesis pin JSON (blank to stop): ",
+  ]);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+  const candidate = JSON.parse(await readFile(join(f.directory, "genesis-candidate.untrusted.json"), "utf8"));
+  assert.equal(candidate.status, "untrusted-node-observation-independent-review-required");
+  const after = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(after.ledgerObservation, undefined);
+  assert.equal(after.genesisApproval, undefined);
 });
 
 test("wizard rejects a changed private stack environment before observation", async () => {

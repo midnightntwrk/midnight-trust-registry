@@ -1570,7 +1570,17 @@ export async function runStandaloneSetupInteractive(
         }
         await observeStandaloneStack(directory, dependencies.stackObservation);
       }
-      const pin = await io.question("Candidate local genesis pin JSON (blank to stop): ");
+      const collect = await io.question(
+        "Collect node-reported genesis candidate for independent review? Type COLLECT or leave blank: ",
+      );
+      if (collect === "COLLECT") {
+        console.log(JSON.stringify(await collectStandaloneGenesisCandidate(
+          directory, dependencies.candidateObservation,
+        )));
+      } else if (collect !== "") {
+        throw new Error("Genesis candidate collection requires COLLECT or blank");
+      }
+      const pin = await io.question("Independently reviewed local genesis pin JSON (blank to stop): ");
       if (pin) await observeStandaloneLedger(directory, pin);
     }
     ({ record } = await readRecord(directory));
