@@ -94,7 +94,7 @@ const authorityIsUnsafe = (state: FinalizedRegistryDeploymentImage): boolean =>
   || (state.maintenanceAuthority.committee.length > 0
     && (state.maintenanceAuthority.threshold < 2 || state.maintenanceAuthority.committee.length < 3));
 
-const validateMaintenancePolicy = (policy: PublicRegistryMaintenancePolicy): void => {
+export const validateMaintenancePolicy = (policy: PublicRegistryMaintenancePolicy): void => {
   if (policy.mode === "immutable") return;
   const { verifyingKeys, threshold } = policy;
   if (verifyingKeys.length < 3 || !Number.isSafeInteger(threshold)
@@ -124,6 +124,37 @@ const matchesVerifierKeys = (
   catalog: ReturnType<typeof verifierKeyCatalog>,
 ): boolean => Object.keys(state.verifierKeySha256).sort().join("\0") === catalog.names.join("\0")
   && catalog.names.every((name) => state.verifierKeySha256[name] === catalog.hashes[name]);
+
+export const matchesPinnedRegistryImage = (input: {
+  networkId: string;
+  receipt: PublicRegistryDeploymentReceipt;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  governance: PublicRegistryGovernancePin;
+}, state: FinalizedRegistryDeploymentImage): boolean => {
+  const { networkId, receipt, bootstrap, governance } = input;
+  const catalog = verifierKeyCatalog(input.releaseManifest);
+  return state.networkId === networkId
+    && state.contractAddress === receipt.contractAddress
+    && state.registryIdCommitment === bytes32Hex(bytes32Commitment(bootstrap.registryId))
+    && state.deploymentNetworkIdCommitment === bytes32Hex(bytes32Commitment(networkId))
+    && state.contractVersion === 1n
+    && state.registryDidCommitment === bytes32Hex(bootstrap.registryDidCommitment)
+    && state.governancePolicyCommitment === bytes32Hex(governance.policyCommitment)
+    && state.governancePolicyVersion === governance.policyVersion
+    && state.governanceActionSequence === governance.actionSequence
+    && state.maintainerThreshold === governance.maintainerThreshold
+    && state.activeMaintainerCount === governance.activeMaintainerCount
+    && state.bootstrapMaintainer !== null
+    && state.bootstrapMaintainer.maintainerId === bytes32Hex(bootstrap.maintainerId)
+    && state.bootstrapMaintainer.didCommitment === bytes32Hex(bootstrap.maintainerDidCommitment)
+    && state.bootstrapMaintainer.keyId === bytes32Hex(bootstrap.maintainerKeyId)
+    && state.bootstrapMaintainer.publicKey.x === bootstrap.maintainerPublicKey.x
+    && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
+    && state.bootstrapMaintainer.status === MaintainerStatus.active
+    && state.bootstrapMaintainer.joinedAtSequence === 0n
+    && matchesVerifierKeys(state, catalog);
+};
 
 const contractAssetsPath = resolve(
   dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract/contract"))),
@@ -239,7 +270,6 @@ export async function readPostDeploymentPublicTrustRegistry(input: {
   maintenancePolicy: PublicRegistryMaintenancePolicy;
 }): Promise<PublicRegistryDeploymentReadback> {
   const { network, receipt, bootstrap, governance, maintenancePolicy } = input;
-  const catalog = verifierKeyCatalog(input.releaseManifest);
   validateMaintenancePolicy(maintenancePolicy);
   commitment(governance.policyCommitment, "Governance policy");
   if (governance.policyVersion < 1n || governance.actionSequence < 1n
@@ -261,26 +291,9 @@ export async function readPostDeploymentPublicTrustRegistry(input: {
     return { status: error instanceof FinalizedDeploymentImageInvalidError ? "invalid-image" : "unavailable" };
   }
   if (state === null) return { status: "pending" };
-  const identityMatches = state.networkId === network.networkId
-    && state.contractAddress === receipt.contractAddress
-    && state.registryIdCommitment === bytes32Hex(bytes32Commitment(bootstrap.registryId))
-    && state.deploymentNetworkIdCommitment === bytes32Hex(bytes32Commitment(network.networkId))
-    && state.contractVersion === 1n
-    && state.registryDidCommitment === bytes32Hex(bootstrap.registryDidCommitment)
-    && state.governancePolicyCommitment === bytes32Hex(governance.policyCommitment)
-    && state.governancePolicyVersion === governance.policyVersion
-    && state.governanceActionSequence === governance.actionSequence
-    && state.maintainerThreshold === governance.maintainerThreshold
-    && state.activeMaintainerCount === governance.activeMaintainerCount
-    && state.bootstrapMaintainer !== null
-    && state.bootstrapMaintainer.maintainerId === bytes32Hex(bootstrap.maintainerId)
-    && state.bootstrapMaintainer.didCommitment === bytes32Hex(bootstrap.maintainerDidCommitment)
-    && state.bootstrapMaintainer.keyId === bytes32Hex(bootstrap.maintainerKeyId)
-    && state.bootstrapMaintainer.publicKey.x === bootstrap.maintainerPublicKey.x
-    && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
-    && state.bootstrapMaintainer.status === MaintainerStatus.active
-    && state.bootstrapMaintainer.joinedAtSequence === 0n
-    && matchesVerifierKeys(state, catalog);
+  const identityMatches = matchesPinnedRegistryImage({
+    networkId: network.networkId, receipt, bootstrap, releaseManifest: input.releaseManifest, governance,
+  }, state);
   if (!identityMatches) return { status: "mismatch", state };
   if (authorityIsUnsafe(state)) return { status: "unsafe-maintenance-authority", state };
   return matchesMaintenancePolicy(state, maintenancePolicy)

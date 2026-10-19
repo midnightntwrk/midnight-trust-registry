@@ -63,13 +63,26 @@ include it in diagnostic output.
 
 **Do not call Midnight.js 4.1.1 `replaceAuthority` for this transition.** Its
 published high-level API accepts one `SigningKey` and produces another
-single-key authority. The lower-level Ledger 8 `MaintenanceUpdate` and
-`ReplaceAuthority` types can represent a committee, but this repository does
-not yet provide a reviewed transaction builder, submission/recovery workflow,
-or adversarial tests for that path. The administrator must not substitute a
-manual unreviewed transaction. Issue #213 remains a security/release blocker.
+single-key authority. `preparePublicNetworkCommitteeTransition` now reads a
+genesis-pinned finalized deployment image, checks its identity, governance,
+verifier keys, and initial maintenance authority, and builds a short-lived
+Ledger 8 `ReplaceAuthority` transaction for the approved committee. It returns
+the exact `dataToSign` and a public summary for external custodian review.
+The bootstrap custodian signs only those bytes; `authorize(signature)` verifies
+that signature and returns an unproven transaction without handling the
+private key. Unit tests exercise the Ledger 8 update and rejection cases.
 
-Before executing a future reviewed transition, expand the Trust Registry
+This is **not** a production submission/recovery workflow. The host must
+durably record the approved plan and receipt, recheck finalized governance and
+maintenance state immediately before submission, prove/balance/submit the
+transaction once, durably record the transaction ID, and reconcile ambiguous
+or interrupted submissions read-only before any retry. It must never sign an
+opaque byte string without showing the network, contract address, finalized
+block, current and next counters, committee keys, and threshold. Independent
+human security review and a real Preprod transaction are still required.
+Issue #213 remains a security/release blocker.
+
+Before executing a reviewed transition, expand the Trust Registry
 governance roster to at least three active maintainers under signed governance
 actions, set its approved multi-party threshold, and independently verify the
 finalized governance state. The transition must be bound to the exact contract
