@@ -72,15 +72,31 @@ The bootstrap custodian signs only those bytes; `authorize(signature)` verifies
 that signature and returns an unproven transaction without handling the
 private key. Unit tests exercise the Ledger 8 update and rejection cases.
 
-This is **not** a production submission/recovery workflow. The host must
-durably record the approved plan and receipt, recheck finalized governance and
-maintenance state immediately before submission, prove/balance/submit the
-transaction once, durably record the transaction ID, and reconcile ambiguous
-or interrupted submissions read-only before any retry. It must never sign an
-opaque byte string without showing the network, contract address, finalized
+`submitPublicNetworkCommitteeTransition` re-reads the pinned finalized image,
+verifies the external signature, and uses `submitTxAsync` through a
+`FileMaintenanceTransitionJournal`. Give that journal one stable path per
+deployment, inside a pre-provisioned, private (0700), locally owned directory
+on single-host storage. The adapter will not create that directory. It
+reserves the attempt before
+the SDK proves, balances, or broadcasts; an error or restart leaves the
+reservation in place and **never retries automatically**. If the SDK returns
+a transaction ID, the adapter attempts to retain it in a separate durable
+record; if that write fails, the thrown error carries the returned ID, but a
+process crash at that point can still lose it. The reservation retains the
+intent expiry and reservation time. Every SDK failure, including proving or
+balancing failures, requires read-only reconciliation of the journal and
+independently finalized network state before any operator-approved new
+attempt. Do not delete or rotate the journal merely to bypass the reservation.
+
+This is **not yet a completed production recovery workflow**. The custodian
+and host must durably retain the approved plan, signature provenance, receipt,
+and recovery decision, and must independently verify finality and post-update
+authority before considering the transition complete. The file journal does
+not coordinate multiple hosts or prove that a transaction finalized. Never
+sign opaque bytes without showing the network, contract address, finalized
 block, current and next counters, committee keys, and threshold. Independent
-human security review and a real Preprod transaction are still required.
-Issue #213 remains a security/release blocker.
+human security review and a real Preprod transaction are still required;
+#213 remains a security/release blocker.
 
 Before executing a reviewed transition, expand the Trust Registry
 governance roster to at least three active maintainers under signed governance

@@ -23,6 +23,14 @@ export * from "./public-network-deployment-action-reader.js";
 export * from "./public-network-deployment.js";
 export { preparePublicNetworkCommitteeTransition } from "./public-maintenance-transition.js";
 export type { CommitteeTransitionApproval, PreparedCommitteeTransition } from "./public-maintenance-transition.js";
+export {
+  FileMaintenanceTransitionJournal,
+  MaintenanceTransitionAlreadyReservedError,
+  MaintenanceTransitionJournalInvalidError,
+  MaintenanceTransitionOutcomeUnknownError,
+  submitPublicNetworkCommitteeTransition,
+} from "./public-maintenance-submission.js";
+export type { MaintenanceTransitionJournalEntry } from "./public-maintenance-submission.js";
 export * from "./vc-scope.js";
 export * from "./vc-authority-signer.js";
 export * from "./vc-authority-registration.js";

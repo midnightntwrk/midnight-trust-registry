@@ -119,6 +119,7 @@ describe("public maintenance committee transition", () => {
     expect(plan.threshold).toBe(2);
     expect(plan.currentAuthorityCounter).toBe(0n);
     expect(plan.nextAuthorityCounter).toBe(1n);
+    expect(Date.parse(plan.expiresAt)).toBeGreaterThan(Date.now());
     expect(plan.dataToSign.length).toBeGreaterThan(0);
     const tx = plan.authorize(signData(bootstrapKey, plan.dataToSign));
     expect(tx.serialize().length).toBeGreaterThan(0);

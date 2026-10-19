@@ -44,6 +44,7 @@ export type PreparedCommitteeTransition = {
   threshold: number;
   currentAuthorityCounter: bigint;
   nextAuthorityCounter: bigint;
+  expiresAt: string;
   dataToSign: Uint8Array;
   /** Accepts one externally produced bootstrap signature; private keys never enter this helper. */
   authorize(signature: Signature): UnprovenTransaction;
@@ -114,6 +115,7 @@ export function prepareCommitteeTransitionFromFinalizedImage(
     threshold: maintenancePolicy.threshold,
     currentAuthorityCounter: current.counter,
     nextAuthorityCounter: nextAuthority.counter,
+    expiresAt: expiresAt.toISOString(),
     dataToSign: Uint8Array.from(dataToSign),
     authorize(signature: Signature): UnprovenTransaction {
       if (getNetworkId() !== networkId || Date.now() >= expiresAt.getTime()) {
