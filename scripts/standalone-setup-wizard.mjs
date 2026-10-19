@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
+import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
@@ -266,6 +267,13 @@ export async function approveStandaloneCommittee(
     }
     validateMaintenancePolicy(approval.maintenancePolicy);
     const keys = approval.maintenancePolicy.verifyingKeys;
+    try {
+      new ContractMaintenanceAuthority(
+        keys.map((key) => key.slice(2)), approval.maintenancePolicy.threshold, 1n,
+      );
+    } catch {
+      throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
+    }
     const custodians = approval.custodians;
     if (!Array.isArray(custodians) || custodians.length !== keys.length
       || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)

@@ -338,8 +338,8 @@ after genesis approval. Its exact JSON shape is:
 ```
 
 Replace all placeholders with exact approved values. The signed roster must
-contain at least three distinct canonical public keys, a threshold of at least
-two, and distinct custody roles matched in key order. The 1-of-3 choice is
+contain at least three distinct canonical, Ledger-valid Schnorr public keys,
+a threshold of at least two, and distinct custody roles matched in key order. The 1-of-3 choice is
 **smoke-only** and intentionally fails this release approval step. As with
 genesis, the setup host verifies the detached signature against an
 operator-pinned reviewer public key; the release owner must separately verify

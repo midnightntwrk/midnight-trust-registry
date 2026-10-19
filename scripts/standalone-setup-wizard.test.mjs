@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+
 import {
   approveStandaloneCommittee,
   approveStandaloneGenesis,
@@ -93,7 +95,7 @@ async function approve(f) {
 
 async function committeeDocument(f, overrides = {}) {
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
-  const keys = ["1", "2", "3"].map((value) => `0x${value.repeat(64)}`);
+  const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
   const document = {
     format: "tr-local-committee-approval-v1",
     sourceRevision,
@@ -238,8 +240,13 @@ test("smoke threshold and repeated custody roles cannot become release approval"
   await approve(f);
   await assert.rejects(approveCommittee(f, {
     maintenancePolicy: { mode: "committee", threshold: 1,
-      verifyingKeys: ["1", "2", "3"].map((value) => `0x${value.repeat(64)}`) },
+      verifyingKeys: Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`) },
   }), /multi-party threshold/u);
+  const validKeys = (await committeeDocument(f)).document.maintenancePolicy.verifyingKeys;
+  await assert.rejects(approveCommittee(f, {
+    maintenancePolicy: { mode: "committee", threshold: 2,
+      verifyingKeys: [...validKeys.slice(0, 2), `0x${"f".repeat(64)}`] },
+  }), /ledger cannot use/u);
   const input = await committeeDocument(f);
   await assert.rejects(approveCommittee(f, {
     custodians: input.document.custodians.map((custodian) => ({ ...custodian, holderRole: "same-maintainer" })),
