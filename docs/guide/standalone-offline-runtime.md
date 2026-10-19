@@ -692,6 +692,37 @@ GraphQL `Query` from `127.0.0.1:38088/api/v4/graphql`, and proof-server
 version `8.1.0` from `127.0.0.1:36300/version`. These establish connectivity
 only. Do not leave the relay running during egress-denied actor journeys.
 
+When a local deployment attempt has a reservation but **no submitted receipt**,
+the operator can capture a read-only, node-pinned finalized-chain scan during
+that same temporary relay window:
+
+```sh
+node scripts/scan-local-deployment-attempt.mjs \
+  /absolute/private/approved-deployment-plan.json START_HEIGHT_BEFORE_RESERVATION
+```
+
+Choose a start height whose indexed timestamp precedes the reservation by a
+sufficient margin. The captured finalized head must be at least one hour after
+the reservation; this minimum does not prove that every provider process has
+stopped or every transaction lifetime has elapsed. The
+scanner reads the approved plan and original private reservation, checks their
+source revision and genesis against the live node, captures one finalized head,
+and checks every indexed block hash against a batched node hash query, along
+with the indexer's parent links. **Transaction enumeration comes only from
+the indexer**; the scanner does not decode node block extrinsics to establish
+indexer completeness. It records indexer-reported transaction count and
+contract-deployment candidates, the pending-extrinsic count, and the best and
+finalized heights at scan end so any unscanned newer blocks are visible. The
+range must contain at most 10,000
+blocks; otherwise preserve the attempt and use a separately reviewed archival
+scan. The scanner rejects an existing submitted receipt: use receipt-based
+reconciliation instead. It does not load wallet material, submit a transaction,
+modify a journal, or approve another attempt. An empty result is **not** proof
+that no transaction was ever broadcast, that a later block cannot contain it,
+or that the operator may retry. Independently inspect provider history,
+finality, mempool, and any candidate contract state before a signed recovery
+decision. Stop and remove the relay after collecting the observation.
+
 Run `node scripts/check-standalone-topology.mjs` against the dedicated
 `tr-standalone-local-smoke` project after the offline cold start. It reads
 Docker metadata without changing containers or volumes and fails on extra

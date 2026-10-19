@@ -2032,3 +2032,15 @@ expiry: a new intent window does not invalidate the old signature. Keep the
 signature file under bootstrap custody until the authority counter advances.
 This workflow does not qualify a real local deployment or replace the human
 security and operator gates.
+
+A separate read-only scanner now makes no-receipt deployment investigation
+repeatable. It accepts only an approved local loopback plan and matching
+private reservation, captures the node's finalized head, verifies the node
+genesis and every parent-linked indexed block hash against the node, and
+reports indexer-listed transactions and contract-deployment candidates, node
+head gaps, and pending-extrinsic count. Node hashes anchor the indexed block
+chain, but the node does not independently attest to the indexer's transaction
+enumeration. It refuses a submitted receipt and never authorizes retry. An empty
+finalized range is useful evidence but does not rule out provider ambiguity,
+later inclusion, or a candidate contract outside the observed range; an
+independent operator must still decide recovery.

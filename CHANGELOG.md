@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- add a read-only local deployment-attempt scanner that pins indexed block
+  ancestry to the approved genesis and a captured finalized node head, reports
+  public deployment candidates and pending-extrinsic count, and never treats
+  an empty scan as recovery approval
 - require signed governance approval before retrying a local maintenance
   transition after a crash with no journal; bind the decision to the expired
   attempt and an independently reviewed finalized checkpoint, retain the
