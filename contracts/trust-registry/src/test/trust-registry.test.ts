@@ -2720,6 +2720,7 @@ describe("trust registry contract", () => {
         [duplicateBootstrapAuthorizer],
       ),
     ).toThrow(/duplicate key ID/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(proposeIssuerSequence);
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {
