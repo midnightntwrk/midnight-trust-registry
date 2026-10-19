@@ -15,6 +15,18 @@ Current scope:
 - keep the first service slices file-backed and local-first instead of
   introducing a separate database or runtime persistence layer
 
+`assertLocalLedgerEvidenceMatchesSnapshot` is a building block for the
+separate local-ledger mode tracked in #219. Given a caller-authenticated
+finalized Compact ledger, contract address, and sequence-to-time mapping, it
+checks that candidate issuer, verifier, auditor, recognition, and epoch maps
+are complete, compares represented record fields, and verifies each included
+evidence bundle against its Compact epoch and publication signer. It does not
+authenticate the checkpoint or prove that off-chain metadata, request-scope
+preimages, DID/VC status authority, or a historical archive is complete. The
+current CLI still serves snapshot/workspace sources only; these checks are not
+wired to a release-qualified API mode, and simulator tests are not deployment
+evidence.
+
 Current route set:
 
 - `GET /health`
