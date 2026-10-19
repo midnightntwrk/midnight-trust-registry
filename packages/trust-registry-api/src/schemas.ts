@@ -55,7 +55,7 @@ export const TrustRegistryApiProblemDetailsSchema = z.object({
 
 export const TrustRegistryApiHealthResponseSchema = z.object({
   status: z.literal("ok"),
-  sourceMode: z.enum(["snapshot", "workspace", "memory"]),
+  sourceMode: z.enum(["snapshot", "workspace", "memory", "local-ledger"]),
   generatedAt: TimestampSchema,
   registryId: NonEmptyStringSchema,
 });

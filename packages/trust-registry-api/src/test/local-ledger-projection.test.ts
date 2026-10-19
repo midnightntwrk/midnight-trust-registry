@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +10,7 @@ import {
   collectAuthorizationRecord,
   collectDistinctEpochs,
   collectRecognitionRecord,
+  writeSnapshotToFile,
 } from "@midnight-ntwrk/trust-registry-cli";
 import {
   LocalTrustRegistryIntegrationHarness,
@@ -18,6 +24,8 @@ import {
   assertLocalLedgerEvidenceMatchesSnapshot,
   assertLocalLedgerProjectionMatchesSnapshot,
 } from "../local-ledger-projection.js";
+import { createLocalLedgerBoundSource } from "../local-ledger-source.js";
+import { createTrustRegistryApiServer } from "../server.js";
 
 const sequenceToTimestamp = (sequence: bigint): string =>
   new Date(Date.parse("2026-05-20T00:00:00Z") + Number(sequence) * 60_000).toISOString();
@@ -161,5 +169,67 @@ describe("finalized Compact projection coverage", () => {
     expect(() => assertLocalLedgerEvidenceMatchesSnapshot({ ...input,
       contractAddress: new Uint8Array(32),
     })).toThrow(/Contract address/u);
+  });
+});
+
+describe("local ledger-bound API source", () => {
+  it("re-reads the finalized view for every HTTP query and fails closed", async () => {
+    const { snapshot, ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-ledger-api-"));
+    const snapshotPath = join(directory, "snapshot.json");
+    const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+    let view = {
+      networkId: "undeployed",
+      contractAddress: address,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
+      ledger,
+    };
+    let readCount = 0;
+    let available = true;
+    let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
+    try {
+      await writeSnapshotToFile(snapshotPath, snapshot);
+      const expectedSnapshotSha256 = createHash("sha256").update(await readFile(snapshotPath)).digest("hex");
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256,
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() { readCount += 1; return available ? view : null; } },
+        sequenceToTimestamp,
+      });
+      const localServer = createTrustRegistryApiServer({ source });
+      server = localServer;
+      await new Promise<void>((resolve) => localServer.listen(0, "127.0.0.1", resolve));
+      const bound = localServer.address();
+      if (bound === null || typeof bound === "string") throw new Error("Expected local HTTP listener");
+      const url = `http://127.0.0.1:${bound.port}`;
+      const healthy = await fetch(`${url}/health`);
+      expect(healthy.status).toBe(200);
+      expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
+      expect(readCount).toBe(1);
+      const raw = await readFile(snapshotPath, "utf8");
+      await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await writeFile(snapshotPath, raw);
+      view = { ...view, ledger: { ...ledger, governancePolicyCommitment: new Uint8Array(32).fill(7) } };
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      expect(readCount).toBe(3);
+      view = { ...view, ledger, networkId: "preprod" };
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      view = { ...view, networkId: "undeployed", finalizedBlockHash: `0x${"0".repeat(64)}` };
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      view = { ...view, finalizedBlockHash: `0x${"a".repeat(64)}`,
+        contractAddress: `0x${"b".repeat(64)}` };
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      available = false;
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      expect(readCount).toBe(7);
+    } finally {
+      const localServer = server;
+      if (localServer !== undefined && localServer.listening) {
+        await new Promise<void>((resolve, reject) => localServer.close((error) => error ? reject(error) : resolve()));
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

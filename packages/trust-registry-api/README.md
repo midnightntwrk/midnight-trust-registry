@@ -27,6 +27,19 @@ current CLI still serves snapshot/workspace sources only; these checks are not
 wired to a release-qualified API mode, and simulator tests are not deployment
 evidence.
 
+`createLocalLedgerBoundSource` can be injected into the HTTP server for
+read-only queries. It requires a pinned local-deployment address, a reader that
+authenticates each finalized checkpoint against an independently approved
+genesis, an independently approved SHA-256 digest of the exact snapshot file
+(covering snapshot-only metadata), and a trusted mapping from Compact governance
+sequences to timestamps.
+It re-reads and verifies the entire candidate snapshot for each request and
+fails closed if the view is missing or mismatched, or the file differs from its
+approved digest or the finalized Compact projection. The CLI does not
+construct these trust inputs. This injectable source has only test-double
+coverage so far; it is not proof of a real local-ledger deployment, finalized
+readback, offline actor journey, or 0.1.0 release qualification.
+
 Current route set:
 
 - `GET /health`
