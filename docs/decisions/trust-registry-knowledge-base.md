@@ -2120,3 +2120,23 @@ it against the preserved setup state. The same pinned governance reviewer
 signs both approvals. It is not a substitute for independent receipt review,
 finalized maintenance readback, offline actor journeys, or human security
 approval; an ambiguous no-receipt attempt cannot pass this gate.
+
+The 0.1.0 Helm backlog (#218) depends on a runnable, ledger-backed API image,
+not just Kubernetes templates. The current standalone Compose files start only
+node, indexer, and proof server; no Trust Registry API or portal OCI images are
+built by this repository. The API executable still accepts snapshot/workspace
+files. Two local, unpushed signed slices (`e0e564d`, `844a18e`) provide
+Compact/evidence projection checks and an injectable read-only source that
+requires a trusted finalized local reader and an approved SHA-256 pin of the
+exact snapshot file. They do not supply the CLI's trusted sequence-to-time
+mapping, approved genesis or manifest, live DID/VC/status authority, or a real
+deployed actor path. The source rejects a changed finalized view or modified
+snapshot instead of falling back to file-only data; its simulator/double tests
+are not deployment evidence. Build and review the missing executable images
+and complete #219 before presenting any chart as the offline RC deployment
+path. Chart lint and rendered manifests are necessary but cannot replace
+isolated-cluster deployment, enforced egress denial, finalized readback, or
+restore evidence. The running dedicated ledger bridge is healthy and its
+installation bytes were verified, but its genesis remains a node-reported
+candidate without independent signed approval; no deployment or committee
+transition is recorded in that setup state.
