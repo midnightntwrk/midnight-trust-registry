@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -24,9 +24,13 @@ export function validateStaticImageInput(role, baseImage, platform, outputDirect
     || !["linux/arm64", "linux/amd64"].includes(platform)
     || typeof outputDirectory !== "string" || !outputDirectory.startsWith("/")
     || !REVISION.test(expectedSourceRevision)
-    || !FINGERPRINT.test(approvedSignerFingerprint)
-    || resolve(outputDirectory) === root || resolve(outputDirectory).startsWith(`${root}/`)) {
+    || !FINGERPRINT.test(approvedSignerFingerprint)) {
     throw new Error("Static image build requires a role, digest-pinned base, platform, external output, approved source SHA, and signer fingerprint");
+  }
+  const canonicalOutput = join(realpathSync(dirname(resolve(outputDirectory))), basename(outputDirectory));
+  const canonicalRoot = realpathSync(root);
+  if (canonicalOutput === canonicalRoot || canonicalOutput.startsWith(`${canonicalRoot}/`)) {
+    throw new Error("Static image output must be outside the source checkout");
   }
 }
 
@@ -134,7 +138,7 @@ export async function buildStaticRuntimeImage(input) {
   }, input.expectedSourceRevision, input.approvedSignerFingerprint);
   const trackedPaths = run("git", ["ls-tree", "-r", "--name-only", "-z", revision],
     { capture: true }).split("\0").filter(Boolean);
-  assertNoExportAttributes(run("git", ["check-attr", "-z", "export-ignore", "export-subst",
+  assertNoExportAttributes(run("git", ["check-attr", `--source=${revision}`, "-z", "export-ignore", "export-subst",
     "--", ...trackedPaths], { capture: true }));
   const temporary = await mkdtemp(join(tmpdir(), `tr-static-${input.role}-`));
   try {

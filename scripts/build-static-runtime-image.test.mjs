@@ -26,10 +26,23 @@ test("static image inputs require explicit digest, supported role, platform, and
     ["applicant", base, "linux/amd64", "relative/image", revision, fingerprint],
     ["admin", base, "linux/arm64", "/tmp/image", "wrong", fingerprint],
     ["admin", base, "linux/arm64", "/tmp/image", revision, "wrong"],
-    ["admin", base, "linux/arm64", resolve(fileURLToPath(new URL("..", import.meta.url))),
-      revision, fingerprint],
   ]) {
     assert.throws(() => validateStaticImageInput(...candidate), /digest-pinned base/u);
+  }
+  assert.throws(() => validateStaticImageInput("admin", base, "linux/arm64",
+    resolve(fileURLToPath(new URL("..", import.meta.url))), revision, fingerprint),
+  /outside the source checkout/u);
+});
+
+test("static image output cannot use a symlinked parent inside the checkout", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-static-output-"));
+  try {
+    await symlink(resolve(fileURLToPath(new URL("..", import.meta.url))),
+      join(directory, "source"));
+    assert.throws(() => validateStaticImageInput("admin", base, "linux/arm64",
+      join(directory, "source", "image"), revision, fingerprint), /outside the source checkout/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

@@ -3,7 +3,8 @@
 `build-static-runtime-image.mjs` builds immutable, non-root Node images for the
 admin console and applicant portal. Installation may be online; runtime image
 startup does not install packages or fetch assets. The operator supplies an
-approved digest-pinned Node 24 base image, a fresh absolute output directory,
+approved digest-pinned Node 24 base image, a fresh absolute output directory
+whose parent already exists,
 the expected signed source revision, and its approved OpenPGP signer fingerprint:
 
 ```sh
@@ -15,7 +16,8 @@ The builder requires a clean GPG/DCO-signed source head and checks the signing
 key's fingerprint (not the primary key's fingerprint when a signing subkey is
 used). It exports that exact commit to a temporary directory, installs frozen
 dependencies without lifecycle scripts, and runs the light build without
-reading or writing Turbo caches. This leaves the checkout's generated keys
+reading Turbo caches or using a remote cache. Temporary local cache writes are
+discarded with the export. This leaves the checkout's generated keys
 untouched. It builds only the chosen portal, rejects nonregular static assets,
 and saves an image archive plus a manifest containing the exact source revision,
 base digest, platform, image ID, archive SHA-256, and individual public asset
@@ -25,7 +27,9 @@ excluded from the served image. Preload the archive into
 the isolated cluster's private registry or nodes before denying egress. Pin
 the resulting distributed image by its registry digest, not a local tag or
 image ID. The local archive hash is not a registry digest or proof of runtime
-isolation. Test the exact platform and image bytes before release.
+isolation. `docker save` by image ID produces an untagged archive; after
+`docker load`, tag the verified image ID in the private registry and pin the
+resulting registry digest. Test the exact platform and image bytes before release.
 
 The current portals default to a loopback API URL in the browser and let the
 operator select another local API URL; ingress/TLS and browser-origin policy
