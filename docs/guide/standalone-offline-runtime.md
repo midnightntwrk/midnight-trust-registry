@@ -72,6 +72,18 @@ placeholder with approved exact values:
 }
 ```
 
+From a clean, GPG-signed and DCO-signed source commit with full generated
+contract artifacts already present, run `pnpm run artifacts:standalone-install`.
+The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
+directory; it does not overwrite an existing bundle or rebuild Compact keys.
+It packs ten packages, copies the 18 local proof-parameter files, exports the
+three digest-pinned Compose images, writes the release and install manifests,
+and runs the read-only bundle verifier. Retain the resulting directory and
+hashes as candidate bytes for operator approval. If the command fails, the
+partial directory is retained for inspection; use a new signed source commit
+or a separately reviewed recovery procedure rather than silently replacing
+candidate bytes.
+
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
 the packed contract and hashes each image archive and all 18 required proof
