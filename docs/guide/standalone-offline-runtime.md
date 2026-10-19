@@ -203,8 +203,8 @@ path JSON file with exactly these fields (replace every placeholder):
   "network": {
     "networkId": "undeployed",
     "rpcUrl": "http://127.0.0.1:<checkpoint-port>",
-    "indexerHttpUrl": "http://127.0.0.1:<indexer-port>/graphql",
-    "indexerWsUrl": "ws://127.0.0.1:<indexer-port>/graphql/ws",
+    "indexerHttpUrl": "http://127.0.0.1:<indexer-port>/api/v4/graphql",
+    "indexerWsUrl": "ws://127.0.0.1:<indexer-port>/api/v4/graphql/ws",
     "expectedGenesisHash": "0x<64-character independently approved hash>",
     "allowedHosts": ["127.0.0.1"]
   },
@@ -235,11 +235,38 @@ private journal and finalized local chain, then obtain a human recovery
 decision. The accompanying unit tests mock providers and do not constitute
 local deployment or offline qualification evidence.
 
-The dedicated internal Docker network used in development does not currently
-expose its configured loopback ports to the host on the tested Docker Desktop
-setup. Establish and document a controlled local-only access path before
-running this host CLI; do not attach a public network or claim egress-denied
-runtime from a temporarily connected installation container.
+The dedicated internal Docker network used in development does not expose its
+configured loopback ports to the host on the tested Docker Desktop setup.
+For an **online installation or deployment window only**, run a temporary
+fixed-destination relay using the already pinned node image, then attach that
+one container to the internal ledger network. The relay has no configurable
+upstream destinations. Its host ports are published on `127.0.0.1` only;
+`30944` forwards node RPC, `38088` forwards the indexer, and `36300` forwards
+the proof server. Use those host ports in the operator's approved endpoint
+plan and separately pin the opaque wallet provider endpoints. Stop and remove
+the relay before the offline runtime test; the relay has a `bridge` attachment
+and is **not** evidence of egress denial.
+
+```sh
+docker run -d --name tr-standalone-install-relay --network bridge \
+  --publish 127.0.0.1:30944:30944 \
+  --publish 127.0.0.1:38088:38088 \
+  --publish 127.0.0.1:36300:36300 \
+  --mount type=bind,src="$PWD/deploy/standalone/local-install-relay.py",dst=/relay.py,readonly \
+  --entrypoint /usr/bin/python3 \
+  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
+  /relay.py
+docker network connect tr-standalone-local-smoke_ledger tr-standalone-install-relay
+# Perform approved installation/deployment checks, then remove the access path.
+docker stop tr-standalone-install-relay
+docker rm tr-standalone-install-relay
+node scripts/check-standalone-topology.mjs
+```
+
+The observed host checks returned the pinned genesis from `127.0.0.1:30944`,
+GraphQL `Query` from `127.0.0.1:38088/api/v4/graphql`, and proof-server
+version `8.1.0` from `127.0.0.1:36300/version`. These establish connectivity
+only. Do not leave the relay running during egress-denied actor journeys.
 
 Run `node scripts/check-standalone-topology.mjs` against the dedicated
 `tr-standalone-local-smoke` project after the offline cold start. It reads
