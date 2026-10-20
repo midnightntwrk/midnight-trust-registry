@@ -122,14 +122,25 @@ node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-ou
 ```
 
 The all-or-nothing portal options write a v5 inventory with six image
-archives. Verification checks each portal's OCI index, runtime role, source
-revision, manifest, assets, and archive hash. The offline loader imports
+archives. Bundle verification checks each portal's OCI index, runtime role,
+source revision, asset-list checksum, and archive hash. The offline loader imports
 source-scoped admin and applicant tags without a registry pull. A v5 Helm
 mapping reads these portal identities from the verified bundle rather than
 separate portal manifests. This is install-byte evidence only: neither the
 loader nor the wizard starts the portals or establishes an offline actor
 journey. The approved installer plan must still bind the six running image
 identities and qualify the deployed API and portals with egress denied.
+
+After loading the v5 images, run
+`node scripts/check-standalone-static-assets.mjs <verified-v5-bundle>` on the
+same Docker host. It creates disposable, network-disabled containers without
+starting them, copies each image's `/app/public` tree, and compares every
+regular file, size, and hash against the verified portal manifest. It rejects
+extra files and links. Retain the reported image IDs and inventory hash as
+install readback evidence. This check requires a locally loaded image; it is
+not an offline browser journey, a process-level egress test, or proof of image
+build provenance.
+
 The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and
 the package release revision. The offline loader then imports a source-scoped
