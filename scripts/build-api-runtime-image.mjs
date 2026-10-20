@@ -101,7 +101,7 @@ export async function buildApiRuntimeImage(input) {
     { capture: true }).split("\0").filter(Boolean);
   assertNoExportAttributes(run("git", ["check-attr", `--source=${revision}`, "-z",
     "export-ignore", "export-subst", "--", ...tracked], { capture: true }));
-  const temporary = await mkdtemp(join(tmpdir(), "tr-api-image-"));
+  const temporary = await mkdtemp(join(realpathSync(tmpdir()), "tr-api-image-"));
   try {
     const source = join(temporary, "source");
     const context = join(temporary, "context");
