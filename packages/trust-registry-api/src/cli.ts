@@ -170,6 +170,7 @@ export const runTrustRegistryApiCli = async (
         signaturePath: options.localLedgerSignaturePath!,
         keyringDirectory: options.localLedgerKeyringDirectory!,
         reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+        requireApiRuntimePin: options.clusterBind === true,
       });
       if (options.clusterBind === true) {
         await assertLocalApiImageSourceRevision(plan.sourceRevision);
@@ -184,8 +185,16 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(options.clusterBind === true ? { corsPolicy: "none" as const } : {}),
     ...(options.unsafeDemoMutations === undefined ? {} : { allowUnsafeDemoMutations: options.unsafeDemoMutations }),
   });
+
+  if (options.clusterBind === true) {
+    server.headersTimeout = 10_000;
+    server.requestTimeout = 15_000;
+    server.keepAliveTimeout = 5_000;
+    server.maxConnections = 16;
+  }
 
   server.listen(options.port, options.host);
   await once(server, "listening");

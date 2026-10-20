@@ -33,10 +33,12 @@ describe("API CLI binding", () => {
       ["serve", "--snapshot", "fixture.json", "--host", "0.0.0.0", "--cluster-bind"],
       ["serve", "--workspace", "workspace.json", "--host", "0.0.0.0", "--cluster-bind"],
       [...localArgs, "--host", "::", "--cluster-bind"],
-      [...localArgs, "--host", "0.0.0.0", "--cluster-bind", "--unsafe-demo-mutations"],
     ]) {
-      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow(/--cluster-bind requires/u);
     }
+    expect(() => parseTrustRegistryApiCliArgs([
+      ...localArgs, "--host", "0.0.0.0", "--cluster-bind", "--unsafe-demo-mutations",
+    ])).toThrow(/forbids demo mutations/u);
   });
 
   it("refuses public demo mutation listeners", () => {

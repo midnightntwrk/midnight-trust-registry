@@ -40,13 +40,16 @@ const plan = (root: string) => ({
 });
 
 describe("approved local-ledger API runtime", () => {
-  it("binds cluster exposure to the executing image's immutable source file", async () => {
+  it("compares the approved source revision with a bounded container file", async () => {
     const root = await mkdtemp(join(tmpdir(), "tr-api-image-revision-"));
     try {
       const path = join(root, "source-revision");
       await writeFile(path, `${sourceRevision}\n`);
       await expect(assertLocalApiImageSourceRevision(sourceRevision, path)).resolves.toBeUndefined();
       await expect(assertLocalApiImageSourceRevision("b".repeat(40), path))
+        .rejects.toThrow(/differs from the approved local plan/u);
+      await writeFile(path, `${"b".repeat(40)}\n`);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, path))
         .rejects.toThrow(/differs from the approved local plan/u);
       await writeFile(path, `${sourceRevision}\nextra`);
       await expect(assertLocalApiImageSourceRevision(sourceRevision, path)).rejects.toThrow();
@@ -116,6 +119,8 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .rejects.toThrow(/requires a signed v4 install/u);
       const v4Inventory = JSON.stringify({ format: "tr-standalone-install-v4", sourceRevision,
         apiRuntime: { manifest: "images/api.manifest.json", manifestSha256: "d".repeat(64),
           archive: "images/api.image.tar", archiveSha256: "e".repeat(64) } });
@@ -125,6 +130,8 @@ describe("approved local-ledger API runtime", () => {
       execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
         "--output", signaturePath, planPath]);
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .sourceRevision).toBe(sourceRevision);
       await writeFile(candidate.installInventoryPath, JSON.stringify({
         format: "tr-standalone-install-v4", sourceRevision,
       }));

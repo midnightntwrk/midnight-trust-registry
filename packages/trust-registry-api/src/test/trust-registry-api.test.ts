@@ -84,9 +84,11 @@ const asRecognitionRecord = (
 const startServer = async (
   source: Parameters<typeof createTrustRegistryApiServer>[0]["source"],
   clock?: () => string,
+  corsPolicy?: "public" | "none",
 ): Promise<ServerHarness> => {
   const server = createTrustRegistryApiServer({ source, allowUnsafeDemoMutations: true,
-    ...(clock === undefined ? {} : { clock }) });
+    ...(clock === undefined ? {} : { clock }),
+    ...(corsPolicy === undefined ? {} : { corsPolicy }) });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
@@ -122,6 +124,20 @@ describe("trust registry api", () => {
 
   afterEach(async () => {
     await rm(tempDir, { force: true, recursive: true });
+  });
+
+  it("omits wildcard CORS when the private-listener policy is selected", async () => {
+    const server = await startServer(createInMemorySource(createDemoSnapshot()), undefined, "none");
+    try {
+      for (const method of ["GET", "OPTIONS"]) {
+        const response = await fetch(`${server.url}/health`, {
+          method, headers: { Origin: "https://unapproved.example" },
+        });
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      }
+    } finally {
+      await server.close();
+    }
   });
 
   it("serves a non-cacheable mutation context only for a mutable workspace", async () => {

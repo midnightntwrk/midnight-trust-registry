@@ -147,6 +147,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   signaturePath: string;
   keyringDirectory: string;
   reviewerFingerprint: string;
+  requireApiRuntimePin?: boolean;
 }): Promise<LocalLedgerRuntimePlan> {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
     throw new Error("Local API reviewer signing-key fingerprint must be canonical");
@@ -207,6 +208,9 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
         || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.manifestSha256 ?? "")
         || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.archiveSha256 ?? "")))) {
     throw new Error("Local API runtime source revision disagrees with approved install artifacts");
+  }
+  if (input.requireApiRuntimePin === true && inventory.format !== "tr-standalone-install-v4") {
+    throw new Error("Cluster API binding requires a signed v4 install with an API image pin");
   }
   return plan;
 }

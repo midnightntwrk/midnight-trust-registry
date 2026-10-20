@@ -132,15 +132,18 @@ image build provenance; the release operator must approve the exact archive
 digest and retain the signed build evidence.
 
 For an isolated cluster, the API may listen on `0.0.0.0` only with
-`--cluster-bind` and the complete detached-reviewer-signed local-ledger plan.
-Before opening that listener, it checks `/app/source-revision` from the
-executing API image against the approved plan. Snapshot/workspace modes and
-unsafe demo mutations cannot use this option. The operator must still keep the
-API on a private service, use a read-only image filesystem, allow only
-authorized in-cluster callers through network policy, and separately qualify
-ingress/TLS and finalized ledger reads. The file check is a runtime consistency
-guard, not proof that a reviewed image is running or that the cluster denies
-egress. No chart or cluster qualification is implied by this CLI option.
+`--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
+signed v4 install inventory with an API archive pin. Before opening that
+listener, it checks a file at `/app/source-revision` in the container
+filesystem against the approved plan. The listener has finite HTTP timeouts
+and a 16-connection cap; it does not emit wildcard CORS headers. Snapshot and
+workspace modes and unsafe demo mutations cannot use this option. The operator
+must still keep the API on a private service, use a read-only image filesystem,
+allow only authorized in-cluster callers through network policy, and separately
+qualify ingress/TLS and finalized ledger reads. The file check is a consistency
+guard, not image provenance or proof that the cluster denies egress. No chart
+or cluster qualification is implied by this CLI option.
+
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
