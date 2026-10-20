@@ -45,7 +45,8 @@ async function portalIdentity(manifestPath, role, revision) {
 }
 
 export function verifyHelmImageMapping(bundle, inventory, portals, values, receipt, valuesSha256) {
-  if (!["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(inventory.format)
+  if (!["tr-standalone-install-v4", "tr-standalone-install-v5",
+    "tr-standalone-install-v6"].includes(inventory.format)
     || receipt?.format !== "tr-helm-image-mapping-v1"
     || receipt.sourceRevision !== bundle.sourceRevision
     || receipt.inventorySha256 !== bundle.inventorySha256
@@ -71,9 +72,9 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
     configId: bundle.apiRuntime?.configId,
   });
   for (const role of ["admin", "applicant"]) {
-    const pin = inventory.format === "tr-standalone-install-v5"
+    const pin = ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
       ? inventory.portalRuntimes?.[role] : portals?.[role];
-    const verified = inventory.format === "tr-standalone-install-v5"
+    const verified = ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
       ? bundle.portalRuntimes?.[role] : pin;
     expected.set(role, {
       archiveSha256: pin?.archiveSha256,
@@ -106,12 +107,13 @@ export async function checkHelmImageMapping(paths) {
     throw new Error("Install inventory changed during mapping verification");
   }
   const inventory = JSON.parse(inventoryBytes);
-  if (inventory.format === "tr-standalone-install-v5"
+  if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
     ? paths.adminManifest !== undefined || paths.applicantManifest !== undefined
     : !paths.adminManifest || !paths.applicantManifest) {
     throw new Error("Helm mapping portal-manifest arguments must match the install format");
   }
-  const portals = inventory.format === "tr-standalone-install-v5" ? null : {
+  const portals = ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
+    ? null : {
     admin: await portalIdentity(paths.adminManifest, "admin", bundle.sourceRevision),
     applicant: await portalIdentity(paths.applicantManifest, "applicant", bundle.sourceRevision),
   };

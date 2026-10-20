@@ -222,7 +222,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!["tr-standalone-install-v2", "tr-standalone-install-v3", "tr-standalone-install-v4",
-    "tr-standalone-install-v5"].includes(inventory?.format)
+    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory?.format)
     || !REVISION.test(inventory.sourceRevision)
     || typeof inventory.packageManifest !== "string"
     || typeof inventory.artifactDirectory !== "string"
@@ -235,7 +235,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   let runtimeComposeSha256 = null;
   let runtimeOfflineComposeSha256 = null;
   if (["tr-standalone-install-v3", "tr-standalone-install-v4",
-    "tr-standalone-install-v5"].includes(inventory.format)) {
+    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
     if (inventory.runtimeCompose?.path !== "compose.yml"
       || !SHA256.test(inventory.runtimeCompose.sha256)
       || inventory.runtimeCompose.offlinePath !== "compose.offline.yml"
@@ -289,7 +289,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   let apiRuntime = null;
-  if (["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(inventory.format)) {
+  if (["tr-standalone-install-v4", "tr-standalone-install-v5",
+    "tr-standalone-install-v6"].includes(inventory.format)) {
     if (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
       || inventory.apiRuntime.archive !== "images/api.image.tar"
       || !SHA256.test(inventory.apiRuntime.manifestSha256)
@@ -310,7 +311,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       inventory.sourceRevision), platform: apiManifest.platform };
   }
   let portalRuntimes = null;
-  if (inventory.format === "tr-standalone-install-v5") {
+  if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
     if (Object.keys(inventory.portalRuntimes ?? {}).sort().join("\0") !== "admin\0applicant") {
       throw new Error("Standalone v5 install requires both portal image pins");
     }
@@ -338,6 +339,20 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       portalRuntimes[role] = { ...identity, imageId: manifest.imageId,
         archiveSha256: pin.archiveSha256, platform: manifest.platform };
     }
+  }
+  let installRelay = null;
+  if (inventory.format === "tr-standalone-install-v6") {
+    if (inventory.installRelay?.path !== "install-relay.py"
+      || !SHA256.test(inventory.installRelay.sha256)
+      || inventory.installRelay.imageRole !== "node") {
+      throw new Error("Standalone installation relay pin is missing or malformed");
+    }
+    const relayPath = await regularBundleFile(root, inventory.installRelay.path);
+    if (await sha256(relayPath) !== inventory.installRelay.sha256) {
+      throw new Error("Standalone installation relay bytes disagree with the install pin");
+    }
+    installRelay = { path: relayPath, sha256: inventory.installRelay.sha256,
+      image: verifiedImages.find((image) => image.role === "node") };
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
@@ -371,6 +386,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     images: verifiedImages,
     apiRuntime,
     portalRuntimes,
+    installRelay,
   };
 }
 

@@ -180,13 +180,22 @@ export async function buildStandaloneInstall(options = {}) {
     };
   }
 
+  let installRelay;
+  if (portalRuntimes) {
+    const path = "install-relay.py";
+    copyFileSync(join(root, "deploy/standalone/local-install-relay.py"), join(destination, path),
+      fsConstants.COPYFILE_EXCL);
+    installRelay = { path, sha256: await sha256(join(destination, path)), imageRole: "node" };
+  }
+
   const inventory = {
-    format: portalRuntimes ? "tr-standalone-install-v5"
+    format: portalRuntimes ? "tr-standalone-install-v6"
       : apiRuntime ? "tr-standalone-install-v4" : "tr-standalone-install-v3", sourceRevision,
     packageManifest: "release-manifest.json", artifactDirectory: "packages",
     runtimeCompose, images, proofParameters: { directory: "proof-params", files: proofFiles },
     ...(apiRuntime ? { apiRuntime } : {}),
     ...(portalRuntimes ? { portalRuntimes } : {}),
+    ...(installRelay ? { installRelay } : {}),
   };
   writeFileSync(join(destination, "install-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });

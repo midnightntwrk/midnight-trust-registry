@@ -322,6 +322,39 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
   }
 });
 
+test("v6 pins the installation relay script beside the complete runtime", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services: {}\n");
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    inventory.format = "tr-standalone-install-v6";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    inventory.apiRuntime = await apiImageArchive(root);
+    inventory.portalRuntimes = {
+      admin: await staticImageArchive(root, "admin"),
+      applicant: await staticImageArchive(root, "applicant"),
+    };
+    const relay = Buffer.from("# fixed destination installation relay\n");
+    await writeFile(join(root, "install-relay.py"), relay);
+    inventory.installRelay = { path: "install-relay.py", sha256: sha(relay), imageRole: "node" };
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const verified = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(verified.installRelay.sha256, sha(relay));
+    assert.equal(verified.installRelay.image.reference, reference("node"));
+    await writeFile(join(root, "install-relay.py"), "changed\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay bytes disagree/u);
+    await writeFile(join(root, "install-relay.py"), relay);
+    inventory.installRelay.imageRole = "indexer";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects altered, missing, extra, and symlinked proof parameters", async () => {
   const { root, inventory } = await fixture();
   try {

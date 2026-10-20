@@ -107,8 +107,12 @@ export function checkStandaloneTopology(network, containers, config = standalone
     throw new Error("Dedicated stack must contain exactly three services");
   }
   const attachedIds = Object.keys(network.Containers ?? {}).sort();
-  const serviceIds = containers.map((container) => container.Id).sort();
-  if (attachedIds.length !== SERVICES.length
+  const serviceIds = [...containers.map((container) => container.Id),
+    ...(expected?.installRelayId ? [expected.installRelayId] : [])].sort();
+  if (expected?.installRelayId && expected?.allowUnpublishedHostPorts !== true) {
+    throw new Error("Installation relay requires explicit unpublished-host observation");
+  }
+  if (attachedIds.length !== serviceIds.length
     || attachedIds.some((id, index) => id !== serviceIds[index])) {
     throw new Error("Dedicated ledger network has a missing or extra container attachment");
   }

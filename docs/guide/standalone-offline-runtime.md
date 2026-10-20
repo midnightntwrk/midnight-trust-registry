@@ -121,18 +121,19 @@ source SHA, then run:
 node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
 ```
 
-The all-or-nothing portal options write a v5 inventory with six image
+The all-or-nothing portal options write a v6 inventory with six image
 archives. Bundle verification checks each portal's OCI index, runtime role,
-source revision, asset-list checksum, and archive hash. The offline loader imports
-source-scoped admin and applicant tags without a registry pull. A v5 Helm
+source revision, asset-list checksum, and archive hash, and pins the temporary
+installation relay script by path and SHA-256. The offline loader imports
+source-scoped admin and applicant tags without a registry pull. A v5/v6 Helm
 mapping reads these portal identities from the verified bundle rather than
 separate portal manifests. This is install-byte evidence only: neither the
 loader nor the wizard starts the portals or establishes an offline actor
 journey. The approved installer plan must still bind the six running image
 identities and qualify the deployed API and portals with egress denied.
 
-After loading the v5 images, run
-`node scripts/check-standalone-static-assets.mjs <verified-v5-bundle>` on the
+After loading the v6 images, run
+`node scripts/check-standalone-static-assets.mjs <verified-v6-bundle>` on the
 same Docker host. It creates disposable, network-disabled containers without
 starting them, copies each image's `/app/public` tree, and compares every
 regular file, size, and hash against the verified portal manifest. It rejects
@@ -163,7 +164,7 @@ digest and retain the signed build evidence.
 
 For an isolated cluster, the API may listen on `0.0.0.0` only with
 `--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
-signed v4 or v5 install inventory with an API archive pin. Before opening that
+signed v4, v5, or v6 install inventory with an API archive pin. Before opening that
 listener, it checks a file at `/app/source-revision` in the container
 filesystem against the approved plan. The listener bounds header, request,
 idle-socket, and keep-alive waits and has a 16-connection cap; it does not
@@ -298,9 +299,10 @@ contained empty lists; the host RPC connection failed. Wizard `observe-stack`
 may record this explicitly as `unpublished-install-access-required` after
 checking the private inputs and the isolated bridge. That observation is **not**
 host connectivity, local-ledger deployment, or offline-runtime evidence.
-Wizard genesis observation still requires an effective direct mapping; the
-temporary relay below is connectivity-only until it has its own verified,
-source-pinned installation-access gate. Do not add an egress-capable network
+Wizard genesis observation requires either an effective direct mapping or a
+v6 verified, source-pinned temporary installation relay. Older bundles and
+the existing v3 smoke stack remain connectivity-only through the relay. Do
+not add an egress-capable network
 to the ledger services merely to make the check pass.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
@@ -982,7 +984,7 @@ docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
   --publish 127.0.0.1:40944:30944 \
   --publish 127.0.0.1:48088:38088 \
   --publish 127.0.0.1:46300:36300 \
-  --mount type=bind,src="$PWD/deploy/standalone/local-install-relay.py",dst=/relay.py,readonly \
+  --mount type=bind,src="<verified-v6-bundle>/install-relay.py",dst=/relay.py,readonly \
   --entrypoint /usr/bin/python3 \
   midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
   /relay.py

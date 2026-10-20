@@ -82,23 +82,29 @@ async function fixture(format = "tr-standalone-install-v2") {
   const images = pinnedStandaloneImages(compose.toString("utf8"));
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
     format, packageManifest: "release-manifest.json", images,
-    ...(["tr-standalone-install-v3", "tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format) ? { runtimeCompose: {
+    ...(["tr-standalone-install-v3", "tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { runtimeCompose: {
       path: "compose.yml", sha256: composeSha256,
       offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
     } } : {}),
-    ...(["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format) ? { apiRuntime: {
+    ...(["tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { apiRuntime: {
       manifest: "images/api.manifest.json", manifestSha256: "a".repeat(64),
       archive: "images/api.image.tar", archiveSha256: "b".repeat(64),
     } } : {}),
-    ...(format === "tr-standalone-install-v5" ? { portalRuntimes: {
+    ...(["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { portalRuntimes: {
       admin: { manifest: "images/admin.manifest.json", manifestSha256: "c".repeat(64),
         archive: "images/admin.image.tar", archiveSha256: "d".repeat(64) },
       applicant: { manifest: "images/applicant.manifest.json", manifestSha256: "e".repeat(64),
         archive: "images/applicant.image.tar", archiveSha256: "f".repeat(64) },
+    } } : {}),
+    ...(format === "tr-standalone-install-v6" ? { installRelay: {
+      path: "install-relay.py", sha256: "b".repeat(64), imageRole: "node",
     } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
   await writeFile(join(bundle, "compose.yml"), compose);
   await writeFile(join(bundle, "compose.offline.yml"), offlineCompose);
+  if (format === "tr-standalone-install-v6") {
+    await writeFile(join(bundle, "install-relay.py"), "# fixture relay\n");
+  }
   await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision }));
@@ -113,11 +119,16 @@ async function fixture(format = "tr-standalone-install-v2") {
       acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
     runtimeComposeSha256: format !== "tr-standalone-install-v2" ? composeSha256 : null,
     runtimeOfflineComposeSha256: format !== "tr-standalone-install-v2" ? offlineComposeSha256 : null,
-    apiRuntime: ["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format)
+    apiRuntime: ["tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format)
       ? { imageId: `sha256:${"c".repeat(64)}` } : null,
-    portalRuntimes: format === "tr-standalone-install-v5" ? {
+    portalRuntimes: ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? {
       admin: { imageId: `sha256:${"d".repeat(64)}` },
       applicant: { imageId: `sha256:${"e".repeat(64)}` },
+    } : null,
+    installRelay: format === "tr-standalone-install-v6" ? {
+      path: join(bundle, "install-relay.py"), sha256: "b".repeat(64),
+      image: { role: "node", reference: images.find((image) => image.role === "node").reference,
+        acceptedIds: [`sha256:${images.find((image) => image.role === "node").reference.split("@sha256:")[1]}`] },
     } : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   const keyring = join(root, "reviewer-public-keyring");
@@ -546,6 +557,85 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => observed,
   }), /before recording a genesis pin/u);
+});
+
+test("v6 genesis pin requires the same verified installation relay across preflight", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, relayId: "relay-id",
+    ports: { node: "60944", indexer: "60888", "proof-server": "60630" },
+    relayScriptSha256: "b".repeat(64),
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:60945" }));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => relay,
+    preflight: async () => { throw new Error("must not query wrong port"); },
+  }), /does not match the verified installation relay/u);
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:60944" }));
+  let calls = 0;
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => ({ ...relay, relayId: ++calls === 1 ? "relay-id" : "replacement" }),
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /relay changed during genesis observation/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  const observed = await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async (config, verified, expected) => {
+      assert.equal(config.project, project);
+      assert.equal(verified.installRelay.sha256, "b".repeat(64));
+      assert.equal(expected.requirePrivateInputs, true);
+      return relay;
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  assert.equal(observed.installAccess.relayId, "relay-id");
+  assert.equal(observed.installAccess.installationOnly, true);
+});
+
+test("v6 deployment reservation rejects a changed installation relay", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, relayId: "relay-id",
+    ports: { node: "60944", indexer: "60888", "proof-server": "60630" },
+    relayScriptSha256: "b".repeat(64),
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  const relayRpc = "http://127.0.0.1:60944";
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: relayRpc }));
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => relay,
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  const approval = JSON.parse(await readFile(f.approvalPath, "utf8"));
+  approval.pinSha256 = createHash("sha256").update(await readFile(f.pinPath)).digest("hex");
+  approval.rpcUrl = relayRpc;
+  await writeFile(f.approvalPath, JSON.stringify(approval));
+  await approve(f);
+  const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
+  planDocument.network.rpcUrl = relayRpc;
+  planDocument.network.indexerHttpUrl = "http://127.0.0.1:60888/api/v4/graphql";
+  planDocument.network.indexerWsUrl = "ws://127.0.0.1:60888/api/v4/graphql/ws";
+  await writeFile(f.planPath, JSON.stringify(planDocument));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => ({ ...relay, relayId: "replacement" }),
+    deploy: async () => { throw new Error("must not submit"); },
+  }), /relay changed before deployment reservation/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {

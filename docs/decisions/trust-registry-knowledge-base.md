@@ -2177,3 +2177,13 @@ source-pinned installation path or offline-runtime evidence. Genesis observation
 still requires verified effective host access, so do not deploy until a reviewed
 access path passes that gate. Preserve the existing volumes and private
 candidate evidence meanwhile.
+
+The next complete v6 install-bundle format pins the temporary relay script
+beside the six images and two Compose files. Its read-only verifier checks the
+running relay image, exact Python entrypoint, read-only script mount, allowed
+environment, selected internal bridge plus default bridge, and three effective
+loopback ports. Wizard genesis observation and deployment reservation recheck
+the same relay identity and source-pinned bytes. This is an installation-only
+access path: it must be removed before offline actor and egress qualification.
+The existing v3 smoke bundle lacks this pin and remains unqualified; no v6
+bundle has yet been built or independently approved on the local stack.

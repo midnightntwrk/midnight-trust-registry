@@ -20,6 +20,7 @@ import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
+import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 import { observeStandaloneRestartSnapshot } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
@@ -385,16 +386,6 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     if (record.install.verified?.runtimeComposeSha256 && !record.stack?.observation) {
       throw new Error("Observe the prepared local stack before recording its genesis pin");
     }
-    if (record.install.verified?.runtimeComposeSha256) {
-      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
-      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
-        { ...expectedTopology, allowUnpublishedHostPorts: false });
-      if (current.project !== record.stack.project
-        || current.networkId !== record.stack.observation.topology.networkId
-        || current.internalNetworkOnly !== true) {
-        throw new Error("Current ledger topology disagrees with the recorded stack observation");
-      }
-    }
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
     if (sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed inventory changed since setup verification");
@@ -404,19 +395,60 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     if (pin.sourceRevision !== record.sourceRevision) {
       throw new Error("Genesis pin source revision disagrees with the installed bundle");
     }
-    if (record.install.verified?.runtimeComposeSha256
-      && (pin.rpcUrl !== `http://127.0.0.1:${record.stack.ports.node}`
-        || !Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
-        || pin.allowedHosts[0] !== "127.0.0.1")) {
-      throw new Error("Genesis pin must target the prepared stack's exact loopback RPC endpoint");
+    let installAccess;
+    if (record.install.verified?.runtimeComposeSha256) {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const directUrl = `http://127.0.0.1:${record.stack.ports.node}`;
+      if (!Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
+        || pin.allowedHosts[0] !== "127.0.0.1") {
+        throw new Error("Genesis pin must allow only the prepared loopback host");
+      }
+      if (pin.rpcUrl === directUrl) {
+        const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+          { ...expectedTopology, allowUnpublishedHostPorts: false });
+        if (current.project !== record.stack.project
+          || current.networkId !== record.stack.observation.topology.networkId
+          || current.internalNetworkOnly !== true) {
+          throw new Error("Current ledger topology disagrees with the recorded stack observation");
+        }
+        installAccess = { kind: "effective-direct-loopback", networkId: current.networkId };
+      } else {
+        if (!record.install.verified.installRelay) {
+          throw new Error("Genesis pin must target the prepared stack's exact loopback RPC endpoint");
+        }
+        const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+          config, record.install.verified, expectedTopology);
+        if (current.project !== record.stack.project
+          || current.networkId !== record.stack.observation.topology.networkId
+          || current.topology?.internalNetworkOnly !== true
+          || current.topology?.hostPortAccess !== "unpublished-install-access-required"
+          || pin.rpcUrl !== `http://127.0.0.1:${current.ports?.node}`) {
+          throw new Error("Genesis pin does not match the verified installation relay");
+        }
+        installAccess = { kind: current.kind, networkId: current.networkId,
+          relayId: current.relayId, ports: current.ports,
+          relayScriptSha256: current.relayScriptSha256, installationOnly: true };
+      }
     }
     const observation = await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
+    if (installAccess?.kind === "standalone-install-relay-observation") {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.relayId !== installAccess.relayId
+        || current.networkId !== installAccess.networkId
+        || JSON.stringify(current.ports) !== JSON.stringify(installAccess.ports)
+        || current.relayScriptSha256 !== installAccess.relayScriptSha256) {
+        throw new Error("Installation relay changed during genesis observation");
+      }
+    }
     record.ledgerObservation = {
       pinSha256: sha256(pinBytes),
       expectedGenesisHash: pin.expectedGenesisHash,
       rpcUrl: pin.rpcUrl,
       allowedHosts: pin.allowedHosts,
       observation,
+      ...(installAccess ? { installAccess } : {}),
     };
     await writeRecord(root, record);
     return record.ledgerObservation;
@@ -796,6 +828,19 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (verified.sourceRevision !== record.sourceRevision
       || sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed bundle changed since setup verification");
+    }
+    const approvedAccess = record.ledgerObservation.installAccess;
+    if (approvedAccess?.kind === "standalone-install-relay-observation") {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const live = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, verified, expectedTopology);
+      if (live.relayId !== approvedAccess.relayId
+        || live.networkId !== approvedAccess.networkId
+        || live.relayScriptSha256 !== approvedAccess.relayScriptSha256
+        || JSON.stringify(live.ports) !== JSON.stringify(approvedAccess.ports)
+        || plan.network.rpcUrl !== `http://127.0.0.1:${live.ports.node}`) {
+        throw new Error("Verified installation relay changed before deployment reservation");
+      }
     }
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));

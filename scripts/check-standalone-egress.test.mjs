@@ -183,7 +183,7 @@ test("fails if the ledger bridge is replaced during the egress probe", async () 
   }), /identity was not observed/u);
 });
 
-test("standalone offline probe requires a verified v3/v4/v5 bundle", async () => {
+test("standalone offline probe requires a verified v3-v6 bundle", async () => {
   const sourceRevision = "a".repeat(40);
   const images = [{ role: "node", acceptedIds: [`sha256:${"b".repeat(64)}`] },
     { role: "indexer" }, { role: "proof-server" }];
@@ -197,7 +197,7 @@ test("standalone offline probe requires a verified v3/v4/v5 bundle", async () =>
   assert.equal(expected.composeFiles.length, 2);
   await assert.rejects(verifiedOfflineEgressTopology(".", async () => ({
     sourceRevision, images, runtimeComposeSha256: null,
-  })), /verified v3\/v4\/v5/u);
+  })), /verified v3-v6/u);
 });
 
 test("removes only its own probe container after a Docker startup failure", async () => {
