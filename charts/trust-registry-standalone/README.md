@@ -98,6 +98,57 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    not a weakened match. The exact Kubernetes, CRI runtime, and `crictl`
    versions remain unqualified until a real cluster run. Repeat after
    restart, replacement-node scheduling, or restore.
+   To check the *approved* node set as one evidence package, export the live
+   eligible arm64 node inventory from the intended cluster and have an
+   independent reviewer approve the complete set. Record the cluster identity
+   and inventory evidence in `clusterReference` and `reviewedReference`.
+   Sign the exact JSON bytes of an approved scope with a detached OpenPGP
+   signature. This example describes the schema, not actual cluster evidence:
+
+   ```json
+   {
+     "format": "tr-helm-approved-node-scope-v1",
+     "sourceRevision": "<40-character source SHA>",
+     "mappingSha256": "<SHA-256 of exact signed mapping.json bytes>",
+     "namespace": "trust-registry",
+     "releaseName": "tr-rc",
+     "eligibleNodeSelection": "kubernetes.io/arch=arm64",
+     "clusterReference": "<reviewed cluster identity and inventory record>",
+     "approvedAt": "<reviewer approval timestamp>",
+     "reviewedReference": "<independent reviewer approval record>",
+     "nodes": [
+       {
+         "name": "<Kubernetes node name>",
+         "collectorHost": "<collector machine hostname>",
+         "imageEndpoint": "unix:///run/containerd/containerd.sock"
+       }
+     ]
+   }
+   ```
+
+   Place the private node receipts in a dedicated directory named exactly
+   `node-<Kubernetes node name>.json`. Put the mapping preflight input paths
+   in `preflight-paths.json` with fields `bundleRoot`, `adminManifest`,
+   `applicantManifest`, `valuesPath`, `receiptPath`, `signaturePath`,
+   `keyringPath`, and `signerFingerprint`, all pointing to the same approved
+   install materials. Run:
+
+   ```sh
+   node scripts/check-helm-cri-fleet.mjs \
+     <preflight-paths.json> <approved-node-scope.json> <scope.sig> \
+     <scope-reviewer-keyring> <SCOPE_REVIEWER_FINGERPRINT> <receipts-directory>
+   ```
+
+   This re-runs the signed archive-to-values mapping preflight, verifies the
+   scope signature, and rejects missing, extra, duplicate, non-regular, or
+   identity-mismatched node receipts. It reports hashes for the scope and each
+   receipt so the operator can sign and retain the checked evidence set. It
+   does **not** discover eligible nodes, authenticate the machine that made a
+   receipt, verify the external inventory record, or prove pod execution,
+   egress denial, or offline operation. If a new eligible node is added or a
+   node is replaced, approve a new scope and recollect its evidence. Keep
+   the RC gate open until the real-cluster install and offline actor journeys
+   are independently reviewed.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
