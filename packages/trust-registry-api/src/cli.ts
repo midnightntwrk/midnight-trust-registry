@@ -193,6 +193,7 @@ export const runTrustRegistryApiCli = async (
     server.headersTimeout = 10_000;
     server.requestTimeout = 15_000;
     server.keepAliveTimeout = 5_000;
+    server.timeout = 20_000;
     server.maxConnections = 16;
   }
 

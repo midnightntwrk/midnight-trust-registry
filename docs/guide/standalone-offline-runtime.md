@@ -135,8 +135,10 @@ For an isolated cluster, the API may listen on `0.0.0.0` only with
 `--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
 signed v4 install inventory with an API archive pin. Before opening that
 listener, it checks a file at `/app/source-revision` in the container
-filesystem against the approved plan. The listener has finite HTTP timeouts
-and a 16-connection cap; it does not emit wildcard CORS headers. Snapshot and
+filesystem against the approved plan. The listener bounds header, request,
+idle-socket, and keep-alive waits and has a 16-connection cap; it does not
+emit wildcard CORS headers. These limits do not cancel a stalled indexer
+provider call, which remains a runtime resilience and qualification gate. Snapshot and
 workspace modes and unsafe demo mutations cannot use this option. The operator
 must still keep the API on a private service, use a read-only image filesystem,
 allow only authorized in-cluster callers through network policy, and separately

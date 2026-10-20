@@ -138,7 +138,7 @@ export async function assertLocalApiImageSourceRevision(
   }
   const bytes = await boundedFile(path, 41);
   if (bytes.toString("utf8") !== `${expectedRevision}\n`) {
-    throw new Error("Executing API image source revision differs from the approved local plan");
+    throw new Error("Container source-revision file differs from the approved local plan");
   }
 }
 
