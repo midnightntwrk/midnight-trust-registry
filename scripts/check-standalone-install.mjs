@@ -332,7 +332,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       validateStaticImageManifest(manifest, role, inventory.sourceRevision, pin.archiveSha256);
       const identity = staticImageIdentityFromArchive(archivePath, role,
         inventory.sourceRevision, true);
-      if (manifest.imageId !== identity.acceptedIds.at(-1)) {
+      if (manifest.imageId !== identity.topDigest) {
         throw new Error(`${role} portal archive OCI identity disagrees with its manifest`);
       }
       portalRuntimes[role] = { ...identity, imageId: manifest.imageId,

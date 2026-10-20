@@ -53,13 +53,17 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
     throw new Error(`${role} image archive config hash mismatch`);
   }
   const config = JSON.parse(configBytes);
+  const environment = config?.config?.Env;
   if (config?.os !== "linux" || config.architecture !== "arm64"
     || config.config?.Labels?.["org.opencontainers.image.revision"] !== revision
     || config.config?.User !== "1000:1000"
     || config.config?.WorkingDir !== "/app"
     || (config.config?.Entrypoint != null && config.config.Entrypoint.length !== 0)
-    || !config.config?.Env?.includes(`TR_STATIC_ROLE=${role}`)
-    || (requireOci && (config.config.Env.some((entry) => typeof entry !== "string"
+    || !Array.isArray(environment)
+    || environment.filter((entry) => typeof entry === "string"
+      && entry.startsWith("TR_STATIC_ROLE=")).length !== 1
+    || !environment.includes(`TR_STATIC_ROLE=${role}`)
+    || (requireOci && (environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
       || config.config.Healthcheck != null || config.config.OnBuild != null))
     || JSON.stringify(config.config?.Cmd)
@@ -92,10 +96,13 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
     if (candidates.length !== 1 || !IMAGE_ID.test(candidates[0].digest)
       || (requireOci && (top.annotations !== undefined
         || candidates[0].annotations !== undefined
+        || top.manifests.filter((entry) => entry !== candidates[0]).length > 1
         || top.manifests.some((entry) => entry !== candidates[0]
           && (entry.platform?.os !== "unknown" || entry.platform?.architecture !== "unknown"
             || entry.annotations?.["vnd.docker.reference.type"] !== "attestation-manifest"
-            || entry.annotations?.["vnd.docker.reference.digest"] !== candidates[0].digest))))) {
+            || entry.annotations?.["vnd.docker.reference.digest"] !== candidates[0].digest
+            || Object.keys(entry.annotations).sort().join(",")
+              !== "vnd.docker.reference.digest,vnd.docker.reference.type"))))) {
       throw new Error(`${role} OCI index does not select one arm64 image`);
     }
     imageDigest = candidates[0].digest;
@@ -111,7 +118,7 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
         `blobs/sha256/${layer.digest.slice(7)}`))))) {
     throw new Error(`${role} OCI image manifest disagrees with the Docker config`);
   }
-  return { configId: `sha256:${configDigest}`,
+  return { configId: `sha256:${configDigest}`, topDigest,
     acceptedIds: [...new Set([...acceptedIds, imageDigest, topDigest])] };
 }
 

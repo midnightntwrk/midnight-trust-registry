@@ -126,6 +126,24 @@ test("static archive config ID is checked against runtime revision and role", as
     });
     assert.throws(() => staticImageIdentityFromArchive(archive, "applicant", revision), /runtime/u);
     assert.throws(() => staticImageIdentityFromArchive(archive, "admin", "f".repeat(40)), /runtime/u);
+    const duplicateRole = Buffer.from(JSON.stringify({ os: "linux", architecture: "arm64",
+      config: { Labels: { "org.opencontainers.image.revision": revision },
+        User: "1000:1000", WorkingDir: "/app",
+        Env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"],
+        Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"] } }));
+    const duplicateDigest = createHash("sha256").update(duplicateRole).digest("hex");
+    await writeFile(join(root, "blobs", "sha256", duplicateDigest), duplicateRole);
+    await writeFile(join(root, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${duplicateDigest}`, RepoTags: null,
+    }]));
+    const duplicateArchive = join(root, "duplicate.tar");
+    execFileSync("tar", ["-cf", duplicateArchive, "-C", root, "manifest.json",
+      `blobs/sha256/${duplicateDigest}`]);
+    assert.throws(() => staticImageIdentityFromArchive(duplicateArchive, "admin", revision),
+      /runtime/u);
+    await writeFile(join(root, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${digest}`, RepoTags: null,
+    }]));
     const imageManifest = Buffer.from(JSON.stringify({ schemaVersion: 2,
       config: { digest: `sha256:${digest}` }, layers: [] }));
     const imageDigest = createHash("sha256").update(imageManifest).digest("hex");
@@ -141,6 +159,7 @@ test("static archive config ID is checked against runtime revision and role", as
       `blobs/sha256/${digest}`, `blobs/sha256/${imageDigest}`, `blobs/sha256/${indexDigest}`]);
     assert.deepEqual(staticImageIdentityFromArchive(ociArchive, "admin", revision), {
       configId: `sha256:${digest}`,
+      topDigest: `sha256:${indexDigest}`,
       acceptedIds: [`sha256:${digest}`, `sha256:${imageDigest}`, `sha256:${indexDigest}`],
     });
     await writeFile(join(root, "index.json"), "{invalid-json");

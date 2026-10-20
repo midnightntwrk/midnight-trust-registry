@@ -106,6 +106,11 @@ export async function checkHelmImageMapping(paths) {
     throw new Error("Install inventory changed during mapping verification");
   }
   const inventory = JSON.parse(inventoryBytes);
+  if (inventory.format === "tr-standalone-install-v5"
+    ? paths.adminManifest !== undefined || paths.applicantManifest !== undefined
+    : !paths.adminManifest || !paths.applicantManifest) {
+    throw new Error("Helm mapping portal-manifest arguments must match the install format");
+  }
   const portals = inventory.format === "tr-standalone-install-v5" ? null : {
     admin: await portalIdentity(paths.adminManifest, "admin", bundle.sourceRevision),
     applicant: await portalIdentity(paths.applicantManifest, "applicant", bundle.sourceRevision),

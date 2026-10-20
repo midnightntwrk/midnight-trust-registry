@@ -81,7 +81,8 @@ async function staticImageArchive(root, role, options = {}) {
   await mkdir(join(source, "blobs/sha256"), { recursive: true });
   const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
     Labels: { "org.opencontainers.image.revision": options.labelRevision ?? revision },
-    User: "1000:1000", WorkingDir: "/app", Env: [`TR_STATIC_ROLE=${role}`],
+    User: "1000:1000", WorkingDir: "/app",
+    Env: options.env ?? [`TR_STATIC_ROLE=${role}`],
     Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
   } });
   const configId = sha(config);
@@ -89,7 +90,8 @@ async function staticImageArchive(root, role, options = {}) {
   const imageDigest = sha(image);
   const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{
     digest: `sha256:${imageDigest}`, platform: { os: "linux", architecture: "arm64" },
-  }] });
+  }, ...(options.extraPlatform ? [{ digest: `sha256:${imageDigest}`,
+    platform: { os: "linux", architecture: "amd64" } }] : [])] });
   const imageId = `sha256:${sha(imageIndex)}`;
   await writeFile(join(source, "blobs/sha256", configId), config);
   await writeFile(join(source, "blobs/sha256", imageDigest), image);
@@ -305,6 +307,16 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
     });
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /OCI index is malformed/u);
+    for (const options of [
+      { env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"] },
+      { env: ["TR_STATIC_ROLE=admin", "NODE_OPTIONS=--import=/tmp/evil.mjs"] },
+      { extraPlatform: true },
+    ]) {
+      inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", options);
+      await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+      await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
+        options.extraPlatform ? /OCI index/u : /runtime/u);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
