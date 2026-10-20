@@ -156,6 +156,29 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    not from `preflight-paths.json`. The signed scope's namespace and release
    name must be independently matched to the actual Helm install invocation;
    this checker does not observe the cluster release.
+   After installation, use an explicitly selected, reviewed kubeconfig and
+   context for a read-only Kubernetes workload observation:
+
+   ```sh
+   node scripts/observe-helm-runtime.mjs \
+     <preflight-paths.json> <approved-node-scope.json> <scope.sig> \
+     <scope-reviewer-keyring> <SCOPE_REVIEWER_FINGERPRINT> \
+     <receipts-directory> <absolute-kubeconfig> <kube-context>
+   ```
+
+   This first repeats the signed fleet check, then reads the arm64 Node list
+   and this release's Deployments, ReplicaSets, and Pods from the selected
+   Kubernetes API. It fails if the live arm64 node names differ from the
+   approved scope, any expected workload is absent or unready, a Pod is not
+   owned through the expected ReplicaSet and Deployment, or a running image
+   reference or pull policy differs from the approved mapping. Capture the
+   output and the raw Kubernetes API responses through an access-controlled
+   evidence channel, along with the kubeconfig trust anchor, context, cluster
+   identity, RBAC grants, time, and Helm revision. The command does not
+   authenticate the reviewer-approved `clusterReference` against the API,
+   prove image bytes executed from the CRI store, verify PVC contents,
+   measure runtime egress, or exercise the local ledger or actor journeys.
+   A passing synthetic test is not live qualification evidence.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
