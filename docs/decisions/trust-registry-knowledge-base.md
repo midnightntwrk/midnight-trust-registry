@@ -2124,24 +2124,25 @@ approval; an ambiguous no-receipt attempt cannot pass this gate.
 The 0.1.0 Helm backlog (#218) depends on a runnable, ledger-backed API image,
 not just Kubernetes templates. The current standalone Compose files start only
 node, indexer, and proof server. A local, unpushed signed slice through
-`bbee90e` now builds two static portal OCI archives from a clean signed export,
+`bbee90e` builds two static portal OCI archives from a clean signed export,
 records asset and archive hashes, and avoids remote Turbo cache reads/writes.
 Both portal roles passed read-only, network-isolated startup at `b0f3844`;
-admin rebuilt from `bbee90e`. This proves packaging behavior, not cluster
-qualification or offline actor journeys. There is still no Trust Registry API
-OCI image, and the API executable still accepts snapshot/workspace
-files. Two local, unpushed signed slices (`e0e564d`, `844a18e`) provide
-Compact/evidence projection checks and an injectable read-only source that
-requires a trusted finalized local reader and an approved SHA-256 pin of the
-exact snapshot file. They do not supply the CLI's trusted sequence-to-time
-mapping, approved genesis or manifest, live DID/VC/status authority, or a real
-deployed actor path. The source rejects a changed finalized view or modified
-snapshot instead of falling back to file-only data; its simulator/double tests
-are not deployment evidence. Build and review the missing executable images
-and complete #219 before presenting any chart as the offline RC deployment
-path. Chart lint and rendered manifests are necessary but cannot replace
-isolated-cluster deployment, enforced egress denial, finalized readback, or
-restore evidence. The running dedicated ledger bridge is healthy and its
-installation bytes were verified, but its genesis remains a node-reported
-candidate without independent signed approval; no deployment or committee
-transition is recorded in that setup state.
+admin rebuilt from `bbee90e`. A separate signed local API-image candidate at
+`a5484f7` built an arm64 OCI archive and passed GPG and API-import checks in a
+read-only, network-disabled container. Independent review found its legacy
+deployment could re-resolve dependencies and published DID proving keys were
+still included; that archive is not a release candidate. A corrected builder
+is under local validation. Packaging checks do not prove
+cluster qualification or offline actor journeys. The CLI now has a separate
+reviewer-signed read-only local-ledger mode, but its tests use simulator or
+reader doubles. The indexer's Compact state lacks state-root authentication,
+the signed governance timestamp map is not independently derived from the
+chain, and the API image has not been bound to a first-run install inventory.
+No live DID/VC/status authority or deployed actor path is established.
+Complete #219 and the real isolated-cluster qualification before presenting a
+chart as the offline RC deployment path. Chart lint and rendered manifests
+cannot replace enforced egress denial, finalized readback, or restore evidence.
+The running dedicated ledger bridge is healthy and its installation bytes
+were verified, but its genesis remains a node-reported candidate without
+independent signed approval; no deployment or committee transition is recorded
+in that setup state.

@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream, realpathSync } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,20 +69,83 @@ export async function assertLightApiPayload(directory) {
       throw new Error(`API runtime requires a regular file: ${path}`);
     }
   }
-  const contract = join(api, "node_modules/@midnight-ntwrk/trust-registry-contract/dist/managed/trust-registry");
-  for (const forbidden of ["keys", "zkir"]) {
-    try {
-      await lstat(join(contract, forbidden));
-    } catch (error) {
-      if (error.code === "ENOENT") continue;
-      throw error;
-    }
-    throw new Error(`API runtime must not contain proving artifacts: ${forbidden}`);
-  }
   const topLevel = await readdir(api);
   if (topLevel.includes("src") || topLevel.includes("test")) {
     throw new Error("API runtime must not ship source or tests");
   }
+}
+
+export async function stripPublishedDidProofArtifacts(directory) {
+  const packageRoot = join(directory, "app/node_modules/@midnight-ntwrk/midnight-did-contract");
+  const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+  if (manifest.name !== "@midnight-ntwrk/midnight-did-contract" || manifest.version !== "0.7.0") {
+    throw new Error("Unexpected DID contract package; review proof-artifact exclusion before building");
+  }
+  const managed = join(packageRoot, "dist/managed/did");
+  for (const name of ["keys", "zkir"]) {
+    if (!(await lstat(join(managed, name))).isDirectory()) {
+      throw new Error(`Expected DID proof-artifact directory is missing: ${name}`);
+    }
+    await rm(join(managed, name), { recursive: true });
+  }
+}
+
+export async function apiPayloadInventory(directory) {
+  const app = await realpath(join(directory, "app"));
+  const records = [];
+  async function walk(path, prefix) {
+    for (const entry of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const absolute = join(path, entry.name);
+      const stat = await lstat(absolute);
+      if (stat.isDirectory()) {
+        if (["keys", "zkir"].includes(entry.name)) {
+          throw new Error(`API image contains a proving-artifact directory: ${relative}`);
+        }
+        await walk(absolute, relative);
+      } else if (stat.isFile()) {
+        if (/\.(?:prover|verifier|bzkir)$/u.test(entry.name)) {
+          throw new Error(`API image contains a proving artifact: ${relative}`);
+        }
+        records.push({ path: relative, size: stat.size, sha256: await fileSha256(absolute) });
+      } else if (stat.isSymbolicLink()) {
+        const target = await readlink(absolute);
+        const resolved = await realpath(absolute);
+        if (!resolved.startsWith(`${app}/`)) {
+          throw new Error(`API image contains an external link: ${relative}`);
+        }
+        records.push({ path: relative, link: target });
+      } else {
+        throw new Error(`API image contains an unsupported file: ${relative}`);
+      }
+    }
+  }
+  await walk(app, "");
+  return { fileCount: records.length,
+    sha256: createHash("sha256").update(JSON.stringify(records)).digest("hex") };
+}
+
+export async function assertArchiveMatchesCommit(source, treeEntries) {
+  const entries = treeEntries.split("\0").filter(Boolean);
+  if (entries.length === 0) throw new Error("Signed source tree is empty");
+  for (const entry of entries) {
+    const match = /^(100644|100755|120000) blob ([0-9a-f]{40})\t(.+)$/us.exec(entry);
+    if (!match) throw new Error("Signed source tree contains an unsupported entry");
+    const [, mode, expected, relative] = match;
+    const path = join(source, relative);
+    const stat = await lstat(path);
+    if (mode === "120000" ? !stat.isSymbolicLink() : !stat.isFile()) {
+      throw new Error(`Source archive entry type differs from signed blob: ${relative}`);
+    }
+    if (mode !== "120000" && Boolean(stat.mode & 0o111) !== (mode === "100755")) {
+      throw new Error(`Source archive executable mode differs from signed tree: ${relative}`);
+    }
+    const bytes = mode === "120000" ? Buffer.from(await readlink(path)) : await readFile(path);
+    const hash = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+    if (hash !== expected) throw new Error(`Source archive bytes differ from signed blob: ${relative}`);
+  }
+  return entries.length;
 }
 
 export async function buildApiRuntimeImage(input) {
@@ -110,15 +173,23 @@ export async function buildApiRuntimeImage(input) {
     const archive = join(temporary, "source.tar");
     run("git", ["archive", "--format=tar", "--output", archive, revision]);
     run("tar", ["-xf", archive, "-C", source]);
+    await assertArchiveMatchesCommit(source,
+      run("git", ["ls-tree", "-r", "-z", revision], { capture: true }));
     const env = cleanBuildEnvironment();
     run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source, env });
     run("pnpm", ["exec", "turbo", "run", "build:light", "--filter",
       "@midnight-ntwrk/trust-registry-api", "--cache=local:w,remote:"], { cwd: source, env });
-    run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-api", "deploy", "--legacy",
-      "--prod", join(context, "app")], { cwd: source, env });
+    run("pnpm", ["--config.inject-workspace-packages=true", "--filter",
+      "@midnight-ntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
+      "--ignore-scripts",
+      join(context, "app")], { cwd: source, env });
+    await stripPublishedDidProofArtifacts(context);
     await assertLightApiPayload(context);
     await writeFile(join(context, "app", "source-revision"), `${revision}\n`, { flag: "wx", mode: 0o444 });
     await cp(join(source, "deploy/runtime/Dockerfile.api"), join(context, "Dockerfile.api"));
+    const payload = await apiPayloadInventory(context);
+    const lockfileSha256 = await fileSha256(join(source, "pnpm-lock.yaml"));
+    const dockerfileSha256 = await fileSha256(join(context, "Dockerfile.api"));
     const tag = `tr-api:sha-${revision.slice(0, 12)}-${input.platform.slice(6)}`;
     const iidFile = join(temporary, "image-id");
     run("docker", ["build", "--load", "--iidfile", iidFile, "--platform", input.platform,
@@ -142,6 +213,7 @@ export async function buildApiRuntimeImage(input) {
     run("docker", ["save", "--output", archivePath, imageId]);
     const metadata = { format: "tr-api-runtime-image-v1", sourceRevision: revision,
       approvedSignerFingerprint: signer, platform: input.platform, baseImage: input.baseImage,
+      lockfileSha256, dockerfileSha256, payload,
       imageId, archiveName: basename(archivePath), archiveSha256: await fileSha256(archivePath) };
     await writeFile(join(input.outputDirectory, "manifest.json"), `${JSON.stringify(metadata, null, 2)}\n`, { flag: "wx" });
     return metadata;
