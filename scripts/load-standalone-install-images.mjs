@@ -55,12 +55,19 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
   }
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!REVISION.test(inventory.sourceRevision)) throw new Error("Install inventory source is invalid");
-  const apiImageId = inventory.format === "tr-standalone-install-v4" ? verified?.apiRuntime?.imageId : null;
-  const apiConfigId = inventory.format === "tr-standalone-install-v4" ? verified?.apiRuntime?.configId : null;
-  if (inventory.format === "tr-standalone-install-v4"
+  const hasApi = ["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(inventory.format);
+  const apiImageId = hasApi ? verified?.apiRuntime?.imageId : null;
+  const apiConfigId = hasApi ? verified?.apiRuntime?.configId : null;
+  if (hasApi
     && (!/^sha256:[0-9a-f]{64}$/u.test(apiImageId ?? "")
       || !/^sha256:[0-9a-f]{64}$/u.test(apiConfigId ?? ""))) {
     throw new Error("Verified API image IDs are missing");
+  }
+  if (inventory.format === "tr-standalone-install-v5"
+    && ["admin", "applicant"].some((role) =>
+      !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.imageId ?? "")
+      || !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.configId ?? ""))) {
+    throw new Error("Verified portal image IDs are missing");
   }
   const runDocker = dependencies.docker ?? docker;
   const inspectArchive = dependencies.imageId ?? installedImageIdFromArchive;
@@ -95,7 +102,7 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
         if (!dependencies.archivePath) await rm(archive, { force: true });
       }
     }
-    if (inventory.format === "tr-standalone-install-v4") {
+    if (hasApi) {
       const image = { role: "api", archive: inventory.apiRuntime.archive,
         archiveSha256: inventory.apiRuntime.archiveSha256 };
       const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
@@ -103,6 +110,19 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
         await load(image, new Set([apiImageId, apiConfigId]), archive);
       } finally {
         if (!dependencies.archivePath) await rm(archive, { force: true });
+      }
+    }
+    if (inventory.format === "tr-standalone-install-v5") {
+      for (const role of ["admin", "applicant"]) {
+        const pin = inventory.portalRuntimes[role];
+        const image = { role, archive: pin.archive, archiveSha256: pin.archiveSha256 };
+        const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+        try {
+          const verifiedRole = verified.portalRuntimes[role];
+          await load(image, new Set([verifiedRole.imageId, verifiedRole.configId]), archive);
+        } finally {
+          if (!dependencies.archivePath) await rm(archive, { force: true });
+        }
       }
     }
     return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,

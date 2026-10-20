@@ -185,7 +185,7 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || !SHA256.test(verified.runtimeOfflineComposeSha256 ?? "")
       || JSON.parse(inventoryBytes).runtimeCompose?.sha256 !== verified.runtimeComposeSha256
       || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
-      throw new Error("New standalone setup requires a verified v3/v4 runtime Compose pin");
+      throw new Error("New standalone setup requires a verified v3/v4/v5 runtime Compose pin");
     }
     const composeBytes = await readFile(composePath);
     if (sha256(composeBytes) !== verified.runtimeComposeSha256
@@ -246,7 +246,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     }
     if (record.install.verified?.runtimeComposeSha256
       && !Array.isArray(record.install.verified.images)) {
-      throw new Error("Verified v3 install image identities are missing from setup");
+      throw new Error("Verified install image identities are missing from setup");
     }
     const envBytes = await regularBytes(join(root, "stack.env"));
     if (sha256(envBytes) !== record.stack.envFileSha256) {
@@ -335,7 +335,7 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
     const { record } = await readRecord(root);
     if (!record.install.verified?.runtimeComposeSha256 || !record.stack?.observation
       || record.ledgerObservation || record.genesisApproval || record.deployment) {
-      throw new Error("Collect a candidate only from an observed v3 stack before recording a genesis pin");
+      throw new Error("Collect a candidate only from an observed stack before recording a genesis pin");
     }
     const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root);
     if (snapshot.project !== record.stack.project

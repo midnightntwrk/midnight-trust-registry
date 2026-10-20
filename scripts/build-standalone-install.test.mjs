@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { pinnedStandaloneImages, stageApiRuntimeImage } from "./build-standalone-install.mjs";
+import { pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
+  validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
 
 const image = `midnightntwrk/test@sha256:${"a".repeat(64)}`;
 const compose = `name: \${TR_STACK_NAME:-tr-standalone-local-smoke}
@@ -24,6 +25,35 @@ test("accepts only three digest-pinned dedicated services", () => {
     /dedicated project/u);
   assert.throws(() => pinnedStandaloneImages(compose.replace("TR_STACK_NAME", "UNTRUSTED_PROJECT")),
     /dedicated project/u);
+});
+
+test("stages both portal roles only from same-source regular image files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-stage-portals-test-"));
+  try {
+    const destination = join(root, "bundle");
+    await mkdir(join(destination, "images"), { recursive: true });
+    const revision = "a".repeat(40);
+    for (const role of ["admin", "applicant"]) {
+      const source = join(root, role);
+      await mkdir(source);
+      const manifest = Buffer.from(JSON.stringify({ role, sourceRevision: revision,
+        archiveName: `${role}.image.tar` }));
+      const archive = Buffer.from(`${role}-archive\n`);
+      await writeFile(join(source, "manifest.json"), manifest);
+      await writeFile(join(source, `${role}.image.tar`), archive);
+      const staged = await stageStaticRuntimeImage(source, destination, role, revision);
+      assert.equal(staged.manifestSha256, createHash("sha256").update(manifest).digest("hex"));
+      assert.equal(staged.archiveSha256, createHash("sha256").update(archive).digest("hex"));
+      assert.deepEqual(await readFile(join(destination, staged.archive)), archive);
+      assert.throws(() => validateStaticRuntimeImageInput(source, role, "b".repeat(40)),
+        /disagrees/u);
+      await rm(join(source, `${role}.image.tar`));
+      await symlink(join(destination, staged.archive), join(source, `${role}.image.tar`));
+      assert.throws(() => validateStaticRuntimeImageInput(source, role, revision), /regular/u);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("stages only same-source regular API image files with exact hashes", async () => {

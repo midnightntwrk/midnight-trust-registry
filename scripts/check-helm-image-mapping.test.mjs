@@ -46,6 +46,25 @@ test("accepts an exact six-role image mapping", () => {
   });
 });
 
+test("v5 mapping uses the verified bundled portal images, not external manifests", () => {
+  const v5Inventory = { ...inventory, format: "tr-standalone-install-v5",
+    portalRuntimes: { admin: { archiveSha256 }, applicant: { archiveSha256 } } };
+  const v5Bundle = { ...bundle, portalRuntimes: {
+    admin: { acceptedIds: [imageId], configId },
+    applicant: { acceptedIds: [imageId], configId },
+  } };
+  assert.equal(verifyHelmImageMapping(v5Bundle, v5Inventory, null, values, receipt,
+    valuesSha256).mappedRoles.length, 6);
+  const changed = structuredClone(v5Bundle);
+  changed.portalRuntimes.admin.acceptedIds = [];
+  assert.throws(() => verifyHelmImageMapping(changed, v5Inventory, portals, values,
+    receipt, valuesSha256), /admin/u);
+  const wrongArchive = structuredClone(v5Inventory);
+  wrongArchive.portalRuntimes.applicant.archiveSha256 = "f".repeat(64);
+  assert.throws(() => verifyHelmImageMapping(v5Bundle, wrongArchive, null, values,
+    receipt, valuesSha256), /applicant/u);
+});
+
 test("rejects changed registry references and archive identities", () => {
   const changed = structuredClone(receipt);
   changed.images[0].reference = `registry.example.test/tr/other@sha256:${"e".repeat(64)}`;

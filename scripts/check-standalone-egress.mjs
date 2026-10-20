@@ -99,7 +99,7 @@ export async function verifiedOfflineEgressTopology(bundleDirectory,
   const verified = await verifyBundle(root);
   if (!verified.runtimeComposeSha256 || !verified.runtimeOfflineComposeSha256
     || !Array.isArray(verified.images) || verified.images.length !== 3) {
-    throw new Error("Offline egress probe requires a verified v3/v4 install bundle");
+    throw new Error("Offline egress probe requires a verified v3/v4/v5 install bundle");
   }
   return { sourceRevision: verified.sourceRevision, images: verified.images,
     allowOffline: true, composeFiles: [join(root, "compose.yml"),

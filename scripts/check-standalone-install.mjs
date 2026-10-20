@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
+import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -220,7 +221,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   const inventoryBytes = await readFile(await regularBundleFile(root, "install-inventory.json"));
   const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
-  if (!["tr-standalone-install-v2", "tr-standalone-install-v3", "tr-standalone-install-v4"].includes(inventory?.format)
+  if (!["tr-standalone-install-v2", "tr-standalone-install-v3", "tr-standalone-install-v4",
+    "tr-standalone-install-v5"].includes(inventory?.format)
     || !REVISION.test(inventory.sourceRevision)
     || typeof inventory.packageManifest !== "string"
     || typeof inventory.artifactDirectory !== "string"
@@ -232,7 +234,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   let runtimeComposeSha256 = null;
   let runtimeOfflineComposeSha256 = null;
-  if (["tr-standalone-install-v3", "tr-standalone-install-v4"].includes(inventory.format)) {
+  if (["tr-standalone-install-v3", "tr-standalone-install-v4",
+    "tr-standalone-install-v5"].includes(inventory.format)) {
     if (inventory.runtimeCompose?.path !== "compose.yml"
       || !SHA256.test(inventory.runtimeCompose.sha256)
       || inventory.runtimeCompose.offlinePath !== "compose.offline.yml"
@@ -286,7 +289,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   let apiRuntime = null;
-  if (inventory.format === "tr-standalone-install-v4") {
+  if (["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(inventory.format)) {
     if (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
       || inventory.apiRuntime.archive !== "images/api.image.tar"
       || !SHA256.test(inventory.apiRuntime.manifestSha256)
@@ -305,6 +308,36 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     }
     apiRuntime = { ...installedApiImageIdFromArchive(archivePath, apiManifest,
       inventory.sourceRevision), platform: apiManifest.platform };
+  }
+  let portalRuntimes = null;
+  if (inventory.format === "tr-standalone-install-v5") {
+    if (Object.keys(inventory.portalRuntimes ?? {}).sort().join("\0") !== "admin\0applicant") {
+      throw new Error("Standalone v5 install requires both portal image pins");
+    }
+    portalRuntimes = {};
+    for (const role of ["admin", "applicant"]) {
+      const pin = inventory.portalRuntimes[role];
+      if (pin?.manifest !== `images/${role}.manifest.json`
+        || pin.archive !== `images/${role}.image.tar`
+        || !SHA256.test(pin.manifestSha256) || !SHA256.test(pin.archiveSha256)) {
+        throw new Error(`${role} portal image pin is missing or malformed`);
+      }
+      const manifestPath = await regularBundleFile(root, pin.manifest);
+      const archivePath = await regularBundleFile(root, pin.archive);
+      if (await sha256(manifestPath) !== pin.manifestSha256
+        || await sha256(archivePath) !== pin.archiveSha256) {
+        throw new Error(`${role} portal image bytes disagree with the install pin`);
+      }
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      validateStaticImageManifest(manifest, role, inventory.sourceRevision, pin.archiveSha256);
+      const identity = staticImageIdentityFromArchive(archivePath, role,
+        inventory.sourceRevision, true);
+      if (manifest.imageId !== identity.acceptedIds.at(-1)) {
+        throw new Error(`${role} portal archive OCI identity disagrees with its manifest`);
+      }
+      portalRuntimes[role] = { ...identity, imageId: manifest.imageId,
+        archiveSha256: pin.archiveSha256, platform: manifest.platform };
+    }
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
@@ -337,6 +370,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     runtimeOfflineComposeSha256,
     images: verifiedImages,
     apiRuntime,
+    portalRuntimes,
   };
 }
 

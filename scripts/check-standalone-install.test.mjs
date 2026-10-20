@@ -76,6 +76,44 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
     archive: "images/api.image.tar", archiveSha256, imageId };
 }
 
+async function staticImageArchive(root, role, options = {}) {
+  const source = join(root, `source-static-${role}`);
+  await mkdir(join(source, "blobs/sha256"), { recursive: true });
+  const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
+    Labels: { "org.opencontainers.image.revision": options.labelRevision ?? revision },
+    User: "1000:1000", WorkingDir: "/app", Env: [`TR_STATIC_ROLE=${role}`],
+    Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
+  } });
+  const configId = sha(config);
+  const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
+  const imageDigest = sha(image);
+  const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{
+    digest: `sha256:${imageDigest}`, platform: { os: "linux", architecture: "arm64" },
+  }] });
+  const imageId = `sha256:${sha(imageIndex)}`;
+  await writeFile(join(source, "blobs/sha256", configId), config);
+  await writeFile(join(source, "blobs/sha256", imageDigest), image);
+  await writeFile(join(source, "blobs/sha256", imageId.slice(7)), imageIndex);
+  await writeFile(join(source, "index.json"), JSON.stringify({ schemaVersion: 2,
+    manifests: [{ digest: imageId,
+      ...(options.outerName ? { annotations: { "io.containerd.image.name": options.outerName } } : {}) }] }));
+  await writeFile(join(source, "manifest.json"), JSON.stringify([{ Config: `blobs/sha256/${configId}`,
+    RepoTags: options.repoTags ?? null, Layers: [] }]));
+  const archive = join(root, `images/${role}.image.tar`);
+  execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
+  const archiveSha256 = sha(await readFile(archive));
+  const assets = [{ path: "index.html", size: 1, sha256: "f".repeat(64) }];
+  const manifest = { format: "tr-static-runtime-image-v1", role, sourceRevision: revision,
+    approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
+    baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
+    assetsSha256: sha(JSON.stringify(assets)), imageId,
+    archiveName: `${role}.image.tar`, archiveSha256, assets };
+  const bytes = JSON.stringify(manifest);
+  await writeFile(join(root, `images/${role}.manifest.json`), bytes);
+  return { manifest: `images/${role}.manifest.json`, manifestSha256: sha(bytes),
+    archive: `images/${role}.image.tar`, archiveSha256, imageId };
+}
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tr-install-inventory-"));
   await mkdir(join(root, "artifacts"));
@@ -230,6 +268,43 @@ test("v4 binds an API archive to the exact install source and runtime config", a
         options.outerName ? /OCI index disagrees/u
           : options.extraPlatform ? /exactly one image/u : /runtime config disagrees/u);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v5 binds both portal OCI archives to the exact install source and roles", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services: {}\n");
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    inventory.format = "tr-standalone-install-v5";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    inventory.apiRuntime = await apiImageArchive(root);
+    inventory.portalRuntimes = {
+      admin: await staticImageArchive(root, "admin"),
+      applicant: await staticImageArchive(root, "applicant"),
+    };
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const verified = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(verified.portalRuntimes.admin.imageId, inventory.portalRuntimes.admin.imageId);
+    assert.equal(verified.portalRuntimes.applicant.imageId, inventory.portalRuntimes.applicant.imageId);
+    delete inventory.portalRuntimes.applicant;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /both portal/u);
+    inventory.portalRuntimes.applicant = await staticImageArchive(root, "applicant");
+    const wrongRole = await staticImageArchive(root, "admin", { labelRevision: "b".repeat(40) });
+    inventory.portalRuntimes.admin = wrongRole;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /runtime/u);
+    inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", {
+      outerName: "tr-static-admin:latest",
+    });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /OCI index is malformed/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

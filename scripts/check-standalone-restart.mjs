@@ -70,7 +70,7 @@ async function readContext(root, dependencies) {
     || !SHA256.test(record.stack.envFileSha256 ?? "")
     || !SHA256.test(record.stack.composeSha256 ?? "")
     || !SHA256.test(record.stack.offlineComposeSha256 ?? "")) {
-    throw new Error("Restart observation requires a prepared and observed v3 stack");
+    throw new Error("Restart observation requires a prepared and observed install stack");
   }
   const bundle = await realpath(record.install.bundle);
   const inventory = await readFile(join(bundle, "install-inventory.json"));
@@ -84,7 +84,7 @@ async function readContext(root, dependencies) {
     || verified.runtimeComposeSha256 !== record.stack.composeSha256
     || verified.runtimeOfflineComposeSha256 !== record.stack.offlineComposeSha256
     || !Array.isArray(verified.images) || verified.images.length !== SERVICES.length) {
-    throw new Error("Running stack no longer matches the verified v3 install bundle");
+    throw new Error("Running stack no longer matches the verified install bundle");
   }
   const env = parsePreparedEnv(envBytes);
   const config = standaloneStackConfig(env);

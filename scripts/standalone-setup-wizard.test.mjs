@@ -82,13 +82,19 @@ async function fixture(format = "tr-standalone-install-v2") {
   const images = pinnedStandaloneImages(compose.toString("utf8"));
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
     format, packageManifest: "release-manifest.json", images,
-    ...(["tr-standalone-install-v3", "tr-standalone-install-v4"].includes(format) ? { runtimeCompose: {
+    ...(["tr-standalone-install-v3", "tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format) ? { runtimeCompose: {
       path: "compose.yml", sha256: composeSha256,
       offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
     } } : {}),
-    ...(format === "tr-standalone-install-v4" ? { apiRuntime: {
+    ...(["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format) ? { apiRuntime: {
       manifest: "images/api.manifest.json", manifestSha256: "a".repeat(64),
       archive: "images/api.image.tar", archiveSha256: "b".repeat(64),
+    } } : {}),
+    ...(format === "tr-standalone-install-v5" ? { portalRuntimes: {
+      admin: { manifest: "images/admin.manifest.json", manifestSha256: "c".repeat(64),
+        archive: "images/admin.image.tar", archiveSha256: "d".repeat(64) },
+      applicant: { manifest: "images/applicant.manifest.json", manifestSha256: "e".repeat(64),
+        archive: "images/applicant.image.tar", archiveSha256: "f".repeat(64) },
     } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
   await writeFile(join(bundle, "compose.yml"), compose);
@@ -107,7 +113,12 @@ async function fixture(format = "tr-standalone-install-v2") {
       acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
     runtimeComposeSha256: format !== "tr-standalone-install-v2" ? composeSha256 : null,
     runtimeOfflineComposeSha256: format !== "tr-standalone-install-v2" ? offlineComposeSha256 : null,
-    apiRuntime: format === "tr-standalone-install-v4" ? { imageId: `sha256:${"c".repeat(64)}` } : null });
+    apiRuntime: ["tr-standalone-install-v4", "tr-standalone-install-v5"].includes(format)
+      ? { imageId: `sha256:${"c".repeat(64)}` } : null,
+    portalRuntimes: format === "tr-standalone-install-v5" ? {
+      admin: { imageId: `sha256:${"d".repeat(64)}` },
+      applicant: { imageId: `sha256:${"e".repeat(64)}` },
+    } : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
@@ -332,7 +343,7 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   await assert.rejects(prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
-  }, stackDependencies(f)), /requires a verified v3\/v4 runtime Compose pin/u);
+  }, stackDependencies(f)), /requires a verified v3\/v4\/v5 runtime Compose pin/u);
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
 });
 
@@ -346,6 +357,20 @@ test("v4 setup retains the API image pin but does not claim it is running", asyn
   assert.equal(record.install.verified.apiRuntime.imageId, `sha256:${"c".repeat(64)}`);
   const status = await standaloneSetupStatus(f.directory);
   assert.equal(status.localLedger, "pending");
+  assert.equal(status.releaseQualified, false);
+});
+
+test("v5 setup retains portal pins without claiming actor runtime", async () => {
+  const f = await fixture("tr-standalone-install-v5");
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.install.verified.portalRuntimes.admin.imageId, `sha256:${"d".repeat(64)}`);
+  assert.equal(record.install.verified.portalRuntimes.applicant.imageId, `sha256:${"e".repeat(64)}`);
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.offlineJourneys, "pending");
   assert.equal(status.releaseQualified, false);
 });
 

@@ -149,6 +149,50 @@ test("v4 accepts the verified config ID reported by a classic Docker store", asy
   }
 });
 
+test("v5 loads both verified portal archives after the ledger and API images", async () => {
+  const inventoryPath = join(root, "install-inventory.json");
+  const original = await readFile(inventoryPath);
+  const imageId = `sha256:${"c".repeat(64)}`;
+  try {
+    const inventory = JSON.parse(original);
+    inventory.format = "tr-standalone-install-v5";
+    inventory.apiRuntime = { archive: "api.image.tar", archiveSha256: "d".repeat(64) };
+    inventory.portalRuntimes = {
+      admin: { archive: "admin.image.tar", archiveSha256: "e".repeat(64) },
+      applicant: { archive: "applicant.image.tar", archiveSha256: "f".repeat(64) },
+    };
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    const loads = [];
+    const verified = { ...await verifiedInventory(), apiRuntime: { imageId, configId: imageId },
+      portalRuntimes: { admin: { imageId, configId: imageId },
+        applicant: { imageId, configId: imageId } } };
+    const result = await loadStandaloneInstallImages(root, {
+      verify: async () => verified,
+      archivePath: (_, image) => join(root, image.archive), imageId: () => imageId,
+      docker: (args) => {
+        if (args[0] === "image" && args[2].startsWith("tr-standalone/")) {
+          throw { status: 1, stderr: "No such image" };
+        }
+        if (args[0] === "image") return imageId;
+        if (args[0] === "load") {
+          loads.push(args[2]);
+          return `Loaded image ID: ${imageId}`;
+        }
+        return "";
+      },
+    });
+    assert.deepEqual(loads.map((path) => path.split("/").at(-1)),
+      ["node.tar", "api.image.tar", "admin.image.tar", "applicant.image.tar"]);
+    assert.equal(result.tags.admin, `tr-standalone/admin:sha-${revision}`);
+    assert.equal(result.tags.applicant, `tr-standalone/applicant:sha-${revision}`);
+    await assert.rejects(loadStandaloneInstallImages(root, {
+      verify: async () => ({ ...verified, portalRuntimes: { admin: verified.portalRuntimes.admin } }),
+    }), /portal image IDs are missing/u);
+  } finally {
+    await writeFile(inventoryPath, original);
+  }
+});
+
 test("loads a private hash-checked snapshot, not a mutable bundle archive", async () => {
   const inventoryPath = join(root, "install-inventory.json");
   const original = await readFile(inventoryPath);

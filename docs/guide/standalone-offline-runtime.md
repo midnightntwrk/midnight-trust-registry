@@ -45,8 +45,8 @@ may have different OCI archive hashes even when the runtime payload matches.
 The digest-pinned base must include `/usr/bin/gpg`;
 the builder checks GPG and the API import in a read-only, network-disabled
 container before exporting. Build it while online. This is packaging evidence,
-not a running local-ledger qualification or an addition to the v3 install
-inventory. The first-run installer must later pin its archive and running
+not a running local-ledger qualification. The v4/v5 installer pins its archive;
+the first-run operator must later verify the running
 image digest, review the API plan, and verify offline operation.
 Local-ledger API mode currently binds to loopback only, so Docker port
 publishing does not expose it; a reviewed sidecar/shared-network-namespace
@@ -113,6 +113,23 @@ node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-ou
 
 This writes a v4 inventory with
 `images/api.manifest.json` and `images/api.image.tar` pinned by exact hashes.
+To include both static portals in the same signed-source install candidate,
+first build each with `scripts/build-static-runtime-image.mjs` from the same
+source SHA, then run:
+
+```sh
+node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
+```
+
+The all-or-nothing portal options write a v5 inventory with six image
+archives. Verification checks each portal's OCI index, runtime role, source
+revision, manifest, assets, and archive hash. The offline loader imports
+source-scoped admin and applicant tags without a registry pull. A v5 Helm
+mapping reads these portal identities from the verified bundle rather than
+separate portal manifests. This is install-byte evidence only: neither the
+loader nor the wizard starts the portals or establishes an offline actor
+journey. The approved installer plan must still bind the six running image
+identities and qualify the deployed API and portals with egress denied.
 The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and
 the package release revision. The offline loader then imports a source-scoped
@@ -133,7 +150,7 @@ digest and retain the signed build evidence.
 
 For an isolated cluster, the API may listen on `0.0.0.0` only with
 `--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
-signed v4 install inventory with an API archive pin. Before opening that
+signed v4 or v5 install inventory with an API archive pin. Before opening that
 listener, it checks a file at `/app/source-revision` in the container
 filesystem against the approved plan. The listener bounds header, request,
 idle-socket, and keep-alive waits and has a 16-connection cap; it does not
