@@ -129,6 +129,19 @@ export function sequenceTimestampMap(plan: LocalLedgerRuntimePlan): SequenceToTi
   };
 }
 
+export async function assertLocalApiImageSourceRevision(
+  expectedRevision: string,
+  path = "/app/source-revision",
+): Promise<void> {
+  if (!REVISION.test(expectedRevision)) {
+    throw new Error("Local API image source revision is malformed");
+  }
+  const bytes = await boundedFile(path, 41);
+  if (bytes.toString("utf8") !== `${expectedRevision}\n`) {
+    throw new Error("Executing API image source revision differs from the approved local plan");
+  }
+}
+
 export async function loadApprovedLocalLedgerRuntimePlan(input: {
   planPath: string;
   signaturePath: string;

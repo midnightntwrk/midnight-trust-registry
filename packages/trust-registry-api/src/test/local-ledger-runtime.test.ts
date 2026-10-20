@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertLocalApiImageSourceRevision,
   loadApprovedLocalLedgerRuntimePlan,
   sequenceTimestampMap,
   validateLocalLedgerRuntimePlan,
@@ -39,6 +40,23 @@ const plan = (root: string) => ({
 });
 
 describe("approved local-ledger API runtime", () => {
+  it("binds cluster exposure to the executing image's immutable source file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tr-api-image-revision-"));
+    try {
+      const path = join(root, "source-revision");
+      await writeFile(path, `${sourceRevision}\n`);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, path)).resolves.toBeUndefined();
+      await expect(assertLocalApiImageSourceRevision("b".repeat(40), path))
+        .rejects.toThrow(/differs from the approved local plan/u);
+      await writeFile(path, `${sourceRevision}\nextra`);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, path)).rejects.toThrow();
+      const linked = join(root, "linked-revision");
+      await symlink(path, linked);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, linked)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("rejects missing, extra, nonlocal, and unordered plan fields", () => {
     const valid = plan("/tmp/tr-api-runtime-test");
     expect(validateLocalLedgerRuntimePlan(valid).sourceRevision).toBe(sourceRevision);

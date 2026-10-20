@@ -5,6 +5,7 @@ import {
   createWorkspaceFileSource,
 } from "./source.js";
 import {
+  assertLocalApiImageSourceRevision,
   createApprovedLocalLedgerRuntimeSource,
   loadApprovedLocalLedgerRuntimePlan,
 } from "./local-ledger-runtime.js";
@@ -13,12 +14,14 @@ import { createTrustRegistryApiServer } from "./server.js";
 const HELP_TEXT = `Usage:
   trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
     [--local-ledger-signature PATH --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT]
+    [--cluster-bind]
     [--unsafe-demo-mutations]
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
   trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
   trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567
+  trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567 --host 0.0.0.0 --cluster-bind
 `;
 
 export type TrustRegistryApiCliOptions = {
@@ -30,6 +33,7 @@ export type TrustRegistryApiCliOptions = {
   localLedgerSignaturePath?: string;
   localLedgerKeyringDirectory?: string;
   localLedgerReviewerFingerprint?: string;
+  clusterBind?: boolean;
   unsafeDemoMutations?: boolean;
 };
 
@@ -107,6 +111,9 @@ export const parseTrustRegistryApiCliArgs = (
       case "--unsafe-demo-mutations":
         options.unsafeDemoMutations = true;
         break;
+      case "--cluster-bind":
+        options.clusterBind = true;
+        break;
       case "--help":
       case "-h":
         throw new Error(HELP_TEXT);
@@ -134,8 +141,12 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.host.trim().length === 0) {
     throw new Error(`--host must not be empty\n\n${HELP_TEXT}`);
   }
+  if (options.clusterBind === true
+    && (options.localLedgerPlanPath === undefined || options.host !== "0.0.0.0")) {
+    throw new Error("--cluster-bind requires signed local-ledger mode on 0.0.0.0");
+  }
   if (options.localLedgerPlanPath !== undefined
-    && !["127.0.0.1", "::1"].includes(options.host)) {
+    && options.clusterBind !== true && !["127.0.0.1", "::1"].includes(options.host)) {
     throw new Error("Unqualified local-ledger mode requires a loopback host");
   }
   if (
@@ -160,6 +171,9 @@ export const runTrustRegistryApiCli = async (
         keyringDirectory: options.localLedgerKeyringDirectory!,
         reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       });
+      if (options.clusterBind === true) {
+        await assertLocalApiImageSourceRevision(plan.sourceRevision);
+      }
       const localSource = await createApprovedLocalLedgerRuntimeSource(plan);
       await localSource.loadSnapshot();
       return localSource;
