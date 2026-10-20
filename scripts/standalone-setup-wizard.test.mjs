@@ -538,7 +538,10 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
     observeSnapshot: async () => ({ ...observed, observedAt: "2026-10-20" }),
   }), /candidate disagrees/u);
   const collected = await collectStandaloneGenesisCandidate(f.directory, {
-    observeSnapshot: async () => observed,
+    observeSnapshot: async (_root, options) => {
+      assert.equal(options.allowUnpublishedHostPorts, true);
+      return observed;
+    },
   });
   const file = JSON.parse(await readFile(collected.path, "utf8"));
   assert.equal(file.nodeReportedGenesisHash, expectedGenesisHash);

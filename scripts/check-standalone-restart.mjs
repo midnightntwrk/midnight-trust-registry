@@ -141,6 +141,7 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     sourceRevision: record.sourceRevision,
     images: verified.images,
     allowOffline: true,
+    allowUnpublishedHostPorts: options.allowUnpublishedHostPorts === true,
     composeFiles: [join(bundle, "compose.yml"), join(bundle, "compose.offline.yml")],
   });
   if (topology.project !== config.project || topology.preparedInputsMatched !== true

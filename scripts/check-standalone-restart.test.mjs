@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   captureStandaloneRestartBaseline,
   compareStandaloneRestartSnapshots,
+  observeStandaloneRestartSnapshot,
   verifyStandaloneRestart,
 } from "./check-standalone-restart.mjs";
 
@@ -103,6 +104,7 @@ test("captures private immutable baseline and verifies a restarted local ledger 
   await writeFile(join(directory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
   let restarted = false;
   let brokenHistory = false;
+  let allowUnpublishedHostPorts;
   const dependencies = {
     verifyBundle: async () => ({ sourceRevision: revision,
       runtimeComposeSha256: composeHash, runtimeOfflineComposeSha256: offlineHash,
@@ -112,6 +114,7 @@ test("captures private immutable baseline and verifies a restarted local ledger 
       assert.equal(config.project, project);
       assert.equal(expected.requirePrivateInputs, true);
       assert.equal(expected.images.length, 3);
+      allowUnpublishedHostPorts = expected.allowUnpublishedHostPorts;
       return { project, preparedInputsMatched: true, verifiedImageIdsMatched: true,
         bundleComposeFilesMatched: true };
     },
@@ -139,7 +142,10 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     },
   };
   try {
+    await observeStandaloneRestartSnapshot(directory, { allowUnpublishedHostPorts: true }, dependencies);
+    assert.equal(allowUnpublishedHostPorts, true);
     const baseline = await captureStandaloneRestartBaseline(directory, dependencies);
+    assert.equal(allowUnpublishedHostPorts, false);
     assert.equal(baseline.finalizedHash, beforeHash);
     await assert.rejects(captureStandaloneRestartBaseline(directory, dependencies), { code: "EEXIST" });
     restarted = true;

@@ -594,9 +594,14 @@ be observed for historical smoke, not RC qualification. This step does not appro
 genesis, attest actor egress, verify a contract readback, or qualify a release.
 
 `collect-genesis-candidate` is an optional, non-overwriting first-run aid. It
-rechecks the live v3 stack and writes `genesis-candidate.untrusted.json` in the
+rechecks the live v3-v6 stack and writes `genesis-candidate.untrusted.json` in the
 private setup directory, recording the **node-reported** genesis hash,
 finalized checkpoint, install source and inventory, and observer-script hash.
+It accepts a ledger bridge whose requested host ports are unpublished on Docker
+Desktop, but requires exactly the three ledger services attached. Disconnect
+the temporary installation relay before collection, then reconnect that same
+relay for the separately verified loopback preflight. Neither the unpublished
+port allowance nor this candidate qualifies host access or offline egress.
 It does not create an approved pin, change `localLedger` status, or authorize
 deployment. An independent reviewer must compare the candidate with the
 pinned chain specification through a channel other than this node, approve

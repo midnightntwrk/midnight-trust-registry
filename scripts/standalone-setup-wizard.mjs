@@ -345,7 +345,8 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
       || record.ledgerObservation || record.genesisApproval || record.deployment) {
       throw new Error("Collect a candidate only from an observed stack before recording a genesis pin");
     }
-    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root);
+    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
+      { allowUnpublishedHostPorts: true });
     if (snapshot.project !== record.stack.project
       || snapshot.sourceRevision !== record.sourceRevision
       || snapshot.installInventorySha256 !== record.install.inventorySha256
