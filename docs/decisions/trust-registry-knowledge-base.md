@@ -2157,3 +2157,19 @@ The running dedicated ledger bridge is healthy and its installation bytes
 were verified, but its genesis remains a node-reported candidate without
 independent signed approval; no deployment or committee transition is recorded
 in that setup state.
+
+On 2026-10-20 the pinned node digest was independently traced to Docker Hub's
+`1.0.0-arm64` tag and the public `midnight-node` `node-1.0.0` release.
+The tagged source, downloaded release tarball, and pinned image agree on the
+SHA-256 of `res/cfg/dev.toml` and both `undeployed` genesis files. A disposable
+network-disabled container running the separately downloaded release binary
+reported the same genesis hash as the dedicated stack. This is a review packet,
+not a governance signature or release qualification. The image's
+`dev.earthly.git-sha` names an Earthly build-tool commit, not node source.
+More importantly, the macOS Docker Desktop smoke stack requests loopback
+bindings in `HostConfig.PortBindings` but has empty effective
+`NetworkSettings.Ports` and no host RPC access. The topology checker now
+requires effective loopback publication, and the wizard rechecks live topology
+before recording a genesis pin. Do not use this stack for deployment until an
+offline-safe topology passes that gate; preserve its existing volumes and
+private candidate evidence meanwhile.

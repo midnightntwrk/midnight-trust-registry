@@ -378,6 +378,27 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     if (record.install.verified?.runtimeComposeSha256 && !record.stack?.observation) {
       throw new Error("Observe the prepared local stack before recording its genesis pin");
     }
+    if (record.install.verified?.runtimeComposeSha256) {
+      const config = standaloneStackConfig({
+        TR_STACK_NAME: record.stack.project,
+        COMPOSE_PROJECT_NAME: record.stack.project,
+        TR_NODE_PORT: record.stack.ports.node,
+        TR_INDEXER_PORT: record.stack.ports.indexer,
+        TR_PROOF_PORT: record.stack.ports["proof-server"],
+      });
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
+        sourceRevision: record.sourceRevision,
+        images: record.install.verified.images,
+        allowOffline: true,
+        composeFiles: [join(record.install.bundle, "compose.yml"),
+          join(record.install.bundle, "compose.offline.yml")],
+      });
+      if (current.project !== record.stack.project
+        || current.networkId !== record.stack.observation.topology.networkId
+        || current.internalNetworkOnly !== true) {
+        throw new Error("Current ledger topology disagrees with the recorded stack observation");
+      }
+    }
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
     if (sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed inventory changed since setup verification");

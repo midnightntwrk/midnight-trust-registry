@@ -455,7 +455,17 @@ test("wizard records only selected ledger-bridge topology and egress observation
   assert.equal(repeated.stack.observations[0].egress.scope,
     "canary HTTPS and DNS on ledger bridge only");
   assert.equal(repeated.stack.observations[1].egress.canaryAddress, "192.0.2.1");
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("effective loopback port is absent"); },
+    preflight: async () => { throw new Error("must not query genesis"); },
+  }), /effective loopback port is absent/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
   await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async (config, expected) => {
+      assert.equal(config.project, project);
+      assert.equal(expected.composeFiles.length, 2);
+      return { project, networkId: ledgerNetworkId, internalNetworkOnly: true };
+    },
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await assert.rejects(observeStandaloneStack(f.directory, {
@@ -502,6 +512,8 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   }), { code: "EEXIST" });
   assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-candidate.untrusted.json.")), false);
   await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true }),
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
