@@ -2116,12 +2116,23 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const fingerprint = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
   assert.match(fingerprint, /^[A-F0-9]{40}$/u);
   const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint]);
+  const armoredPublicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--armor",
+    "--export", fingerprint]);
   execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"], { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
   const document = join(root, "approval.json");
   const signature = join(root, "approval.sig");
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint);
+  const publicExport = join(root, "reviewer-public.asc");
+  await writeFile(publicExport, armoredPublicKey, { mode: 0o600 });
+  await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40)),
+    /does not match/u);
+  const invalidExport = join(root, "invalid-public.asc");
+  await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 });
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint),
+    /armored public-key export/u);
   const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));
   await mkdir(longKeyring, { recursive: true, mode: 0o700 });
   await writeFile(join(longKeyring, "pubring.kbx"), await readFile(join(verifier, "pubring.kbx")),

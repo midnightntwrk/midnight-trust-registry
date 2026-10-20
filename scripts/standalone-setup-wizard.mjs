@@ -462,10 +462,14 @@ export async function verifyDetachedReviewerSignature(
   documentPath, signaturePath, keyringDirectory, expectedFingerprint,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
-  const keyringRoot = await privateDirectory(keyringDirectory);
+  const publicKeySource = resolve(keyringDirectory);
+  const sourceStat = await lstat(publicKeySource);
+  const armoredExport = sourceStat.isFile();
+  const keyboxPath = armoredExport ? publicKeySource
+    : join(await privateDirectory(publicKeySource), "pubring.kbx");
   let keybox;
   try {
-    keybox = await open(join(keyringRoot, "pubring.kbx"),
+    keybox = await open(keyboxPath,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
     if (error.code === "ENOENT") {
@@ -485,11 +489,21 @@ export async function verifyDetachedReviewerSignature(
   } finally {
     await keybox.close();
   }
+  if (armoredExport && !publicKeys.toString("utf8").startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----\n")) {
+    throw new Error("Reviewer key file must be an armored public-key export");
+  }
   const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
   const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
   try {
     const keyring = join(temporary, "pubring.kbx");
-    await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
+    if (armoredExport) {
+      const exportPath = join(temporary, "reviewer-public.asc");
+      await writeFile(exportPath, publicKeys, { flag: "wx", mode: 0o600 });
+      await execFileAsync("gpg", ["--batch", "--no-options", "--homedir", temporary,
+        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    } else {
+      await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
+    }
     const { stdout } = await execFileAsync("gpg", [
       "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
       "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,

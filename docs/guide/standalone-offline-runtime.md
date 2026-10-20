@@ -689,12 +689,15 @@ candidate packet by itself is not such a reference. If that independent
 reference is not available, leave the draft unsigned and deployment blocked;
 do not substitute chat approval or a GitHub commit signature.
 The operator obtains the expected fingerprint through an independently
-approved channel, imports the public key into a mode-0700 local GPG keyring,
-and runs `approve-genesis`. Pre-create the keyring directory with mode `0700`,
-then import the reviewer's exported public key there with `gpg --homedir
+approved channel and runs `approve-genesis` with either the reviewer's
+armored **public-key export** (`gpg --armor --export FINGERPRINT >
+reviewer-public.asc`) or a local GPG keyring directory. The wizard imports the
+public export into a short-lived isolated verification home; it never needs
+the reviewer's secret key. For a directory, pre-create it with mode `0700`
+and import the public key there with `gpg --homedir
 /absolute/private/reviewer-public-keyring --import reviewer-public.asc`. The
-wizard reads `pubring.kbx` from that directory into a short-lived isolated
-verification home; a keyboxd-only or legacy `pubring.gpg` home is not accepted.
+directory must contain `pubring.kbx`; keyboxd-only and legacy `pubring.gpg`
+homes are not accepted. Both forms pin the full reviewer fingerprint.
 The wizard does not download keys or establish
 reviewer authority from a typed fingerprint: the release owner must separately
 verify the key owner and the provenance of `reviewedReference`. It checks
