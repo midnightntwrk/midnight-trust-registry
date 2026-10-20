@@ -120,7 +120,7 @@ describe("approved local-ledger API runtime", () => {
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
-        .rejects.toThrow(/requires a signed v4 install/u);
+        .rejects.toThrow(/requires a signed install with an API image pin/u);
       const v4Inventory = JSON.stringify({ format: "tr-standalone-install-v4", sourceRevision,
         apiRuntime: { manifest: "images/api.manifest.json", manifestSha256: "d".repeat(64),
           archive: "images/api.image.tar", archiveSha256: "e".repeat(64) } });
@@ -132,6 +132,57 @@ describe("approved local-ledger API runtime", () => {
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
+      const portalPin = (role: string) => ({ manifest: `images/${role}.manifest.json`,
+        manifestSha256: "b".repeat(64), archive: `images/${role}.image.tar`,
+        archiveSha256: "c".repeat(64) });
+      const v6 = { format: "tr-standalone-install-v6", sourceRevision,
+        apiRuntime: JSON.parse(v4Inventory).apiRuntime,
+        portalRuntimes: { admin: portalPin("admin"), applicant: portalPin("applicant") },
+        installRelay: { path: "install-relay.py", sha256: "d".repeat(64), imageRole: "node" } };
+      const signInventory = async (value: object) => {
+        const bytes = JSON.stringify(value);
+        await writeFile(candidate.installInventoryPath, bytes);
+        await writeFile(planPath, `${JSON.stringify({ ...candidate,
+          installInventorySha256: sha256(bytes) })}\n`);
+        execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+          "--output", signaturePath, planPath]);
+      };
+      await signInventory(v6);
+      expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .sourceRevision).toBe(sourceRevision);
+      await signInventory({ ...v6, format: "tr-standalone-install-v5", installRelay: undefined });
+      expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .sourceRevision).toBe(sourceRevision);
+      await signInventory({ ...v6, format: "tr-standalone-install-v5", installRelay: undefined,
+        portalRuntimes: undefined });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, apiRuntime: undefined });
+      await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, sha256: "invalid" } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/disagrees with approved install artifacts/u);
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, sha256: ["d".repeat(64)] } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, path: "../install-relay.py" } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, imageRole: "indexer" } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, installRelay: undefined });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory({ ...v6, portalRuntimes: { admin: portalPin("admin") } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/disagrees with approved install artifacts/u);
+      await signInventory({ ...v6, portalRuntimes: { ...v6.portalRuntimes,
+        extra: portalPin("extra") } });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await signInventory(JSON.parse(v4Inventory));
       await writeFile(candidate.installInventoryPath, JSON.stringify({
         format: "tr-standalone-install-v4", sourceRevision,
       }));

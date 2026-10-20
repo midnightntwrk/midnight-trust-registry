@@ -198,19 +198,38 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   }
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (!["tr-standalone-install-v3", "tr-standalone-install-v4"].includes(inventory?.format)
+  const installFormat = inventory?.format;
+  const supportedFormat = ["tr-standalone-install-v3", "tr-standalone-install-v4",
+    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(installFormat);
+  const requiresApiPin = installFormat !== "tr-standalone-install-v3";
+  const requiresPortalPins = installFormat === "tr-standalone-install-v5"
+    || installFormat === "tr-standalone-install-v6";
+  const artifactPin = (value: unknown, manifestPath: string, archivePath: string): boolean => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const pin = value as Record<string, unknown>;
+    return pin.manifest === manifestPath && pin.archive === archivePath
+      && typeof pin.manifestSha256 === "string" && SHA256.test(pin.manifestSha256)
+      && typeof pin.archiveSha256 === "string" && SHA256.test(pin.archiveSha256);
+  };
+  if (!supportedFormat
     || manifest?.format !== "tr-release-candidate-manifest-v2"
     || inventory.sourceRevision !== plan.sourceRevision
     || manifest.sourceRevision !== plan.sourceRevision
-    || (inventory.format === "tr-standalone-install-v4"
-      && (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
-        || inventory.apiRuntime?.archive !== "images/api.image.tar"
-        || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.manifestSha256 ?? "")
-        || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.archiveSha256 ?? "")))) {
-    throw new Error("Local API runtime source revision disagrees with approved install artifacts");
+    || (requiresApiPin && !artifactPin(inventory.apiRuntime,
+      "images/api.manifest.json", "images/api.image.tar"))
+    || (requiresPortalPins && (!["admin", "applicant"].every((role) =>
+      artifactPin(inventory.portalRuntimes?.[role],
+        `images/${role}.manifest.json`, `images/${role}.image.tar`))
+      || Object.keys(inventory.portalRuntimes ?? {}).sort().join(",") !== "admin,applicant"))
+    || (installFormat === "tr-standalone-install-v6"
+      && (inventory.installRelay?.path !== "install-relay.py"
+        || inventory.installRelay.imageRole !== "node"
+        || typeof inventory.installRelay.sha256 !== "string"
+        || !SHA256.test(inventory.installRelay.sha256)))) {
+    throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");
   }
-  if (input.requireApiRuntimePin === true && inventory.format !== "tr-standalone-install-v4") {
-    throw new Error("Cluster API binding requires a signed v4 install with an API image pin");
+  if (input.requireApiRuntimePin === true && !requiresApiPin) {
+    throw new Error("Cluster API binding requires a signed install with an API image pin");
   }
   return plan;
 }
