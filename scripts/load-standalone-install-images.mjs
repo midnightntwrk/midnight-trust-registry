@@ -41,17 +41,17 @@ async function verifiedArchivePath(root, image) {
 /** Loads only previously verified archive bytes; never pulls from a registry. */
 export async function loadStandaloneInstallImages(bundlePath, dependencies = {}) {
   const root = await realpath(resolve(bundlePath));
-  await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
+  const verified = await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
   const inventory = JSON.parse(await readFile(join(root, "install-inventory.json"), "utf8"));
   if (!REVISION.test(inventory.sourceRevision)) throw new Error("Install inventory source is invalid");
+  const apiImageId = inventory.format === "tr-standalone-install-v4" ? verified?.apiRuntime?.imageId : null;
+  if (inventory.format === "tr-standalone-install-v4" && !/^sha256:[0-9a-f]{64}$/u.test(apiImageId ?? "")) {
+    throw new Error("Verified API image ID is missing");
+  }
   const runDocker = dependencies.docker ?? docker;
   const inspectArchive = dependencies.imageId ?? installedImageIdFromArchive;
   const tags = {};
-  for (const image of inventory.images) {
-    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
-    const configId = inspectArchive(archive, image.reference);
-    const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
-    const acceptedIds = new Set([configId, manifestId]);
+  async function load(image, acceptedIds, archive) {
     const tag = `tr-standalone/${image.role}:sha-${inventory.sourceRevision}`;
     const existing = inspectOptionalTag(tag, runDocker);
     if (existing !== null && !acceptedIds.has(existing)) {
@@ -68,6 +68,18 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
     }
     if (existing === null) runDocker(["tag", loadedId, tag]);
     tags[image.role] = tag;
+  }
+  for (const image of inventory.images) {
+    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
+    const configId = inspectArchive(archive, image.reference);
+    const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
+    await load(image, new Set([configId, manifestId]), archive);
+  }
+  if (inventory.format === "tr-standalone-install-v4") {
+    const image = { role: "api", archive: inventory.apiRuntime.archive,
+      archiveSha256: inventory.apiRuntime.archiveSha256 };
+    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
+    await load(image, new Set([apiImageId]), archive);
   }
   return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
     tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };

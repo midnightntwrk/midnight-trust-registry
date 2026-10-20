@@ -185,7 +185,7 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || !SHA256.test(verified.runtimeOfflineComposeSha256 ?? "")
       || JSON.parse(inventoryBytes).runtimeCompose?.sha256 !== verified.runtimeComposeSha256
       || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
-      throw new Error("New standalone setup requires a verified v3 runtime Compose pin");
+      throw new Error("New standalone setup requires a verified v3/v4 runtime Compose pin");
     }
     const composeBytes = await readFile(composePath);
     if (sha256(composeBytes) !== verified.runtimeComposeSha256

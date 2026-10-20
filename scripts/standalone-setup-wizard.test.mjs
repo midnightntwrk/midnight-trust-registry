@@ -81,9 +81,13 @@ async function fixture(format = "tr-standalone-install-v2") {
   const images = pinnedStandaloneImages(compose.toString("utf8"));
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
     format, packageManifest: "release-manifest.json", images,
-    ...(format === "tr-standalone-install-v3" ? { runtimeCompose: {
+    ...(["tr-standalone-install-v3", "tr-standalone-install-v4"].includes(format) ? { runtimeCompose: {
       path: "compose.yml", sha256: composeSha256,
       offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
+    } } : {}),
+    ...(format === "tr-standalone-install-v4" ? { apiRuntime: {
+      manifest: "images/api.manifest.json", manifestSha256: "a".repeat(64),
+      archive: "images/api.image.tar", archiveSha256: "b".repeat(64),
     } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
   await writeFile(join(bundle, "compose.yml"), compose);
@@ -100,8 +104,9 @@ async function fixture(format = "tr-standalone-install-v2") {
     proofParameterCount: 18,
     images: images.map(({ role, reference }) => ({ role, reference,
       acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
-    runtimeComposeSha256: format === "tr-standalone-install-v3" ? composeSha256 : null,
-    runtimeOfflineComposeSha256: format === "tr-standalone-install-v3" ? offlineComposeSha256 : null });
+    runtimeComposeSha256: format !== "tr-standalone-install-v2" ? composeSha256 : null,
+    runtimeOfflineComposeSha256: format !== "tr-standalone-install-v2" ? offlineComposeSha256 : null,
+    apiRuntime: format === "tr-standalone-install-v4" ? { imageId: `sha256:${"c".repeat(64)}` } : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
@@ -326,8 +331,21 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   await assert.rejects(prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
-  }, stackDependencies(f)), /requires a verified v3 runtime Compose pin/u);
+  }, stackDependencies(f)), /requires a verified v3\/v4 runtime Compose pin/u);
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
+});
+
+test("v4 setup retains the API image pin but does not claim it is running", async () => {
+  const f = await fixture("tr-standalone-install-v4");
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.install.verified.apiRuntime.imageId, `sha256:${"c".repeat(64)}`);
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.localLedger, "pending");
+  assert.equal(status.releaseQualified, false);
 });
 
 test("v3 setup cannot record genesis or draft approval before stack observation", async () => {

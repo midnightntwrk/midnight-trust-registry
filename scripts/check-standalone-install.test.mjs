@@ -34,6 +34,41 @@ async function imageArchive(root, role, digest = manifestDigest, repoTags = null
   return sha(await readFile(archive));
 }
 
+async function apiImageArchive(root, labelRevision = revision, repoTags = null) {
+  const source = join(root, "source-api");
+  await mkdir(join(source, "blobs/sha256"), { recursive: true });
+  const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
+    Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
+    WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
+  } });
+  const configId = sha(config);
+  const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
+  const imageDigest = sha(image);
+  const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{ digest: `sha256:${imageDigest}`,
+    platform: { os: "linux", architecture: "arm64" } }] });
+  const imageId = `sha256:${sha(imageIndex)}`;
+  await writeFile(join(source, "blobs/sha256", configId), config);
+  await writeFile(join(source, "blobs/sha256", imageDigest), image);
+  await writeFile(join(source, "blobs/sha256", imageId.slice(7)), imageIndex);
+  await writeFile(join(source, "index.json"), JSON.stringify({ schemaVersion: 2,
+    manifests: [{ digest: imageId }] }));
+  await writeFile(join(source, "manifest.json"), JSON.stringify([{ Config: `blobs/sha256/${configId}`,
+    RepoTags: repoTags, Layers: [] }]));
+  const archive = join(root, "images/api.image.tar");
+  execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
+  const archiveSha256 = sha(await readFile(archive));
+  const manifest = { format: "tr-api-runtime-image-v1", sourceRevision: revision,
+    approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
+    baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
+    lockfileSha256: "c".repeat(64), dockerfileSha256: "d".repeat(64),
+    payload: { fileCount: 1, sha256: "e".repeat(64) }, imageId,
+    archiveName: "api.image.tar", archiveSha256 };
+  const manifestBytes = JSON.stringify(manifest);
+  await writeFile(join(root, "images/api.manifest.json"), manifestBytes);
+  return { manifest: "images/api.manifest.json", manifestSha256: sha(manifestBytes),
+    archive: "images/api.image.tar", archiveSha256, imageId };
+}
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tr-install-inventory-"));
   await mkdir(join(root, "artifacts"));
@@ -114,6 +149,61 @@ test("v3 install pins complete runtime Compose bytes", async () => {
     inventory.runtimeCompose.path = "../outside.yml";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v4 binds an API archive to the exact install source and runtime config", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services: {}\n");
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    inventory.format = "tr-standalone-install-v4";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    inventory.apiRuntime = await apiImageArchive(root);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const verified = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(verified.apiRuntime.imageId, inventory.apiRuntime.imageId);
+    assert.equal(verified.apiRuntime.platform, "linux/arm64");
+
+    const apiManifestPath = join(root, "images/api.manifest.json");
+    const original = await readFile(apiManifestPath);
+    await writeFile(apiManifestPath, "{}\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API image bytes disagree/u);
+    await writeFile(apiManifestPath, original);
+    const altered = JSON.parse(original);
+    altered.sourceRevision = "b".repeat(40);
+    const alteredBytes = JSON.stringify(altered);
+    await writeFile(apiManifestPath, alteredBytes);
+    inventory.apiRuntime.manifestSha256 = sha(alteredBytes);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /manifest is malformed or disagrees/u);
+    await writeFile(apiManifestPath, original);
+    inventory.apiRuntime.manifestSha256 = sha(original);
+    const wrongRuntime = await apiImageArchive(root, "b".repeat(40));
+    inventory.apiRuntime.archiveSha256 = sha(await readFile(join(root, "images/api.image.tar")));
+    altered.archiveSha256 = inventory.apiRuntime.archiveSha256;
+    altered.sourceRevision = revision;
+    altered.imageId = wrongRuntime.imageId;
+    const mismatchedBytes = JSON.stringify(altered);
+    await writeFile(apiManifestPath, mismatchedBytes);
+    inventory.apiRuntime.manifestSha256 = sha(mismatchedBytes);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /runtime config disagrees/u);
+    const tagged = await apiImageArchive(root, revision, ["example.test/api:latest"]);
+    const taggedManifest = JSON.parse(await readFile(apiManifestPath));
+    taggedManifest.imageId = tagged.imageId;
+    taggedManifest.archiveSha256 = tagged.archiveSha256;
+    const taggedBytes = JSON.stringify(taggedManifest);
+    await writeFile(apiManifestPath, taggedBytes);
+    inventory.apiRuntime.manifestSha256 = sha(taggedBytes);
+    inventory.apiRuntime.archiveSha256 = tagged.archiveSha256;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /imports a tag/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

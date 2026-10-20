@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -82,4 +82,37 @@ test("loaded image ID mismatch blocks tagging", async () => {
     },
   }), /disagrees/u);
   assert.equal(tagged, false);
+});
+
+test("v4 loads the verified API archive without a registry pull", async () => {
+  const inventoryPath = join(root, "install-inventory.json");
+  const original = await readFile(inventoryPath);
+  const imageId = `sha256:${"c".repeat(64)}`;
+  try {
+    const inventory = JSON.parse(original);
+    inventory.format = "tr-standalone-install-v4";
+    inventory.apiRuntime = { archive: "api.image.tar", archiveSha256: "d".repeat(64) };
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    const loads = [];
+    const result = await loadStandaloneInstallImages(root, {
+      verify: async () => ({ apiRuntime: { imageId } }),
+      archivePath: (_, image) => join(root, image.archive),
+      imageId: () => imageId,
+      docker: (args) => {
+        if (args[0] === "image" && args[2].startsWith("tr-standalone/")) {
+          throw { status: 1, stderr: "No such image" };
+        }
+        if (args[0] === "image") return imageId;
+        if (args[0] === "load") {
+          loads.push(args[2]);
+          return `Loaded image ID: ${imageId}`;
+        }
+        return "";
+      },
+    });
+    assert.deepEqual(loads, [join(root, "node.tar"), join(root, "api.image.tar")]);
+    assert.equal(result.tags.api, `tr-standalone/api:sha-${revision}`);
+  } finally {
+    await writeFile(inventoryPath, original);
+  }
 });

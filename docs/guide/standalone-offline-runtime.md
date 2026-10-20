@@ -104,6 +104,23 @@ placeholder with approved exact values:
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
+To include a separately built API image from the **same signed source SHA**,
+run instead:
+
+```sh
+node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory>
+```
+
+This writes a v4 inventory with
+`images/api.manifest.json` and `images/api.image.tar` pinned by exact hashes.
+The verifier checks that the API archive's OCI image ID, Linux architecture,
+non-root entrypoint, and source-revision label match the builder manifest and
+the package release revision. The offline loader then imports a source-scoped
+`tr-standalone/api` tag without pulling. A v3 bundle remains a ledger-stack
+bundle only; neither format starts the API or proves that it can query a live
+local ledger. Matching source labels and hashes do not independently prove
+image build provenance; the release operator must approve the exact archive
+digest and retain the signed build evidence.
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
