@@ -2,29 +2,42 @@
 
 This versioned chart is an **install template**, not 0.1.0 qualification
 evidence. It targets an isolated, arm64, self-hosted local Midnight ledger.
-It creates six single-replica Deployments, six private ClusterIP Services, and
-NetworkPolicies. It creates no Secret, PVC, Ingress, wallet, ServiceAccount,
+In its default `bootstrap` phase it creates node, indexer, and prover. After
+genesis and maintenance approval, `deploymentPhase: runtime` adds the API and
+two portals, for six single-replica Deployments and six private ClusterIP
+Services in total. It creates no Secret, PVC, Ingress, wallet, ServiceAccount,
 governance approval, or public-network resource. See [issue #218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218)
 and the [standalone qualification plan](../../docs/guide/standalone-offline-runtime.md).
 
 ## Prepare online, then run offline
 
-1. Independently approve the signed source, release manifest, genesis,
-   maintenance policy, and exact OCI digests. Build and verify the v4 install
+1. Independently approve the signed source, release manifest, maintenance
+   policy, and exact OCI digests. The chart fixes `CFG_PRESET=dev`; observe the
+   resulting local genesis on the target cluster and approve its hash during
+   first-run setup before signing the API plan. The chart cannot substitute a
+   different genesis or self-approve the observed one. Build and verify the v4 install
    bundle. Do not use the dummy digests in `tests/fixture-values.yaml`.
-2. Preload every approved OCI image onto **every** eligible arm64 node. The
-   chart fixes `imagePullPolicy: Never`, so an absent image fails closed rather
-   than pulling from a public registry. The operator may use an internal
-   registry during installation, but runtime nodes still need local image
-   bytes before egress is denied.
+2. During online installation, map each approved archive hash and image ID to
+   its private-registry digest after pushing the exact image bytes. Have the
+   release reviewer approve that mapping. Preload each resulting
+   `private-registry/name@sha256:<digest>` reference into the CRI image store
+   on **every** eligible arm64 node (for example with `crictl pull`), and
+   inspect the local CRI image ID and repo digest on every node against the
+   approved mapping. `docker load` on the workstation does not preload a
+   Kubernetes node. The chart fixes `imagePullPolicy: Never`; an absent or
+   differently named image fails closed instead of pulling. The chart schema
+   checks digest syntax, not archive-to-registry provenance. Retain the
+   reviewed mapping and node inspection receipts as install evidence.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
    chart does not hash PVC contents. Back up node and indexer volumes together
    with their genesis, contract address, release manifest, and operator
    approval record. Never treat an empty replacement PVC as a restore.
-4. Provide an indexer Secret with keys `password` and `secret`. Provide an
-   API approval Secret with keys `api-plan.json`, `api-plan.sig`,
+4. Before bootstrap, provide an indexer Secret with keys `password` and
+   `secret`. Reserve names for the API approval and reviewer-keyring Secrets
+   in values, but create those only after genesis is observed and the plan is
+   independently approved. The API approval Secret needs keys `api-plan.json`, `api-plan.sig`,
    `install-inventory.json`, `release-manifest.json`, and `snapshot.json`, plus
    a reviewer-keyring Secret with `pubring.kbx`. The detached signed plan must
    refer to these files under `/run/trust-registry/` and to the exact pinned
@@ -36,14 +49,21 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    narrowly scoped RBAC separately. Native Secrets have a size limit, so
    large snapshots need a separately reviewed delivery mechanism.
 5. Provide a public local beneficiary key, reviewer fingerprint, and real
-   digest-pinned image references in a private values file. Run
+   digest-pinned image references in a private values file. Install the
+   `bootstrap` phase first, observe its genesis, complete the first-run
+   wizard's detached approvals, and provision the API Secrets. Then upgrade
+   to `deploymentPhase: runtime`. Do not use `--wait` for a runtime upgrade
+   until the signed plan and local ledger are actually ready. Run
    `helm lint charts/trust-registry-standalone -f <approved-values>` and
    `helm template rc charts/trust-registry-standalone -n <namespace> -f <approved-values>`.
    Only after inspecting the output and approvals should an operator install
    it. `pnpm run test:helm-standalone` tests templates with synthetic values.
 
-The API init container copies projected Secret symlinks into a private
-memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
+The current chart does not execute the first-run wizard or approve governance;
+the operator must carry its signed receipts across the phase transition.
+
+The API init container idempotently copies projected Secret symlinks into a
+private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
 directory becomes 0700. This is required because the API refuses symlinked
 approval files. The API then starts in signed, read-only local-ledger mode
 with explicit `--cluster-bind`. It has no unsafe demo mutation flag, no
@@ -55,6 +75,9 @@ same-origin ingress design; they are **not** provided by this chart.
 
 The default NetworkPolicy denies ingress and egress for chart pods. Narrow
 rules permit API-to-node/indexer, indexer-to-node, and selected DNS access.
+Actor-labelled pods cannot reach node RPC; only the API, indexer, and
+operator-labelled pods can. Operator access to the dev-preset RPC is powerful
+and must be restricted by namespace RBAC.
 In-namespace bootstrap/actor pods must carry
 `trust-registry.midnight.network/role=operator` or `=actor` for service ingress.
 Namespace RBAC must prevent untrusted users from assigning those labels.
@@ -65,8 +88,9 @@ node-local agents, and CNI behavior require real-cluster verification.
 No workload receives a service-account token. The API and portals run as
 non-root with read-only root filesystems. Node, indexer, and prover images
 have not yet been qualified with a forced non-root UID; the operator must
-review image behavior, volume ownership, Pod Security admission, and resource
-requests/limits on the target cluster. All workload probes are present, but
+review image behavior, pre-provision PVC ownership for the image UIDs, Pod
+Security admission, and resource requests/limits on the target cluster. All
+workload probes are present, but
 their live readiness semantics must be validated before release.
 
 Upgrades and rollbacks must preserve the PVCs and replayable approval

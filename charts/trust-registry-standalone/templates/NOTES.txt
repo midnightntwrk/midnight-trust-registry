@@ -1,3 +1,8 @@
+Deployment phase: {{ .Values.deploymentPhase }}.
+Bootstrap runs only node, indexer, and prover. After target-cluster genesis
+readback and independent first-run approvals, supply the signed API materials
+and upgrade with deploymentPhase=runtime to add API and portals.
+
 This chart creates private ClusterIP Services only. It does not create Secrets,
 PVCs, an Ingress, a wallet, a ledger deployment, or release approval.
 

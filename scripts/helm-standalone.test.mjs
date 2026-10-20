@@ -16,8 +16,8 @@ const helm = (args) => {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
   return result.stdout;
 };
-const rendered = () => yaml.loadAll(helm(["template", "rc", chart, "--namespace", "trust-registry",
-  "--values", fixture])).filter(Boolean);
+const rendered = (phase = "runtime") => yaml.loadAll(helm(["template", "rc", chart,
+  "--namespace", "trust-registry", "--values", fixture, "--set", `deploymentPhase=${phase}`])).filter(Boolean);
 const role = (object) => object.metadata?.labels?.["app.kubernetes.io/component"]
   ?? object.spec?.selector?.matchLabels?.["app.kubernetes.io/component"]
   ?? object.spec?.podSelector?.matchLabels?.["app.kubernetes.io/component"];
@@ -61,6 +61,7 @@ test("renders six private digest-pinned runtime workloads without embedded crede
   const init = pod.initContainers[0];
   assert.equal(init.name, "stage-approval");
   assert.match(init.args[0], /cp \/input\/approval\/api-plan.json/u);
+  assert.match(init.args[0], /rm -f \/run\/trust-registry\/api-plan.json/u);
   assert.match(init.args[0], /chmod 700 \/run\/trust-registry\/reviewer-keyring/u);
   assert.equal(pod.volumes.find((volume) => volume.name === "approval-runtime").emptyDir.medium, "Memory");
   assert.deepEqual(pod.volumes.filter((volume) => volume.secret).map((volume) => volume.secret.secretName).sort(),
@@ -69,10 +70,23 @@ test("renders six private digest-pinned runtime workloads without embedded crede
   assert.ok(main.args.includes("--cluster-bind"));
   assert.ok(!main.args.includes("--unsafe-demo-mutations"));
   assert.equal(main.securityContext.readOnlyRootFilesystem, true);
+  assert.equal(main.startupProbe.timeoutSeconds, 20);
+  assert.equal(main.readinessProbe.timeoutSeconds, 20);
+  assert.equal(main.livenessProbe.timeoutSeconds, 5);
+  assert.doesNotMatch(main.livenessProbe.exec.command.join(" "), /\/health/u);
   assert.equal(main.volumeMounts.find((mount) => mount.name === "approval-runtime").readOnly, true);
   const proof = deployments.find((deployment) => role(deployment) === "proof-server");
   assert.equal(proof.spec.template.spec.volumes[0].persistentVolumeClaim.readOnly, true);
   assert.equal(proof.spec.template.spec.containers[0].volumeMounts[0].readOnly, true);
+});
+
+test("bootstrap waits for target genesis approval before creating the API or portals", () => {
+  const objects = rendered("bootstrap");
+  const deployments = objects.filter((object) => object.kind === "Deployment");
+  const services = objects.filter((object) => object.kind === "Service");
+  assert.deepEqual(deployments.map(role).sort(), ["node", "indexer", "proof-server"].sort());
+  assert.deepEqual(services.map(role).sort(), ["node", "indexer", "proof-server"].sort());
+  assert.ok(!JSON.stringify(objects).includes("api-approval"));
 });
 
 test("default-denies all chart pods and allows only local service traffic plus scoped DNS", () => {
@@ -93,4 +107,8 @@ test("default-denies all chart pods and allows only local service traffic plus s
   assert.equal(ingress.length, 6);
   assert.ok(ingress.every((policy) => policy.spec.ingress.every((entry) =>
     entry.from.every((source) => source.podSelector && !source.ipBlock))));
+  const nodeIngress = ingress.find((policy) => role(policy) === "node");
+  assert.ok(nodeIngress);
+  assert.ok(nodeIngress.spec.ingress[0].from.every((source) =>
+    source.podSelector.matchLabels["trust-registry.midnight.network/role"] !== "actor"));
 });

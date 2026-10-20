@@ -1,4 +1,6 @@
 # No release images, credentials, genesis, or PVCs are approved by default.
+deploymentPhase: bootstrap
+
 images:
   node: ""
   indexer: ""

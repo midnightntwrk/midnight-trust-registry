@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentPhase "runtime" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +35,10 @@ spec:
           args:
             - |
               umask 077
+              rm -f /run/trust-registry/api-plan.json /run/trust-registry/api-plan.sig
+              rm -f /run/trust-registry/install-inventory.json /run/trust-registry/release-manifest.json
+              rm -f /run/trust-registry/snapshot.json
+              rm -rf /run/trust-registry/reviewer-keyring
               mkdir /run/trust-registry/reviewer-keyring
               cp /input/approval/api-plan.json /run/trust-registry/api-plan.json
               cp /input/approval/api-plan.sig /run/trust-registry/api-plan.sig
@@ -41,6 +46,9 @@ spec:
               cp /input/approval/release-manifest.json /run/trust-registry/release-manifest.json
               cp /input/approval/snapshot.json /run/trust-registry/snapshot.json
               cp /input/keyring/pubring.kbx /run/trust-registry/reviewer-keyring/pubring.kbx
+              chmod 600 /run/trust-registry/api-plan.json /run/trust-registry/api-plan.sig
+              chmod 600 /run/trust-registry/install-inventory.json /run/trust-registry/release-manifest.json
+              chmod 600 /run/trust-registry/snapshot.json /run/trust-registry/reviewer-keyring/pubring.kbx
               chmod 700 /run/trust-registry/reviewer-keyring
           resources:
             {{- toYaml .Values.resources.api | nindent 12 }}
@@ -81,15 +89,18 @@ spec:
           startupProbe:
             exec:
               command: [node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            timeoutSeconds: 20
             periodSeconds: 10
-            failureThreshold: 30
+            failureThreshold: 120
           readinessProbe:
             exec:
               command: [node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            timeoutSeconds: 20
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: [node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+              command: [node, -e, "const s=require('node:net').connect(4400,'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"]
+            timeoutSeconds: 5
             periodSeconds: 30
           resources:
             {{- toYaml .Values.resources.api | nindent 12 }}
@@ -108,11 +119,11 @@ spec:
         - name: approval-input
           secret:
             secretName: {{ .Values.secrets.apiApprovalName | quote }}
-            defaultMode: 0444
+            defaultMode: 0440
         - name: keyring-input
           secret:
             secretName: {{ .Values.secrets.apiKeyringName | quote }}
-            defaultMode: 0444
+            defaultMode: 0440
         - name: approval-runtime
           emptyDir:
             medium: Memory
@@ -121,3 +132,4 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 32Mi
+{{- end }}

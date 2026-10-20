@@ -2,8 +2,9 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
-  "required": ["images", "node", "storage", "secrets", "imagePullPolicy", "networkPolicy"],
+  "required": ["deploymentPhase", "images", "node", "storage", "secrets", "imagePullPolicy", "networkPolicy"],
   "properties": {
+    "deploymentPhase": { "enum": ["bootstrap", "runtime"] },
     "images": {
       "type": "object",
       "additionalProperties": false,

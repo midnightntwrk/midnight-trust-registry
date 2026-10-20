@@ -11,7 +11,8 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name | quote }}
       app.kubernetes.io/part-of: trust-registry-standalone
   policyTypes: [Ingress, Egress]
-{{- range $role, $callers := dict "node" (list "indexer" "api" "operator" "actor") "indexer" (list "api" "operator" "actor") "proof-server" (list "operator" "actor") "api" (list "operator" "actor") "admin" (list "operator" "actor") "applicant" (list "operator" "actor") }}
+{{- range $role, $callers := dict "node" (list "indexer" "api" "operator") "indexer" (list "api" "operator" "actor") "proof-server" (list "operator" "actor") "api" (list "operator" "actor") "admin" (list "operator" "actor") "applicant" (list "operator" "actor") }}
+{{- if or (eq $.Values.deploymentPhase "runtime") (has $role (list "node" "indexer" "proof-server")) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -37,7 +38,9 @@ spec:
         - protocol: TCP
           port: {{ index (dict "node" 9944 "indexer" 8088 "proof-server" 6300 "api" 4400 "admin" 4173 "applicant" 4173) $role }}
 {{- end }}
+{{- end }}
 {{- range $role, $destinations := dict "indexer" (list "node") "api" (list "node" "indexer") }}
+{{- if or (eq $.Values.deploymentPhase "runtime") (eq $role "indexer") }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -70,4 +73,5 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+{{- end }}
 {{- end }}

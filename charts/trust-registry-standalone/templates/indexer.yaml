@@ -69,10 +69,12 @@ spec:
             exec:
               command: [sh, -ec, "cat /var/run/indexer-standalone/running"]
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: http
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources.indexer | nindent 12 }}
           securityContext:

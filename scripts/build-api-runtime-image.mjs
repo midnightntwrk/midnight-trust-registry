@@ -245,6 +245,10 @@ export async function buildApiRuntimeImage(input) {
     run("docker", ["run", "--rm", "--network", "none", "--read-only", "--tmpfs",
       "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "/usr/bin/gpg", imageId, "--version"],
     { capture: true });
+    run("docker", ["run", "--rm", "--network", "none", "--read-only", "--tmpfs",
+      "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "/bin/sh", imageId, "-ec",
+      "for tool in cp mkdir rm chmod; do command -v \"$tool\" >/dev/null; done"],
+    { capture: true });
     const runtimeRevision = run("docker", ["run", "--rm", "--network", "none", "--read-only",
       "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "node", imageId,
       "-e", "import('/app/dist/cli.js').then(() => process.stdout.write(require('node:fs').readFileSync('/app/source-revision', 'utf8').trim()))"],

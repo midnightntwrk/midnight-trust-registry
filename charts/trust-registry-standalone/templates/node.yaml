@@ -49,10 +49,12 @@ spec:
                   -d '{"jsonrpc":"2.0","id":1,"method":"chain_getBlockHash","params":[1]}'
                   http://127.0.0.1:9944 | grep -q '"result":"0x'
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: rpc
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources.node | nindent 12 }}
           securityContext:

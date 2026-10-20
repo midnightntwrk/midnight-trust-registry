@@ -1,4 +1,5 @@
 # Template test data only. These digests are not real images or release approvals.
+deploymentPhase: runtime
 images:
   node: example.invalid/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   indexer: example.invalid/indexer@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
