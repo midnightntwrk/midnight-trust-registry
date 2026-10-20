@@ -67,6 +67,8 @@ test("rejects missing roles, tag references, unpinned inventory, and pulls", () 
   const tagged = structuredClone(receipt);
   tagged.images[0].reference = "registry.example.test/tr/node:latest";
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, tagged, valuesSha256), /node/u);
+  tagged.images[0].reference = `midnightntwrk/node@sha256:${"e".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, tagged, valuesSha256), /node/u);
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals,
     { ...values, imagePullPolicy: "Always" }, receipt, valuesSha256), /disagree/u);
   assert.throws(() => verifyHelmImageMapping(bundle,

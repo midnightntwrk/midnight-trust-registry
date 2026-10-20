@@ -13,7 +13,7 @@ import { verifyMappingSignature } from "./verify-helm-mapping-signature.mjs";
 const execFileAsync = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
-const REFERENCE = /^[a-z0-9][a-z0-9.:-]*(\/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$/u;
+const REFERENCE = /^(?:localhost(?::[0-9]{1,5})?|[a-z0-9][a-z0-9.-]*\.[a-z0-9][a-z0-9.-]*(?::[0-9]{1,5})?|[a-z0-9][a-z0-9-]*:[0-9]{1,5})(?:\/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$/u;
 const NODE = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/u;
 const ROLES = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");

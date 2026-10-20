@@ -28,6 +28,8 @@ test("chart lints only with explicit operator inputs", () => {
   assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
     "--set", "images.api=example.invalid/api:latest"]), /images.api/u);
   assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
+    "--set", `images.api=midnightntwrk/api@sha256:${"a".repeat(64)}`]), /images.api/u);
+  assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
     "--set", `images.api=example.invalid/api:latest@sha256:${"a".repeat(64)}`]), /images.api/u);
   assert.throws(() => helm(["template", "1rc", chart, "--values", fixture]),
     /release name must start with a letter/u);

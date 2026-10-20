@@ -20,7 +20,7 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 2. During online installation, map each approved archive hash and image ID to
    its private-registry digest after pushing the exact image bytes. Have the
    release reviewer approve that mapping. Preload each resulting
-   `private-registry/name@sha256:<digest>` reference into the CRI image store
+   `registry.example.test/name@sha256:<digest>` reference into the CRI image store
    on **every** eligible arm64 node (for example with `crictl pull`), and
    inspect the local CRI image ID and repo digest on every node against the
    approved mapping. `docker load` on the workstation does not preload a
@@ -55,7 +55,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    the one values file supplied to this command, and verifies the reviewer's
    signature over the mapping. The registry digest is linked to the archive
    **only by that independent human approval**, not cryptographically by this
-   tool. Retain the preflight output's `mappingSha256` and require every
+   tool. Use fully qualified image references with an explicit registry host;
+   short Docker Hub names are rejected before install because CRI may report
+   their normalized names differently. Retain the preflight output's `mappingSha256` and require every
    node receipt to name that same hash; a signature alone does not recheck
    the install archives on the node. Install with that exact values file and no extra `-f` or `--set`
    overrides; the tool cannot police a later Helm invocation. It does

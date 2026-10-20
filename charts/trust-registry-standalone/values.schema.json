@@ -69,7 +69,7 @@
     }
   },
   "definitions": {
-    "image": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.:-]*(/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$" },
+    "image": { "type": "string", "pattern": "^(localhost(:[0-9]{1,5})?|[a-z0-9][a-z0-9.-]*\\.[a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?|[a-z0-9][a-z0-9-]*:[0-9]{1,5})(/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$" },
     "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63 },
     "labels": {
       "type": "object",

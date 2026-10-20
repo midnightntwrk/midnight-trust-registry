@@ -62,6 +62,9 @@ test("rejects an absent digest, wrong config ID, empty image, or incomplete reco
 test("requires a complete signed mapping, explicit Unix endpoint, and node identity", async () => {
   assert.throws(() => validateSignedImageMapping({ ...mapping,
     images: mapping.images.slice(1) }), /malformed/u);
+  const short = structuredClone(mapping);
+  short.images[0].reference = `midnightntwrk/node@sha256:${"a".repeat(64)}`;
+  assert.throws(() => validateSignedImageMapping(short), /pinned node/u);
   assert.throws(() => validateCriEndpoint("tcp://127.0.0.1:9000"), /Unix/u);
   assert.throws(() => validateCriEndpoint("unix:///run/../private.sock"), /Unix/u);
   await assert.rejects(collectHelmCriImageReceipt(bytes, "worker..one", endpoint,
