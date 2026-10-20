@@ -33,8 +33,9 @@ resulting registry digest. Test the exact platform and image bytes before releas
 
 The current portals default to a loopback API URL in the browser and let the
 operator select another local API URL; ingress/TLS and browser-origin policy
-remain deployment responsibilities. There is no Trust Registry API OCI build
-in this slice. In particular, the API's existing CLI is file-backed, so these
-portal images and a Helm template cannot satisfy #218 or #219 alone. Actual
-offline actor journeys, API and wallet continuity, cluster network-policy
-enforcement, restore, and independent security review remain release gates.
+remain deployment responsibilities. A separate API image builder and signed
+local-ledger CLI path now exist, but the portal images, API image, and Helm
+template do not satisfy #218 or #219 by themselves. Actual local-ledger
+readback, offline actor journeys, API and wallet continuity, cluster
+network-policy enforcement, restore, and independent security review remain
+release gates.

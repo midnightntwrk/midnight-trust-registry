@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tr.componentName" (dict "root" . "component" "indexer") }}
+  labels:
+    {{- include "tr.labels" (dict "root" . "component" "indexer") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tr.selector" (dict "root" . "component" "indexer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tr.labels" (dict "root" . "component" "indexer") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: indexer
+          image: {{ .Values.images.indexer | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: RUST_LOG
+              value: indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,fastrace_opentelemetry=off,info
+            - name: APP__INFRA__NODE__URL
+              value: ws://{{ include "tr.componentName" (dict "root" . "component" "node") }}:9944
+            - name: APP__APPLICATION__NETWORK_ID
+              value: undeployed
+            - name: APP__INFRA__STORAGE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.indexerName | quote }}
+                  key: password
+            - name: APP__INFRA__PUB_SUB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.indexerName | quote }}
+                  key: password
+            - name: APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.indexerName | quote }}
+                  key: password
+            - name: APP__INFRA__SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.indexerName | quote }}
+                  key: secret
+            - name: APP__INFRA__SPO_NODE__URL
+              value: ws://{{ include "tr.componentName" (dict "root" . "component" "node") }}:9944
+            - name: APP__INFRA__SPO_NODE__BLOCKFROST_ID
+              value: e2e-test-dummy-id
+          ports:
+            - name: http
+              containerPort: 8088
+          startupProbe:
+            exec:
+              command: [sh, -ec, "cat /var/run/indexer-standalone/running"]
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: [sh, -ec, "cat /var/run/indexer-standalone/running"]
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources.indexer | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.indexerClaim | quote }}

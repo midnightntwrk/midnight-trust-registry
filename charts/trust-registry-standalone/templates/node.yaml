@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tr.componentName" (dict "root" . "component" "node") }}
+  labels:
+    {{- include "tr.labels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tr.selector" (dict "root" . "component" "node") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tr.labels" (dict "root" . "component" "node") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: node
+          image: {{ .Values.images.node | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: CFG_PRESET
+              value: dev
+            - name: SIDECHAIN_BLOCK_BENEFICIARY
+              value: {{ .Values.node.beneficiary | quote }}
+          ports:
+            - name: rpc
+              containerPort: 9944
+          startupProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -ec
+                - >-
+                  curl -sf -H 'Content-Type: application/json'
+                  -d '{"jsonrpc":"2.0","id":1,"method":"chain_getBlockHash","params":[1]}'
+                  http://127.0.0.1:9944 | grep -q '"result":"0x'
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources.node | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: chain
+              mountPath: /node/chain
+      volumes:
+        - name: chain
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.nodeClaim | quote }}

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tr.componentName" (dict "root" . "component" "proof-server") }}
+  labels:
+    {{- include "tr.labels" (dict "root" . "component" "proof-server") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tr.selector" (dict "root" . "component" "proof-server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tr.labels" (dict "root" . "component" "proof-server") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: proof-server
+          image: {{ .Values.images.proofServer | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [midnight-proof-server, -v]
+          env:
+            - name: RUST_BACKTRACE
+              value: full
+            - name: MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 6300
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources.proofServer | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: parameters
+              mountPath: /.cache/midnight/zk-params
+              readOnly: true
+      volumes:
+        - name: parameters
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.proofParametersClaim | quote }}
+            readOnly: true

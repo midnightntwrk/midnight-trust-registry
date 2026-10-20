@@ -1,0 +1,41 @@
+# No release images, credentials, genesis, or PVCs are approved by default.
+images:
+  node: ""
+  indexer: ""
+  proofServer: ""
+  api: ""
+  admin: ""
+  applicant: ""
+
+node:
+  # Public local beneficiary key; never use a wallet seed here.
+  beneficiary: ""
+
+storage:
+  nodeClaim: ""
+  indexerClaim: ""
+  proofParametersClaim: ""
+
+secrets:
+  # Existing Secrets provisioned by the operator, not this chart.
+  indexerName: ""
+  apiApprovalName: ""
+  apiKeyringName: ""
+  apiReviewerFingerprint: ""
+
+# Runtime images must already be on every eligible node before egress is denied.
+imagePullPolicy: Never
+
+networkPolicy:
+  dnsNamespaceLabels:
+    kubernetes.io/metadata.name: kube-system
+  dnsPodLabels:
+    k8s-app: kube-dns
+
+resources:
+  node: {}
+  indexer: {}
+  proofServer: {}
+  api: {}
+  admin: {}
+  applicant: {}
