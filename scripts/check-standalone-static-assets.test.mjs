@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,6 +104,25 @@ test("v5 readback binds both loaded images to their verified asset lists without
       },
     }), /disagree/u);
     assert.deepEqual(removed, ["1".repeat(64)]);
+    const removedLinked = [];
+    await assert.rejects(checkStandaloneStaticAssets(root, {
+      verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
+        portalRuntimes: verifiedPortals }),
+      docker: (args) => {
+        if (args[0] === "image") return args.at(-1);
+        if (args[0] === "create") return "2".repeat(64);
+        if (args[0] === "cp") {
+          symlinkSync(root, args[2]);
+          return "";
+        }
+        if (args[0] === "rm") {
+          removedLinked.push(args.at(-1));
+          return "";
+        }
+        throw new Error(`Unexpected Docker command: ${args.join(" ")}`);
+      },
+    }), /real directory/u);
+    assert.deepEqual(removedLinked, ["2".repeat(64)]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
