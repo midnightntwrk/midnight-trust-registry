@@ -83,7 +83,8 @@ export function checkStandaloneTopology(network, containers, config = standalone
     || !/^[0-9a-f]{40}$/u.test(expected.sourceRevision))) {
     throw new Error("Verified image identities are incomplete");
   }
-  if (network?.Name !== config.network || network.Internal !== true
+  if (network?.Name !== config.network || typeof network.Id !== "string" || network.Id.length === 0
+    || network.Internal !== true
     || network.Driver !== "bridge" || network.EnableIPv6 !== false
     || network.Labels?.["com.docker.compose.project"] !== config.project) {
     throw new Error("Dedicated ledger network is not an internal IPv4-only Compose bridge");
@@ -181,6 +182,7 @@ export function checkStandaloneTopology(network, containers, config = standalone
     kind: "standalone-runtime-topology-observation",
     project: config.project,
     network: config.network,
+    networkId: network.Id,
     services: observed,
     internalNetworkOnly: true,
     proofParameterCacheReadOnly: true,

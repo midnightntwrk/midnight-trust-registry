@@ -111,7 +111,10 @@ export async function observeStandaloneEgress(dependencies = {}) {
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
   const config = standaloneStackConfig(dependencies.env ?? process.env);
   const expectedTopology = dependencies.expectedTopology;
-  await topology(config, expectedTopology);
+  const before = await topology(config, expectedTopology);
+  if (typeof before?.networkId !== "string" || before.networkId.length === 0) {
+    throw new Error("Ledger network identity was not observed before the egress probe");
+  }
   const image = (await command([
     "inspect", "--format", "{{.Config.Image}}", `${config.project}-node-1`,
   ])).stdout.trim();
@@ -162,11 +165,15 @@ export async function observeStandaloneEgress(dependencies = {}) {
     isolatedDnsCode: isolatedDns.code,
     isolatedDnsOutput: isolatedDns.stdout,
   });
-  await topology(config, expectedTopology);
+  const after = await topology(config, expectedTopology);
+  if (after?.networkId !== before.networkId) {
+    throw new Error("Ledger network identity changed during the egress probe");
+  }
   return {
     kind: "standalone-ledger-egress-probe",
     observedAt: new Date().toISOString(),
     project: config.project,
+    networkId: before.networkId,
     image,
     probeImage,
     canary: CANARY,

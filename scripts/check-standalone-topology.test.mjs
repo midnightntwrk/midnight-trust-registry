@@ -44,7 +44,7 @@ const containers = ["node", "indexer", "proof-server"].map(container);
 test("reports only topology, never offline qualification", () => {
   assert.deepEqual(checkStandaloneTopology(network, containers), {
     kind: "standalone-runtime-topology-observation",
-    project, network: ledger, services: ["indexer", "node", "proof-server"],
+    project, network: ledger, networkId: "ledger-id", services: ["indexer", "node", "proof-server"],
     internalNetworkOnly: true, proofParameterCacheReadOnly: true,
     egressDenied: "not-verified", actorJourneys: "not-run",
   });

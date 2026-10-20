@@ -1013,7 +1013,9 @@ ephemeral copy of the pinned node image on Docker's normal bridge. The same
 IP-pinned HTTPS request must then fail on the dedicated internal bridge,
 and the canary's DNS lookup must fail there as well. The control must have a
 broad outbound route; the internal probe must have no `/0` or `/1` route.
-The command changes no ledger data or service mounts. Its evidence is limited
+The observer also requires the same Docker network ID before and after the
+probe, so a replaced ledger bridge invalidates the result. The command changes
+no ledger data or service mounts. Its evidence is limited
 to this canary and the ledger bridge. It does not verify wallet, API, browser,
 backup, other host egress paths, or actor journeys, and it does not replace
 firewall logs or an offline end-to-end run.
