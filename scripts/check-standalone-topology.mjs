@@ -63,11 +63,11 @@ function requireLoopbackBinding(container, service, port) {
   const target = PORTS[service].target;
   if (!bindings || Object.keys(bindings).length !== 1
     || !Array.isArray(bindings[target]) || bindings[target].length !== 1
-    || bindings[target][0].HostIp !== "127.0.0.1"
-    || bindings[target][0].HostPort !== port
+    || bindings[target][0]?.HostIp !== "127.0.0.1"
+    || bindings[target][0]?.HostPort !== port
     || !effective || !Array.isArray(effective[target]) || effective[target].length !== 1
-    || effective[target][0].HostIp !== "127.0.0.1"
-    || effective[target][0].HostPort !== port
+    || effective[target][0]?.HostIp !== "127.0.0.1"
+    || effective[target][0]?.HostPort !== port
     || Object.entries(effective).some(([name, entries]) => name !== target
       && entries !== null && (!Array.isArray(entries) || entries.length !== 0))) {
     throw new Error(`Dedicated ${service} port is not bound only to approved loopback`);

@@ -232,18 +232,8 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
   });
 }
 
-export async function observeStandaloneStack(directory, dependencies = {}) {
-  return withLock(directory, async (root) => {
-    const { record } = await readRecord(root);
+async function preparedStandaloneTopology(root, record) {
     if (!record.stack) throw new Error("Prepare an isolated stack before observing it");
-    if (record.ledgerObservation || record.deployment) {
-      throw new Error("Stack observations cannot change after local-ledger observation begins");
-    }
-    const observations = record.stack.observations ?? (record.stack.observation
-      ? [record.stack.observation] : []);
-    if (!Array.isArray(observations) || observations.length >= 20) {
-      throw new Error("Stack observation history is full or malformed");
-    }
     if (record.install.verified?.runtimeComposeSha256
       && !Array.isArray(record.install.verified.images)) {
       throw new Error("Verified install image identities are missing from setup");
@@ -304,6 +294,22 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
           join(record.install.bundle, "compose.offline.yml")],
       } : {}),
     };
+    return { config, expectedTopology };
+}
+
+export async function observeStandaloneStack(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.stack) throw new Error("Prepare an isolated stack before observing it");
+    if (record.ledgerObservation || record.deployment) {
+      throw new Error("Stack observations cannot change after local-ledger observation begins");
+    }
+    const observations = record.stack.observations ?? (record.stack.observation
+      ? [record.stack.observation] : []);
+    if (!Array.isArray(observations) || observations.length >= 20) {
+      throw new Error("Stack observation history is full or malformed");
+    }
+    const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
       expectedTopology);
     const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
@@ -379,20 +385,9 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
       throw new Error("Observe the prepared local stack before recording its genesis pin");
     }
     if (record.install.verified?.runtimeComposeSha256) {
-      const config = standaloneStackConfig({
-        TR_STACK_NAME: record.stack.project,
-        COMPOSE_PROJECT_NAME: record.stack.project,
-        TR_NODE_PORT: record.stack.ports.node,
-        TR_INDEXER_PORT: record.stack.ports.indexer,
-        TR_PROOF_PORT: record.stack.ports["proof-server"],
-      });
-      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
-        sourceRevision: record.sourceRevision,
-        images: record.install.verified.images,
-        allowOffline: true,
-        composeFiles: [join(record.install.bundle, "compose.yml"),
-          join(record.install.bundle, "compose.offline.yml")],
-      });
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        expectedTopology);
       if (current.project !== record.stack.project
         || current.networkId !== record.stack.observation.topology.networkId
         || current.internalNetworkOnly !== true) {
@@ -407,6 +402,12 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     const pin = JSON.parse(pinBytes);
     if (pin.sourceRevision !== record.sourceRevision) {
       throw new Error("Genesis pin source revision disagrees with the installed bundle");
+    }
+    if (record.install.verified?.runtimeComposeSha256
+      && (pin.rpcUrl !== `http://127.0.0.1:${record.stack.ports.node}`
+        || !Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
+        || pin.allowedHosts[0] !== "127.0.0.1")) {
+      throw new Error("Genesis pin must target the prepared stack's exact loopback RPC endpoint");
     }
     const observation = await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
     record.ledgerObservation = {

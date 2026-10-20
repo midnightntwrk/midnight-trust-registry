@@ -409,6 +409,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   const result = await observeStandaloneStack(f.directory, {
     observeTopology: async (config, expected) => {
       assert.equal(config.project, project);
@@ -455,15 +456,38 @@ test("wizard records only selected ledger-bridge topology and egress observation
   assert.equal(repeated.stack.observations[0].egress.scope,
     "canary HTTPS and DNS on ledger bridge only");
   assert.equal(repeated.stack.observations[1].egress.canaryAddress, "192.0.2.1");
+  const envPath = join(f.directory, "stack.env");
+  const preparedEnv = await readFile(envPath);
+  await writeFile(envPath, preparedEnv.toString("utf8").replace("TR_NODE_PORT=39944", "TR_NODE_PORT=49944"));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("must not inspect Docker after env drift"); },
+  }), /Prepared stack environment changed/u);
+  await writeFile(envPath, preparedEnv);
+  const composePath = join(repeated.install.bundle, "compose.yml");
+  const preparedCompose = await readFile(composePath);
+  await writeFile(composePath, "name: changed\n");
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("must not inspect Docker after Compose drift"); },
+  }), /Runtime Compose changed/u);
+  await writeFile(composePath, preparedCompose);
   await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
     observeTopology: async () => { throw new Error("effective loopback port is absent"); },
     preflight: async () => { throw new Error("must not query genesis"); },
   }), /effective loopback port is absent/u);
   assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await writeFile(f.pinPath, JSON.stringify(pin));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true }),
+    preflight: async () => { throw new Error("must not query another stack"); },
+  }), /exact loopback RPC endpoint/u);
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await observeStandaloneLedger(f.directory, f.pinPath, {
     observeTopology: async (config, expected) => {
       assert.equal(config.project, project);
       assert.equal(expected.composeFiles.length, 2);
+      assert.equal(expected.requirePrivateInputs, true);
+      assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
       return { project, networkId: ledgerNetworkId, internalNetworkOnly: true };
     },
     preflight: async () => ({ kind: "local-node-observation-only" }),
@@ -478,6 +502,7 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await observeStandaloneStack(f.directory, {
     observeTopology: async () => ({ project, networkId: ledgerNetworkId, preparedInputsMatched: true,
       verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),

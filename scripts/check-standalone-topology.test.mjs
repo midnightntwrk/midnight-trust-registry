@@ -226,6 +226,15 @@ test("rejects public or extra port bindings and mismatched private ports", () =>
   const unpublished = structuredClone(containers);
   unpublished[0].NetworkSettings.Ports["9944/tcp"] = [];
   assert.throws(() => checkStandaloneTopology(network, unpublished), /approved loopback/u);
+  const nullBinding = structuredClone(containers);
+  nullBinding[0].NetworkSettings.Ports["9944/tcp"] = [null];
+  assert.throws(() => checkStandaloneTopology(network, nullBinding), /approved loopback/u);
+  const wrongEffectivePort = structuredClone(containers);
+  wrongEffectivePort[0].NetworkSettings.Ports["9944/tcp"][0].HostPort = "49944";
+  assert.throws(() => checkStandaloneTopology(network, wrongEffectivePort), /approved loopback/u);
+  const duplicateEffective = structuredClone(containers);
+  duplicateEffective[0].NetworkSettings.Ports["9944/tcp"].push({ HostIp: "127.0.0.1", HostPort: "29944" });
+  assert.throws(() => checkStandaloneTopology(network, duplicateEffective), /approved loopback/u);
   const publicEffective = structuredClone(containers);
   publicEffective[0].NetworkSettings.Ports["9944/tcp"][0].HostIp = "0.0.0.0";
   assert.throws(() => checkStandaloneTopology(network, publicEffective), /approved loopback/u);
