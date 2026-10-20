@@ -100,6 +100,8 @@ test("rejects altered scope, mapping, preflight, and invalid node selectors", as
   assert.throws(() => validateApprovedNodeScope({ ...scope,
     approvedAt: "2026" }, mappingBytes), /ISO-8601/u);
   assert.throws(() => validateApprovedNodeScope({ ...scope,
+    approvedAt: "2026-02-30T00:00:00Z" }, mappingBytes), /real UTC/u);
+  assert.throws(() => validateApprovedNodeScope({ ...scope,
     nodes: [{ ...scope.nodes[0], imageEndpoint: "tcp://host:9000" }] }, mappingBytes), /Unix/u);
 });
 

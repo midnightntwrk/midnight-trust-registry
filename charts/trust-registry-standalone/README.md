@@ -141,12 +141,14 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
    This re-runs the signed archive-to-values mapping preflight, verifies the
    scope signature, and rejects missing, extra, duplicate, non-regular,
-   stale-timestamp, or identity-mismatched node receipts. Each approved node
+   pre-approval-timestamp, or identity-mismatched node receipts. Each approved node
    needs a distinct collector hostname. It reports hashes for the scope and each
    receipt so the operator can sign and retain the checked evidence set. It
    does **not** discover eligible nodes, authenticate the machine or clock that made a
    receipt, verify the external inventory record, or prove pod execution,
-   egress denial, or offline operation. If a new eligible node is added or a
+   egress denial, or offline operation. Timestamp checking only establishes
+   that the receipt claims a time no earlier than approval; it does not reject
+   future timestamps or prove actual collection time. If a new eligible node is added or a
    node is replaced, approve a new scope and recollect its evidence. Keep
    the RC gate open until the real-cluster install and offline actor journeys
    are independently reviewed.

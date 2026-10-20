@@ -20,7 +20,13 @@ function parseIsoTime(value) {
   if (typeof value !== "string" || !ISO_TIME.test(value) || !Number.isFinite(Date.parse(value))) {
     throw new Error("Approval and collection times must be ISO-8601 UTC timestamps");
   }
-  return Date.parse(value);
+  const parsed = Date.parse(value);
+  const canonical = value.replace(/(?:\.(\d{1,3}))?Z$/u,
+    (_suffix, millis) => `.${(millis ?? "").padEnd(3, "0")}Z`);
+  if (new Date(parsed).toISOString() !== canonical) {
+    throw new Error("Approval and collection times must be real UTC timestamps");
+  }
+  return parsed;
 }
 
 function validDnsName(value, maxLength = 253) {
@@ -91,7 +97,7 @@ export function checkHelmCriFleet(mappingBytes, preflight, scopeBytes, receiptBy
 }
 
 async function boundedReceipt(path) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.size === 0 || stat.size > 2 * 1024 * 1024) {
