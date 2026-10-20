@@ -34,6 +34,7 @@ import {
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
+import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
 const ledgerNetworkId = "ledger-id";
@@ -269,6 +270,10 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
   await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
     ...proposal,
     privateKey: "must-not-be-accepted",
+  }), /Canonical reviewer metadata/u);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    ...proposal,
+    reviewedReference: demoGenesisReference("standalone").exampleReference,
   }), /Canonical reviewer metadata/u);
   const result = await draftStandaloneGenesisApproval(f.directory, proposal);
   assert.equal(result.state, "unsigned-human-review-required");
@@ -2079,6 +2084,17 @@ test("signature verification reads a private snapshot of the retained approval b
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(Buffer.compare(Buffer.from(record.genesisApproval.documentBase64, "base64"), original), 0);
   assert.deepEqual((await readdir(f.directory)).sort(), ["setup-record.json"]);
+});
+
+test("synthetic demo reference cannot enter a signed genesis approval", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  const document = JSON.parse(await readFile(f.approvalPath, "utf8"));
+  document.reviewedReference = demoGenesisReference("preview").exampleReference;
+  await writeFile(f.approvalPath, JSON.stringify(document));
+  await assert.rejects(approve(f), /does not bind the current install and observed genesis/u);
 });
 
 test("detached GPG verification accepts only the pinned signing key and exact bytes", async (t) => {

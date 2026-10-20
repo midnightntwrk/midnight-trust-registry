@@ -679,7 +679,12 @@ gpg --verify genesis-approval.sig genesis-approval.unsigned.json
 
 The `reviewedReference` in the draft must identify the independently reviewed
 chain specification or reproducible genesis evidence and its immutable digest
-(plus a stable review/ticket identifier where available). The node-generated
+(a ticket or document ID is optional). For a format-only illustration, run
+`node scripts/demo-genesis-reference.mjs standalone` or
+`node scripts/demo-genesis-reference.mjs preview`. These commands hash distinct,
+synthetic chain-spec fixtures and print `demo:` references. They do not contact
+either network, read a real genesis, produce a signed approval, or qualify a
+release. The wizard rejects their `demo:` references. The node-generated
 candidate packet by itself is not such a reference. If that independent
 reference is not available, leave the draft unsigned and deployment blocked;
 do not substitute chat approval or a GitHub commit signature.

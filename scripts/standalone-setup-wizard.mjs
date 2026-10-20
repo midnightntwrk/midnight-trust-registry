@@ -512,6 +512,7 @@ function reviewerProposal(proposal, fields) {
     || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
     || typeof proposal.reviewedReference !== "string"
     || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512
+    || proposal.reviewedReference.startsWith("demo:")
     || !Number.isFinite(approvedAt)
     || new Date(approvedAt).toISOString() !== proposal.approvedAt
     || approvedAt > Date.now() + 5 * 60_000) {
@@ -669,6 +670,7 @@ export async function approveStandaloneGenesis(
       || approval.reviewerFingerprint !== expectedFingerprint
       || typeof approval.reviewedReference !== "string"
       || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
+    || approval.reviewedReference.startsWith("demo:")
       || !Number.isFinite(approvedAt) || approvedAt < Date.parse(record.createdAt)
       || approvedAt > Date.now() + 5 * 60_000) {
       throw new Error("Reviewer approval does not bind the current install and observed genesis");
