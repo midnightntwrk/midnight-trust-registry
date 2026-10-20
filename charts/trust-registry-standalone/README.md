@@ -45,12 +45,17 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    ```
 
    The receipt is a JSON object with `format: "tr-helm-image-mapping-v1"`,
-   the bundle's `sourceRevision` and `inventorySha256`, and an `images` array
+   the bundle's `sourceRevision` and `inventorySha256`, the SHA-256 of the
+   exact approved values file as `valuesSha256`, and an `images` array
    containing exactly `node`, `indexer`, `proofServer`, `api`, `admin`, and
    `applicant`. Each image entry has `role`, the chart's exact `reference`,
    the approved `archiveSha256`, and its local `imageId`. The verifier hashes
-   the v4 bundle and both portal archives, checks those identities and the
-   reviewed signature against chart values, and fails on mismatches. It does
+   the v4 bundle and both portal archives, checks those identities against
+   the one values file supplied to this command, and verifies the reviewer's
+   signature over the mapping. The registry digest is linked to the archive
+   **only by that independent human approval**, not cryptographically by this
+   tool. Install with that exact values file and no extra `-f` or `--set`
+   overrides; the tool cannot police a later Helm invocation. It does
    **not** prove registry provenance, CRI preload, live image execution, or
    offline behavior. Keep the raw per-node `crictl inspecti` output, node
    identity, and reviewer-approved archive-to-registry comparison separately

@@ -8,4 +8,5 @@ COPY public/ /app/public/
 COPY serve-static.mjs entrypoint.mjs /app/
 USER 1000:1000
 EXPOSE 4173
+ENTRYPOINT []
 CMD ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"]

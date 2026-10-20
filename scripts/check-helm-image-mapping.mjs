@@ -16,12 +16,28 @@ const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const REFERENCE = /^[a-z0-9][a-z0-9.:-]*(\/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$/u;
 const ROLES = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 
-export function staticImageIdFromArchive(archive, role, revision) {
+function archiveJson(archive, member) {
+  return JSON.parse(execFileSync("tar", ["-xOf", archive, member], {
+    encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+}
+
+function verifiedBlob(archive, digest) {
+  if (!IMAGE_ID.test(digest)) throw new Error("Invalid OCI blob digest");
+  const bytes = execFileSync("tar", ["-xOf", archive, `blobs/sha256/${digest.slice(7)}`], {
+    timeout: 30_000, maxBuffer: 1024 * 1024,
+  });
+  if (createHash("sha256").update(bytes).digest("hex") !== digest.slice(7)) {
+    throw new Error("OCI blob hash mismatch");
+  }
+  return JSON.parse(bytes);
+}
+
+export function staticImageIdsFromArchive(archive, role, revision) {
   let legacy;
   try {
-    legacy = JSON.parse(execFileSync("tar", ["-xOf", archive, "manifest.json"], {
-      encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
-    }));
+    legacy = archiveJson(archive, "manifest.json");
   } catch {
     throw new Error(`${role} image archive has no readable Docker manifest`);
   }
@@ -46,12 +62,41 @@ export function staticImageIdFromArchive(archive, role, revision) {
     || config.config?.Labels?.["org.opencontainers.image.revision"] !== revision
     || config.config?.User !== "1000:1000"
     || config.config?.WorkingDir !== "/app"
+    || (config.config?.Entrypoint != null && config.config.Entrypoint.length !== 0)
     || !config.config?.Env?.includes(`TR_STATIC_ROLE=${role}`)
     || JSON.stringify(config.config?.Cmd)
       !== JSON.stringify(["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"])) {
     throw new Error(`${role} image archive config disagrees with the approved runtime`);
   }
-  return `sha256:${configDigest}`;
+  const acceptedIds = [`sha256:${configDigest}`];
+  const members = execFileSync("tar", ["-tf", archive], {
+    encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  }).split("\n");
+  if (!members.includes("index.json") && !members.includes("./index.json")) return acceptedIds;
+  const index = archiveJson(archive, "index.json");
+  if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
+    || !IMAGE_ID.test(index.manifests[0]?.digest)) {
+    throw new Error(`${role} OCI index is malformed`);
+  }
+  const topDigest = index.manifests[0].digest;
+  const top = verifiedBlob(archive, topDigest);
+  let imageDigest = topDigest;
+  let imageManifest = top;
+  if (Array.isArray(top.manifests)) {
+    const candidates = top.manifests.filter((entry) => entry.platform?.os === "linux"
+      && entry.platform?.architecture === "arm64");
+    if (candidates.length !== 1 || !IMAGE_ID.test(candidates[0].digest)) {
+      throw new Error(`${role} OCI index does not select one arm64 image`);
+    }
+    imageDigest = candidates[0].digest;
+    imageManifest = verifiedBlob(archive, imageDigest);
+  }
+  if (imageManifest?.schemaVersion !== 2
+    || imageManifest.config?.digest !== `sha256:${configDigest}`) {
+    throw new Error(`${role} OCI image manifest disagrees with the Docker config`);
+  }
+  return [...new Set([...acceptedIds, imageDigest, topDigest])];
 }
 
 async function sha256(path) {
@@ -70,17 +115,19 @@ async function portalIdentity(manifestPath, role, revision) {
   }
   const archive = join(dirname(manifestPath), manifest.archiveName);
   if (!(await lstat(archive)).isFile() || await sha256(archive) !== manifest.archiveSha256
-    || staticImageIdFromArchive(archive, role, revision) !== manifest.imageId) {
+    || !staticImageIdsFromArchive(archive, role, revision).includes(manifest.imageId)) {
     throw new Error(`${role} image archive disagrees with its manifest`);
   }
   return { archiveSha256: manifest.archiveSha256, acceptedIds: [manifest.imageId] };
 }
 
-export function verifyHelmImageMapping(bundle, inventory, portals, values, receipt) {
+export function verifyHelmImageMapping(bundle, inventory, portals, values, receipt, valuesSha256) {
   if (inventory.format !== "tr-standalone-install-v4"
     || receipt?.format !== "tr-helm-image-mapping-v1"
     || receipt.sourceRevision !== bundle.sourceRevision
     || receipt.inventorySha256 !== bundle.inventorySha256
+    || !SHA256.test(valuesSha256)
+    || receipt.valuesSha256 !== valuesSha256
     || values?.imagePullPolicy !== "Never"
     || !["bootstrap", "runtime"].includes(values?.deploymentPhase)
     || !Array.isArray(receipt.images)
@@ -115,34 +162,49 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
     mappedRoles: [...ROLES], deploymentPhase: values.deploymentPhase };
 }
 
-export function verifyMappingSignature(receiptPath, signaturePath, keyringPath, signerFingerprint) {
+export function approvedMappingSigner(output, signerFingerprint) {
   if (!FINGERPRINT.test(signerFingerprint)) throw new Error("Invalid mapping signer fingerprint");
+  if (/^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED|BADSIG|ERRSIG|NO_PUBKEY)\b/mu.test(output)) {
+    throw new Error("Helm image mapping signer key or signature is expired, revoked, or invalid");
+  }
+  const valid = /^\[GNUPG:\] VALIDSIG (.+)$/mu.exec(output)?.[1]?.trim().split(/\s+/u);
+  if (!valid || (valid[0] !== signerFingerprint && valid[9] !== signerFingerprint)) {
+    throw new Error("Helm image mapping signature is not from the approved signer");
+  }
+  return signerFingerprint;
+}
+
+export function verifyMappingSignature(receiptBytes, signaturePath, keyringPath, signerFingerprint) {
   let output;
   try {
-    output = execFileSync("gpgv", ["--keyring", keyringPath, "--status-fd", "1",
-      signaturePath, receiptPath], { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
+    output = execFileSync("gpgv", ["--keyring", resolve(keyringPath), "--status-fd", "1",
+      "--", resolve(signaturePath), "-"], { input: receiptBytes, encoding: "utf8",
+      timeout: 30_000, stdio: ["pipe", "pipe", "pipe"] });
   } catch {
     throw new Error("Helm image mapping has no valid detached signature");
   }
-  const fingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/mu.exec(output)?.[1];
-  if (fingerprint !== signerFingerprint) {
-    throw new Error("Helm image mapping signature is not from the approved signer");
-  }
-  return fingerprint;
+  return approvedMappingSigner(output, signerFingerprint);
 }
 
 export async function checkHelmImageMapping(paths) {
+  const inventoryBytes = await readFile(join(paths.bundleRoot, "install-inventory.json"));
   const bundle = await verifyStandaloneInstallBundle(paths.bundleRoot);
-  const inventory = JSON.parse(await readFile(join(paths.bundleRoot, "install-inventory.json"), "utf8"));
+  if (createHash("sha256").update(inventoryBytes).digest("hex") !== bundle.inventorySha256) {
+    throw new Error("Install inventory changed during mapping verification");
+  }
+  const inventory = JSON.parse(inventoryBytes);
   const portals = {
     admin: await portalIdentity(paths.adminManifest, "admin", bundle.sourceRevision),
     applicant: await portalIdentity(paths.applicantManifest, "applicant", bundle.sourceRevision),
   };
-  const values = yaml.load(await readFile(paths.valuesPath, "utf8"));
-  verifyMappingSignature(paths.receiptPath, paths.signaturePath, paths.keyringPath,
+  const valuesBytes = await readFile(paths.valuesPath);
+  const values = yaml.load(valuesBytes.toString("utf8"));
+  const receiptBytes = await readFile(paths.receiptPath);
+  verifyMappingSignature(receiptBytes, paths.signaturePath, paths.keyringPath,
     paths.signerFingerprint);
-  const receipt = JSON.parse(await readFile(paths.receiptPath, "utf8"));
-  return verifyHelmImageMapping(bundle, inventory, portals, values, receipt);
+  const receipt = JSON.parse(receiptBytes);
+  return verifyHelmImageMapping(bundle, inventory, portals, values, receipt,
+    createHash("sha256").update(valuesBytes).digest("hex"));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
