@@ -344,6 +344,8 @@ test("wizard prepares a private isolated stack without starting or approving it"
   const status = await standaloneSetupStatus(f.directory);
   assert.equal(status.stackConfiguration, "prepared-runtime-unobserved");
   assert.equal(status.localLedger, "pending");
+  assert.deepEqual(status.restartObservation, { status: "pending" });
+  assert.equal(status.restartRestore, "pending");
   assert.equal(status.releaseQualified, false);
   await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
     /already prepared/u);

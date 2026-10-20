@@ -1119,6 +1119,11 @@ private `restart-baseline.json` and `restart-verification.json` files are
 created once with mode 0600; do not overwrite them to retry a failure. Retain
 the explicit restart command log and investigate failed or ambiguous results.
 Never use `down -v` on a ledger whose history is evidence.
+The wizard's `status` command rechecks these private evidence files without
+querying Docker: `restartObservation` can report `verified-ledger-bridge-only`
+with both finalized heights, but `restartRestore` remains `pending`. A changed
+baseline, mismatched verification, or evidence bound to another setup makes
+status fail closed; preserve those files for investigation instead of recapturing.
 
 This is **ledger-bridge continuity only**. A pre-deployment run is a development
 smoke, not RC evidence. Even after deployment, this helper does not read back

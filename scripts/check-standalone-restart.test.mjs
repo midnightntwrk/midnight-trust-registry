@@ -9,6 +9,7 @@ import {
   captureStandaloneRestartBaseline,
   compareStandaloneRestartSnapshots,
   observeStandaloneRestartSnapshot,
+  readStandaloneRestartEvidence,
   verifyStandaloneRestart,
 } from "./check-standalone-restart.mjs";
 
@@ -151,6 +152,8 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     },
   };
   try {
+    const expected = { sourceRevision: revision, installInventorySha256: digest(inventory), project };
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected), { status: "pending" });
     await observeStandaloneRestartSnapshot(directory, { allowUnpublishedHostPorts: true }, dependencies);
     assert.equal(allowUnpublishedHostPorts, true);
     const baseline = await captureStandaloneRestartBaseline(directory, dependencies);
@@ -159,6 +162,10 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     const baselineRecord = JSON.parse(await readFile(baseline.baselinePath, "utf8"));
     assert.equal(baselineRecord.networkId, "ledger-id");
     assert.equal(baselineRecord.hostPortAccess, "unpublished-install-access-required");
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected),
+      { status: "baseline-captured-verification-pending" });
+    await assert.rejects(readStandaloneRestartEvidence(directory,
+      { ...expected, project: "another-project" }), /not bound to this setup/u);
     await assert.rejects(captureStandaloneRestartBaseline(directory, dependencies), { code: "EEXIST" });
     restarted = true;
     brokenHistory = true;
@@ -168,6 +175,16 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     assert.equal(result.releaseQualified, false);
     assert.equal(JSON.parse(await readFile(join(directory, "restart-verification.json"), "utf8"))
       .baselineSha256.length, 64);
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected), {
+      status: "verified-ledger-bridge-only", beforeFinalizedHeight: 11, afterFinalizedHeight: 12,
+    });
+    const verificationPath = join(directory, "restart-verification.json");
+    const verificationBytes = await readFile(verificationPath);
+    const forged = JSON.parse(verificationBytes);
+    forged.baselineSha256 = "f".repeat(64);
+    await writeFile(verificationPath, JSON.stringify(forged));
+    await assert.rejects(readStandaloneRestartEvidence(directory, expected), /does not match/u);
+    await writeFile(verificationPath, verificationBytes);
     await assert.rejects(verifyStandaloneRestart(directory, dependencies), { code: "EEXIST" });
   } finally {
     await rm(root, { recursive: true, force: true });

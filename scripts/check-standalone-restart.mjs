@@ -33,7 +33,7 @@ async function privateDirectory(directory) {
 
 async function privateFile(path) {
   const stat = await lstat(path);
-  if (!stat.isFile() || (stat.mode & 0o077) !== 0
+  if (!stat.isFile() || stat.size === 0 || stat.size > 1024 * 1024 || (stat.mode & 0o077) !== 0
     || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
     throw new Error("Restart evidence input must be an owned private regular file");
   }
@@ -260,6 +260,44 @@ export async function verifyStandaloneRestart(directory, dependencies = {}) {
     ...result, observedAt: new Date().toISOString(), baselineSha256: sha256(baselineBytes), after,
   });
   return result;
+}
+
+export async function readStandaloneRestartEvidence(directory, expected) {
+  const root = await privateDirectory(directory);
+  let baselineBytes;
+  let verificationBytes;
+  try {
+    baselineBytes = await privateFile(join(root, BASELINE));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    verificationBytes = await privateFile(join(root, VERIFICATION));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (!baselineBytes && !verificationBytes) return { status: "pending" };
+  if (!baselineBytes) throw new Error("Restart verification exists without its baseline");
+  const baseline = JSON.parse(baselineBytes);
+  if (baseline.format !== "tr-standalone-restart-snapshot-v1"
+    || baseline.sourceRevision !== expected.sourceRevision
+    || baseline.installInventorySha256 !== expected.installInventorySha256
+    || baseline.project !== expected.project) {
+    throw new Error("Restart baseline is not bound to this setup");
+  }
+  if (!verificationBytes) return { status: "baseline-captured-verification-pending" };
+  const verification = JSON.parse(verificationBytes);
+  const comparison = compareStandaloneRestartSnapshots(baseline, verification.after);
+  if (verification.baselineSha256 !== sha256(baselineBytes)
+    || !Number.isFinite(Date.parse(verification.observedAt ?? ""))
+    || Object.entries(comparison).some(([key, value]) => verification[key] !== value)) {
+    throw new Error("Restart verification does not match its baseline and readback");
+  }
+  return {
+    status: "verified-ledger-bridge-only",
+    beforeFinalizedHeight: comparison.beforeFinalizedHeight,
+    afterFinalizedHeight: comparison.afterFinalizedHeight,
+  };
 }
 
 if (process.argv[1] && await realpath(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) {

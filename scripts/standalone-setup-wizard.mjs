@@ -22,7 +22,7 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
-import { observeStandaloneRestartSnapshot } from "./check-standalone-restart.mjs";
+import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -1593,6 +1593,11 @@ export async function approveStandaloneCommitteeRecovery(
 
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
+  const restartObservation = await readStandaloneRestartEvidence(root, {
+    sourceRevision: record.sourceRevision,
+    installInventorySha256: record.install?.inventorySha256,
+    project: record.stack?.project,
+  });
   let lockPresent = false;
   try {
     await lstat(join(root, ".setup.lock"));
@@ -1619,6 +1624,7 @@ export async function standaloneSetupStatus(directory) {
     maintenanceTransitionAlert: record.maintenanceAttempt?.alert ?? null,
     maintenanceLastReadback: record.maintenanceAttempt?.reconciliation?.status ?? null,
     offlineJourneys: "pending",
+    restartObservation,
     restartRestore: "pending",
     independentReview: "pending",
     releaseQualified: false,
