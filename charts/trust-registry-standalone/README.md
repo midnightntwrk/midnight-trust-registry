@@ -140,15 +140,20 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    ```
 
    This re-runs the signed archive-to-values mapping preflight, verifies the
-   scope signature, and rejects missing, extra, duplicate, non-regular, or
-   identity-mismatched node receipts. It reports hashes for the scope and each
+   scope signature, and rejects missing, extra, duplicate, non-regular,
+   stale-timestamp, or identity-mismatched node receipts. Each approved node
+   needs a distinct collector hostname. It reports hashes for the scope and each
    receipt so the operator can sign and retain the checked evidence set. It
-   does **not** discover eligible nodes, authenticate the machine that made a
+   does **not** discover eligible nodes, authenticate the machine or clock that made a
    receipt, verify the external inventory record, or prove pod execution,
    egress denial, or offline operation. If a new eligible node is added or a
    node is replaced, approve a new scope and recollect its evidence. Keep
    the RC gate open until the real-cluster install and offline actor journeys
    are independently reviewed.
+   Relative preflight paths are resolved from the command's working directory,
+   not from `preflight-paths.json`. The signed scope's namespace and release
+   name must be independently matched to the actual Helm install invocation;
+   this checker does not observe the cluster release.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this

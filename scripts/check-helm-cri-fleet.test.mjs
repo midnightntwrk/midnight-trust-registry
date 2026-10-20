@@ -54,21 +54,39 @@ test("covers every approved node with one matching CRI receipt", async () => {
 test("rejects missing, extra, duplicate, or mismatched node observations", async () => {
   const observed = await receipts();
   observed.delete("worker-2");
-  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /preflight/u);
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /receipt count/u);
   observed.set("unexpected", await receipt(scope.nodes[1]));
   assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /Missing CRI receipt/u);
+  observed.set("worker-2", await receipt(scope.nodes[1]));
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /receipt count/u);
+  observed.delete("unexpected");
   const duplicate = { ...scope, nodes: [scope.nodes[0], scope.nodes[0]] };
   assert.throws(() => validateApprovedNodeScope(duplicate, mappingBytes), /duplicate/u);
-  observed.delete("unexpected");
-  observed.set("worker-2", await receipt(scope.nodes[1]));
+  assert.throws(() => validateApprovedNodeScope({ ...scope,
+    nodes: [scope.nodes[0], { ...scope.nodes[1], collectorHost: "worker-1" }] }, mappingBytes), /duplicate/u);
   const forged = JSON.parse(observed.get("worker-2"));
   forged.collectorHost = "other-host";
   observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
   assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /node identity/u);
   forged.collectorHost = "worker-2";
+  forged.nodeName = "worker-1";
+  observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /node identity/u);
+  forged.nodeName = "worker-2";
+  forged.imageEndpoint = "unix:///var/run/other.sock";
+  observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /node identity/u);
+  forged.imageEndpoint = endpoint;
   forged.images[0].inspecti.status.id = configId(1);
   observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
   assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /exact reviewed/u);
+  forged.images[0].inspecti.status.id = configId(0);
+  forged.collectedAt = "2025-10-20T00:00:00Z";
+  observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /predates/u);
+  forged.collectedAt = "2026";
+  observed.set("worker-2", Buffer.from(JSON.stringify(forged)));
+  assert.throws(() => checkHelmCriFleet(mappingBytes, preflight, scopeBytes, observed), /ISO-8601/u);
 });
 
 test("rejects altered scope, mapping, preflight, and invalid node selectors", async () => {
@@ -79,6 +97,8 @@ test("rejects altered scope, mapping, preflight, and invalid node selectors", as
     Buffer.from(JSON.stringify({ ...scope, mappingSha256: "0".repeat(64) })), observed), /scope/u);
   assert.throws(() => validateApprovedNodeScope({ ...scope,
     eligibleNodeSelection: "kubernetes.io/arch=amd64" }, mappingBytes), /scope/u);
+  assert.throws(() => validateApprovedNodeScope({ ...scope,
+    approvedAt: "2026" }, mappingBytes), /ISO-8601/u);
   assert.throws(() => validateApprovedNodeScope({ ...scope,
     nodes: [{ ...scope.nodes[0], imageEndpoint: "tcp://host:9000" }] }, mappingBytes), /Unix/u);
 });
