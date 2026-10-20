@@ -65,6 +65,7 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
 
   const observed = [];
   for (const entry of expected) {
+    const approvedImage = mapping.images.find((image) => image.role === entry.role);
     const deployment = deployments.find((item) => item.metadata.name === entry.deploymentName);
     const labels = { "app.kubernetes.io/instance": scope.releaseName,
       "app.kubernetes.io/part-of": "trust-registry-standalone",
@@ -107,15 +108,20 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
     }
     const container = running.spec?.containers?.[0];
     const status = running.status?.containerStatuses?.[0];
+    const observedImageId = typeof status?.imageID === "string"
+      ? status.imageID.replace(/^[a-z][a-z0-9+.-]*:\/\//u, "") : "";
     if (running.metadata.namespace !== scope.namespace
       || typeof running.metadata.name !== "string" || running.metadata.name.length === 0
       || running.metadata.deletionTimestamp || running.status?.phase !== "Running"
       || !approvedNodes.includes(running.spec?.nodeName)
+      || (running.spec.ephemeralContainers?.length ?? 0) !== 0
+      || (running.status.ephemeralContainerStatuses?.length ?? 0) !== 0
       || running.spec.containers?.length !== 1 || container?.name !== entry.component
       || container.image !== entry.reference || container.imagePullPolicy !== "Never"
       || running.status.containerStatuses?.length !== 1 || status?.name !== entry.component
       || status.image !== entry.reference || status.ready !== true
-      || typeof status.imageID !== "string" || status.imageID.length === 0
+      || (observedImageId !== entry.reference && observedImageId !== approvedImage.configId)
+      || typeof status.containerID !== "string" || status.containerID.length === 0
       || !running.status.conditions?.some((condition) => condition.type === "Ready"
         && condition.status === "True")) {
       throw new Error(`Pod is not running the approved image: ${entry.component}`);
@@ -126,8 +132,13 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
         || template.initContainers[0].image !== entry.reference
         || template.initContainers[0].imagePullPolicy !== "Never"
         || running.spec.initContainers?.length !== 1
+        || running.spec.initContainers[0].name !== "stage-approval"
         || running.spec.initContainers[0].image !== entry.reference
+        || running.spec.initContainers[0].imagePullPolicy !== "Never"
+        || running.spec.initContainers[0].restartPolicy === "Always"
         || running.status.initContainerStatuses?.length !== 1
+        || running.status.initContainerStatuses[0].name !== "stage-approval"
+        || running.status.initContainerStatuses[0].image !== entry.reference
         || running.status.initContainerStatuses[0].state?.terminated?.exitCode !== 0) {
         throw new Error("API approval init container did not complete from the pinned image");
       }
@@ -142,7 +153,7 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
   return { format: "tr-helm-live-workload-observation-v1", observedAt: new Date().toISOString(),
     kubeContext, clusterReference: scope.clusterReference, namespace: scope.namespace,
     releaseName: scope.releaseName, scopeSha256: sha256(scopeBytes),
-    mappingSha256: sha256(mappingBytes), nodes: approvedNodes.sort(), workloads: observed,
+    mappingSha256: sha256(mappingBytes), nodes: [...approvedNodes].sort(), workloads: observed,
     qualification: "not-established: observed Kubernetes state is not an offline actor or restore test" };
 }
 

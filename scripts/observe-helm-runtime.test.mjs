@@ -57,9 +57,11 @@ function fixture() {
       spec: { nodeName: "worker-1", containers: [structuredClone(container)],
         ...(name === "api" ? { initContainers: [structuredClone(init)] } : {}) },
       status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }],
-        containerStatuses: [{ name, image: reference(role), imageID: `containerd://sha256:${"f".repeat(64)}`,
-          ready: true }], ...(name === "api" ? { initContainerStatuses: [{ name: "stage-approval",
-          state: { terminated: { exitCode: 0 } } }] } : {}) } });
+        containerStatuses: [{ name, image: reference(role),
+          imageID: `containerd://sha256:${String(roles.indexOf(role) + 1).repeat(64)}`,
+          containerID: `containerd://${"f".repeat(64)}`, ready: true }],
+        ...(name === "api" ? { initContainerStatuses: [{ name: "stage-approval",
+          image: reference(role), state: { terminated: { exitCode: 0 } } }] } : {}) } });
   }
   return { nodes, workloads };
 }
@@ -99,6 +101,12 @@ test("rejects missing nodes, stale rollout, unowned pods, and image or policy dr
   pod.spec.containers[0].imagePullPolicy = "Always";
   assert.throws(check, /not running/u);
   pod.spec.containers[0].imagePullPolicy = "Never";
+  pod.status.containerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
+  assert.throws(check, /not running/u);
+  pod.status.containerStatuses[0].imageID = `containerd://sha256:${"1".repeat(64)}`;
+  pod.spec.ephemeralContainers = [{ name: "debug", image: "unapproved:latest" }];
+  assert.throws(check, /not running/u);
+  delete pod.spec.ephemeralContainers;
   const api = workloads.items.find((item) => item.kind === "Pod"
     && item.metadata.labels["app.kubernetes.io/component"] === "api");
   api.status.initContainerStatuses[0].state.terminated.exitCode = 1;

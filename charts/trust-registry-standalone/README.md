@@ -169,15 +169,21 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    This first repeats the signed fleet check, then reads the arm64 Node list
    and this release's Deployments, ReplicaSets, and Pods from the selected
    Kubernetes API. It fails if the live arm64 node names differ from the
-   approved scope, any expected workload is absent or unready, a Pod is not
+   approved scope, any expected labelled workload is absent or unready, a Pod is not
    owned through the expected ReplicaSet and Deployment, or a running image
-   reference or pull policy differs from the approved mapping. Capture the
+   reference, image ID, or pull policy differs from the approved mapping, or
+   an ephemeral debug container is present. Capture the
    output and the raw Kubernetes API responses through an access-controlled
    evidence channel, along with the kubeconfig trust anchor, context, cluster
-   identity, RBAC grants, time, and Helm revision. The command does not
+   identity, RBAC grants, time, and Helm revision. Review kubeconfig `exec`
+   plugins and the inherited proxy environment before running: `kubectl` may
+   execute credential plugins and use a configured proxy. The command does not
    authenticate the reviewer-approved `clusterReference` against the API,
    prove image bytes executed from the CRI store, verify PVC contents,
-   measure runtime egress, or exercise the local ledger or actor journeys.
+   inspect unrelated or unlabelled workloads, measure runtime egress, or
+   exercise the local ledger or actor journeys. The two API queries are not
+   one atomic snapshot; a separate, authenticated evidence capture is still
+   needed for release review.
    A passing synthetic test is not live qualification evidence.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
