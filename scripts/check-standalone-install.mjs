@@ -313,7 +313,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   let portalRuntimes = null;
   if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
     if (Object.keys(inventory.portalRuntimes ?? {}).sort().join("\0") !== "admin\0applicant") {
-      throw new Error("Standalone v5 install requires both portal image pins");
+      throw new Error("Standalone v5/v6 install requires both portal image pins");
     }
     portalRuntimes = {};
     for (const role of ["admin", "applicant"]) {

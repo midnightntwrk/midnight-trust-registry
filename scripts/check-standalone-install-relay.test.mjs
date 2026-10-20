@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { checkStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
+import { checkStandaloneInstallRelay as checkRelay, observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { standaloneStackConfig } from "./check-standalone-topology.mjs";
 
 const config = standaloneStackConfig({ TR_STACK_NAME: "tr-standalone-local-relaytest" });
@@ -38,13 +42,17 @@ const bindings = Object.fromEntries(services.map((service) => [relayTargets[serv
   [{ HostIp: "127.0.0.1", HostPort: relayPorts[service] }]]));
 const relay = {
   Id: "relay-id", Name: `/${config.project}-install-relay`, Image: digest,
-  Config: { Image: reference, Entrypoint: ["/usr/bin/python3"], Cmd: ["/relay.py"], Labels: {} },
+  Config: { Image: reference, Entrypoint: ["/usr/bin/python3"], Cmd: ["/relay.py"],
+    Labels: {}, Env: [], User: "root" },
   State: { Running: true }, HostConfig: { PortBindings: bindings },
   NetworkSettings: { Networks: { bridge: { NetworkID: "bridge-id" },
     [config.network]: { NetworkID: "ledger-id" } }, Ports: structuredClone(bindings) },
   Mounts: [{ Type: "bind", Source: bundle.installRelay.path,
     Destination: "/relay.py", RW: false }],
 };
+const baseImage = { Id: digest, Config: { Env: [], User: "root" } };
+const checkStandaloneInstallRelay = (network, ledgerContainers, candidate, config, verified) =>
+  checkRelay(network, ledgerContainers, candidate, config, verified, undefined, baseImage);
 
 test("verified relay grants installation-only loopback access to the unpublished bridge", () => {
   const observed = checkStandaloneInstallRelay(network, containers, relay, config, bundle);
@@ -88,4 +96,51 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
   publicLedger[0].NetworkSettings.Networks.external = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneInstallRelay(network, publicLedger, relay, config, bundle),
     /non-internal network attachment/u);
+  for (const [change, pattern] of [
+    [(candidate) => { candidate.Name = "/other-install-relay"; }, /identity or entrypoint/u],
+    [(candidate) => { candidate.State.Running = false; }, /identity or entrypoint/u],
+    [(candidate) => { candidate.HostConfig.Privileged = true; }, /elevated privileges/u],
+    [(candidate) => { candidate.Mounts.push({ Type: "bind", Destination: "/extra", RW: false }); }, /script mount/u],
+    [(candidate) => { candidate.HostConfig.PortBindings["30944/tcp"][0].HostPort = "60945"; }, /effective port differs/u],
+    [(candidate) => {
+      candidate.HostConfig.PortBindings["30944/tcp"][0].HostPort = "60888";
+      candidate.NetworkSettings.Ports["30944/tcp"][0].HostPort = "60888";
+    }, /host ports must be distinct/u],
+  ]) {
+    const candidate = structuredClone(relay);
+    change(candidate);
+    assert.throws(() => checkStandaloneInstallRelay(network, containers, candidate, config, bundle), pattern);
+  }
+});
+
+test("live relay observation hashes both host and running mount bytes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-relay-check-"));
+  try {
+    const path = join(root, "install-relay.py");
+    const bytes = Buffer.from("# pinned relay\n");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    await writeFile(path, bytes);
+    const installed = { ...bundle, installRelay: { path, sha256 } };
+    const running = structuredClone(relay);
+    running.Mounts[0].Source = path;
+    const docker = async (args) => {
+      if (args[0] === "ps") return "node-id\nindexer-id\nproof-server-id\n";
+      if (args[0] === "network") return JSON.stringify([network]);
+      if (args[0] === "image") return JSON.stringify([baseImage]);
+      if (args[0] === "exec") return `${sha256}  /relay.py\n`;
+      if (args[0] === "inspect" && args.length === 2) return JSON.stringify([running]);
+      if (args[0] === "inspect") return JSON.stringify(containers);
+      throw new Error("Unexpected Docker call");
+    };
+    assert.equal((await observeStandaloneInstallRelay(config, installed, undefined, { docker })).relayId,
+      "relay-id");
+    await assert.rejects(observeStandaloneInstallRelay(config, installed, undefined, {
+      docker: async (args) => args[0] === "exec" ? `${"0".repeat(64)}  /relay.py\n` : docker(args),
+    }), /Running installation relay script differs/u);
+    await writeFile(path, "changed\n");
+    await assert.rejects(observeStandaloneInstallRelay(config, installed, undefined, { docker }),
+      /script changed after bundle verification/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -806,6 +806,24 @@ export async function approveStandaloneCommitteeDeployment(
   });
 }
 
+async function requireCurrentInstallRelay(root, record, verified, plan, dependencies) {
+  const approved = record.ledgerObservation.installAccess;
+  const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+  const live = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+    config, verified, expectedTopology);
+  const indexerHttp = `http://127.0.0.1:${live.ports?.indexer}/api/v4/graphql`;
+  const indexerWs = `ws://127.0.0.1:${live.ports?.indexer}/api/v4/graphql/ws`;
+  if (live.relayId !== approved.relayId
+    || live.networkId !== approved.networkId
+    || live.relayScriptSha256 !== approved.relayScriptSha256
+    || JSON.stringify(live.ports) !== JSON.stringify(approved.ports)
+    || plan.network.rpcUrl !== `http://127.0.0.1:${live.ports?.node}`
+    || plan.network.indexerHttpUrl !== indexerHttp
+    || plan.network.indexerWsUrl !== indexerWs) {
+    throw new Error("Verified installation relay changed or plan endpoints diverged");
+  }
+}
+
 export async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -831,16 +849,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     }
     const approvedAccess = record.ledgerObservation.installAccess;
     if (approvedAccess?.kind === "standalone-install-relay-observation") {
-      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
-      const live = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
-        config, verified, expectedTopology);
-      if (live.relayId !== approvedAccess.relayId
-        || live.networkId !== approvedAccess.networkId
-        || live.relayScriptSha256 !== approvedAccess.relayScriptSha256
-        || JSON.stringify(live.ports) !== JSON.stringify(approvedAccess.ports)
-        || plan.network.rpcUrl !== `http://127.0.0.1:${live.ports.node}`) {
-        throw new Error("Verified installation relay changed before deployment reservation");
-      }
+      await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
     }
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
@@ -864,6 +873,9 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     await writeRecord(root, record);
     try {
       const result = await (dependencies.deploy ?? runLocalDeployment)(plan);
+      if (approvedAccess?.kind === "standalone-install-relay-observation") {
+        await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+      }
       record.deployment = { ...record.deployment, state: "observed", result };
       await writeRecord(root, record);
       return result;

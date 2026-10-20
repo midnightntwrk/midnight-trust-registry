@@ -2180,10 +2180,17 @@ candidate evidence meanwhile.
 
 The next complete v6 install-bundle format pins the temporary relay script
 beside the six images and two Compose files. Its read-only verifier checks the
-running relay image, exact Python entrypoint, read-only script mount, allowed
-environment, selected internal bridge plus default bridge, and three effective
-loopback ports. Wizard genesis observation and deployment reservation recheck
+running relay image, exact Python entrypoint, read-only script mount, environment
+identical to the pinned base image, mounted script bytes, selected internal
+bridge plus default bridge, and three effective loopback ports. Wizard genesis
+observation and deployment reservation recheck
 the same relay identity and source-pinned bytes. This is an installation-only
 access path: it must be removed before offline actor and egress qualification.
-The existing v3 smoke bundle lacks this pin and remains unqualified; no v6
-bundle has yet been built or independently approved on the local stack.
+The deployment plan's node and indexer URLs must all match the relay, and a
+post-submission drift check marks the attempt unknown rather than permitting a
+blind retry. The proof-server URL lives in provider configuration outside this
+plan and remains a separate qualification concern. Hashing current mounted
+bytes does not prove which Python code was loaded at process start against a
+malicious host administrator. The existing v3 smoke bundle lacks this pin and
+remains unqualified; no v6 bundle has yet been built or independently approved
+on the local stack.

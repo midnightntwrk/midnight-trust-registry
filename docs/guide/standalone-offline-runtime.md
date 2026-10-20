@@ -304,6 +304,13 @@ v6 verified, source-pinned temporary installation relay. Older bundles and
 the existing v3 smoke stack remain connectivity-only through the relay. Do
 not add an egress-capable network
 to the ledger services merely to make the check pass.
+The v6 relay gate verifies the running image, mounted script hash, inherited
+image environment, exact loopback publications, and selected bridge before and
+after genesis preflight. Deployment reservation checks the same relay and the
+plan's node and indexer URLs; a post-submission mismatch is an unknown outcome
+that must be reconciled, never retried blindly. The proof-server endpoint is
+still supplied by the operator's provider configuration and needs separate
+review. Remove the relay before any offline-runtime qualification.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat

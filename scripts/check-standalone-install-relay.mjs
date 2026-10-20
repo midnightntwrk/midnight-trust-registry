@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readFile, lstat } from "node:fs/promises";
 import { promisify } from "node:util";
 
-import { checkStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { checkStandaloneTopology } from "./check-standalone-topology.mjs";
 
 const run = promisify(execFile);
 const ROUTES = { node: "30944/tcp", indexer: "38088/tcp", "proof-server": "36300/tcp" };
@@ -22,10 +22,13 @@ function hostPort(binding) {
 
 /** Installation-only access. This must never be reported as offline egress denial. */
 export function checkStandaloneInstallRelay(network, ledgerContainers, relay, config, verified,
-  expectedTopology) {
+  expectedTopology, baseImage) {
   const pin = verified?.installRelay;
   const node = verified?.images?.find((image) => image.role === "node");
-  if (!pin || !node || relay?.Name !== `/${config.project}-install-relay`
+  if (!pin || !node || !node.acceptedIds?.includes(baseImage?.Id)
+    || JSON.stringify(relay?.Config?.Env ?? []) !== JSON.stringify(baseImage?.Config?.Env ?? [])
+    || relay?.Config?.User !== baseImage?.Config?.User
+    || relay?.Name !== `/${config.project}-install-relay`
     || relay.State?.Running !== true || relay.State?.Paused === true
     || relay.Config?.Image !== node.reference || !node.acceptedIds?.includes(relay.Image)
     || JSON.stringify(relay.Config?.Entrypoint) !== JSON.stringify(["/usr/bin/python3"])
@@ -88,7 +91,9 @@ async function docker(args) {
   return stdout;
 }
 
-export async function observeStandaloneInstallRelay(config, verified, expectedTopology) {
+export async function observeStandaloneInstallRelay(config, verified, expectedTopology,
+  dependencies = {}) {
+  const runDocker = dependencies.docker ?? docker;
   const pin = verified?.installRelay;
   if (!pin) throw new Error("Verified install bundle has no installation relay pin");
   const stat = await lstat(pin.path);
@@ -96,11 +101,20 @@ export async function observeStandaloneInstallRelay(config, verified, expectedTo
     !== pin.sha256) {
     throw new Error("Installation relay script changed after bundle verification");
   }
-  const ids = (await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${config.project}`]))
+  const ids = (await runDocker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${config.project}`]))
     .trim().split("\n").filter(Boolean);
   if (ids.length !== 3) throw new Error("Dedicated Compose project has an unexpected service count");
-  const [network] = JSON.parse(await docker(["network", "inspect", config.network]));
-  const [relay] = JSON.parse(await docker(["inspect", `${config.project}-install-relay`]));
-  const containers = JSON.parse(await docker(["inspect", ...ids]));
-  return checkStandaloneInstallRelay(network, containers, relay, config, verified, expectedTopology);
+  const [network] = JSON.parse(await runDocker(["network", "inspect", config.network]));
+  const [relay] = JSON.parse(await runDocker(["inspect", `${config.project}-install-relay`]));
+  const containers = JSON.parse(await runDocker(["inspect", ...ids]));
+  const nodeImage = verified.images.find((image) => image.role === "node");
+  if (!nodeImage) throw new Error("Verified install bundle has no node image pin");
+  const [baseImage] = JSON.parse(await runDocker(["image", "inspect", nodeImage.reference]));
+  const observation = checkStandaloneInstallRelay(network, containers, relay, config, verified,
+    expectedTopology, baseImage);
+  const mountedHash = (await runDocker(["exec", relay.Id, "sha256sum", "/relay.py"])).trim();
+  if (mountedHash !== `${pin.sha256}  /relay.py`) {
+    throw new Error("Running installation relay script differs from the verified bundle");
+  }
+  return observation;
 }

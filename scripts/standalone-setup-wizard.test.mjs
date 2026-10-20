@@ -630,12 +630,30 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
   planDocument.network.indexerHttpUrl = "http://127.0.0.1:60888/api/v4/graphql";
   planDocument.network.indexerWsUrl = "ws://127.0.0.1:60888/api/v4/graphql/ws";
   await writeFile(f.planPath, JSON.stringify(planDocument));
+  const wrongIndexer = { ...planDocument, network: { ...planDocument.network,
+    indexerHttpUrl: "http://127.0.0.1:60889/api/v4/graphql" } };
+  await writeFile(f.planPath, JSON.stringify(wrongIndexer));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => relay,
+    deploy: async () => { throw new Error("must not submit"); },
+  }), /plan endpoints diverged/u);
+  await writeFile(f.planPath, JSON.stringify(planDocument));
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
     verifyBundle: f.verifyBundle,
     observeInstallRelay: async () => ({ ...relay, relayId: "replacement" }),
     deploy: async () => { throw new Error("must not submit"); },
-  }), /relay changed before deployment reservation/u);
+  }), /relay changed or plan endpoints diverged/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+  let observations = 0;
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => (++observations === 1 ? relay
+      : { ...relay, relayId: "replacement" }),
+    deploy: async () => ({ kind: "local-deployment-submission-observation", readbackStatus: "pending" }),
+  }), /outcome is unknown/u);
+  assert.equal(observations, 2);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "unknown");
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {
