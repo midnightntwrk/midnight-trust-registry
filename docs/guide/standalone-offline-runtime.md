@@ -48,6 +48,10 @@ container before exporting. Build it while online. This is packaging evidence,
 not a running local-ledger qualification or an addition to the v3 install
 inventory. The first-run installer must later pin its archive and running
 image digest, review the API plan, and verify offline operation.
+Local-ledger API mode currently binds to loopback only, so Docker port
+publishing does not expose it; a reviewed sidecar/shared-network-namespace
+topology is needed before cluster use. Plan verification also needs a writable
+`/tmp` and a GPG keyring owned by the runtime uid (1000) with mode `0700`.
 
 The staged install directory must contain `install-inventory.json`, the
 release-candidate package manifest and its ten tarballs, separate OCI image

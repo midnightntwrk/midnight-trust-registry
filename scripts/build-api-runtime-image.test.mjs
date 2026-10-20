@@ -45,8 +45,11 @@ test("API payload contains runtime code but no proving keys", async () => {
     await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /proving-artifact directory/u);
     await rm(join(contract, "keys"), { recursive: true });
     await symlink("/tmp", join(app, "outside"));
-    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /external link/u);
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /absolute link/u);
     await rm(join(app, "outside"));
+    await symlink(join(app, "dist/cli.js"), join(app, "absolute-inside"));
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /absolute link/u);
+    await rm(join(app, "absolute-inside"));
     await writeFile(join(app, "native-darwin-arm64.node"), "native\n");
     await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /native addon/u);
   } finally {

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createReadStream, realpathSync } from "node:fs";
 import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertApprovedSourceEvidence, assertNoExportAttributes } from "./build-static-runtime-image.mjs";
@@ -145,6 +145,9 @@ export async function apiPayloadInventory(directory, platform) {
           size: stat.size, sha256: await fileSha256(absolute) });
       } else if (stat.isSymbolicLink()) {
         const target = await readlink(absolute);
+        if (isAbsolute(target)) {
+          throw new Error(`API image contains an absolute link: ${relative}`);
+        }
         const resolved = await realpath(absolute);
         if (!resolved.startsWith(`${app}/`)) {
           throw new Error(`API image contains an external link: ${relative}`);
