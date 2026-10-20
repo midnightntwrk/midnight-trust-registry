@@ -662,6 +662,27 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
 The reviewer compares the candidate genesis to independently obtained
 chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
 and sends the detached signature and public signing key to the operator.
+An existing GitHub-registered **GPG signing key** may be used for this human
+review. GitHub registration or a Verified commit is not the approval: the
+reviewer must still sign the exact `genesis-approval.unsigned.json` bytes with
+that key. Select the full 40-hex-character primary signing-key fingerprint,
+not its short key ID or an encryption subkey; confirm the key owner and
+fingerprint through a channel independent of the node and the GitHub key
+listing. Do not export or send a secret key. For example, on the reviewer's
+trusted signing system, after inspecting the draft and independent evidence:
+
+```sh
+gpg --local-user REVIEWER_SIGNING_KEY_FINGERPRINT --armor --detach-sign \
+  --output genesis-approval.sig genesis-approval.unsigned.json
+gpg --verify genesis-approval.sig genesis-approval.unsigned.json
+```
+
+The `reviewedReference` in the draft must identify the independently reviewed
+chain specification or reproducible genesis evidence and its immutable digest
+(plus a stable review/ticket identifier where available). The node-generated
+candidate packet by itself is not such a reference. If that independent
+reference is not available, leave the draft unsigned and deployment blocked;
+do not substitute chat approval or a GitHub commit signature.
 The operator obtains the expected fingerprint through an independently
 approved channel, imports the public key into a mode-0700 local GPG keyring,
 and runs `approve-genesis`. The wizard does not download keys or establish
@@ -1142,6 +1163,12 @@ smoke, not RC evidence. Even after deployment, this helper does not read back
 the contract, wallet keys, API state, browser journeys, or backup media; it
 does not exercise cross-host restore, prove independent service restarts from
 the command log alone, or close the restart/recovery release gate.
+
+The first dedicated local-ledger b3 observation was captured before contract
+deployment. Its finalized-history continuity is a development smoke only;
+it cannot be relabelled after deployment. A release observation needs a new,
+approved setup and post-deployment baseline, plus the separate contract,
+wallet, API, and recovery readbacks described above.
 
 ### Distinct-project restore readback
 
