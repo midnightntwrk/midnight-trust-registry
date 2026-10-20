@@ -127,6 +127,9 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
       throw new Error(`Pod is not running the approved image: ${entry.component}`);
     }
     if (entry.component === "api") {
+      const initStatus = running.status.initContainerStatuses?.[0];
+      const observedInitImageId = typeof initStatus?.imageID === "string"
+        ? initStatus.imageID.replace(/^[a-z][a-z0-9+.-]*:\/\//u, "") : "";
       if (template.initContainers?.length !== 1
         || template.initContainers[0].name !== "stage-approval"
         || template.initContainers[0].image !== entry.reference
@@ -137,9 +140,12 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
         || running.spec.initContainers[0].imagePullPolicy !== "Never"
         || running.spec.initContainers[0].restartPolicy === "Always"
         || running.status.initContainerStatuses?.length !== 1
-        || running.status.initContainerStatuses[0].name !== "stage-approval"
-        || running.status.initContainerStatuses[0].image !== entry.reference
-        || running.status.initContainerStatuses[0].state?.terminated?.exitCode !== 0) {
+        || initStatus.name !== "stage-approval"
+        || initStatus.image !== entry.reference
+        || (observedInitImageId !== entry.reference
+          && observedInitImageId !== approvedImage.configId)
+        || typeof initStatus.containerID !== "string" || initStatus.containerID.length === 0
+        || initStatus.state?.terminated?.exitCode !== 0) {
         throw new Error("API approval init container did not complete from the pinned image");
       }
     } else if ((template.initContainers?.length ?? 0) !== 0
@@ -154,7 +160,7 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
     kubeContext, clusterReference: scope.clusterReference, namespace: scope.namespace,
     releaseName: scope.releaseName, scopeSha256: sha256(scopeBytes),
     mappingSha256: sha256(mappingBytes), nodes: [...approvedNodes].sort(), workloads: observed,
-    qualification: "not-established: observed Kubernetes state is not an offline actor or restore test" };
+    qualification: "not-established: image readback is not full Pod-spec parity, offline actor, or restore evidence" };
 }
 
 export async function observeSignedHelmRuntime(paths, dependencies = {}) {

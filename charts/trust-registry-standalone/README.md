@@ -181,7 +181,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    authenticate the reviewer-approved `clusterReference` against the API,
    prove image bytes executed from the CRI store, verify PVC contents,
    inspect unrelated or unlabelled workloads, measure runtime egress, or
-   exercise the local ledger or actor journeys. The two API queries are not
+   exercise the local ledger or actor journeys. It does not compare commands,
+   arguments, environment, security context, host networking, or volumes
+   against the rendered chart; an independently captured rendered-manifest
+   versus live-resource diff remains necessary. The two API queries are not
    one atomic snapshot; a separate, authenticated evidence capture is still
    needed for release review.
    A passing synthetic test is not live qualification evidence.

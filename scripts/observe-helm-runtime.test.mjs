@@ -61,7 +61,9 @@ function fixture() {
           imageID: `containerd://sha256:${String(roles.indexOf(role) + 1).repeat(64)}`,
           containerID: `containerd://${"f".repeat(64)}`, ready: true }],
         ...(name === "api" ? { initContainerStatuses: [{ name: "stage-approval",
-          image: reference(role), state: { terminated: { exitCode: 0 } } }] } : {}) } });
+          image: reference(role), imageID: `containerd://sha256:${"4".repeat(64)}`,
+          containerID: `containerd://${"e".repeat(64)}`,
+          state: { terminated: { exitCode: 0 } } }] } : {}) } });
   }
   return { nodes, workloads };
 }
@@ -104,12 +106,21 @@ test("rejects missing nodes, stale rollout, unowned pods, and image or policy dr
   pod.status.containerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
   assert.throws(check, /not running/u);
   pod.status.containerStatuses[0].imageID = `containerd://sha256:${"1".repeat(64)}`;
+  pod.status.containerStatuses[0].imageID = `docker-pullable://${reference("node")}`;
+  assert.doesNotThrow(check);
+  pod.status.containerStatuses[0].imageID = `containerd://sha256:${"1".repeat(64)}`;
   pod.spec.ephemeralContainers = [{ name: "debug", image: "unapproved:latest" }];
   assert.throws(check, /not running/u);
   delete pod.spec.ephemeralContainers;
+  pod.status.ephemeralContainerStatuses = [{ name: "debug" }];
+  assert.throws(check, /not running/u);
+  delete pod.status.ephemeralContainerStatuses;
   const api = workloads.items.find((item) => item.kind === "Pod"
     && item.metadata.labels["app.kubernetes.io/component"] === "api");
   api.status.initContainerStatuses[0].state.terminated.exitCode = 1;
+  assert.throws(check, /approval init/u);
+  api.status.initContainerStatuses[0].state.terminated.exitCode = 0;
+  api.status.initContainerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
   assert.throws(check, /approval init/u);
 });
 
