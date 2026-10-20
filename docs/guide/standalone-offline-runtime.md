@@ -136,7 +136,9 @@ After loading the v5 images, run
 same Docker host. It creates disposable, network-disabled containers without
 starting them, copies each image's `/app/public` tree, and compares every
 regular file, size, and hash against the verified portal manifest. It rejects
-extra files and links. Retain the reported image IDs and inventory hash as
+extra files and links, including a linked public root. The readback accepts
+the verified OCI index ID or config ID from the local Docker image store.
+Retain the reported image IDs and inventory hash as
 install readback evidence. This check requires a locally loaded image; it is
 not an offline browser journey, a process-level egress test, or proof of image
 build provenance.

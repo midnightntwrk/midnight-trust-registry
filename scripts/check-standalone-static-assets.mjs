@@ -25,6 +25,9 @@ async function sha256(path) {
 }
 
 export async function verifyStaticAssetDirectory(directory, expectedAssets) {
+  if (!(await lstat(directory)).isDirectory()) {
+    throw new Error("Static image public root must be a real directory");
+  }
   const observed = [];
   async function walk(path, prefix) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
@@ -63,8 +66,16 @@ export async function checkStandaloneStaticAssets(bundleRoot, dependencies = {})
     const results = {};
     for (const role of ["admin", "applicant"]) {
       const pin = verified.portalRuntimes[role];
-      if (!IMAGE_ID.test(pin.imageId)
-        || runDocker(["image", "inspect", "--format", "{{.Id}}", pin.imageId]) !== pin.imageId) {
+      if (!IMAGE_ID.test(pin.imageId) || !IMAGE_ID.test(pin.configId)) {
+        throw new Error(`${role} verified image identity is invalid`);
+      }
+      let loadedId;
+      try {
+        loadedId = runDocker(["image", "inspect", "--format", "{{.Id}}", pin.imageId]);
+      } catch {
+        loadedId = runDocker(["image", "inspect", "--format", "{{.Id}}", pin.configId]);
+      }
+      if (![pin.imageId, pin.configId].includes(loadedId)) {
         throw new Error(`${role} loaded image ID disagrees with the verified bundle`);
       }
       const manifestBytes = await readFile(join(bundleRoot, inventory.portalRuntimes[role].manifest));
@@ -74,19 +85,30 @@ export async function checkStandaloneStaticAssets(bundleRoot, dependencies = {})
       }
       const manifest = JSON.parse(manifestBytes);
       const container = runDocker(["create", "--network", "none", "--pull", "never",
-        "--read-only", "--entrypoint", "/bin/true", pin.imageId]);
+        "--read-only", "--entrypoint", "/bin/true", loadedId]);
       if (!CONTAINER_ID.test(container)) {
         throw new Error(`${role} image did not create a disposable readback container`);
       }
+      let readbackError;
       try {
         const destination = join(temporary, role);
         runDocker(["cp", `${container}:/app/public`, destination]);
         results[role] = { imageId: pin.imageId,
           assetCount: await verifyStaticAssetDirectory(destination, manifest.assets),
           assetsSha256: manifest.assetsSha256 };
-      } finally {
-        runDocker(["rm", "--force", container]);
+      } catch (error) {
+        readbackError = error;
       }
+      try {
+        runDocker(["rm", "--force", container]);
+      } catch (cleanupError) {
+        if (readbackError) {
+          throw new AggregateError([readbackError, cleanupError],
+            `${role} static readback and container cleanup both failed`);
+        }
+        throw cleanupError;
+      }
+      if (readbackError) throw readbackError;
     }
     return { sourceRevision: verified.sourceRevision,
       inventorySha256: verified.inventorySha256, readback: results,

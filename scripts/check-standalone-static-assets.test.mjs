@@ -27,6 +27,9 @@ test("static asset readback rejects missing, changed, extra, and linked files", 
     await rm(join(root, "extra.js"));
     await symlink("index.html", join(root, "linked.html"));
     await assert.rejects(verifyStaticAssetDirectory(root, expected), /linked/u);
+    const linkedRoot = join(root, "linked-root");
+    await symlink(root, linkedRoot);
+    await assert.rejects(verifyStaticAssetDirectory(linkedRoot, expected), /real directory/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -43,7 +46,8 @@ test("v5 readback binds both loaded images to their verified asset lists without
       const bytes = JSON.stringify(manifest);
       await writeFile(join(root, `${role}.json`), bytes);
       portalRuntimes[role] = { manifest: `${role}.json`, manifestSha256: sha(bytes) };
-      verifiedPortals[role] = { imageId: `sha256:${digit.repeat(64)}` };
+      verifiedPortals[role] = { imageId: `sha256:${digit.repeat(64)}`,
+        configId: `sha256:${role === "admin" ? "c".repeat(64) : "d".repeat(64)}` };
     }
     const inventory = Buffer.from(JSON.stringify({ portalRuntimes }));
     await writeFile(join(root, "install-inventory.json"), inventory);
@@ -52,12 +56,19 @@ test("v5 readback binds both loaded images to their verified asset lists without
       verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
         portalRuntimes: verifiedPortals }),
       docker: (args) => {
-        if (args[0] === "image") return args.at(-1);
+        if (args[0] === "image") {
+          if (args.at(-1) === verifiedPortals.admin.imageId) {
+            throw new Error("classic store has only the config ID");
+          }
+          return args.at(-1);
+        }
         if (args[0] === "create") {
           const id = (containers.length + 1).toString(16).padStart(64, "0");
           containers.push(id);
           assert.deepEqual(args.slice(0, 7), ["create", "--network", "none", "--pull",
             "never", "--read-only", "--entrypoint"]);
+          assert.equal(args.at(-1), containers.length === 1
+            ? verifiedPortals.admin.configId : verifiedPortals.applicant.imageId);
           return id;
         }
         if (args[0] === "cp") {
@@ -73,6 +84,26 @@ test("v5 readback binds both loaded images to their verified asset lists without
     assert.equal(result.readback.applicant.assetCount, 1);
     assert.equal(result.offlineJourneyQualified, false);
     assert.equal(result.runtimeStarted, false);
+    const removed = [];
+    await assert.rejects(checkStandaloneStaticAssets(root, {
+      verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
+        portalRuntimes: verifiedPortals }),
+      docker: (args) => {
+        if (args[0] === "image") return args.at(-1);
+        if (args[0] === "create") return "1".repeat(64);
+        if (args[0] === "cp") {
+          mkdirSync(args[2]);
+          writeFileSync(join(args[2], "index.html"), "no");
+          return "";
+        }
+        if (args[0] === "rm") {
+          removed.push(args.at(-1));
+          return "";
+        }
+        throw new Error(`Unexpected Docker command: ${args.join(" ")}`);
+      },
+    }), /disagree/u);
+    assert.deepEqual(removed, ["1".repeat(64)]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
