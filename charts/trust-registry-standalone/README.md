@@ -31,6 +31,30 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    Image garbage collection or a replacement node can evict a preloaded
    reference; review cluster retention and credential-verification policy,
    and re-check all exact refs before restart or restore tests.
+   Before installation, prepare a six-role mapping receipt in the format below,
+   have the release reviewer independently compare the private-registry
+   digests with the pushed bytes, and sign the exact JSON file with a detached
+   OpenPGP signature. Run the mapping preflight with the approved public
+   keyring and fingerprint:
+
+   ```sh
+   node scripts/check-helm-image-mapping.mjs \
+     <v4-bundle> <admin-image/manifest.json> <applicant-image/manifest.json> \
+     <approved-values.yaml> <mapping.json> <mapping.sig> \
+     <reviewer-keyring> <REVIEWER_FINGERPRINT>
+   ```
+
+   The receipt is a JSON object with `format: "tr-helm-image-mapping-v1"`,
+   the bundle's `sourceRevision` and `inventorySha256`, and an `images` array
+   containing exactly `node`, `indexer`, `proofServer`, `api`, `admin`, and
+   `applicant`. Each image entry has `role`, the chart's exact `reference`,
+   the approved `archiveSha256`, and its local `imageId`. The verifier hashes
+   the v4 bundle and both portal archives, checks those identities and the
+   reviewed signature against chart values, and fails on mismatches. It does
+   **not** prove registry provenance, CRI preload, live image execution, or
+   offline behavior. Keep the raw per-node `crictl inspecti` output, node
+   identity, and reviewer-approved archive-to-registry comparison separately
+   as real-cluster evidence. Never fabricate these observations from tests.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
