@@ -2131,8 +2131,12 @@ admin rebuilt from `bbee90e`. A separate signed local API-image candidate at
 `a5484f7` built an arm64 OCI archive and passed GPG and API-import checks in a
 read-only, network-disabled container. Independent review found its legacy
 deployment could re-resolve dependencies and published DID proving keys were
-still included; that archive is not a release candidate. A corrected builder
-is under local validation. Packaging checks do not prove
+still included; that archive is not a release candidate. The corrected builder
+at signed revision `a26ea84` uses the shared lockfile, excludes the known DID
+proof assets and all native addons, and scans the full runtime payload. Two
+builds had the same 12,166-entry payload digest after excluding pnpm's volatile
+install metadata. Their OCI image/archive digests differed, so the exact
+archive remains pinned separately. Packaging checks do not prove
 cluster qualification or offline actor journeys. The CLI now has a separate
 reviewer-signed read-only local-ledger mode, but its tests use simulator or
 reader doubles. The indexer's Compact state lacks state-root authentication,

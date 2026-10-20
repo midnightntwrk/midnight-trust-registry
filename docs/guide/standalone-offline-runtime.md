@@ -39,7 +39,9 @@ It exports the signed source commit, performs a frozen light build, deploys
 production-only dependencies from the shared lockfile without lifecycle
 scripts or optional native addons, removes the known published DID 0.7.0 proof payload from its isolated
 staging copy, and scans the complete payload for remaining proving artifacts.
-The manifest records the lockfile, Dockerfile, payload and archive hashes.
+Volatile pnpm install metadata is omitted from the runtime. The manifest
+records the lockfile, Dockerfile, payload and archive hashes; repeat builds
+may have different OCI archive hashes even when the runtime payload matches.
 The digest-pinned base must include `/usr/bin/gpg`;
 the builder checks GPG and the API import in a read-only, network-disabled
 container before exporting. Build it while online. This is packaging evidence,
