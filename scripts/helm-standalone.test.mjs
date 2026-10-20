@@ -28,6 +28,12 @@ test("chart lints only with explicit operator inputs", () => {
   assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
     "--set", "images.api=example.invalid/api:latest"]), /images.api/u);
   assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
+    "--set", `images.api=example.invalid/api:latest@sha256:${"a".repeat(64)}`]), /images.api/u);
+  assert.throws(() => helm(["template", "1rc", chart, "--values", fixture]),
+    /release name must start with a letter/u);
+  assert.throws(() => helm(["template", `r${"a".repeat(47)}`, chart, "--values", fixture]),
+    /release name must be at most 47 characters/u);
+  assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
     "--set", "secrets.indexerName="]), /secrets.indexerName/u);
   assert.throws(() => helm(["template", "rc", chart, "--values", fixture,
     "--set", "storage.proofParametersClaim="]), /proofParametersClaim/u);
@@ -87,6 +93,10 @@ test("bootstrap waits for target genesis approval before creating the API or por
   assert.deepEqual(deployments.map(role).sort(), ["node", "indexer", "proof-server"].sort());
   assert.deepEqual(services.map(role).sort(), ["node", "indexer", "proof-server"].sort());
   assert.ok(!JSON.stringify(objects).includes("api-approval"));
+  const policies = objects.filter((object) => object.kind === "NetworkPolicy");
+  assert.equal(policies.length, 5);
+  assert.deepEqual(policies.filter((policy) => policy.spec.policyTypes.includes("Egress"))
+    .map(role).filter(Boolean), ["indexer"]);
 });
 
 test("default-denies all chart pods and allows only local service traffic plus scoped DNS", () => {

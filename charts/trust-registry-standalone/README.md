@@ -28,6 +28,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    differently named image fails closed instead of pulling. The chart schema
    checks digest syntax, not archive-to-registry provenance. Retain the
    reviewed mapping and node inspection receipts as install evidence.
+   Image garbage collection or a replacement node can evict a preloaded
+   reference; review cluster retention and credential-verification policy,
+   and re-check all exact refs before restart or restore tests.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
@@ -52,7 +55,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    digest-pinned image references in a private values file. Install the
    `bootstrap` phase first, observe its genesis, complete the first-run
    wizard's detached approvals, and provision the API Secrets. Then upgrade
-   to `deploymentPhase: runtime`. Do not use `--wait` for a runtime upgrade
+   to `deploymentPhase: runtime`. Use a release name beginning with a lowercase
+   letter and at most 47 characters; the signed plan's `allowedHosts` and endpoint URLs must use the
+   chart's exact short Service names `<release>-tr-node` and
+   `<release>-tr-indexer`, not fully qualified cluster DNS names. Do not use
+   `--wait` for a runtime upgrade
    until the signed plan and local ledger are actually ready. Run
    `helm lint charts/trust-registry-standalone -f <approved-values>` and
    `helm template rc charts/trust-registry-standalone -n <namespace> -f <approved-values>`.
@@ -61,6 +68,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
 The current chart does not execute the first-run wizard or approve governance;
 the operator must carry its signed receipts across the phase transition.
+Before the signed API plan's `notAfter`, obtain renewed independent approval,
+replace the approval Secret, and roll the API pod. An expired plan fails closed;
+Helm does not renew or revoke it.
 
 The API init container idempotently copies projected Secret symlinks into a
 private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
