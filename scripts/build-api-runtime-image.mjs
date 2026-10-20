@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream, realpathSync } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,8 +110,12 @@ export async function stripPublishedDidProofArtifacts(directory) {
   }
 }
 
-export async function apiPayloadInventory(directory) {
+export async function apiPayloadInventory(directory, platform) {
+  if (!["linux/arm64", "linux/amd64"].includes(platform)) {
+    throw new Error("API payload inventory requires an approved Linux platform");
+  }
   const app = await realpath(join(directory, "app"));
+  const cpu = platform === "linux/amd64" ? "x64" : "arm64";
   const records = [];
   async function walk(path, prefix) {
     for (const entry of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
@@ -128,7 +132,12 @@ export async function apiPayloadInventory(directory) {
         if (/\.(?:prover|verifier|bzkir)$/u.test(entry.name)) {
           throw new Error(`API image contains a proving artifact: ${relative}`);
         }
-        records.push({ path: relative, size: stat.size, sha256: await fileSha256(absolute) });
+        if (entry.name.endsWith(".node")
+          && (!relative.includes("linux") || !relative.includes(cpu))) {
+          throw new Error(`API image contains a native module for the wrong platform: ${relative}`);
+        }
+        records.push({ path: relative, mode: stat.mode & 0o777,
+          size: stat.size, sha256: await fileSha256(absolute) });
       } else if (stat.isSymbolicLink()) {
         const target = await readlink(absolute);
         const resolved = await realpath(absolute);
@@ -184,7 +193,9 @@ export async function buildApiRuntimeImage(input) {
     { capture: true }).split("\0").filter(Boolean);
   assertNoExportAttributes(run("git", ["check-attr", `--source=${revision}`, "-z",
     "export-ignore", "export-subst", "--", ...tracked], { capture: true }));
-  const temporary = await mkdtemp(join(realpathSync(tmpdir()), "tr-api-image-"));
+  // A stable source path makes pnpm's injected workspace names repeatable on this host.
+  const temporary = join(realpathSync(tmpdir()), `tr-api-image-${revision}`);
+  await mkdir(temporary, { mode: 0o700 });
   try {
     const source = join(temporary, "source");
     const context = join(temporary, "context");
@@ -196,18 +207,20 @@ export async function buildApiRuntimeImage(input) {
     await assertArchiveMatchesCommit(source,
       run("git", ["ls-tree", "-r", "-z", revision], { capture: true }));
     const env = cleanBuildEnvironment();
+    const cpu = input.platform === "linux/amd64" ? "x64" : "arm64";
     run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source, env });
     run("pnpm", ["exec", "turbo", "run", "build:light", "--filter",
       "@midnight-ntwrk/trust-registry-api", "--cache=local:w,remote:"], { cwd: source, env });
     run("pnpm", ["--config.inject-workspace-packages=true", "--filter",
       "@midnight-ntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
+      "--os", "linux", "--cpu", cpu, "--libc", "glibc",
       "--ignore-scripts",
       join(context, "app")], { cwd: source, env });
     await stripPublishedDidProofArtifacts(context);
     await assertLightApiPayload(context);
     await writeFile(join(context, "app", "source-revision"), `${revision}\n`, { flag: "wx", mode: 0o444 });
     await cp(join(source, "deploy/runtime/Dockerfile.api"), join(context, "Dockerfile.api"));
-    const payload = await apiPayloadInventory(context);
+    const payload = await apiPayloadInventory(context, input.platform);
     const lockfileSha256 = await fileSha256(join(source, "pnpm-lock.yaml"));
     const dockerfileSha256 = await fileSha256(join(context, "Dockerfile.api"));
     const tag = `tr-api:sha-${revision.slice(0, 12)}-${input.platform.slice(6)}`;

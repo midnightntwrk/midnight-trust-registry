@@ -38,13 +38,16 @@ test("API payload contains runtime code but no proving keys", async () => {
       await writeFile(path, "export {};\n");
     }
     await assertLightApiPayload(root);
-    const initial = await apiPayloadInventory(root);
+    const initial = await apiPayloadInventory(root, "linux/arm64");
     assert.match(initial.sha256, /^[0-9a-f]{64}$/u);
     await mkdir(join(contract, "keys"));
-    await assert.rejects(apiPayloadInventory(root), /proving-artifact directory/u);
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /proving-artifact directory/u);
     await rm(join(contract, "keys"), { recursive: true });
     await symlink("/tmp", join(app, "outside"));
-    await assert.rejects(apiPayloadInventory(root), /external link/u);
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /external link/u);
+    await rm(join(app, "outside"));
+    await writeFile(join(app, "native-darwin-arm64.node"), "native\n");
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /wrong platform/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -53,8 +56,7 @@ test("API payload contains runtime code but no proving keys", async () => {
 test("known published DID proof assets are removed from isolated staging only", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-api-did-payload-test-"));
   try {
-    const did = join(root, "app/node_modules/@midnight-ntwrk/midnight-did-contract");
-    await mkdir(join(root, "app/node_modules/.pnpm"), { recursive: true });
+    const did = join(root, "app/node_modules/.pnpm/@midnight-ntwrk+midnight-did-contract@0.7.0/node_modules/@midnight-ntwrk/midnight-did-contract");
     for (const name of ["keys", "zkir"]) {
       await mkdir(join(did, "dist/managed/did", name), { recursive: true });
       await writeFile(join(did, "dist/managed/did", name, "example.prover"), "proof\n");
@@ -63,7 +65,7 @@ test("known published DID proof assets are removed from isolated staging only", 
       name: "@midnight-ntwrk/midnight-did-contract", version: "0.7.0",
     }));
     await stripPublishedDidProofArtifacts(root);
-    await apiPayloadInventory(root);
+    await apiPayloadInventory(root, "linux/arm64");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
