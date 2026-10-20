@@ -1131,6 +1131,35 @@ the contract, wallet keys, API state, browser journeys, or backup media; it
 does not exercise cross-host restore, prove independent service restarts from
 the command log alone, or close the restart/recovery release gate.
 
+### Distinct-project restore readback
+
+After deployment and before a separately approved backup, capture a
+non-overwriting finalized checkpoint in the source setup directory. Restore
+the operator-held backup to a **different isolated project and setup
+directory**, then read the destination's finalized chain:
+
+```sh
+node scripts/check-standalone-restore.mjs capture /absolute/private/source-setup
+# Operator stops services, backs up, transfers, and restores node/indexer,
+# wallet, API, and contract state under an approved custody procedure.
+node scripts/check-standalone-restore.mjs verify /absolute/private/source-setup /absolute/private/destination-setup
+```
+
+The readback rechecks each project's verified install bundle and live ledger
+topology. It requires the same source revision, observer and install inventory,
+genesis, and historical finalized block hash, with a different project,
+network, and three container identities. Destination finality must advance
+beyond the source checkpoint. The source snapshot and destination result are
+private, one-write files. Preserve them on any failure instead of recapturing
+or resetting volumes.
+
+This is only **distinct-project ledger continuity**. The script cannot prove
+that a backup was made, transferred to another host, or held under approved
+custody. It does not read contract state, wallet keys, API data, or transaction
+journals; these require separate post-restore evidence. Running its tests
+with injected snapshots is not local deployment or restore evidence. A
+pre-deployment run is development smoke only and does not advance the RC gate.
+
 ## Acceptance Test Before Claiming Support
 
 1. Complete installation online, then block external DNS and egress while
