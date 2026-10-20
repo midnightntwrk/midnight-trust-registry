@@ -52,6 +52,10 @@ test("reports only topology, never offline qualification", () => {
 
 test("rejects external attachment and network drift", () => {
   assert.throws(() => checkStandaloneTopology({ ...network, Internal: false }, containers), /internal IPv4/u);
+  assert.throws(() => checkStandaloneTopology({ ...network, Id: "" }, containers), /internal IPv4/u);
+  const wrongNetworkId = structuredClone(containers);
+  wrongNetworkId[0].NetworkSettings.Networks[ledger].NetworkID = "other-ledger-id";
+  assert.throws(() => checkStandaloneTopology(network, wrongNetworkId), /non-internal/u);
   const attached = structuredClone(containers);
   attached[0].NetworkSettings.Networks.bridge = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneTopology(network, attached), /non-internal/u);

@@ -316,7 +316,9 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       },
       expectedTopology,
     });
-    if (topology.project !== config.project || egress.project !== config.project) {
+    if (topology.project !== config.project || egress.project !== config.project
+      || typeof topology.networkId !== "string" || topology.networkId.length === 0
+      || egress.networkId !== topology.networkId) {
       throw new Error("Stack observations disagree with the selected project");
     }
     record.stack.observation = { observedAt: new Date().toISOString(), topology, egress };

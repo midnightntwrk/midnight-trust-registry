@@ -36,6 +36,7 @@ import {
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 
 const sourceRevision = "a".repeat(40);
+const ledgerNetworkId = "ledger-id";
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
 const governanceFingerprint = "B".repeat(40);
@@ -393,7 +394,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.equal(expected.sourceRevision, sourceRevision);
       assert.equal(expected.images.length, 3);
       assert.equal(expected.composeFiles.length, 2);
-      return { kind: "standalone-runtime-topology-observation", project,
+      return { kind: "standalone-runtime-topology-observation", project, networkId: ledgerNetworkId,
         preparedInputsMatched: true, egressDenied: "not-verified", actorJourneys: "not-run" };
     },
     observeEgress: async ({ env, expectedTopology }) => {
@@ -402,7 +403,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.equal(expectedTopology.sourceRevision, sourceRevision);
       assert.equal(expectedTopology.allowOffline, true);
       assert.equal(expectedTopology.images.length, 3);
-      return { kind: "standalone-ledger-egress-probe", project,
+      return { kind: "standalone-ledger-egress-probe", project, networkId: ledgerNetworkId,
         scope: "canary HTTPS and DNS on ledger bridge only" };
     },
   });
@@ -416,9 +417,13 @@ test("wizard records only selected ledger-bridge topology and egress observation
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(record.stack.observations.length, 1);
   assert.ok(Number.isFinite(Date.parse(record.stack.observation.observedAt)));
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId }),
+    observeEgress: async () => ({ project, networkId: "replacement-ledger-id" }),
+  }), /Stack observations disagree/u);
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project }),
-    observeEgress: async () => ({ project, canaryAddress: "192.0.2.1" }),
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId, canaryAddress: "192.0.2.1" }),
   });
   const repeated = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(repeated.stack.observations.length, 2);
@@ -439,9 +444,10 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project, preparedInputsMatched: true,
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId, preparedInputsMatched: true,
       verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
-    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      kind: "standalone-ledger-egress-probe" }),
   });
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   const observed = { project, sourceRevision,
@@ -520,9 +526,10 @@ test("interactive wizard stops before genesis until the prepared stack is observ
     observeTopology: async (_config, expected) => {
       assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
       topologyCalled = true;
-      return { project, preparedInputsMatched: true };
+      return { project, networkId: ledgerNetworkId, preparedInputsMatched: true };
     },
-    observeEgress: async () => ({ project, scope: "ledger bridge only" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      scope: "ledger bridge only" }),
   } });
   assert.equal(topologyCalled, true);
   assert.equal(prompts.at(-1), "Independently reviewed local genesis pin JSON (blank to stop): ");
@@ -537,9 +544,10 @@ test("interactive wizard collects an untrusted genesis candidate without pinning
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project, preparedInputsMatched: true,
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId, preparedInputsMatched: true,
       verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
-    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      kind: "standalone-ledger-egress-probe" }),
   });
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   const prompts = [];

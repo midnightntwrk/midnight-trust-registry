@@ -103,7 +103,7 @@ test("orchestrates restricted probes and checks topology before and after", asyn
     assert.deepEqual(args.slice(args.indexOf("--user"), args.indexOf("--user") + 2),
       ["--user", "65534:65534"]);
     assert.ok(args.includes("--cap-drop"));
-    assert.ok(["bridge", `${project}_ledger`].includes(args[args.indexOf("--network") + 1]));
+    assert.ok(["bridge", observedNetwork.networkId].includes(args[args.indexOf("--network") + 1]));
   }
 });
 

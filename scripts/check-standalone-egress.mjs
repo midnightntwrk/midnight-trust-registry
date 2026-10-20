@@ -150,13 +150,13 @@ export async function observeStandaloneEgress(dependencies = {}) {
     "--connect-timeout", "5", "--max-time", "10", "-fsSI", `https://${CANARY}`,
   ];
   const controlRoute = await runInNetwork(command, probeImage, "bridge", "cat", ["/proc/net/route"]);
-  const isolatedRoute = await runInNetwork(command, probeImage, config.network, "cat", ["/proc/net/route"]);
+  const isolatedRoute = await runInNetwork(command, probeImage, before.networkId, "cat", ["/proc/net/route"]);
   if (controlRoute.code !== 0 || isolatedRoute.code !== 0) {
     throw new Error("Could not inspect probe route tables");
   }
   const control = await runInNetwork(command, probeImage, "bridge", "curl", curlArgs);
-  const isolated = await runInNetwork(command, probeImage, config.network, "curl", curlArgs);
-  const isolatedDns = await runInNetwork(command, probeImage, config.network, "getent", ["ahostsv4", CANARY]);
+  const isolated = await runInNetwork(command, probeImage, before.networkId, "curl", curlArgs);
+  const isolatedDns = await runInNetwork(command, probeImage, before.networkId, "getent", ["ahostsv4", CANARY]);
   validateEgressProbe({
     controlRoute: controlRoute.stdout,
     isolatedRoute: isolatedRoute.stdout,
