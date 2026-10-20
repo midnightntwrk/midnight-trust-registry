@@ -39,6 +39,7 @@ export function validateSignedImageMapping(mapping) {
   for (const role of ROLES) {
     const entry = mapping.images.find((image) => image.role === role);
     if (!REFERENCE.test(entry?.reference) || !IMAGE_ID.test(entry?.imageId)
+      || !IMAGE_ID.test(entry?.configId)
       || !SHA256.test(entry?.archiveSha256)) {
       throw new Error(`Signed Helm image mapping lacks a pinned ${role} image`);
     }
@@ -46,9 +47,9 @@ export function validateSignedImageMapping(mapping) {
   return mapping;
 }
 
-export function verifyCriImageStatus(inspecti, reference) {
+export function verifyCriImageStatus(inspecti, reference, approvedConfigId) {
   const status = inspecti?.status;
-  if (!IMAGE_ID.test(status?.id)
+  if (!IMAGE_ID.test(approvedConfigId) || status?.id !== approvedConfigId
     || !Array.isArray(status.repoDigests)
     || !status.repoDigests.includes(reference)
     || !/^[1-9][0-9]*$/u.test(String(status.size))) {
@@ -67,13 +68,13 @@ export async function collectHelmCriImageReceipt(mappingBytes, nodeName, imageEn
   validateCriEndpoint(imageEndpoint);
   const images = [];
   for (const role of ROLES) {
-    const { reference } = mapping.images.find((image) => image.role === role);
+    const { reference, configId } = mapping.images.find((image) => image.role === role);
     const { stdout } = await run("crictl", ["--image-endpoint", imageEndpoint,
       "inspecti", "--quiet", "--output", "json", reference], {
       timeout: 30_000, maxBuffer: 4 * 1024 * 1024,
     });
     const inspecti = JSON.parse(stdout);
-    verifyCriImageStatus(inspecti, reference);
+    verifyCriImageStatus(inspecti, reference, configId);
     images.push({ role, reference, inspecti });
   }
   return { format: "tr-helm-cri-node-images-v1", nodeName, collectorHost: host,
@@ -81,7 +82,8 @@ export async function collectHelmCriImageReceipt(mappingBytes, nodeName, imageEn
     sourceRevision: mapping.sourceRevision, images };
 }
 
-export function verifyHelmCriImageReceipt(mappingBytes, receipt) {
+/** Checks record consistency, not node identity or authenticity of the JSON. */
+export function checkHelmCriReceiptConsistency(mappingBytes, receipt) {
   const mapping = validateSignedImageMapping(JSON.parse(mappingBytes));
   if (receipt?.format !== "tr-helm-cri-node-images-v1"
     || receipt.mappingSha256 !== sha256(mappingBytes)
@@ -93,23 +95,24 @@ export function verifyHelmCriImageReceipt(mappingBytes, receipt) {
   }
   validateCriEndpoint(receipt.imageEndpoint);
   for (const role of ROLES) {
-    const reference = mapping.images.find((image) => image.role === role).reference;
+    const { reference, configId } = mapping.images.find((image) => image.role === role);
     const image = receipt.images.find((entry) => entry.role === role);
     if (image.reference !== reference) {
       throw new Error(`Node CRI receipt uses an unexpected ${role} reference`);
     }
-    verifyCriImageStatus(image.inspecti, reference);
+    verifyCriImageStatus(image.inspecti, reference, configId);
   }
   return { nodeName: receipt.nodeName, sourceRevision: mapping.sourceRevision,
     mappingSha256: receipt.mappingSha256, observedRoles: [...ROLES] };
 }
 
-export async function collectSignedHelmCriImages(paths, run = execFileAsync) {
+export async function collectSignedHelmCriImages(paths, run = execFileAsync,
+  verifySignature = verifyMappingSignature, host = hostname()) {
   const mappingBytes = await readFile(paths.mappingPath);
-  verifyMappingSignature(mappingBytes, paths.signaturePath, paths.keyringPath,
+  verifySignature(mappingBytes, paths.signaturePath, paths.keyringPath,
     paths.signerFingerprint);
   const receipt = await collectHelmCriImageReceipt(mappingBytes, paths.nodeName,
-    paths.imageEndpoint, run);
+    paths.imageEndpoint, run, host);
   const output = await open(paths.outputPath, "wx", 0o600);
   try {
     await output.writeFile(`${JSON.stringify(receipt, null, 2)}\n`);
@@ -117,7 +120,7 @@ export async function collectSignedHelmCriImages(paths, run = execFileAsync) {
   } finally {
     await output.close();
   }
-  return verifyHelmCriImageReceipt(mappingBytes, receipt);
+  return checkHelmCriReceiptConsistency(mappingBytes, receipt);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

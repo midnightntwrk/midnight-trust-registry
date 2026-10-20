@@ -115,11 +115,15 @@ async function portalIdentity(manifestPath, role, revision) {
     throw new Error(`Invalid ${role} static image manifest`);
   }
   const archive = join(dirname(manifestPath), manifest.archiveName);
-  if (!(await lstat(archive)).isFile() || await sha256(archive) !== manifest.archiveSha256
-    || !staticImageIdsFromArchive(archive, role, revision).includes(manifest.imageId)) {
+  if (!(await lstat(archive)).isFile() || await sha256(archive) !== manifest.archiveSha256) {
     throw new Error(`${role} image archive disagrees with its manifest`);
   }
-  return { archiveSha256: manifest.archiveSha256, acceptedIds: [manifest.imageId] };
+  const acceptedIds = staticImageIdsFromArchive(archive, role, revision);
+  if (!acceptedIds.includes(manifest.imageId)) {
+    throw new Error(`${role} image ID disagrees with its archive`);
+  }
+  return { archiveSha256: manifest.archiveSha256, acceptedIds,
+    configId: acceptedIds[0] };
 }
 
 export function verifyHelmImageMapping(bundle, inventory, portals, values, receipt, valuesSha256) {
@@ -139,12 +143,14 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
   const expected = new Map(inventory.images.map((image) => [image.role, {
     archiveSha256: image.archiveSha256,
     acceptedIds: bundle.images.find((entry) => entry.role === image.role)?.acceptedIds,
+    configId: bundle.images.find((entry) => entry.role === image.role)?.acceptedIds?.[0],
   }]));
   expected.set("proofServer", expected.get("proof-server"));
   expected.delete("proof-server");
   expected.set("api", {
     archiveSha256: inventory.apiRuntime?.archiveSha256,
     acceptedIds: [bundle.apiRuntime?.imageId, bundle.apiRuntime?.configId],
+    configId: bundle.apiRuntime?.configId,
   });
   for (const role of ["admin", "applicant"]) expected.set(role, portals[role]);
   for (const role of ROLES) {
@@ -154,6 +160,8 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
       || !REFERENCE.test(entry?.reference)
       || values.images?.[role] !== entry.reference
       || entry.archiveSha256 !== pin.archiveSha256
+      || !IMAGE_ID.test(entry.configId)
+      || entry.configId !== pin.configId
       || !IMAGE_ID.test(entry.imageId)
       || !pin.acceptedIds?.includes(entry.imageId)) {
       throw new Error(`Helm image mapping is not approved by install artifacts: ${role}`);

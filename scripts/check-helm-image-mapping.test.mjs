@@ -17,7 +17,7 @@ const imageId = `sha256:${"d".repeat(64)}`;
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const images = roles.map((role) => ({ role,
   reference: `registry.example.test/tr/${role.toLowerCase()}@sha256:${"e".repeat(64)}`,
-  archiveSha256, imageId }));
+  archiveSha256, imageId, configId: imageId }));
 const bundle = {
   sourceRevision: revision,
   inventorySha256,
@@ -30,8 +30,8 @@ const inventory = {
   apiRuntime: { archiveSha256 },
 };
 const portals = {
-  admin: { archiveSha256, acceptedIds: [imageId] },
-  applicant: { archiveSha256, acceptedIds: [imageId] },
+  admin: { archiveSha256, acceptedIds: [imageId], configId: imageId },
+  applicant: { archiveSha256, acceptedIds: [imageId], configId: imageId },
 };
 const values = { deploymentPhase: "runtime", imagePullPolicy: "Never",
   images: Object.fromEntries(images.map(({ role, reference }) => [role, reference])) };
@@ -54,6 +54,9 @@ test("rejects changed registry references and archive identities", () => {
   changed.images[0].archiveSha256 = archiveSha256;
   changed.images[0].imageId = `sha256:${"f".repeat(64)}`;
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
+  changed.images[0].imageId = imageId;
+  changed.images[0].configId = `sha256:${"f".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
 });
 
 test("rejects missing roles, tag references, unpinned inventory, and pulls", () => {
@@ -74,7 +77,8 @@ test("rejects stale source, inventory, and portal identities", () => {
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
     { ...receipt, inventorySha256: "f".repeat(64) }, valuesSha256), /disagree/u);
   assert.throws(() => verifyHelmImageMapping(bundle, inventory,
-    { ...portals, admin: { archiveSha256, acceptedIds: [] } }, values, receipt, valuesSha256), /admin/u);
+    { ...portals, admin: { archiveSha256, acceptedIds: [], configId: imageId } }, values,
+    receipt, valuesSha256), /admin/u);
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
     { ...receipt, valuesSha256: "f".repeat(64) }, valuesSha256), /disagree/u);
 });

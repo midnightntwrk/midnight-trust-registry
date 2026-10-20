@@ -49,7 +49,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    exact approved values file as `valuesSha256`, and an `images` array
    containing exactly `node`, `indexer`, `proofServer`, `api`, `admin`, and
    `applicant`. Each image entry has `role`, the chart's exact `reference`,
-   the approved `archiveSha256`, and its local `imageId`. The verifier hashes
+   the approved `archiveSha256`, its local `imageId`, and the archive's
+   `configId`. The verifier hashes
    the v4 bundle and both portal archives, checks those identities against
    the one values file supplied to this command, and verifies the reviewer's
    signature over the mapping. The registry digest is linked to the archive
@@ -76,7 +77,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    the package workspace. Supply the actual image-service Unix socket for
    that node, not the example path. It requests each signed digest reference
    separately with `crictl inspecti --quiet --output json` and requires an
-   exact `repoDigests` match, a content-addressed image ID, and nonzero size.
+   exact `repoDigests` match, a CRI image ID equal to the signed archive's
+   `configId`, and nonzero size. A generic image import may not preserve the
+   exact digest-named reference; check the CRI lookup by that reference before
+   using `imagePullPolicy: Never`.
    It writes a new mode-0600 receipt and refuses to overwrite one. Collect
    the raw receipt through a controlled evidence channel; independently
    confirm that the supplied Kubernetes node name belongs to the machine,
@@ -85,7 +89,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    independent attestations. A receipt only observes one node's CRI store at
    one instant; it does not prove every node was checked, that a pod ran the
    image, that image garbage collection will not evict it, or that egress was
-   denied. Repeat after restart, replacement-node scheduling, or restore.
+   denied. The current checker expects a `sha256:` CRI image ID; a runtime
+   that reports another ID syntax requires a separately reviewed adapter,
+   not a weakened match. The exact Kubernetes, CRI runtime, and `crictl`
+   versions remain unqualified until a real cluster run. Repeat after
+   restart, replacement-node scheduling, or restore.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this

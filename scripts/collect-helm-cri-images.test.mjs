@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { collectHelmCriImageReceipt, validateCriEndpoint, validateSignedImageMapping,
-  verifyCriImageStatus, verifyHelmCriImageReceipt } from "./collect-helm-cri-images.mjs";
+import { collectHelmCriImageReceipt, collectSignedHelmCriImages,
+  validateCriEndpoint, validateSignedImageMapping,
+  verifyCriImageStatus, checkHelmCriReceiptConsistency } from "./collect-helm-cri-images.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const reference = (role) => `registry.example.test/tr/${role.toLowerCase()}@sha256:${"a".repeat(64)}`;
+const configId = (role) => `sha256:${String(roles.indexOf(role) + 1).repeat(64)}`;
 const mapping = { format: "tr-helm-image-mapping-v1", sourceRevision: "b".repeat(40),
   inventorySha256: "c".repeat(64), valuesSha256: "d".repeat(64),
   images: roles.map((role) => ({ role, reference: reference(role),
-    imageId: `sha256:${"e".repeat(64)}`, archiveSha256: "f".repeat(64) })) };
+    imageId: configId(role), configId: configId(role), archiveSha256: "f".repeat(64) })) };
 const bytes = Buffer.from(`${JSON.stringify(mapping)}\n`);
 const endpoint = "unix:///run/containerd/containerd.sock";
-const inspecti = (role) => ({ status: { id: `sha256:${"e".repeat(64)}`,
+const inspecti = (role) => ({ status: { id: configId(role),
   repoDigests: [reference(role)], size: "12345" } });
 
 test("collects one exact CRI observation for each signed role without pulling", async () => {
@@ -30,22 +35,28 @@ test("collects one exact CRI observation for each signed role without pulling", 
   assert.deepEqual(calls.map(([, args]) => args), roles.map((role) => [
     "--image-endpoint", endpoint, "inspecti", "--quiet", "--output", "json", reference(role),
   ]));
-  assert.deepEqual(verifyHelmCriImageReceipt(bytes, receipt).observedRoles, roles);
+  assert.deepEqual(checkHelmCriReceiptConsistency(bytes, receipt).observedRoles, roles);
 });
 
-test("rejects an absent digest, empty image, or fabricated node observation", async () => {
+test("rejects an absent digest, wrong config ID, empty image, or incomplete record", async () => {
   assert.throws(() => verifyCriImageStatus({ status: { ...inspecti("node").status,
-    repoDigests: [reference("indexer")] } }, reference("node")), /exact reviewed/u);
+    repoDigests: [reference("indexer")] } }, reference("node"), configId("node")), /exact reviewed/u);
   assert.throws(() => verifyCriImageStatus({ status: { ...inspecti("node").status,
-    size: "0" } }, reference("node")), /exact reviewed/u);
+    size: "0" } }, reference("node"), configId("node")), /exact reviewed/u);
+  assert.throws(() => verifyCriImageStatus(inspecti("indexer"), reference("node"),
+    configId("node")), /exact reviewed/u);
   const receipt = await collectHelmCriImageReceipt(bytes, "worker-1", endpoint,
     async (_command, args) => ({ stdout: JSON.stringify(inspecti(roles.find((role) =>
       reference(role) === args.at(-1)))) }), "node-host");
   receipt.images[0].inspecti.status.repoDigests = [];
-  assert.throws(() => verifyHelmCriImageReceipt(bytes, receipt), /exact reviewed/u);
+  assert.throws(() => checkHelmCriReceiptConsistency(bytes, receipt), /exact reviewed/u);
   receipt.images[0].inspecti.status.repoDigests = [reference("node")];
   receipt.images.pop();
-  assert.throws(() => verifyHelmCriImageReceipt(bytes, receipt), /does not match/u);
+  assert.throws(() => checkHelmCriReceiptConsistency(bytes, receipt), /does not match/u);
+  receipt.images.push({ role: "applicant", reference: reference("applicant"),
+    inspecti: inspecti("applicant") });
+  receipt.mappingSha256 = "0".repeat(64);
+  assert.throws(() => checkHelmCriReceiptConsistency(bytes, receipt), /does not match/u);
 });
 
 test("requires a complete signed mapping, explicit Unix endpoint, and node identity", async () => {
@@ -55,4 +66,38 @@ test("requires a complete signed mapping, explicit Unix endpoint, and node ident
   assert.throws(() => validateCriEndpoint("unix:///run/../private.sock"), /Unix/u);
   await assert.rejects(collectHelmCriImageReceipt(bytes, "worker..one", endpoint,
     async () => { throw new Error("must not run"); }), /node name/u);
+});
+
+test("signed collector rejects invalid approval before CRI and writes one private receipt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-helm-cri-test-"));
+  try {
+    const mappingPath = join(root, "mapping.json");
+    const outputPath = join(root, "node-receipt.json");
+    await writeFile(mappingPath, bytes);
+    const paths = { mappingPath, outputPath, signaturePath: join(root, "mapping.sig"),
+      keyringPath: join(root, "reviewer.gpg"), signerFingerprint: "A".repeat(40),
+      nodeName: "worker-1", imageEndpoint: endpoint };
+    let calls = 0;
+    const run = async (_command, args) => {
+      calls += 1;
+      return { stdout: JSON.stringify(inspecti(roles.find((role) =>
+        reference(role) === args.at(-1)))) };
+    };
+    assert.throws(() => verifyCriImageStatus(inspecti("node"), reference("node"),
+      configId("api")), /exact reviewed/u);
+    await assert.rejects(collectSignedHelmCriImages(paths, run, () => {
+      throw new Error("bad signature");
+    }), /bad signature/u);
+    assert.equal(calls, 0);
+    assert.equal((await readFile(mappingPath)).toString(), bytes.toString());
+    const result = await collectSignedHelmCriImages(paths, run, () => {}, "node-host");
+    assert.deepEqual(result.observedRoles, roles);
+    assert.equal(calls, roles.length);
+    assert.equal((await stat(outputPath)).mode & 0o777, 0o600);
+    assert.equal(JSON.parse(await readFile(outputPath, "utf8")).collectorHost, "node-host");
+    await assert.rejects(collectSignedHelmCriImages(paths, run, () => {}, "node-host"),
+      { code: "EEXIST" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
