@@ -297,7 +297,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       indexerPassword: selected.TR_INDEXER_PASSWORD,
       indexerSecret: selected.TR_INDEXER_SECRET,
       ...(record.install.verified?.runtimeComposeSha256 ? {
-        sourceRevision: record.sourceRevision,
+        sourceRevision: record.install.verified.sourceRevision,
         images: record.install.verified.images,
         allowOffline: true,
         composeFiles: [join(record.install.bundle, "compose.yml"),

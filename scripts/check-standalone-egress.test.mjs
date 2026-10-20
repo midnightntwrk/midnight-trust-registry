@@ -108,9 +108,10 @@ test("uses the verified image ID for a source-scoped offline bundle probe", asyn
   const project = "tr-standalone-local-wizard-a1";
   const sourceRevision = "a".repeat(40);
   const image = `tr-standalone/node:sha-${sourceRevision}`;
+  const digest = `midnightntwrk/midnight-node@sha256:${"a".repeat(64)}`;
   const imageId = `sha256:${"b".repeat(64)}`;
   const expectedTopology = { allowOffline: true, sourceRevision,
-    images: [{ role: "node", acceptedIds: [imageId] }],
+    images: [{ role: "node", reference: digest, acceptedIds: [imageId] }],
     composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml"] };
   let observations = 0;
   const dockerCommand = async (args) => {
@@ -134,6 +135,18 @@ test("uses the verified image ID for a source-scoped offline bundle probe", asyn
   assert.equal(observations, 2);
   assert.equal(result.image, image);
   assert.equal(result.probeImage, imageId);
+  const digestResult = await observeStandaloneEgress({ dockerCommand: async (args) =>
+    args[0] === "inspect" && args[2] === "{{.Config.Image}}"
+      ? { code: 0, stdout: `${digest}\n` } : dockerCommand(args),
+  expectedTopology, env: { TR_STACK_NAME: project },
+  observeTopology: async (_config, expected) => assert.equal(expected, expectedTopology) });
+  assert.equal(digestResult.image, digest);
+  assert.equal(digestResult.probeImage, imageId);
+  await assert.rejects(observeStandaloneEgress({ expectedTopology,
+    env: { TR_STACK_NAME: project }, observeTopology: async () => {},
+    dockerCommand: async (args) => args[0] === "inspect" && args[2] === "{{.Config.Image}}"
+      ? { code: 0, stdout: "unapproved:latest\n" } : dockerCommand(args),
+  }), /not tied/u);
   await assert.rejects(observeStandaloneEgress({ expectedTopology, env: { TR_STACK_NAME: project },
     observeTopology: async () => {}, dockerCommand: async (args) => ({ code: 0,
       stdout: `${args[2] === "{{.Image}}" ? `sha256:${"c".repeat(64)}` : image}\n` }),

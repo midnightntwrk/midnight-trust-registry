@@ -116,13 +116,16 @@ export async function observeStandaloneEgress(dependencies = {}) {
     "inspect", "--format", "{{.Config.Image}}", `${config.project}-node-1`,
   ])).stdout.trim();
   let probeImage = image;
-  if (expectedTopology?.allowOffline === true) {
+  if (expectedTopology?.images) {
     const node = expectedTopology.images?.find((entry) => entry.role === "node");
     const approvedTag = `tr-standalone/node:sha-${expectedTopology.sourceRevision}`;
-    if (!node || !Array.isArray(node.acceptedIds) || image !== approvedTag
-      || !Array.isArray(expectedTopology.composeFiles)
-      || expectedTopology.composeFiles.length !== 2) {
-      throw new Error("Offline probe image is not tied to the verified bundle");
+    const verifiedDigest = image === node?.reference;
+    const verifiedOfflineTag = expectedTopology.allowOffline === true && image === approvedTag
+      && Array.isArray(expectedTopology.composeFiles)
+      && expectedTopology.composeFiles.length === 2;
+    if (!node || !Array.isArray(node.acceptedIds)
+      || (!verifiedDigest && !verifiedOfflineTag)) {
+      throw new Error("Probe image is not tied to the verified bundle");
     }
     const imageId = (await command([
       "inspect", "--format", "{{.Image}}", `${config.project}-node-1`,
