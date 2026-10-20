@@ -2,7 +2,9 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { link, open, lstat, mkdir, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { link, open, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -460,15 +462,46 @@ export async function verifyDetachedReviewerSignature(
   documentPath, signaturePath, keyringDirectory, expectedFingerprint,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
-  await privateDirectory(keyringDirectory);
-  const { stdout } = await execFileAsync("gpg", [
-    "--batch", "--no-auto-key-retrieve", "--homedir", keyringDirectory,
-    "--status-fd=1", "--verify", signaturePath, documentPath,
-  ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
-  const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
-  if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
-    || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED) /mu.test(stdout)) {
-    throw new Error("Detached approval signature does not match the pinned reviewer key");
+  const keyringRoot = await privateDirectory(keyringDirectory);
+  let keybox;
+  try {
+    keybox = await open(join(keyringRoot, "pubring.kbx"),
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("Reviewer keyring needs pubring.kbx; export and import the public key into a pre-created private directory");
+    }
+    throw error;
+  }
+  let publicKeys;
+  try {
+    const stat = await keybox.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > 8 * 1024 * 1024
+      || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
+      throw new Error("Reviewer public keyring must be an owned bounded regular file");
+    }
+    publicKeys = await keybox.readFile();
+    if (publicKeys.length !== stat.size) throw new Error("Reviewer public keyring changed during read");
+  } finally {
+    await keybox.close();
+  }
+  const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
+  const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
+  try {
+    const keyring = join(temporary, "pubring.kbx");
+    await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
+    const { stdout } = await execFileAsync("gpg", [
+      "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
+      "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
+      "--status-fd=1", "--verify", signaturePath, documentPath,
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
+    if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
+      || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED) /mu.test(stdout)) {
+      throw new Error("Detached approval signature does not match the pinned reviewer key");
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
   }
 }
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -2106,6 +2106,19 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint);
+  const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));
+  await mkdir(longKeyring, { recursive: true, mode: 0o700 });
+  await writeFile(join(longKeyring, "pubring.kbx"), await readFile(join(verifier, "pubring.kbx")),
+    { mode: 0o600 });
+  await verifyDetachedReviewerSignature(document, signature, longKeyring, fingerprint);
+  const unsupportedKeyring = join(root, "unsupported-keyring");
+  await mkdir(unsupportedKeyring, { mode: 0o700 });
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, unsupportedKeyring, fingerprint),
+    /needs pubring\.kbx/u);
+  const linkedKeyring = join(root, "linked-keyring");
+  await mkdir(linkedKeyring, { mode: 0o700 });
+  await symlink(join(verifier, "pubring.kbx"), join(linkedKeyring, "pubring.kbx"));
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, linkedKeyring, fingerprint));
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, "B".repeat(40)), /does not match/u);
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint));
