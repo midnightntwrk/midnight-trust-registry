@@ -521,7 +521,11 @@ candidate bytes; it does not by itself support an RC qualification claim.
 egress behavior, including prepared private-input matching and unchanged
 bundled Compose bytes. For v3, it also matches the verified archive image IDs,
 source-scoped offline tags, and Docker Compose's recorded bundle paths before
-appending timestamped ledger-bridge evidence. A v3 setup record created before
+appending timestamped ledger-bridge evidence. Its probe runs by the verified
+node image ID rather than trusting a mutable local tag. A standalone CLI
+invocation against a source-scoped offline stack must supply the same verified
+bundle: `node scripts/check-standalone-egress.mjs <verified-bundle-directory>`.
+A v3 setup record created before
 image identities were recorded cannot be upgraded in place; begin a fresh
 setup directory rather than replacing its evidence. At
 most 20 pre-genesis observations are retained; investigate drift before that

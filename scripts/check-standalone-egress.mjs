@@ -2,11 +2,13 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 
 const run = promisify(execFile);
 const CANARY = "example.com";
@@ -91,17 +93,49 @@ export function validateEgressProbe({ controlRoute, isolatedRoute, controlCode, 
   }
 }
 
+export async function verifiedOfflineEgressTopology(bundleDirectory,
+  verifyBundle = verifyStandaloneInstallBundle) {
+  const root = await realpath(resolve(bundleDirectory));
+  const verified = await verifyBundle(root);
+  if (!verified.runtimeComposeSha256 || !verified.runtimeOfflineComposeSha256
+    || !Array.isArray(verified.images) || verified.images.length !== 3) {
+    throw new Error("Offline egress probe requires a verified v3/v4 install bundle");
+  }
+  return { sourceRevision: verified.sourceRevision, images: verified.images,
+    allowOffline: true, composeFiles: [join(root, "compose.yml"),
+      join(root, "compose.offline.yml")] };
+}
+
 export async function observeStandaloneEgress(dependencies = {}) {
   const command = dependencies.dockerCommand ?? docker;
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
   const config = standaloneStackConfig(dependencies.env ?? process.env);
-  await topology(config);
+  const expectedTopology = dependencies.expectedTopology;
+  await topology(config, expectedTopology);
   const image = (await command([
     "inspect", "--format", "{{.Config.Image}}", `${config.project}-node-1`,
   ])).stdout.trim();
-  if (!DIGEST_IMAGE.test(image)) throw new Error("Probe image is not digest-pinned");
+  let probeImage = image;
+  if (expectedTopology?.allowOffline === true) {
+    const node = expectedTopology.images?.find((entry) => entry.role === "node");
+    const approvedTag = `tr-standalone/node:sha-${expectedTopology.sourceRevision}`;
+    if (!node || !Array.isArray(node.acceptedIds) || image !== approvedTag
+      || !Array.isArray(expectedTopology.composeFiles)
+      || expectedTopology.composeFiles.length !== 2) {
+      throw new Error("Offline probe image is not tied to the verified bundle");
+    }
+    const imageId = (await command([
+      "inspect", "--format", "{{.Image}}", `${config.project}-node-1`,
+    ])).stdout.trim();
+    if (!node.acceptedIds.includes(imageId)) {
+      throw new Error("Offline probe image ID differs from the verified bundle");
+    }
+    probeImage = imageId;
+  } else if (!DIGEST_IMAGE.test(image)) {
+    throw new Error("Probe image is not digest-pinned");
+  }
 
-  const addresses = await runInNetwork(command, image, "bridge", "getent", ["ahostsv4", CANARY]);
+  const addresses = await runInNetwork(command, probeImage, "bridge", "getent", ["ahostsv4", CANARY]);
   if (addresses.code !== 0) throw new Error("Canary DNS resolution failed on control bridge");
   const address = parseCanaryAddress(addresses.stdout);
 
@@ -109,14 +143,14 @@ export async function observeStandaloneEgress(dependencies = {}) {
     "--noproxy", "*", "--resolve", `${CANARY}:443:${address}`,
     "--connect-timeout", "5", "--max-time", "10", "-fsSI", `https://${CANARY}`,
   ];
-  const controlRoute = await runInNetwork(command, image, "bridge", "cat", ["/proc/net/route"]);
-  const isolatedRoute = await runInNetwork(command, image, config.network, "cat", ["/proc/net/route"]);
+  const controlRoute = await runInNetwork(command, probeImage, "bridge", "cat", ["/proc/net/route"]);
+  const isolatedRoute = await runInNetwork(command, probeImage, config.network, "cat", ["/proc/net/route"]);
   if (controlRoute.code !== 0 || isolatedRoute.code !== 0) {
     throw new Error("Could not inspect probe route tables");
   }
-  const control = await runInNetwork(command, image, "bridge", "curl", curlArgs);
-  const isolated = await runInNetwork(command, image, config.network, "curl", curlArgs);
-  const isolatedDns = await runInNetwork(command, image, config.network, "getent", ["ahostsv4", CANARY]);
+  const control = await runInNetwork(command, probeImage, "bridge", "curl", curlArgs);
+  const isolated = await runInNetwork(command, probeImage, config.network, "curl", curlArgs);
+  const isolatedDns = await runInNetwork(command, probeImage, config.network, "getent", ["ahostsv4", CANARY]);
   validateEgressProbe({
     controlRoute: controlRoute.stdout,
     isolatedRoute: isolatedRoute.stdout,
@@ -125,12 +159,13 @@ export async function observeStandaloneEgress(dependencies = {}) {
     isolatedDnsCode: isolatedDns.code,
     isolatedDnsOutput: isolatedDns.stdout,
   });
-  await topology(config);
+  await topology(config, expectedTopology);
   return {
     kind: "standalone-ledger-egress-probe",
     observedAt: new Date().toISOString(),
     project: config.project,
     image,
+    probeImage,
     canary: CANARY,
     canaryAddress: address,
     controlHttpsReachable: true,
@@ -143,7 +178,12 @@ export async function observeStandaloneEgress(dependencies = {}) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    console.log(JSON.stringify(await observeStandaloneEgress()));
+    if (process.argv.length > 3) {
+      throw new Error("Usage: check-standalone-egress.mjs [verified-install-bundle]");
+    }
+    const expectedTopology = process.argv[2]
+      ? await verifiedOfflineEgressTopology(process.argv[2]) : undefined;
+    console.log(JSON.stringify(await observeStandaloneEgress({ expectedTopology })));
   } catch (error) {
     console.error(`Standalone egress probe inconclusive: ${error.message}`);
     process.exitCode = 1;

@@ -291,7 +291,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       || !/^[0-9a-f]{64}$/u.test(selected.TR_INDEXER_SECRET ?? "")) {
       throw new Error("Prepared private stack inputs disagree with the install bundle");
     }
-    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
+    const expectedTopology = {
       requirePrivateInputs: true,
       proofParamsDir,
       indexerPassword: selected.TR_INDEXER_PASSWORD,
@@ -303,7 +303,9 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
         composeFiles: [join(record.install.bundle, "compose.yml"),
           join(record.install.bundle, "compose.offline.yml")],
       } : {}),
-    });
+    };
+    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+      expectedTopology);
     const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
       env: {
         TR_STACK_NAME: config.project,
@@ -312,6 +314,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
         TR_INDEXER_PORT: config.ports.indexer,
         TR_PROOF_PORT: config.ports["proof-server"],
       },
+      expectedTopology,
     });
     if (topology.project !== config.project || egress.project !== config.project) {
       throw new Error("Stack observations disagree with the selected project");

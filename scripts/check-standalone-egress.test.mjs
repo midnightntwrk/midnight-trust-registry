@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { hasBroadOutboundRoute, hasValidRouteTable, observeStandaloneEgress, parseCanaryAddress,
-  validateEgressProbe } from "./check-standalone-egress.mjs";
+  validateEgressProbe, verifiedOfflineEgressTopology } from "./check-standalone-egress.mjs";
 
 const header = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT";
 const subnet = "eth0\t000015AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0";
@@ -102,6 +102,59 @@ test("orchestrates restricted probes and checks topology before and after", asyn
     assert.ok(args.includes("--cap-drop"));
     assert.ok(["bridge", `${project}_ledger`].includes(args[args.indexOf("--network") + 1]));
   }
+});
+
+test("uses the verified image ID for a source-scoped offline bundle probe", async () => {
+  const project = "tr-standalone-local-wizard-a1";
+  const sourceRevision = "a".repeat(40);
+  const image = `tr-standalone/node:sha-${sourceRevision}`;
+  const imageId = `sha256:${"b".repeat(64)}`;
+  const expectedTopology = { allowOffline: true, sourceRevision,
+    images: [{ role: "node", acceptedIds: [imageId] }],
+    composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml"] };
+  let observations = 0;
+  const dockerCommand = async (args) => {
+    if (args[0] === "inspect") return { code: 0,
+      stdout: `${args[2] === "{{.Image}}" ? imageId : image}\n` };
+    assert.equal(args[args.indexOf("--entrypoint") + 2], imageId);
+    const network = args[args.indexOf("--network") + 1];
+    const entrypoint = args[args.indexOf("--entrypoint") + 1];
+    if (entrypoint === "cat") return { code: 0, stdout: network === "bridge" ? controlRoute : isolatedRoute };
+    if (entrypoint === "getent") return network === "bridge"
+      ? { code: 0, stdout: "104.20.23.154 STREAM example.com\n" }
+      : { code: 2, stdout: "" };
+    return { code: network === "bridge" ? 0 : 7, stdout: "" };
+  };
+  const result = await observeStandaloneEgress({ dockerCommand, expectedTopology,
+    env: { TR_STACK_NAME: project }, observeTopology: async (config, expected) => {
+      assert.equal(config.project, project);
+      assert.equal(expected, expectedTopology);
+      observations += 1;
+    } });
+  assert.equal(observations, 2);
+  assert.equal(result.image, image);
+  assert.equal(result.probeImage, imageId);
+  await assert.rejects(observeStandaloneEgress({ expectedTopology, env: { TR_STACK_NAME: project },
+    observeTopology: async () => {}, dockerCommand: async (args) => ({ code: 0,
+      stdout: `${args[2] === "{{.Image}}" ? `sha256:${"c".repeat(64)}` : image}\n` }),
+  }), /image ID differs/u);
+});
+
+test("standalone offline probe requires a verified v3/v4 bundle", async () => {
+  const sourceRevision = "a".repeat(40);
+  const images = [{ role: "node", acceptedIds: [`sha256:${"b".repeat(64)}`] },
+    { role: "indexer" }, { role: "proof-server" }];
+  const expected = await verifiedOfflineEgressTopology(".", async () => ({
+    sourceRevision, images, runtimeComposeSha256: "c".repeat(64),
+    runtimeOfflineComposeSha256: "d".repeat(64),
+  }));
+  assert.equal(expected.sourceRevision, sourceRevision);
+  assert.equal(expected.allowOffline, true);
+  assert.equal(expected.images, images);
+  assert.equal(expected.composeFiles.length, 2);
+  await assert.rejects(verifiedOfflineEgressTopology(".", async () => ({
+    sourceRevision, images, runtimeComposeSha256: null,
+  })), /verified v3\/v4/u);
 });
 
 test("removes only its own probe container after a Docker startup failure", async () => {

@@ -396,9 +396,12 @@ test("wizard records only selected ledger-bridge topology and egress observation
       return { kind: "standalone-runtime-topology-observation", project,
         preparedInputsMatched: true, egressDenied: "not-verified", actorJourneys: "not-run" };
     },
-    observeEgress: async ({ env }) => {
+    observeEgress: async ({ env, expectedTopology }) => {
       assert.equal(env.TR_STACK_NAME, project);
       assert.equal(env.TR_NODE_PORT, "39944");
+      assert.equal(expectedTopology.sourceRevision, sourceRevision);
+      assert.equal(expectedTopology.allowOffline, true);
+      assert.equal(expectedTopology.images.length, 3);
       return { kind: "standalone-ledger-egress-probe", project,
         scope: "canary HTTPS and DNS on ledger bridge only" };
     },
