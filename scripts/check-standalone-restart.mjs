@@ -145,8 +145,9 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     composeFiles: [join(bundle, "compose.yml"), join(bundle, "compose.offline.yml")],
   });
   if (topology.project !== config.project || topology.preparedInputsMatched !== true
-    || topology.verifiedImageIdsMatched !== true || topology.bundleComposeFilesMatched !== true) {
-    throw new Error("Restart snapshot requires verified live v3 topology");
+    || topology.verifiedImageIdsMatched !== true || topology.bundleComposeFilesMatched !== true
+    || topology.internalNetworkOnly !== true || !topology.networkId) {
+    throw new Error("Restart snapshot requires verified live standalone topology");
   }
   const command = dependencies.command ?? run;
   const containers = Object.fromEntries(await Promise.all(SERVICES.map(async (service) =>
@@ -178,6 +179,8 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     format: "tr-standalone-restart-snapshot-v1",
     observedAt: new Date().toISOString(),
     project: config.project,
+    networkId: topology.networkId,
+    hostPortAccess: topology.hostPortAccess ?? "effective-loopback",
     sourceRevision: record.sourceRevision,
     observerSha256,
     installInventorySha256: record.install.inventorySha256,
@@ -193,11 +196,13 @@ export function compareStandaloneRestartSnapshots(before, after) {
   if (before?.format !== "tr-standalone-restart-snapshot-v1"
     || after?.format !== before.format || !HASH.test(before.genesisHash ?? "")
     || !HASH.test(before.finalizedHash ?? "")
+    || typeof before.networkId !== "string" || before.networkId.length === 0
+    || !["effective-loopback", "unpublished-install-access-required"].includes(before.hostPortAccess)
     || !Number.isSafeInteger(before.finalizedHeight) || before.finalizedHeight < 1) {
     throw new Error("Restart baseline is malformed");
   }
   for (const key of ["project", "sourceRevision", "observerSha256",
-    "installInventorySha256", "stackEnvSha256",
+    "installInventorySha256", "stackEnvSha256", "networkId", "hostPortAccess",
     "genesisHash"]) {
     if (after[key] !== before[key]) throw new Error(`Restart evidence changed ${key}`);
   }
@@ -237,7 +242,8 @@ export function compareStandaloneRestartSnapshots(before, after) {
 
 export async function captureStandaloneRestartBaseline(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
-  const snapshot = await observeStandaloneRestartSnapshot(root, {}, dependencies);
+  const snapshot = await observeStandaloneRestartSnapshot(root,
+    { allowUnpublishedHostPorts: true }, dependencies);
   await writeEvidence(join(root, BASELINE), snapshot);
   return { baselinePath: join(root, BASELINE), project: snapshot.project,
     finalizedHeight: snapshot.finalizedHeight, finalizedHash: snapshot.finalizedHash };
@@ -248,7 +254,7 @@ export async function verifyStandaloneRestart(directory, dependencies = {}) {
   const baselineBytes = await privateFile(join(root, BASELINE));
   const baseline = JSON.parse(baselineBytes);
   const after = await observeStandaloneRestartSnapshot(root,
-    { historicalHeight: baseline.finalizedHeight }, dependencies);
+    { historicalHeight: baseline.finalizedHeight, allowUnpublishedHostPorts: true }, dependencies);
   const result = compareStandaloneRestartSnapshots(baseline, after);
   await writeEvidence(join(root, VERIFICATION), {
     ...result, observedAt: new Date().toISOString(), baselineSha256: sha256(baselineBytes), after,

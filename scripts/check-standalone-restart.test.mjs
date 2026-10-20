@@ -23,6 +23,8 @@ function snapshot() {
   return {
     format: "tr-standalone-restart-snapshot-v1",
     project: "tr-standalone-local-restart-test",
+    networkId: "ledger-id",
+    hostPortAccess: "unpublished-install-access-required",
     sourceRevision: revision,
     observerSha256: "a".repeat(64),
     installInventorySha256: "b".repeat(64),
@@ -67,6 +69,12 @@ test("requires every service restart, intact volumes, and finalized history", ()
   const changedSource = structuredClone(after);
   changedSource.sourceRevision = "f".repeat(40);
   assert.throws(() => compareStandaloneRestartSnapshots(before, changedSource), /changed sourceRevision/u);
+  const changedNetwork = structuredClone(after);
+  changedNetwork.networkId = "replacement-ledger";
+  assert.throws(() => compareStandaloneRestartSnapshots(before, changedNetwork), /changed networkId/u);
+  const changedAccess = structuredClone(after);
+  changedAccess.hostPortAccess = "effective-loopback";
+  assert.throws(() => compareStandaloneRestartSnapshots(before, changedAccess), /changed hostPortAccess/u);
   const changedObserver = structuredClone(after);
   changedObserver.observerSha256 = "f".repeat(64);
   assert.throws(() => compareStandaloneRestartSnapshots(before, changedObserver), /changed observerSha256/u);
@@ -115,8 +123,9 @@ test("captures private immutable baseline and verifies a restarted local ledger 
       assert.equal(expected.requirePrivateInputs, true);
       assert.equal(expected.images.length, 3);
       allowUnpublishedHostPorts = expected.allowUnpublishedHostPorts;
-      return { project, preparedInputsMatched: true, verifiedImageIdsMatched: true,
-        bundleComposeFilesMatched: true };
+      return { project, networkId: "ledger-id", internalNetworkOnly: true,
+        hostPortAccess: "unpublished-install-access-required", preparedInputsMatched: true,
+        verifiedImageIdsMatched: true, bundleComposeFilesMatched: true };
     },
     command: async (_name, args) => {
       if (args[0] === "ps") {
@@ -145,8 +154,11 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     await observeStandaloneRestartSnapshot(directory, { allowUnpublishedHostPorts: true }, dependencies);
     assert.equal(allowUnpublishedHostPorts, true);
     const baseline = await captureStandaloneRestartBaseline(directory, dependencies);
-    assert.equal(allowUnpublishedHostPorts, false);
+    assert.equal(allowUnpublishedHostPorts, true);
     assert.equal(baseline.finalizedHash, beforeHash);
+    const baselineRecord = JSON.parse(await readFile(baseline.baselinePath, "utf8"));
+    assert.equal(baselineRecord.networkId, "ledger-id");
+    assert.equal(baselineRecord.hostPortAccess, "unpublished-install-access-required");
     await assert.rejects(captureStandaloneRestartBaseline(directory, dependencies), { code: "EEXIST" });
     restarted = true;
     brokenHistory = true;
