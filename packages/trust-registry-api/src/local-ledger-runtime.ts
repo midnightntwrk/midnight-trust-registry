@@ -83,7 +83,7 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
   for (const [sequence, timestamp] of Object.entries(plan.sequenceTimestamps)) {
     const parsed = canonicalTimestamp(timestamp);
     if (!DECIMAL.test(sequence) || BigInt(sequence) !== previousSequence + 1n
-      || !Number.isFinite(parsed) || parsed <= previousTime
+      || !Number.isFinite(parsed) || parsed < previousTime
       || parsed > now + 5 * 60_000) {
       throw new Error("Local API runtime sequence timestamps must be ordered UTC ledger history");
     }
@@ -102,8 +102,8 @@ async function boundedFile(path: string, maxBytes: number): Promise<Buffer> {
     if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) {
       throw new Error("Local API approval file must be a bounded regular file");
     }
-    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
-      throw new Error("Local API approval file must be owned by the runtime user");
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid() && stat.uid !== 0) {
+      throw new Error("Local API approval file must be owned by root or the runtime user");
     }
     const buffer = Buffer.alloc(maxBytes + 1);
     let count = 0;
@@ -142,9 +142,10 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   const signatureBytes = await boundedFile(input.signaturePath, 64 * 1024);
   const keyring = await lstat(input.keyringDirectory);
   if (!keyring.isDirectory() || (keyring.mode & 0o077) !== 0
-    || (typeof process.getuid === "function" && keyring.uid !== process.getuid())) {
+    || (typeof process.getuid === "function" && keyring.uid !== process.getuid() && keyring.uid !== 0)) {
     throw new Error("Local API reviewer keyring must be a private directory");
   }
+  const keyringBytes = await boundedFile(join(input.keyringDirectory, "pubring.kbx"), 8 * 1024 * 1024);
   const gpg = ["/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/bin/gpg"].find(existsSync);
   if (gpg === undefined) throw new Error("Local API runtime requires an installed GPG verifier");
   const temporary = await mkdtemp(join(tmpdir(), "tr-local-api-approval-"));
@@ -153,9 +154,10 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     const signatureCopy = join(temporary, "plan.sig");
     await writeFile(planCopy, planBytes, { flag: "wx", mode: 0o600 });
     await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(join(temporary, "pubring.kbx"), keyringBytes, { flag: "wx", mode: 0o600 });
     const verification = spawnSync(gpg, ["--batch", "--no-options", "--no-auto-key-retrieve",
-      "--no-default-keyring", "--homedir", input.keyringDirectory,
-      "--keyring", join(input.keyringDirectory, "pubring.kbx"), "--status-fd=1",
+      "--trust-model", "always", "--no-default-keyring", "--homedir", temporary,
+      "--keyring", join(temporary, "pubring.kbx"), "--status-fd=1",
       "--verify", signatureCopy, planCopy],
     { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024,
       env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });

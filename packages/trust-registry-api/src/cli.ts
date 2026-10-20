@@ -134,6 +134,10 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.host.trim().length === 0) {
     throw new Error(`--host must not be empty\n\n${HELP_TEXT}`);
   }
+  if (options.localLedgerPlanPath !== undefined
+    && !["127.0.0.1", "::1"].includes(options.host)) {
+    throw new Error("Unqualified local-ledger mode requires a loopback host");
+  }
   if (
     options.unsafeDemoMutations === true
     && !["127.0.0.1", "::1"].includes(options.host)

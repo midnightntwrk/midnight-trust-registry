@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 
 import { TrustRegistryOperatorSnapshotSchema } from "@midnight-ntwrk/trust-registry-cli";
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
@@ -14,6 +15,28 @@ import type { TrustRegistryApiStateSource } from "./source.js";
 const CONTRACT_ADDRESS = /^0x[0-9a-f]{64}$/u;
 const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
+const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+
+async function readBoundedSnapshot(path: string): Promise<Buffer> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_SNAPSHOT_BYTES) {
+      throw new Error("Pinned local snapshot must be a bounded regular file");
+    }
+    const bytes = Buffer.alloc(stat.size + 1);
+    let count = 0;
+    while (count < bytes.length) {
+      const result = await file.read(bytes, count, bytes.length - count, count);
+      if (result.bytesRead === 0) break;
+      count += result.bytesRead;
+    }
+    if (count !== stat.size) throw new Error("Pinned local snapshot changed during read");
+    return bytes.subarray(0, count);
+  } finally {
+    await file.close();
+  }
+}
 
 /**
  * The injected reader must pin an independently approved local genesis and authenticate
@@ -47,7 +70,7 @@ export function createLocalLedgerBoundSource(input: {
         || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())) {
         throw new Error("Finalized local Trust Registry view does not match the pinned deployment");
       }
-      const raw = await readFile(input.snapshotPath);
+      const raw = await readBoundedSnapshot(input.snapshotPath);
       if (createHash("sha256").update(raw).digest("hex") !== expectedSnapshotSha256) {
         throw new Error("Candidate snapshot differs from the approved SHA-256 digest");
       }

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +61,9 @@ describe("approved local-ledger API runtime", () => {
     const mapper = sequenceTimestampMap(validateLocalLedgerRuntimePlan(valid));
     expect(mapper(1n)).toBe("2026-01-01T00:01:00.000Z");
     expect(() => mapper(2n)).toThrow(/no approved ledger timestamp/u);
+    expect(validateLocalLedgerRuntimePlan({ ...valid, sequenceTimestamps: {
+      "0": "2026-01-01T00:00:00.000Z", "1": "2026-01-01T00:00:00.000Z",
+    } }).sequenceTimestamps["1"]).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("requires an actual detached reviewer signature and exact install bytes", async () => {
@@ -95,6 +98,12 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      await chmod(verifier, 0o500);
+      expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      await chmod(verifier, 0o700);
+      const linkedPlan = join(root, "linked-plan.json");
+      await symlink(planPath, linkedPlan);
+      await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, planPath: linkedPlan })).rejects.toThrow();
       await expect(loadApprovedLocalLedgerRuntimePlan({ ...input,
         reviewerFingerprint: "B".repeat(40) })).rejects.toThrow(/detached reviewer signature/u);
       await writeFile(candidate.releaseManifestPath, `${manifest}\n`);

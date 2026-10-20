@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -211,9 +211,15 @@ describe("local ledger-bound API source", () => {
       await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
       await writeFile(snapshotPath, raw);
+      const actualPath = join(directory, "actual-snapshot.json");
+      await rename(snapshotPath, actualPath);
+      await symlink(actualPath, snapshotPath);
+      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await rm(snapshotPath);
+      await rename(actualPath, snapshotPath);
       view = { ...view, ledger: { ...ledger, governancePolicyCommitment: new Uint8Array(32).fill(7) } };
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
-      expect(readCount).toBe(3);
+      expect(readCount).toBe(4);
       view = { ...view, ledger, networkId: "preprod" };
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
       view = { ...view, networkId: "undeployed", finalizedBlockHash: `0x${"0".repeat(64)}` };
@@ -223,7 +229,7 @@ describe("local ledger-bound API source", () => {
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
       available = false;
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
-      expect(readCount).toBe(7);
+      expect(readCount).toBe(8);
     } finally {
       const localServer = server;
       if (localServer !== undefined && localServer.listening) {

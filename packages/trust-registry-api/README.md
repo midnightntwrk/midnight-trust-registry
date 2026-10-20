@@ -58,19 +58,23 @@ release-manifest and snapshot paths plus their SHA-256 digests, nonzero approved
 genesis and contract hashes, exact local RPC/indexer endpoints and allowed
 hosts, a contiguous governance-sequence-to-UTC-timestamp map covering the
 finalized governance count, and a validity window no longer than 90 days. The
-plan and signature must be regular files owned by the runtime user, and the
+plan and signature must be regular files owned by root or the runtime user, and the
 reviewer keyring must be a private directory with its approved public key in
 `pubring.kbx`. The CLI verifies private copies of the exact plan bytes it
-parses, checks the install bytes, constructs the pinned local reader,
+parses and copies the read-only public keyring into private GPG scratch space;
+the pinned fingerprint is the exact key that signs the plan, including a
+signing subkey if used. It checks the install bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
+Until qualification is complete, local-ledger mode also binds only to loopback.
 
 The signed map is a reviewer attestation, not proof that timestamps were
 derived from authenticated ledger history. The plan's `sourceRevision` is not
 yet bound to a reviewed running API image, and a signed plan cannot currently
-be revoked before expiry. No live local deployment, signer
+be revoked before expiry. The local indexer's contract state is not yet
+verified against the authenticated checkpoint state root. No live local deployment, signer
 journey, DID/VC/status authority, egress-denied browser flow, or restart/restore
 test has been completed through this CLI. Do not expose it as the 0.1.0 RC API
 until those independent gates and the first-run approval workflow are complete.
