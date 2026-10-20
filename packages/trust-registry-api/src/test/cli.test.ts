@@ -19,6 +19,9 @@ describe("API CLI binding", () => {
     ]) {
       expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
     }
+    expect(() => parseTrustRegistryApiCliArgs([
+      ...localArgs, "--local-ledger-plan", "/run/replacement.json",
+    ])).toThrow(/duplicate argument/u);
   });
 
   it("refuses public demo mutation listeners", () => {

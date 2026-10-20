@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { lstat, readFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { constants, existsSync } from "node:fs";
+import { lstat, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -28,10 +30,17 @@ export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & 
   snapshotPath: string;
   snapshotSha256: string;
   sequenceTimestamps: Readonly<Record<string, string>>;
+  notBefore: string;
+  notAfter: string;
 };
 
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
-  Object.keys(value).sort().join("\0") === [...keys].sort().join("\0");
+  Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+
+const canonicalTimestamp = (value: unknown): number => {
+  const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? parsed : Number.NaN;
+};
 
 export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRuntimePlan {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -40,7 +49,7 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
   const plan = value as Record<string, unknown>;
   if (!exactKeys(plan, ["allowedHosts", "contractAddress", "expectedGenesisHash", "format",
     "indexerHttpUrl", "indexerWsUrl", "installInventoryPath", "installInventorySha256",
-    "networkId", "releaseManifestPath", "releaseManifestSha256", "rpcUrl", "sequenceTimestamps",
+    "networkId", "notAfter", "notBefore", "releaseManifestPath", "releaseManifestSha256", "rpcUrl", "sequenceTimestamps",
     "snapshotPath", "snapshotSha256", "sourceRevision"])
     || plan.format !== "tr-local-api-runtime-v1" || plan.networkId !== "undeployed"
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
@@ -58,16 +67,24 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     || !Array.isArray(plan.allowedHosts) || plan.allowedHosts.length === 0
     || plan.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)
     || plan.sequenceTimestamps === null || typeof plan.sequenceTimestamps !== "object"
-    || Array.isArray(plan.sequenceTimestamps)) {
+    || Array.isArray(plan.sequenceTimestamps)
+    || !Number.isFinite(canonicalTimestamp(plan.notBefore))
+    || !Number.isFinite(canonicalTimestamp(plan.notAfter))
+    || canonicalTimestamp(plan.notAfter) <= canonicalTimestamp(plan.notBefore)
+    || canonicalTimestamp(plan.notAfter) - canonicalTimestamp(plan.notBefore) > 90 * 24 * 60 * 60 * 1000) {
     throw new Error("Local API runtime plan lacks exact approved local pins");
+  }
+  const now = Date.now();
+  if (now < canonicalTimestamp(plan.notBefore) || now > canonicalTimestamp(plan.notAfter)) {
+    throw new Error("Local API runtime plan is not currently valid");
   }
   let previousSequence = -1n;
   let previousTime = -1;
   for (const [sequence, timestamp] of Object.entries(plan.sequenceTimestamps)) {
-    const parsed = typeof timestamp === "string" ? Date.parse(timestamp) : Number.NaN;
-    if (!DECIMAL.test(sequence) || BigInt(sequence) <= previousSequence
-      || !Number.isFinite(parsed) || new Date(parsed).toISOString() !== timestamp
-      || parsed < previousTime) {
+    const parsed = canonicalTimestamp(timestamp);
+    if (!DECIMAL.test(sequence) || BigInt(sequence) !== previousSequence + 1n
+      || !Number.isFinite(parsed) || parsed <= previousTime
+      || parsed > now + 5 * 60_000) {
       throw new Error("Local API runtime sequence timestamps must be ordered UTC ledger history");
     }
     previousSequence = BigInt(sequence);
@@ -79,11 +96,29 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
 
 async function boundedFile(path: string, maxBytes: number): Promise<Buffer> {
   if (!isAbsolute(path)) throw new Error("Local API approval path must be absolute");
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) {
-    throw new Error("Local API approval file must be a bounded regular file");
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) {
+      throw new Error("Local API approval file must be a bounded regular file");
+    }
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+      throw new Error("Local API approval file must be owned by the runtime user");
+    }
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let count = 0;
+    while (count < buffer.length) {
+      const result = await file.read(buffer, count, buffer.length - count, count);
+      if (result.bytesRead === 0) break;
+      count += result.bytesRead;
+    }
+    if (count === 0 || count > maxBytes || count !== stat.size) {
+      throw new Error("Local API approval file changed or exceeded its size limit");
+    }
+    return buffer.subarray(0, count);
+  } finally {
+    await file.close();
   }
-  return readFile(path);
 }
 
 export function sequenceTimestampMap(plan: LocalLedgerRuntimePlan): SequenceToTimestamp {
@@ -104,17 +139,38 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     throw new Error("Local API reviewer signing-key fingerprint must be canonical");
   }
   const planBytes = await boundedFile(input.planPath, 1024 * 1024);
-  await boundedFile(input.signaturePath, 64 * 1024);
+  const signatureBytes = await boundedFile(input.signaturePath, 64 * 1024);
   const keyring = await lstat(input.keyringDirectory);
-  if (!keyring.isDirectory() || (keyring.mode & 0o077) !== 0) {
+  if (!keyring.isDirectory() || (keyring.mode & 0o077) !== 0
+    || (typeof process.getuid === "function" && keyring.uid !== process.getuid())) {
     throw new Error("Local API reviewer keyring must be a private directory");
   }
-  const verification = spawnSync("gpg", ["--batch", "--no-auto-key-retrieve", "--homedir",
-    input.keyringDirectory, "--status-fd=1", "--verify", input.signaturePath, input.planPath],
-  { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024 });
-  const fingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/mu.exec(verification.stdout ?? "")?.[1];
-  if (verification.status !== 0 || verification.error || fingerprint !== input.reviewerFingerprint) {
-    throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
+  const gpg = ["/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/bin/gpg"].find(existsSync);
+  if (gpg === undefined) throw new Error("Local API runtime requires an installed GPG verifier");
+  const temporary = await mkdtemp(join(tmpdir(), "tr-local-api-approval-"));
+  try {
+    const planCopy = join(temporary, "plan.json");
+    const signatureCopy = join(temporary, "plan.sig");
+    await writeFile(planCopy, planBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
+    const verification = spawnSync(gpg, ["--batch", "--no-options", "--no-auto-key-retrieve",
+      "--no-default-keyring", "--homedir", input.keyringDirectory,
+      "--keyring", join(input.keyringDirectory, "pubring.kbx"), "--status-fd=1",
+      "--verify", signatureCopy, planCopy],
+    { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024,
+      env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });
+    const statuses = (verification.stdout ?? "").split("\n")
+      .filter((line) => line.startsWith("[GNUPG:] "));
+    const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
+    const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
+    const rejected = statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG)\b/u.test(line));
+    const fingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/u.exec(valid[0] ?? "")?.[1];
+    if (verification.status !== 0 || verification.error || rejected
+      || good.length !== 1 || valid.length !== 1 || fingerprint !== input.reviewerFingerprint) {
+      throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
   }
   const plan = validateLocalLedgerRuntimePlan(JSON.parse(planBytes.toString("utf8")));
   const inventoryBytes = await boundedFile(plan.installInventoryPath, 1024 * 1024);
@@ -137,11 +193,31 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
 
 export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRuntimePlan) {
   const reader = await createLocalNetworkDeploymentActionReader(plan);
-  return createLocalLedgerBoundSource({
+  const source = createLocalLedgerBoundSource({
     snapshotPath: plan.snapshotPath,
     expectedSnapshotSha256: plan.snapshotSha256,
     contractAddress: plan.contractAddress,
-    reader,
+    reader: {
+      async readCurrentFinalizedLedger(address) {
+        const view = await reader.readCurrentFinalizedLedger(address);
+        if (view !== null && (typeof view.ledger.governanceActionCount !== "bigint"
+          || view.ledger.governanceActionCount
+            !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1))) {
+          throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+        }
+        return view;
+      },
+    },
     sequenceToTimestamp: sequenceTimestampMap(plan),
   });
+  return {
+    ...source,
+    async loadSnapshot() {
+      const now = Date.now();
+      if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
+        throw new Error("Local API runtime plan is not currently valid");
+      }
+      return source.loadSnapshot();
+    },
+  };
 }

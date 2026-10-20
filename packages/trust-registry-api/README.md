@@ -35,7 +35,7 @@ sequences to timestamps.
 It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
 approved digest or the finalized Compact projection. The CLI constructs these
-inputs from an operator-signed runtime plan and the local checkpoint/indexer
+inputs from a reviewer-signed runtime plan and the local checkpoint/indexer
 reader. This source still has only simulator and test-double coverage, not
 proof of a real local-ledger deployment, finalized readback, offline actor
 journey, or 0.1.0 release qualification.
@@ -56,16 +56,21 @@ trust-registry-api serve \
 The plan pins `undeployed`, the source revision, absolute install-inventory,
 release-manifest and snapshot paths plus their SHA-256 digests, nonzero approved
 genesis and contract hashes, exact local RPC/indexer endpoints and allowed
-hosts, and a nonempty governance-sequence-to-UTC-timestamp map. The CLI checks
-the detached signature and install bytes, constructs the pinned local reader,
+hosts, a contiguous governance-sequence-to-UTC-timestamp map covering the
+finalized governance count, and a validity window no longer than 90 days. The
+plan and signature must be regular files owned by the runtime user, and the
+reviewer keyring must be a private directory with its approved public key in
+`pubring.kbx`. The CLI verifies private copies of the exact plan bytes it
+parses, checks the install bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
-missing sequence timestamps fail closed. File-backed snapshot/workspace mode
+missing sequence timestamps or an expired plan fail closed. File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
 
-The signed map is an operator attestation, not proof that timestamps were
+The signed map is a reviewer attestation, not proof that timestamps were
 derived from authenticated ledger history. The plan's `sourceRevision` is not
-yet bound to a reviewed running API image. No live local deployment, signer
+yet bound to a reviewed running API image, and a signed plan cannot currently
+be revoked before expiry. No live local deployment, signer
 journey, DID/VC/status authority, egress-denied browser flow, or restart/restore
 test has been completed through this CLI. Do not expose it as the 0.1.0 RC API
 until those independent gates and the first-run approval workflow are complete.

@@ -49,9 +49,14 @@ export const parseTrustRegistryApiCliArgs = (
     host: "127.0.0.1",
     port: 4400,
   };
+  const seen = new Set<string>();
 
   while (args.length > 0) {
     const arg = args.shift();
+    if (arg !== "--help" && arg !== "-h" && arg !== undefined) {
+      if (seen.has(arg)) throw new Error(`duplicate argument: ${arg}`);
+      seen.add(arg);
+    }
     switch (arg) {
       case "--host": {
         const host = args.shift();

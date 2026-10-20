@@ -30,6 +30,8 @@ const plan = (root: string) => ({
   allowedHosts: ["127.0.0.1"],
   snapshotPath: join(root, "snapshot.json"),
   snapshotSha256: "f".repeat(64),
+  notBefore: new Date(Date.now() - 60_000).toISOString(),
+  notAfter: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
   sequenceTimestamps: {
     "0": "2026-01-01T00:00:00.000Z",
     "1": "2026-01-01T00:01:00.000Z",
@@ -46,6 +48,10 @@ describe("approved local-ledger API runtime", () => {
       { ...valid, contractAddress: `0x${"0".repeat(64)}` },
       { ...valid, snapshotPath: "relative.json" },
       { ...valid, sequenceTimestamps: {} },
+      { ...valid, notAfter: "2026-01-01T00:00:00.000Z" },
+      { ...valid, notBefore: new Date(Date.now() + 60_000).toISOString() },
+      { ...valid, sequenceTimestamps: { "1": "2026-01-01T00:00:00.000Z" } },
+      { ...valid, sequenceTimestamps: { "0": new Date(Date.now() + 60 * 60_000).toISOString() } },
       { ...valid, sequenceTimestamps: { "0": "2026-01-01T00:00:00Z" } },
       { ...valid, sequenceTimestamps: { "0": "2026-01-01T00:01:00.000Z",
         "1": "2026-01-01T00:00:00.000Z" } },
@@ -58,7 +64,7 @@ describe("approved local-ledger API runtime", () => {
   });
 
   it("requires an actual detached reviewer signature and exact install bytes", async () => {
-    if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) return;
+    expect(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status).toBe(0);
     const root = await mkdtemp(join(tmpdir(), "tr-api-runtime-"));
     try {
       const signer = join(root, "signer");
