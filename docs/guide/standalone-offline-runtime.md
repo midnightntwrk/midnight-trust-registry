@@ -38,7 +38,9 @@ node scripts/build-api-runtime-image.mjs <digest-pinned-node-base> <linux/arm64|
 It exports the
 signed source commit, performs a frozen light build, deploys production-only
 dependencies, and rejects bundled contract proving keys before saving an image
-archive and hash manifest. Build it while online. This is packaging evidence,
+archive and hash manifest. The digest-pinned base must include `/usr/bin/gpg`;
+the builder checks GPG and the API import in a read-only, network-disabled
+container before exporting. Build it while online. This is packaging evidence,
 not a running local-ledger qualification or an addition to the v3 install
 inventory. The first-run installer must later pin its archive and running
 image digest, review the API plan, and verify offline operation.

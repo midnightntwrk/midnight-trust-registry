@@ -129,6 +129,14 @@ export async function buildApiRuntimeImage(input) {
       || run("docker", ["image", "inspect", "--format", "{{.Id}}", tag], { capture: true }) !== imageId) {
       throw new Error("Built API image ID does not match the loaded image");
     }
+    run("docker", ["run", "--rm", "--network", "none", "--read-only", "--tmpfs",
+      "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "/usr/bin/gpg", imageId, "--version"],
+    { capture: true });
+    const runtimeRevision = run("docker", ["run", "--rm", "--network", "none", "--read-only",
+      "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "node", imageId,
+      "-e", "import('/app/dist/cli.js').then(() => process.stdout.write(require('node:fs').readFileSync('/app/source-revision', 'utf8').trim()))"],
+    { capture: true });
+    if (runtimeRevision !== revision) throw new Error("API runtime image source revision differs from approved source");
     await mkdir(input.outputDirectory);
     const archivePath = join(input.outputDirectory, "api.image.tar");
     run("docker", ["save", "--output", archivePath, imageId]);
