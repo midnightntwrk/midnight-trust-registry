@@ -72,6 +72,14 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
   injectedEnvironment.Config.Env = ["PYTHONPATH=/tmp/override"];
   assert.throws(() => checkStandaloneInstallRelay(network, containers, injectedEnvironment,
     config, bundle), /identity or entrypoint/u);
+  const inheritedHealthcheck = structuredClone(relay);
+  inheritedHealthcheck.Config.Healthcheck = { Test: ["CMD", "true"] };
+  const matchingBaseImage = structuredClone(baseImage);
+  matchingBaseImage.Config.Healthcheck = structuredClone(inheritedHealthcheck.Config.Healthcheck);
+  assert.doesNotThrow(() => checkRelay(network, containers, inheritedHealthcheck, config,
+    bundle, undefined, matchingBaseImage));
+  assert.throws(() => checkStandaloneInstallRelay(network, containers, inheritedHealthcheck,
+    config, bundle), /identity or entrypoint/u);
   const writableScript = structuredClone(relay);
   writableScript.Mounts[0].RW = true;
   assert.throws(() => checkStandaloneInstallRelay(network, containers, writableScript, config, bundle),
@@ -127,15 +135,18 @@ test("live relay observation hashes both host and running mount bytes", async ()
       if (args[0] === "ps") return "node-id\nindexer-id\nproof-server-id\n";
       if (args[0] === "network") return JSON.stringify([network]);
       if (args[0] === "image") return JSON.stringify([baseImage]);
-      if (args[0] === "exec") return `${sha256}  /relay.py\n`;
-      if (args[0] === "inspect" && args.length === 2) return JSON.stringify([running]);
+      if (args[0] === "exec") {
+        assert.deepEqual(args.slice(0, 5), ["exec", "relay-id", "/usr/bin/python3", "-I", "-c"]);
+        return `${sha256}\n`;
+      }
+      if (args[0] === "inspect" && args[1] === "--type") return JSON.stringify([running]);
       if (args[0] === "inspect") return JSON.stringify(containers);
       throw new Error("Unexpected Docker call");
     };
     assert.equal((await observeStandaloneInstallRelay(config, installed, undefined, { docker })).relayId,
       "relay-id");
     await assert.rejects(observeStandaloneInstallRelay(config, installed, undefined, {
-      docker: async (args) => args[0] === "exec" ? `${"0".repeat(64)}  /relay.py\n` : docker(args),
+      docker: async (args) => args[0] === "exec" ? `${"0".repeat(64)}\n` : docker(args),
     }), /Running installation relay script differs/u);
     await writeFile(path, "changed\n");
     await assert.rejects(observeStandaloneInstallRelay(config, installed, undefined, { docker }),

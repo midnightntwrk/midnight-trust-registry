@@ -33,7 +33,8 @@ export function checkStandaloneInstallRelay(network, ledgerContainers, relay, co
     || relay.Config?.Image !== node.reference || !node.acceptedIds?.includes(relay.Image)
     || JSON.stringify(relay.Config?.Entrypoint) !== JSON.stringify(["/usr/bin/python3"])
     || JSON.stringify(relay.Config?.Cmd) !== JSON.stringify(["/relay.py"])
-    || relay.Config?.Healthcheck != null
+    || JSON.stringify(relay.Config?.Healthcheck ?? null)
+      !== JSON.stringify(baseImage?.Config?.Healthcheck ?? null)
     || (relay.Config?.Env ?? []).some((entry) =>
       /^(?:PYTHON[A-Z_]*|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
     || relay.Config?.Labels?.["com.docker.compose.project"] !== undefined) {
@@ -105,15 +106,18 @@ export async function observeStandaloneInstallRelay(config, verified, expectedTo
     .trim().split("\n").filter(Boolean);
   if (ids.length !== 3) throw new Error("Dedicated Compose project has an unexpected service count");
   const [network] = JSON.parse(await runDocker(["network", "inspect", config.network]));
-  const [relay] = JSON.parse(await runDocker(["inspect", `${config.project}-install-relay`]));
+  const [relay] = JSON.parse(await runDocker(["inspect", "--type", "container",
+    `${config.project}-install-relay`]));
   const containers = JSON.parse(await runDocker(["inspect", ...ids]));
   const nodeImage = verified.images.find((image) => image.role === "node");
   if (!nodeImage) throw new Error("Verified install bundle has no node image pin");
   const [baseImage] = JSON.parse(await runDocker(["image", "inspect", nodeImage.reference]));
   const observation = checkStandaloneInstallRelay(network, containers, relay, config, verified,
     expectedTopology, baseImage);
-  const mountedHash = (await runDocker(["exec", relay.Id, "sha256sum", "/relay.py"])).trim();
-  if (mountedHash !== `${pin.sha256}  /relay.py`) {
+  const mountedHash = (await runDocker(["exec", relay.Id, "/usr/bin/python3", "-I", "-c",
+    "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())",
+    "/relay.py"])).trim();
+  if (mountedHash !== pin.sha256) {
     throw new Error("Running installation relay script differs from the verified bundle");
   }
   return observation;

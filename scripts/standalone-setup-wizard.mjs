@@ -816,11 +816,13 @@ async function requireCurrentInstallRelay(root, record, verified, plan, dependen
   if (live.relayId !== approved.relayId
     || live.networkId !== approved.networkId
     || live.relayScriptSha256 !== approved.relayScriptSha256
-    || JSON.stringify(live.ports) !== JSON.stringify(approved.ports)
-    || plan.network.rpcUrl !== `http://127.0.0.1:${live.ports?.node}`
+    || JSON.stringify(live.ports) !== JSON.stringify(approved.ports)) {
+    throw new Error("Verified installation relay changed");
+  }
+  if (plan.network.rpcUrl !== `http://127.0.0.1:${live.ports?.node}`
     || plan.network.indexerHttpUrl !== indexerHttp
     || plan.network.indexerWsUrl !== indexerWs) {
-    throw new Error("Verified installation relay changed or plan endpoints diverged");
+    throw new Error("Deployment plan endpoints diverged from the verified installation relay");
   }
 }
 

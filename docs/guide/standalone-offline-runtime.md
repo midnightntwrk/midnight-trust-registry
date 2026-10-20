@@ -983,6 +983,9 @@ host ports in the operator's approved endpoint plan and separately pin the
 opaque wallet provider endpoints. Stop and remove
 the relay before the offline runtime test; the relay has a `bridge` attachment
 and is **not** evidence of egress denial.
+Use the absolute canonical `install-relay.py` path returned by the verified v6
+bundle for the read-only mount; a symlink or differently spelled source path
+fails the live relay gate.
 
 ```sh
 export TR_STACK_NAME=tr-standalone-local-qualification

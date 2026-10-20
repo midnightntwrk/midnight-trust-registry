@@ -643,7 +643,7 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
     verifyBundle: f.verifyBundle,
     observeInstallRelay: async () => ({ ...relay, relayId: "replacement" }),
     deploy: async () => { throw new Error("must not submit"); },
-  }), /relay changed or plan endpoints diverged/u);
+  }), /Verified installation relay changed/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
   let observations = 0;
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
