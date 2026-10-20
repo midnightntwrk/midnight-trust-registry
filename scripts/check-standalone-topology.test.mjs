@@ -245,3 +245,27 @@ test("rejects public or extra port bindings and mismatched private ports", () =>
   sharedVolume[0].Mounts[0].Name = "tr-standalone-local-other_node-data";
   assert.throws(() => checkStandaloneTopology(network, sharedVolume), /mount drifted/u);
 });
+
+test("records an unpublished internal bridge without treating it as host access", () => {
+  const unpublished = structuredClone(containers);
+  for (const item of unpublished) {
+    const [target] = Object.keys(item.NetworkSettings.Ports);
+    item.NetworkSettings.Ports[target] = [];
+  }
+  assert.throws(() => checkStandaloneTopology(network, unpublished), /approved loopback/u);
+  const observation = checkStandaloneTopology(network, unpublished, standaloneStackConfig({}), {
+    ...expected, allowUnpublishedHostPorts: true,
+  });
+  assert.equal(observation.hostPortAccess, "unpublished-install-access-required");
+  assert.equal(observation.egressDenied, "not-verified");
+  const partial = structuredClone(unpublished);
+  partial[0].NetworkSettings.Ports["9944/tcp"] = [{ HostIp: "127.0.0.1", HostPort: "29944" }];
+  assert.throws(() => checkStandaloneTopology(network, partial, standaloneStackConfig({}), {
+    allowUnpublishedHostPorts: true,
+  }), /host access mode is inconsistent/u);
+  const malformed = structuredClone(unpublished);
+  malformed[0].NetworkSettings.Ports["9944/tcp"] = [null];
+  assert.throws(() => checkStandaloneTopology(network, malformed, standaloneStackConfig({}), {
+    allowUnpublishedHostPorts: true,
+  }), /approved loopback/u);
+});

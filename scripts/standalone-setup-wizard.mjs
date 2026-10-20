@@ -283,6 +283,7 @@ async function preparedStandaloneTopology(root, record) {
     }
     const expectedTopology = {
       requirePrivateInputs: true,
+      allowUnpublishedHostPorts: true,
       proofParamsDir,
       indexerPassword: selected.TR_INDEXER_PASSWORD,
       indexerSecret: selected.TR_INDEXER_SECRET,
@@ -387,7 +388,7 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     if (record.install.verified?.runtimeComposeSha256) {
       const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
       const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
-        expectedTopology);
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
       if (current.project !== record.stack.project
         || current.networkId !== record.stack.observation.topology.networkId
         || current.internalNetworkOnly !== true) {

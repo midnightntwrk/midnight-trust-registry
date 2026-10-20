@@ -289,15 +289,19 @@ and secret and the proof server's bind source against the prepared private
 `stack.env`; its observation records only a match flag, never secret values.
 A direct topology check without that private input cannot attest the match.
 
-The topology check requires Docker's **effective** loopback port mapping, not just the requested
-`HostConfig.PortBindings`. Confirm that `docker port <project>-node-1` exposes
-the intended `127.0.0.1` port and that the host can reach it. On this macOS
-Docker Desktop development host, an observed internal-only ledger bridge had
-requested loopback bindings but `NetworkSettings.Ports` contained empty lists;
-the host RPC connection failed. Such a stack is a development smoke only,
-not a deployable qualification target. Do not add an egress-capable network or
-relay merely to make the check pass; qualify a reviewed topology that preserves
-the offline egress policy, or use a suitable isolated Linux operator host.
+The direct topology check requires Docker's **effective** loopback port mapping,
+not just the requested `HostConfig.PortBindings`. Confirm that `docker port
+<project>-node-1` exposes the intended `127.0.0.1` port and that the host can
+reach it. On this macOS Docker Desktop development host, an internal-only
+ledger bridge had requested loopback bindings but `NetworkSettings.Ports`
+contained empty lists; the host RPC connection failed. Wizard `observe-stack`
+may record this explicitly as `unpublished-install-access-required` after
+checking the private inputs and the isolated bridge. That observation is **not**
+host connectivity, local-ledger deployment, or offline-runtime evidence.
+Wizard genesis observation still requires an effective direct mapping; the
+temporary relay below is connectivity-only until it has its own verified,
+source-pinned installation-access gate. Do not add an egress-capable network
+to the ledger services merely to make the check pass.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat

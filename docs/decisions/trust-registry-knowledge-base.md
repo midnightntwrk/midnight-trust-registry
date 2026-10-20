@@ -2168,8 +2168,12 @@ not a governance signature or release qualification. The image's
 `dev.earthly.git-sha` names an Earthly build-tool commit, not node source.
 More importantly, the macOS Docker Desktop smoke stack requests loopback
 bindings in `HostConfig.PortBindings` but has empty effective
-`NetworkSettings.Ports` and no host RPC access. The topology checker now
-requires effective loopback publication, and the wizard rechecks live topology
-before recording a genesis pin. Do not use this stack for deployment until an
-offline-safe topology passes that gate; preserve its existing volumes and
-private candidate evidence meanwhile.
+`NetworkSettings.Ports` and no direct host RPC access. The wizard can now
+record a prepared, isolated bridge as `unpublished-install-access-required`,
+and a fresh live observation matched its private inputs and pinned images and
+passed a scoped ledger-bridge egress probe. A temporary relay reached node RPC,
+indexer GraphQL, and proof-server version, then was removed; it was not a
+source-pinned installation path or offline-runtime evidence. Genesis observation
+still requires verified effective host access, so do not deploy until a reviewed
+access path passes that gate. Preserve the existing volumes and private
+candidate evidence meanwhile.

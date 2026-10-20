@@ -417,6 +417,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
       assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
       assert.equal(expected.requirePrivateInputs, true);
+      assert.equal(expected.allowUnpublishedHostPorts, true);
       assert.equal(expected.sourceRevision, sourceRevision);
       assert.equal(expected.images.length, 3);
       assert.equal(expected.composeFiles.length, 2);
@@ -487,6 +488,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.equal(config.project, project);
       assert.equal(expected.composeFiles.length, 2);
       assert.equal(expected.requirePrivateInputs, true);
+      assert.equal(expected.allowUnpublishedHostPorts, false);
       assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
       return { project, networkId: ledgerNetworkId, internalNetworkOnly: true };
     },
