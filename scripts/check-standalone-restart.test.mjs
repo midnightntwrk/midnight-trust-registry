@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   captureStandaloneRestartBaseline,
   compareStandaloneRestartSnapshots,
+  deploymentMarkerFromRecord,
   observeStandaloneRestartSnapshot,
   readStandaloneRestartEvidence,
   verifyStandaloneRestart,
@@ -19,6 +20,19 @@ const beforeHash = `0x${"2".repeat(64)}`;
 const afterHash = `0x${"3".repeat(64)}`;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const services = ["node", "indexer", "proof-server"];
+
+test("deployment marker requires a valid reconciled staged-bootstrap receipt", () => {
+  const receipt = { networkId: "undeployed", contractAddress: `0x${"4".repeat(64)}`,
+    blockHash: `0x${"5".repeat(64)}`, txId: "local-tx", blockHeight: 12 };
+  const record = { deployment: { state: "observed", result: {
+    receipt, readbackStatus: "staged-bootstrap-pending" } } };
+  assert.deepEqual(deploymentMarkerFromRecord(record), { state: "observed",
+    contractAddress: receipt.contractAddress, readbackStatus: "staged-bootstrap-pending",
+    validReceipt: true });
+  assert.equal(deploymentMarkerFromRecord({ deployment: { state: "observed", result: {
+    receipt: { ...receipt, contractAddress: `0x${"0".repeat(64)}` },
+    readbackStatus: "staged-bootstrap-pending" } } }).validReceipt, false);
+});
 
 function snapshot() {
   return {
@@ -48,6 +62,7 @@ test("requires every service restart, intact volumes, and finalized history", ()
   for (const service of services) after.containers[service].startedAt = "2026-10-20T00:01:00Z";
   const result = compareStandaloneRestartSnapshots(before, after);
   assert.equal(result.releaseQualified, false);
+  assert.equal(result.deploymentEvidence, undefined);
   assert.equal(result.crossHostRestore, "not-run");
   assert.equal(result.preservedCheckpointHash, beforeHash);
   for (const service of services) {
@@ -79,6 +94,29 @@ test("requires every service restart, intact volumes, and finalized history", ()
   const changedObserver = structuredClone(after);
   changedObserver.observerSha256 = "f".repeat(64);
   assert.throws(() => compareStandaloneRestartSnapshots(before, changedObserver), /changed observerSha256/u);
+  const recordedBefore = { ...before, setupDeployment: { state: "observed",
+    contractAddress: `0x${"4".repeat(64)}`, readbackStatus: "staged-bootstrap-pending",
+    validReceipt: true } };
+  const recordedAfter = { ...after, setupDeployment: structuredClone(recordedBefore.setupDeployment) };
+  assert.equal(compareStandaloneRestartSnapshots(recordedBefore, recordedAfter).deploymentEvidence,
+    "setup-recorded-deployment-ledger-only");
+  const mismatch = structuredClone(recordedBefore);
+  mismatch.setupDeployment.readbackStatus = "mismatch";
+  assert.equal(compareStandaloneRestartSnapshots(mismatch,
+    { ...after, setupDeployment: structuredClone(mismatch.setupDeployment) }).deploymentEvidence,
+  "deployment-state-observed-unbound");
+  const unknown = { ...before, setupDeployment: { state: "unknown", contractAddress: null } };
+  assert.equal(compareStandaloneRestartSnapshots(unknown,
+    { ...after, setupDeployment: structuredClone(unknown.setupDeployment) }).deploymentEvidence,
+  "deployment-state-unknown-unbound");
+  const legacyObserved = { ...before, setupDeployment: { state: "observed",
+    contractAddress: `0x${"4".repeat(64)}` } };
+  assert.equal(compareStandaloneRestartSnapshots(legacyObserved,
+    { ...after, setupDeployment: structuredClone(legacyObserved.setupDeployment) }).deploymentEvidence,
+  "deployment-state-observed-unbound");
+  recordedAfter.setupDeployment.state = "unknown";
+  assert.throws(() => compareStandaloneRestartSnapshots(recordedBefore, recordedAfter),
+    /setup deployment record changed/u);
 });
 
 test("captures private immutable baseline and verifies a restarted local ledger bridge", async () => {
@@ -173,10 +211,12 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     brokenHistory = false;
     const result = await verifyStandaloneRestart(directory, dependencies);
     assert.equal(result.releaseQualified, false);
+    assert.equal(result.deploymentEvidence, "pre-deployment-smoke");
     assert.equal(JSON.parse(await readFile(join(directory, "restart-verification.json"), "utf8"))
       .baselineSha256.length, 64);
     assert.deepEqual(await readStandaloneRestartEvidence(directory, expected), {
-      status: "verified-ledger-bridge-only", beforeFinalizedHeight: 11, afterFinalizedHeight: 12,
+      status: "self-attested-ledger-bridge-only", deploymentEvidence: "pre-deployment-smoke",
+      beforeFinalizedHeight: 11, afterFinalizedHeight: 12,
     });
     const verificationPath = join(directory, "restart-verification.json");
     const verificationBytes = await readFile(verificationPath);

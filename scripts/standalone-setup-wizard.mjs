@@ -1593,11 +1593,16 @@ export async function approveStandaloneCommitteeRecovery(
 
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
-  const restartObservation = await readStandaloneRestartEvidence(root, {
-    sourceRevision: record.sourceRevision,
-    installInventorySha256: record.install?.inventorySha256,
-    project: record.stack?.project,
-  });
+  let restartObservation;
+  try {
+    restartObservation = await readStandaloneRestartEvidence(root, {
+      sourceRevision: record.sourceRevision,
+      installInventorySha256: record.install?.inventorySha256,
+      project: record.stack?.project,
+    });
+  } catch {
+    restartObservation = { status: "invalid-evidence-investigate" };
+  }
   let lockPresent = false;
   try {
     await lstat(join(root, ".setup.lock"));

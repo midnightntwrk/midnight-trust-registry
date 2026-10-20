@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
-import { lstat, open, readFile, realpath } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { observeStandaloneRestartSnapshot } from "./check-standalone-restart.mjs";
+import { deploymentMarkerFromRecord, observeStandaloneRestartSnapshot,
+  setupDeploymentMarker } from "./check-standalone-restart.mjs";
 
 const SOURCE = "restore-source.json";
 const DESTINATION = "restore-destination.json";
@@ -22,9 +23,9 @@ async function privateDirectory(directory) {
   return root;
 }
 
-async function readPrivateSnapshot(path) {
+async function readPrivateSnapshot(path, maxBytes = 1024 * 1024) {
   const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > 1024 * 1024
+  if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes
     || (stat.mode & 0o077) !== 0
     || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
     throw new Error("Restore source must be an owned private regular file");
@@ -33,12 +34,18 @@ async function readPrivateSnapshot(path) {
 }
 
 async function writeEvidence(path, value) {
-  const file = await open(path, "wx", 0o600);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const file = await open(temporary, "wx", 0o600);
   try {
-    await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
-    await file.sync();
+    try {
+      await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await link(temporary, path);
   } finally {
-    await file.close();
+    await unlink(temporary).catch(() => {});
   }
 }
 
@@ -75,6 +82,8 @@ export function compareStandaloneRestoreSnapshots(source, destination) {
       throw new Error(`Restore did not isolate the ${service} container`);
     }
   }
+  const sourceDeployment = setupDeploymentMarker(source);
+  const destinationDeployment = setupDeploymentMarker(destination);
   return {
     kind: "standalone-distinct-project-ledger-readback",
     sourceRevision: source.sourceRevision,
@@ -83,6 +92,15 @@ export function compareStandaloneRestoreSnapshots(source, destination) {
     sourceFinalizedHeight: source.finalizedHeight,
     destinationFinalizedHeight: destination.finalizedHeight,
     preservedCheckpointHash: source.finalizedHash,
+    deploymentEvidence: sourceDeployment.state === "observed"
+      && destinationDeployment.state === "observed"
+      && sourceDeployment.readbackStatus === "staged-bootstrap-pending"
+      && destinationDeployment.readbackStatus === "staged-bootstrap-pending"
+      && sourceDeployment.validReceipt === true
+      && destinationDeployment.validReceipt === true
+      && sourceDeployment.contractAddress !== null
+      && sourceDeployment.contractAddress === destinationDeployment.contractAddress
+      ? "matching-setup-records-ledger-only" : "pre-deployment-or-unbound-smoke",
     backupAndCrossHostCustody: "operator-evidence-required",
     contractAndWalletReadback: "not-verified",
     releaseQualified: false,
@@ -109,6 +127,16 @@ export async function verifyStandaloneRestore(sourceDirectory, destinationDirect
   if (sourceRoot === destinationRoot) throw new Error("Restore destination must use a different setup directory");
   const sourceBytes = await readPrivateSnapshot(join(sourceRoot, SOURCE));
   const source = JSON.parse(sourceBytes);
+  const record = JSON.parse(await readPrivateSnapshot(join(sourceRoot, "setup-record.json"), 16 * 1024 * 1024));
+  if (record.format !== "tr-standalone-setup-v1"
+    || source.project !== record.stack?.project
+    || source.sourceRevision !== record.sourceRevision
+    || source.installInventorySha256 !== record.install?.inventorySha256
+    || source.stackEnvSha256 !== record.stack?.envFileSha256
+    || (source.setupDeployment !== undefined && JSON.stringify(setupDeploymentMarker(source))
+      !== JSON.stringify(deploymentMarkerFromRecord(record)))) {
+    throw new Error("Restore source checkpoint is not bound to the source setup");
+  }
   if (!Number.isSafeInteger(source.finalizedHeight) || source.finalizedHeight < 1) {
     throw new Error("Restore source height is invalid");
   }

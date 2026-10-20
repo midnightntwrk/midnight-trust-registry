@@ -360,6 +360,20 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
 });
 
+test("invalid restart evidence does not hide deployment and maintenance alerts", async () => {
+  const f = await fixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt = { state: "conflict", alert: "independent-human-recovery-required" };
+  await writeFile(recordPath, JSON.stringify(record));
+  await writeFile(join(f.directory, "restart-baseline.json"), "truncated", { mode: 0o600 });
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.restartObservation.status, "invalid-evidence-investigate");
+  assert.equal(status.maintenanceTransitionAlert, "independent-human-recovery-required");
+  assert.equal(status.maintenanceTransition, "conflict");
+  assert.equal(status.releaseQualified, false);
+});
+
 test("v4 setup retains the API image pin but does not claim it is running", async () => {
   const f = await fixture("tr-standalone-install-v4");
   await prepareStandaloneStack(f.directory, {

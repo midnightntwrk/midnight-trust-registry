@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,7 +18,7 @@ function snapshots() {
   const source = {
     format: "tr-standalone-restart-snapshot-v1",
     sourceRevision: "a".repeat(40), observerSha256: "b".repeat(64),
-    installInventorySha256: "c".repeat(64),
+    installInventorySha256: "c".repeat(64), stackEnvSha256: "d".repeat(64),
     project: "tr-standalone-local-source", networkId: "source-network-id",
     genesisHash, finalizedHeight: 42, finalizedHash: sourceHash,
     containers: Object.fromEntries(["node", "indexer", "proof-server"]
@@ -40,6 +40,17 @@ test("restore comparison requires a distinct pinned ledger retaining finalized h
   assert.equal(result.preservedCheckpointHash, sourceHash);
   assert.equal(result.releaseQualified, false);
   assert.equal(result.contractAndWalletReadback, "not-verified");
+  assert.equal(result.deploymentEvidence, "pre-deployment-or-unbound-smoke");
+  const recorded = structuredClone(source);
+  const restored = structuredClone(destination);
+  recorded.setupDeployment = { state: "observed", contractAddress: `0x${"4".repeat(64)}`,
+    readbackStatus: "staged-bootstrap-pending", validReceipt: true };
+  restored.setupDeployment = structuredClone(recorded.setupDeployment);
+  assert.equal(compareStandaloneRestoreSnapshots(recorded, restored).deploymentEvidence,
+    "matching-setup-records-ledger-only");
+  restored.setupDeployment.readbackStatus = "mismatch";
+  assert.equal(compareStandaloneRestoreSnapshots(recorded, restored).deploymentEvidence,
+    "pre-deployment-or-unbound-smoke");
   assert.throws(() => compareStandaloneRestoreSnapshots(source,
     { ...destination, finalizedHash: "invalid" }), /checkpoint is malformed/u);
   assert.throws(() => compareStandaloneRestoreSnapshots(source,
@@ -68,6 +79,10 @@ test("capture and verify write private, non-overwriting, ledger-only evidence", 
   const destinationDirectory = await mkdtemp(join(tmpdir(), "tr-restore-destination-"));
   const { source, destination } = snapshots();
   try {
+    const record = { format: "tr-standalone-setup-v1", sourceRevision: source.sourceRevision,
+      install: { inventorySha256: source.installInventorySha256 },
+      stack: { project: source.project, envFileSha256: source.stackEnvSha256 } };
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
     const capture = await captureStandaloneRestoreSource(sourceDirectory, {
       observeSnapshot: async (_directory, options) => {
         assert.equal(options.allowUnpublishedHostPorts, true);
@@ -79,6 +94,17 @@ test("capture and verify write private, non-overwriting, ledger-only evidence", 
       { observeSnapshot: async () => source }), { code: "EEXIST" });
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, sourceDirectory,
       { observeSnapshot: async () => destination }), /different setup directory/u);
+    const wrongRecord = { ...record, stack: { ...record.stack, project: "another-project" } };
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(wrongRecord));
+    await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
+      { observeSnapshot: async () => destination }), /not bound to the source setup/u);
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record));
+    const markedSource = { ...source, setupDeployment: { state: "unknown", contractAddress: null,
+      readbackStatus: null, validReceipt: false } };
+    await writeFile(capture.sourcePath, JSON.stringify(markedSource));
+    await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
+      { observeSnapshot: async () => destination }), /not bound to the source setup/u);
+    await writeFile(capture.sourcePath, JSON.stringify(source));
     const result = await verifyStandaloneRestore(sourceDirectory, destinationDirectory, {
       observeSnapshot: async (_directory, options) => {
         assert.equal(options.historicalHeight, 42);

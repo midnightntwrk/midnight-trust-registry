@@ -1119,11 +1119,23 @@ private `restart-baseline.json` and `restart-verification.json` files are
 created once with mode 0600; do not overwrite them to retry a failure. Retain
 the explicit restart command log and investigate failed or ambiguous results.
 Never use `down -v` on a ledger whose history is evidence.
-The wizard's `status` command rechecks these private evidence files without
-querying Docker: `restartObservation` can report `verified-ledger-bridge-only`
-with both finalized heights, but `restartRestore` remains `pending`. A changed
-baseline, mismatched verification, or evidence bound to another setup makes
-status fail closed; preserve those files for investigation instead of recapturing.
+The wizard's `status` command checks these private evidence files without
+querying Docker: `restartObservation` can report
+`self-attested-ledger-bridge-only` with both finalized heights and an explicit
+`pre-deployment-smoke`, setup-recorded deployment, or unbound deployment-state
+marker. Only a valid staged-bootstrap readback receives the recorded-deployment
+label; unknown, mismatched, and legacy states remain unbound. This is a
+consistency check of operator-held files, not proof that Docker/RPC was
+observed independently. `restartRestore` remains `pending`. A changed
+baseline, mismatched verification, or evidence bound to another setup reports
+`invalid-evidence-investigate` without hiding deployment or maintenance alerts.
+Preserve the files for investigation instead of recapturing. Evidence files
+are published atomically only after a private temporary file is synced, so an
+interrupted write cannot leave a half-written final path.
+If deployment changes between baseline and verification, the comparison fails
+closed. Preserve that baseline as failed evidence and use a fresh private setup
+directory under an approved recovery procedure for a new observation; do not
+overwrite or delete the original evidence.
 
 This is **ledger-bridge continuity only**. A pre-deployment run is a development
 smoke, not RC evidence. Even after deployment, this helper does not read back
@@ -1150,7 +1162,11 @@ topology. It requires the same source revision, observer and install inventory,
 genesis, and historical finalized block hash, with a different project,
 network, and three container identities. Destination finality must advance
 beyond the source checkpoint. The source snapshot and destination result are
-private, one-write files. Preserve them on any failure instead of recapturing
+private, atomically published one-write files. Verification also binds the
+source snapshot to the source setup record. The result distinguishes
+pre-deployment or unbound smoke from matching valid staged-bootstrap setup
+records, but neither
+classification independently reads contract state. Preserve the files on any failure instead of recapturing
 or resetting volumes.
 
 This is only **distinct-project ledger continuity**. The script cannot prove
