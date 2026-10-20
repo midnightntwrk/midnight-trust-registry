@@ -37,7 +37,7 @@ node scripts/build-api-runtime-image.mjs <digest-pinned-node-base> <linux/arm64|
 
 It exports the signed source commit, performs a frozen light build, deploys
 production-only dependencies from the shared lockfile without lifecycle
-scripts, removes the known published DID 0.7.0 proof payload from its isolated
+scripts or optional native addons, removes the known published DID 0.7.0 proof payload from its isolated
 staging copy, and scans the complete payload for remaining proving artifacts.
 The manifest records the lockfile, Dockerfile, payload and archive hashes.
 The digest-pinned base must include `/usr/bin/gpg`;

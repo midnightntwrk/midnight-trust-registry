@@ -47,7 +47,7 @@ test("API payload contains runtime code but no proving keys", async () => {
     await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /external link/u);
     await rm(join(app, "outside"));
     await writeFile(join(app, "native-darwin-arm64.node"), "native\n");
-    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /wrong platform/u);
+    await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /native addon/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

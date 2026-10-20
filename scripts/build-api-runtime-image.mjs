@@ -115,7 +115,6 @@ export async function apiPayloadInventory(directory, platform) {
     throw new Error("API payload inventory requires an approved Linux platform");
   }
   const app = await realpath(join(directory, "app"));
-  const cpu = platform === "linux/amd64" ? "x64" : "arm64";
   const records = [];
   async function walk(path, prefix) {
     for (const entry of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
@@ -132,9 +131,8 @@ export async function apiPayloadInventory(directory, platform) {
         if (/\.(?:prover|verifier|bzkir)$/u.test(entry.name)) {
           throw new Error(`API image contains a proving artifact: ${relative}`);
         }
-        if (entry.name.endsWith(".node")
-          && (!relative.includes("linux") || !relative.includes(cpu))) {
-          throw new Error(`API image contains a native module for the wrong platform: ${relative}`);
+        if (entry.name.endsWith(".node")) {
+          throw new Error(`API image must not contain a native addon: ${relative}`);
         }
         records.push({ path: relative, mode: stat.mode & 0o777,
           size: stat.size, sha256: await fileSha256(absolute) });
@@ -213,7 +211,7 @@ export async function buildApiRuntimeImage(input) {
       "@midnight-ntwrk/trust-registry-api", "--cache=local:w,remote:"], { cwd: source, env });
     run("pnpm", ["--config.inject-workspace-packages=true", "--filter",
       "@midnight-ntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
-      "--os", "linux", "--cpu", cpu, "--libc", "glibc",
+      "--os", "linux", "--cpu", cpu, "--libc", "glibc", "--no-optional",
       "--ignore-scripts",
       join(context, "app")], { cwd: source, env });
     await stripPublishedDidProofArtifacts(context);
