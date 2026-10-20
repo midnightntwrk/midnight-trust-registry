@@ -110,6 +110,13 @@ export async function stripPublishedDidProofArtifacts(directory) {
   }
 }
 
+export async function stripPnpmInstallMetadata(directory) {
+  const modules = join(directory, "app/node_modules");
+  for (const name of [".modules.yaml", ".pnpm-workspace-state-v1.json"]) {
+    await rm(join(modules, name), { force: true });
+  }
+}
+
 export async function apiPayloadInventory(directory, platform) {
   if (!["linux/arm64", "linux/amd64"].includes(platform)) {
     throw new Error("API payload inventory requires an approved Linux platform");
@@ -215,6 +222,7 @@ export async function buildApiRuntimeImage(input) {
       "--ignore-scripts",
       join(context, "app")], { cwd: source, env });
     await stripPublishedDidProofArtifacts(context);
+    await stripPnpmInstallMetadata(context);
     await assertLightApiPayload(context);
     await writeFile(join(context, "app", "source-revision"), `${revision}\n`, { flag: "wx", mode: 0o444 });
     await cp(join(source, "deploy/runtime/Dockerfile.api"), join(context, "Dockerfile.api"));

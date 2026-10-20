@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { apiPayloadInventory, assertArchiveMatchesCommit, assertLightApiPayload, stripPublishedDidProofArtifacts,
+import { apiPayloadInventory, assertArchiveMatchesCommit, assertLightApiPayload, stripPnpmInstallMetadata,
+  stripPublishedDidProofArtifacts,
   validateApiImageInput } from "./build-api-runtime-image.mjs";
 
 const base = `docker.io/library/node@sha256:${"a".repeat(64)}`;
@@ -66,6 +67,23 @@ test("known published DID proof assets are removed from isolated staging only", 
     }));
     await stripPublishedDidProofArtifacts(root);
     await apiPayloadInventory(root, "linux/arm64");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("pnpm install timestamps are excluded from runtime payload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-api-pnpm-metadata-test-"));
+  try {
+    const modules = join(root, "app/node_modules");
+    await mkdir(modules, { recursive: true });
+    await writeFile(join(modules, ".modules.yaml"), "prunedAt: now\n");
+    await writeFile(join(modules, ".pnpm-workspace-state-v1.json"), '{"lastValidatedTimestamp":1}\n');
+    await writeFile(join(modules, "runtime.js"), "export {};\n");
+    await stripPnpmInstallMetadata(root);
+    await assert.rejects(readFile(join(modules, ".modules.yaml")), { code: "ENOENT" });
+    await assert.rejects(readFile(join(modules, ".pnpm-workspace-state-v1.json")), { code: "ENOENT" });
+    assert.equal(await readFile(join(modules, "runtime.js"), "utf8"), "export {};\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
