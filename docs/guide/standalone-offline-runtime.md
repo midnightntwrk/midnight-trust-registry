@@ -29,6 +29,20 @@ trustworthy by itself.
    console, and applicant-portal identities. Keep wallet seeds, maintenance
    keys, API credentials, and proof inputs out of images, fixtures, and logs.
 
+The API has a separate candidate OCI builder:
+
+```sh
+node scripts/build-api-runtime-image.mjs <digest-pinned-node-base> <linux/arm64|linux/amd64> <external-new-output-directory> <signed-source-SHA> <approved-source-signing-fingerprint>
+```
+
+It exports the
+signed source commit, performs a frozen light build, deploys production-only
+dependencies, and rejects bundled contract proving keys before saving an image
+archive and hash manifest. Build it while online. This is packaging evidence,
+not a running local-ledger qualification or an addition to the v3 install
+inventory. The first-run installer must later pin its archive and running
+image digest, review the API plan, and verify offline operation.
+
 The staged install directory must contain `install-inventory.json`, the
 release-candidate package manifest and its ten tarballs, separate OCI image
 archives for node, indexer, and proof server, and the proof server's verified
