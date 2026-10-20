@@ -9,10 +9,11 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { verifyMappingSignature } from "./verify-helm-mapping-signature.mjs";
+export { approvedMappingSigner, verifyMappingSignature } from "./verify-helm-mapping-signature.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
-const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const REFERENCE = /^[a-z0-9][a-z0-9.:-]*(\/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$/u;
 const ROLES = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 
@@ -160,30 +161,6 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
   }
   return { sourceRevision: bundle.sourceRevision, inventorySha256: bundle.inventorySha256,
     mappedRoles: [...ROLES], deploymentPhase: values.deploymentPhase };
-}
-
-export function approvedMappingSigner(output, signerFingerprint) {
-  if (!FINGERPRINT.test(signerFingerprint)) throw new Error("Invalid mapping signer fingerprint");
-  if (/^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED|BADSIG|ERRSIG|NO_PUBKEY)\b/mu.test(output)) {
-    throw new Error("Helm image mapping signer key or signature is expired, revoked, or invalid");
-  }
-  const valid = /^\[GNUPG:\] VALIDSIG (.+)$/mu.exec(output)?.[1]?.trim().split(/\s+/u);
-  if (!valid || (valid[0] !== signerFingerprint && valid[9] !== signerFingerprint)) {
-    throw new Error("Helm image mapping signature is not from the approved signer");
-  }
-  return signerFingerprint;
-}
-
-export function verifyMappingSignature(receiptBytes, signaturePath, keyringPath, signerFingerprint) {
-  let output;
-  try {
-    output = execFileSync("gpgv", ["--keyring", resolve(keyringPath), "--status-fd", "1",
-      "--", resolve(signaturePath), "-"], { input: receiptBytes, encoding: "utf8",
-      timeout: 30_000, stdio: ["pipe", "pipe", "pipe"] });
-  } catch {
-    throw new Error("Helm image mapping has no valid detached signature");
-  }
-  return approvedMappingSigner(output, signerFingerprint);
 }
 
 export async function checkHelmImageMapping(paths) {

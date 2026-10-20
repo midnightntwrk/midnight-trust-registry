@@ -60,6 +60,32 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    offline behavior. Keep the raw per-node `crictl inspecti` output, node
    identity, and reviewer-approved archive-to-registry comparison separately
    as real-cluster evidence. Never fabricate these observations from tests.
+   Once the images are preloaded, run the read-only collector **on each
+   eligible Kubernetes node** against that node's explicit CRI image socket:
+
+   ```sh
+   node scripts/collect-helm-cri-images.mjs \
+     <mapping.json> <mapping.sig> <reviewer-keyring> <REVIEWER_FINGERPRINT> \
+     <kubernetes-node-name> unix:///run/containerd/containerd.sock \
+     <new-private-node-receipt.json>
+   ```
+
+   The collector needs Node.js, `gpgv`, `crictl`, and the two checked-in
+   scripts `collect-helm-cri-images.mjs` and
+   `verify-helm-mapping-signature.mjs`; it does not pull images or require
+   the package workspace. Supply the actual image-service Unix socket for
+   that node, not the example path. It requests each signed digest reference
+   separately with `crictl inspecti --quiet --output json` and requires an
+   exact `repoDigests` match, a content-addressed image ID, and nonzero size.
+   It writes a new mode-0600 receipt and refuses to overwrite one. Collect
+   the raw receipt through a controlled evidence channel; independently
+   confirm that the supplied Kubernetes node name belongs to the machine,
+   compare receipts with the complete eligible-node inventory, and sign the
+   resulting evidence set. The collector's hostname and clock are not
+   independent attestations. A receipt only observes one node's CRI store at
+   one instant; it does not prove every node was checked, that a pod ran the
+   image, that image garbage collection will not evict it, or that egress was
+   denied. Repeat after restart, replacement-node scheduling, or restore.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
    Verify its contents against the install inventory before deployment; this
