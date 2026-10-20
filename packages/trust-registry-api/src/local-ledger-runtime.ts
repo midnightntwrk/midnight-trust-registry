@@ -184,10 +184,15 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   }
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (inventory?.format !== "tr-standalone-install-v3"
+  if (!["tr-standalone-install-v3", "tr-standalone-install-v4"].includes(inventory?.format)
     || manifest?.format !== "tr-release-candidate-manifest-v2"
     || inventory.sourceRevision !== plan.sourceRevision
-    || manifest.sourceRevision !== plan.sourceRevision) {
+    || manifest.sourceRevision !== plan.sourceRevision
+    || (inventory.format === "tr-standalone-install-v4"
+      && (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
+        || inventory.apiRuntime?.archive !== "images/api.image.tar"
+        || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.manifestSha256 ?? "")
+        || !/^[0-9a-f]{64}$/u.test(inventory.apiRuntime?.archiveSha256 ?? "")))) {
     throw new Error("Local API runtime source revision disagrees with approved install artifacts");
   }
   return plan;

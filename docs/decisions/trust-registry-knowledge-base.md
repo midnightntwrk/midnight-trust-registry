@@ -2140,8 +2140,10 @@ archive remains pinned separately. Packaging checks do not prove
 cluster qualification or offline actor journeys. An unpushed v4 install
 inventory slice binds a separately built API archive to the same signed
 source revision as the release packages, verifies its OCI/config identity,
-and imports it by exact archive ID without a registry pull. It does not start
-or observe a running API. The CLI now has a separate
+and imports a private hash-checked copy without a registry pull. It rejects
+image-name annotations and unapproved platform variants. The signed local
+API plan can reference a v4 inventory, but the installer does not start or
+observe a running API. The CLI now has a separate
 reviewer-signed read-only local-ledger mode, but its tests use simulator or
 reader doubles. The indexer's Compact state lacks state-root authentication,
 the signed governance timestamp map is not independently derived from the

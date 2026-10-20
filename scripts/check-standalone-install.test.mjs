@@ -18,13 +18,14 @@ const manifestBytes = JSON.stringify({ schemaVersion: 2,
 const manifestDigest = sha(manifestBytes);
 const reference = (role) => `example.test/${role}@sha256:${manifestDigest}`;
 
-async function imageArchive(root, role, digest = manifestDigest, repoTags = null) {
+async function imageArchive(root, role, digest = manifestDigest, repoTags = null, imageName = null) {
   const source = join(root, `source-${role}`);
   await mkdir(join(source, "blobs/sha256"), { recursive: true });
   await writeFile(join(source, "blobs/sha256", digest), manifestBytes);
   await writeFile(join(source, "blobs/sha256", configDigest), configBytes);
   await writeFile(join(source, "index.json"), JSON.stringify({
-    schemaVersion: 2, manifests: [{ digest: `sha256:${digest}` }],
+    schemaVersion: 2, manifests: [{ digest: `sha256:${digest}`,
+      ...(imageName ? { annotations: { "io.containerd.image.name": imageName } } : {}) }],
   }));
   await writeFile(join(source, "manifest.json"), JSON.stringify([{
     Config: `blobs/sha256/${configDigest}`, RepoTags: repoTags, Layers: [],
@@ -34,24 +35,28 @@ async function imageArchive(root, role, digest = manifestDigest, repoTags = null
   return sha(await readFile(archive));
 }
 
-async function apiImageArchive(root, labelRevision = revision, repoTags = null) {
+async function apiImageArchive(root, labelRevision = revision, repoTags = null, options = {}) {
   const source = join(root, "source-api");
   await mkdir(join(source, "blobs/sha256"), { recursive: true });
   const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
     Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
     WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
+    ...(options.env ? { Env: options.env } : {}),
   } });
   const configId = sha(config);
   const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
   const imageDigest = sha(image);
   const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{ digest: `sha256:${imageDigest}`,
-    platform: { os: "linux", architecture: "arm64" } }] });
+    platform: { os: "linux", architecture: "arm64" } },
+  ...(options.extraPlatform ? [{ digest: `sha256:${"f".repeat(64)}`,
+    platform: { os: "linux", architecture: "amd64" } }] : [])] });
   const imageId = `sha256:${sha(imageIndex)}`;
   await writeFile(join(source, "blobs/sha256", configId), config);
   await writeFile(join(source, "blobs/sha256", imageDigest), image);
   await writeFile(join(source, "blobs/sha256", imageId.slice(7)), imageIndex);
   await writeFile(join(source, "index.json"), JSON.stringify({ schemaVersion: 2,
-    manifests: [{ digest: imageId }] }));
+    manifests: [{ digest: imageId,
+      ...(options.outerName ? { annotations: { "io.containerd.image.name": options.outerName } } : {}) }] }));
   await writeFile(join(source, "manifest.json"), JSON.stringify([{ Config: `blobs/sha256/${configId}`,
     RepoTags: repoTags, Layers: [] }]));
   const archive = join(root, "images/api.image.tar");
@@ -204,6 +209,24 @@ test("v4 binds an API archive to the exact install source and runtime config", a
     inventory.apiRuntime.archiveSha256 = tagged.archiveSha256;
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /imports a tag/u);
+    for (const options of [
+      { outerName: "tr-standalone/node:sha-fake" },
+      { extraPlatform: true },
+      { env: ["NODE_OPTIONS=--import=data:text/javascript,throw%20Error('injected')"] },
+    ]) {
+      const changed = await apiImageArchive(root, revision, null, options);
+      const changedManifest = JSON.parse(await readFile(apiManifestPath));
+      changedManifest.imageId = changed.imageId;
+      changedManifest.archiveSha256 = changed.archiveSha256;
+      const bytes = JSON.stringify(changedManifest);
+      await writeFile(apiManifestPath, bytes);
+      inventory.apiRuntime.manifestSha256 = sha(bytes);
+      inventory.apiRuntime.archiveSha256 = changed.archiveSha256;
+      await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+      await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
+        options.outerName ? /OCI index disagrees/u
+          : options.extraPlatform ? /exactly one image/u : /runtime config disagrees/u);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -276,6 +299,18 @@ test("rejects image archives that would import implicit tags", async () => {
     inventory.images[0].archiveSha256 = await imageArchive(root, "node", manifestDigest, ["example.test/node:latest"]);
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /implicit image tags/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a ledger image name hidden in OCI index annotations", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    inventory.images[0].archiveSha256 = await imageArchive(root, "node", manifestDigest, null,
+      "tr-standalone/proof-server:sha-unapproved");
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /OCI manifest digest disagrees/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -104,6 +104,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     throw new Error("API archive lacks a readable OCI index");
   }
   if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
+    || index.annotations !== undefined || index.manifests[0]?.annotations !== undefined
     || index.manifests[0]?.digest !== manifest.imageId) {
     throw new Error("API archive OCI index disagrees with the image manifest");
   }
@@ -111,15 +112,27 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
   const architecture = manifest.platform.split("/")[1];
   const imageDescriptors = imageIndex?.manifests?.filter((entry) =>
     entry.platform?.os === "linux" && entry.platform?.architecture === architecture);
-  if (imageIndex?.schemaVersion !== 2 || imageDescriptors?.length !== 1) {
+  const otherDescriptors = imageIndex?.manifests?.filter((entry) => !imageDescriptors.includes(entry));
+  if (imageIndex?.schemaVersion !== 2 || imageIndex.annotations !== undefined
+    || imageDescriptors?.length !== 1 || imageDescriptors[0].annotations !== undefined
+    || otherDescriptors?.length > 1
+    || otherDescriptors?.some((entry) => entry.platform?.os !== "unknown"
+      || entry.platform?.architecture !== "unknown"
+      || entry.annotations?.["vnd.docker.reference.type"] !== "attestation-manifest"
+      || entry.annotations?.["vnd.docker.reference.digest"] !== imageDescriptors[0].digest
+      || Object.keys(entry.annotations).sort().join(",")
+        !== "vnd.docker.reference.digest,vnd.docker.reference.type")) {
     throw new Error("API archive must contain exactly one image for the approved platform");
   }
   const imageManifest = JSON.parse(verifiedArchiveBlob(archive, imageDescriptors[0].digest));
-  if (imageManifest?.schemaVersion !== 2 || !IMAGE_ID.test(imageManifest.config?.digest)) {
+  if (imageManifest?.schemaVersion !== 2 || !IMAGE_ID.test(imageManifest.config?.digest)
+    || !Array.isArray(imageManifest.layers)
+    || imageManifest.layers.some((layer) => !IMAGE_ID.test(layer?.digest))) {
     throw new Error("API archive image manifest is malformed");
   }
   const configBytes = verifiedArchiveBlob(archive, imageManifest.config.digest);
   const config = JSON.parse(configBytes);
+  const environment = config?.config?.Env ?? [];
   const legacy = JSON.parse(archiveMember(archive, "manifest.json"));
   if (legacy?.length !== 1
     || legacy[0]?.RepoTags !== null
@@ -132,10 +145,14 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || config.config?.Labels?.["org.opencontainers.image.revision"] !== sourceRevision
     || config.config?.User !== "1000:1000"
     || config.config?.WorkingDir !== "/app"
-    || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])) {
+    || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])
+    || config.config?.Cmd != null || config.config?.Healthcheck != null
+    || config.config?.OnBuild != null
+    || !Array.isArray(environment) || environment.some((entry) => typeof entry !== "string"
+      || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))) {
     throw new Error("API archive runtime config disagrees with the approved source or entrypoint");
   }
-  return manifest.imageId;
+  return { imageId: manifest.imageId, configId: imageManifest.config.digest };
 }
 
 export function installedImageIdFromArchive(archive, reference) {
@@ -147,6 +164,7 @@ export function installedImageIdFromArchive(archive, reference) {
     throw new Error("Container archive lacks a readable OCI index");
   }
   if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
+    || index.annotations !== undefined || index.manifests[0]?.annotations !== undefined
     || index.manifests[0]?.digest !== `sha256:${expected}`) {
     throw new Error("Container archive OCI manifest digest disagrees with the approved image pin");
   }
@@ -194,7 +212,9 @@ async function regularFiles(directory, prefix = "") {
 /** Verifies staged bytes only. It does not prove image provenance, deployment, or offline behavior. */
 export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts) {
   const root = await realpath(resolve(bundleRoot));
-  const inventory = JSON.parse(await readFile(await regularBundleFile(root, "install-inventory.json"), "utf8"));
+  const inventoryBytes = await readFile(await regularBundleFile(root, "install-inventory.json"));
+  const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!["tr-standalone-install-v2", "tr-standalone-install-v3", "tr-standalone-install-v4"].includes(inventory?.format)
     || !REVISION.test(inventory.sourceRevision)
     || typeof inventory.packageManifest !== "string"
@@ -278,7 +298,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (apiManifest.archiveSha256 !== inventory.apiRuntime.archiveSha256) {
       throw new Error("Standalone API image archive disagrees with its build manifest");
     }
-    apiRuntime = { imageId: installedApiImageIdFromArchive(archivePath, apiManifest,
+    apiRuntime = { ...installedApiImageIdFromArchive(archivePath, apiManifest,
       inventory.sourceRevision), platform: apiManifest.platform };
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
@@ -304,6 +324,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   return {
     sourceRevision: inventory.sourceRevision,
+    inventorySha256,
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,

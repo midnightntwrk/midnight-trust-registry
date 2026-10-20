@@ -2,8 +2,9 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { constants as fsConstants, createReadStream } from "node:fs";
+import { copyFile, lstat, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,32 +26,46 @@ function inspectOptionalTag(tag, runDocker) {
   }
 }
 
-async function verifiedArchivePath(root, image) {
+async function stagedArchivePath(root, image, staging) {
   const archive = resolve(root, image.archive);
   if (!archive.startsWith(`${root}${sep}`) || !(await lstat(archive)).isFile()) {
     throw new Error("Install image archive path is not a regular bundle file");
   }
+  const actual = await realpath(archive);
+  if (!actual.startsWith(`${root}${sep}`)) {
+    throw new Error("Install image archive escapes the bundle");
+  }
+  const staged = join(staging, `${image.role}.tar`);
+  await copyFile(archive, staged, fsConstants.COPYFILE_EXCL);
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(archive)) hash.update(chunk);
+  for await (const chunk of createReadStream(staged)) hash.update(chunk);
   if (hash.digest("hex") !== image.archiveSha256) {
     throw new Error("Install image archive changed after bundle verification");
   }
-  return archive;
+  return staged;
 }
 
 /** Loads only previously verified archive bytes; never pulls from a registry. */
 export async function loadStandaloneInstallImages(bundlePath, dependencies = {}) {
   const root = await realpath(resolve(bundlePath));
   const verified = await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
-  const inventory = JSON.parse(await readFile(join(root, "install-inventory.json"), "utf8"));
+  const inventoryBytes = await readFile(join(root, "install-inventory.json"));
+  if (createHash("sha256").update(inventoryBytes).digest("hex") !== verified?.inventorySha256) {
+    throw new Error("Install inventory changed after bundle verification");
+  }
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!REVISION.test(inventory.sourceRevision)) throw new Error("Install inventory source is invalid");
   const apiImageId = inventory.format === "tr-standalone-install-v4" ? verified?.apiRuntime?.imageId : null;
-  if (inventory.format === "tr-standalone-install-v4" && !/^sha256:[0-9a-f]{64}$/u.test(apiImageId ?? "")) {
-    throw new Error("Verified API image ID is missing");
+  const apiConfigId = inventory.format === "tr-standalone-install-v4" ? verified?.apiRuntime?.configId : null;
+  if (inventory.format === "tr-standalone-install-v4"
+    && (!/^sha256:[0-9a-f]{64}$/u.test(apiImageId ?? "")
+      || !/^sha256:[0-9a-f]{64}$/u.test(apiConfigId ?? ""))) {
+    throw new Error("Verified API image IDs are missing");
   }
   const runDocker = dependencies.docker ?? docker;
   const inspectArchive = dependencies.imageId ?? installedImageIdFromArchive;
   const tags = {};
+  const staging = await mkdtemp(join(tmpdir(), "tr-install-image-load-"));
   async function load(image, acceptedIds, archive) {
     const tag = `tr-standalone/${image.role}:sha-${inventory.sourceRevision}`;
     const existing = inspectOptionalTag(tag, runDocker);
@@ -69,20 +84,24 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
     if (existing === null) runDocker(["tag", loadedId, tag]);
     tags[image.role] = tag;
   }
-  for (const image of inventory.images) {
-    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
-    const configId = inspectArchive(archive, image.reference);
-    const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
-    await load(image, new Set([configId, manifestId]), archive);
+  try {
+    for (const image of inventory.images) {
+      const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+      const configId = inspectArchive(archive, image.reference);
+      const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
+      await load(image, new Set([configId, manifestId]), archive);
+    }
+    if (inventory.format === "tr-standalone-install-v4") {
+      const image = { role: "api", archive: inventory.apiRuntime.archive,
+        archiveSha256: inventory.apiRuntime.archiveSha256 };
+      const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+      await load(image, new Set([apiImageId, apiConfigId]), archive);
+    }
+    return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
+      tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
-  if (inventory.format === "tr-standalone-install-v4") {
-    const image = { role: "api", archive: inventory.apiRuntime.archive,
-      archiveSha256: inventory.apiRuntime.archiveSha256 };
-    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
-    await load(image, new Set([apiImageId]), archive);
-  }
-  return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
-    tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

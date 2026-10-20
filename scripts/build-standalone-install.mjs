@@ -41,7 +41,7 @@ function verifiedSourceRevision() {
   return command("git", ["rev-parse", "HEAD"]);
 }
 
-export async function stageApiRuntimeImage(inputDirectory, destination, sourceRevision) {
+export function validateApiRuntimeImageInput(inputDirectory, sourceRevision) {
   if (!isAbsolute(inputDirectory)) throw new Error("API image directory must be absolute");
   const source = resolve(inputDirectory);
   const manifestSource = join(source, "manifest.json");
@@ -53,6 +53,11 @@ export async function stageApiRuntimeImage(inputDirectory, destination, sourceRe
   if (apiManifest.sourceRevision !== sourceRevision || apiManifest.archiveName !== "api.image.tar") {
     throw new Error("API image source revision or archive name disagrees with install source");
   }
+  return { manifestSource, archiveSource };
+}
+
+export async function stageApiRuntimeImage(inputDirectory, destination, sourceRevision) {
+  const { manifestSource, archiveSource } = validateApiRuntimeImageInput(inputDirectory, sourceRevision);
   const manifest = "images/api.manifest.json";
   const archive = "images/api.image.tar";
   copyFileSync(manifestSource, join(destination, manifest), fsConstants.COPYFILE_EXCL);
@@ -64,6 +69,9 @@ export async function stageApiRuntimeImage(inputDirectory, destination, sourceRe
 /** Creates a fresh bundle only; failed output is retained for inspection. */
 export async function buildStandaloneInstall(options = {}) {
   const sourceRevision = verifiedSourceRevision();
+  if (options.apiImageDirectory !== undefined) {
+    validateApiRuntimeImageInput(options.apiImageDirectory, sourceRevision);
+  }
   const outputRoot = resolve(options.outputRoot ?? join(root, "artifacts/standalone-install"));
   const proofSource = resolve(options.proofSource ?? join(root, "artifacts/standalone-proof-params"));
   if ((options.outputRoot && !isAbsolute(options.outputRoot))

@@ -116,7 +116,11 @@ This writes a v4 inventory with
 The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and
 the package release revision. The offline loader then imports a source-scoped
-`tr-standalone/api` tag without pulling. A v3 bundle remains a ledger-stack
+`tr-standalone/api` tag without pulling. It rejects image-name annotations,
+unapproved platform variants, and Node execution-injection settings. The
+loader snapshots each checked archive to a private temporary directory and
+rehashes it before Docker reads it; it accepts the checked OCI or config ID
+reported by the daemon. A v3 bundle remains a ledger-stack
 bundle only; neither format starts the API or proves that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
@@ -149,7 +153,8 @@ record independent registry-digest verification at acquisition.
 
 On a clean offline host, run
 `node scripts/load-standalone-install-images.mjs <verified-bundle-directory>`.
-It rechecks the bundle, loads archives without pulling, verifies each Docker
+It rechecks the bundle, snapshots and hashes each archive in a private
+temporary directory, loads those snapshots without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
 `TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned

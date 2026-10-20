@@ -98,6 +98,20 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      const v4Inventory = JSON.stringify({ format: "tr-standalone-install-v4", sourceRevision,
+        apiRuntime: { manifest: "images/api.manifest.json", manifestSha256: "d".repeat(64),
+          archive: "images/api.image.tar", archiveSha256: "e".repeat(64) } });
+      await writeFile(candidate.installInventoryPath, v4Inventory);
+      const v4Candidate = { ...candidate, installInventorySha256: sha256(v4Inventory) };
+      await writeFile(planPath, `${JSON.stringify(v4Candidate)}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
+      expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      await writeFile(candidate.installInventoryPath, JSON.stringify({
+        format: "tr-standalone-install-v4", sourceRevision,
+      }));
+      await expect(loadApprovedLocalLedgerRuntimePlan(input)).rejects.toThrow(/approved bytes/u);
+      await writeFile(candidate.installInventoryPath, v4Inventory);
       await chmod(verifier, 0o500);
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       await chmod(verifier, 0o700);
