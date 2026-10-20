@@ -54,6 +54,7 @@ test("known published DID proof assets are removed from isolated staging only", 
   const root = await mkdtemp(join(tmpdir(), "tr-api-did-payload-test-"));
   try {
     const did = join(root, "app/node_modules/@midnight-ntwrk/midnight-did-contract");
+    await mkdir(join(root, "app/node_modules/.pnpm"), { recursive: true });
     for (const name of ["keys", "zkir"]) {
       await mkdir(join(did, "dist/managed/did", name), { recursive: true });
       await writeFile(join(did, "dist/managed/did", name, "example.prover"), "proof\n");

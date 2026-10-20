@@ -76,17 +76,37 @@ export async function assertLightApiPayload(directory) {
 }
 
 export async function stripPublishedDidProofArtifacts(directory) {
-  const packageRoot = join(directory, "app/node_modules/@midnight-ntwrk/midnight-did-contract");
-  const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
-  if (manifest.name !== "@midnight-ntwrk/midnight-did-contract" || manifest.version !== "0.7.0") {
-    throw new Error("Unexpected DID contract package; review proof-artifact exclusion before building");
-  }
-  const managed = join(packageRoot, "dist/managed/did");
-  for (const name of ["keys", "zkir"]) {
-    if (!(await lstat(join(managed, name))).isDirectory()) {
-      throw new Error(`Expected DID proof-artifact directory is missing: ${name}`);
+  const modules = join(directory, "app/node_modules");
+  const candidates = [join(modules, "@midnight-ntwrk/midnight-did-contract")];
+  for (const entry of await readdir(join(modules, ".pnpm"))) {
+    if (entry.startsWith("@midnight-ntwrk+midnight-did-contract@")) {
+      candidates.push(join(modules, ".pnpm", entry,
+        "node_modules/@midnight-ntwrk/midnight-did-contract"));
     }
-    await rm(join(managed, name), { recursive: true });
+  }
+  for (const packageRoot of candidates) {
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (manifest.name !== "@midnight-ntwrk/midnight-did-contract" || manifest.version !== "0.7.0") {
+      throw new Error("Unexpected DID contract package; review proof-artifact exclusion before building");
+    }
+    const managed = join(packageRoot, "dist/managed/did");
+    for (const name of ["keys", "zkir"]) {
+      try {
+        if (!(await lstat(join(managed, name))).isDirectory()) {
+          throw new Error(`DID proof-artifact path is not a directory: ${name}`);
+        }
+      } catch (error) {
+        if (error.code === "ENOENT") continue;
+        throw error;
+      }
+      await rm(join(managed, name), { recursive: true });
+    }
   }
 }
 
