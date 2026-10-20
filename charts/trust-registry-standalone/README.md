@@ -55,7 +55,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    the one values file supplied to this command, and verifies the reviewer's
    signature over the mapping. The registry digest is linked to the archive
    **only by that independent human approval**, not cryptographically by this
-   tool. Install with that exact values file and no extra `-f` or `--set`
+   tool. Retain the preflight output's `mappingSha256` and require every
+   node receipt to name that same hash; a signature alone does not recheck
+   the install archives on the node. Install with that exact values file and no extra `-f` or `--set`
    overrides; the tool cannot police a later Helm invocation. It does
    **not** prove registry provenance, CRI preload, live image execution, or
    offline behavior. Keep the raw per-node `crictl inspecti` output, node

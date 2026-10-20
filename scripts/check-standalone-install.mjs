@@ -282,7 +282,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       throw new Error(`Container archive hash mismatch: ${image.role}`);
     }
     const configId = installedImageIdFromArchive(archive, image.reference);
-    verifiedImages.push({ role: image.role, reference: image.reference,
+    verifiedImages.push({ role: image.role, reference: image.reference, configId,
       acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   let apiRuntime = null;

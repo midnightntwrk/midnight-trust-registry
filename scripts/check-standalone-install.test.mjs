@@ -117,6 +117,7 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
     assert.equal(verified, true);
     assert.deepEqual(result.imageRoles, ["indexer", "node", "proof-server"]);
     assert.equal(result.images.length, 3);
+    assert.ok(result.images.every((image) => image.configId === `sha256:${configDigest}`));
     assert.ok(result.images.every((image) => image.acceptedIds.includes(
       `sha256:${image.reference.split("@sha256:")[1]}`)));
     assert.equal(result.proofParameterCount, 18);

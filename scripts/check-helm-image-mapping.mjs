@@ -35,7 +35,7 @@ function verifiedBlob(archive, digest) {
   return JSON.parse(bytes);
 }
 
-export function staticImageIdsFromArchive(archive, role, revision) {
+export function staticImageIdentityFromArchive(archive, role, revision) {
   let legacy;
   try {
     legacy = archiveJson(archive, "manifest.json");
@@ -74,7 +74,9 @@ export function staticImageIdsFromArchive(archive, role, revision) {
     encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   }).split("\n");
-  if (!members.includes("index.json") && !members.includes("./index.json")) return acceptedIds;
+  if (!members.includes("index.json") && !members.includes("./index.json")) {
+    return { configId: `sha256:${configDigest}`, acceptedIds };
+  }
   const index = archiveJson(archive, "index.json");
   if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
     || !IMAGE_ID.test(index.manifests[0]?.digest)) {
@@ -97,7 +99,8 @@ export function staticImageIdsFromArchive(archive, role, revision) {
     || imageManifest.config?.digest !== `sha256:${configDigest}`) {
     throw new Error(`${role} OCI image manifest disagrees with the Docker config`);
   }
-  return [...new Set([...acceptedIds, imageDigest, topDigest])];
+  return { configId: `sha256:${configDigest}`,
+    acceptedIds: [...new Set([...acceptedIds, imageDigest, topDigest])] };
 }
 
 async function sha256(path) {
@@ -118,12 +121,11 @@ async function portalIdentity(manifestPath, role, revision) {
   if (!(await lstat(archive)).isFile() || await sha256(archive) !== manifest.archiveSha256) {
     throw new Error(`${role} image archive disagrees with its manifest`);
   }
-  const acceptedIds = staticImageIdsFromArchive(archive, role, revision);
+  const { configId, acceptedIds } = staticImageIdentityFromArchive(archive, role, revision);
   if (!acceptedIds.includes(manifest.imageId)) {
     throw new Error(`${role} image ID disagrees with its archive`);
   }
-  return { archiveSha256: manifest.archiveSha256, acceptedIds,
-    configId: acceptedIds[0] };
+  return { archiveSha256: manifest.archiveSha256, acceptedIds, configId };
 }
 
 export function verifyHelmImageMapping(bundle, inventory, portals, values, receipt, valuesSha256) {
@@ -143,7 +145,7 @@ export function verifyHelmImageMapping(bundle, inventory, portals, values, recei
   const expected = new Map(inventory.images.map((image) => [image.role, {
     archiveSha256: image.archiveSha256,
     acceptedIds: bundle.images.find((entry) => entry.role === image.role)?.acceptedIds,
-    configId: bundle.images.find((entry) => entry.role === image.role)?.acceptedIds?.[0],
+    configId: bundle.images.find((entry) => entry.role === image.role)?.configId,
   }]));
   expected.set("proofServer", expected.get("proof-server"));
   expected.delete("proof-server");
@@ -188,8 +190,9 @@ export async function checkHelmImageMapping(paths) {
   verifyMappingSignature(receiptBytes, paths.signaturePath, paths.keyringPath,
     paths.signerFingerprint);
   const receipt = JSON.parse(receiptBytes);
-  return verifyHelmImageMapping(bundle, inventory, portals, values, receipt,
-    createHash("sha256").update(valuesBytes).digest("hex"));
+  return { ...verifyHelmImageMapping(bundle, inventory, portals, values, receipt,
+    createHash("sha256").update(valuesBytes).digest("hex")),
+    mappingSha256: createHash("sha256").update(receiptBytes).digest("hex") };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

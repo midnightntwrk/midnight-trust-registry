@@ -6,23 +6,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { approvedMappingSigner, staticImageIdsFromArchive, verifyHelmImageMapping,
+import { approvedMappingSigner, staticImageIdentityFromArchive, verifyHelmImageMapping,
   verifyMappingSignature } from "./check-helm-image-mapping.mjs";
 
 const revision = "a".repeat(40);
 const inventorySha256 = "b".repeat(64);
 const valuesSha256 = "7".repeat(64);
 const archiveSha256 = "c".repeat(64);
-const imageId = `sha256:${"d".repeat(64)}`;
+const configId = `sha256:${"d".repeat(64)}`;
+const imageId = `sha256:${"1".repeat(64)}`;
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const images = roles.map((role) => ({ role,
   reference: `registry.example.test/tr/${role.toLowerCase()}@sha256:${"e".repeat(64)}`,
-  archiveSha256, imageId, configId: imageId }));
+  archiveSha256, imageId, configId }));
 const bundle = {
   sourceRevision: revision,
   inventorySha256,
-  images: ["node", "indexer", "proof-server"].map((role) => ({ role, acceptedIds: [imageId] })),
-  apiRuntime: { imageId, configId: imageId },
+  images: ["node", "indexer", "proof-server"].map((role) => ({ role,
+    acceptedIds: [configId, imageId], configId })),
+  apiRuntime: { imageId, configId },
 };
 const inventory = {
   format: "tr-standalone-install-v4",
@@ -30,8 +32,8 @@ const inventory = {
   apiRuntime: { archiveSha256 },
 };
 const portals = {
-  admin: { archiveSha256, acceptedIds: [imageId], configId: imageId },
-  applicant: { archiveSha256, acceptedIds: [imageId], configId: imageId },
+  admin: { archiveSha256, acceptedIds: [configId, imageId], configId },
+  applicant: { archiveSha256, acceptedIds: [configId, imageId], configId },
 };
 const values = { deploymentPhase: "runtime", imagePullPolicy: "Never",
   images: Object.fromEntries(images.map(({ role, reference }) => [role, reference])) };
@@ -77,7 +79,7 @@ test("rejects stale source, inventory, and portal identities", () => {
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
     { ...receipt, inventorySha256: "f".repeat(64) }, valuesSha256), /disagree/u);
   assert.throws(() => verifyHelmImageMapping(bundle, inventory,
-    { ...portals, admin: { archiveSha256, acceptedIds: [], configId: imageId } }, values,
+    { ...portals, admin: { archiveSha256, acceptedIds: [], configId } }, values,
     receipt, valuesSha256), /admin/u);
   assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
     { ...receipt, valuesSha256: "f".repeat(64) }, valuesSha256), /disagree/u);
@@ -98,9 +100,11 @@ test("static archive config ID is checked against runtime revision and role", as
     }]));
     const archive = join(root, "image.tar");
     execFileSync("tar", ["-cf", archive, "-C", root, "manifest.json", `blobs/sha256/${digest}`]);
-    assert.deepEqual(staticImageIdsFromArchive(archive, "admin", revision), [`sha256:${digest}`]);
-    assert.throws(() => staticImageIdsFromArchive(archive, "applicant", revision), /runtime/u);
-    assert.throws(() => staticImageIdsFromArchive(archive, "admin", "f".repeat(40)), /runtime/u);
+    assert.deepEqual(staticImageIdentityFromArchive(archive, "admin", revision), {
+      configId: `sha256:${digest}`, acceptedIds: [`sha256:${digest}`],
+    });
+    assert.throws(() => staticImageIdentityFromArchive(archive, "applicant", revision), /runtime/u);
+    assert.throws(() => staticImageIdentityFromArchive(archive, "admin", "f".repeat(40)), /runtime/u);
     const imageManifest = Buffer.from(JSON.stringify({ schemaVersion: 2,
       config: { digest: `sha256:${digest}` }, layers: [] }));
     const imageDigest = createHash("sha256").update(imageManifest).digest("hex");
@@ -114,13 +118,15 @@ test("static archive config ID is checked against runtime revision and role", as
     const ociArchive = join(root, "oci.tar");
     execFileSync("tar", ["-cf", ociArchive, "-C", root, "index.json", "manifest.json",
       `blobs/sha256/${digest}`, `blobs/sha256/${imageDigest}`, `blobs/sha256/${indexDigest}`]);
-    assert.deepEqual(staticImageIdsFromArchive(ociArchive, "admin", revision),
-      [`sha256:${digest}`, `sha256:${imageDigest}`, `sha256:${indexDigest}`]);
+    assert.deepEqual(staticImageIdentityFromArchive(ociArchive, "admin", revision), {
+      configId: `sha256:${digest}`,
+      acceptedIds: [`sha256:${digest}`, `sha256:${imageDigest}`, `sha256:${indexDigest}`],
+    });
     await writeFile(join(root, "index.json"), "{invalid-json");
     const invalidArchive = join(root, "invalid.tar");
     execFileSync("tar", ["-cf", invalidArchive, "-C", root, "index.json", "manifest.json",
       `blobs/sha256/${digest}`]);
-    assert.throws(() => staticImageIdsFromArchive(invalidArchive, "admin", revision));
+    assert.throws(() => staticImageIdentityFromArchive(invalidArchive, "admin", revision));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
