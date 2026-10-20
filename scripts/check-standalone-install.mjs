@@ -85,7 +85,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || manifest.sourceRevision !== sourceRevision
     || !REVISION.test(manifest.sourceRevision)
     || !FINGERPRINT.test(manifest.approvedSignerFingerprint)
-    || !["linux/arm64", "linux/amd64"].includes(manifest.platform)
+    || manifest.platform !== "linux/arm64"
     || !IMAGE.test(manifest.baseImage)
     || !SHA256.test(manifest.lockfileSha256)
     || !SHA256.test(manifest.dockerfileSha256)
@@ -157,14 +157,19 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
 
 export function installedImageIdFromArchive(archive, reference) {
   const expected = reference.split("@sha256:")[1];
+  const source = reference.split("@sha256:")[0];
   let index;
   try {
     index = JSON.parse(archiveMember(archive, "index.json"));
   } catch {
     throw new Error("Container archive lacks a readable OCI index");
   }
+  const annotations = index?.manifests?.[0]?.annotations;
+  const approvedSource = annotations === undefined
+    || (Object.keys(annotations).length === 1
+      && annotations["containerd.io/distribution.source.docker.io"] === source);
   if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
-    || index.annotations !== undefined || index.manifests[0]?.annotations !== undefined
+    || index.annotations !== undefined || !approvedSource
     || index.manifests[0]?.digest !== `sha256:${expected}`) {
     throw new Error("Container archive OCI manifest digest disagrees with the approved image pin");
   }

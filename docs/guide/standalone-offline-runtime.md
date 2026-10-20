@@ -117,10 +117,15 @@ The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and
 the package release revision. The offline loader then imports a source-scoped
 `tr-standalone/api` tag without pulling. It rejects image-name annotations,
-unapproved platform variants, and Node execution-injection settings. The
-loader snapshots each checked archive to a private temporary directory and
-rehashes it before Docker reads it; it accepts the checked OCI or config ID
-reported by the daemon. A v3 bundle remains a ledger-stack
+unapproved platform variants, and selected Node execution-injection settings.
+For this arm64 local RC, build and export with Docker's containerd image store
+and the default attestation index enabled; classic-store or direct-manifest
+API archives are not yet supported. The ledger image checker permits only a
+distribution-source annotation matching the pinned repository, never an image
+name or tag annotation. The loader snapshots one checked archive at a time to
+a private temporary directory, rehashes it before Docker reads it, and
+accepts the checked OCI or config ID reported by the daemon. Ensure the
+temporary filesystem can hold the largest image archive. A v3 bundle remains a ledger-stack
 bundle only; neither format starts the API or proves that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive

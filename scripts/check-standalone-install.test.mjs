@@ -25,7 +25,9 @@ async function imageArchive(root, role, digest = manifestDigest, repoTags = null
   await writeFile(join(source, "blobs/sha256", configDigest), configBytes);
   await writeFile(join(source, "index.json"), JSON.stringify({
     schemaVersion: 2, manifests: [{ digest: `sha256:${digest}`,
-      ...(imageName ? { annotations: { "io.containerd.image.name": imageName } } : {}) }],
+      ...(imageName ? { annotations: imageName === reference(role).split("@")[0]
+        ? { "containerd.io/distribution.source.docker.io": imageName }
+        : { "io.containerd.image.name": imageName } } : {}) }],
   }));
   await writeFile(join(source, "manifest.json"), JSON.stringify([{
     Config: `blobs/sha256/${configDigest}`, RepoTags: repoTags, Layers: [],
@@ -311,6 +313,18 @@ test("rejects a ledger image name hidden in OCI index annotations", async () => 
       "tr-standalone/proof-server:sha-unapproved");
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /OCI manifest digest disagrees/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("accepts only the pinned repository as a ledger distribution-source annotation", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    inventory.images[0].archiveSha256 = await imageArchive(root, "node", manifestDigest, null,
+      reference("node").split("@")[0]);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await verifyStandaloneInstallBundle(root, () => {});
   } finally {
     await rm(root, { recursive: true, force: true });
   }

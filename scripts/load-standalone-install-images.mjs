@@ -87,15 +87,23 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
   try {
     for (const image of inventory.images) {
       const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
-      const configId = inspectArchive(archive, image.reference);
-      const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
-      await load(image, new Set([configId, manifestId]), archive);
+      try {
+        const configId = inspectArchive(archive, image.reference);
+        const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
+        await load(image, new Set([configId, manifestId]), archive);
+      } finally {
+        if (!dependencies.archivePath) await rm(archive, { force: true });
+      }
     }
     if (inventory.format === "tr-standalone-install-v4") {
       const image = { role: "api", archive: inventory.apiRuntime.archive,
         archiveSha256: inventory.apiRuntime.archiveSha256 };
       const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
-      await load(image, new Set([apiImageId, apiConfigId]), archive);
+      try {
+        await load(image, new Set([apiImageId, apiConfigId]), archive);
+      } finally {
+        if (!dependencies.archivePath) await rm(archive, { force: true });
+      }
     }
     return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
       tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };
