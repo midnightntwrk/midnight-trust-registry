@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
   createLocalNetworkDeploymentActionReader,
+  type FinalizedRegistryLedgerView,
   type LocalNetworkDeploymentActionReaderConfig,
 } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -54,7 +55,7 @@ export function assertApprovedReviewerSignatureStatus(
 }
 
 export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & {
-  format: "tr-local-api-runtime-v1";
+  format: "tr-local-api-runtime-v2";
   sourceRevision: string;
   installInventoryPath: string;
   installInventorySha256: string;
@@ -63,6 +64,12 @@ export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & 
   contractAddress: string;
   snapshotPath: string;
   snapshotSha256: string;
+  verifierKeySha256: Readonly<Record<string, string>>;
+  maintenanceAuthority: {
+    committee: readonly string[];
+    threshold: number;
+    counter: string;
+  };
   sequenceTimestamps: Readonly<Record<string, string>>;
   notBefore: string;
   notAfter: string;
@@ -87,6 +94,21 @@ function parseCanonicalApprovedPlan(bytes: Buffer): unknown {
   return value;
 }
 
+function validMaintenanceAuthority(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const authority = value as Record<string, unknown>;
+  if (!exactKeys(authority, ["committee", "threshold", "counter"])
+    || !Array.isArray(authority.committee) || authority.committee.length === 0
+    || authority.committee.some((key: unknown) =>
+      typeof key !== "string" || !HASH.test(key) || /^0x0{64}$/u.test(key))
+    || new Set(authority.committee).size !== authority.committee.length
+    || !Number.isSafeInteger(authority.threshold)
+    || (authority.threshold as number) < 1
+    || (authority.threshold as number) > authority.committee.length
+    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)) return false;
+  return true;
+}
+
 export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRuntimePlan {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Local API runtime plan must be an object");
@@ -94,9 +116,10 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
   const plan = value as Record<string, unknown>;
   if (!exactKeys(plan, ["allowedHosts", "contractAddress", "expectedGenesisHash", "format",
     "indexerHttpUrl", "indexerWsUrl", "installInventoryPath", "installInventorySha256",
-    "networkId", "notAfter", "notBefore", "releaseManifestPath", "releaseManifestSha256", "rpcUrl", "sequenceTimestamps",
-    "snapshotPath", "snapshotSha256", "sourceRevision"])
-    || plan.format !== "tr-local-api-runtime-v1" || plan.networkId !== "undeployed"
+    "maintenanceAuthority", "networkId", "notAfter", "notBefore", "releaseManifestPath",
+    "releaseManifestSha256", "rpcUrl", "sequenceTimestamps", "snapshotPath", "snapshotSha256",
+    "sourceRevision", "verifierKeySha256"])
+    || plan.format !== "tr-local-api-runtime-v2" || plan.networkId !== "undeployed"
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
     || typeof plan.expectedGenesisHash !== "string" || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)
@@ -113,6 +136,12 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     || plan.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)
     || plan.sequenceTimestamps === null || typeof plan.sequenceTimestamps !== "object"
     || Array.isArray(plan.sequenceTimestamps)
+    || plan.verifierKeySha256 === null || typeof plan.verifierKeySha256 !== "object"
+    || Array.isArray(plan.verifierKeySha256)
+    || Object.keys(plan.verifierKeySha256).length === 0
+    || Object.entries(plan.verifierKeySha256).some(([name, digest]) =>
+      name.length === 0 || typeof digest !== "string" || !SHA256.test(digest))
+    || !validMaintenanceAuthority(plan.maintenanceAuthority)
     || !Number.isFinite(canonicalTimestamp(plan.notBefore))
     || !Number.isFinite(canonicalTimestamp(plan.notAfter))
     || canonicalTimestamp(plan.notAfter) <= canonicalTimestamp(plan.notBefore)
@@ -181,6 +210,29 @@ export function assertApprovedPlanCoversGovernanceCount(
   if (typeof count !== "bigint"
     || count !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1)) {
     throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+  }
+}
+
+export function assertApprovedDeploymentImage(
+  plan: Pick<LocalLedgerRuntimePlan, "verifierKeySha256" | "maintenanceAuthority">,
+  view: Pick<FinalizedRegistryLedgerView, "verifierKeySha256" | "maintenanceAuthority">,
+): void {
+  const expected = plan.verifierKeySha256;
+  const observed = view.verifierKeySha256;
+  if (observed === null || typeof observed !== "object" || Array.isArray(observed)
+    || Object.keys(observed).length !== Object.keys(expected).length
+    || Object.entries(expected).some(([name, digest]) =>
+      !Object.hasOwn(observed, name) || observed[name] !== digest)) {
+    throw new Error("Finalized verifier-key catalog differs from the approved local plan");
+  }
+  const authority = view.maintenanceAuthority;
+  const approved = plan.maintenanceAuthority;
+  if (!authority || !Array.isArray(authority.committee)
+    || authority.committee.length !== approved.committee.length
+    || authority.committee.some((key, index) => key !== approved.committee[index])
+    || authority.threshold !== approved.threshold
+    || authority.counter !== BigInt(approved.counter)) {
+    throw new Error("Finalized maintenance authority differs from the approved local plan");
   }
 }
 
@@ -281,6 +333,15 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
         || !SHA256.test(inventory.installRelay.sha256)))) {
     throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");
   }
+  const approvedKeys = Object.entries(plan.verifierKeySha256);
+  if (manifest.verifierKeySha256 === null || typeof manifest.verifierKeySha256 !== "object"
+    || Array.isArray(manifest.verifierKeySha256)
+    || Object.keys(manifest.verifierKeySha256 ?? {}).length !== approvedKeys.length
+    || approvedKeys.some(([name, hash]) =>
+      !Object.hasOwn(manifest.verifierKeySha256, name)
+      || manifest.verifierKeySha256[name] !== hash)) {
+    throw new Error("Local API approved verifier-key catalog differs from the release manifest");
+  }
   if (input.requireApiRuntimePin === true && !requiresApiPin) {
     throw new Error("Cluster API binding requires a signed install with an API image pin");
   }
@@ -297,6 +358,7 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
       async readCurrentFinalizedLedger(address) {
         const view = await reader.readCurrentFinalizedLedger(address);
         if (view !== null) {
+          assertApprovedDeploymentImage(plan, view);
           assertApprovedPlanCoversGovernanceCount(plan, view.ledger.governanceActionCount);
         }
         return view;

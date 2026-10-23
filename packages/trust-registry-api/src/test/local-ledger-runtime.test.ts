@@ -12,6 +12,7 @@ vi.mock("@midnight-ntwrk/trust-registry-integration", () => ({
 }));
 
 import {
+  assertApprovedDeploymentImage,
   assertApprovedPlanCoversGovernanceCount,
   assertApprovedReviewerSignatureStatus,
   assertLocalApiImageSourceRevision,
@@ -23,8 +24,10 @@ import {
 
 const sourceRevision = "a".repeat(40);
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+const verifierKeySha256 = { first: "1".repeat(64), second: "2".repeat(64) };
+const maintenanceAuthority = { committee: [`0x${"3".repeat(64)}`], threshold: 1, counter: "0" };
 const plan = (root: string) => ({
-  format: "tr-local-api-runtime-v1",
+  format: "tr-local-api-runtime-v2",
   networkId: "undeployed",
   sourceRevision,
   installInventoryPath: join(root, "install-inventory.json"),
@@ -39,6 +42,8 @@ const plan = (root: string) => ({
   allowedHosts: ["127.0.0.1"],
   snapshotPath: join(root, "snapshot.json"),
   snapshotSha256: "f".repeat(64),
+  verifierKeySha256,
+  maintenanceAuthority,
   notBefore: new Date(Date.now() - 60_000).toISOString(),
   notAfter: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
   sequenceTimestamps: {
@@ -109,6 +114,13 @@ describe("approved local-ledger API runtime", () => {
       { ...valid, extra: true },
       { ...valid, contractAddress: `0x${"0".repeat(64)}` },
       { ...valid, snapshotPath: "relative.json" },
+      { ...valid, format: "tr-local-api-runtime-v1" },
+      { ...valid, verifierKeySha256: {} },
+      { ...valid, verifierKeySha256: { first: "a".repeat(63) } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority, counter: "-1" } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority, threshold: 2 } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority,
+        committee: [maintenanceAuthority.committee[0], maintenanceAuthority.committee[0]] } },
       { ...valid, sequenceTimestamps: {} },
       { ...valid, notAfter: "2026-01-01T00:00:00.000Z" },
       { ...valid, notBefore: new Date(Date.now() + 60_000).toISOString() },
@@ -126,6 +138,31 @@ describe("approved local-ledger API runtime", () => {
     expect(validateLocalLedgerRuntimePlan({ ...valid, sequenceTimestamps: {
       "0": "2026-01-01T00:00:00.000Z", "1": "2026-01-01T00:00:00.000Z",
     } }).sequenceTimestamps["1"]).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("rejects finalized verifier-key and maintenance-authority drift", () => {
+    const approved = validateLocalLedgerRuntimePlan(plan("/tmp/tr-api-runtime-test"));
+    const image = { verifierKeySha256, maintenanceAuthority: {
+      committee: maintenanceAuthority.committee, threshold: 1, counter: 0n,
+    } };
+    expect(() => assertApprovedDeploymentImage(approved, image)).not.toThrow();
+    for (const invalid of [
+      { ...image, verifierKeySha256: { first: verifierKeySha256.first } },
+      { ...image, verifierKeySha256: { ...verifierKeySha256, second: "4".repeat(64) } },
+      { ...image, verifierKeySha256: { ...verifierKeySha256, extra: "4".repeat(64) } },
+    ]) {
+      expect(() => assertApprovedDeploymentImage(approved, invalid))
+        .toThrow(/Finalized verifier-key catalog differs/u);
+    }
+    for (const invalid of [
+      { ...image, maintenanceAuthority: { ...image.maintenanceAuthority, counter: 1n } },
+      { ...image, maintenanceAuthority: { ...image.maintenanceAuthority, threshold: 2 } },
+      { ...image, maintenanceAuthority: { ...image.maintenanceAuthority,
+        committee: [`0x${"4".repeat(64)}`] } },
+    ]) {
+      expect(() => assertApprovedDeploymentImage(approved, invalid))
+        .toThrow(/Finalized maintenance authority differs/u);
+    }
   });
 
   it("fails closed when a governed mutation makes the signed sequence map stale", () => {
@@ -146,7 +183,10 @@ describe("approved local-ledger API runtime", () => {
   });
 
   it("checks the signed governance count and expiry on actual source reads", async () => {
-    const readCurrentFinalizedLedger = vi.fn(async () => ({ ledger: { governanceActionCount: 2n } }));
+    const readCurrentFinalizedLedger = vi.fn(async () => ({
+      ledger: { governanceActionCount: 2n }, verifierKeySha256,
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n },
+    }));
     readerMocks.createReader.mockResolvedValue({
       readCurrentFinalizedLedger,
     });
@@ -156,13 +196,25 @@ describe("approved local-ledger API runtime", () => {
     await expect(source.loadSnapshot()).rejects.toMatchObject(stale);
     await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(stale);
     expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+      verifierKeySha256: { ...verifierKeySha256, first: "4".repeat(64) },
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
+    await expect(source.loadSnapshot()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/Finalized verifier-key catalog differs/u) },
+    });
+    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+      verifierKeySha256,
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 1n } });
+    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
+    });
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(approved.notAfter).getTime() + 1);
       const expired = { cause: { message: expect.stringMatching(/not currently valid/u) } };
       await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
       await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
-      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
       readerMocks.createReader.mockReset();
@@ -187,7 +239,8 @@ describe("approved local-ledger API runtime", () => {
       const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint!]);
       execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
         { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
-      const manifest = JSON.stringify({ format: "tr-release-candidate-manifest-v2", sourceRevision });
+      const manifest = JSON.stringify({ format: "tr-release-candidate-manifest-v2", sourceRevision,
+        verifierKeySha256 });
       const manifestSha256 = sha256(manifest);
       const manifestPin = { packageManifest: "release-manifest.json",
         packageManifestSha256: manifestSha256 };
@@ -266,6 +319,14 @@ describe("approved local-ledger API runtime", () => {
       await signInventory(v6);
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
+      await writeFile(planPath, `${JSON.stringify({ ...candidate,
+        installInventorySha256: sha256(JSON.stringify(v6)),
+        verifierKeySha256: { first: "4".repeat(64), second: verifierKeySha256.second } })}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved verifier-key catalog differs/u);
+      await signInventory(v6);
       await signInventory({ ...v6, packageManifestSha256: "f".repeat(64) });
       await expect(loadApprovedLocalLedgerRuntimePlan(input))
         .rejects.toThrow(/disagrees with approved install artifacts/u);

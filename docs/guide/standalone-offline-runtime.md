@@ -171,6 +171,11 @@ temporary filesystem can hold the largest image archive. A v3 bundle remains a l
 bundle only and cannot back a signed local-ledger API plan. The API requires a
 v4-v6 inventory with an API image pin and checks that its embedded release
 manifest digest and path identify the same signed manifest bytes as the plan.
+The v2 signed API plan must also pin the complete release-manifest verifier-key
+catalog and the approved maintenance committee, threshold, and counter. Each
+API query checks those values from the same finalized contract-state read as
+the Compact ledger projection. Any verifier-key or authority change requires
+manual review, a new signed plan, and an API restart.
 Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive

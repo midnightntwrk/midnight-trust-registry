@@ -57,7 +57,7 @@ a durable journal and independently authenticated reader. Presence checks alone
 are not qualification. Other governed action ports remain disabled until they
 have an equivalent durable submission path.
 
-For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v1`
+For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v2`
 JSON plan. Write it as compact JSON with an optional final newline, or as
 two-space-indented JSON with a final newline. Duplicate keys, alternative
 escaping, and other noncanonical encodings are rejected even if signed. The
@@ -77,8 +77,11 @@ trust-registry-api serve \
 The plan pins `undeployed`, the source revision, absolute install-inventory,
 release-manifest and snapshot paths plus their SHA-256 digests, nonzero approved
 genesis and contract hashes, exact local RPC/indexer endpoints and allowed
-hosts, a contiguous governance-sequence-to-UTC-timestamp map covering the
-finalized governance count, and a validity window no longer than 90 days. The
+hosts, the exact release-manifest verifier-key catalog, the ordered maintenance
+committee public keys, threshold and decimal counter, a contiguous
+governance-sequence-to-UTC-timestamp map covering the finalized governance
+count, and a validity window no longer than 90 days. The v1 plan no longer
+authorizes local API startup. The
 plan and signature must be regular files owned by root or the runtime user, and the
 reviewer keyring must be a private directory with its approved public key in
 `pubring.kbx`. The CLI verifies private copies of the exact plan bytes it
@@ -93,7 +96,9 @@ requires a version-4 40-character fingerprint, a detached binary-document signat
 and SHA-256, SHA-384, or SHA-512 as its signature hash. It checks the install
 bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
-listening. Every query rechecks the snapshot digest and finalized projection;
+listening. Every query rechecks the snapshot digest, finalized projection,
+verifier-key bytes, and maintenance authority in the same finalized contract
+read; a key or committee change requires a new manually reviewed signed plan.
 missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
 Any governed mutation changes the finalized action count, so the current
@@ -104,7 +109,8 @@ not been exercised as a live local-ledger actor journey.
 For each governed mutation, stop or drain query traffic, wait for an independently
 authenticated finalized checkpoint, prepare a new snapshot and complete ordered
 sequence timestamp map, and have the reviewer inspect the exact source, install,
-genesis, contract, checkpoint, snapshot digest, map and validity window before
+genesis, contract, checkpoint, snapshot digest, verifier keys, maintenance
+authority, map and validity window before
 detached-signing a new canonical plan. Install the new snapshot, plan and signature
 as one immutable versioned set; change the service's paths to that set and restart
 the API. Before switching traffic, run `trust-registry-api check-local-ledger-plan`

@@ -232,7 +232,8 @@ describe("local ledger-bound API source", () => {
       await writeSnapshotToFile(snapshotPath, snapshot);
       const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
       let view = { networkId: "undeployed", contractAddress: address,
-        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger };
+        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger,
+        verifierKeySha256: {}, maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
       const source = createLocalLedgerBoundSource({
         snapshotPath,
         expectedSnapshotSha256: createHash("sha256").update(await readFile(snapshotPath)).digest("hex"),
@@ -308,6 +309,8 @@ describe("local ledger-bound API source", () => {
       contractAddress: address,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
       ledger,
+      verifierKeySha256: {},
+      maintenanceAuthority: { committee: [], threshold: 0, counter: 0n },
     };
     let readCount = 0;
     let available = true;

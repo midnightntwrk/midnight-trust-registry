@@ -80,6 +80,14 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
+    const contractState = new ContractState();
+    contractState.data = simulator.circuitContext.currentQueryContext.state;
+    const operation = new ContractOperation();
+    operation.verifierKey = readFileSync(verifierKeyPath);
+    contractState.setOperation(verifierCircuit, operation);
+    contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
+      [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
+    queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
     const finalizedLedger = await reader.readCurrentFinalizedLedger(`0x${address}`);
     expect(finalizedLedger).toMatchObject({
       networkId: "preprod",
@@ -89,6 +97,9 @@ describe("checkpointed deployment action reader", () => {
     if (finalizedLedger === null) throw new Error("Expected a finalized ledger");
     expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
     expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
+    expect(finalizedLedger.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(operation.verifierKey).digest("hex"),
+    });
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",
       contractAddress: `0x${address}`,
@@ -146,6 +157,11 @@ describe("checkpointed deployment action reader", () => {
     expect(observed?.maintenanceAuthority).toEqual({
       committee: [`0x${maintenanceKey}`], threshold: 1, counter: 0n,
     });
+    queryContractState.mockResolvedValueOnce(ContractState.deserialize(contractState.serialize()) as never);
+    const ledgerView = await reader.readCurrentFinalizedLedger(`0x${address}`);
+    expect(queryContractState).toHaveBeenCalledTimes(2);
+    expect(ledgerView?.verifierKeySha256).toEqual(observed?.verifierKeySha256);
+    expect(ledgerView?.maintenanceAuthority).toEqual(observed?.maintenanceAuthority);
   });
 
   it("fails closed when the checkpoint is absent or malformed", async () => {

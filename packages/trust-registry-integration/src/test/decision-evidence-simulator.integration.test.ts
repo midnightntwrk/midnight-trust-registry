@@ -335,8 +335,11 @@ describe("simulator-backed VC decision evidence composition", () => {
     const compactCandidate = await verifyDecisionEvidenceWithTrustedReaders(compactEvidence, context.selection, compactReaders);
     expect(compactCandidate).toEqual({ ...candidate, decisionSequence: compactSequence });
     const finalizedBlockHash = sha256Hex("finalized-decision-block");
+    const deploymentImage = { verifierKeySha256: {},
+      maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
     const checkpointedReaders = createCheckpointedCompactDecisionReaders({
       readCurrentFinalizedLedger: async () => ({
+        ...deploymentImage,
         networkId,
         finalizedBlockHash,
         contractAddress: context.selection.contractAddress,
@@ -357,6 +360,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).toEqual(compactCandidate);
     const wrongCheckpointReaders = createCheckpointedCompactDecisionReaders({
       readCurrentFinalizedLedger: async () => ({
+        ...deploymentImage,
         networkId: "other-network",
         finalizedBlockHash,
         contractAddress: context.selection.contractAddress,
@@ -374,6 +378,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/checkpoint does not match selected deployment/u);
     const wrongAddressReaders = createCheckpointedCompactDecisionReaders({
       readCurrentFinalizedLedger: async () => ({
+        ...deploymentImage,
         networkId,
         finalizedBlockHash,
         contractAddress: sha256Hex("other-deployment"),
@@ -391,6 +396,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/checkpoint does not match selected deployment/u);
     const malformedCheckpointReaders = createCheckpointedCompactDecisionReaders({
       readCurrentFinalizedLedger: async () => ({
+        ...deploymentImage,
         networkId,
         finalizedBlockHash: `0x${"0".repeat(64)}`,
         contractAddress: context.selection.contractAddress,
