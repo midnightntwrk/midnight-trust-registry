@@ -1523,8 +1523,14 @@ test("legacy maintenance attempts remain read-only reconcilable without retrospe
   const record = JSON.parse(await readFile(recordPath, "utf8"));
   delete record.committeeDeploymentApproval;
   delete record.maintenanceAttempt.committeeDeploymentApprovalSha256;
+  const approval = record.committeeApproval;
+  const original = JSON.parse(Buffer.from(approval.documentBase64, "base64").toString("utf8"));
+  const legacyBytes = `${JSON.stringify(original, null, 4)}\r\n`;
+  approval.documentBase64 = Buffer.from(legacyBytes).toString("base64");
+  approval.documentSha256 = createHash("sha256").update(legacyBytes).digest("hex");
   const saved = JSON.parse(await readFile(f.signingRequestPath, "utf8"));
   delete saved.committeeDeploymentApprovalSha256;
+  saved.committeeApprovalSha256 = approval.documentSha256;
   const bytes = JSON.stringify(saved);
   await writeFile(f.signingRequestPath, bytes);
   record.maintenanceAttempt.signingRequestSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -2048,6 +2054,18 @@ test("wizard rejects a changed roster or incomplete key insertion before transit
   await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
     verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed roster"),
   }), /disagrees with signed approval bytes/u);
+});
+
+test("transition prepare rejects a changed stored governance reviewer", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.committeeApproval.reviewerFingerprint = "C".repeat(40);
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle,
+    prepareTransition: async () => assert.fail("changed reviewer reached transition preparation"),
+  }), /Stored committee approval disagrees with signed approval bytes/u);
 });
 
 test("transition prepare rejects ambiguous stored signed approval bytes", async () => {

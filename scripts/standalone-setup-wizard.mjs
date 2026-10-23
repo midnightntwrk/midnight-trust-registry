@@ -1246,12 +1246,25 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Approved committee and finalized staged deployment are required");
     }
     const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
-    const signedApproval = parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
+    // Historical attempts may be reconciled forensically, but never prepared or submitted again.
+    const signedApproval = legacyReadOnly
+      ? JSON.parse(approvalBytes.toString("utf8"))
+      : parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
     if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
+      || !exactFields(signedApproval, ["approvedAt", "custodians", "expectedGenesisHash", "format",
+        "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
+        "reviewedReference", "reviewerFingerprint", "sourceRevision"])
+      || signedApproval.format !== "tr-local-committee-approval-v1"
+      || signedApproval.networkId !== "undeployed"
       || signedApproval.sourceRevision !== record.sourceRevision
       || signedApproval.installInventorySha256 !== record.install.inventorySha256
       || signedApproval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
       || signedApproval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || signedApproval.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
+      || signedApproval.approvedAt !== record.committeeApproval.approvedAt
+      || signedApproval.reviewedReference !== record.committeeApproval.reviewedReference
+      || JSON.stringify(signedApproval.custodians)
+        !== JSON.stringify(record.committeeApproval.custodians)
       || JSON.stringify(signedApproval.maintenancePolicy)
         !== JSON.stringify(record.committeeApproval.maintenancePolicy)) {
       throw new Error("Stored committee approval disagrees with signed approval bytes");
