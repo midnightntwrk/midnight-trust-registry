@@ -76,6 +76,7 @@ test("renders six private digest-pinned runtime workloads without embedded crede
     ["api-approval", "reviewer-keyring"].sort());
   const main = pod.containers[0];
   assert.ok(main.args.includes("--cluster-bind"));
+  assert.ok(main.args.includes("--serve-portals"));
   assert.ok(!main.args.includes("--unsafe-demo-mutations"));
   assert.equal(main.securityContext.readOnlyRootFilesystem, true);
   assert.equal(main.startupProbe.timeoutSeconds, 20);

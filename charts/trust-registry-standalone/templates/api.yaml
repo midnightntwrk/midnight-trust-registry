@@ -83,6 +83,7 @@ spec:
             - --host
             - 0.0.0.0
             - --cluster-bind
+            - --serve-portals
           ports:
             - name: http
               containerPort: 4400

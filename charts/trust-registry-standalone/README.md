@@ -233,10 +233,16 @@ The API init container idempotently copies projected Secret symlinks into a
 private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
 directory becomes 0700. This is required because the API refuses symlinked
 approval files. The API then starts in signed, read-only local-ledger mode
-with explicit `--cluster-bind`. It has no unsafe demo mutation flag, no
-wildcard CORS, and no public Service. The admin and applicant portals serve
-static files only. Browser/API routing and TLS require a separately reviewed
-same-origin ingress design; they are **not** provided by this chart.
+with explicit `--cluster-bind` and `--serve-portals`. The API image must
+contain both portal asset sets under `/app/portals`; it refuses to start if
+either entry point is missing. For private applicant journeys, `/admin/`,
+`/applicant/`, and `/v1/` must all reach this API Service through one reviewed
+HTTPS origin. Do not route either portal path to the separate static portal
+Services: those remain internal-only packaging surfaces and cannot host the
+same-origin private evidence API. The API has no unsafe demo mutation flag,
+wildcard CORS, or public Service. The chart supplies neither Ingress nor TLS;
+review and test that routing, browser policy, and egress controls on the
+actual cluster.
 
 ## Isolation and operations
 
@@ -251,6 +257,11 @@ Namespace RBAC must prevent untrusted users from assigning those labels.
 The DNS selectors are configurable because CNI/CoreDNS labels differ by
 cluster. No rule grants public-IP egress. Port-forward, host networking,
 node-local agents, and CNI behavior require real-cluster verification.
+The API ingress rule admits only same-namespace pods labelled as an actor or
+operator. A controller in another namespace cannot reach the API without a
+separately reviewed narrow policy; do not broaden this rule merely to make
+an ingress smoke test pass. The same-origin browser route also needs a
+reviewed TLS termination point and a real egress-denied actor test.
 
 No workload receives a service-account token. The API and portals run as
 non-root with read-only root filesystems. Node, indexer, and prover images
