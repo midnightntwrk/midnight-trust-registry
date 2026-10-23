@@ -1057,7 +1057,7 @@ test("wizard refuses a Compose project with existing containers or persistent re
 
 test("an observed submission is still not a finalized or release-qualified deployment", async () => {
   const f = await fixture();
-  const { directory, pinPath, planPath, verifyBundle } = f;
+  const { directory, pinPath, planPath, releaseManifestPath, verifyBundle } = f;
   await observeStandaloneLedger(directory, pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, { verifyBundle }), /reviewer approval/u);
   await approve(f);
@@ -1073,7 +1073,11 @@ test("an observed submission is still not a finalized or release-qualified deplo
   const result = { kind: "local-deployment-submission-observation", readbackStatus: "pending" };
   assert.deepEqual(await attemptStandaloneDeployment(directory, planPath, {
     verifyBundle,
-    deploy: async () => result,
+    deploy: async (_plan, _dependencies, approval) => {
+      assert.equal(approval.expectedReleaseManifestSha256,
+        createHash("sha256").update(await readFile(releaseManifestPath)).digest("hex"));
+      return result;
+    },
   }), result);
   const status = await standaloneSetupStatus(directory);
   assert.equal(status.deployment, "observed");
