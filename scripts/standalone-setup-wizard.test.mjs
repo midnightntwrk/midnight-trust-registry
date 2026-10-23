@@ -2050,6 +2050,26 @@ test("wizard rejects a changed roster or incomplete key insertion before transit
   }), /disagrees with signed approval bytes/u);
 });
 
+test("transition prepare rejects ambiguous stored signed approval bytes", async () => {
+  for (const field of ["committeeApproval", "committeeDeploymentApproval"]) {
+    const f = await committeeTransitionFixture();
+    const recordPath = join(f.directory, "setup-record.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8"));
+    const approval = record[field];
+    const bytes = Buffer.from(approval.documentBase64, "base64").toString("utf8");
+    const ambiguous = bytes.replace('"reviewedReference":',
+      '"reviewedReference":"demo:visible-first", "reviewedReference":');
+    assert.notEqual(ambiguous, bytes);
+    approval.documentBase64 = Buffer.from(ambiguous).toString("base64");
+    approval.documentSha256 = createHash("sha256").update(ambiguous).digest("hex");
+    await writeFile(recordPath, JSON.stringify(record));
+    await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+      verifyBundle: f.verifyBundle,
+      prepareTransition: async () => assert.fail("ambiguous approval reached transition preparation"),
+    }), /canonical signed JSON without duplicate keys/u);
+  }
+});
+
 test("wizard requires finalized staged bootstrap and binds insertion to verified install", async () => {
   const f = await stagedFixture();
   await attemptStandaloneDeployment(f.directory, f.planPath, {

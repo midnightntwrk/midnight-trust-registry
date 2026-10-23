@@ -1246,7 +1246,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Approved committee and finalized staged deployment are required");
     }
     const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
-    const signedApproval = JSON.parse(approvalBytes.toString("utf8"));
+    const signedApproval = parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
     if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
       || signedApproval.sourceRevision !== record.sourceRevision
       || signedApproval.installInventorySha256 !== record.install.inventorySha256
@@ -1277,7 +1277,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     }
     if (record.committeeDeploymentApproval) {
       const bindingBytes = Buffer.from(record.committeeDeploymentApproval.documentBase64 ?? "", "base64");
-      const binding = JSON.parse(bindingBytes.toString("utf8"));
+      const binding = parseCanonicalSignedJson(bindingBytes, "Stored committee deployment approval");
       const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
       if (sha256(bindingBytes) !== record.committeeDeploymentApproval.documentSha256
         || binding.format !== "tr-local-committee-deployment-approval-v1"
