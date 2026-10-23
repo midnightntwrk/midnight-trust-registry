@@ -961,6 +961,7 @@ export const createTrustRegistryApiServer = (
 
   return createServer(async (request, response) => {
     if (options.corsPolicy === "none") corsDisabledResponses.add(response);
+    if (options.source.mode === "local-ledger") response.setHeader("cache-control", "no-store");
     let privateApplicantRoute = false;
     try {
       const method = request.method ?? "GET";

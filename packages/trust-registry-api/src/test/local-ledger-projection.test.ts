@@ -247,6 +247,7 @@ describe("local ledger-bound API source", () => {
       const url = `http://127.0.0.1:${bound.port}`;
       const healthy = await fetch(`${url}/health`);
       expect(healthy.status).toBe(200);
+      expect(healthy.headers.get("cache-control")).toBe("no-store");
       expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
       expect(readCount).toBe(1);
       const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
@@ -260,6 +261,7 @@ describe("local ledger-bound API source", () => {
       await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
       const mismatched = await fetch(`${url}/health`);
       expect(mismatched.status).toBe(503);
+      expect(mismatched.headers.get("cache-control")).toBe("no-store");
       expect(await mismatched.json()).toMatchObject({
         status: 503,
         type: expect.stringMatching(/local-ledger-unavailable$/u),
@@ -299,6 +301,7 @@ describe("local ledger-bound API source", () => {
           action: "issue", resource: "credential-family" }),
       });
       expect(trqp.status).toBe(503);
+      expect(trqp.headers.get("cache-control")).toBe("no-store");
       expect(await trqp.json()).toMatchObject({ status: 503, title: "local ledger unavailable" });
       expect(readCount).toBe(10);
     } finally {

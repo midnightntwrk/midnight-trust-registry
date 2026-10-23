@@ -79,6 +79,8 @@ and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
+All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
+and browsers are not instructed to reuse stale authorization decisions.
 File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
 By default local-ledger mode binds only to loopback. Guarded `--cluster-bind` can
