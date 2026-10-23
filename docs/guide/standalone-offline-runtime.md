@@ -663,11 +663,14 @@ observation in a separate evidence record.
 
 `draft-genesis-pin` is an optional, non-overwriting aid after candidate
 collection. It rechecks the current direct-loopback path or the v6 bundle's
-verified installation-only relay, then writes mode-0600
+verified installation-only relay, confirms that the live RPC still reports the
+candidate genesis and a progressing finalized head, and rechecks the access
+path before writing mode-0600
 `genesis-pin.proposed.json` from the untrusted candidate and actual loopback
 RPC port. Its output includes both candidate and pin SHA-256 hashes and leaves
 all approval, deployment, and release states pending. It does not independently
-derive genesis or make the proposal safe to trust. The reviewer must verify the
+derive genesis or make the proposal safe to trust: the recheck is still the
+same node's self-report. The reviewer must verify the
 chain-spec provenance and proposed pin before the separate `observe` command;
 the same relay identity and ports must be restored and reverified for that
 observation. A pre-existing proposal is not replaced automatically.

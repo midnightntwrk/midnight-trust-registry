@@ -480,6 +480,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
     const observedNetworkId = record.stack.observation.topology?.networkId;
     let rpcPort;
     let accessKind;
+    let accessObservation;
     if (record.stack.observation.topology?.hostPortAccess === "effective-loopback") {
       const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
         { ...expectedTopology, allowUnpublishedHostPorts: false });
@@ -489,6 +490,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
       }
       rpcPort = config.ports.node;
       accessKind = "effective-direct-loopback";
+      accessObservation = current;
     } else if (record.stack.observation.topology?.hostPortAccess
       === "unpublished-install-access-required" && record.install.verified.installRelay) {
       const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
@@ -501,6 +503,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
       }
       rpcPort = current.ports.node;
       accessKind = current.kind;
+      accessObservation = current;
     } else {
       throw new Error("A verified loopback or installation relay path is required to draft a genesis pin");
     }
@@ -516,6 +519,26 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
       expectedGenesisHash: candidate.nodeReportedGenesisHash,
       allowedHosts: ["127.0.0.1"],
     };
+    await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
+    if (accessKind === "effective-direct-loopback") {
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
+      if (current.project !== accessObservation.project
+        || current.networkId !== accessObservation.networkId
+        || current.internalNetworkOnly !== true
+        || current.hostPortAccess !== "effective-loopback") {
+        throw new Error("Direct loopback access changed during genesis pin draft");
+      }
+    } else {
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.relayId !== accessObservation.relayId
+        || current.networkId !== accessObservation.networkId
+        || JSON.stringify(current.ports) !== JSON.stringify(accessObservation.ports)
+        || current.relayScriptSha256 !== accessObservation.relayScriptSha256) {
+        throw new Error("Installation relay changed during genesis pin draft");
+      }
+    }
     const bytes = Buffer.from(`${JSON.stringify(pin, null, 2)}\n`);
     const path = join(root, "genesis-pin.proposed.json");
     await writePrivateSnapshot(path, bytes);

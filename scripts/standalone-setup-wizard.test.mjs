@@ -769,10 +769,32 @@ test("drafted v6 genesis pin is private, untrusted, relay-bound, and non-overwri
     observeInstallRelay: async () => { throw new Error("must not inspect relay after duplicate key"); },
   }), /candidate is malformed or disagrees/u);
   await writeFile(candidatePath, original);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => relay,
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.expectedGenesisHash, expectedGenesisHash);
+      assert.equal(currentPin.rpcUrl, "http://127.0.0.1:60944");
+      throw new Error("live genesis no longer matches candidate");
+    },
+  }), /live genesis no longer matches candidate/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
+  let relayChecks = 0;
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => {
+      relayChecks += 1;
+      return relayChecks === 1 ? relay : { ...relay, relayId: "changed-relay" };
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /Installation relay changed during genesis pin draft/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
   const result = await draftStandaloneGenesisPin(f.directory, {
     observeInstallRelay: async (_config, _verified, expected) => {
       assert.equal(expected.allowUnpublishedHostPorts, true);
       return relay;
+    },
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.expectedGenesisHash, expectedGenesisHash);
+      return { kind: "local-node-observation-only" };
     },
   });
   assert.equal(result.accessKind, "standalone-install-relay-observation");
@@ -785,6 +807,7 @@ test("drafted v6 genesis pin is private, untrusted, relay-bound, and non-overwri
   assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
   await assert.rejects(draftStandaloneGenesisPin(f.directory, {
     observeInstallRelay: async () => relay,
+    preflight: async () => ({ kind: "local-node-observation-only" }),
   }), { code: "EEXIST" });
   assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-pin.proposed.json.")), false);
 });
@@ -810,8 +833,21 @@ test("drafted direct-loopback pin rechecks topology without approving genesis", 
   await assert.rejects(draftStandaloneGenesisPin(f.directory, {
     observeTopology: async () => ({ ...topology, networkId: "different-network" }),
   }), /Direct loopback access changed/u);
+  let topologyChecks = 0;
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => {
+      topologyChecks += 1;
+      return topologyChecks === 1 ? topology : { ...topology, networkId: "different-network" };
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /Direct loopback access changed during genesis pin draft/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
   const result = await draftStandaloneGenesisPin(f.directory, {
     observeTopology: async () => topology,
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.rpcUrl, "http://127.0.0.1:39944");
+      return { kind: "local-node-observation-only" };
+    },
   });
   assert.equal(result.accessKind, "effective-direct-loopback");
   assert.equal(JSON.parse(await readFile(result.path, "utf8")).rpcUrl, "http://127.0.0.1:39944");
