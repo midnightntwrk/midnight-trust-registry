@@ -206,7 +206,7 @@ parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
-The contract tarball must use canonical `package/` paths; aliases, dot segments,
+Every package tarball must use canonical `package/` paths; aliases, dot segments,
 and duplicate normalized paths are rejected so the checked entries cannot be
 shadowed by another top-level archive prefix during installation.
 The manifest-backed package smoke rehashes private temporary copies before

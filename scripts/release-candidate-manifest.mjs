@@ -79,6 +79,7 @@ export function buildReleaseCandidateManifest(input) {
     if (!existsSync(path) || statSync(path).size === 0) {
       throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
     }
+    assertCanonicalPackedPaths(packedEntries(path));
     return {
       workspace,
       name: manifest.name,
@@ -148,28 +149,32 @@ export function buildReleaseCandidateManifest(input) {
 }
 
 export function assertFullPackedContract(paths, contractInfo) {
+  assertCanonicalPackedPaths(paths);
+  const files = paths.map((path) => path.replace(/^package\//u, ""));
+  const required = "dist/managed/trust-registry/compiler/contract-info.json";
+  if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
+  const missing = missingFullContractArtifacts(files, "trust-registry", proofCircuitNames(contractInfo));
+  if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
+}
+
+export function assertCanonicalPackedPaths(paths) {
   const listed = paths.filter((path) => path.length > 0);
   const normalized = listed.map((path) => path.endsWith("/") ? path.slice(0, -1) : path);
   if (new Set(normalized).size !== listed.length) {
-    throw new Error("Packed contract contains duplicate archive paths");
+    throw new Error("Packed package contains duplicate archive paths");
   }
   for (const path of listed) {
     if (!path.startsWith("package/") || /[\\\x00-\x1f\x7f]/u.test(path)) {
-      throw new Error("Packed contract contains non-canonical archive paths");
+      throw new Error("Packed package contains non-canonical archive paths");
     }
     const relative = path.slice("package/".length);
     if (relative === "") continue;
     const segments = relative.split("/");
     if (path.endsWith("/")) segments.pop();
     if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
-      throw new Error("Packed contract contains non-canonical archive paths");
+      throw new Error("Packed package contains non-canonical archive paths");
     }
   }
-  const files = paths.map((path) => path.replace(/^package\//u, ""));
-  const required = "dist/managed/trust-registry/compiler/contract-info.json";
-  if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
-  const missing = missingFullContractArtifacts(files, "trust-registry", proofCircuitNames(contractInfo));
-  if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
 }
 
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
@@ -207,6 +212,7 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
+    assertCanonicalPackedPaths(packedEntries(path));
   }
   assertExactTarballs(artifactDir, filenames);
   const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");

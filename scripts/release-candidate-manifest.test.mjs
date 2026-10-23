@@ -50,6 +50,19 @@ const packContract = (root, verifier = "verifier-a\n",
   return tarball;
 };
 
+const packDomain = (root, includeAlias = false) => {
+  put(root, "packed-domain/package/package.json", JSON.stringify({
+    name: "@midnight-ntwrk/trust-registry-domain", version: "0.1.0",
+  }));
+  if (includeAlias) put(root, "packed-domain/x/package.json", "shadowed-domain\n");
+  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz");
+  const packed = spawnSync("tar", ["-czf", tarball, "package", ...(includeAlias ? ["x"] : [])], {
+    cwd: join(root, "packed-domain"), encoding: "utf8",
+  });
+  assert.equal(packed.status, 0, packed.stderr);
+  return tarball;
+};
+
 test("candidate manifest binds signed source inputs and exact package bytes", () => {
   const root = mkdtempSync(join(tmpdir(), "tr-release-manifest-"));
   roots.push(root);
@@ -68,7 +81,7 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
     name: "@midnight-ntwrk/trust-registry-domain", version: "0.1.0",
   }));
   const contractTarball = packContract(root);
-  put(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz", "domain-tarball");
+  const domainTarball = packDomain(root);
   const input = {
     repoRoot: root, artifactDir: join(root, "artifacts/npm"), revision: "a".repeat(40),
     workspaces: ["contracts/trust-registry", "packages/trust-registry-domain"],
@@ -89,6 +102,15 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  packDomain(root, true);
+  assert.throws(() => buildReleaseCandidateManifest(input), /non-canonical archive paths/u);
+  const aliasedDomain = { ...manifest.packages[1], sizeBytes: statSync(domainTarball).size,
+    sha256: createHash("sha256").update(readFileSync(domainTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [manifest.packages[0], aliasedDomain],
+  }, input.artifactDir, input.workspaces), /non-canonical archive paths/u);
+  packDomain(root);
+  manifest = buildReleaseCandidateManifest(input);
   assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, compactCompilerVersion: "0.30.0" },
     input.artifactDir, input.workspaces), /compiler version differs from packed contract metadata/u);
   for (const field of ["contractSourceSha256", "generatedContractSha256"]) {
