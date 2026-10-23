@@ -149,8 +149,21 @@ export function buildReleaseCandidateManifest(input) {
 
 export function assertFullPackedContract(paths, contractInfo) {
   const listed = paths.filter((path) => path.length > 0);
-  if (new Set(listed).size !== listed.length) {
+  const normalized = listed.map((path) => path.endsWith("/") ? path.slice(0, -1) : path);
+  if (new Set(normalized).size !== listed.length) {
     throw new Error("Packed contract contains duplicate archive paths");
+  }
+  for (const path of listed) {
+    if (!path.startsWith("package/") || /[\\\x00-\x1f\x7f]/u.test(path)) {
+      throw new Error("Packed contract contains non-canonical archive paths");
+    }
+    const relative = path.slice("package/".length);
+    if (relative === "") continue;
+    const segments = relative.split("/");
+    if (path.endsWith("/")) segments.pop();
+    if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+      throw new Error("Packed contract contains non-canonical archive paths");
+    }
   }
   const files = paths.map((path) => path.replace(/^package\//u, ""));
   const required = "dist/managed/trust-registry/compiler/contract-info.json";

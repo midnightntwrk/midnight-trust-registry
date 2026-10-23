@@ -206,6 +206,14 @@ parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
+The contract tarball must use canonical `package/` paths; aliases, dot segments,
+and duplicate normalized paths are rejected so the checked entries cannot be
+shadowed by another top-level archive prefix during installation.
+The manifest-backed package smoke rehashes private temporary copies before
+passing them to `npm install`, so changes to the original staging paths after
+verification cannot change what that smoke installs. Keep the original bundle
+under operator-controlled custody; this check does not prevent a process with
+the same filesystem privileges from altering its private temporary files.
 The v3 verifier also checks both Compose files and requires the base Compose
 image references to match the archived image inventory. V2 bundles remain
 verifiable as historical smoke artifacts but cannot prepare a new wizard stack.

@@ -118,6 +118,19 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   }, input.artifactDir, input.workspaces), /compiler version differs from packed contract metadata/u);
   packContract(root);
   manifest = buildReleaseCandidateManifest(input);
+  put(root, "packed-contract/x/src/trust-registry.compact", "substituted-source\n");
+  const aliased = spawnSync("tar", ["-czf", contractTarball, "package", "x"], {
+    cwd: join(root, "packed-contract"), encoding: "utf8",
+  });
+  assert.equal(aliased.status, 0, aliased.stderr);
+  assert.throws(() => buildReleaseCandidateManifest(input), /non-canonical archive paths/u);
+  const aliasedPackage = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
+    sha256: createHash("sha256").update(readFileSync(contractTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [aliasedPackage, manifest.packages[1]],
+  }, input.artifactDir, input.workspaces), /non-canonical archive paths/u);
+  packContract(root);
+  manifest = buildReleaseCandidateManifest(input);
   const extraSourceKey = "contracts/trust-registry/dist/managed/trust-registry/keys/extra.verifier";
   put(root, extraSourceKey, "extra\n");
   assert.throws(() => buildReleaseCandidateManifest(input), /Generated verifier keys do not match/u);
@@ -193,6 +206,13 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
     /verification key for proveA/u);
   assert.throws(() => assertFullPackedContract(paths.slice(1), info), /contract-info/u);
   assert.throws(() => assertFullPackedContract([...paths, paths.at(-1)], info), /duplicate archive paths/u);
+  for (const alias of ["x/src/trust-registry.compact", "./package/src/trust-registry.compact",
+    "package/./src/trust-registry.compact", "package/src/../src/trust-registry.compact",
+    "package//src/trust-registry.compact", "package/src\\trust-registry.compact"]) {
+    assert.throws(() => assertFullPackedContract([...paths, alias], info), /non-canonical archive paths/u);
+  }
+  assert.throws(() => assertFullPackedContract([...paths, "package/dist/", "package/dist"], info),
+    /duplicate archive paths/u);
 });
 
 test("manifest smoke mode refuses invalid evidence before package installation", () => {
