@@ -640,6 +640,12 @@ accept. The operator passes that
 same file and detached signature to `approve-genesis` or `approve-committee`.
 The wizard does not create reviewer authority, private keys, or signatures.
 
+New setups require an install bundle with verified runtime Compose and offline
+Compose pins (v3 or later); a historical v2 bundle cannot initialize a new
+deployment. Existing records without a setup-bound approval cannot reserve a
+deployment and must be recreated from a current bundle. Historical test
+fixtures are not standalone deployment evidence.
+
 The wizard verifies staged bytes, checks that the pin and deployment plan
 match the installed source and observed genesis, and requires a detached
 reviewer signature before deployment. The signed JSON has exactly these fields:

@@ -122,8 +122,15 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   const bundle = await realpath(resolve(bundleDirectory));
   const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(bundle);
   const inventory = await regularBytes(join(bundle, "install-inventory.json"));
-  if (JSON.parse(inventory).sourceRevision !== verified.sourceRevision) {
+  const inventoryDocument = JSON.parse(inventory);
+  if (inventoryDocument.sourceRevision !== verified.sourceRevision) {
     throw new Error("Verified install inventory changed during setup");
+  }
+  if (!SHA256.test(verified.runtimeComposeSha256 ?? "")
+    || !SHA256.test(verified.runtimeOfflineComposeSha256 ?? "")
+    || inventoryDocument.runtimeCompose?.sha256 !== verified.runtimeComposeSha256
+    || inventoryDocument.runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
+    throw new Error("New standalone setup requires a verified runtime Compose pin");
   }
   const root = resolve(directory);
   await mkdir(root, { mode: 0o700 });
@@ -910,6 +917,9 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     }
     if (!record.ledgerObservation || !record.genesisApproval) {
       throw new Error("Observe the local ledger and record detached reviewer approval before deployment");
+    }
+    if (!record.setupId) {
+      throw new Error("Legacy setup cannot submit a deployment without a setup-bound approval");
     }
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));

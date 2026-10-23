@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,7 +131,19 @@ async function fixture(format = "tr-standalone-install-v2") {
       image: { role: "node", reference: images.find((image) => image.role === "node").reference,
         acceptedIds: [`sha256:${images.find((image) => image.role === "node").reference.split("@sha256:")[1]}`] },
     } : null });
-  await initializeStandaloneSetup(directory, bundle, { verifyBundle });
+  if (format === "tr-standalone-install-v2") {
+    // Historical test records exercise approval state transitions, not a supported new installation.
+    await mkdir(directory, { mode: 0o700 });
+    await writeFile(join(directory, "setup-record.json"), JSON.stringify({
+      format: "tr-standalone-setup-v1", setupId: randomUUID(), sourceRevision,
+      createdAt: new Date().toISOString(),
+      install: { bundle, inventorySha256: createHash("sha256")
+        .update(await readFile(join(bundle, "install-inventory.json"))).digest("hex"),
+      verified: await verifyBundle() },
+    }), { mode: 0o600 });
+  } else {
+    await initializeStandaloneSetup(directory, bundle, { verifyBundle });
+  }
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
   const approvalPath = join(root, "genesis-approval.json");
@@ -362,11 +374,31 @@ test("wizard prepares a private isolated stack without starting or approving it"
 
 test("wizard refuses historical v2 bundles for a new stack", async () => {
   const f = await fixture("tr-standalone-install-v2");
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  await assert.rejects(initializeStandaloneSetup(join(f.directory, "new-setup"),
+    record.install.bundle, { verifyBundle: f.verifyBundle }), /requires a verified runtime Compose pin/u);
+  await assert.rejects(lstat(join(f.directory, "new-setup")), { code: "ENOENT" });
   await assert.rejects(prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
   }, stackDependencies(f)), /requires a verified v3\/v4\/v5 runtime Compose pin/u);
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
+});
+
+test("legacy setup without a setup-bound approval cannot reserve deployment", async () => {
+  const f = await fixture("tr-standalone-install-v2");
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.setupId;
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => { throw new Error("must not submit"); },
+  }), /Legacy setup cannot submit/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
 test("invalid restart evidence does not hide deployment and maintenance alerts", async () => {
