@@ -264,8 +264,15 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 The current chart does not execute the first-run wizard or approve governance;
 the operator must carry its signed receipts across the phase transition.
 Before the signed API plan's `notAfter`, obtain renewed independent approval,
-replace the approval Secret, and roll the API pod. An expired plan fails closed;
-Helm does not renew or revoke it.
+replace the approval Secret, and roll the API pod. The plan also pins the exact
+finalized governance count and snapshot digest. After any governed mutation,
+the API readiness check fails closed until a new snapshot and sequence map are
+independently reviewed, a replacement plan is detached-signed, the approval
+Secret is replaced, and the API pod is rolled. Merely updating a projected
+Secret does not rerun the init container that copies approved bytes into the
+private volume. An expired or stale plan fails closed; Helm does not renew or
+revoke it. This manual rotation has not been qualified in a live local actor
+journey.
 
 The API init container idempotently copies projected Secret symlinks into a
 private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring

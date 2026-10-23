@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertApprovedPlanCoversGovernanceCount,
   assertApprovedReviewerSignatureStatus,
   assertLocalApiImageSourceRevision,
   loadApprovedLocalLedgerRuntimePlan,
@@ -119,6 +120,15 @@ describe("approved local-ledger API runtime", () => {
     expect(validateLocalLedgerRuntimePlan({ ...valid, sequenceTimestamps: {
       "0": "2026-01-01T00:00:00.000Z", "1": "2026-01-01T00:00:00.000Z",
     } }).sequenceTimestamps["1"]).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("fails closed when a governed mutation makes the signed sequence map stale", () => {
+    const approved = validateLocalLedgerRuntimePlan(plan("/tmp/tr-api-runtime-test"));
+    expect(() => assertApprovedPlanCoversGovernanceCount(approved, 1n)).not.toThrow();
+    for (const count of [0n, 2n, undefined, "1"]) {
+      expect(() => assertApprovedPlanCoversGovernanceCount(approved, count))
+        .toThrow(/do not cover the finalized governance count/u);
+    }
   });
 
   it("requires an actual detached reviewer signature and exact install bytes", async () => {

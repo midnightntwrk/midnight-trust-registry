@@ -95,6 +95,11 @@ and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
+Any governed mutation changes the finalized action count, so the current
+signed plan and snapshot become stale until an independently reviewed
+replacement is signed and installed. `/health` fails closed during that gap;
+the local Helm readiness probe uses this endpoint. This manual rotation has
+not been exercised as a live local-ledger actor journey.
 All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
 and browsers are not instructed to reuse stale authorization decisions.
 With `--serve-portals`, the API serves packaged admin and applicant assets at

@@ -174,6 +174,16 @@ export function sequenceTimestampMap(plan: LocalLedgerRuntimePlan): SequenceToTi
   };
 }
 
+export function assertApprovedPlanCoversGovernanceCount(
+  plan: Pick<LocalLedgerRuntimePlan, "sequenceTimestamps">,
+  count: unknown,
+): void {
+  if (typeof count !== "bigint"
+    || count !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1)) {
+    throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+  }
+}
+
 export async function assertLocalApiImageSourceRevision(
   expectedRevision: string,
   path = "/app/source-revision",
@@ -283,10 +293,8 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     reader: {
       async readCurrentFinalizedLedger(address) {
         const view = await reader.readCurrentFinalizedLedger(address);
-        if (view !== null && (typeof view.ledger.governanceActionCount !== "bigint"
-          || view.ledger.governanceActionCount
-            !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1))) {
-          throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+        if (view !== null) {
+          assertApprovedPlanCoversGovernanceCount(plan, view.ledger.governanceActionCount);
         }
         return view;
       },
