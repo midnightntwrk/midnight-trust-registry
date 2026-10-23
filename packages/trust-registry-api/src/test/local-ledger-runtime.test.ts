@@ -49,16 +49,22 @@ describe("approved local-ledger API runtime", () => {
     const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00 ${primary}`;
     const output = `[GNUPG:] GOODSIG ${signer} Reviewer\n${valid}\n`;
     expect(() => assertApprovedReviewerSignatureStatus(output, 0, primary, now)).not.toThrow();
+    expect(() => assertApprovedReviewerSignatureStatus(
+      `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, 0, primary, now)).not.toThrow();
     for (const invalid of [
       [output, 0, "C".repeat(40)],
       [output, 1, primary],
       [valid, 0, primary],
       [`${output}${valid}\n`, 0, primary],
       [`${output}[GNUPG:] REVKEYSIG ${signer} Reviewer\n`, 0, primary],
-      [`${output}[GNUPG:] KEYEXPIRED ${signedAt}\n`, 0, primary],
+      [`${output}[GNUPG:] KEYREVOKED\n`, 0, primary],
+      [`${output}[GNUPG:] EXPKEYSIG ${signer} Reviewer\n`, 0, primary],
       [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
       [`[GNUPG:] GOODSIG ${primary} Reviewer\n[GNUPG:] VALIDSIG ${primary} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
       [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt + 600} 0 4 0 22 8 00 ${primary}\n`, 0, primary],
+      [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} ${signedAt - 1} 4 0 22 8 00 ${primary}\n`, 0, primary],
+      [output.replace(" 22 8 00 ", " 22 2 00 "), 0, primary],
+      [output.replace(" 22 8 00 ", " 22 8 01 "), 0, primary],
     ] as const) {
       expect(() => assertApprovedReviewerSignatureStatus(invalid[0], invalid[1], invalid[2], now))
         .toThrow(/approved detached reviewer signature/u);

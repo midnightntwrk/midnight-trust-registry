@@ -60,7 +60,7 @@ trust-registry-api serve \
   --local-ledger-plan /run/trust-registry/api-plan.json \
   --local-ledger-signature /run/trust-registry/api-plan.sig \
   --local-ledger-keyring /run/trust-registry/reviewer-keyring \
-  --local-ledger-reviewer '<approved-40-character-GPG-signing-key-fingerprint>' \
+  --local-ledger-reviewer '<approved-40-character-GPG-primary-fingerprint>' \
   --serve-portals \
   --host 127.0.0.1 --port 4400
 ```
@@ -76,7 +76,12 @@ reviewer keyring must be a private directory with its approved public key in
 parses and copies the read-only public keyring into private GPG scratch space;
 the pinned fingerprint is the approved primary signing-key fingerprint. A
 signature made by its signing subkey is accepted only when GnuPG reports that
-same primary fingerprint. It checks the install bytes, constructs the pinned local reader,
+same primary fingerprint. Any valid signing subkey of that primary can approve
+the plan; an earlier configuration pinned to one signing subkey must be
+re-approved with the primary fingerprint before upgrading. This profile
+requires a version-4 40-character fingerprint, a binary detached signature,
+and SHA-256, SHA-384, or SHA-512 as its signature hash. It checks the install
+bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. Ledger read and

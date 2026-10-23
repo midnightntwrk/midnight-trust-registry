@@ -33,6 +33,8 @@ export function assertApprovedReviewerSignatureStatus(
   const primaryFingerprint = fields?.[11];
   const signedAt = Number(fields?.[4]);
   const expiresAt = Number(fields?.[5]);
+  const hashAlgorithm = fields?.[9];
+  const signatureClass = fields?.[10];
   const nowSeconds = Math.floor(now / 1000);
   if (exitStatus !== 0 || !FINGERPRINT.test(expectedPrimaryFingerprint)
     || valid.length !== 1 || good.length !== 1
@@ -42,7 +44,9 @@ export function assertApprovedReviewerSignatureStatus(
     || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
     || !Number.isSafeInteger(expiresAt) || expiresAt < 0
     || (expiresAt !== 0 && expiresAt <= nowSeconds)
-    || statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+    || !["8", "9", "10"].includes(hashAlgorithm ?? "")
+    || signatureClass !== "00"
+    || statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
     throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
   }
 }
@@ -178,7 +182,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   requireApiRuntimePin?: boolean;
 }): Promise<LocalLedgerRuntimePlan> {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
-    throw new Error("Local API reviewer signing-key fingerprint must be canonical");
+    throw new Error("Local API reviewer primary signing-key fingerprint must be canonical");
   }
   const planBytes = await boundedFile(input.planPath, 1024 * 1024);
   const signatureBytes = await boundedFile(input.signaturePath, 64 * 1024);
