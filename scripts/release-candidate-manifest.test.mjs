@@ -25,9 +25,12 @@ const put = (root, path, content) => {
   writeFileSync(absolute, content);
 };
 
-const packContract = (root, verifier = "verifier-a\n") => {
+const packContract = (root, verifier = "verifier-a\n",
+  source = "contract-test\n", generated = "generated-test\n") => {
   const prefix = "package/dist/managed/trust-registry";
   const info = JSON.stringify({ circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
+  put(root, "packed-contract/package/src/trust-registry.compact", source);
+  put(root, `packed-contract/${prefix}/contract/index.js`, generated);
   put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
   put(root, `packed-contract/${prefix}/compiler/contract-info.json`, info);
   for (const name of ["proveB", "proveA"]) {
@@ -70,7 +73,7 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
     workspaces: ["contracts/trust-registry", "packages/trust-registry-domain"],
     publish: ["contracts/trust-registry"],
   };
-  const manifest = buildReleaseCandidateManifest(input);
+  let manifest = buildReleaseCandidateManifest(input);
   assert.equal(manifest.sourceRevision, "a".repeat(40));
   assert.equal(manifest.compactCompilerVersion, "0.31.1");
   assert.equal(manifest.lockfileSha256, createHash("sha256").update("lock-test\n").digest("hex"));
@@ -85,6 +88,26 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  for (const field of ["contractSourceSha256", "generatedContractSha256"]) {
+    assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, [field]: "0".repeat(64) },
+      input.artifactDir, input.workspaces), /packed contract source or generated contract hash mismatch/u);
+  }
+  packContract(root, "verifier-a\n", "substituted-source\n");
+  assert.throws(() => buildReleaseCandidateManifest(input), /Packed contract does not match the candidate tree/u);
+  let repacked = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
+    sha256: createHash("sha256").update(readFileSync(contractTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [repacked, manifest.packages[1]],
+  }, input.artifactDir, input.workspaces), /packed contract source or generated contract hash mismatch/u);
+  packContract(root, "verifier-a\n", "contract-test\n", "substituted-generated\n");
+  assert.throws(() => buildReleaseCandidateManifest(input), /Packed contract does not match the candidate tree/u);
+  repacked = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
+    sha256: createHash("sha256").update(readFileSync(contractTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [repacked, manifest.packages[1]],
+  }, input.artifactDir, input.workspaces), /packed contract source or generated contract hash mismatch/u);
+  packContract(root);
+  manifest = buildReleaseCandidateManifest(input);
   const extraSourceKey = "contracts/trust-registry/dist/managed/trust-registry/keys/extra.verifier";
   put(root, extraSourceKey, "extra\n");
   assert.throws(() => buildReleaseCandidateManifest(input), /Generated verifier keys do not match/u);

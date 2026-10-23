@@ -14,6 +14,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HASH = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
+const CONTRACT_SOURCE_ENTRY = "package/src/trust-registry.compact";
+const GENERATED_CONTRACT_ENTRY = `${CONTRACT_PREFIX}/contract/index.js`;
 const hashBytes = (value) => createHash("sha256").update(value).digest("hex");
 const sha256 = (path) => {
   const hash = createHash("sha256");
@@ -101,6 +103,14 @@ export function buildReleaseCandidateManifest(input) {
     !== sha256(contractInfoPath)) {
     throw new Error("Packed contract metadata does not match the candidate tree");
   }
+  for (const [packed, source] of [
+    [CONTRACT_SOURCE_ENTRY, "contracts/trust-registry/src/trust-registry.compact"],
+    [GENERATED_CONTRACT_ENTRY, "contracts/trust-registry/dist/managed/trust-registry/contract/index.js"],
+  ]) {
+    if (hashPackedTarEntry(contractTarball, packed) !== sha256(join(repoRoot, source))) {
+      throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
+    }
+  }
   const verifierKeySha256 = verifierKeyHashes(contractTarball, contractInfo);
   const sourceKeys = join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/keys");
   const sourceVerifierNames = readdirSync(sourceKeys).filter((name) => name.endsWith(".verifier"))
@@ -185,6 +195,10 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
   const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
   if (contract === undefined) throw new Error("Release contract package is missing");
   const contractTarball = join(artifactDir, contract.filename);
+  if (hashPackedTarEntry(contractTarball, CONTRACT_SOURCE_ENTRY) !== manifest.contractSourceSha256
+    || hashPackedTarEntry(contractTarball, GENERATED_CONTRACT_ENTRY) !== manifest.generatedContractSha256) {
+    throw new Error("Release candidate packed contract source or generated contract hash mismatch");
+  }
   const contractInfo = packedContractInfo(contractTarball);
   const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
   const actualHashes = manifest.verifierKeySha256;
@@ -232,22 +246,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     artifactDir: join(root, artifactDirectory),
     revision,
   });
-  const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
-  if (contract === undefined) throw new Error("Release contract package is missing");
-  const packedPaths = packedEntries(join(root, artifactDirectory, contract.filename));
-  const contractTarball = join(root, artifactDirectory, contract.filename);
-  const contractInfo = json(join(root,
-    "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json"));
-  assertFullPackedContract(packedPaths, contractInfo);
-  for (const [packed, source] of [
-    ["package/src/trust-registry.compact", "contracts/trust-registry/src/trust-registry.compact"],
-    ["package/dist/managed/trust-registry/contract/index.js",
-      "contracts/trust-registry/dist/managed/trust-registry/contract/index.js"],
-  ]) {
-    if (hashPackedTarEntry(contractTarball, packed) !== sha256(join(root, source))) {
-      throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
-    }
-  }
+  verifyReleaseCandidateArtifacts(manifest, join(root, artifactDirectory));
   const output = join(root, "artifacts/release-candidate", revision, "manifest.json");
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });

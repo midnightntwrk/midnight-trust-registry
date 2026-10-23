@@ -198,7 +198,9 @@ candidate bytes.
 
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
-the packed contract and hashes each image archive and all 18 required proof
+the packed contract, including the manifest's Compact-source and generated
+contract hashes against the corresponding tarball bytes, and hashes each
+image archive and all 18 required proof
 parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
