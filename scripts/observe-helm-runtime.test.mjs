@@ -93,8 +93,8 @@ test("rejects changed or replaced API approval Secrets without exposing their da
   assert.throws(() => check({ ...secret, immutable: false }), /immutable reviewed Pod input/u);
   assert.throws(() => check({ ...secret, metadata: { ...secret.metadata,
     creationTimestamp: "2026-10-24T00:02:00.000Z" } }), /immutable reviewed Pod input/u);
-  assert.throws(() => check({ ...secret, metadata: { ...secret.metadata,
-    creationTimestamp: pod.metadata.creationTimestamp } }), /immutable reviewed Pod input/u);
+  assert.equal(check({ ...secret, metadata: { ...secret.metadata,
+    creationTimestamp: pod.metadata.creationTimestamp } }).planSha256, hash(planBytes));
   assert.throws(() => check({ ...secret, data: { ...secret.data,
     "api-plan.json": Buffer.from("different").toString("base64") } }), /differs from/u);
   assert.throws(() => check({ ...secret, data: { ...secret.data,
@@ -533,6 +533,10 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
     assert.ok(!JSON.stringify(observed).includes(keyringBytes.toString("base64")));
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      verifyPlanSignature: async () => { throw new Error("bad async signature"); },
+    }), /bad async signature/u);
+    assert.equal(calls.length, 0);
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
       run: async (program, args) => {
         if (args.includes("secret")) throw Object.assign(new Error("private secret bytes"),
           { stdout: "private secret bytes" });
@@ -565,9 +569,17 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
       run: async (program, args) => args.includes("get") && args.includes("pod")
+        ? { stdout: JSON.stringify({ ...apiPod, status: { ...apiPod.status,
+          containerStatuses: [{ ...apiPod.status.containerStatuses[0],
+            containerID: "containerd://changed" }] } }) } : run(program, args),
+    }), /Pod changed during observation/u);
+    calls.length = 0;
+    const stableWithNewVersion = await observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("get") && args.includes("pod")
         ? { stdout: JSON.stringify({ ...apiPod, metadata: { ...apiPod.metadata,
           resourceVersion: "54" } }) } : run(program, args),
-    }), /Pod changed during observation/u);
+    });
+    assert.equal(stableWithNewVersion.apiPlanBinding.apiApprovalSecret.secretUid, "secret-1");
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, {
       checkFleet: async () => { throw new Error("bad fleet"); },

@@ -177,9 +177,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    After installation, use an explicitly selected, reviewed kubeconfig and
    context for a non-mutating Kubernetes workload observation. The observer
    needs narrowly scoped `get` access to both API Secrets and the API Pod,
-   plus `pods/exec` access to run a fixed, read-only hash probe in the API
-   container. Restrict these grants to the approved release and evidence
-   operator; `pods/exec` is not a read-only Kubernetes RBAC verb:
+   plus `create` on `pods/exec` to run a fixed, read-only hash probe in the API
+   container. Limit Secret `get` to the two names with RBAC `resourceNames`;
+   restrict these grants to the approved release and evidence operator.
+   `pods/exec` is not a read-only Kubernetes RBAC verb:
 
    ```sh
    node scripts/observe-helm-runtime.mjs \
@@ -196,7 +197,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    release-manifest digest, and validity window must match the exact verified
    bundle and signed Helm image mapping before any Kubernetes observation.
    The chart's external API approval and reviewer-keyring Secrets must be
-   `immutable: true` and created before the API Pod. The observer reads both
+   `immutable: true` and not created after the API Pod (at timestamp precision).
+   The observer reads both
    Secrets through the selected Kubernetes API, checks their identities and
    creation times, and compares their exact data with the reviewed plan,
    signature, inventory, manifest, snapshot, and public keyring. It then
@@ -206,7 +208,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    Secret identities, runtime file hashes, signer fingerprint, and observed
    API image ID and reference. Current `immutable: true` status does not
    establish that a Secret was immutable when the Pod started; the runtime
-   file readback establishes byte equality at observation time. Neither
+   file readback reports byte equality from inside the API container at
+   observation time. A compromised container could falsify the probe. Neither
    check continuously binds the process to the plan. The API independently
    verifies the full plan at startup and on reads.
    The observer then reads the arm64 Node list

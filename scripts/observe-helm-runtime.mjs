@@ -98,7 +98,7 @@ function assertApiSecretMetadata(secret, pod, expectedName, expectedNamespace, v
     || typeof secret.metadata?.resourceVersion !== "string"
     || secret.metadata.resourceVersion.length === 0
     || !Number.isFinite(podCreated) || !Number.isFinite(secretCreated)
-    || secretCreated >= podCreated
+    || secretCreated > podCreated
     || pod?.spec?.volumes?.find((volume) => volume.name === volumeName)
       ?.secret?.secretName !== expectedName
   ) {
@@ -557,7 +557,7 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     const keyringCopy = join(signatureDirectory, "pubring.kbx");
     await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
     await writeFile(keyringCopy, keyringBytes, { flag: "wx", mode: 0o600 });
-    (dependencies.verifyPlanSignature ?? verifyMappingSignature)(planBytes,
+    await (dependencies.verifyPlanSignature ?? verifyMappingSignature)(planBytes,
       signatureCopy, keyringCopy, paths.apiPlanSignerFingerprint);
   } finally {
     await rm(signatureDirectory, { recursive: true, force: true });
@@ -590,7 +590,7 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     .find((volume) => volume.name === "keyring-input")?.secret?.secretName;
   if (typeof approvalSecretName !== "string" || approvalSecretName.length === 0
     || typeof keyringSecretName !== "string" || keyringSecretName.length === 0
-    || !apiPod.metadata?.uid || !apiPod.metadata?.resourceVersion) {
+    || !apiPod.metadata?.uid) {
     throw new Error("Approved API Pod has no stable approval inputs");
   }
   const getSecret = async (name) => {
@@ -631,11 +631,26 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   } catch {
     throw new Error("Unable to re-read approved API Pod");
   }
+  const initialApiStatus = apiPod.status.containerStatuses.find((entry) => entry.name === "api");
+  const currentApiStatus = currentPod.status?.containerStatuses?.find((entry) => entry.name === "api");
   if (currentPod.kind !== "Pod"
     || currentPod.metadata?.uid !== apiPod.metadata.uid
-    || currentPod.metadata?.resourceVersion !== apiPod.metadata.resourceVersion
-    || currentPod.status?.containerStatuses?.[0]?.containerID
-      !== apiPod.status.containerStatuses[0].containerID) {
+    || currentPod.metadata?.name !== apiPod.metadata.name
+    || currentPod.metadata?.namespace !== apiPod.metadata.namespace
+    || currentPod.metadata?.deletionTimestamp
+    || !isDeepStrictEqual(currentPod.metadata?.ownerReferences, apiPod.metadata.ownerReferences)
+    || !isDeepStrictEqual(currentPod.metadata?.labels, apiPod.metadata.labels)
+    || !isDeepStrictEqual(currentPod.metadata?.annotations ?? {}, apiPod.metadata.annotations ?? {})
+    || !currentPod.spec
+    || !isDeepStrictEqual(securityRelevantPodSpec(currentPod.spec, true),
+      securityRelevantPodSpec(apiPod.spec, true))
+    || currentPod.status?.containerStatuses?.length !== 1
+    || currentApiStatus?.containerID !== initialApiStatus.containerID
+    || currentApiStatus?.restartCount !== initialApiStatus.restartCount
+    || currentApiStatus?.imageID !== initialApiStatus.imageID
+    || currentApiStatus?.ready !== true
+    || currentPod.status?.initContainerStatuses?.find((entry) => entry.name === "stage-approval")
+      ?.containerID !== apiPod.status.initContainerStatuses[0].containerID) {
     throw new Error("Approved API Pod changed during observation");
   }
   return { ...observed, format: "tr-helm-live-workload-observation-v2",
