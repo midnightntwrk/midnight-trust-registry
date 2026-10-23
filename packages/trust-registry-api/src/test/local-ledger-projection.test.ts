@@ -368,10 +368,10 @@ describe("local ledger-bound API source", () => {
       ] as const) {
         const response = await fetch(`${url}${path}`, { method: "POST",
           headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        expect(response.status, path).toBe(503);
+        expect(response.status, path).toBe(501);
         expect(response.headers.get("cache-control")).toBe("no-store");
-        expect(await response.json()).toMatchObject({ status: 503,
-          type: expect.stringMatching(/historical-projection-unavailable$/u) });
+        expect(await response.json()).toMatchObject({ status: 501,
+          type: expect.stringMatching(/historical-decisions-out-of-scope$/u) });
       }
       expect(readCount).toBe(1);
       const raw = await readFile(snapshotPath, "utf8");
@@ -417,9 +417,10 @@ describe("local ledger-bound API source", () => {
         body: JSON.stringify({ entity_id: "did:example:issuer", authority_id: snapshot.registry.registryDid,
           action: "issue", resource: "credential-family" }),
       });
-      expect(trqp.status).toBe(503);
+      expect(trqp.status).toBe(501);
       expect(trqp.headers.get("cache-control")).toBe("no-store");
-      expect(await trqp.json()).toMatchObject({ status: 503, title: "historical projection unavailable" });
+      expect(await trqp.json()).toMatchObject({ status: 501,
+        title: "historical decisions are outside the local 0.1.0 profile" });
       expect(readCount).toBe(9);
     } finally {
       const localServer = server;

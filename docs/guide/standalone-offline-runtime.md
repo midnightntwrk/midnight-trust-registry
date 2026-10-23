@@ -1309,7 +1309,16 @@ with injected snapshots is not local deployment or restore evidence.
 3. Run issuer, verifier, auditor, maintainer, and recognition actor journeys
    through the self-hosted API and browser surfaces. Test wallet funding,
    proofs, DID resolution, status checks, finalized evidence, and TRQP
-   projection with no public endpoint calls. Reject stale, substituted, or
+   metadata projection with no public endpoint calls. The local 0.1.0 profile
+   supports current decisions only: historical authorization, recognition, and
+   TRQP decision/evidence routes must return the explicit out-of-scope problem.
+   After each governed mutation, drain the API, authenticate finalized readback,
+   independently review the replacement snapshot and complete sequence map,
+   detach-sign a new plan, switch to an immutable versioned plan/snapshot set,
+   and restart. Verify startup, `/health`, and current actor reads before
+   reopening traffic. A failed rotation leaves the API unavailable; do not
+   restart with a stale plan or a fixture source. Capture this sequence as live
+   offline evidence, not as a simulator test. Reject stale, substituted, or
    unavailable trust data rather than silently treating it as valid.
 4. Restart node, indexer, prover, and API independently. Verify persistent
    keys, wallet state, ledger, receipts, and historical evidence survive.

@@ -43,8 +43,9 @@ approved digest or the finalized Compact projection. The CLI constructs these
 inputs from a reviewer-signed runtime plan and the local checkpoint/indexer
 reader. Current-map coverage does not prove that a historical evidence archive
 contains every transition. In local-ledger mode, historical authorization and
-recognition evaluation plus TRQP decision/evidence routes return 503 until a
-complete checkpoint-bound history replay is available. Fixture modes retain
+recognition evaluation plus TRQP decision/evidence routes return 501 with
+`historical-decisions-out-of-scope`. They are deferred from the local-only
+0.1.0 profile, not temporarily unavailable current decisions. Fixture modes retain
 their development behavior. This source still has only simulator and
 test-double coverage, not
 proof of a real local-ledger deployment, finalized readback, offline actor
@@ -100,6 +101,18 @@ signed plan and snapshot become stale until an independently reviewed
 replacement is signed and installed. `/health` fails closed during that gap;
 the local Helm readiness probe uses this endpoint. This manual rotation has
 not been exercised as a live local-ledger actor journey.
+For each governed mutation, stop or drain query traffic, wait for an independently
+authenticated finalized checkpoint, prepare a new snapshot and complete ordered
+sequence timestamp map, and have the reviewer inspect the exact source, install,
+genesis, contract, checkpoint, snapshot digest, map and validity window before
+detached-signing a new canonical plan. Install the new snapshot, plan and signature
+as one immutable versioned set; change the service's paths to that set and restart
+the API. Do not overwrite a running plan or snapshot in place. Startup must pass
+signature, pin and finalized-readback checks, then `/health` and current actor
+queries must pass before restoring traffic. If any check fails, leave the API
+unavailable and reconcile the finalized ledger; never roll back to a plan whose
+governance count is stale or restart in fixture mode. Preserve both signed versions
+for audit. This is an operator procedure, not an automated signer or live test.
 All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
 and browsers are not instructed to reuse stale authorization decisions.
 With `--serve-portals`, the API serves packaged admin and applicant assets at

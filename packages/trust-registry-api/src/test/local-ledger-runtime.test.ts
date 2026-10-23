@@ -129,6 +129,14 @@ describe("approved local-ledger API runtime", () => {
       expect(() => assertApprovedPlanCoversGovernanceCount(approved, count))
         .toThrow(/do not cover the finalized governance count/u);
     }
+    const rotated = validateLocalLedgerRuntimePlan({ ...approved,
+      snapshotSha256: "a".repeat(64),
+      sequenceTimestamps: { ...approved.sequenceTimestamps,
+        "2": new Date().toISOString() },
+    });
+    expect(() => assertApprovedPlanCoversGovernanceCount(approved, 2n)).toThrow();
+    expect(() => assertApprovedPlanCoversGovernanceCount(rotated, 2n)).not.toThrow();
+    expect(() => assertApprovedPlanCoversGovernanceCount(rotated, 3n)).toThrow();
   });
 
   it("requires an actual detached reviewer signature and exact install bytes", async () => {

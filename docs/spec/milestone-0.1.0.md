@@ -15,7 +15,8 @@ From a clean install, an operator can run a self-hosted Midnight ledger journey
 in which a `did:midnight` applicant proves eligibility with a Midnight VC/VP,
 an authorized evidence verifier signs a commitment, a quorum of maintainers
 approves the exact application, an epoch anchors the decision, and a relying
-party independently verifies a current and historical scoped trust answer.
+party independently verifies a current scoped trust answer. Historical decision
+routes are deferred from this local-only RC.
 The same journey MUST expose applicant, maintainer, and query operations through
 the documented API and local applications. Negative cases MUST fail at the
 boundary where the violated rule is enforced.
@@ -36,7 +37,7 @@ and Ledger 8 synchronous cross-contract calls are outside this milestone.
 | Governance | Publish versioned eligibility, voting, emergency, audit, and retention rules | Registry policy and its anchor |
 | Federation | Optionally authenticate a registry publisher; never grant membership implicitly | External trust chain plus local recognition |
 | Registry | Commit application decisions, roles, scopes, evidence hashes, signer sets, and epochs | Trust Registry Compact state |
-| Query | Return current/historical decisions with verifiable evidence and explicit failures | Client/API projection of registry state |
+| Query | Return current finalized decisions with verifiable evidence and explicit failures; reject historical decisions | Client/API projection of registry state |
 | Credential | Verify applicant VC/VP and later issuer VC/status evidence | `midnight-verifiable-credentials` |
 | DID | Resolve identifiers and assertion methods, including historical keys | `midnight-did` |
 
@@ -94,7 +95,7 @@ consider an audit request, never permission to release data.
 | UC-09 | Maintainers suspend, revoke, or archive | Action-specific threshold and timestamped event; current queries change | Wrong threshold, invalid transition, or silent deletion of history |
 | UC-10 | Maintainers recognize external authority | Exact action/resource/authority/registry scope and independent recognition evidence | Recognition used as local issuer, verifier, or admin grant |
 | UC-11 | Operator publishes an epoch | State/event/policy roots and signer evidence anchor a bounded view | Invalid root, signer, policy, or unpublished/unfinalized view |
-| UC-12 | Relying party evaluates at time T | Active scoped grant, accepted epoch, DID/key history, policy snapshot, and proof all verify | Wrong registry, scope, time, status, Merkle path, or stale epoch |
+| UC-12 | Relying party evaluates current trust | Active scoped grant, accepted finalized epoch, current DID/key and policy snapshot, and proof all verify | Wrong registry, scope, status, Merkle path, stale epoch, or historical request |
 | UC-13 | Holder presents a credential | Verifier checks VC proof, VC status, issuer grant at issuance, and applicable current policy | Registry lookup used as substitute for VC proof or status |
 | UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant, exact request purpose, and matching active current ledger record | Blanket data access or holder tracking through the registry |
 | UC-15 | VC consumer installs a registry decision | A governed issuer or verifier grant yields a VC-compatible descriptor and authority proof accepted under a pinned local anchor | Witness-supplied authority, wrong network/contract, method/key/scope substitution, stale sequence, or revoked-to-active replay |
@@ -275,9 +276,10 @@ policy root against current policy, and evaluates the grant at the query time.
 An unrelated statement's later epoch does not by itself supersede an unchanged
 grant. Requiring the latest publication of an otherwise unchanged statement
 needs an authenticated per-statement epoch index, not the ledger's global
-latest-epoch ID. A historical answer names the evaluation time and
-the epoch or ledger view that establishes it; it does not silently substitute
-today's policy or keys. For a credential issued at time T, an issuance-time
+latest-epoch ID. The local 0.1.0 API MUST reject historical authorization,
+recognition, and TRQP decision/evidence requests rather than infer history from
+current maps or an unauthenticated indexer cursor. Historical answers require a
+future checkpoint-bound transition replay profile. For a credential issued at time T, an issuance-time
 issuer grant is necessary but insufficient: the verifier also checks the VC
 signature and status under VC rules and any current policy restriction. A
 revoked issuer cannot issue new credentials. Whether a revocation invalidates

@@ -826,9 +826,9 @@ export const createTrustRegistryApiServer = (
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const requireCompleteHistoricalProjection = (): void => {
     if (options.source.mode === "local-ledger") {
-      throw jsonProblem(problemBaseUri, "historical-projection-unavailable", 503,
-        "historical projection unavailable",
-        "Local ledger history has not been proven complete at a finalized checkpoint.");
+      throw jsonProblem(problemBaseUri, "historical-decisions-out-of-scope", 501,
+        "historical decisions are outside the local 0.1.0 profile",
+        "Only current finalized authorization and recognition lookups are supported.");
     }
   };
   const trqpAdapter = new TrustRegistryTrqpAdapter(
