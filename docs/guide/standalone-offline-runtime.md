@@ -183,6 +183,10 @@ or cluster qualification is implied by this CLI option.
 
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
+The full-artifact preflight requires the packaged Compact source bytes to match
+the current source. That comparison catches a stale source copy but does not
+prove that the compiler outputs or proving keys came from those bytes;
+independently review the build provenance before release approval.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
 three digest-pinned Compose images, copies and hashes both runtime Compose
 files, writes the release and install manifests,
