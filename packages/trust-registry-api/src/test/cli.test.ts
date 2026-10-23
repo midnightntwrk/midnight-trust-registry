@@ -15,6 +15,8 @@ describe("API CLI binding", () => {
       [...localArgs, "--snapshot", "fixture.json"],
       [...localArgs, "--workspace", "workspace.json"],
       [...localArgs, "--unsafe-demo-mutations"],
+      ["serve", "--snapshot", "fixture.json", "--serve-portals"],
+      ["serve", "--workspace", "workspace.json", "--serve-portals"],
       ["serve", "--snapshot", "fixture.json", "--local-ledger-signature", "/run/api-plan.sig"],
     ]) {
       expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
@@ -28,6 +30,7 @@ describe("API CLI binding", () => {
     expect(parseTrustRegistryApiCliArgs([
       ...localArgs, "--host", "0.0.0.0", "--cluster-bind",
     ]).clusterBind).toBe(true);
+    expect(parseTrustRegistryApiCliArgs([...localArgs, "--serve-portals"]).servePortals).toBe(true);
     for (const args of [
       [...localArgs, "--cluster-bind"],
       ["serve", "--snapshot", "fixture.json", "--host", "0.0.0.0", "--cluster-bind"],

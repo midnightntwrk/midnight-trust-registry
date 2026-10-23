@@ -4,6 +4,24 @@ import { describe, expect, it, vi } from "vitest";
 import { canUsePrivateEvidenceHost, createApplicantPortalApp, escapeHtml } from "../app.js";
 
 describe("trust registry applicant portal app", () => {
+  it("uses the API origin when served from the packaged applicant path", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL): Promise<Response> => Response.json({}));
+    const storage = { getItem: vi.fn(() => "https://saved.example"), setItem: vi.fn() } as unknown as Storage;
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/applicant/?apiBase=https://outside.example"),
+      storage, fetchImpl: fetchImpl as typeof fetch,
+    });
+    const input = root.querySelector<HTMLInputElement>("[data-api-base-form] [name='apiBase']");
+    expect(input?.value).toBe("https://registry.example");
+    expect(input?.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>("[data-api-base-form] button[type='submit']")?.disabled).toBe(true);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+    expect(fetchImpl.mock.calls.every(([url]) => String(url).startsWith("https://registry.example/"))).toBe(true);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
   it("exports a historical claim without presenting the API flag as verified trust", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);

@@ -34,6 +34,24 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("uses the API origin when served from the packaged admin path", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL): Promise<Response> => Response.json({}));
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("https://registry.example/admin/?apiBase=https://outside.example"),
+      storage: window.localStorage,
+      fetchImpl: fetchImpl as typeof fetch,
+      confirm: () => false,
+    });
+    const input = root.querySelector<HTMLInputElement>("[data-api-base-form] [name='apiBase']");
+    expect(input?.value).toBe("https://registry.example");
+    expect(input?.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>("[data-api-base-form] button[type='submit']")?.disabled).toBe(true);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+    expect(fetchImpl.mock.calls.every(([url]) => String(url).startsWith("https://registry.example/"))).toBe(true);
+  });
+
   it("loads auditor cards and confirms actions and epoch publication before POST", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);

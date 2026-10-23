@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { apiPayloadInventory, assertArchiveMatchesCommit, assertLightApiPayload, stripPnpmInstallMetadata,
-  stripPublishedDidProofArtifacts,
+  stripPublishedDidProofArtifacts, stageApiPortalAssets,
   validateApiImageInput } from "./build-api-runtime-image.mjs";
 
 const base = `docker.io/library/node@sha256:${"a".repeat(64)}`;
@@ -52,6 +52,32 @@ test("API payload contains runtime code but no proving keys", async () => {
     await rm(join(app, "absolute-inside"));
     await writeFile(join(app, "native-darwin-arm64.node"), "native\n");
     await assert.rejects(apiPayloadInventory(root, "linux/arm64"), /native addon/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("API image stages both clean portal asset sets under one origin", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-api-portals-"));
+  try {
+    const source = join(root, "source");
+    const context = join(root, "context");
+    for (const packageName of ["trust-registry-admin-console", "trust-registry-applicant-portal"]) {
+      const dist = join(source, "packages", packageName, "dist");
+      await mkdir(dist, { recursive: true });
+      await writeFile(join(dist, "index.html"), "<html>portal</html>");
+      await writeFile(join(dist, "index.js"), "export {};");
+      await writeFile(join(dist, "index.js.map"), "private source map");
+    }
+    const staged = await stageApiPortalAssets(source, context);
+    assert.equal(staged.admin.fileCount, 2);
+    assert.equal(staged.applicant.fileCount, 2);
+    assert.match(staged.admin.sha256, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(await readdir(join(context, "app/portals/admin")), ["index.html", "index.js"]);
+    assert.equal(await readFile(join(context, "app/portals/applicant/index.html"), "utf8"), "<html>portal</html>");
+    await assert.rejects(stageApiPortalAssets(source, context), /already exists/u);
+    await writeFile(join(source, "packages/trust-registry-admin-console/dist/private.txt"), "private");
+    await assert.rejects(stageApiPortalAssets(source, join(root, "fresh")), /Unexpected static build output/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

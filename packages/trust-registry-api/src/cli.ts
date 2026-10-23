@@ -10,15 +10,18 @@ import {
   loadApprovedLocalLedgerRuntimePlan,
 } from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
+import { createPortalStaticHandler } from "./portal-static.js";
 
 const HELP_TEXT = `Usage:
   trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
     [--local-ledger-signature PATH --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT]
     [--cluster-bind]
+    [--serve-portals]
     [--unsafe-demo-mutations]
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
+--serve-portals serves packaged admin/applicant assets from the API origin.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -37,6 +40,7 @@ export type TrustRegistryApiCliOptions = {
   localLedgerKeyringDirectory?: string;
   localLedgerReviewerFingerprint?: string;
   clusterBind?: boolean;
+  servePortals?: boolean;
   unsafeDemoMutations?: boolean;
 };
 
@@ -117,6 +121,9 @@ export const parseTrustRegistryApiCliArgs = (
       case "--cluster-bind":
         options.clusterBind = true;
         break;
+      case "--serve-portals":
+        options.servePortals = true;
+        break;
       case "--help":
       case "-h":
         throw new Error(HELP_TEXT);
@@ -148,6 +155,9 @@ export const parseTrustRegistryApiCliArgs = (
     && (options.localLedgerPlanPath === undefined || options.host !== "0.0.0.0")) {
     throw new Error("--cluster-bind requires signed local-ledger mode on 0.0.0.0");
   }
+  if (options.servePortals === true && options.localLedgerPlanPath === undefined) {
+    throw new Error("--serve-portals requires signed local-ledger mode");
+  }
   if (options.localLedgerPlanPath !== undefined
     && options.clusterBind !== true && !["127.0.0.1", "::1"].includes(options.host)) {
     throw new Error("Unqualified local-ledger mode requires a loopback host");
@@ -170,6 +180,9 @@ export const runTrustRegistryApiCli = async (
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<void> => {
   const options = parseTrustRegistryApiCliArgs(argv);
+  const portalHandler = options.servePortals === true
+    ? await createPortalStaticHandler("/app/portals")
+    : undefined;
   const source = options.localLedgerPlanPath !== undefined
     ? await (async () => {
       const plan = await loadApprovedLocalLedgerRuntimePlan({
@@ -192,6 +205,7 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(portalHandler === undefined ? {} : { nonApiGetHandler: portalHandler }),
     ...(options.clusterBind === true ? { corsPolicy: "none" as const } : {}),
     ...(options.unsafeDemoMutations === undefined ? {} : { allowUnsafeDemoMutations: options.unsafeDemoMutations }),
   });

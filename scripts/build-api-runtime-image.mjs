@@ -3,12 +3,12 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream, realpathSync } from "node:fs";
-import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { assertApprovedSourceEvidence, assertNoExportAttributes } from "./build-static-runtime-image.mjs";
+import { assertApprovedSourceEvidence, assertNoExportAttributes, staticAssetManifest } from "./build-static-runtime-image.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9.:/_-]*@sha256:[0-9a-f]{64}$/u;
@@ -73,6 +73,30 @@ export async function assertLightApiPayload(directory) {
   if (topLevel.includes("src") || topLevel.includes("test")) {
     throw new Error("API runtime must not ship source or tests");
   }
+}
+
+export async function stageApiPortalAssets(source, context) {
+  const portals = {};
+  for (const [role, packageName] of [["admin", "trust-registry-admin-console"],
+    ["applicant", "trust-registry-applicant-portal"]]) {
+    const dist = join(source, "packages", packageName, "dist");
+    const selected = await staticAssetManifest(dist);
+    const destinationRoot = join(context, "app", "portals", role);
+    for (const asset of selected) {
+      const destination = join(destinationRoot, asset.path);
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(join(dist, asset.path), destination, { dereference: false,
+        errorOnExist: true, force: false });
+      await chmod(destination, 0o444);
+    }
+    const staged = await staticAssetManifest(destinationRoot);
+    if (JSON.stringify(staged) !== JSON.stringify(selected)) {
+      throw new Error(`${role} API portal assets differ from the clean build`);
+    }
+    portals[role] = { fileCount: staged.length,
+      sha256: createHash("sha256").update(JSON.stringify(staged)).digest("hex") };
+  }
+  return portals;
 }
 
 export async function stripPublishedDidProofArtifacts(directory) {
@@ -218,7 +242,9 @@ export async function buildApiRuntimeImage(input) {
     const cpu = input.platform === "linux/amd64" ? "x64" : "arm64";
     run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source, env });
     run("pnpm", ["exec", "turbo", "run", "build:light", "--filter",
-      "@midnight-ntwrk/trust-registry-api", "--cache=local:w,remote:"], { cwd: source, env });
+      "@midnight-ntwrk/trust-registry-api", "--filter",
+      "@midnight-ntwrk/trust-registry-admin-console", "--filter",
+      "@midnight-ntwrk/trust-registry-applicant-portal", "--cache=local:w,remote:"], { cwd: source, env });
     run("pnpm", ["--config.inject-workspace-packages=true", "--filter",
       "@midnight-ntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
       "--os", "linux", "--cpu", cpu, "--libc", "glibc", "--no-optional",
@@ -227,6 +253,7 @@ export async function buildApiRuntimeImage(input) {
     await stripPublishedDidProofArtifacts(context);
     await stripPnpmInstallMetadata(context);
     await assertLightApiPayload(context);
+    await stageApiPortalAssets(source, context);
     await writeFile(join(context, "app", "source-revision"), `${revision}\n`, { flag: "wx", mode: 0o444 });
     await cp(join(source, "deploy/runtime/Dockerfile.api"), join(context, "Dockerfile.api"));
     const payload = await apiPayloadInventory(context, input.platform);

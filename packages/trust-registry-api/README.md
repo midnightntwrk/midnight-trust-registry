@@ -61,6 +61,7 @@ trust-registry-api serve \
   --local-ledger-signature /run/trust-registry/api-plan.sig \
   --local-ledger-keyring /run/trust-registry/reviewer-keyring \
   --local-ledger-reviewer '<approved-40-character-GPG-signing-key-fingerprint>' \
+  --serve-portals \
   --host 127.0.0.1 --port 4400
 ```
 
@@ -81,6 +82,14 @@ missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
 All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
 and browsers are not instructed to reuse stale authorization decisions.
+With `--serve-portals`, the API serves packaged admin and applicant assets at
+`/admin/` and `/applicant/` on its own origin. Startup fails if either portal's
+HTML or JavaScript entry point is absent. In these paths the portals ignore
+stored or query-selected API URLs and use their current origin, so the
+applicant's private-evidence requests do not require cross-origin access.
+Do not put an ingress that routes those paths to a different image in front of
+this mode; TLS, authenticated exposure, and offline browser journeys still
+require deployment validation. Without the flag, the API does not serve portals.
 File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
 By default local-ledger mode binds only to loopback. Guarded `--cluster-bind` can
