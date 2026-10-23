@@ -144,6 +144,16 @@ or compact scripts, then validate the generated surface through tests.
 6. Push and open PRs against `develop` or the previous branch when stacking.
 7. Ask for second-opinion review when the change affects protocol, governance, package layout, Compact contracts, CI, or security boundaries.
 
+At each phase exit, inventory local worktrees, branches, containers, volumes,
+temporary build targets, and ignored artifacts. Remove obsolete worktrees and
+reproducible targets yourself only after checking Git status, unpublished
+commits, ownership, and whether any generated outputs are preserved in a
+verified bundle. Keep proving/verifier keys, signed install bundles, private
+approval evidence, and active ledger volumes. If an item cannot safely be
+removed, record exactly why it was retained; do not leave cleanup for the user
+or another agent. Never reset a worktree destructively to make it removable or
+touch sibling-project infrastructure.
+
 For issue-backed `0.1.0` product increments, target `milestone-0.1.0` rather
 than `develop` and follow [the milestone delivery harness](docs/plans/milestone-0.1.0-delivery-harness.md).
 Agent/operator merge into that branch is permitted only after green CI on the

@@ -2192,5 +2192,24 @@ blind retry. The proof-server URL lives in provider configuration outside this
 plan and remains a separate qualification concern. Hashing current mounted
 bytes does not prove which Python code was loaded at process start against a
 malicious host administrator. The existing v3 smoke bundle lacks this pin and
-remains unqualified; no v6 bundle has yet been built or independently approved
-on the local stack.
+remains unqualified. The final sentence of the earlier record preceded the
+later v6 build and does not describe the current candidate.
+
+As of signed source `33c9395bfb867d2038fc4e93f8712bbd296d5f0a`, the
+verified v6 install inventory SHA-256 is
+`4ff7a6cfe3767ba261cf3118a186d13ec9d4bf59568e8020b20507cb56f460ae`.
+The dedicated b12 node/indexer/prover bridge matched its private inputs and
+pinned image identities. A bridge-only canary denied HTTPS and DNS egress;
+this does not cover actors or runtime services. An installation-only relay
+matched pinned script SHA-256
+`93b92ca48b9c73361bdf8f8f0384f99c42eadda888751f58bfcc75cd2ad6b9d8`
+and returned the expected node genesis, GraphQL query type, and proof-server
+version over loopback. The relay was removed and the three services stopped;
+volumes and private b12 evidence were retained. The private review packet and
+pin are unsigned proposals. No wizard genesis approval, contract deployment,
+committee transition, deployed offline actor journey, or restore qualification
+has occurred. The v2 signed API plan and Helm plan/Secret/image observer are
+implemented and locally tested, but not deployed against this ledger. Keep
+the local RC gates open until independent genesis and committee approvals,
+finalized contract readback, offline actor journeys, recovery, and independent
+security review are actually observed.
