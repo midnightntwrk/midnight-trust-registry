@@ -244,6 +244,10 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
     deployment.spec.template.spec.dnsPolicy = "ClusterFirst";
     deployment.spec.template.spec.restartPolicy = "Always";
   }
+  const apiWorkload = workloads.items.find((item) => item.metadata.name === "tr-rc-tr-api");
+  for (const volume of apiWorkload.spec.template.spec.volumes.filter((item) => item.secret)) {
+    volume.secret.defaultMode = 288;
+  }
   const check = () => validateHelmRenderedWorkloadParity(renderedBytes, actualMappingBytes,
     actualScopeBytes, workloads);
   assert.equal(check(), hash(renderedBytes));

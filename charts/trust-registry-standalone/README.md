@@ -203,8 +203,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    automount, no host namespaces or hostPath volumes, RuntimeDefault seccomp,
    and dropped container capabilities without additions. API and portal root
    filesystems must remain read-only. It compares these Pod-spec fields with
-   the signed rendered Deployment templates, normalizing ordinary Kubernetes
-   defaults. It does **not** compare live Services, NetworkPolicies, PVCs,
+   the signed rendered Deployment templates, normalizing selected Kubernetes
+   defaults. A real-cluster check is still required to validate API-server
+   defaulting (including resource quantities, probe fields, and projected
+   volume modes) and annotation parity; synthetic tests do not establish it.
+   It does **not** compare live Services, NetworkPolicies, PVCs,
    Secrets, or unrelated workloads with the render. The two API queries are not
    one atomic snapshot; a separate, authenticated evidence capture is still
    needed for release review.
