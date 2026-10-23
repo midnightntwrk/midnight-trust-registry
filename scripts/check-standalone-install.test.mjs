@@ -155,6 +155,7 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
       verified = true;
     });
     assert.equal(verified, true);
+    assert.equal(result.packageManifestSha256, sha(await readFile(join(root, "release.json"))));
     assert.deepEqual(result.imageRoles, ["indexer", "node", "proof-server"]);
     assert.equal(result.images.length, 3);
     assert.ok(result.images.every((image) => image.configId === `sha256:${configDigest}`));

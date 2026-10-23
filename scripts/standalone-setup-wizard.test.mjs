@@ -182,6 +182,8 @@ async function fixture(format = "tr-standalone-install-v3") {
   const verifyBundle = async () => ({ sourceRevision,
     inventorySha256: createHash("sha256")
       .update(await readFile(join(bundle, "install-inventory.json"))).digest("hex"),
+    packageManifestSha256: createHash("sha256")
+      .update(await readFile(join(bundle, "release-manifest.json"))).digest("hex"),
     packageCount: 10, imageRoles: ["node", "indexer", "proof-server"],
     proofParameterCount: 18,
     images: images.map(({ role, reference }) => ({ role, reference,
@@ -1106,6 +1108,27 @@ test("wizard rejects a manifest substitution before reserving a deployment", asy
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision, changed: true }));
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, { verifyBundle }), /release manifest disagrees/u);
   assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
+});
+
+test("deployment binds the release manifest bytes read by the bundle verifier", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  await approveCommittee(f);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const bundleManifestPath = join(record.install.bundle, "release-manifest.json");
+  const original = await readFile(bundleManifestPath);
+  await writeFile(bundleManifestPath, JSON.stringify({ sourceRevision, substituted: true }));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: async () => {
+      const verified = await f.verifyBundle();
+      await writeFile(bundleManifestPath, original);
+      return verified;
+    },
+    deploy: async () => assert.fail("unverified manifest reached provider"),
+  }), /release manifest changed since bundle verification/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
 test("wizard reserves once before provider execution and never retries an unknown outcome", async () => {

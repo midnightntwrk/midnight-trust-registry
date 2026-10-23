@@ -60,6 +60,15 @@ function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message)
   return hash;
 }
 
+async function verifiedPackageManifestBytes(bundle, inventory, verified) {
+  const manifestBytes = await regularBytes(join(bundle, JSON.parse(inventory).packageManifest));
+  if (!SHA256.test(verified?.packageManifestSha256 ?? "")
+    || sha256(manifestBytes) !== verified.packageManifestSha256) {
+    throw new Error("Installed release manifest changed since bundle verification");
+  }
+  return manifestBytes;
+}
+
 async function regularBytes(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
@@ -151,6 +160,7 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   const inventoryDocument = JSON.parse(inventory);
   requireVerifiedInventoryBytes(verified, inventory, undefined,
     "Verified install inventory changed during setup");
+  await verifiedPackageManifestBytes(bundle, inventory, verified);
   if (inventoryDocument.sourceRevision !== verified.sourceRevision) {
     throw new Error("Verified install inventory changed during setup");
   }
@@ -870,8 +880,7 @@ export async function approveStandaloneCommitteeDeployment(
     }
     requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
       "Installed inventory changed since committee approval");
-    const manifestPath = join(record.install.bundle, JSON.parse(inventory).packageManifest);
-    const manifestBytes = await regularBytes(manifestPath);
+    const manifestBytes = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const stagedManifestBytes = await regularBytes(deployment.stagedPlan.releaseManifestPath);
     if (sha256(manifestBytes) !== sha256(stagedManifestBytes)) {
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
@@ -1015,8 +1024,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
       "Installed bundle changed since setup verification");
     await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
-    const packageManifest = JSON.parse(inventory).packageManifest;
-    const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
+    const bundleManifestBytes = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const planManifestBytes = await regularBytes(plan.releaseManifestPath);
     if (sha256(bundleManifestBytes) !== sha256(planManifestBytes)) {
       throw new Error("Deployment release manifest disagrees with the verified install bundle");
@@ -1077,8 +1085,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     }
     requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
       "Installed bundle changed since setup verification");
-    const packageManifest = JSON.parse(inventory).packageManifest;
-    const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
+    const bundleManifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const planManifest = await regularBytes(plan.releaseManifestPath);
     if (sha256(bundleManifest) !== sha256(planManifest)) {
       throw new Error("Deployment release manifest disagrees with the verified install bundle");
@@ -1170,8 +1177,7 @@ async function approvedInsertionPlan(root, record, planPath, dependencies) {
   }
   requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
     "Installed bundle changed since setup verification");
-  const packageManifest = JSON.parse(inventory).packageManifest;
-  const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
+  const bundleManifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
   const planManifest = await regularBytes(plan.releaseManifestPath);
   if (sha256(bundleManifest) !== sha256(planManifest)) {
     throw new Error("Insertion release manifest disagrees with the verified install bundle");
@@ -1313,8 +1319,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Installed bundle source revision changed since committee approval");
     }
-    const manifestPath = join(record.install.bundle, JSON.parse(inventory).packageManifest);
-    const manifestBytes = await regularBytes(manifestPath);
+    const manifestBytes = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const deployedManifestBytes = await regularBytes(staged.releaseManifestPath);
     if (sha256(manifestBytes) !== sha256(deployedManifestBytes)) {
       throw new Error("Staged deployment manifest disagrees with approved install bytes");

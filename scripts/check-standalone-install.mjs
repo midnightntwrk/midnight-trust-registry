@@ -263,9 +263,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (new Set(inventory.images.map((image) => image.archive)).size !== inventory.images.length) {
     throw new Error("Each container role requires a distinct pinned archive");
   }
-  const packageManifest = JSON.parse(await readFile(
-    await regularBundleFile(root, inventory.packageManifest), "utf8",
-  ));
+  const packageManifestBytes = await readFile(await regularBundleFile(root, inventory.packageManifest));
+  const packageManifestSha256 = createHash("sha256").update(packageManifestBytes).digest("hex");
+  const packageManifest = JSON.parse(packageManifestBytes.toString("utf8"));
   if (packageManifest.sourceRevision !== inventory.sourceRevision) {
     throw new Error("Standalone install source revision disagrees with the package manifest");
   }
@@ -378,6 +378,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   return {
     sourceRevision: inventory.sourceRevision,
     inventorySha256,
+    packageManifestSha256,
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,
