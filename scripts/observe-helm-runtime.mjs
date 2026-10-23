@@ -2,10 +2,12 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
+import yaml from "js-yaml";
 
 import { checkSignedHelmCriFleet, validateApprovedNodeScope } from "./check-helm-cri-fleet.mjs";
 import { validateSignedImageMapping } from "./collect-helm-cri-images.mjs";
@@ -24,6 +26,18 @@ function exactNames(actual, expected, description) {
   }
 }
 
+function probeWithDefaults(probe) {
+  if (probe === undefined || probe === null) return null;
+  return {
+    ...probe,
+    initialDelaySeconds: probe.initialDelaySeconds ?? 0,
+    timeoutSeconds: probe.timeoutSeconds ?? 1,
+    periodSeconds: probe.periodSeconds ?? 10,
+    successThreshold: probe.successThreshold ?? 1,
+    failureThreshold: probe.failureThreshold ?? 3,
+  };
+}
+
 function securityRelevantContainer(container) {
   return {
     name: container?.name,
@@ -33,14 +47,16 @@ function securityRelevantContainer(container) {
     args: container?.args ?? [],
     env: container?.env ?? [],
     envFrom: container?.envFrom ?? [],
-    ports: container?.ports ?? [],
-    volumeMounts: container?.volumeMounts ?? [],
+    ports: (container?.ports ?? []).map((port) => ({ ...port, protocol: port.protocol ?? "TCP" })),
+    volumeMounts: (container?.volumeMounts ?? []).map((mount) => ({
+      ...mount, readOnly: mount.readOnly ?? false,
+    })),
     volumeDevices: container?.volumeDevices ?? [],
     securityContext: container?.securityContext ?? {},
     resources: container?.resources ?? {},
-    startupProbe: container?.startupProbe ?? null,
-    readinessProbe: container?.readinessProbe ?? null,
-    livenessProbe: container?.livenessProbe ?? null,
+    startupProbe: probeWithDefaults(container?.startupProbe),
+    readinessProbe: probeWithDefaults(container?.readinessProbe),
+    livenessProbe: probeWithDefaults(container?.livenessProbe),
     lifecycle: container?.lifecycle ?? null,
     workingDir: container?.workingDir ?? "",
     stdin: container?.stdin ?? false,
@@ -53,7 +69,10 @@ function securityRelevantPodSpec(spec) {
   return {
     containers: (spec?.containers ?? []).map(securityRelevantContainer),
     initContainers: (spec?.initContainers ?? []).map(securityRelevantContainer),
-    volumes: spec?.volumes ?? [],
+    volumes: (spec?.volumes ?? []).map((volume) => volume.persistentVolumeClaim
+      ? { ...volume, persistentVolumeClaim: { ...volume.persistentVolumeClaim,
+        readOnly: volume.persistentVolumeClaim.readOnly ?? false } }
+      : volume),
     nodeSelector: spec?.nodeSelector ?? {},
     securityContext: spec?.securityContext ?? {},
     automountServiceAccountToken: spec?.automountServiceAccountToken ?? true,
@@ -244,6 +263,61 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
     qualification: "not-established: workload spec parity is not rendered-chart parity, offline actor, or restore evidence" };
 }
 
+export function validateHelmRenderedWorkloadParity(renderedBytes, mappingBytes, scopeBytes, workloads) {
+  const mapping = validateSignedImageMapping(JSON.parse(mappingBytes));
+  const scope = validateApprovedNodeScope(JSON.parse(scopeBytes), mappingBytes);
+  if (scope.format !== "tr-helm-approved-node-scope-v2"
+    || sha256(renderedBytes) !== scope.renderedManifestSha256) {
+    throw new Error("Rendered Helm manifest differs from the signed v2 scope");
+  }
+  const documents = yaml.loadAll(renderedBytes.toString("utf8")).filter(Boolean);
+  const rendered = documents.filter((item) => item?.kind === "Deployment");
+  const live = workloads.items.filter((item) => item.kind === "Deployment");
+  const expectedNames = mapping.images.map((image) =>
+    `${scope.releaseName}-tr-${COMPONENTS.get(image.role)}`);
+  exactNames(rendered.map((item) => item?.metadata?.name), expectedNames,
+    "Rendered Helm deployments");
+  exactNames(live.map((item) => item?.metadata?.name), expectedNames,
+    "Live Helm deployments");
+  for (const image of mapping.images) {
+    const name = `${scope.releaseName}-tr-${COMPONENTS.get(image.role)}`;
+    const expected = rendered.find((item) => item.metadata.name === name);
+    const actual = live.find((item) => item.metadata.name === name);
+    const renderedSpec = expected?.spec?.template?.spec;
+    const liveSpec = actual?.spec?.template?.spec;
+    if ((expected.metadata.namespace !== undefined && expected.metadata.namespace !== scope.namespace)
+      || actual.metadata.namespace !== scope.namespace
+      || expected.spec?.replicas !== 1 || actual.spec?.replicas !== 1
+      || expected.spec?.strategy?.type !== "Recreate"
+      || actual.spec?.strategy?.type !== "Recreate"
+      || renderedSpec?.containers?.length !== 1
+      || renderedSpec.containers[0].image !== image.reference
+      || !isDeepStrictEqual(securityRelevantPodSpec(renderedSpec),
+        securityRelevantPodSpec(liveSpec))) {
+      throw new Error(`Live Deployment differs from the signed Helm render: ${name}`);
+    }
+  }
+  return scope.renderedManifestSha256;
+}
+
+async function boundedRenderedManifest(path) {
+  if (typeof path !== "string" || !path.startsWith("/")) {
+    throw new Error("An absolute signed Helm render path is required");
+  }
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > 8 * 1024 * 1024) {
+      throw new Error("Signed Helm render must be a bounded regular file");
+    }
+    const bytes = await file.readFile();
+    if (bytes.length !== stat.size) throw new Error("Signed Helm render changed during read");
+    return bytes;
+  } finally {
+    await file.close();
+  }
+}
+
 export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   const fleet = await (dependencies.checkFleet ?? checkSignedHelmCriFleet)(paths);
   const [mappingBytes, scopeBytes] = await Promise.all([
@@ -251,6 +325,11 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   ]);
   const scope = validateApprovedNodeScope(JSON.parse(scopeBytes), mappingBytes);
   if (fleet.scopeSha256 !== sha256(scopeBytes)) throw new Error("Approved scope changed after fleet check");
+  const renderedBytes = await boundedRenderedManifest(paths.renderedManifestPath);
+  if (scope.format !== "tr-helm-approved-node-scope-v2"
+    || scope.renderedManifestSha256 !== sha256(renderedBytes)) {
+    throw new Error("Signed v2 scope does not approve the exact Helm render");
+  }
   if (typeof paths.kubeconfig !== "string" || !paths.kubeconfig.startsWith("/")
     || typeof paths.kubeContext !== "string" || paths.kubeContext.length === 0) {
     throw new Error("Explicit absolute kubeconfig and Kubernetes context are required");
@@ -265,18 +344,24 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   const workloads = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
     "get", "deployments,replicasets,pods", "--selector", selector,
     "--output=json", "--chunk-size=0"], options)).stdout);
-  return validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, nodes, workloads,
+  const observed = validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, nodes, workloads,
     paths.kubeContext);
+  const renderedManifestSha256 = validateHelmRenderedWorkloadParity(renderedBytes,
+    mappingBytes, scopeBytes, workloads);
+  return { ...observed, format: "tr-helm-live-workload-observation-v2",
+    renderedManifestSha256,
+    qualification: "not-established: signed render parity is not live network policy, offline actor, or restore evidence" };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 10) {
-    throw new Error("Usage: node scripts/observe-helm-runtime.mjs <preflight-paths.json> <scope.json> <scope.sig> <scope-keyring> <scope-signer-fingerprint> <receipts-dir> <absolute-kubeconfig> <kube-context>");
+  if (process.argv.length !== 11) {
+    throw new Error("Usage: node scripts/observe-helm-runtime.mjs <preflight-paths.json> <scope.json> <scope.sig> <scope-keyring> <scope-signer-fingerprint> <receipts-dir> <absolute-kubeconfig> <kube-context> <approved-render.yaml>");
   }
   const [preflightPathsFile, scopePath, scopeSignaturePath, scopeKeyringPath,
-    scopeSignerFingerprint, receiptsDirectory, kubeconfig, kubeContext] = process.argv.slice(2);
+    scopeSignerFingerprint, receiptsDirectory, kubeconfig, kubeContext,
+    renderedManifestPath] = process.argv.slice(2);
   const preflightPaths = JSON.parse(await readFile(preflightPathsFile, "utf8"));
   console.log(JSON.stringify(await observeSignedHelmRuntime({ preflightPaths, scopePath,
     scopeSignaturePath, scopeKeyringPath, scopeSignerFingerprint, receiptsDirectory,
-    kubeconfig, kubeContext }), null, 2));
+    kubeconfig, kubeContext, renderedManifestPath }), null, 2));
 }

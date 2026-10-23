@@ -14,6 +14,7 @@ import { verifyMappingSignature } from "./verify-helm-mapping-signature.mjs";
 const DNS_LABEL = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u;
 const RELEASE = /^[a-z](?:[-a-z0-9]*[a-z0-9])?$/u;
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function parseIsoTime(value) {
@@ -36,7 +37,9 @@ function validDnsName(value, maxLength = 253) {
 
 export function validateApprovedNodeScope(scope, mappingBytes) {
   const mapping = validateSignedImageMapping(JSON.parse(mappingBytes));
-  if (scope?.format !== "tr-helm-approved-node-scope-v1"
+  if (!["tr-helm-approved-node-scope-v1", "tr-helm-approved-node-scope-v2"].includes(scope?.format)
+    || (scope.format === "tr-helm-approved-node-scope-v2"
+      && !SHA256.test(scope.renderedManifestSha256 ?? ""))
     || scope.sourceRevision !== mapping.sourceRevision
     || scope.mappingSha256 !== sha256(mappingBytes)
     || typeof scope.namespace !== "string" || scope.namespace.length > 63

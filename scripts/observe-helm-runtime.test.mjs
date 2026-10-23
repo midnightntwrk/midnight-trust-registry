@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
 
 import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
-  validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
+  validateHelmRenderedWorkloadParity, validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const component = (role) => role === "proofServer" ? "proof-server" : role;
@@ -51,7 +51,7 @@ function fixture() {
     workloads.items.push({ kind: "Deployment",
       metadata: { name: `tr-rc-tr-${name}`, namespace: "trust-registry", uid: `dep-${name}`,
         generation: 1, labels },
-      spec: { replicas: 1, selector: { matchLabels: labels },
+      spec: { replicas: 1, strategy: { type: "Recreate" }, selector: { matchLabels: labels },
         template: { metadata: { labels }, spec } },
       status: { observedGeneration: 1, readyReplicas: 1, availableReplicas: 1,
         updatedReplicas: 1 } });
@@ -219,6 +219,43 @@ test("accepts all six actual chart Pod templates with ordinary API-server defaul
   }
 });
 
+test("binds live Deployment Pod specs to the signed exact Helm render", () => {
+  const chart = join(import.meta.dirname, "..", "charts", "trust-registry-standalone");
+  const values = join(chart, "tests", "fixture-values.yaml");
+  const result = spawnSync("helm", ["template", "tr-rc", chart, "--namespace", "trust-registry",
+    "--values", values], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr);
+  const renderedBytes = Buffer.from(result.stdout);
+  const deployments = yaml.loadAll(result.stdout).filter((item) => item?.kind === "Deployment");
+  const actualMapping = structuredClone(mapping);
+  for (const image of actualMapping.images) {
+    const dep = deployments.find((item) =>
+      item.metadata.labels["app.kubernetes.io/component"] === component(image.role));
+    image.reference = dep.spec.template.spec.containers[0].image;
+  }
+  const actualMappingBytes = Buffer.from(`${JSON.stringify(actualMapping)}\n`);
+  const actualScope = { ...scope, format: "tr-helm-approved-node-scope-v2",
+    mappingSha256: hash(actualMappingBytes), renderedManifestSha256: hash(renderedBytes) };
+  const actualScopeBytes = Buffer.from(`${JSON.stringify(actualScope)}\n`);
+  const workloads = { kind: "List", items: structuredClone(deployments) };
+  for (const deployment of workloads.items) {
+    deployment.metadata.namespace = "trust-registry";
+    deployment.spec.template.spec.serviceAccountName = "default";
+    deployment.spec.template.spec.dnsPolicy = "ClusterFirst";
+    deployment.spec.template.spec.restartPolicy = "Always";
+  }
+  const check = () => validateHelmRenderedWorkloadParity(renderedBytes, actualMappingBytes,
+    actualScopeBytes, workloads);
+  assert.equal(check(), hash(renderedBytes));
+  const api = workloads.items.find((item) => item.metadata.name === "tr-rc-tr-api");
+  api.spec.template.spec.initContainers[0].args = ["true"];
+  assert.throws(check, /differs from the signed Helm render/u);
+  api.spec.template.spec.initContainers[0].args =
+    deployments.find((item) => item.metadata.name === "tr-rc-tr-api").spec.template.spec.initContainers[0].args;
+  assert.throws(() => validateHelmRenderedWorkloadParity(Buffer.from("tampered"),
+    actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
+});
+
 test("runs read-only kubectl queries only after the signed fleet preflight", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-helm-live-test-"));
   try {
@@ -229,13 +266,22 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     const paths = { preflightPaths: { receiptPath: mappingPath }, scopePath,
       kubeconfig: join(root, "kubeconfig"), kubeContext: "isolated-cluster" };
     const { nodes, workloads } = fixture();
+    const renderedBytes = Buffer.from(workloads.items.filter((item) => item.kind === "Deployment")
+      .map((item) => `---\n${yaml.dump(item)}`).join(""));
+    const renderedManifestPath = join(root, "reviewed-render.yaml");
+    await writeFile(renderedManifestPath, renderedBytes);
+    const observedScopeBytes = Buffer.from(`${JSON.stringify({ ...scope,
+      format: "tr-helm-approved-node-scope-v2", renderedManifestSha256: hash(renderedBytes) })}\n`);
+    await writeFile(scopePath, observedScopeBytes);
+    const observedFleet = { mappingSha256: hash(mappingBytes), scopeSha256: hash(observedScopeBytes) };
+    paths.renderedManifestPath = renderedManifestPath;
     const calls = [];
     const run = async (program, args) => {
       calls.push([program, args]);
       return { stdout: JSON.stringify(args.includes("nodes") ? nodes : workloads) };
     };
     assert.equal((await observeSignedHelmRuntime(paths,
-      { checkFleet: async () => fleet, run })).workloads.length, 6);
+      { checkFleet: async () => observedFleet, run })).workloads.length, 6);
     assert.equal(calls.length, 2);
     assert.ok(calls.every(([program, args]) => program === "kubectl"
       && args.includes("--context") && args.includes("isolated-cluster")
@@ -244,6 +290,26 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     await assert.rejects(observeSignedHelmRuntime(paths, {
       checkFleet: async () => { throw new Error("bad fleet"); }, run,
     }), /bad fleet/u);
+    assert.equal(calls.length, 0);
+    await writeFile(renderedManifestPath, "tampered\n");
+    await assert.rejects(observeSignedHelmRuntime(paths, {
+      checkFleet: async () => observedFleet, run,
+    }), /exact Helm render/u);
+    assert.equal(calls.length, 0);
+    await writeFile(renderedManifestPath, renderedBytes);
+    const linkedRender = join(root, "linked-render.yaml");
+    await symlink(renderedManifestPath, linkedRender);
+    paths.renderedManifestPath = linkedRender;
+    await assert.rejects(observeSignedHelmRuntime(paths, {
+      checkFleet: async () => observedFleet, run,
+    }));
+    assert.equal(calls.length, 0);
+    paths.renderedManifestPath = renderedManifestPath;
+    await writeFile(scopePath, scopeBytes);
+    await assert.rejects(observeSignedHelmRuntime(paths, {
+      checkFleet: async () => ({ mappingSha256: hash(mappingBytes),
+        scopeSha256: hash(scopeBytes) }), run,
+    }), /Signed v2 scope/u);
     assert.equal(calls.length, 0);
   } finally {
     await rm(root, { recursive: true, force: true });

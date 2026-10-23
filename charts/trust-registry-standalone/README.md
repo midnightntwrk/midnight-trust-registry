@@ -102,14 +102,25 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    eligible arm64 node inventory from the intended cluster and have an
    independent reviewer approve the complete set. Record the cluster identity
    and inventory evidence in `clusterReference` and `reviewedReference`.
+   For live workload observation, render the exact reviewed values, namespace,
+   and release name to a retained YAML file. Review it and record its SHA-256
+   in a v2 scope before signing; do not change the render afterward:
+
+   ```sh
+   helm template tr-rc charts/trust-registry-standalone -n trust-registry \
+     -f <approved-values.yaml> > <approved-render.yaml>
+   shasum -a 256 <approved-render.yaml>
+   ```
+
    Sign the exact JSON bytes of an approved scope with a detached OpenPGP
    signature. This example describes the schema, not actual cluster evidence:
 
    ```json
    {
-     "format": "tr-helm-approved-node-scope-v1",
+     "format": "tr-helm-approved-node-scope-v2",
      "sourceRevision": "<40-character source SHA>",
      "mappingSha256": "<SHA-256 of exact signed mapping.json bytes>",
+     "renderedManifestSha256": "<SHA-256 of exact reviewed Helm YAML bytes>",
      "namespace": "trust-registry",
      "releaseName": "tr-rc",
      "eligibleNodeSelection": "kubernetes.io/arch=arm64",
@@ -163,7 +174,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    node scripts/observe-helm-runtime.mjs \
      <preflight-paths.json> <approved-node-scope.json> <scope.sig> \
      <scope-reviewer-keyring> <SCOPE_REVIEWER_FINGERPRINT> \
-     <receipts-directory> <absolute-kubeconfig> <kube-context>
+     <receipts-directory> <absolute-kubeconfig> <kube-context> \
+     <approved-render.yaml>
    ```
 
    This first repeats the signed fleet check, then reads the arm64 Node list
@@ -172,7 +184,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    approved scope, any expected labelled workload is absent or unready, a Pod is not
    owned through the expected ReplicaSet and Deployment, or a running image
    reference, image ID, or pull policy differs from the approved mapping, or
-   an ephemeral debug container is present. Capture the
+   an ephemeral debug container is present. It also rejects live Deployment
+   Pod specs that differ from the exact signed Helm render. A v1 node scope
+   remains valid for fleet receipt checks but is rejected by this live observer.
+   Capture the
    output and the raw Kubernetes API responses through an access-controlled
    evidence channel, along with the kubeconfig trust anchor, context, cluster
    identity, RBAC grants, time, and Helm revision. Review kubeconfig `exec`
@@ -187,9 +202,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    security context, and host networking. It requires disabled service-account
    automount, no host namespaces or hostPath volumes, RuntimeDefault seccomp,
    and dropped container capabilities without additions. API and portal root
-   filesystems must remain read-only. It does **not** compare that Deployment template with the
-   independently reviewed rendered chart; an authenticated rendered-manifest
-   versus live-resource diff remains necessary. The two API queries are not
+   filesystems must remain read-only. It compares these Pod-spec fields with
+   the signed rendered Deployment templates, normalizing ordinary Kubernetes
+   defaults. It does **not** compare live Services, NetworkPolicies, PVCs,
+   Secrets, or unrelated workloads with the render. The two API queries are not
    one atomic snapshot; a separate, authenticated evidence capture is still
    needed for release review.
    A passing synthetic test is not live qualification evidence.
