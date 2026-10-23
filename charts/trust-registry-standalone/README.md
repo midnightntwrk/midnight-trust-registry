@@ -182,10 +182,25 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
      <preflight-paths.json> <approved-node-scope.json> <scope.sig> \
      <scope-reviewer-keyring> <SCOPE_REVIEWER_FINGERPRINT> \
      <receipts-directory> <absolute-kubeconfig> <kube-context> \
-     <approved-render.yaml>
+     <approved-render.yaml> <api-plan.json> <api-plan.sig> \
+     <api-plan-reviewer-keyring> <API_PLAN_REVIEWER_FINGERPRINT>
    ```
 
-   This first repeats the signed fleet check, then reads the arm64 Node list
+   This first repeats the signed fleet check, verifies the canonical,
+   detached-signed v2 API plan, and checks its deployment identity fields.
+   Its source revision, install-inventory digest,
+   release-manifest digest, and validity window must match the exact verified
+   bundle and signed Helm image mapping before any Kubernetes observation.
+   The chart's external API approval Secret must be `immutable: true` and
+   created before the API Pod. The observer reads that one Secret through the
+   selected Kubernetes API, checks its UID and creation time, and compares
+   its plan, signature, inventory, manifest, and snapshot bytes with the
+   approved digests. It does not print Secret data. The output records the
+   signed plan digest, Secret identity, and externally observed API image ID
+   and reference. This binds one observation to the staged Pod input and
+   approved install, not the running process continuously to that plan. The
+   API must independently verify the full plan at startup and on reads.
+   The observer then reads the arm64 Node list
    and this release's Deployments, ReplicaSets, and Pods from the selected
    Kubernetes API. It fails if the live arm64 node names differ from the
    approved scope, any expected labelled workload is absent or unready, a Pod is not
@@ -194,16 +209,19 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    an ephemeral debug container is present. It also rejects live Deployment
    Pod specs that differ from the exact signed Helm render. A v1 node scope
    remains valid for fleet receipt checks but is rejected by this live observer.
-   Capture the
-   output and the raw Kubernetes API responses through an access-controlled
-   evidence channel, along with the kubeconfig trust anchor, context, cluster
+   Capture the output and raw Kubernetes API responses through an
+   access-controlled evidence channel; the Secret response contains private
+   snapshot and approval data and must not go into ordinary logs. Retain the
+   kubeconfig trust anchor, context, cluster
    identity, RBAC grants, time, and Helm revision. Review kubeconfig `exec`
    plugins and the inherited proxy environment before running: `kubectl` may
    execute credential plugins and use a configured proxy. The command does not
    authenticate the reviewer-approved `clusterReference` against the API,
-   prove image bytes executed from the CRI store, verify PVC contents,
+   prove image bytes executed from the CRI store, prove a running process has
+   not changed after observation, verify PVC contents,
    inspect unrelated or unlabelled workloads, measure runtime egress, or
-   exercise the local ledger or actor journeys. It compares security-relevant
+   exercise the local ledger or actor journeys. A later rollout, image-store
+   replacement, or plan rotation requires a fresh observation. It compares security-relevant
    Pod specs across each Deployment, owned ReplicaSet, and running Pod,
    including commands, arguments, environment, mounts, volumes, probes,
    security context, and host networking. It requires disabled service-account

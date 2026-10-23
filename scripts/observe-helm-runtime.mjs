@@ -3,14 +3,16 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { open, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 import yaml from "js-yaml";
 
 import { checkSignedHelmCriFleet, validateApprovedNodeScope } from "./check-helm-cri-fleet.mjs";
 import { validateSignedImageMapping } from "./collect-helm-cri-images.mjs";
+import { verifyMappingSignature } from "./verify-helm-mapping-signature.mjs";
 
 const execFileAsync = promisify(execFile);
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -18,6 +20,94 @@ const COMPONENTS = new Map([
   ["node", "node"], ["indexer", "indexer"], ["proofServer", "proof-server"],
   ["api", "api"], ["admin", "admin"], ["applicant", "applicant"],
 ]);
+const SHA256 = /^[0-9a-f]{64}$/u;
+const APPROVAL_SECRET_KEYS = ["api-plan.json", "api-plan.sig",
+  "install-inventory.json", "release-manifest.json", "snapshot.json"];
+
+export function validateHelmApiPlanBinding(planBytes, mappingBytes, inventoryBytes,
+  now = Date.now()) {
+  const text = planBytes.toString("utf8");
+  const plan = JSON.parse(text);
+  if (!Buffer.from(text, "utf8").equals(planBytes)
+    || ![JSON.stringify(plan), `${JSON.stringify(plan)}\n`,
+      `${JSON.stringify(plan, null, 2)}\n`].includes(text)) {
+    throw new Error("Signed API plan must be canonical JSON without duplicate keys");
+  }
+  const mapping = validateSignedImageMapping(JSON.parse(mappingBytes));
+  if (sha256(inventoryBytes) !== mapping.inventorySha256) {
+    throw new Error("Helm inventory changed after signed image preflight");
+  }
+  const inventory = JSON.parse(inventoryBytes);
+  const timestamp = (value) => typeof value === "string" && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString() === value ? Date.parse(value) : Number.NaN;
+  if (plan?.format !== "tr-local-api-runtime-v2"
+    || plan.sourceRevision !== mapping.sourceRevision
+    || plan.installInventorySha256 !== mapping.inventorySha256
+    || !SHA256.test(plan.releaseManifestSha256 ?? "")
+    || !SHA256.test(plan.snapshotSha256 ?? "")
+    || inventory.sourceRevision !== mapping.sourceRevision
+    || !["tr-standalone-install-v4", "tr-standalone-install-v5",
+      "tr-standalone-install-v6"].includes(inventory.format)
+    || inventory.packageManifest !== "release-manifest.json"
+    || inventory.packageManifestSha256 !== plan.releaseManifestSha256
+    || !Number.isFinite(timestamp(plan.notBefore))
+    || !Number.isFinite(timestamp(plan.notAfter))
+    || now < timestamp(plan.notBefore) || now > timestamp(plan.notAfter)
+    || timestamp(plan.notAfter) - timestamp(plan.notBefore) > 90 * 24 * 60 * 60 * 1000) {
+    throw new Error("Signed API plan does not bind the approved Helm install and current validity window");
+  }
+  const apiImage = mapping.images.find((image) => image.role === "api");
+  return { format: "tr-helm-api-plan-binding-v1", planSha256: sha256(planBytes),
+    sourceRevision: mapping.sourceRevision, inventorySha256: mapping.inventorySha256,
+    releaseManifestSha256: plan.releaseManifestSha256, snapshotSha256: plan.snapshotSha256,
+    apiImageReference: apiImage.reference, apiImageConfigId: apiImage.configId };
+}
+
+export function validateApiApprovalSecret(secret, pod, binding, planBytes, signatureBytes,
+  expectedName, expectedNamespace, signerFingerprint) {
+  const podCreated = Date.parse(pod?.metadata?.creationTimestamp ?? "");
+  const secretCreated = Date.parse(secret?.metadata?.creationTimestamp ?? "");
+  const container = pod?.spec?.containers?.find((entry) => entry.name === "api");
+  const reviewerFlag = container?.args?.indexOf("--local-ledger-reviewer") ?? -1;
+  if (secret?.kind !== "Secret" || secret.type !== "Opaque" || secret.immutable !== true
+    || secret.metadata?.name !== expectedName
+    || secret.metadata?.namespace !== expectedNamespace
+    || typeof secret.metadata?.uid !== "string" || secret.metadata.uid.length === 0
+    || typeof secret.metadata?.resourceVersion !== "string"
+    || secret.metadata.resourceVersion.length === 0
+    || !Number.isFinite(podCreated) || !Number.isFinite(secretCreated)
+    || secretCreated > podCreated
+    || pod?.spec?.volumes?.find((volume) => volume.name === "approval-input")
+      ?.secret?.secretName !== expectedName
+    || reviewerFlag < 0 || container.args[reviewerFlag + 1] !== signerFingerprint
+    || secret.data === null || typeof secret.data !== "object"
+    || Array.isArray(secret.data)
+    || Object.keys(secret.data).sort().join("\0") !== [...APPROVAL_SECRET_KEYS].sort().join("\0")) {
+    throw new Error("Live API approval Secret is not the immutable reviewed Pod input");
+  }
+  const decode = (key) => {
+    const encoded = secret.data[key];
+    if (typeof encoded !== "string" || encoded.length === 0
+      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) {
+      throw new Error(`Live API approval Secret has invalid ${key} bytes`);
+    }
+    const bytes = Buffer.from(encoded, "base64");
+    if (bytes.toString("base64") !== encoded) {
+      throw new Error(`Live API approval Secret has noncanonical ${key} bytes`);
+    }
+    return bytes;
+  };
+  if (!decode("api-plan.json").equals(planBytes)
+    || !decode("api-plan.sig").equals(signatureBytes)
+    || sha256(decode("install-inventory.json")) !== binding.inventorySha256
+    || sha256(decode("release-manifest.json")) !== binding.releaseManifestSha256
+    || sha256(decode("snapshot.json")) !== binding.snapshotSha256) {
+    throw new Error("Live API approval Secret differs from the signed plan and verified install");
+  }
+  return { secretName: expectedName, secretUid: secret.metadata.uid,
+    secretResourceVersion: secret.metadata.resourceVersion,
+    planSha256: binding.planSha256 };
+}
 
 function exactNames(actual, expected, description) {
   if (actual.length !== expected.length || new Set(actual).size !== actual.length
@@ -359,23 +449,25 @@ export function validateHelmRenderedWorkloadParity(renderedBytes, mappingBytes, 
   return scope.renderedManifestSha256;
 }
 
-async function boundedRenderedManifest(path) {
+async function boundedFile(path, maxBytes, description) {
   if (typeof path !== "string" || !path.startsWith("/")) {
-    throw new Error("An absolute signed Helm render path is required");
+    throw new Error(`An absolute ${description} path is required`);
   }
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size === 0 || stat.size > 8 * 1024 * 1024) {
-      throw new Error("Signed Helm render must be a bounded regular file");
+    if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) {
+      throw new Error(`${description} must be a bounded regular file`);
     }
     const bytes = await file.readFile();
-    if (bytes.length !== stat.size) throw new Error("Signed Helm render changed during read");
+    if (bytes.length !== stat.size) throw new Error(`${description} changed during read`);
     return bytes;
   } finally {
     await file.close();
   }
 }
+
+const boundedRenderedManifest = (path) => boundedFile(path, 8 * 1024 * 1024, "Signed Helm render");
 
 export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   const fleet = await (dependencies.checkFleet ?? checkSignedHelmCriFleet)(paths);
@@ -389,6 +481,22 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     || scope.renderedManifestSha256 !== sha256(renderedBytes)) {
     throw new Error("Signed v2 scope does not approve the exact Helm render");
   }
+  const [planBytes, signatureBytes, inventoryBytes] = await Promise.all([
+    boundedFile(paths.apiPlanPath, 1024 * 1024, "Signed API plan"),
+    boundedFile(paths.apiPlanSignaturePath, 64 * 1024, "API plan signature"),
+    boundedFile(join(paths.preflightPaths.bundleRoot, "install-inventory.json"),
+      1024 * 1024, "Helm install inventory"),
+  ]);
+  const signatureDirectory = await mkdtemp(join(tmpdir(), "tr-helm-api-plan-"));
+  try {
+    const signatureCopy = join(signatureDirectory, "api-plan.sig");
+    await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
+    (dependencies.verifyPlanSignature ?? verifyMappingSignature)(planBytes,
+      signatureCopy, paths.apiPlanKeyringPath, paths.apiPlanSignerFingerprint);
+  } finally {
+    await rm(signatureDirectory, { recursive: true, force: true });
+  }
+  const apiPlanBinding = validateHelmApiPlanBinding(planBytes, mappingBytes, inventoryBytes);
   if (typeof paths.kubeconfig !== "string" || !paths.kubeconfig.startsWith("/")
     || typeof paths.kubeContext !== "string" || paths.kubeContext.length === 0) {
     throw new Error("Explicit absolute kubeconfig and Kubernetes context are required");
@@ -407,20 +515,36 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     paths.kubeContext);
   const renderedManifestSha256 = validateHelmRenderedWorkloadParity(renderedBytes,
     mappingBytes, scopeBytes, workloads);
+  const apiWorkload = observed.workloads.find((workload) => workload.role === "api");
+  const apiPod = workloads.items.find((item) => item.kind === "Pod"
+    && item.metadata?.name === apiWorkload.pod);
+  const approvalSecretName = apiPod.spec.volumes
+    .find((volume) => volume.name === "approval-input")?.secret?.secretName;
+  if (typeof approvalSecretName !== "string" || approvalSecretName.length === 0) {
+    throw new Error("Approved API Pod has no approval Secret");
+  }
+  const secret = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
+    "get", "secret", approvalSecretName, "--output=json"], options)).stdout);
+  const apiApprovalSecret = validateApiApprovalSecret(secret, apiPod, apiPlanBinding,
+    planBytes, signatureBytes, approvalSecretName, scope.namespace,
+    paths.apiPlanSignerFingerprint);
   return { ...observed, format: "tr-helm-live-workload-observation-v2",
-    renderedManifestSha256,
-    qualification: "not-established: signed render parity is not live network policy, offline actor, or restore evidence" };
+    renderedManifestSha256, apiPlanBinding: { ...apiPlanBinding,
+      observedImageID: apiWorkload.imageID, apiApprovalSecret },
+    qualification: "not-established: signed plan/Secret/image parity is point-in-time, not live network policy, offline actor, or restore evidence" };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 11) {
-    throw new Error("Usage: node scripts/observe-helm-runtime.mjs <preflight-paths.json> <scope.json> <scope.sig> <scope-keyring> <scope-signer-fingerprint> <receipts-dir> <absolute-kubeconfig> <kube-context> <approved-render.yaml>");
+  if (process.argv.length !== 15) {
+    throw new Error("Usage: node scripts/observe-helm-runtime.mjs <preflight-paths.json> <scope.json> <scope.sig> <scope-keyring> <scope-signer-fingerprint> <receipts-dir> <absolute-kubeconfig> <kube-context> <approved-render.yaml> <api-plan.json> <api-plan.sig> <api-plan-keyring> <api-plan-signer-fingerprint>");
   }
   const [preflightPathsFile, scopePath, scopeSignaturePath, scopeKeyringPath,
     scopeSignerFingerprint, receiptsDirectory, kubeconfig, kubeContext,
-    renderedManifestPath] = process.argv.slice(2);
+    renderedManifestPath, apiPlanPath, apiPlanSignaturePath, apiPlanKeyringPath,
+    apiPlanSignerFingerprint] = process.argv.slice(2);
   const preflightPaths = JSON.parse(await readFile(preflightPathsFile, "utf8"));
   console.log(JSON.stringify(await observeSignedHelmRuntime({ preflightPaths, scopePath,
     scopeSignaturePath, scopeKeyringPath, scopeSignerFingerprint, receiptsDirectory,
-    kubeconfig, kubeContext, renderedManifestPath }), null, 2));
+    kubeconfig, kubeContext, renderedManifestPath, apiPlanPath, apiPlanSignaturePath,
+    apiPlanKeyringPath, apiPlanSignerFingerprint }), null, 2));
 }

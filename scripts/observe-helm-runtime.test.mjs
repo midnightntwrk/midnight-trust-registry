@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
 
 import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
-  validateHelmRenderedWorkloadParity, validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
+  validateApiApprovalSecret, validateHelmApiPlanBinding, validateHelmRenderedWorkloadParity,
+  validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const component = (role) => role === "proofServer" ? "proof-server" : role;
@@ -28,6 +29,81 @@ const scope = { format: "tr-helm-approved-node-scope-v1", sourceRevision: mappin
     imageEndpoint: "unix:///run/containerd/containerd.sock" }] };
 const scopeBytes = Buffer.from(`${JSON.stringify(scope)}\n`);
 const fleet = { mappingSha256: hash(mappingBytes), scopeSha256: hash(scopeBytes) };
+const releaseManifest = Buffer.from("release-manifest");
+const snapshot = Buffer.from("snapshot");
+const currentPlan = (inventory) => ({ format: "tr-local-api-runtime-v2",
+  sourceRevision: mapping.sourceRevision, installInventorySha256: hash(inventory),
+  releaseManifestSha256: hash(releaseManifest), snapshotSha256: hash(snapshot),
+  notBefore: new Date(Date.now() - 60_000).toISOString(),
+  notAfter: new Date(Date.now() + 60_000).toISOString() });
+
+test("binds a canonical signed API plan to the verified Helm mapping and install", () => {
+  const inventory = Buffer.from(JSON.stringify({ format: "tr-standalone-install-v6",
+    sourceRevision: mapping.sourceRevision, packageManifest: "release-manifest.json",
+    packageManifestSha256: hash(releaseManifest) }));
+  const signedMapping = Buffer.from(`${JSON.stringify({ ...mapping,
+    inventorySha256: hash(inventory) })}\n`);
+  const plan = currentPlan(inventory);
+  const bytes = Buffer.from(`${JSON.stringify(plan)}\n`);
+  const result = validateHelmApiPlanBinding(bytes, signedMapping, inventory);
+  assert.equal(result.planSha256, hash(bytes));
+  assert.equal(result.apiImageReference, reference("api"));
+  const check = (candidate, candidateMapping = signedMapping, candidateInventory = inventory) =>
+    validateHelmApiPlanBinding(Buffer.from(`${JSON.stringify(candidate)}\n`),
+      candidateMapping, candidateInventory);
+  assert.throws(() => check({ ...plan, sourceRevision: "f".repeat(40) }), /does not bind/u);
+  assert.throws(() => check({ ...plan, installInventorySha256: "f".repeat(64) }), /does not bind/u);
+  assert.throws(() => check({ ...plan, releaseManifestSha256: "f".repeat(64) }), /does not bind/u);
+  assert.throws(() => check({ ...plan, format: "tr-local-api-runtime-v1" }), /does not bind/u);
+  assert.throws(() => check({ ...plan, notAfter: new Date(Date.now() - 1).toISOString() }),
+    /does not bind/u);
+  assert.throws(() => check(plan, signedMapping, Buffer.from("tampered")), /changed after/u);
+  assert.throws(() => validateHelmApiPlanBinding(Buffer.from(JSON.stringify(plan)
+    .replace('"format":"tr-local-api-runtime-v2"',
+      '"format":"tr-local-api-runtime-v1","format":"tr-local-api-runtime-v2"')),
+  signedMapping, inventory), /canonical JSON/u);
+});
+
+test("rejects changed or replaced API approval Secrets without exposing their data", () => {
+  const inventory = Buffer.from(JSON.stringify({ format: "tr-standalone-install-v6",
+    sourceRevision: mapping.sourceRevision, packageManifest: "release-manifest.json",
+    packageManifestSha256: hash(releaseManifest) }));
+  const signedMapping = Buffer.from(`${JSON.stringify({ ...mapping,
+    inventorySha256: hash(inventory) })}\n`);
+  const planBytes = Buffer.from(`${JSON.stringify(currentPlan(inventory))}\n`);
+  const signatureBytes = Buffer.from("signature");
+  const binding = validateHelmApiPlanBinding(planBytes, signedMapping, inventory);
+  const reviewer = "A".repeat(40);
+  const pod = { metadata: { creationTimestamp: "2026-10-24T00:01:00.000Z" },
+    spec: { containers: [{ name: "api", args: ["--local-ledger-reviewer", reviewer] }],
+      volumes: [{ name: "approval-input", secret: { secretName: "api-approval" } }] } };
+  const secret = { kind: "Secret", type: "Opaque", immutable: true,
+    metadata: { name: "api-approval", namespace: "trust-registry", uid: "secret-1",
+      resourceVersion: "42", creationTimestamp: "2026-10-24T00:00:00.000Z" },
+    data: Object.fromEntries([
+      ["api-plan.json", planBytes], ["api-plan.sig", signatureBytes],
+      ["install-inventory.json", inventory], ["release-manifest.json", releaseManifest],
+      ["snapshot.json", snapshot],
+    ].map(([name, bytes]) => [name, bytes.toString("base64")])) };
+  const check = (candidate = secret, observedPod = pod) => validateApiApprovalSecret(
+    candidate, observedPod, binding, planBytes, signatureBytes,
+    "api-approval", "trust-registry", reviewer);
+  assert.equal(check().planSha256, hash(planBytes));
+  assert.throws(() => check({ ...secret, immutable: false }), /immutable reviewed Pod input/u);
+  assert.throws(() => check({ ...secret, metadata: { ...secret.metadata,
+    creationTimestamp: "2026-10-24T00:02:00.000Z" } }), /immutable reviewed Pod input/u);
+  assert.throws(() => check({ ...secret, data: { ...secret.data,
+    "api-plan.json": Buffer.from("different").toString("base64") } }), /differs from/u);
+  assert.throws(() => check({ ...secret, data: { ...secret.data,
+    "api-plan.sig": Buffer.from("different").toString("base64") } }), /differs from/u);
+  for (const key of ["install-inventory.json", "release-manifest.json", "snapshot.json"]) {
+    assert.throws(() => check({ ...secret, data: { ...secret.data,
+      [key]: Buffer.from("different").toString("base64") } }), /differs from/u);
+  }
+  assert.throws(() => check(secret, { ...pod, spec: { ...pod.spec,
+    containers: [{ name: "api", args: ["--local-ledger-reviewer", "B".repeat(40)] }] } }),
+  /immutable reviewed Pod input/u);
+});
 
 function fixture() {
   const nodes = { kind: "NodeList", items: [{ kind: "Node",
@@ -345,39 +421,88 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
   try {
     const mappingPath = join(root, "mapping.json");
     const scopePath = join(root, "scope.json");
-    await writeFile(mappingPath, mappingBytes);
+    const inventory = Buffer.from(JSON.stringify({ format: "tr-standalone-install-v6",
+      sourceRevision: mapping.sourceRevision, packageManifest: "release-manifest.json",
+      packageManifestSha256: hash(releaseManifest) }));
+    const signedMappingBytes = Buffer.from(`${JSON.stringify({ ...mapping,
+      inventorySha256: hash(inventory) })}\n`);
+    await writeFile(join(root, "install-inventory.json"), inventory);
+    const apiPlanPath = join(root, "api-plan.json");
+    const signatureBytes = Buffer.from("signature");
+    await writeFile(apiPlanPath, `${JSON.stringify(currentPlan(inventory))}\n`);
+    await writeFile(join(root, "api-plan.sig"), signatureBytes);
+    await writeFile(mappingPath, signedMappingBytes);
     await writeFile(scopePath, scopeBytes);
-    const paths = { preflightPaths: { receiptPath: mappingPath }, scopePath,
-      kubeconfig: join(root, "kubeconfig"), kubeContext: "isolated-cluster" };
+    const paths = { preflightPaths: { receiptPath: mappingPath, bundleRoot: root }, scopePath,
+      kubeconfig: join(root, "kubeconfig"), kubeContext: "isolated-cluster", apiPlanPath,
+      apiPlanSignaturePath: join(root, "api-plan.sig"), apiPlanKeyringPath: join(root, "pubring.kbx"),
+      apiPlanSignerFingerprint: "A".repeat(40) };
     const { nodes, workloads } = fixture();
+    for (const workload of workloads.items.filter((item) =>
+      item.metadata?.labels?.["app.kubernetes.io/component"] === "api")) {
+      const spec = workload.kind === "Deployment" ? workload.spec.template.spec
+        : workload.kind === "ReplicaSet" ? workload.spec.template.spec : workload.spec;
+      spec.containers[0].args = ["--local-ledger-reviewer", paths.apiPlanSignerFingerprint];
+      spec.volumes = [{ name: "approval-input", secret: { secretName: "api-approval" } }];
+      if (workload.kind === "Pod") {
+        workload.metadata.creationTimestamp = "2026-10-24T00:01:00.000Z";
+      }
+    }
+    const secret = { kind: "Secret", type: "Opaque", immutable: true,
+      metadata: { name: "api-approval", namespace: "trust-registry", uid: "secret-1",
+        resourceVersion: "42", creationTimestamp: "2026-10-24T00:00:00.000Z" },
+      data: Object.fromEntries([
+        ["api-plan.json", await readFile(apiPlanPath)], ["api-plan.sig", signatureBytes],
+        ["install-inventory.json", inventory], ["release-manifest.json", releaseManifest],
+        ["snapshot.json", snapshot],
+      ].map(([name, bytes]) => [name, bytes.toString("base64")])) };
     const renderedBytes = Buffer.from(workloads.items.filter((item) => item.kind === "Deployment")
       .map((item) => `---\n${yaml.dump(item)}`).join(""));
     const renderedManifestPath = join(root, "reviewed-render.yaml");
     await writeFile(renderedManifestPath, renderedBytes);
     const observedScopeBytes = Buffer.from(`${JSON.stringify({ ...scope,
-      format: "tr-helm-approved-node-scope-v2", renderedManifestSha256: hash(renderedBytes) })}\n`);
+      mappingSha256: hash(signedMappingBytes), format: "tr-helm-approved-node-scope-v2",
+      renderedManifestSha256: hash(renderedBytes) })}\n`);
     await writeFile(scopePath, observedScopeBytes);
-    const observedFleet = { mappingSha256: hash(mappingBytes), scopeSha256: hash(observedScopeBytes) };
+    const observedFleet = { mappingSha256: hash(signedMappingBytes),
+      scopeSha256: hash(observedScopeBytes) };
     paths.renderedManifestPath = renderedManifestPath;
     const calls = [];
     const run = async (program, args) => {
       calls.push([program, args]);
-      return { stdout: JSON.stringify(args.includes("nodes") ? nodes : workloads) };
+      return { stdout: JSON.stringify(args.includes("nodes") ? nodes
+        : args.includes("secret") ? secret : workloads) };
     };
-    assert.equal((await observeSignedHelmRuntime(paths,
-      { checkFleet: async () => observedFleet, run })).workloads.length, 6);
-    assert.equal(calls.length, 2);
+    const dependencies = { checkFleet: async () => observedFleet,
+      verifyPlanSignature: () => "approved", run };
+    const observed = await observeSignedHelmRuntime(paths, dependencies);
+    assert.equal(observed.workloads.length, 6);
+    assert.equal(observed.apiPlanBinding.planSha256,
+      hash(await readFile(apiPlanPath)));
+    assert.equal(observed.apiPlanBinding.apiApprovalSecret.secretUid, "secret-1");
+    assert.equal(calls.length, 3);
     assert.ok(calls.every(([program, args]) => program === "kubectl"
       && args.includes("--context") && args.includes("isolated-cluster")
       && args.includes("--output=json")));
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, {
-      checkFleet: async () => { throw new Error("bad fleet"); }, run,
+      checkFleet: async () => { throw new Error("bad fleet"); },
+      verifyPlanSignature: () => "approved", run,
     }), /bad fleet/u);
+    assert.equal(calls.length, 0);
+    await writeFile(apiPlanPath, `${JSON.stringify({ ...currentPlan(inventory),
+      sourceRevision: "f".repeat(40) })}\n`);
+    await assert.rejects(observeSignedHelmRuntime(paths, dependencies), /does not bind/u);
+    assert.equal(calls.length, 0);
+    await writeFile(apiPlanPath, `${JSON.stringify(currentPlan(inventory))}\n`);
+    await assert.rejects(observeSignedHelmRuntime(paths, {
+      checkFleet: async () => observedFleet,
+      verifyPlanSignature: () => { throw new Error("bad signature"); }, run,
+    }), /bad signature/u);
     assert.equal(calls.length, 0);
     await writeFile(renderedManifestPath, "tampered\n");
     await assert.rejects(observeSignedHelmRuntime(paths, {
-      checkFleet: async () => observedFleet, run,
+      checkFleet: async () => observedFleet, verifyPlanSignature: () => "approved", run,
     }), /exact Helm render/u);
     assert.equal(calls.length, 0);
     await writeFile(renderedManifestPath, renderedBytes);
@@ -385,14 +510,16 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     await symlink(renderedManifestPath, linkedRender);
     paths.renderedManifestPath = linkedRender;
     await assert.rejects(observeSignedHelmRuntime(paths, {
-      checkFleet: async () => observedFleet, run,
+      checkFleet: async () => observedFleet, verifyPlanSignature: () => "approved", run,
     }));
     assert.equal(calls.length, 0);
     paths.renderedManifestPath = renderedManifestPath;
-    await writeFile(scopePath, scopeBytes);
+    const unsignedV1Scope = Buffer.from(`${JSON.stringify({ ...scope,
+      mappingSha256: hash(signedMappingBytes) })}\n`);
+    await writeFile(scopePath, unsignedV1Scope);
     await assert.rejects(observeSignedHelmRuntime(paths, {
-      checkFleet: async () => ({ mappingSha256: hash(mappingBytes),
-        scopeSha256: hash(scopeBytes) }), run,
+      checkFleet: async () => ({ mappingSha256: hash(signedMappingBytes),
+        scopeSha256: hash(unsignedV1Scope) }), verifyPlanSignature: () => "approved", run,
     }), /Signed v2 scope/u);
     assert.equal(calls.length, 0);
   } finally {
