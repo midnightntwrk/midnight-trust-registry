@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertApprovedReviewerSignatureStatus,
   assertLocalApiImageSourceRevision,
   loadApprovedLocalLedgerRuntimePlan,
   sequenceTimestampMap,
@@ -40,6 +41,30 @@ const plan = (root: string) => ({
 });
 
 describe("approved local-ledger API runtime", () => {
+  it("pins the primary reviewer key when a signing subkey makes the detached signature", () => {
+    const primary = "A".repeat(40);
+    const signer = "B".repeat(40);
+    const now = Date.now();
+    const signedAt = Math.floor(now / 1000);
+    const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00 ${primary}`;
+    const output = `[GNUPG:] GOODSIG ${signer} Reviewer\n${valid}\n`;
+    expect(() => assertApprovedReviewerSignatureStatus(output, 0, primary, now)).not.toThrow();
+    for (const invalid of [
+      [output, 0, "C".repeat(40)],
+      [output, 1, primary],
+      [valid, 0, primary],
+      [`${output}${valid}\n`, 0, primary],
+      [`${output}[GNUPG:] REVKEYSIG ${signer} Reviewer\n`, 0, primary],
+      [`${output}[GNUPG:] KEYEXPIRED ${signedAt}\n`, 0, primary],
+      [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
+      [`[GNUPG:] GOODSIG ${primary} Reviewer\n[GNUPG:] VALIDSIG ${primary} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
+      [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt + 600} 0 4 0 22 8 00 ${primary}\n`, 0, primary],
+    ] as const) {
+      expect(() => assertApprovedReviewerSignatureStatus(invalid[0], invalid[1], invalid[2], now))
+        .toThrow(/approved detached reviewer signature/u);
+    }
+  });
+
   it("compares the approved source revision with a bounded container file", async () => {
     const root = await mkdtemp(join(tmpdir(), "tr-api-image-revision-"));
     try {
@@ -118,6 +143,23 @@ describe("approved local-ledger API runtime", () => {
         "--output", signaturePath, planPath]);
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
+      expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+        "--passphrase", "", "--quick-add-key", fingerprint!, "ed25519", "sign", "0"],
+      { stdio: "pipe", timeout: 30_000 });
+      const subkeys = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+        "--with-subkey-fingerprint", "--list-secret-keys"], { encoding: "utf8" }).split("\n");
+      const subkeyIndex = subkeys.findIndex((line) => line.startsWith("ssb:"));
+      const subkeyFingerprint = subkeys.slice(subkeyIndex + 1)
+        .find((line) => line.startsWith("fpr:"))?.split(":")[9];
+      expect(subkeyFingerprint).toMatch(/^[A-F0-9]{40}$/u);
+      const updatedPublicKey = execFileSync("gpg", ["--homedir", signer, "--batch",
+        "--export", fingerprint!]);
+      execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
+        { input: updatedPublicKey, stdio: ["pipe", "pipe", "pipe"] });
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes",
+        "--local-user", `${subkeyFingerprint}!`, "--detach-sign", "--output", signaturePath,
+        planPath]);
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .rejects.toThrow(/requires a signed install with an API image pin/u);

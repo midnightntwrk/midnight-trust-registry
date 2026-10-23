@@ -19,6 +19,34 @@ const REVISION = /^[0-9a-f]{40}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 
+export function assertApprovedReviewerSignatureStatus(
+  output: string,
+  exitStatus: number | null,
+  expectedPrimaryFingerprint: string,
+  now = Date.now(),
+): void {
+  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
+  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
+  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
+  const fields = valid[0]?.split(/\s+/u);
+  const signerFingerprint = fields?.[2];
+  const primaryFingerprint = fields?.[11];
+  const signedAt = Number(fields?.[4]);
+  const expiresAt = Number(fields?.[5]);
+  const nowSeconds = Math.floor(now / 1000);
+  if (exitStatus !== 0 || !FINGERPRINT.test(expectedPrimaryFingerprint)
+    || valid.length !== 1 || good.length !== 1
+    || fields?.length !== 12
+    || !FINGERPRINT.test(signerFingerprint ?? "")
+    || primaryFingerprint !== expectedPrimaryFingerprint
+    || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
+    || !Number.isSafeInteger(expiresAt) || expiresAt < 0
+    || (expiresAt !== 0 && expiresAt <= nowSeconds)
+    || statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+    throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
+  }
+}
+
 export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & {
   format: "tr-local-api-runtime-v1";
   sourceRevision: string;
@@ -175,16 +203,11 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
       "--verify", signatureCopy, planCopy],
     { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024,
       env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });
-    const statuses = (verification.stdout ?? "").split("\n")
-      .filter((line) => line.startsWith("[GNUPG:] "));
-    const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-    const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-    const rejected = statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG)\b/u.test(line));
-    const fingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/u.exec(valid[0] ?? "")?.[1];
-    if (verification.status !== 0 || verification.error || rejected
-      || good.length !== 1 || valid.length !== 1 || fingerprint !== input.reviewerFingerprint) {
+    if (verification.error) {
       throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
     }
+    assertApprovedReviewerSignatureStatus(verification.stdout ?? "", verification.status,
+      input.reviewerFingerprint);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

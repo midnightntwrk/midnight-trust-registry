@@ -74,8 +74,9 @@ plan and signature must be regular files owned by root or the runtime user, and 
 reviewer keyring must be a private directory with its approved public key in
 `pubring.kbx`. The CLI verifies private copies of the exact plan bytes it
 parses and copies the read-only public keyring into private GPG scratch space;
-the pinned fingerprint is the exact key that signs the plan, including a
-signing subkey if used. It checks the install bytes, constructs the pinned local reader,
+the pinned fingerprint is the approved primary signing-key fingerprint. A
+signature made by its signing subkey is accepted only when GnuPG reports that
+same primary fingerprint. It checks the install bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. Ledger read and
