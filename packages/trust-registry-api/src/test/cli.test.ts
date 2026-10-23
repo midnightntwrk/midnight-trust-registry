@@ -44,6 +44,22 @@ describe("API CLI binding", () => {
     ])).toThrow(/forbids demo mutations/u);
   });
 
+  it("preflights only the complete signed local plan without listener options", () => {
+    const preflight = ["check-local-ledger-plan", ...localArgs.slice(1)];
+    expect(parseTrustRegistryApiCliArgs(preflight).command).toBe("check-local-ledger-plan");
+    for (const args of [
+      preflight.slice(0, -2),
+      [...preflight, "--host", "0.0.0.0"],
+      [...preflight, "--port", "4400"],
+      [...preflight, "--cluster-bind"],
+      [...preflight, "--serve-portals"],
+      [...preflight, "--unsafe-demo-mutations"],
+      ["check-local-ledger-plan", "--snapshot", "fixture.json"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

@@ -19,10 +19,14 @@ const HELP_TEXT = `Usage:
     [--cluster-bind]
     [--serve-portals]
     [--unsafe-demo-mutations]
+  trust-registry-api check-local-ledger-plan --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
 --serve-portals serves packaged admin/applicant assets from the API origin.
+The plan check performs signed-pin and finalized snapshot readback without a listener.
+It is not independent finality proof or release qualification.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -32,6 +36,7 @@ Examples:
 `;
 
 export type TrustRegistryApiCliOptions = {
+  command: "serve" | "check-local-ledger-plan";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -53,11 +58,12 @@ export const parseTrustRegistryApiCliArgs = (
   if (command === "--help" || command === "-h" || command === "help") {
     throw new Error(HELP_TEXT);
   }
-  if (command !== "serve") {
+  if (command !== "serve" && command !== "check-local-ledger-plan") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
   const options: TrustRegistryApiCliOptions = {
+    command,
     host: "127.0.0.1",
     port: 4400,
   };
@@ -146,6 +152,14 @@ export const parseTrustRegistryApiCliArgs = (
     : localEvidence.some((value) => value !== undefined)) {
     throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
+  if (command === "check-local-ledger-plan") {
+    const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
+      "--local-ledger-keyring", "--local-ledger-reviewer"]);
+    if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
+      throw new Error("Plan preflight accepts only complete signed local-ledger evidence");
+    }
+    return options;
+  }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
     throw new Error(`invalid port: ${String(options.port)}\n\n${HELP_TEXT}`);
   }
@@ -181,6 +195,19 @@ export const runTrustRegistryApiCli = async (
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<void> => {
   const options = parseTrustRegistryApiCliArgs(argv);
+  if (options.command === "check-local-ledger-plan") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    await source.loadSnapshot();
+    process.stdout.write(`Signed local plan and finalized snapshot match (${plan.sourceRevision}); not release qualification.\n`);
+    return;
+  }
   const portalHandler = options.servePortals === true
     ? await createPortalStaticHandler("/app/portals")
     : undefined;

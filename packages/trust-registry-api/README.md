@@ -107,7 +107,12 @@ sequence timestamp map, and have the reviewer inspect the exact source, install,
 genesis, contract, checkpoint, snapshot digest, map and validity window before
 detached-signing a new canonical plan. Install the new snapshot, plan and signature
 as one immutable versioned set; change the service's paths to that set and restart
-the API. Do not overwrite a running plan or snapshot in place. Startup must pass
+the API. Before switching traffic, run `trust-registry-api check-local-ledger-plan`
+with the same four `--local-ledger-*` arguments shown above. It checks the
+detached signature, source/install pins, current finalized ledger view, and
+snapshot without opening a listener; it does not check the running image,
+authenticate finality independently, or qualify the release. Do not overwrite
+a running plan or snapshot in place. Startup must pass
 signature, pin and finalized-readback checks, then `/health` and current actor
 queries must pass before restoring traffic. If any check fails, leave the API
 unavailable and reconcile the finalized ledger; never roll back to a plan whose
