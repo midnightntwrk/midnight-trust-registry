@@ -43,6 +43,12 @@ const assertExactTarballs = (artifactDir, filenames) => {
 };
 
 const packedEntries = (tarball) => run("tar", ["-tzf", tarball]).split("\n");
+const assertPackedPackageIdentity = (tarball, name, version) => {
+  const manifest = JSON.parse(readPackedTarEntry(tarball, "package/package.json").toString("utf8"));
+  if (manifest.name !== name || manifest.version !== version) {
+    throw new Error(`Packed package identity differs from candidate workspace: ${name}`);
+  }
+};
 const packedContractInfo = (tarball) => JSON.parse(readPackedTarEntry(tarball,
   `${CONTRACT_PREFIX}/compiler/contract-info.json`).toString("utf8"));
 const verifierKeyEntry = (name) => `${CONTRACT_PREFIX}/keys/${name}.verifier`;
@@ -80,6 +86,7 @@ export function buildReleaseCandidateManifest(input) {
       throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
     }
     assertCanonicalPackedPaths(packedEntries(path));
+    assertPackedPackageIdentity(path, manifest.name, manifest.version);
     return {
       workspace,
       name: manifest.name,
@@ -213,6 +220,7 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
     assertCanonicalPackedPaths(packedEntries(path));
+    assertPackedPackageIdentity(path, entry.name, entry.version);
   }
   assertExactTarballs(artifactDir, filenames);
   const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");

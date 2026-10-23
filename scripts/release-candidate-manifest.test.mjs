@@ -30,6 +30,9 @@ const packContract = (root, verifier = "verifier-a\n",
   const prefix = "package/dist/managed/trust-registry";
   const info = JSON.stringify({ "compiler-version": compilerVersion,
     circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
+  put(root, "packed-contract/package/package.json", JSON.stringify({
+    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+  }));
   put(root, "packed-contract/package/src/trust-registry.compact", source);
   put(root, `packed-contract/${prefix}/contract/index.js`, generated);
   put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
@@ -50,9 +53,9 @@ const packContract = (root, verifier = "verifier-a\n",
   return tarball;
 };
 
-const packDomain = (root, includeAlias = false) => {
+const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-registry-domain") => {
   put(root, "packed-domain/package/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-domain", version: "0.1.0",
+    name, version: "0.1.0",
   }));
   if (includeAlias) put(root, "packed-domain/x/package.json", "shadowed-domain\n");
   const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz");
@@ -109,6 +112,15 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
     packages: [manifest.packages[0], aliasedDomain],
   }, input.artifactDir, input.workspaces), /non-canonical archive paths/u);
+  packDomain(root);
+  manifest = buildReleaseCandidateManifest(input);
+  packDomain(root, false, "@midnight-ntwrk/other-package");
+  assert.throws(() => buildReleaseCandidateManifest(input), /Packed package identity differs/u);
+  const substitutedDomain = { ...manifest.packages[1], sizeBytes: statSync(domainTarball).size,
+    sha256: createHash("sha256").update(readFileSync(domainTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [manifest.packages[0], substitutedDomain],
+  }, input.artifactDir, input.workspaces), /Packed package identity differs/u);
   packDomain(root);
   manifest = buildReleaseCandidateManifest(input);
   assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, compactCompilerVersion: "0.30.0" },
