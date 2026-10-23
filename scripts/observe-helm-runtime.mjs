@@ -69,10 +69,12 @@ function securityRelevantContainer(container) {
   };
 }
 
-function securityRelevantPodSpec(spec) {
+function securityRelevantPodSpec(spec, runningPod = false) {
   const workloadSpec = { ...spec };
-  delete workloadSpec.nodeName;
-  delete workloadSpec.ephemeralContainers;
+  if (runningPod) {
+    delete workloadSpec.nodeName;
+    delete workloadSpec.ephemeralContainers;
+  }
   return {
     ...workloadSpec,
     containers: (spec?.containers ?? []).map(securityRelevantContainer),
@@ -129,7 +131,7 @@ function withoutPodTemplateHash(labels) {
 
 export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podSpec, component) {
   const template = securityRelevantPodSpec(deploymentSpec);
-  const pod = securityRelevantPodSpec(podSpec);
+  const pod = securityRelevantPodSpec(podSpec, true);
   pod.tolerations = withoutAdmittedEvictionTolerations(pod.tolerations, template.tolerations);
   if (!isDeepStrictEqual(template, securityRelevantPodSpec(replicaSetSpec))
     || !isDeepStrictEqual(template, pod)) {
@@ -137,6 +139,7 @@ export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podS
   }
   if (template.automountServiceAccountToken !== false
     || template.serviceAccountName !== "default"
+    || template.nodeName !== undefined
     || template.hostNetwork || template.hostPID || template.hostIPC
     || template.shareProcessNamespace === true
     || template.securityContext.seccompProfile?.type !== "RuntimeDefault"
@@ -250,6 +253,11 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
       Object.keys(object.metadata?.annotations ?? {}).some((key) =>
         key.startsWith("container.apparmor.security.beta.kubernetes.io/")))) {
       throw new Error(`Legacy AppArmor annotation is not approved: ${entry.component}`);
+    }
+    const templateAnnotations = deployment.spec.template.metadata?.annotations ?? {};
+    if (!isDeepStrictEqual(liveSet.spec.template.metadata?.annotations ?? {}, templateAnnotations)
+      || !isDeepStrictEqual(running.metadata.annotations ?? {}, templateAnnotations)) {
+      throw new Error(`Pod annotations differ from the approved Deployment template: ${entry.component}`);
     }
     assertWorkloadPodSpecParity(template, liveSet.spec.template.spec, running.spec, entry.component);
     const container = running.spec?.containers?.[0];

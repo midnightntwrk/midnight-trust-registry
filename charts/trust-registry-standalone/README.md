@@ -207,10 +207,12 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    template annotations. It allows only the matching Kubernetes-generated
    `pod-template-hash` label in ReplicaSet/Pod labels and normalizes documented
    container, service-account, priority, and 300-second eviction defaults.
-   Other Pod/container fields fail
-   closed on drift, except the live-only node assignment and separately
-   checked ephemeral containers. A real-cluster check is still required to
-   validate API-server defaulting (including resource quantities, probe fields,
+   ReplicaSet and Pod annotations must match the signed Deployment template;
+   admission-added annotations fail closed until explicitly reviewed. Other
+   Pod/container fields fail closed on drift, except the running Pod's node
+   assignment and separately checked ephemeral containers. A real-cluster
+   check is still required to validate API-server defaulting (including
+   resource quantities, probe fields,
    and projected volume modes); synthetic tests do not establish it.
    It does **not** compare live Services, NetworkPolicies, PVCs,
    Secrets, or unrelated workloads with the render. The two API queries are not

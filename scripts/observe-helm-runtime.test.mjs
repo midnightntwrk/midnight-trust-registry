@@ -117,7 +117,6 @@ test("rejects missing nodes, stale rollout, unowned pods, and image or policy dr
   pod.spec.containers[0].imagePullPolicy = "Never";
   pod.status.containerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
   assert.throws(check, /not running/u);
-  pod.status.containerStatuses[0].imageID = `containerd://sha256:${"1".repeat(64)}`;
   pod.status.containerStatuses[0].imageID = `docker-pullable://${reference("node")}`;
   assert.doesNotThrow(check);
   pod.status.containerStatuses[0].imageID = `containerd://sha256:${"1".repeat(64)}`;
@@ -178,6 +177,12 @@ test("rejects command, env, volume, and security drift across the workload chain
   };
   assert.throws(check, /Legacy AppArmor annotation/u);
   delete apiPod.metadata.annotations;
+  apiPod.metadata.annotations = { "k8s.v1.cni.cncf.io/networks": "unapproved" };
+  assert.throws(check, /Pod annotations differ/u);
+  delete apiPod.metadata.annotations;
+  apiSet.spec.template.metadata.annotations = { "mesh.example.test/traffic": "unapproved" };
+  assert.throws(check, /Pod annotations differ/u);
+  delete apiSet.spec.template.metadata.annotations;
   apiPod.metadata.labels["network-policy.example.test/allow-egress"] = "true";
   assert.throws(check, /Pod labels differ/u);
   delete apiPod.metadata.labels["network-policy.example.test/allow-egress"];
@@ -188,6 +193,11 @@ test("rejects command, env, volume, and security drift across the workload chain
   assert.throws(check, /Pod labels differ/u);
   delete apiSet.spec.template.metadata.labels["pod-template-hash"];
   delete apiPod.metadata.labels["pod-template-hash"];
+  apiDeployment.spec.template.spec.nodeName = "worker-1";
+  apiSet.spec.template.spec.nodeName = "worker-1";
+  assert.throws(check, /Pod spec differs/u);
+  delete apiDeployment.spec.template.spec.nodeName;
+  delete apiSet.spec.template.spec.nodeName;
   apiDeployment.spec.template.spec.hostNetwork = true;
   apiSet.spec.template.spec.hostNetwork = true;
   apiPod.spec.hostNetwork = true;
@@ -323,6 +333,9 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
   api.spec.selector.matchLabels["network-policy.example.test/allow-egress"] = "true";
   assert.throws(check, /differs from the signed Helm render/u);
   delete api.spec.selector.matchLabels["network-policy.example.test/allow-egress"];
+  api.spec.template.spec.nodeName = "worker-1";
+  assert.throws(check, /differs from the signed Helm render/u);
+  delete api.spec.template.spec.nodeName;
   assert.throws(() => validateHelmRenderedWorkloadParity(Buffer.from("tampered"),
     actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
 });
