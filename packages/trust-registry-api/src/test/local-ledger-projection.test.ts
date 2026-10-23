@@ -21,6 +21,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
+  assertCompletePolicyRevisionHistory,
   assertLocalLedgerEvidenceMatchesSnapshot,
   assertLocalLedgerProjectionMatchesSnapshot,
 } from "../local-ledger-projection.js";
@@ -29,6 +30,33 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const sequenceToTimestamp = (sequence: bigint): string =>
   new Date(Date.parse("2026-05-20T00:00:00Z") + Number(sequence) * 60_000).toISOString();
+
+const revisionMap = <K, V>(entries: [K, V][], keyOf: (key: K) => string) => {
+  const values = new Map(entries.map(([key, value]) => [keyOf(key), value]));
+  return {
+    isEmpty: () => values.size === 0,
+    size: () => BigInt(values.size),
+    member: (key: K) => values.has(keyOf(key)),
+    lookup: (key: K): V => {
+      const value = values.get(keyOf(key));
+      if (value === undefined) throw new Error("Missing policy revision fixture key");
+      return value;
+    },
+    [Symbol.iterator]: () => entries[Symbol.iterator](),
+  };
+};
+
+const policyHistory = (versions: [bigint, Uint8Array, bigint][]) => ({
+  governancePolicyVersion: 3n,
+  governanceActionCount: 5n,
+  governancePolicyCommitmentsByVersion: revisionMap(
+    versions.map(([version, commitment]) => [version, commitment]), String),
+  governancePolicyVersionsByCommitment: revisionMap(
+    versions.map(([version, commitment]) => [commitment, version]),
+    (key: Uint8Array) => Buffer.from(key).toString("hex")),
+  governancePolicyEffectiveFromByVersion: revisionMap(
+    versions.map(([version, , effectiveFrom]) => [version, effectiveFrom]), String),
+});
 
 const fixture = () => {
   const harness = new LocalTrustRegistryIntegrationHarness("api-ledger-coverage");
@@ -76,6 +104,28 @@ const fixture = () => {
 };
 
 describe("finalized Compact projection coverage", () => {
+  it("requires a contiguous and ordered policy revision history", () => {
+    const first = new Uint8Array(32).fill(1);
+    const second = new Uint8Array(32).fill(2);
+    const third = new Uint8Array(32).fill(3);
+    const valid = policyHistory([[1n, first, 0n], [2n, second, 2n], [3n, third, 4n]]);
+    expect(() => assertCompletePolicyRevisionHistory(valid)).not.toThrow();
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [3n, third, 4n], [4n, second, 5n],
+    ]))).toThrow(/incomplete/u);
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [2n, second, 2n], [3n, third, 2n],
+    ]))).toThrow(/inconsistent/u);
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [2n, second, 2n], [3n, third, 6n],
+    ]))).toThrow(/inconsistent/u);
+    expect(() => assertCompletePolicyRevisionHistory({ ...valid,
+      governancePolicyVersionsByCommitment: revisionMap([
+        [first, 1n], [second, 3n], [third, 2n],
+      ], (key: Uint8Array) => Buffer.from(key).toString("hex")),
+    })).toThrow(/inconsistent/u);
+  });
+
   it("matches all current ledger maps and rejects omitted or forged entries", () => {
     const { snapshot, ledger } = fixture();
     expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, ledger)).not.toThrow();

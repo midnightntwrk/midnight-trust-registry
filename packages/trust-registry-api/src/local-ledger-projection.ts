@@ -133,6 +133,35 @@ function policyCommitmentAtSequence(ledger: Ledger, sequence: bigint): string {
   return selectedCommitment;
 }
 
+export function assertCompletePolicyRevisionHistory(
+  ledger: Pick<Ledger, "governancePolicyVersion" | "governanceActionCount"
+    | "governancePolicyCommitmentsByVersion" | "governancePolicyVersionsByCommitment"
+    | "governancePolicyEffectiveFromByVersion">,
+): void {
+  const version = ledger.governancePolicyVersion;
+  if (version < 1n || ledger.governancePolicyCommitmentsByVersion.size() !== version
+    || ledger.governancePolicyEffectiveFromByVersion.size() !== version
+    || ledger.governancePolicyVersionsByCommitment.size() !== version) {
+    throw new Error("Finalized policy revision history is incomplete");
+  }
+  let previousEffectiveFrom = -1n;
+  for (let current = 1n; current <= version; current += 1n) {
+    if (!ledger.governancePolicyCommitmentsByVersion.member(current)
+      || !ledger.governancePolicyEffectiveFromByVersion.member(current)) {
+      throw new Error("Finalized policy revision history is incomplete");
+    }
+    const commitmentBytes = ledger.governancePolicyCommitmentsByVersion.lookup(current);
+    const effectiveFrom = ledger.governancePolicyEffectiveFromByVersion.lookup(current);
+    if (!ledger.governancePolicyVersionsByCommitment.member(commitmentBytes)
+      || ledger.governancePolicyVersionsByCommitment.lookup(commitmentBytes) !== current
+      || effectiveFrom > ledger.governanceActionCount
+      || (current === 1n ? effectiveFrom !== 0n : effectiveFrom <= previousEffectiveFrom)) {
+      throw new Error("Finalized policy revision history is inconsistent");
+    }
+    previousEffectiveFrom = effectiveFrom;
+  }
+}
+
 /**
  * Checks candidate projection coverage and represented fields at one caller-authenticated ledger view.
  * This does not authenticate finality, off-chain metadata, scope preimages, or historical bundle signatures.
@@ -151,6 +180,7 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
     )) {
     throw new Error("Candidate registry or policy differs from finalized Compact state");
   }
+  assertCompletePolicyRevisionHistory(ledger);
   if (!ledger.governancePolicyCommitmentsByVersion.member(ledger.governancePolicyVersion)
     || hex(ledger.governancePolicyCommitmentsByVersion.lookup(ledger.governancePolicyVersion))
       !== hex(ledger.governancePolicyCommitment)) {
