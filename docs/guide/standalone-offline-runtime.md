@@ -132,17 +132,21 @@ loader nor the wizard starts the portals or establishes an offline actor
 journey. The approved installer plan must still bind the six running image
 identities and qualify the deployed API and portals with egress denied.
 
-After loading the v6 images, run
-`node scripts/check-standalone-static-assets.mjs <verified-v6-bundle>` on the
+After loading the v5/v6 images, run
+`node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
 same Docker host. It creates disposable, network-disabled containers without
-starting them, copies each image's `/app/public` tree, and compares every
-regular file, size, and hash against the verified portal manifest. It rejects
-extra files and links, including a linked public root. The readback accepts
+starting them, reads a bounded tar stream from each portal image's
+`/app/public` tree and the API image's `/app/portals` tree without extracting
+onto the host filesystem, and compares every regular file, size, and hash
+against the verified portal manifests. It rejects extra files, directories
+not implied by the manifests, links, case-colliding paths, unsupported tar
+headers, and image-declared volumes. File modes and ownership are not compared.
+The readback accepts
 the verified OCI index ID or config ID from the local Docker image store.
 Retain the reported image IDs and inventory hash as
-install readback evidence. This check requires a locally loaded image; it is
-not an offline browser journey, a process-level egress test, or proof of image
-build provenance.
+install readback evidence. This check requires locally loaded exact images;
+it is not an offline browser journey, a process-level egress test, proof of
+image build provenance, or qualification of a newer source revision.
 
 The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and

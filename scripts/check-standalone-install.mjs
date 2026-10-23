@@ -158,7 +158,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || config.config?.WorkingDir !== "/app"
     || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])
     || config.config?.Cmd != null || config.config?.Healthcheck != null
-    || config.config?.OnBuild != null
+    || config.config?.OnBuild != null || config.config?.Volumes != null
     || !Array.isArray(environment) || environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))) {
     throw new Error("API archive runtime config disagrees with the approved source or entrypoint");

@@ -65,7 +65,8 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
     || !environment.includes(`TR_STATIC_ROLE=${role}`)
     || (requireOci && (environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
-      || config.config.Healthcheck != null || config.config.OnBuild != null))
+      || config.config.Healthcheck != null || config.config.OnBuild != null
+      || config.config.Volumes != null))
     || JSON.stringify(config.config?.Cmd)
       !== JSON.stringify(["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"])) {
     throw new Error(`${role} image archive config disagrees with the approved runtime`);

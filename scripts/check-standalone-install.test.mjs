@@ -44,6 +44,7 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
     Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
     WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
     ...(options.env ? { Env: options.env } : {}),
+    ...(options.volumes ? { Volumes: options.volumes } : {}),
   } });
   const configId = sha(config);
   const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
@@ -85,6 +86,7 @@ async function staticImageArchive(root, role, options = {}) {
     Labels: { "org.opencontainers.image.revision": options.labelRevision ?? revision },
     User: "1000:1000", WorkingDir: "/app",
     Env: options.env ?? [`TR_STATIC_ROLE=${role}`],
+    ...(options.volumes ? { Volumes: options.volumes } : {}),
     Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
   } });
   const configId = sha(config);
@@ -280,6 +282,7 @@ test("v4 binds an API archive to the exact install source and runtime config", a
       { outerName: "tr-standalone/node:sha-fake" },
       { extraPlatform: true },
       { env: ["NODE_OPTIONS=--import=data:text/javascript,throw%20Error('injected')"] },
+      { volumes: { "/app/portals": {} } },
     ]) {
       const changed = await apiImageArchive(root, revision, null, options);
       const changedManifest = JSON.parse(await readFile(apiManifestPath));
@@ -334,6 +337,7 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
     for (const options of [
       { env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"] },
       { env: ["TR_STATIC_ROLE=admin", "NODE_OPTIONS=--import=/tmp/evil.mjs"] },
+      { volumes: { "/app/public": {} } },
       { extraPlatform: true },
     ]) {
       inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", options);
