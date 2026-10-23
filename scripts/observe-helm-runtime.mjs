@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import { checkSignedHelmCriFleet, validateApprovedNodeScope } from "./check-helm-cri-fleet.mjs";
 import { validateSignedImageMapping } from "./collect-helm-cri-images.mjs";
@@ -21,6 +21,80 @@ function exactNames(actual, expected, description) {
   if (actual.length !== expected.length || new Set(actual).size !== actual.length
     || actual.some((name) => !expected.includes(name))) {
     throw new Error(`${description} do not match the approved Helm scope`);
+  }
+}
+
+function securityRelevantContainer(container) {
+  return {
+    name: container?.name,
+    image: container?.image,
+    imagePullPolicy: container?.imagePullPolicy,
+    command: container?.command ?? [],
+    args: container?.args ?? [],
+    env: container?.env ?? [],
+    envFrom: container?.envFrom ?? [],
+    ports: container?.ports ?? [],
+    volumeMounts: container?.volumeMounts ?? [],
+    volumeDevices: container?.volumeDevices ?? [],
+    securityContext: container?.securityContext ?? {},
+    resources: container?.resources ?? {},
+    startupProbe: container?.startupProbe ?? null,
+    readinessProbe: container?.readinessProbe ?? null,
+    livenessProbe: container?.livenessProbe ?? null,
+    lifecycle: container?.lifecycle ?? null,
+    workingDir: container?.workingDir ?? "",
+    stdin: container?.stdin ?? false,
+    tty: container?.tty ?? false,
+    restartPolicy: container?.restartPolicy ?? null,
+  };
+}
+
+function securityRelevantPodSpec(spec) {
+  return {
+    containers: (spec?.containers ?? []).map(securityRelevantContainer),
+    initContainers: (spec?.initContainers ?? []).map(securityRelevantContainer),
+    volumes: spec?.volumes ?? [],
+    nodeSelector: spec?.nodeSelector ?? {},
+    securityContext: spec?.securityContext ?? {},
+    automountServiceAccountToken: spec?.automountServiceAccountToken ?? true,
+    serviceAccountName: spec?.serviceAccountName ?? "default",
+    hostNetwork: spec?.hostNetwork ?? false,
+    hostPID: spec?.hostPID ?? false,
+    hostIPC: spec?.hostIPC ?? false,
+    shareProcessNamespace: spec?.shareProcessNamespace ?? false,
+    hostUsers: spec?.hostUsers ?? true,
+    imagePullSecrets: spec?.imagePullSecrets ?? [],
+    affinity: spec?.affinity ?? null,
+    tolerations: spec?.tolerations ?? [],
+    topologySpreadConstraints: spec?.topologySpreadConstraints ?? [],
+    hostAliases: spec?.hostAliases ?? [],
+    dnsConfig: spec?.dnsConfig ?? null,
+    dnsPolicy: spec?.dnsPolicy ?? "ClusterFirst",
+    runtimeClassName: spec?.runtimeClassName ?? null,
+    schedulerName: spec?.schedulerName ?? "default-scheduler",
+    priorityClassName: spec?.priorityClassName ?? "",
+    restartPolicy: spec?.restartPolicy ?? "Always",
+    terminationGracePeriodSeconds: spec?.terminationGracePeriodSeconds ?? 30,
+    enableServiceLinks: spec?.enableServiceLinks ?? true,
+  };
+}
+
+function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podSpec, component) {
+  const template = securityRelevantPodSpec(deploymentSpec);
+  if (!isDeepStrictEqual(template, securityRelevantPodSpec(replicaSetSpec))
+    || !isDeepStrictEqual(template, securityRelevantPodSpec(podSpec))) {
+    throw new Error(`Pod spec differs from the approved Deployment template: ${component}`);
+  }
+  if (template.automountServiceAccountToken !== false
+    || template.serviceAccountName !== "default"
+    || template.hostNetwork || template.hostPID || template.hostIPC
+    || template.shareProcessNamespace === true
+    || template.volumes.some((volume) => volume.hostPath !== undefined)
+    || [...template.containers, ...template.initContainers].some((container) =>
+      container.securityContext.allowPrivilegeEscalation !== false
+      || container.securityContext.privileged === true
+      || !container.securityContext.capabilities?.drop?.includes("ALL"))) {
+    throw new Error(`Pod spec violates standalone isolation requirements: ${component}`);
   }
 }
 
@@ -106,6 +180,7 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
       || liveSet.spec.template.spec.containers[0].imagePullPolicy !== "Never") {
       throw new Error(`Pod is not owned by the approved Deployment: ${entry.component}`);
     }
+    assertWorkloadPodSpecParity(template, liveSet.spec.template.spec, running.spec, entry.component);
     const container = running.spec?.containers?.[0];
     const status = running.status?.containerStatuses?.[0];
     const observedImageId = typeof status?.imageID === "string"
@@ -160,7 +235,7 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
     kubeContext, clusterReference: scope.clusterReference, namespace: scope.namespace,
     releaseName: scope.releaseName, scopeSha256: sha256(scopeBytes),
     mappingSha256: sha256(mappingBytes), nodes: [...approvedNodes].sort(), workloads: observed,
-    qualification: "not-established: image readback is not full Pod-spec parity, offline actor, or restore evidence" };
+    qualification: "not-established: workload spec parity is not rendered-chart parity, offline actor, or restore evidence" };
 }
 
 export async function observeSignedHelmRuntime(paths, dependencies = {}) {

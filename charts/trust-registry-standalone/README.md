@@ -181,9 +181,13 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    authenticate the reviewer-approved `clusterReference` against the API,
    prove image bytes executed from the CRI store, verify PVC contents,
    inspect unrelated or unlabelled workloads, measure runtime egress, or
-   exercise the local ledger or actor journeys. It does not compare commands,
-   arguments, environment, security context, host networking, or volumes
-   against the rendered chart; an independently captured rendered-manifest
+   exercise the local ledger or actor journeys. It compares security-relevant
+   Pod specs across each Deployment, owned ReplicaSet, and running Pod,
+   including commands, arguments, environment, mounts, volumes, probes,
+   security context, and host networking. It requires disabled service-account
+   automount, no host namespaces or hostPath volumes, and dropped container
+   capabilities. It does **not** compare that Deployment template with the
+   independently reviewed rendered chart; an authenticated rendered-manifest
    versus live-resource diff remains necessary. The two API queries are not
    one atomic snapshot; a separate, authenticated evidence capture is still
    needed for release review.

@@ -36,9 +36,12 @@ function fixture() {
     const labels = { "app.kubernetes.io/instance": "tr-rc",
       "app.kubernetes.io/part-of": "trust-registry-standalone",
       "app.kubernetes.io/component": name };
-    const container = { name, image: reference(role), imagePullPolicy: "Never" };
-    const init = { name: "stage-approval", image: reference(role), imagePullPolicy: "Never" };
-    const spec = { nodeSelector: { "kubernetes.io/arch": "arm64" },
+    const securityContext = { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } };
+    const container = { name, image: reference(role), imagePullPolicy: "Never", securityContext };
+    const init = { name: "stage-approval", image: reference(role), imagePullPolicy: "Never",
+      securityContext };
+    const spec = { automountServiceAccountToken: false,
+      nodeSelector: { "kubernetes.io/arch": "arm64" },
       containers: [container], ...(name === "api" ? { initContainers: [init] } : {}) };
     workloads.items.push({ kind: "Deployment",
       metadata: { name: `tr-rc-tr-${name}`, namespace: "trust-registry", uid: `dep-${name}`,
@@ -50,12 +53,11 @@ function fixture() {
     workloads.items.push({ kind: "ReplicaSet",
       metadata: { name: `rs-${name}`, namespace: "trust-registry", uid: `rs-${name}`, labels,
         ownerReferences: [{ kind: "Deployment", uid: `dep-${name}`, controller: true }] },
-      spec: { replicas: 1, template: { spec } }, status: { readyReplicas: 1 } });
+      spec: { replicas: 1, template: { spec: structuredClone(spec) } }, status: { readyReplicas: 1 } });
     workloads.items.push({ kind: "Pod",
       metadata: { name: `pod-${name}`, namespace: "trust-registry", labels,
         ownerReferences: [{ kind: "ReplicaSet", uid: `rs-${name}`, controller: true }] },
-      spec: { nodeName: "worker-1", containers: [structuredClone(container)],
-        ...(name === "api" ? { initContainers: [structuredClone(init)] } : {}) },
+      spec: { ...structuredClone(spec), nodeName: "worker-1" },
       status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }],
         containerStatuses: [{ name, image: reference(role),
           imageID: `containerd://sha256:${String(roles.indexOf(role) + 1).repeat(64)}`,
@@ -101,7 +103,7 @@ test("rejects missing nodes, stale rollout, unowned pods, and image or policy dr
   assert.throws(check, /not owned/u);
   pod.metadata.ownerReferences = [{ kind: "ReplicaSet", uid: "rs-node", controller: true }];
   pod.spec.containers[0].imagePullPolicy = "Always";
-  assert.throws(check, /not running/u);
+  assert.throws(check, /Pod spec differs/u);
   pod.spec.containers[0].imagePullPolicy = "Never";
   pod.status.containerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
   assert.throws(check, /not running/u);
@@ -122,6 +124,58 @@ test("rejects missing nodes, stale rollout, unowned pods, and image or policy dr
   api.status.initContainerStatuses[0].state.terminated.exitCode = 0;
   api.status.initContainerStatuses[0].imageID = `containerd://sha256:${"f".repeat(64)}`;
   assert.throws(check, /approval init/u);
+});
+
+test("rejects command, env, volume, and security drift across the workload chain", () => {
+  const { nodes, workloads } = fixture();
+  const check = () => validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet,
+    nodes, workloads, "isolated-cluster");
+  const apiPod = workloads.items.find((item) => item.kind === "Pod"
+    && item.metadata.labels["app.kubernetes.io/component"] === "api");
+  const apiSet = workloads.items.find((item) => item.kind === "ReplicaSet"
+    && item.metadata.labels["app.kubernetes.io/component"] === "api");
+  const apiDeployment = workloads.items.find((item) => item.kind === "Deployment"
+    && item.metadata.labels["app.kubernetes.io/component"] === "api");
+  apiPod.spec.containers[0].args = ["serve", "--unsafe-demo-mutations"];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.containers[0].args;
+  apiSet.spec.template.spec.containers[0].env = [{ name: "UNSAFE", value: "true" }];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiSet.spec.template.spec.containers[0].env;
+  apiPod.spec.volumes = [{ name: "secret", hostPath: { path: "/host" } }];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.volumes;
+  apiPod.spec.containers[0].securityContext.allowPrivilegeEscalation = true;
+  assert.throws(check, /Pod spec differs/u);
+  apiPod.spec.containers[0].securityContext.allowPrivilegeEscalation = false;
+  apiPod.spec.initContainers[0].command = ["sh", "-c", "exit 0"];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.initContainers[0].command;
+  apiPod.spec.containers[0].volumeMounts = [{ name: "host", mountPath: "/run/trust-registry" }];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.containers[0].volumeMounts;
+  apiPod.spec.containers[0].readinessProbe = { exec: { command: ["true"] } };
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.containers[0].readinessProbe;
+  apiDeployment.spec.template.spec.hostNetwork = true;
+  apiSet.spec.template.spec.hostNetwork = true;
+  apiPod.spec.hostNetwork = true;
+  assert.throws(check, /violates standalone isolation/u);
+  delete apiDeployment.spec.template.spec.hostNetwork;
+  delete apiSet.spec.template.spec.hostNetwork;
+  delete apiPod.spec.hostNetwork;
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    value.volumes = [{ name: "host", hostPath: { path: "/" } }];
+  }
+  assert.throws(check, /violates standalone isolation/u);
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    delete value.volumes;
+  }
+  apiPod.spec.serviceAccountName = "privileged";
+  assert.throws(check, /Pod spec differs/u);
+  apiPod.spec.serviceAccountName = "default";
+  apiPod.spec.dnsPolicy = "ClusterFirst";
+  assert.doesNotThrow(check);
 });
 
 test("runs read-only kubectl queries only after the signed fleet preflight", async () => {
