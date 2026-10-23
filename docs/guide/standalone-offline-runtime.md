@@ -697,6 +697,13 @@ gpg --local-user REVIEWER_SIGNING_KEY_FINGERPRINT --armor --detach-sign \
 gpg --verify genesis-approval.sig genesis-approval.unsigned.json
 ```
 
+The verifier accepts a signing subkey only when GnuPG reports the pinned
+primary-key fingerprint, and rejects expired signatures. The signature's
+creation time must be at or after the draft's `approvedAt` time; set that
+timestamp immediately before signing on a clock-synchronized trusted system.
+GnuPG signature time is signer-controlled metadata, not an independent trusted
+timestamp or proof that the review occurred.
+
 The `reviewedReference` in the draft must identify the independently reviewed
 chain specification or reproducible genesis evidence and its immutable digest
 (a ticket or document ID is optional). For a format-only illustration, run

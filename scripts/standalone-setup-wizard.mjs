@@ -488,7 +488,7 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
 }
 
 export async function verifyDetachedReviewerSignature(
-  documentPath, signaturePath, keyringDirectory, expectedFingerprint,
+  documentPath, signaturePath, keyringDirectory, expectedFingerprint, approvedAt = null,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
   const publicKeySource = resolve(keyringDirectory);
@@ -538,9 +538,20 @@ export async function verifyDetachedReviewerSignature(
       "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
       "--status-fd=1", "--verify", signaturePath, documentPath,
     ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
-    const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
-    if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
-      || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH) /mu.test(stdout)) {
+    const valid = stdout.split("\n").filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
+    const fields = valid[0]?.split(/\s+/u);
+    const signedAt = Number(fields?.[4]);
+    const expiresAt = Number(fields?.[5]);
+    const minimumSignedAt = approvedAt === null ? 0 : Math.floor(Date.parse(approvedAt) / 1000);
+    const now = Math.floor(Date.now() / 1000);
+    if (valid.length !== 1 || fields?.length !== 12
+      || !FINGERPRINT.test(fields[2]) || fields[11] !== expectedFingerprint
+      || !Number.isSafeInteger(signedAt) || signedAt <= 0
+      || !Number.isSafeInteger(expiresAt) || expiresAt < 0
+      || !Number.isSafeInteger(minimumSignedAt)
+      || signedAt < minimumSignedAt || signedAt > now + 5 * 60
+      || (expiresAt !== 0 && expiresAt <= now)
+      || /^\[GNUPG:\] (?:EXPSIG|EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH) /mu.test(stdout)) {
       throw new Error("Detached approval signature does not match the pinned reviewer key");
     }
   } finally {
@@ -663,7 +674,7 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
 }
 
 async function verifiedApprovalEvidence(
-  root, label, document, signature, keyringDirectory, expectedFingerprint, dependencies,
+  root, label, document, signature, keyringDirectory, expectedFingerprint, dependencies, approvedAt,
 ) {
   if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
     throw new Error(`${label} approval document or signature exceeds the bounded evidence size`);
@@ -675,7 +686,7 @@ async function verifiedApprovalEvidence(
     await writePrivateSnapshot(documentSnapshot, document);
     await writePrivateSnapshot(signatureSnapshot, signature);
     await (dependencies.verifySignature ?? verifyDetachedReviewerSignature)(
-      documentSnapshot, signatureSnapshot, resolve(keyringDirectory), expectedFingerprint,
+      documentSnapshot, signatureSnapshot, resolve(keyringDirectory), expectedFingerprint, approvedAt,
     );
   } finally {
     await unlink(documentSnapshot).catch(() => {});
@@ -727,6 +738,7 @@ export async function approveStandaloneGenesis(
     }
     const evidence = await verifiedApprovalEvidence(
       root, "genesis", document, signature, keyringDirectory, expectedFingerprint, dependencies,
+      approval.approvedAt,
     );
     record.genesisApproval = {
       ...evidence,
@@ -777,6 +789,7 @@ export async function approveStandaloneCommittee(
     validateReleaseCommittee(approval.maintenancePolicy, approval.custodians);
     const evidence = await verifiedApprovalEvidence(
       root, "committee", document, signature, keyringDirectory, expectedFingerprint, dependencies,
+      approval.approvedAt,
     );
     record.committeeApproval = {
       ...evidence,
@@ -865,7 +878,7 @@ export async function approveStandaloneCommitteeDeployment(
     }
     const evidence = await verifiedApprovalEvidence(
       root, "committee-deployment", document, signature, keyringDirectory,
-      expectedFingerprint, dependencies,
+      expectedFingerprint, dependencies, approval.approvedAt,
     );
     record.committeeDeploymentApproval = {
       ...evidence,
@@ -1672,7 +1685,7 @@ export async function approveStandaloneCommitteeRecovery(
     }
     const evidence = await verifiedApprovalEvidence(
       root, "maintenance-recovery", document, signature, keyringDirectory,
-      expectedFingerprint, dependencies,
+      expectedFingerprint, dependencies, decision.approvedAt,
     );
     attempt.recoveryApproval = {
       ...evidence, approvedAt: decision.approvedAt,

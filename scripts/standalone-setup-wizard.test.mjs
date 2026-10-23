@@ -2356,3 +2356,89 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint));
 });
+
+test("detached GPG verification accepts a signing subkey under the pinned primary key", async (t) => {
+  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
+    t.skip("gpg is not installed");
+    return;
+  }
+  const root = await mkdtemp("/tmp/tr-gpg-subkey-");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const signer = join(root, "signer");
+  const verifier = join(root, "verifier");
+  await mkdir(signer, { mode: 0o700 });
+  await mkdir(verifier, { mode: 0o700 });
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+    "--passphrase", "", "--quick-generate-key", "Subkey Reviewer <subkey@example.test>",
+    "ed25519", "cert", "0"], { stdio: "pipe", timeout: 30_000 });
+  const listing = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+    "--list-secret-keys"], { encoding: "utf8" });
+  const primary = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
+  assert.match(primary, /^[A-F0-9]{40}$/u);
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+    "--passphrase", "", "--quick-add-key", primary, "ed25519", "sign", "0"],
+  { stdio: "pipe", timeout: 30_000 });
+  const fingerprints = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+    "--list-secret-keys"], { encoding: "utf8" }).split("\n")
+    .filter((line) => line.startsWith("fpr:")).map((line) => line.split(":")[9]);
+  assert.equal(fingerprints.length, 2);
+  assert.notEqual(fingerprints[0], fingerprints[1]);
+  const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", primary]);
+  execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
+    { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
+  const document = join(root, "approval.json");
+  const signature = join(root, "approval.sig");
+  await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+    "--output", signature, document], { stdio: "pipe", timeout: 30_000 });
+  const status = execFileSync("gpg", ["--homedir", verifier, "--batch", "--status-fd=1",
+    "--verify", signature, document], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const valid = status.split("\n").find((line) => line.startsWith("[GNUPG:] VALIDSIG "));
+  const fields = valid?.split(/\s+/u);
+  assert.equal(fields.length, 12);
+  assert.equal(fields.at(-1), primary);
+  assert.match(fields[4], /^[0-9]+$/u);
+  assert.match(fields[5], /^[0-9]+$/u);
+  await verifyDetachedReviewerSignature(document, signature, verifier, primary);
+  await verifyDetachedReviewerSignature(document, signature, verifier, primary,
+    new Date(Date.now() - 60_000).toISOString());
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, primary,
+    new Date(Date.now() + 60_000).toISOString()), /does not match/u);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier,
+    "B".repeat(40)), /does not match/u);
+});
+
+test("detached GPG verification rejects an expired signature with a still-valid key", async (t) => {
+  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
+    t.skip("gpg is not installed");
+    return;
+  }
+  const root = await mkdtemp("/tmp/tr-gpg-expired-");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const signer = join(root, "signer");
+  const verifier = join(root, "verifier");
+  await mkdir(signer, { mode: 0o700 });
+  await mkdir(verifier, { mode: 0o700 });
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+    "--passphrase", "", "--faked-system-time", "20200101T000000", "--quick-generate-key",
+    "Expired Signature Reviewer <expired@example.test>", "ed25519", "sign", "0"],
+  { stdio: "pipe", timeout: 30_000 });
+  const listing = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+    "--list-secret-keys"], { encoding: "utf8" });
+  const fingerprint = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
+  assert.match(fingerprint, /^[A-F0-9]{40}$/u);
+  const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint]);
+  execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
+    { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
+  const document = join(root, "approval.json");
+  const signature = join(root, "approval.sig");
+  await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--faked-system-time",
+    "20200102T000000", "--default-sig-expire", "1d", "--detach-sign", "--output",
+    signature, document], { stdio: "pipe", timeout: 30_000 });
+  const result = spawnSync("gpg", ["--homedir", verifier, "--batch", "--status-fd=1",
+    "--verify", signature, document], { encoding: "utf8" });
+  assert.match(result.stdout, /\[GNUPG:\] EXPSIG /u);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier,
+    fingerprint));
+});
