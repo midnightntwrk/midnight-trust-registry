@@ -44,7 +44,9 @@ for(const [name,path] of Object.entries(paths)){
   try{
     const stat=fs.fstatSync(fd);
     if(!stat.isFile()||stat.size===0||stat.size>limits[name]) throw new Error('invalid runtime file');
-    hashes[name]=crypto.createHash('sha256').update(fs.readFileSync(fd)).digest('hex');
+    const bytes=fs.readFileSync(fd);
+    if(bytes.length!==stat.size) throw new Error('runtime file changed during read');
+    hashes[name]=crypto.createHash('sha256').update(bytes).digest('hex');
   } finally { fs.closeSync(fd); }
 }
 process.stdout.write(JSON.stringify(hashes));`;
@@ -633,6 +635,10 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   }
   const initialApiStatus = apiPod.status.containerStatuses.find((entry) => entry.name === "api");
   const currentApiStatus = currentPod.status?.containerStatuses?.find((entry) => entry.name === "api");
+  const initialInitStatus = apiPod.status.initContainerStatuses.find((entry) =>
+    entry.name === "stage-approval");
+  const currentInitStatus = currentPod.status?.initContainerStatuses?.find((entry) =>
+    entry.name === "stage-approval");
   if (currentPod.kind !== "Pod"
     || currentPod.metadata?.uid !== apiPod.metadata.uid
     || currentPod.metadata?.name !== apiPod.metadata.name
@@ -645,12 +651,14 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     || !isDeepStrictEqual(securityRelevantPodSpec(currentPod.spec, true),
       securityRelevantPodSpec(apiPod.spec, true))
     || currentPod.status?.containerStatuses?.length !== 1
+    || !initialApiStatus?.containerID || !currentApiStatus?.containerID
+    || !initialApiStatus?.imageID || !currentApiStatus?.imageID
+    || !initialInitStatus?.containerID || !currentInitStatus?.containerID
     || currentApiStatus?.containerID !== initialApiStatus.containerID
     || currentApiStatus?.restartCount !== initialApiStatus.restartCount
     || currentApiStatus?.imageID !== initialApiStatus.imageID
     || currentApiStatus?.ready !== true
-    || currentPod.status?.initContainerStatuses?.find((entry) => entry.name === "stage-approval")
-      ?.containerID !== apiPod.status.initContainerStatuses[0].containerID) {
+    || currentInitStatus.containerID !== initialInitStatus.containerID) {
     throw new Error("Approved API Pod changed during observation");
   }
   return { ...observed, format: "tr-helm-live-workload-observation-v2",

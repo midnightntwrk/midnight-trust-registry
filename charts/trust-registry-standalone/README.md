@@ -176,11 +176,14 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    this checker does not observe the cluster release.
    After installation, use an explicitly selected, reviewed kubeconfig and
    context for a non-mutating Kubernetes workload observation. The observer
-   needs narrowly scoped `get` access to both API Secrets and the API Pod,
+   needs `list` on nodes, Deployments, ReplicaSets, and Pods, and `get` on
+   both API Secrets and the API Pod,
    plus `create` on `pods/exec` to run a fixed, read-only hash probe in the API
    container. Limit Secret `get` to the two names with RBAC `resourceNames`;
    restrict these grants to the approved release and evidence operator.
-   `pods/exec` is not a read-only Kubernetes RBAC verb:
+   `pods/exec` cannot practically be limited to a stable Deployment Pod name
+   across rollouts and can reach other Pods in the namespace. Treat this as
+   privileged operator access, not a read-only Kubernetes RBAC verb:
 
    ```sh
    node scripts/observe-helm-runtime.mjs \
@@ -191,8 +194,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
      <api-plan-reviewer-keyring> <API_PLAN_REVIEWER_FINGERPRINT>
    ```
 
-   This first repeats the signed fleet check, verifies the canonical,
-   detached-signed v2 API plan, and checks its deployment identity fields.
+   This first repeats the signed fleet check, verifies the exact-byte,
+   detached-signed v2 API plan, and checks its install binding fields.
    Its source revision, install-inventory digest,
    release-manifest digest, and validity window must match the exact verified
    bundle and signed Helm image mapping before any Kubernetes observation.
@@ -221,9 +224,10 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    an ephemeral debug container is present. It also rejects live Deployment
    Pod specs that differ from the exact signed Helm render. A v1 node scope
    remains valid for fleet receipt checks but is rejected by this live observer.
-   Capture the output and raw Kubernetes API responses through an
-   access-controlled evidence channel; the Secret response contains private
-   snapshot and approval data and must not go into ordinary logs. Retain the
+   Capture the observer output and non-Secret Kubernetes responses through an
+   access-controlled evidence channel. Retain Secret metadata and digests,
+   not raw Secret responses: they contain private snapshot and approval data.
+   Retain the
    kubeconfig trust anchor, context, cluster
    identity, RBAC grants, time, and Helm revision. Review kubeconfig `exec`
    plugins and the inherited proxy environment before running: `kubectl` may
@@ -275,7 +279,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    credentials in Helm values, a ConfigMap, the image, or logs. A Kubernetes
    Secret object remains in cluster storage; enforce at-rest encryption and
    narrowly scoped RBAC separately. Native Secrets have a size limit, so
-   large snapshots need a separately reviewed delivery mechanism.
+   large snapshots need a separately reviewed delivery mechanism. The five
+   approval files share one Kubernetes Secret's approximately 1 MiB data
+   limit; the probe's per-file bounds do not enlarge that limit.
 5. Provide a public local beneficiary key, reviewer fingerprint, and real
    digest-pinned image references in a private values file. Install the
    `bootstrap` phase first, observe its genesis, complete the first-run

@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { inspect } from "node:util";
 import yaml from "js-yaml";
 
 import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
@@ -117,6 +118,9 @@ test("rejects changed or replaced API approval Secrets without exposing their da
     Buffer.from("different"), "api-keyring", "trust-registry"), /differs/u);
   assert.throws(() => validateApiKeyringSecret({ ...keyringSecret, immutable: false },
     keyringPod, keyringBytes, "api-keyring", "trust-registry"), /immutable/u);
+  assert.throws(() => validateApiKeyringSecret({ ...keyringSecret,
+    metadata: { ...keyringSecret.metadata, creationTimestamp: "2026-10-24T00:02:00.000Z" } },
+  keyringPod, keyringBytes, "api-keyring", "trust-registry"), /immutable/u);
   const digests = Object.fromEntries([
     "api-plan.json", "api-plan.sig", "install-inventory.json", "release-manifest.json",
     "snapshot.json", "pubring.kbx"].map((key) => [key, hash(Buffer.from(key))]));
@@ -125,6 +129,8 @@ test("rejects changed or replaced API approval Secrets without exposing their da
     "pubring.kbx": hash(Buffer.from("different")) }, digests), /Running API approval/u);
   assert.throws(() => validateApiRuntimeHashes(digests,
     { "api-plan.json": digests["api-plan.json"] }), /Running API approval/u);
+  assert.throws(() => validateApiRuntimeHashes({ ...digests, extra: "0".repeat(64) },
+    digests), /Running API approval/u);
 });
 
 function fixture() {
@@ -543,7 +549,8 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
         return run(program, args);
       },
     }), (error) => error.message === "Unable to read approved API Secret"
-      && !JSON.stringify(error).includes("private secret bytes"));
+      && error.cause === undefined && !inspect(error, { showHidden: true })
+        .includes("private secret bytes"));
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
       run: async (program, args) => args.includes("secret") && args.includes("api-keyring")
@@ -565,12 +572,20 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
         return run(program, args);
       },
     }), (error) => error.message === "Unable to read running API approval-file hashes"
-      && !JSON.stringify(error).includes("private runtime bytes"));
+      && error.cause === undefined && !inspect(error, { showHidden: true })
+        .includes("private runtime bytes"));
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
       run: async (program, args) => args.includes("get") && args.includes("pod")
         ? { stdout: JSON.stringify({ ...apiPod, status: { ...apiPod.status,
           containerStatuses: [{ ...apiPod.status.containerStatuses[0],
+            containerID: "containerd://changed" }] } }) } : run(program, args),
+    }), /Pod changed during observation/u);
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("get") && args.includes("pod")
+        ? { stdout: JSON.stringify({ ...apiPod, status: { ...apiPod.status,
+          initContainerStatuses: [{ ...apiPod.status.initContainerStatuses[0],
             containerID: "containerd://changed" }] } }) } : run(program, args),
     }), /Pod changed during observation/u);
     calls.length = 0;
