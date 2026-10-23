@@ -8,7 +8,8 @@ import test from "node:test";
 import yaml from "js-yaml";
 
 import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
-  validateApiApprovalSecret, validateHelmApiPlanBinding, validateHelmRenderedWorkloadParity,
+  validateApiApprovalSecret, validateApiKeyringSecret, validateApiRuntimeHashes,
+  validateHelmApiPlanBinding, validateHelmRenderedWorkloadParity,
   validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
@@ -92,6 +93,8 @@ test("rejects changed or replaced API approval Secrets without exposing their da
   assert.throws(() => check({ ...secret, immutable: false }), /immutable reviewed Pod input/u);
   assert.throws(() => check({ ...secret, metadata: { ...secret.metadata,
     creationTimestamp: "2026-10-24T00:02:00.000Z" } }), /immutable reviewed Pod input/u);
+  assert.throws(() => check({ ...secret, metadata: { ...secret.metadata,
+    creationTimestamp: pod.metadata.creationTimestamp } }), /immutable reviewed Pod input/u);
   assert.throws(() => check({ ...secret, data: { ...secret.data,
     "api-plan.json": Buffer.from("different").toString("base64") } }), /differs from/u);
   assert.throws(() => check({ ...secret, data: { ...secret.data,
@@ -102,7 +105,26 @@ test("rejects changed or replaced API approval Secrets without exposing their da
   }
   assert.throws(() => check(secret, { ...pod, spec: { ...pod.spec,
     containers: [{ name: "api", args: ["--local-ledger-reviewer", "B".repeat(40)] }] } }),
-  /immutable reviewed Pod input/u);
+  /reviewer differs/u);
+  const keyringBytes = Buffer.from("reviewer keyring");
+  const keyringPod = { ...pod, spec: { ...pod.spec,
+    volumes: [{ name: "keyring-input", secret: { secretName: "api-keyring" } }] } };
+  const keyringSecret = { ...secret, metadata: { ...secret.metadata, name: "api-keyring" },
+    data: { "pubring.kbx": keyringBytes.toString("base64") } };
+  assert.equal(validateApiKeyringSecret(keyringSecret, keyringPod, keyringBytes,
+    "api-keyring", "trust-registry").keyringSha256, hash(keyringBytes));
+  assert.throws(() => validateApiKeyringSecret(keyringSecret, keyringPod,
+    Buffer.from("different"), "api-keyring", "trust-registry"), /differs/u);
+  assert.throws(() => validateApiKeyringSecret({ ...keyringSecret, immutable: false },
+    keyringPod, keyringBytes, "api-keyring", "trust-registry"), /immutable/u);
+  const digests = Object.fromEntries([
+    "api-plan.json", "api-plan.sig", "install-inventory.json", "release-manifest.json",
+    "snapshot.json", "pubring.kbx"].map((key) => [key, hash(Buffer.from(key))]));
+  assert.deepEqual(validateApiRuntimeHashes(digests, digests), digests);
+  assert.throws(() => validateApiRuntimeHashes({ ...digests,
+    "pubring.kbx": hash(Buffer.from("different")) }, digests), /Running API approval/u);
+  assert.throws(() => validateApiRuntimeHashes(digests,
+    { "api-plan.json": digests["api-plan.json"] }), /Running API approval/u);
 });
 
 function fixture() {
@@ -416,7 +438,7 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
     actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
 });
 
-test("runs read-only kubectl queries only after the signed fleet preflight", async () => {
+test("observes signed fleet, immutable Secrets, and running API file hashes", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-helm-live-test-"));
   try {
     const mappingPath = join(root, "mapping.json");
@@ -429,8 +451,10 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     await writeFile(join(root, "install-inventory.json"), inventory);
     const apiPlanPath = join(root, "api-plan.json");
     const signatureBytes = Buffer.from("signature");
+    const keyringBytes = Buffer.from("reviewer keyring");
     await writeFile(apiPlanPath, `${JSON.stringify(currentPlan(inventory))}\n`);
     await writeFile(join(root, "api-plan.sig"), signatureBytes);
+    await writeFile(join(root, "pubring.kbx"), keyringBytes);
     await writeFile(mappingPath, signedMappingBytes);
     await writeFile(scopePath, scopeBytes);
     const paths = { preflightPaths: { receiptPath: mappingPath, bundleRoot: root }, scopePath,
@@ -443,9 +467,12 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
       const spec = workload.kind === "Deployment" ? workload.spec.template.spec
         : workload.kind === "ReplicaSet" ? workload.spec.template.spec : workload.spec;
       spec.containers[0].args = ["--local-ledger-reviewer", paths.apiPlanSignerFingerprint];
-      spec.volumes = [{ name: "approval-input", secret: { secretName: "api-approval" } }];
+      spec.volumes = [{ name: "approval-input", secret: { secretName: "api-approval" } },
+        { name: "keyring-input", secret: { secretName: "api-keyring" } }];
       if (workload.kind === "Pod") {
         workload.metadata.creationTimestamp = "2026-10-24T00:01:00.000Z";
+        workload.metadata.uid = "pod-api-uid";
+        workload.metadata.resourceVersion = "53";
       }
     }
     const secret = { kind: "Secret", type: "Opaque", immutable: true,
@@ -456,6 +483,19 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
         ["install-inventory.json", inventory], ["release-manifest.json", releaseManifest],
         ["snapshot.json", snapshot],
       ].map(([name, bytes]) => [name, bytes.toString("base64")])) };
+    const keyringSecret = { ...secret,
+      metadata: { ...secret.metadata, name: "api-keyring", uid: "keyring-1" },
+      data: { "pubring.kbx": keyringBytes.toString("base64") } };
+    const apiPod = workloads.items.find((item) => item.kind === "Pod"
+      && item.metadata.name === "pod-api");
+    const runtimeHashes = {
+      "api-plan.json": hash(await readFile(apiPlanPath)),
+      "api-plan.sig": hash(signatureBytes),
+      "install-inventory.json": hash(inventory),
+      "release-manifest.json": hash(releaseManifest),
+      "snapshot.json": hash(snapshot),
+      "pubring.kbx": hash(keyringBytes),
+    };
     const renderedBytes = Buffer.from(workloads.items.filter((item) => item.kind === "Deployment")
       .map((item) => `---\n${yaml.dump(item)}`).join(""));
     const renderedManifestPath = join(root, "reviewed-render.yaml");
@@ -470,8 +510,11 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     const calls = [];
     const run = async (program, args) => {
       calls.push([program, args]);
-      return { stdout: JSON.stringify(args.includes("nodes") ? nodes
-        : args.includes("secret") ? secret : workloads) };
+      const value = args.includes("nodes") ? nodes
+        : args.includes("secret") ? args.includes("api-keyring") ? keyringSecret : secret
+          : args.includes("exec") ? runtimeHashes
+            : args.includes("pod") ? apiPod : workloads;
+      return { stdout: JSON.stringify(value) };
     };
     const dependencies = { checkFleet: async () => observedFleet,
       verifyPlanSignature: () => "approved", run };
@@ -480,10 +523,51 @@ test("runs read-only kubectl queries only after the signed fleet preflight", asy
     assert.equal(observed.apiPlanBinding.planSha256,
       hash(await readFile(apiPlanPath)));
     assert.equal(observed.apiPlanBinding.apiApprovalSecret.secretUid, "secret-1");
-    assert.equal(calls.length, 3);
+    assert.equal(observed.apiPlanBinding.apiKeyringSecret.secretUid, "keyring-1");
+    assert.equal(observed.apiPlanBinding.keyringSha256, hash(keyringBytes));
+    assert.deepEqual(observed.apiPlanBinding.runtimeApprovalHashes, runtimeHashes);
+    assert.equal(calls.length, 6);
     assert.ok(calls.every(([program, args]) => program === "kubectl"
-      && args.includes("--context") && args.includes("isolated-cluster")
-      && args.includes("--output=json")));
+      && args.includes("--context") && args.includes("isolated-cluster")));
+    assert.ok(calls.find(([, args]) => args.includes("exec"))?.[1].includes("node"));
+    assert.ok(!JSON.stringify(observed).includes(keyringBytes.toString("base64")));
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => {
+        if (args.includes("secret")) throw Object.assign(new Error("private secret bytes"),
+          { stdout: "private secret bytes" });
+        return run(program, args);
+      },
+    }), (error) => error.message === "Unable to read approved API Secret"
+      && !JSON.stringify(error).includes("private secret bytes"));
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("secret") && args.includes("api-keyring")
+        ? { stdout: JSON.stringify({ ...keyringSecret,
+          data: { "pubring.kbx": Buffer.from("substituted keyring").toString("base64") } }) }
+        : run(program, args),
+    }), /keyring Secret differs/u);
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("exec")
+        ? { stdout: JSON.stringify({ ...runtimeHashes, "pubring.kbx": "0".repeat(64) }) }
+        : run(program, args),
+    }), /Running API approval files differ/u);
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => {
+        if (args.includes("exec")) throw Object.assign(new Error("private runtime bytes"),
+          { stdout: "private runtime bytes" });
+        return run(program, args);
+      },
+    }), (error) => error.message === "Unable to read running API approval-file hashes"
+      && !JSON.stringify(error).includes("private runtime bytes"));
+    calls.length = 0;
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("get") && args.includes("pod")
+        ? { stdout: JSON.stringify({ ...apiPod, metadata: { ...apiPod.metadata,
+          resourceVersion: "54" } }) } : run(program, args),
+    }), /Pod changed during observation/u);
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, {
       checkFleet: async () => { throw new Error("bad fleet"); },

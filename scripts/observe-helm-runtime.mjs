@@ -23,6 +23,31 @@ const COMPONENTS = new Map([
 const SHA256 = /^[0-9a-f]{64}$/u;
 const APPROVAL_SECRET_KEYS = ["api-plan.json", "api-plan.sig",
   "install-inventory.json", "release-manifest.json", "snapshot.json"];
+const RUNTIME_APPROVAL_PATHS = {
+  "api-plan.json": "/run/trust-registry/api-plan.json",
+  "api-plan.sig": "/run/trust-registry/api-plan.sig",
+  "install-inventory.json": "/run/trust-registry/install-inventory.json",
+  "release-manifest.json": "/run/trust-registry/release-manifest.json",
+  "snapshot.json": "/run/trust-registry/snapshot.json",
+  "pubring.kbx": "/run/trust-registry/reviewer-keyring/pubring.kbx",
+};
+const RUNTIME_HASH_SCRIPT = `
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const paths=${JSON.stringify(RUNTIME_APPROVAL_PATHS)};
+const limits={'api-plan.json':1048576,'api-plan.sig':65536,
+  'install-inventory.json':1048576,'release-manifest.json':1048576,
+  'snapshot.json':67108864,'pubring.kbx':8388608};
+const hashes={};
+for(const [name,path] of Object.entries(paths)){
+  const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  try{
+    const stat=fs.fstatSync(fd);
+    if(!stat.isFile()||stat.size===0||stat.size>limits[name]) throw new Error('invalid runtime file');
+    hashes[name]=crypto.createHash('sha256').update(fs.readFileSync(fd)).digest('hex');
+  } finally { fs.closeSync(fd); }
+}
+process.stdout.write(JSON.stringify(hashes));`;
 
 export function validateHelmApiPlanBinding(planBytes, mappingBytes, inventoryBytes,
   now = Date.now()) {
@@ -63,12 +88,9 @@ export function validateHelmApiPlanBinding(planBytes, mappingBytes, inventoryByt
     apiImageReference: apiImage.reference, apiImageConfigId: apiImage.configId };
 }
 
-export function validateApiApprovalSecret(secret, pod, binding, planBytes, signatureBytes,
-  expectedName, expectedNamespace, signerFingerprint) {
+function assertApiSecretMetadata(secret, pod, expectedName, expectedNamespace, volumeName) {
   const podCreated = Date.parse(pod?.metadata?.creationTimestamp ?? "");
   const secretCreated = Date.parse(secret?.metadata?.creationTimestamp ?? "");
-  const container = pod?.spec?.containers?.find((entry) => entry.name === "api");
-  const reviewerFlag = container?.args?.indexOf("--local-ledger-reviewer") ?? -1;
   if (secret?.kind !== "Secret" || secret.type !== "Opaque" || secret.immutable !== true
     || secret.metadata?.name !== expectedName
     || secret.metadata?.namespace !== expectedNamespace
@@ -76,37 +98,78 @@ export function validateApiApprovalSecret(secret, pod, binding, planBytes, signa
     || typeof secret.metadata?.resourceVersion !== "string"
     || secret.metadata.resourceVersion.length === 0
     || !Number.isFinite(podCreated) || !Number.isFinite(secretCreated)
-    || secretCreated > podCreated
-    || pod?.spec?.volumes?.find((volume) => volume.name === "approval-input")
+    || secretCreated >= podCreated
+    || pod?.spec?.volumes?.find((volume) => volume.name === volumeName)
       ?.secret?.secretName !== expectedName
-    || reviewerFlag < 0 || container.args[reviewerFlag + 1] !== signerFingerprint
-    || secret.data === null || typeof secret.data !== "object"
-    || Array.isArray(secret.data)
-    || Object.keys(secret.data).sort().join("\0") !== [...APPROVAL_SECRET_KEYS].sort().join("\0")) {
-    throw new Error("Live API approval Secret is not the immutable reviewed Pod input");
+  ) {
+    throw new Error("Live API Secret is not the immutable reviewed Pod input");
   }
-  const decode = (key) => {
+  return { secretName: expectedName, secretUid: secret.metadata.uid,
+    secretResourceVersion: secret.metadata.resourceVersion };
+}
+
+function decodedSecretData(secret, expectedKeys) {
+  if (secret?.data === null || typeof secret?.data !== "object"
+    || Array.isArray(secret.data)
+    || Object.keys(secret.data).sort().join("\0") !== [...expectedKeys].sort().join("\0")) {
+    throw new Error("Live API Secret has unexpected data keys");
+  }
+  return Object.fromEntries(expectedKeys.map((key) => {
     const encoded = secret.data[key];
     if (typeof encoded !== "string" || encoded.length === 0
       || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) {
-      throw new Error(`Live API approval Secret has invalid ${key} bytes`);
+      throw new Error(`Live API Secret has invalid ${key} bytes`);
     }
     const bytes = Buffer.from(encoded, "base64");
     if (bytes.toString("base64") !== encoded) {
-      throw new Error(`Live API approval Secret has noncanonical ${key} bytes`);
+      throw new Error(`Live API Secret has noncanonical ${key} bytes`);
     }
-    return bytes;
-  };
-  if (!decode("api-plan.json").equals(planBytes)
-    || !decode("api-plan.sig").equals(signatureBytes)
-    || sha256(decode("install-inventory.json")) !== binding.inventorySha256
-    || sha256(decode("release-manifest.json")) !== binding.releaseManifestSha256
-    || sha256(decode("snapshot.json")) !== binding.snapshotSha256) {
+    return [key, bytes];
+  }));
+}
+
+export function validateApiApprovalSecret(secret, pod, binding, planBytes, signatureBytes,
+  expectedName, expectedNamespace, signerFingerprint) {
+  const metadata = assertApiSecretMetadata(secret, pod, expectedName, expectedNamespace,
+    "approval-input");
+  const container = pod?.spec?.containers?.find((entry) => entry.name === "api");
+  const reviewerFlag = container?.args?.indexOf("--local-ledger-reviewer") ?? -1;
+  if (reviewerFlag < 0 || container.args[reviewerFlag + 1] !== signerFingerprint) {
+    throw new Error("Live API reviewer differs from the approved signer");
+  }
+  const data = decodedSecretData(secret, APPROVAL_SECRET_KEYS);
+  if (!data["api-plan.json"].equals(planBytes)
+    || !data["api-plan.sig"].equals(signatureBytes)
+    || sha256(data["install-inventory.json"]) !== binding.inventorySha256
+    || sha256(data["release-manifest.json"]) !== binding.releaseManifestSha256
+    || sha256(data["snapshot.json"]) !== binding.snapshotSha256) {
     throw new Error("Live API approval Secret differs from the signed plan and verified install");
   }
-  return { secretName: expectedName, secretUid: secret.metadata.uid,
-    secretResourceVersion: secret.metadata.resourceVersion,
-    planSha256: binding.planSha256 };
+  return { ...metadata, planSha256: binding.planSha256 };
+}
+
+export function validateApiKeyringSecret(secret, pod, keyringBytes, expectedName,
+  expectedNamespace) {
+  const metadata = assertApiSecretMetadata(secret, pod, expectedName, expectedNamespace,
+    "keyring-input");
+  const data = decodedSecretData(secret, ["pubring.kbx"]);
+  if (!data["pubring.kbx"].equals(keyringBytes)) {
+    throw new Error("Live API keyring Secret differs from the approved reviewer keyring");
+  }
+  return { ...metadata, keyringSha256: sha256(keyringBytes) };
+}
+
+export function validateApiRuntimeHashes(hashes, expected) {
+  if (hashes === null || typeof hashes !== "object" || Array.isArray(hashes)
+    || Object.keys(hashes).sort().join("\0")
+      !== Object.keys(RUNTIME_APPROVAL_PATHS).sort().join("\0")
+    || Object.keys(expected).sort().join("\0")
+      !== Object.keys(RUNTIME_APPROVAL_PATHS).sort().join("\0")
+    || Object.entries(expected).some(([name, digest]) =>
+      !SHA256.test(digest) || hashes[name] !== digest)) {
+    throw new Error("Running API approval files differ from the signed plan and Secrets");
+  }
+  return hashes;
 }
 
 function exactNames(actual, expected, description) {
@@ -481,18 +544,21 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     || scope.renderedManifestSha256 !== sha256(renderedBytes)) {
     throw new Error("Signed v2 scope does not approve the exact Helm render");
   }
-  const [planBytes, signatureBytes, inventoryBytes] = await Promise.all([
+  const [planBytes, signatureBytes, keyringBytes, inventoryBytes] = await Promise.all([
     boundedFile(paths.apiPlanPath, 1024 * 1024, "Signed API plan"),
     boundedFile(paths.apiPlanSignaturePath, 64 * 1024, "API plan signature"),
+    boundedFile(paths.apiPlanKeyringPath, 8 * 1024 * 1024, "API reviewer keyring"),
     boundedFile(join(paths.preflightPaths.bundleRoot, "install-inventory.json"),
       1024 * 1024, "Helm install inventory"),
   ]);
   const signatureDirectory = await mkdtemp(join(tmpdir(), "tr-helm-api-plan-"));
   try {
     const signatureCopy = join(signatureDirectory, "api-plan.sig");
+    const keyringCopy = join(signatureDirectory, "pubring.kbx");
     await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(keyringCopy, keyringBytes, { flag: "wx", mode: 0o600 });
     (dependencies.verifyPlanSignature ?? verifyMappingSignature)(planBytes,
-      signatureCopy, paths.apiPlanKeyringPath, paths.apiPlanSignerFingerprint);
+      signatureCopy, keyringCopy, paths.apiPlanSignerFingerprint);
   } finally {
     await rm(signatureDirectory, { recursive: true, force: true });
   }
@@ -520,18 +586,66 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     && item.metadata?.name === apiWorkload.pod);
   const approvalSecretName = apiPod.spec.volumes
     .find((volume) => volume.name === "approval-input")?.secret?.secretName;
-  if (typeof approvalSecretName !== "string" || approvalSecretName.length === 0) {
-    throw new Error("Approved API Pod has no approval Secret");
+  const keyringSecretName = apiPod.spec.volumes
+    .find((volume) => volume.name === "keyring-input")?.secret?.secretName;
+  if (typeof approvalSecretName !== "string" || approvalSecretName.length === 0
+    || typeof keyringSecretName !== "string" || keyringSecretName.length === 0
+    || !apiPod.metadata?.uid || !apiPod.metadata?.resourceVersion) {
+    throw new Error("Approved API Pod has no stable approval inputs");
   }
-  const secret = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
-    "get", "secret", approvalSecretName, "--output=json"], options)).stdout);
-  const apiApprovalSecret = validateApiApprovalSecret(secret, apiPod, apiPlanBinding,
+  const getSecret = async (name) => {
+    try {
+      return JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
+        "get", "secret", name, "--output=json"], options)).stdout);
+    } catch {
+      throw new Error("Unable to read approved API Secret");
+    }
+  };
+  const approvalSecret = await getSecret(approvalSecretName);
+  const apiApprovalSecret = validateApiApprovalSecret(approvalSecret, apiPod, apiPlanBinding,
     planBytes, signatureBytes, approvalSecretName, scope.namespace,
     paths.apiPlanSignerFingerprint);
+  const keyringSecret = await getSecret(keyringSecretName);
+  const apiKeyringSecret = validateApiKeyringSecret(keyringSecret, apiPod, keyringBytes,
+    keyringSecretName, scope.namespace);
+  const expectedRuntimeHashes = { "api-plan.json": sha256(planBytes),
+    "api-plan.sig": sha256(signatureBytes),
+    "install-inventory.json": apiPlanBinding.inventorySha256,
+    "release-manifest.json": apiPlanBinding.releaseManifestSha256,
+    "snapshot.json": apiPlanBinding.snapshotSha256,
+    "pubring.kbx": sha256(keyringBytes) };
+  let runtimeHashes;
+  try {
+    const result = await command("kubectl", [...base, "--namespace", scope.namespace,
+      "exec", apiPod.metadata.name, "-c", "api", "--", "node", "-e", RUNTIME_HASH_SCRIPT],
+    options);
+    runtimeHashes = JSON.parse(result.stdout);
+  } catch {
+    throw new Error("Unable to read running API approval-file hashes");
+  }
+  validateApiRuntimeHashes(runtimeHashes, expectedRuntimeHashes);
+  let currentPod;
+  try {
+    currentPod = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
+      "get", "pod", apiPod.metadata.name, "--output=json"], options)).stdout);
+  } catch {
+    throw new Error("Unable to re-read approved API Pod");
+  }
+  if (currentPod.kind !== "Pod"
+    || currentPod.metadata?.uid !== apiPod.metadata.uid
+    || currentPod.metadata?.resourceVersion !== apiPod.metadata.resourceVersion
+    || currentPod.status?.containerStatuses?.[0]?.containerID
+      !== apiPod.status.containerStatuses[0].containerID) {
+    throw new Error("Approved API Pod changed during observation");
+  }
   return { ...observed, format: "tr-helm-live-workload-observation-v2",
     renderedManifestSha256, apiPlanBinding: { ...apiPlanBinding,
-      observedImageID: apiWorkload.imageID, apiApprovalSecret },
-    qualification: "not-established: signed plan/Secret/image parity is point-in-time, not live network policy, offline actor, or restore evidence" };
+      observedImageID: apiWorkload.imageID, apiApprovalSecret, apiKeyringSecret,
+      signerFingerprint: paths.apiPlanSignerFingerprint,
+      signatureSha256: expectedRuntimeHashes["api-plan.sig"],
+      keyringSha256: expectedRuntimeHashes["pubring.kbx"],
+      runtimeApprovalHashes: runtimeHashes },
+    qualification: "not-established: signed plan/Secret/runtime-file/image parity is point-in-time, not live network policy, offline actor, or restore evidence" };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
