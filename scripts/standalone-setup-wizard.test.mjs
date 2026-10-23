@@ -11,6 +11,7 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 
 import {
   assertUnusedStandaloneProject,
+  assertDetachedReviewerSignatureStatus,
   draftStandaloneGenesisApproval,
   draftStandaloneCommitteeApproval,
   approveStandaloneCommittee,
@@ -255,8 +256,9 @@ async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
 async function approve(f) {
   return approveStandaloneGenesis(
     f.directory, f.approvalPath, f.signaturePath, f.keyring, reviewerFingerprint,
-    { verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+    { verifySignature: async (_document, _signature, _keyring, fingerprint, approvedAt) => {
       assert.equal(fingerprint, reviewerFingerprint);
+      assert.equal(approvedAt, JSON.parse(await readFile(f.approvalPath, "utf8")).approvedAt);
     } },
   );
 }
@@ -293,8 +295,9 @@ async function committeeDocument(f, overrides = {}) {
 async function approveCommittee(f, overrides = {}) {
   const input = await committeeDocument(f, overrides);
   return approveStandaloneCommittee(f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
-    verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+    verifySignature: async (_document, _signature, _keyring, fingerprint, approvedAt) => {
       assert.equal(fingerprint, governanceFingerprint);
+      assert.equal(approvedAt, input.document.approvedAt);
     },
   });
 }
@@ -327,8 +330,9 @@ async function approveCommitteeDeployment(f, overrides = {}) {
   const input = await committeeDeploymentDocument(f, overrides);
   return approveStandaloneCommitteeDeployment(
     f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
-    { verifyBundle: f.verifyBundle, verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+    { verifyBundle: f.verifyBundle, verifySignature: async (_document, _signature, _keyring, fingerprint, approvedAt) => {
       assert.equal(fingerprint, governanceFingerprint);
+      assert.equal(approvedAt, input.document.approvedAt);
     } },
   );
 }
@@ -1567,8 +1571,9 @@ async function recoveryRequiredFixture() {
     prepareTransition: async (approval) => ({ ...await f.dependencies.prepareTransition(approval),
       finalizedBlockHash: `0x${"f".repeat(64)}` }),
     now: () => now,
-    verifySignature: async (_document, _signature, _keyring, fingerprint) => {
+    verifySignature: async (_document, _signature, _keyring, fingerprint, approvedAt) => {
       assert.equal(fingerprint, governanceFingerprint);
+      assert.equal(approvedAt, decision.approvedAt);
     },
   };
   return { ...f, decision, decisionPath, decisionSignaturePath, now, dependencies };
@@ -2655,11 +2660,41 @@ test("synthetic demo reference cannot enter a signed genesis approval", async ()
   await assert.rejects(approve(f), /does not bind the current install and observed genesis/u);
 });
 
-test("detached GPG verification accepts only the pinned signing key and exact bytes", async (t) => {
-  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
-    t.skip("gpg is not installed");
-    return;
+test("reviewer signature status binds the signer and rejects weak or attached signatures", () => {
+  const primary = "A".repeat(40);
+  const signer = "B".repeat(40);
+  const signedAt = Math.floor(Date.now() / 1000);
+  const approvedAt = new Date((signedAt - 60) * 1000).toISOString();
+  const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00 ${primary}`;
+  const good = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer`;
+  const output = `${good}\n${valid}\n`;
+  assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(output, primary, approvedAt));
+  assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
+    output.replace(signer.slice(-16), signer), primary, approvedAt));
+  assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
+    `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, primary, approvedAt));
+  for (const invalid of [
+    valid,
+    `${output}${valid}\n`,
+    output.replace(good, `[GNUPG:] GOODSIG ${"C".repeat(16)} Reviewer`),
+    output.replace(` ${primary}`, ` ${"C".repeat(40)}`),
+    output.replace(" 22 8 00 ", " 22 2 00 "),
+    output.replace(" 22 8 00 ", " 22 11 00 "),
+    output.replace(" 22 8 00 ", " 22 8 01 "),
+    `${output}[GNUPG:] EXPKEYSIG ${signer} Reviewer\n`,
+    `${output}[GNUPG:] KEYREVOKED\n`,
+    `${output}[GNUPG:] PLAINTEXT_LENGTH 10\n`,
+  ]) {
+    assert.throws(() => assertDetachedReviewerSignatureStatus(invalid, primary, approvedAt), /pinned reviewer key/u);
   }
+  assert.throws(() => assertDetachedReviewerSignatureStatus(output, primary), /pinned reviewer key/u);
+  assert.throws(() => assertDetachedReviewerSignatureStatus(output, primary,
+    new Date((signedAt + 60) * 1000).toISOString()), /pinned reviewer key/u);
+});
+
+test("detached GPG verification accepts only the pinned signing key and exact bytes", async (t) => {
+  assert.equal(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status, 0,
+    "GPG is required for the first-run signature release gate");
   const root = await mkdtemp("/tmp/tr-gpg-");
   t.after(() => rm(root, { recursive: true, force: true }));
   const signer = join(root, "signer");
@@ -2679,32 +2714,37 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"], { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
   const document = join(root, "approval.json");
   const signature = join(root, "approval.sig");
+  const approvedAt = new Date(Date.now() - 60_000).toISOString();
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
-  await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint);
+  await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+  const armoredSignature = join(root, "approval.asc");
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--armor", "--detach-sign",
+    "--output", armoredSignature, document]);
+  await verifyDetachedReviewerSignature(document, armoredSignature, verifier, fingerprint, approvedAt);
   const publicExport = join(root, "reviewer-public.asc");
   await writeFile(publicExport, armoredPublicKey, { mode: 0o600 });
-  await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint);
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40)),
+  await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint, approvedAt);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40), approvedAt),
     /does not match/u);
   const invalidExport = join(root, "invalid-public.asc");
   await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 });
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint),
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint, approvedAt),
     /armored public-key export/u);
   const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));
   await mkdir(longKeyring, { recursive: true, mode: 0o700 });
   await writeFile(join(longKeyring, "pubring.kbx"), await readFile(join(verifier, "pubring.kbx")),
     { mode: 0o600 });
-  await verifyDetachedReviewerSignature(document, signature, longKeyring, fingerprint);
+  await verifyDetachedReviewerSignature(document, signature, longKeyring, fingerprint, approvedAt);
   const unsupportedKeyring = join(root, "unsupported-keyring");
   await mkdir(unsupportedKeyring, { mode: 0o700 });
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, unsupportedKeyring, fingerprint),
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, unsupportedKeyring, fingerprint, approvedAt),
     /needs pubring\.kbx/u);
   const linkedKeyring = join(root, "linked-keyring");
   await mkdir(linkedKeyring, { mode: 0o700 });
   await symlink(join(verifier, "pubring.kbx"), join(linkedKeyring, "pubring.kbx"));
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, linkedKeyring, fingerprint));
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, "B".repeat(40)), /does not match/u);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, linkedKeyring, fingerprint, approvedAt));
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, "B".repeat(40), approvedAt), /does not match/u);
   const attachedSignature = join(root, "attached.sig");
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--sign", "--output",
     attachedSignature, document]);
@@ -2714,18 +2754,16 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const unrelatedDocument = join(root, "unrelated.json");
   await writeFile(unrelatedDocument, '{"format":"different"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, attachedSignature,
-    verifier, fingerprint), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, clearSignature,
-    verifier, fingerprint), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
   await writeFile(document, '{"format":"tampered"}\n');
-  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint));
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt));
 });
 
 test("detached GPG verification accepts a signing subkey under the pinned primary key", async (t) => {
-  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
-    t.skip("gpg is not installed");
-    return;
-  }
+  assert.equal(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status, 0,
+    "GPG is required for the first-run signature release gate");
   const root = await mkdtemp("/tmp/tr-gpg-subkey-");
   t.after(() => rm(root, { recursive: true, force: true }));
   const signer = join(root, "signer");
@@ -2752,6 +2790,7 @@ test("detached GPG verification accepts a signing subkey under the pinned primar
     { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
   const document = join(root, "approval.json");
   const signature = join(root, "approval.sig");
+  const approvedAt = new Date(Date.now() - 60_000).toISOString();
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
     "--output", signature, document], { stdio: "pipe", timeout: 30_000 });
@@ -2763,20 +2802,18 @@ test("detached GPG verification accepts a signing subkey under the pinned primar
   assert.equal(fields.at(-1), primary);
   assert.match(fields[4], /^[0-9]+$/u);
   assert.match(fields[5], /^[0-9]+$/u);
-  await verifyDetachedReviewerSignature(document, signature, verifier, primary);
+  await verifyDetachedReviewerSignature(document, signature, verifier, primary, approvedAt);
   await verifyDetachedReviewerSignature(document, signature, verifier, primary,
     new Date(Date.now() - 60_000).toISOString());
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, primary,
     new Date(Date.now() + 60_000).toISOString()), /does not match/u);
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier,
-    "B".repeat(40)), /does not match/u);
+    "B".repeat(40), approvedAt), /does not match/u);
 });
 
 test("detached GPG verification rejects an expired signature with a still-valid key", async (t) => {
-  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
-    t.skip("gpg is not installed");
-    return;
-  }
+  assert.equal(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status, 0,
+    "GPG is required for the first-run signature release gate");
   const root = await mkdtemp("/tmp/tr-gpg-expired-");
   t.after(() => rm(root, { recursive: true, force: true }));
   const signer = join(root, "signer");
@@ -2804,5 +2841,5 @@ test("detached GPG verification rejects an expired signature with a still-valid 
     "--verify", signature, document], { encoding: "utf8" });
   assert.match(result.stdout, /\[GNUPG:\] EXPSIG /u);
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier,
-    fingerprint));
+    fingerprint, "2020-01-01T00:00:00.000Z"));
 });

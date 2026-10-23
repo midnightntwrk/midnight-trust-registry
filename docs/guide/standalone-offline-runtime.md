@@ -716,7 +716,14 @@ gpg --verify genesis-approval.sig genesis-approval.unsigned.json
 ```
 
 The verifier accepts a signing subkey only when GnuPG reports the pinned
-primary-key fingerprint, and rejects expired signatures. The signature's
+primary-key fingerprint and the `GOODSIG` key ID or fingerprint matches the
+actual signer.
+It requires a detached binary-document signature using SHA-256, SHA-384, or
+SHA-512; ASCII armoring of that detached signature is accepted. It rejects an
+expired or revoked signing key or signature. A `KEYEXPIRED` status alone does
+not cause rejection; an expired signing key is rejected through `EXPKEYSIG`.
+The operator must refresh the approved public-key export or keyring before
+verification, because an old export cannot reveal a later revocation. The signature's
 creation time must be at or after the draft's `approvedAt` time; set that
 timestamp immediately before signing on a clock-synchronized trusted system.
 GnuPG signature time is signer-controlled metadata, not an independent trusted
