@@ -1293,6 +1293,9 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       const binding = parseCanonicalSignedJson(bindingBytes, "Stored committee deployment approval");
       const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
       if (sha256(bindingBytes) !== record.committeeDeploymentApproval.documentSha256
+        || !exactFields(binding, ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
+          "deploymentReceipt", "expectedGenesisHash", "format", "releaseManifestSha256",
+          "reviewedReference", "reviewerFingerprint", "sourceRevision"])
         || binding.format !== "tr-local-committee-deployment-approval-v1"
         || binding.sourceRevision !== record.sourceRevision
         || binding.committeeApprovalSha256 !== record.committeeApproval.documentSha256
@@ -1300,6 +1303,8 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
         || binding.releaseManifestSha256 !== sha256(manifestBytes)
         || binding.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
         || binding.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
+        || binding.approvedAt !== record.committeeDeploymentApproval.approvedAt
+        || binding.reviewedReference !== record.committeeDeploymentApproval.reviewedReference
         || !exactFields(binding.deploymentReceipt, receiptFields)
         || receiptFields.some((field) => binding.deploymentReceipt[field] !== receipt[field])) {
         throw new Error("Signed committee deployment binding disagrees with current setup state");

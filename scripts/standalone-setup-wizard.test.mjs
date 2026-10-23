@@ -2068,6 +2068,21 @@ test("transition prepare rejects a changed stored governance reviewer", async ()
   }), /Stored committee approval disagrees with signed approval bytes/u);
 });
 
+test("transition prepare rejects changed retained deployment-binding metadata", async () => {
+  for (const field of ["approvedAt", "reviewedReference"]) {
+    const f = await committeeTransitionFixture();
+    const recordPath = join(f.directory, "setup-record.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8"));
+    record.committeeDeploymentApproval[field] = field === "approvedAt"
+      ? "2026-01-01T00:00:00.000Z" : "sha256:changed-review-reference";
+    await writeFile(recordPath, JSON.stringify(record));
+    await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+      verifyBundle: f.verifyBundle,
+      prepareTransition: async () => assert.fail("changed binding reached transition preparation"),
+    }), /Signed committee deployment binding disagrees with current setup state/u);
+  }
+});
+
 test("transition prepare rejects ambiguous stored signed approval bytes", async () => {
   for (const field of ["committeeApproval", "committeeDeploymentApproval"]) {
     const f = await committeeTransitionFixture();

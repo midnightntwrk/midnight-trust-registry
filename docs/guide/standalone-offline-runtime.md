@@ -318,7 +318,8 @@ ledger; results are not recorded if access changes during readback. If the
 temporary relay was removed, restore the **same verified** relay and ports for
 those operations, then remove it again before testing egress-denied runtime.
 Legacy read-only maintenance reconciliation remains forensic only and cannot
-qualify a release.
+qualify a release. It does not recheck the current endpoint mapping, so a
+legacy `observed` status is not authenticated deployment or release evidence.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat
