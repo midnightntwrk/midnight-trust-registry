@@ -309,6 +309,18 @@ async function preparedStandaloneTopology(root, record) {
     return { config, expectedTopology };
 }
 
+function requireVerifiedStandaloneStack(record) {
+  const access = record.ledgerObservation?.installAccess;
+  if (!SHA256.test(record.install?.verified?.runtimeComposeSha256 ?? "")
+    || !SHA256.test(record.install?.verified?.runtimeOfflineComposeSha256 ?? "")
+    || !record.stack?.observation
+    || typeof record.stack.project !== "string"
+    || !["effective-direct-loopback", "standalone-install-relay-observation"].includes(access?.kind)
+    || access.networkId !== record.stack.observation.topology?.networkId) {
+    throw new Error("A verified observed standalone stack is required before approval or deployment");
+  }
+}
+
 export async function observeStandaloneStack(directory, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -442,7 +454,16 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
       }
     }
     const observation = await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
-    if (installAccess?.kind === "standalone-install-relay-observation") {
+    if (installAccess?.kind === "effective-direct-loopback") {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
+      if (current.project !== record.stack.project
+        || current.networkId !== installAccess.networkId
+        || current.internalNetworkOnly !== true) {
+        throw new Error("Direct-loopback topology changed during genesis observation");
+      }
+    } else if (installAccess?.kind === "standalone-install-relay-observation") {
       const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
       const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
         config, record.install.verified, expectedTopology);
@@ -553,6 +574,7 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
     if (!record.ledgerObservation || record.genesisApproval || record.deployment) {
       throw new Error("Observe genesis before drafting its approval; do not replace an approved or reserved decision");
     }
+    requireVerifiedStandaloneStack(record);
     if (record.install.verified?.runtimeComposeSha256 && !record.stack?.observation) {
       throw new Error("Observe the prepared local stack before drafting its genesis approval");
     }
@@ -676,6 +698,7 @@ export async function approveStandaloneGenesis(
     const { record } = await readRecord(root);
     if (!record.ledgerObservation) throw new Error("Observe the local ledger before requesting genesis approval");
     if (record.genesisApproval || record.deployment) throw new Error("Genesis approval is already recorded or deployment reserved");
+    requireVerifiedStandaloneStack(record);
     if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
     const document = await regularBytes(resolve(documentPath));
     const signature = await regularBytes(resolve(signaturePath));
@@ -908,6 +931,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (!record.ledgerObservation || !record.genesisApproval) {
       throw new Error("Observe the local ledger and record detached reviewer approval before deployment");
     }
+    requireVerifiedStandaloneStack(record);
     if (!record.setupId) {
       throw new Error("Legacy setup cannot submit a deployment without a setup-bound approval");
     }

@@ -17,11 +17,11 @@ import {
   approveStandaloneCommitteeDeployment,
   approveStandaloneCommitteeRecovery,
   approveStandaloneGenesis,
-  attemptStandaloneDeployment,
+  attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
   attemptStandaloneVerifierKeyInsertion,
   collectStandaloneGenesisCandidate,
   initializeStandaloneSetup,
-  observeStandaloneLedger,
+  observeStandaloneLedger as observeStandaloneLedgerRaw,
   observeStandaloneStack,
   prepareStandaloneStack,
   prepareStandaloneCommitteeTransition,
@@ -72,7 +72,25 @@ const plan = {
   journalPath: "/private/deployment-attempt.json",
 };
 
-async function fixture(format = "tr-standalone-install-v2") {
+async function fixtureTopology(directory) {
+  const record = JSON.parse(await readFile(join(directory, "setup-record.json"), "utf8"));
+  return { project: record.stack.project, networkId: ledgerNetworkId, internalNetworkOnly: true };
+}
+
+async function observeStandaloneLedger(directory, pinPath, dependencies = {}) {
+  return observeStandaloneLedgerRaw(directory, pinPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
+  return attemptStandaloneDeploymentRaw(directory, planPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function fixture(format = "tr-standalone-install-v3") {
+  const prepareDefaultStack = arguments.length === 0;
   const root = await mkdtemp(join(tmpdir(), "tr-wizard-test-"));
   const bundle = join(root, "bundle");
   await mkdir(bundle);
@@ -144,6 +162,17 @@ async function fixture(format = "tr-standalone-install-v2") {
   } else {
     await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   }
+  if (prepareDefaultStack) {
+    const project = "tr-standalone-local-test";
+    await prepareStandaloneStack(directory, { project, nodePort: "29944",
+      indexerPort: "28088", proofPort: "26300" }, {
+      verifyBundle, assertProjectUnused: async () => {},
+    });
+    await observeStandaloneStack(directory, {
+      observeTopology: async () => ({ project, networkId: ledgerNetworkId, internalNetworkOnly: true }),
+      observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+    });
+  }
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
   const approvalPath = join(root, "genesis-approval.json");
@@ -152,7 +181,7 @@ async function fixture(format = "tr-standalone-install-v2") {
   await writeFile(approvalPath, JSON.stringify({
     format: "tr-local-genesis-approval-v1",
     setupId: record.setupId,
-    stackProject: null,
+    stackProject: record.stack?.project ?? null,
     sourceRevision,
     installInventorySha256: record.install.inventorySha256,
     networkId: "undeployed",
@@ -297,7 +326,7 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(document.installInventorySha256, record.install.inventorySha256);
   assert.equal(document.setupId, record.setupId);
-  assert.equal(document.stackProject, null);
+  assert.equal(document.stackProject, record.stack.project);
   assert.equal(document.pinSha256, record.ledgerObservation.pinSha256);
   assert.equal(document.expectedGenesisHash, expectedGenesisHash);
   assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
@@ -385,19 +414,18 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
 });
 
-test("legacy setup without a setup-bound approval cannot reserve deployment", async () => {
+test("legacy v2 record cannot approve genesis or reserve deployment despite a setup ID", async () => {
   const f = await fixture("tr-standalone-install-v2");
   await observeStandaloneLedger(f.directory, f.pinPath,
     { preflight: async () => ({ kind: "local-node-observation-only" }) });
-  await approve(f);
-  const recordPath = join(f.directory, "setup-record.json");
-  const record = JSON.parse(await readFile(recordPath, "utf8"));
-  delete record.setupId;
-  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approve(f), /verified observed standalone stack/u);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  record.genesisApproval = { reviewerFingerprint, documentSha256: "a".repeat(64) };
+  await writeFile(join(f.directory, "setup-record.json"), JSON.stringify(record));
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
     verifyBundle: f.verifyBundle,
     deploy: async () => { throw new Error("must not submit"); },
-  }), /Legacy setup cannot submit/u);
+  }), /verified observed standalone stack/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
@@ -756,6 +784,19 @@ test("direct-loopback deployment rechecks topology and exact indexer endpoints",
     ...deps, observeTopology: async () => topology,
   }), /endpoints diverged/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+});
+
+test("direct-loopback genesis observation refuses a topology change during preflight", async () => {
+  const f = await fixture();
+  let checks = 0;
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => ({ project: "tr-standalone-local-test",
+      networkId: ++checks === 1 ? ledgerNetworkId : "replacement",
+      internalNetworkOnly: true }),
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /Direct-loopback topology changed during genesis observation/u);
+  assert.equal(checks, 2);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {
@@ -2236,7 +2277,7 @@ test("signature verification reads a private snapshot of the retained approval b
   );
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(Buffer.compare(Buffer.from(record.genesisApproval.documentBase64, "base64"), original), 0);
-  assert.deepEqual((await readdir(f.directory)).sort(), ["setup-record.json"]);
+  assert.deepEqual((await readdir(f.directory)).sort(), ["setup-record.json", "stack.env"]);
 });
 
 test("synthetic demo reference cannot enter a signed genesis approval", async () => {

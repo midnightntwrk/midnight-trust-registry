@@ -646,8 +646,9 @@ references are rejected before signature verification.
 
 New setups require an install bundle with verified runtime Compose and offline
 Compose pins (v3 or later); a historical v2 bundle cannot initialize a new
-deployment. Existing records without a setup-bound approval cannot reserve a
-deployment and must be recreated from a current bundle. Historical test
+deployment. Existing v2 records cannot draft or accept genesis approval or
+reserve a deployment, even if they contain a setup ID; recreate them from a
+current bundle and observe a verified stack. Historical test
 fixtures are not standalone deployment evidence.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
@@ -674,9 +675,9 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
 The `setupId` and `stackProject` bind this signature to one private first-run
 setup and its isolated ledger stack; an approval drafted for another setup
 cannot be reused. Sign a newly generated draft for a new installation rather
-than copying an earlier approval document. The wizard also rechecks the live
-direct-loopback topology and exact indexer endpoints immediately before
-submitting a deployment.
+than copying an earlier approval document. The wizard rechecks the live
+direct-loopback topology after genesis preflight, and topology plus exact
+indexer endpoints immediately before submitting a deployment.
 
 The reviewer compares the candidate genesis to independently obtained
 chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
