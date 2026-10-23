@@ -139,6 +139,8 @@ async function fixture(format = "tr-standalone-install-v2") {
   const record = JSON.parse(await readFile(join(directory, "setup-record.json"), "utf8"));
   await writeFile(approvalPath, JSON.stringify({
     format: "tr-local-genesis-approval-v1",
+    setupId: record.setupId,
+    stackProject: null,
     sourceRevision,
     installInventorySha256: record.install.inventorySha256,
     networkId: "undeployed",
@@ -282,6 +284,8 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
   const document = JSON.parse(bytes);
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(document.installInventorySha256, record.install.inventorySha256);
+  assert.equal(document.setupId, record.setupId);
+  assert.equal(document.stackProject, null);
   assert.equal(document.pinSha256, record.ledgerObservation.pinSha256);
   assert.equal(document.expectedGenesisHash, expectedGenesisHash);
   assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
@@ -647,6 +651,7 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
   const approval = JSON.parse(await readFile(f.approvalPath, "utf8"));
   approval.pinSha256 = createHash("sha256").update(await readFile(f.pinPath)).digest("hex");
   approval.rpcUrl = relayRpc;
+  approval.stackProject = project;
   await writeFile(f.approvalPath, JSON.stringify(approval));
   await approve(f);
   const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
@@ -678,6 +683,47 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
   }), /outcome is unknown/u);
   assert.equal(observations, 2);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "unknown");
+});
+
+test("direct-loopback deployment rechecks topology and exact indexer endpoints", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  const topology = { project, networkId: ledgerNetworkId, internalNetworkOnly: true };
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => topology,
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const rpcUrl = "http://127.0.0.1:39944";
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl }));
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => topology,
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  const approval = JSON.parse(await readFile(f.approvalPath, "utf8"));
+  approval.pinSha256 = createHash("sha256").update(await readFile(f.pinPath)).digest("hex");
+  approval.rpcUrl = rpcUrl;
+  approval.stackProject = project;
+  await writeFile(f.approvalPath, JSON.stringify(approval));
+  await approve(f);
+  const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
+  planDocument.network.rpcUrl = rpcUrl;
+  planDocument.network.indexerHttpUrl = "http://127.0.0.1:38088/api/v4/graphql";
+  planDocument.network.indexerWsUrl = "ws://127.0.0.1:38088/api/v4/graphql/ws";
+  await writeFile(f.planPath, JSON.stringify(planDocument));
+  const deps = { verifyBundle: f.verifyBundle,
+    deploy: async () => { throw new Error("must not submit"); } };
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    ...deps, observeTopology: async () => ({ ...topology, networkId: "replacement" }),
+  }), /direct-loopback topology changed/u);
+  const wrongIndexer = { ...planDocument, network: { ...planDocument.network,
+    indexerHttpUrl: "http://127.0.0.1:38089/api/v4/graphql" } };
+  await writeFile(f.planPath, JSON.stringify(wrongIndexer));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    ...deps, observeTopology: async () => topology,
+  }), /endpoints diverged/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {
@@ -2035,6 +2081,20 @@ test("genesis approval rejects changed source pins and cannot be replaced after 
   }), /after reviewer approval/u);
 });
 
+test("genesis approval cannot be replayed across setup directories", async () => {
+  const first = await fixture();
+  const second = await fixture();
+  await observeStandaloneLedger(first.directory, first.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await observeStandaloneLedger(second.directory, second.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await assert.rejects(approveStandaloneGenesis(second.directory, first.approvalPath,
+    first.signaturePath, second.keyring, reviewerFingerprint,
+    { verifySignature: async () => { throw new Error("signature should not be checked"); } }), /does not bind/u);
+  const secondRecord = JSON.parse(await readFile(join(second.directory, "setup-record.json"), "utf8"));
+  assert.equal(secondRecord.genesisApproval, undefined);
+});
+
 test("signed release committee roster binds three distinct custodians but not a transition", async () => {
   const f = await fixture();
   await observeStandaloneLedger(f.directory, f.pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
@@ -2147,6 +2207,18 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await symlink(join(verifier, "pubring.kbx"), join(linkedKeyring, "pubring.kbx"));
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, linkedKeyring, fingerprint));
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, "B".repeat(40)), /does not match/u);
+  const attachedSignature = join(root, "attached.sig");
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--sign", "--output",
+    attachedSignature, document]);
+  const clearSignature = join(root, "clear.asc");
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--clearsign", "--output",
+    clearSignature, document]);
+  const unrelatedDocument = join(root, "unrelated.json");
+  await writeFile(unrelatedDocument, '{"format":"different"}\n');
+  await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, attachedSignature,
+    verifier, fingerprint), /detached signature|not verified/u);
+  await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, clearSignature,
+    verifier, fingerprint), /detached signature|not verified/u);
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint));
 });

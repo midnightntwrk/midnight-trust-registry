@@ -647,6 +647,8 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
 ```json
 {
   "format": "tr-local-genesis-approval-v1",
+  "setupId": "<random setup ID from setup-record.json>",
+  "stackProject": "<prepared Compose project from setup-record.json>",
   "sourceRevision": "<signed source SHA from setup-record.json>",
   "installInventorySha256": "<inventory hash from setup-record.json>",
   "networkId": "undeployed",
@@ -658,6 +660,13 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
   "approvedAt": "<ISO-8601 time after setup initialization>"
 }
 ```
+
+The `setupId` and `stackProject` bind this signature to one private first-run
+setup and its isolated ledger stack; an approval drafted for another setup
+cannot be reused. Sign a newly generated draft for a new installation rather
+than copying an earlier approval document. The wizard also rechecks the live
+direct-loopback topology and exact indexer endpoints immediately before
+submitting a deployment.
 
 The reviewer compares the candidate genesis to independently obtained
 chain-spec evidence, signs the exact JSON bytes on a separate trusted system,

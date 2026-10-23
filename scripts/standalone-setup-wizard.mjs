@@ -129,6 +129,7 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   await mkdir(root, { mode: 0o700 });
   const record = {
     format: FORMAT,
+    setupId: randomUUID(),
     sourceRevision: verified.sourceRevision,
     createdAt: new Date().toISOString(),
     install: { bundle, inventorySha256: sha256(inventory), verified },
@@ -511,7 +512,7 @@ export async function verifyDetachedReviewerSignature(
     ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
     const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
     if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
-      || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED) /mu.test(stdout)) {
+      || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH) /mu.test(stdout)) {
       throw new Error("Detached approval signature does not match the pinned reviewer key");
     }
   } finally {
@@ -549,6 +550,8 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
     }
     const document = {
       format: "tr-local-genesis-approval-v1",
+      setupId: record.setupId,
+      stackProject: record.stack?.project ?? null,
       sourceRevision: record.sourceRevision,
       installInventorySha256: record.install.inventorySha256,
       networkId: "undeployed",
@@ -669,12 +672,15 @@ export async function approveStandaloneGenesis(
     }
     const approval = JSON.parse(document);
     const expectedFields = ["approvedAt", "expectedGenesisHash", "format", "installInventorySha256",
-      "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "sourceRevision"];
+      "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
+      "sourceRevision", "stackProject"];
     const approvedAt = Date.parse(approval?.approvedAt);
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
       || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
       || approval.format !== "tr-local-genesis-approval-v1"
       || approval.sourceRevision !== record.sourceRevision
+      || !record.setupId || approval.setupId !== record.setupId
+      || approval.stackProject !== (record.stack?.project ?? null)
       || approval.installInventorySha256 !== record.install.inventorySha256
       || approval.networkId !== "undeployed"
       || approval.pinSha256 !== record.ledgerObservation.pinSha256
@@ -876,6 +882,26 @@ async function requireCurrentInstallRelay(root, record, verified, plan, dependen
   }
 }
 
+async function requireCurrentDirectTopology(root, record, plan, dependencies) {
+  const approved = record.ledgerObservation.installAccess;
+  const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+  const live = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+    { ...expectedTopology, allowUnpublishedHostPorts: false });
+  if (live.project !== record.stack.project
+    || live.networkId !== approved.networkId
+    || live.networkId !== record.stack.observation.topology.networkId
+    || live.internalNetworkOnly !== true) {
+    throw new Error("Verified direct-loopback topology changed");
+  }
+  const indexerHttp = `http://127.0.0.1:${record.stack.ports.indexer}/api/v4/graphql`;
+  const indexerWs = `ws://127.0.0.1:${record.stack.ports.indexer}/api/v4/graphql/ws`;
+  if (plan.network.rpcUrl !== `http://127.0.0.1:${record.stack.ports.node}`
+    || plan.network.indexerHttpUrl !== indexerHttp
+    || plan.network.indexerWsUrl !== indexerWs) {
+    throw new Error("Deployment plan endpoints diverged from the verified direct-loopback stack");
+  }
+}
+
 export async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -902,6 +928,8 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     const approvedAccess = record.ledgerObservation.installAccess;
     if (approvedAccess?.kind === "standalone-install-relay-observation") {
       await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+    } else if (approvedAccess?.kind === "effective-direct-loopback") {
+      await requireCurrentDirectTopology(root, record, plan, dependencies);
     }
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
@@ -927,6 +955,8 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       const result = await (dependencies.deploy ?? runLocalDeployment)(plan);
       if (approvedAccess?.kind === "standalone-install-relay-observation") {
         await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+      } else if (approvedAccess?.kind === "effective-direct-loopback") {
+        await requireCurrentDirectTopology(root, record, plan, dependencies);
       }
       record.deployment = { ...record.deployment, state: "observed", result };
       await writeRecord(root, record);
