@@ -639,6 +639,10 @@ including the approval time, then sign the **exact bytes** of the draft they
 accept. The operator passes that
 same file and detached signature to `approve-genesis` or `approve-committee`.
 The wizard does not create reviewer authority, private keys, or signatures.
+Every signed genesis, committee, deployment-binding, and no-journal recovery
+decision requires a canonical UTC ISO approval time and an independently
+reviewed non-`demo:` reference; alternate time spellings and synthetic demo
+references are rejected before signature verification.
 
 New setups require an install bundle with verified runtime Compose and offline
 Compose pins (v3 or later); a historical v2 bundle cannot initialize a new

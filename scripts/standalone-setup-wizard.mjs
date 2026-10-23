@@ -527,17 +527,22 @@ export async function verifyDetachedReviewerSignature(
   }
 }
 
+function canonicalReviewerMetadata(value, earliest, latest) {
+  const approvedAt = Date.parse(value?.approvedAt);
+  return typeof value?.reviewedReference === "string"
+    && value.reviewedReference.length >= 8 && value.reviewedReference.length <= 512
+    && !value.reviewedReference.startsWith("demo:")
+    && typeof value.approvedAt === "string"
+    && Number.isFinite(approvedAt)
+    && new Date(approvedAt).toISOString() === value.approvedAt
+    && approvedAt >= earliest && approvedAt <= latest;
+}
+
 function reviewerProposal(proposal, fields) {
-  const approvedAt = Date.parse(proposal?.approvedAt);
   if (proposal === null || typeof proposal !== "object" || Array.isArray(proposal)
     || Object.keys(proposal).sort().join("\0") !== fields.sort().join("\0")
     || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
-    || typeof proposal.reviewedReference !== "string"
-    || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512
-    || proposal.reviewedReference.startsWith("demo:")
-    || !Number.isFinite(approvedAt)
-    || new Date(approvedAt).toISOString() !== proposal.approvedAt
-    || approvedAt > Date.now() + 5 * 60_000) {
+    || !canonicalReviewerMetadata(proposal, -Infinity, Date.now() + 5 * 60_000)) {
     throw new Error("Canonical reviewer metadata and a human-supplied approval time are required");
   }
 }
@@ -681,7 +686,6 @@ export async function approveStandaloneGenesis(
     const expectedFields = ["approvedAt", "expectedGenesisHash", "format", "installInventorySha256",
       "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
       "sourceRevision", "stackProject"];
-    const approvedAt = Date.parse(approval?.approvedAt);
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
       || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
       || approval.format !== "tr-local-genesis-approval-v1"
@@ -695,11 +699,7 @@ export async function approveStandaloneGenesis(
       || !HASH.test(approval.expectedGenesisHash)
       || approval.rpcUrl !== record.ledgerObservation.rpcUrl
       || approval.reviewerFingerprint !== expectedFingerprint
-      || typeof approval.reviewedReference !== "string"
-      || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
-    || approval.reviewedReference.startsWith("demo:")
-      || !Number.isFinite(approvedAt) || approvedAt < Date.parse(record.createdAt)
-      || approvedAt > Date.now() + 5 * 60_000) {
+      || !canonicalReviewerMetadata(approval, Date.parse(record.createdAt), Date.now() + 5 * 60_000)) {
       throw new Error("Reviewer approval does not bind the current install and observed genesis");
     }
     const evidence = await verifiedApprovalEvidence(
@@ -738,7 +738,6 @@ export async function approveStandaloneCommittee(
     const expectedFields = ["approvedAt", "custodians", "expectedGenesisHash", "format",
       "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
       "reviewedReference", "reviewerFingerprint", "sourceRevision"];
-    const approvedAt = Date.parse(approval?.approvedAt);
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
       || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
       || approval.format !== "tr-local-committee-approval-v1"
@@ -748,11 +747,8 @@ export async function approveStandaloneCommittee(
       || approval.networkId !== "undeployed"
       || approval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
       || approval.reviewerFingerprint !== expectedFingerprint
-      || typeof approval.reviewedReference !== "string"
-      || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
-      || !Number.isFinite(approvedAt)
-      || approvedAt < Date.parse(record.genesisApproval.approvedAt)
-      || approvedAt > Date.now() + 5 * 60_000) {
+      || !canonicalReviewerMetadata(approval,
+        Date.parse(record.genesisApproval.approvedAt), Date.now() + 5 * 60_000)) {
       throw new Error("Committee approval does not bind the approved install and genesis");
     }
     validateReleaseCommittee(approval.maintenancePolicy, approval.custodians);
@@ -823,7 +819,6 @@ export async function approveStandaloneCommitteeDeployment(
       throw new Error("Committee deployment approval document or signature exceeds the bounded evidence size");
     }
     const approval = JSON.parse(document);
-    const approvedAt = Date.parse(approval?.approvedAt);
     const reservedAt = Date.parse(deployment.reservedAt);
     const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
     const expectedFields = ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
@@ -841,13 +836,8 @@ export async function approveStandaloneCommitteeDeployment(
       || !exactFields(approval.deploymentReceipt, receiptFields)
       || receiptFields.some((field) => approval.deploymentReceipt[field] !== receipt[field])
       || approval.reviewerFingerprint !== expectedFingerprint
-      || typeof approval.reviewedReference !== "string"
-      || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
-      || !Number.isFinite(approvedAt)
       || !Number.isFinite(reservedAt)
-      || approval.approvedAt !== new Date(approvedAt).toISOString()
-      || approvedAt < reservedAt
-      || approvedAt > Date.now() + 5 * 60_000) {
+      || !canonicalReviewerMetadata(approval, reservedAt, Date.now() + 5 * 60_000)) {
       throw new Error("Committee deployment approval does not bind the finalized install and contract");
     }
     const evidence = await verifiedApprovalEvidence(
@@ -1634,7 +1624,6 @@ export async function approveStandaloneCommitteeRecovery(
       throw new Error("Maintenance recovery decision or signature exceeds the bounded evidence size");
     }
     const decision = JSON.parse(document);
-    const approvedAt = Date.parse(decision?.approvedAt);
     const reservedAt = Date.parse(attempt.reservedAt);
     if (!exactFields(decision, ["approvedAt", "approvedFinalizedBlockHash", "decision",
       "expiredAt", "format", "requestSha256", "reviewedReference", "reviewerFingerprint",
@@ -1652,11 +1641,9 @@ export async function approveStandaloneCommitteeRecovery(
       || decision.expiredAt !== approval.expiresAt.toISOString()
       || decision.reviewerFingerprint !== expectedFingerprint
       || expectedFingerprint !== record.committeeApproval.reviewerFingerprint
-      || typeof decision.reviewedReference !== "string"
-      || decision.reviewedReference.length < 8 || decision.reviewedReference.length > 512
-      || !Number.isFinite(approvedAt) || !Number.isFinite(reservedAt)
-      || approvedAt < expiredAt + 10 * 60_000
-      || approvedAt > now + 60_000 || approvedAt < reservedAt) {
+      || !Number.isFinite(reservedAt)
+      || !canonicalReviewerMetadata(decision,
+        Math.max(expiredAt + 10 * 60_000, reservedAt), now + 60_000)) {
       throw new Error("Signed maintenance recovery decision does not bind the expired attempt and approved reviewer");
     }
     const evidence = await verifiedApprovalEvidence(

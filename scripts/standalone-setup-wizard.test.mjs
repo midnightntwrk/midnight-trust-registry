@@ -1142,6 +1142,22 @@ test("deployment binding rejects a wrong contract or governance reviewer before 
     "roster-signature-verified-deployment-binding-pending");
 });
 
+test("deployment binding rejects synthetic references before signature verification", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f, {
+    reviewedReference: "demo:synthetic-deployment",
+  });
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
+      verifyBundle: f.verifyBundle,
+      verifySignature: async () => assert.fail("invalid metadata reached signature verification"),
+    }), /does not bind the finalized install and contract/u);
+});
+
 test("deployment binding refuses pending readback and cannot be replaced after approval", async () => {
   const f = await committeeTransitionFixture();
   const input = await committeeDeploymentDocument(f);
@@ -1680,6 +1696,24 @@ test("recovery rejects early, changed-image, and changed-decision evidence", asy
     "recovery-required-no-journal");
 });
 
+test("recovery rejects noncanonical reviewer time and synthetic references", async () => {
+  const f = await recoveryRequiredFixture();
+  const args = [f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint];
+  for (const decision of [
+    { ...f.decision, approvedAt: f.decision.approvedAt.replace("Z", "+00:00") },
+    { ...f.decision, reviewedReference: "demo:synthetic-recovery" },
+  ]) {
+    await writeFile(f.decisionPath, JSON.stringify(decision));
+    await assert.rejects(approveStandaloneCommitteeRecovery(...args, {
+      ...f.dependencies,
+      verifySignature: async () => assert.fail("invalid metadata reached signature verification"),
+    }), /does not bind the expired attempt/u);
+  }
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovery-required-no-journal");
+});
+
 test("failed governance signature leaves maintenance recovery blocked", async () => {
   const f = await recoveryRequiredFixture();
   await assert.rejects(approveStandaloneCommitteeRecovery(
@@ -2111,6 +2145,33 @@ test("genesis approval rejects changed source pins and cannot be replaced after 
   await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   }), /after reviewer approval/u);
+});
+
+test("genesis and committee approvals reject noncanonical reviewer metadata", async () => {
+  const genesis = await fixture();
+  await observeStandaloneLedger(genesis.directory, genesis.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  const document = JSON.parse(await readFile(genesis.approvalPath, "utf8"));
+  for (const approval of [
+    { ...document, approvedAt: document.approvedAt.replace("Z", "+00:00") },
+    { ...document, reviewedReference: "demo:synthetic-genesis" },
+  ]) {
+    await writeFile(genesis.approvalPath, JSON.stringify(approval));
+    await assert.rejects(approve(genesis), /does not bind/u);
+  }
+  await writeFile(genesis.approvalPath, JSON.stringify(document));
+  await approve(genesis);
+  const committee = await committeeDocument(genesis);
+  for (const approval of [
+    { ...committee.document, approvedAt: committee.document.approvedAt.replace("Z", "+00:00") },
+    { ...committee.document, reviewedReference: "demo:synthetic-committee" },
+  ]) {
+    await writeFile(committee.path, JSON.stringify(approval));
+    await assert.rejects(approveStandaloneCommittee(genesis.directory, committee.path,
+      committee.signature, genesis.keyring, governanceFingerprint, {
+        verifySignature: async () => assert.fail("invalid metadata reached signature verification"),
+      }), /does not bind/u);
+  }
 });
 
 test("genesis approval cannot be replayed across setup directories", async () => {
