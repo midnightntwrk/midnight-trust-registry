@@ -203,8 +203,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    automount, no host namespaces or hostPath volumes, RuntimeDefault seccomp,
    and dropped container capabilities without additions. API and portal root
    filesystems must remain read-only. It compares these Pod-spec fields with
-   the signed rendered Deployment templates and template annotations,
-   normalizing selected Kubernetes defaults. Other Pod/container fields fail
+   the signed rendered Deployment templates, selectors, template labels, and
+   template annotations. It allows only the matching Kubernetes-generated
+   `pod-template-hash` label in ReplicaSet/Pod labels and normalizes documented
+   container, service-account, priority, and 300-second eviction defaults.
+   Other Pod/container fields fail
    closed on drift, except the live-only node assignment and separately
    checked ephemeral containers. A real-cluster check is still required to
    validate API-server defaulting (including resource quantities, probe fields,

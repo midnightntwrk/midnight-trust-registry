@@ -50,17 +50,22 @@ function fixture() {
       containers: [container], ...(name === "api" ? { initContainers: [init] } : {}) };
     workloads.items.push({ kind: "Deployment",
       metadata: { name: `tr-rc-tr-${name}`, namespace: "trust-registry", uid: `dep-${name}`,
-        generation: 1, labels },
-      spec: { replicas: 1, strategy: { type: "Recreate" }, selector: { matchLabels: labels },
-        template: { metadata: { labels }, spec } },
+        generation: 1, labels: structuredClone(labels) },
+      spec: { replicas: 1, strategy: { type: "Recreate" },
+        selector: { matchLabels: structuredClone(labels) },
+        template: { metadata: { labels: structuredClone(labels) }, spec } },
       status: { observedGeneration: 1, readyReplicas: 1, availableReplicas: 1,
         updatedReplicas: 1 } });
     workloads.items.push({ kind: "ReplicaSet",
-      metadata: { name: `rs-${name}`, namespace: "trust-registry", uid: `rs-${name}`, labels,
+      metadata: { name: `rs-${name}`, namespace: "trust-registry", uid: `rs-${name}`,
+        labels: structuredClone(labels),
         ownerReferences: [{ kind: "Deployment", uid: `dep-${name}`, controller: true }] },
-      spec: { replicas: 1, template: { spec: structuredClone(spec) } }, status: { readyReplicas: 1 } });
+      spec: { replicas: 1, template: { metadata: { labels: structuredClone(labels) },
+        spec: structuredClone(spec) } },
+      status: { readyReplicas: 1 } });
     workloads.items.push({ kind: "Pod",
-      metadata: { name: `pod-${name}`, namespace: "trust-registry", labels,
+      metadata: { name: `pod-${name}`, namespace: "trust-registry",
+        labels: structuredClone(labels),
         ownerReferences: [{ kind: "ReplicaSet", uid: `rs-${name}`, controller: true }] },
       spec: { ...structuredClone(spec), nodeName: "worker-1" },
       status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }],
@@ -173,6 +178,16 @@ test("rejects command, env, volume, and security drift across the workload chain
   };
   assert.throws(check, /Legacy AppArmor annotation/u);
   delete apiPod.metadata.annotations;
+  apiPod.metadata.labels["network-policy.example.test/allow-egress"] = "true";
+  assert.throws(check, /Pod labels differ/u);
+  delete apiPod.metadata.labels["network-policy.example.test/allow-egress"];
+  apiSet.spec.template.metadata.labels["pod-template-hash"] = "abc123";
+  apiPod.metadata.labels["pod-template-hash"] = "abc123";
+  assert.doesNotThrow(check);
+  apiPod.metadata.labels["pod-template-hash"] = "forged";
+  assert.throws(check, /Pod labels differ/u);
+  delete apiSet.spec.template.metadata.labels["pod-template-hash"];
+  delete apiPod.metadata.labels["pod-template-hash"];
   apiDeployment.spec.template.spec.hostNetwork = true;
   apiSet.spec.template.spec.hostNetwork = true;
   apiPod.spec.hostNetwork = true;
@@ -227,11 +242,33 @@ test("accepts all six actual chart Pod templates with ordinary API-server defaul
   for (const deployment of deployments) {
     const spec = deployment.spec.template.spec;
     const pod = { ...structuredClone(spec), serviceAccountName: "default",
+      serviceAccount: "default", priority: 0, preemptionPolicy: "PreemptLowerPriority",
       dnsPolicy: "ClusterFirst", schedulerName: "default-scheduler",
       restartPolicy: "Always", terminationGracePeriodSeconds: 30,
-      enableServiceLinks: true };
+      enableServiceLinks: true, tolerations: [
+        { key: "node.kubernetes.io/not-ready", operator: "Exists", effect: "NoExecute",
+          tolerationSeconds: 300 },
+        { key: "node.kubernetes.io/unreachable", operator: "Exists", effect: "NoExecute",
+          tolerationSeconds: 300 },
+      ] };
+    for (const container of [...pod.containers, ...(pod.initContainers ?? [])]) {
+      container.stdinOnce = false;
+      container.terminationMessagePath = "/dev/termination-log";
+      container.terminationMessagePolicy = "File";
+    }
     assert.doesNotThrow(() => assertWorkloadPodSpecParity(spec, structuredClone(spec), pod,
       deployment.metadata.name));
+    pod.tolerations[0].tolerationSeconds = 600;
+    assert.throws(() => assertWorkloadPodSpecParity(spec, structuredClone(spec), pod,
+      deployment.metadata.name), /Pod spec differs/u);
+    pod.tolerations[0].tolerationSeconds = 300;
+    pod.serviceAccount = "privileged";
+    assert.throws(() => assertWorkloadPodSpecParity(spec, structuredClone(spec), pod,
+      deployment.metadata.name), /Pod spec differs/u);
+    pod.serviceAccount = "default";
+    pod.containers[0].terminationMessagePath = "/tmp/other-log";
+    assert.throws(() => assertWorkloadPodSpecParity(spec, structuredClone(spec), pod,
+      deployment.metadata.name), /Pod spec differs/u);
   }
 });
 
@@ -259,6 +296,11 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
     deployment.spec.template.spec.serviceAccountName = "default";
     deployment.spec.template.spec.dnsPolicy = "ClusterFirst";
     deployment.spec.template.spec.restartPolicy = "Always";
+    for (const container of [...deployment.spec.template.spec.containers,
+      ...(deployment.spec.template.spec.initContainers ?? [])]) {
+      container.terminationMessagePath = "/dev/termination-log";
+      container.terminationMessagePolicy = "File";
+    }
   }
   const apiWorkload = workloads.items.find((item) => item.metadata.name === "tr-rc-tr-api");
   for (const volume of apiWorkload.spec.template.spec.volumes.filter((item) => item.secret)) {
@@ -275,6 +317,12 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
   api.spec.template.metadata.annotations = { "security.example.test/override": "unapproved" };
   assert.throws(check, /differs from the signed Helm render/u);
   delete api.spec.template.metadata.annotations;
+  api.spec.template.metadata.labels["network-policy.example.test/allow-egress"] = "true";
+  assert.throws(check, /differs from the signed Helm render/u);
+  delete api.spec.template.metadata.labels["network-policy.example.test/allow-egress"];
+  api.spec.selector.matchLabels["network-policy.example.test/allow-egress"] = "true";
+  assert.throws(check, /differs from the signed Helm render/u);
+  delete api.spec.selector.matchLabels["network-policy.example.test/allow-egress"];
   assert.throws(() => validateHelmRenderedWorkloadParity(Buffer.from("tampered"),
     actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
 });

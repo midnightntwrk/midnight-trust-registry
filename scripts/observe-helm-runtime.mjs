@@ -61,7 +61,10 @@ function securityRelevantContainer(container) {
     lifecycle: container?.lifecycle ?? null,
     workingDir: container?.workingDir ?? "",
     stdin: container?.stdin ?? false,
+    stdinOnce: container?.stdinOnce ?? false,
     tty: container?.tty ?? false,
+    terminationMessagePath: container?.terminationMessagePath ?? "/dev/termination-log",
+    terminationMessagePolicy: container?.terminationMessagePolicy ?? "File",
     restartPolicy: container?.restartPolicy ?? null,
   };
 }
@@ -82,6 +85,7 @@ function securityRelevantPodSpec(spec) {
     securityContext: spec?.securityContext ?? {},
     automountServiceAccountToken: spec?.automountServiceAccountToken ?? true,
     serviceAccountName: spec?.serviceAccountName ?? "default",
+    serviceAccount: spec?.serviceAccount ?? spec?.serviceAccountName ?? "default",
     hostNetwork: spec?.hostNetwork ?? false,
     hostPID: spec?.hostPID ?? false,
     hostIPC: spec?.hostIPC ?? false,
@@ -97,16 +101,38 @@ function securityRelevantPodSpec(spec) {
     runtimeClassName: spec?.runtimeClassName ?? null,
     schedulerName: spec?.schedulerName ?? "default-scheduler",
     priorityClassName: spec?.priorityClassName ?? "",
+    priority: spec?.priority ?? 0,
+    preemptionPolicy: spec?.preemptionPolicy ?? "PreemptLowerPriority",
     restartPolicy: spec?.restartPolicy ?? "Always",
     terminationGracePeriodSeconds: spec?.terminationGracePeriodSeconds ?? 30,
     enableServiceLinks: spec?.enableServiceLinks ?? true,
   };
 }
 
+const DEFAULT_EVICTION_TOLERATIONS = ["node.kubernetes.io/not-ready",
+  "node.kubernetes.io/unreachable"];
+
+function withoutAdmittedEvictionTolerations(podTolerations, templateTolerations) {
+  return podTolerations.filter((toleration) => !(
+    DEFAULT_EVICTION_TOLERATIONS.includes(toleration.key)
+    && isDeepStrictEqual(toleration, { key: toleration.key, operator: "Exists",
+      effect: "NoExecute", tolerationSeconds: 300 })
+    && !templateTolerations.some((approved) => approved.key === toleration.key
+      && approved.effect === "NoExecute")));
+}
+
+function withoutPodTemplateHash(labels) {
+  const result = { ...labels };
+  delete result["pod-template-hash"];
+  return result;
+}
+
 export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podSpec, component) {
   const template = securityRelevantPodSpec(deploymentSpec);
+  const pod = securityRelevantPodSpec(podSpec);
+  pod.tolerations = withoutAdmittedEvictionTolerations(pod.tolerations, template.tolerations);
   if (!isDeepStrictEqual(template, securityRelevantPodSpec(replicaSetSpec))
-    || !isDeepStrictEqual(template, securityRelevantPodSpec(podSpec))) {
+    || !isDeepStrictEqual(template, pod)) {
     throw new Error(`Pod spec differs from the observed Deployment template: ${component}`);
   }
   if (template.automountServiceAccountToken !== false
@@ -212,6 +238,14 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
       || liveSet.spec.template.spec.containers[0].imagePullPolicy !== "Never") {
       throw new Error(`Pod is not owned by the approved Deployment: ${entry.component}`);
     }
+    const templateLabels = deployment.spec.template.metadata?.labels ?? {};
+    const setLabels = liveSet.spec.template.metadata?.labels ?? {};
+    const podLabels = running.metadata.labels ?? {};
+    if (!isDeepStrictEqual(withoutPodTemplateHash(setLabels), templateLabels)
+      || !isDeepStrictEqual(withoutPodTemplateHash(podLabels), templateLabels)
+      || setLabels["pod-template-hash"] !== podLabels["pod-template-hash"]) {
+      throw new Error(`Pod labels differ from the approved Deployment template: ${entry.component}`);
+    }
     if ([deployment.spec.template, liveSet.spec.template, running].some((object) =>
       Object.keys(object.metadata?.annotations ?? {}).some((key) =>
         key.startsWith("container.apparmor.security.beta.kubernetes.io/")))) {
@@ -302,6 +336,9 @@ export function validateHelmRenderedWorkloadParity(renderedBytes, mappingBytes, 
       || expected.spec?.replicas !== 1 || actual.spec?.replicas !== 1
       || expected.spec?.strategy?.type !== "Recreate"
       || actual.spec?.strategy?.type !== "Recreate"
+      || !isDeepStrictEqual(expected.spec?.selector, actual.spec?.selector)
+      || !isDeepStrictEqual(expected.spec?.template?.metadata?.labels,
+        actual.spec?.template?.metadata?.labels)
       || !isDeepStrictEqual(expected.spec?.template?.metadata?.annotations ?? {},
         actual.spec?.template?.metadata?.annotations ?? {})
       || renderedSpec?.containers?.length !== 1
