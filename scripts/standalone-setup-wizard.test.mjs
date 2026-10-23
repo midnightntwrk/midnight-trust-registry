@@ -1246,6 +1246,23 @@ test("deployment binding rejects synthetic references before signature verificat
     }), /does not bind the finalized install and contract/u);
 });
 
+test("deployment binding rejects duplicate signed JSON keys", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  await writeFile(recordPath, JSON.stringify(record));
+  const input = await committeeDeploymentDocument(f);
+  const bytes = await readFile(input.path, "utf8");
+  await writeFile(input.path, bytes.replace('"reviewedReference":',
+    '"reviewedReference":"demo:visible-first", "reviewedReference":'));
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
+      verifyBundle: f.verifyBundle,
+      verifySignature: async () => assert.fail("duplicate keys reached signature verification"),
+    }), /canonical signed JSON without duplicate keys/u);
+});
+
 test("deployment binding refuses pending readback and cannot be replaced after approval", async () => {
   const f = await committeeTransitionFixture();
   const input = await committeeDeploymentDocument(f);
@@ -1843,6 +1860,19 @@ test("maintenance recovery cannot approve against a changed verified stack", asy
     "recovery-required-no-journal");
 });
 
+test("maintenance recovery rejects duplicate signed JSON keys", async () => {
+  const f = await recoveryRequiredFixture();
+  const bytes = await readFile(f.decisionPath, "utf8");
+  await writeFile(f.decisionPath, bytes.replace('"reviewedReference":',
+    '"reviewedReference":"demo:visible-first", "reviewedReference":'));
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, {
+      ...f.dependencies,
+      verifySignature: async () => assert.fail("duplicate keys reached signature verification"),
+    }), /canonical signed JSON without duplicate keys/u);
+});
+
 test("failed governance signature leaves maintenance recovery blocked", async () => {
   const f = await recoveryRequiredFixture();
   await assert.rejects(approveStandaloneCommitteeRecovery(
@@ -2342,6 +2372,28 @@ test("genesis and committee approvals reject noncanonical reviewer metadata", as
         verifySignature: async () => assert.fail("invalid metadata reached signature verification"),
       }), /does not bind/u);
   }
+});
+
+test("genesis and committee approvals reject duplicate signed JSON keys", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  const genesisBytes = await readFile(f.approvalPath, "utf8");
+  await writeFile(f.approvalPath, genesisBytes.replace('"reviewedReference":',
+    '"reviewedReference":"demo:visible-first", "reviewedReference":'));
+  await assert.rejects(approve(f), /canonical signed JSON without duplicate keys/u);
+  await writeFile(f.approvalPath, `${genesisBytes}\n`);
+  await assert.rejects(approve(f), /canonical signed JSON without duplicate keys/u);
+  await writeFile(f.approvalPath, genesisBytes);
+  await approve(f);
+  const committee = await committeeDocument(f);
+  const committeeBytes = await readFile(committee.path, "utf8");
+  await writeFile(committee.path, committeeBytes.replace('"reviewedReference":',
+    '"reviewedReference":"demo:visible-first", "reviewedReference":'));
+  await assert.rejects(approveStandaloneCommittee(f.directory, committee.path,
+    committee.signature, f.keyring, governanceFingerprint, {
+      verifySignature: async () => assert.fail("duplicate keys reached signature verification"),
+    }), /canonical signed JSON without duplicate keys/u);
 });
 
 test("genesis approval cannot be replayed across setup directories", async () => {

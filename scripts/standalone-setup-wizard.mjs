@@ -58,6 +58,16 @@ async function regularBytes(path) {
   return readFile(path);
 }
 
+function parseCanonicalSignedJson(bytes, label) {
+  const raw = bytes.toString("utf8");
+  const value = JSON.parse(raw);
+  if (!Buffer.from(raw, "utf8").equals(bytes)
+    || (raw !== JSON.stringify(value) && raw !== `${JSON.stringify(value, null, 2)}\n`)) {
+    throw new Error(`${label} must use canonical signed JSON without duplicate keys`);
+  }
+  return value;
+}
+
 async function privateDirectory(path) {
   const stat = await lstat(path);
   if (!stat.isDirectory() || (stat.mode & 0o077) !== 0
@@ -716,7 +726,7 @@ export async function approveStandaloneGenesis(
     if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
       throw new Error("Genesis approval document or signature exceeds the bounded evidence size");
     }
-    const approval = JSON.parse(document);
+    const approval = parseCanonicalSignedJson(document, "Genesis approval");
     const expectedFields = ["approvedAt", "expectedGenesisHash", "format", "installInventorySha256",
       "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
       "sourceRevision", "stackProject"];
@@ -769,7 +779,7 @@ export async function approveStandaloneCommittee(
     if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
       throw new Error("Committee approval document or signature exceeds the bounded evidence size");
     }
-    const approval = JSON.parse(document);
+    const approval = parseCanonicalSignedJson(document, "Committee approval");
     const expectedFields = ["approvedAt", "custodians", "expectedGenesisHash", "format",
       "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
       "reviewedReference", "reviewerFingerprint", "sourceRevision"];
@@ -854,7 +864,7 @@ export async function approveStandaloneCommitteeDeployment(
     if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
       throw new Error("Committee deployment approval document or signature exceeds the bounded evidence size");
     }
-    const approval = JSON.parse(document);
+    const approval = parseCanonicalSignedJson(document, "Committee deployment approval");
     const reservedAt = Date.parse(deployment.reservedAt);
     const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
     const expectedFields = ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
@@ -1689,7 +1699,7 @@ export async function approveStandaloneCommitteeRecovery(
     if (document.length > 32 * 1024 || signature.length > 64 * 1024) {
       throw new Error("Maintenance recovery decision or signature exceeds the bounded evidence size");
     }
-    const decision = JSON.parse(document);
+    const decision = parseCanonicalSignedJson(document, "Maintenance recovery decision");
     const reservedAt = Date.parse(attempt.reservedAt);
     if (!exactFields(decision, ["approvedAt", "approvedFinalizedBlockHash", "decision",
       "expiredAt", "format", "requestSha256", "reviewedReference", "reviewerFingerprint",

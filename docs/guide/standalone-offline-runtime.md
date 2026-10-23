@@ -651,6 +651,11 @@ Every signed genesis, committee, deployment-binding, and no-journal recovery
 decision requires a canonical UTC ISO approval time and an independently
 reviewed non-`demo:` reference; alternate time spellings and synthetic demo
 references are rejected before signature verification.
+Signed approval JSON must be either compact JSON (`JSON.stringify(value)`)
+or the wizard's two-space-indented draft with one trailing newline. The wizard
+rejects alternate serialization and duplicate keys before verifying the
+signature; reviewers should sign the exact generated draft bytes whenever a
+draft command is available.
 
 New setups require an install bundle with verified runtime Compose and offline
 Compose pins (v3 or later); a historical v2 bundle cannot initialize a new
