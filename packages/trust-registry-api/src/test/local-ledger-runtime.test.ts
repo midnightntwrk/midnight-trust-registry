@@ -47,7 +47,7 @@ describe("approved local-ledger API runtime", () => {
     const now = Date.now();
     const signedAt = Math.floor(now / 1000);
     const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00 ${primary}`;
-    const output = `[GNUPG:] GOODSIG ${signer} Reviewer\n${valid}\n`;
+    const output = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer\n${valid}\n`;
     expect(() => assertApprovedReviewerSignatureStatus(output, 0, primary, now)).not.toThrow();
     expect(() => assertApprovedReviewerSignatureStatus(
       `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, 0, primary, now)).not.toThrow();
@@ -55,6 +55,7 @@ describe("approved local-ledger API runtime", () => {
       [output, 0, "C".repeat(40)],
       [output, 1, primary],
       [valid, 0, primary],
+      [output.replace(`GOODSIG ${signer.slice(-16)}`, `GOODSIG ${"C".repeat(16)}`), 0, primary],
       [`${output}${valid}\n`, 0, primary],
       [`${output}[GNUPG:] REVKEYSIG ${signer} Reviewer\n`, 0, primary],
       [`${output}[GNUPG:] KEYREVOKED\n`, 0, primary],

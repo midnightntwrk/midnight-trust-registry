@@ -30,6 +30,7 @@ export function assertApprovedReviewerSignatureStatus(
   const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
   const fields = valid[0]?.split(/\s+/u);
   const signerFingerprint = fields?.[2];
+  const goodSignerKeyId = good[0]?.split(/\s+/u)[2];
   const primaryFingerprint = fields?.[11];
   const signedAt = Number(fields?.[4]);
   const expiresAt = Number(fields?.[5]);
@@ -40,6 +41,7 @@ export function assertApprovedReviewerSignatureStatus(
     || valid.length !== 1 || good.length !== 1
     || fields?.length !== 12
     || !FINGERPRINT.test(signerFingerprint ?? "")
+    || goodSignerKeyId !== signerFingerprint?.slice(-16)
     || primaryFingerprint !== expectedPrimaryFingerprint
     || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
     || !Number.isSafeInteger(expiresAt) || expiresAt < 0
