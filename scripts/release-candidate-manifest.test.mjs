@@ -26,9 +26,10 @@ const put = (root, path, content) => {
 };
 
 const packContract = (root, verifier = "verifier-a\n",
-  source = "contract-test\n", generated = "generated-test\n") => {
+  source = "contract-test\n", generated = "generated-test\n", compilerVersion = "0.31.1") => {
   const prefix = "package/dist/managed/trust-registry";
-  const info = JSON.stringify({ circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
+  const info = JSON.stringify({ "compiler-version": compilerVersion,
+    circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
   put(root, "packed-contract/package/src/trust-registry.compact", source);
   put(root, `packed-contract/${prefix}/contract/index.js`, generated);
   put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
@@ -88,6 +89,8 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, compactCompilerVersion: "0.30.0" },
+    input.artifactDir, input.workspaces), /compiler version differs from packed contract metadata/u);
   for (const field of ["contractSourceSha256", "generatedContractSha256"]) {
     assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest, [field]: "0".repeat(64) },
       input.artifactDir, input.workspaces), /packed contract source or generated contract hash mismatch/u);
@@ -106,6 +109,13 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
     packages: [repacked, manifest.packages[1]],
   }, input.artifactDir, input.workspaces), /packed contract source or generated contract hash mismatch/u);
+  packContract(root, "verifier-a\n", "contract-test\n", "generated-test\n", "0.30.0");
+  assert.throws(() => buildReleaseCandidateManifest(input), /compiler version differs from the candidate toolchain pin/u);
+  repacked = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
+    sha256: createHash("sha256").update(readFileSync(contractTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [repacked, manifest.packages[1]],
+  }, input.artifactDir, input.workspaces), /compiler version differs from packed contract metadata/u);
   packContract(root);
   manifest = buildReleaseCandidateManifest(input);
   const extraSourceKey = "contracts/trust-registry/dist/managed/trust-registry/keys/extra.verifier";

@@ -99,6 +99,10 @@ export function buildReleaseCandidateManifest(input) {
   const contractInfoPath = join(repoRoot,
     "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json");
   const contractInfo = json(contractInfoPath);
+  const compactCompilerVersion = readFileSync(join(repoRoot, ".compact-version"), "utf8").trim();
+  if (contractInfo["compiler-version"] !== compactCompilerVersion) {
+    throw new Error("Generated contract compiler version differs from the candidate toolchain pin");
+  }
   if (hashPackedTarEntry(contractTarball, `${CONTRACT_PREFIX}/compiler/contract-info.json`)
     !== sha256(contractInfoPath)) {
     throw new Error("Packed contract metadata does not match the candidate tree");
@@ -129,7 +133,7 @@ export function buildReleaseCandidateManifest(input) {
     format: "tr-release-candidate-manifest-v2",
     sourceRevision: revision,
     packageVersion: packageRoot.version,
-    compactCompilerVersion: readFileSync(join(repoRoot, ".compact-version"), "utf8").trim(),
+    compactCompilerVersion,
     packageManager: packageRoot.packageManager,
     lockfileSha256: sha256(join(repoRoot, "pnpm-lock.yaml")),
     contractSourceSha256: sha256(join(repoRoot, "contracts/trust-registry/src/trust-registry.compact")),
@@ -200,6 +204,9 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     throw new Error("Release candidate packed contract source or generated contract hash mismatch");
   }
   const contractInfo = packedContractInfo(contractTarball);
+  if (contractInfo["compiler-version"] !== manifest.compactCompilerVersion) {
+    throw new Error("Release candidate compiler version differs from packed contract metadata");
+  }
   const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
   const actualHashes = manifest.verifierKeySha256;
   if (actualHashes === null || typeof actualHashes !== "object" || Array.isArray(actualHashes)
