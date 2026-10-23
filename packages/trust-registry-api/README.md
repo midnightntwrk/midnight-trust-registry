@@ -52,7 +52,10 @@ are not qualification. Other governed action ports remain disabled until they
 have an equivalent durable submission path.
 
 For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v1`
-JSON plan. The operator supplies the exact plan, detached signature, a private
+JSON plan. Write it as compact JSON with an optional final newline, or as
+two-space-indented JSON with a final newline. Duplicate keys, alternative
+escaping, and other noncanonical encodings are rejected even if signed. The
+operator supplies the exact plan, detached signature, a private
 public-key keyring, and the out-of-band approved signing-key fingerprint:
 
 ```sh
@@ -76,10 +79,11 @@ reviewer keyring must be a private directory with its approved public key in
 parses and copies the read-only public keyring into private GPG scratch space;
 the pinned fingerprint is the approved primary signing-key fingerprint. A
 signature made by its signing subkey is accepted only when GnuPG reports that
-same primary fingerprint. Any valid signing subkey of that primary can approve
+same primary fingerprint and the reported signer key ID or fingerprint matches
+the signing key. Any valid signing subkey of that primary can approve
 the plan; an earlier configuration pinned to one signing subkey must be
 re-approved with the primary fingerprint before upgrading. This profile
-requires a version-4 40-character fingerprint, a binary detached signature,
+requires a version-4 40-character fingerprint, a detached binary-document signature,
 and SHA-256, SHA-384, or SHA-512 as its signature hash. It checks the install
 bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before

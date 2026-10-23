@@ -41,7 +41,7 @@ export function assertApprovedReviewerSignatureStatus(
     || valid.length !== 1 || good.length !== 1
     || fields?.length !== 12
     || !FINGERPRINT.test(signerFingerprint ?? "")
-    || goodSignerKeyId !== signerFingerprint?.slice(-16)
+    || ![signerFingerprint?.slice(-16), signerFingerprint].includes(goodSignerKeyId)
     || primaryFingerprint !== expectedPrimaryFingerprint
     || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
     || !Number.isSafeInteger(expiresAt) || expiresAt < 0
@@ -75,6 +75,17 @@ const canonicalTimestamp = (value: unknown): number => {
   const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? parsed : Number.NaN;
 };
+
+function parseCanonicalApprovedPlan(bytes: Buffer): unknown {
+  const raw = bytes.toString("utf8");
+  const value: unknown = JSON.parse(raw);
+  const compact = JSON.stringify(value);
+  if (!Buffer.from(raw, "utf8").equals(bytes)
+    || ![compact, `${compact}\n`, `${JSON.stringify(value, null, 2)}\n`].includes(raw)) {
+    throw new Error("Local API runtime plan must use canonical signed JSON without duplicate keys");
+  }
+  return value;
+}
 
 export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRuntimePlan {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -217,7 +228,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-  const plan = validateLocalLedgerRuntimePlan(JSON.parse(planBytes.toString("utf8")));
+  const plan = validateLocalLedgerRuntimePlan(parseCanonicalApprovedPlan(planBytes));
   const inventoryBytes = await boundedFile(plan.installInventoryPath, 1024 * 1024);
   const manifestBytes = await boundedFile(plan.releaseManifestPath, 1024 * 1024);
   const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");

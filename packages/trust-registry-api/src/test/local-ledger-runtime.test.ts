@@ -50,6 +50,8 @@ describe("approved local-ledger API runtime", () => {
     const output = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer\n${valid}\n`;
     expect(() => assertApprovedReviewerSignatureStatus(output, 0, primary, now)).not.toThrow();
     expect(() => assertApprovedReviewerSignatureStatus(
+      output.replace(signer.slice(-16), signer), 0, primary, now)).not.toThrow();
+    expect(() => assertApprovedReviewerSignatureStatus(
       `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, 0, primary, now)).not.toThrow();
     for (const invalid of [
       [output, 0, "C".repeat(40)],
@@ -151,6 +153,15 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      await writeFile(planPath, `${JSON.stringify(candidate).replace('"networkId":"undeployed"',
+        '"networkId":"preprod","networkId":"undeployed"')}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/canonical signed JSON without duplicate keys/u);
+      await writeFile(planPath, `${JSON.stringify(candidate)}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
       execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
         "--passphrase", "", "--quick-add-key", fingerprint!, "ed25519", "sign", "0"],
       { stdio: "pipe", timeout: 30_000 });
