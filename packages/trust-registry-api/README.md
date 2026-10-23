@@ -71,7 +71,9 @@ the pinned fingerprint is the exact key that signs the plan, including a
 signing subkey if used. It checks the install bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
-missing sequence timestamps or an expired plan fail closed. File-backed snapshot/workspace mode
+missing sequence timestamps or an expired plan fail closed. Ledger read and
+projection failures return a generic 503 without exposing provider or file details.
+File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
 By default local-ledger mode binds only to loopback. Guarded `--cluster-bind` can
 expose the signed mode on all interfaces with an API image source-revision check,

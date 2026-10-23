@@ -186,6 +186,7 @@ describe("local ledger-bound API source", () => {
     };
     let readCount = 0;
     let available = true;
+    let readError: Error | undefined;
     let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
     try {
       await writeSnapshotToFile(snapshotPath, snapshot);
@@ -194,7 +195,11 @@ describe("local ledger-bound API source", () => {
         snapshotPath,
         expectedSnapshotSha256,
         contractAddress: address,
-        reader: { async readCurrentFinalizedLedger() { readCount += 1; return available ? view : null; } },
+        reader: { async readCurrentFinalizedLedger() {
+          readCount += 1;
+          if (readError !== undefined) throw readError;
+          return available ? view : null;
+        } },
         sequenceToTimestamp,
       });
       const localServer = createTrustRegistryApiServer({ source });
@@ -207,9 +212,21 @@ describe("local ledger-bound API source", () => {
       expect(healthy.status).toBe(200);
       expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
       expect(readCount).toBe(1);
+      const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{invalid",
+      });
+      expect(malformedRequest.status).toBe(400);
+      expect(readCount).toBe(1);
       const raw = await readFile(snapshotPath, "utf8");
       await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      const mismatched = await fetch(`${url}/health`);
+      expect(mismatched.status).toBe(503);
+      expect(await mismatched.json()).toMatchObject({
+        status: 503,
+        type: expect.stringMatching(/local-ledger-unavailable$/u),
+      });
       await writeFile(snapshotPath, raw);
       const actualPath = join(directory, "actual-snapshot.json");
       await rename(snapshotPath, actualPath);
@@ -230,6 +247,23 @@ describe("local ledger-bound API source", () => {
       available = false;
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
       expect(readCount).toBe(8);
+      readError = new Error("private provider path /run/secrets/local-ledger");
+      const unavailable = await fetch(`${url}/v1/registry`);
+      expect(unavailable.status).toBe(503);
+      const problem = await unavailable.json();
+      expect(problem).toMatchObject({ status: 503, title: "local ledger unavailable" });
+      expect(problem).not.toHaveProperty("detail");
+      expect(JSON.stringify(problem)).not.toContain("/run/secrets/local-ledger");
+      expect(readCount).toBe(9);
+      const trqp = await fetch(`${url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entity_id: "did:example:issuer", authority_id: snapshot.registry.registryDid,
+          action: "issue", resource: "credential-family" }),
+      });
+      expect(trqp.status).toBe(503);
+      expect(await trqp.json()).toMatchObject({ status: 503, title: "local ledger unavailable" });
+      expect(readCount).toBe(10);
     } finally {
       const localServer = server;
       if (localServer !== undefined && localServer.listening) {

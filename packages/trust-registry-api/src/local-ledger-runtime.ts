@@ -11,7 +11,7 @@ import {
   type LocalNetworkDeploymentActionReaderConfig,
 } from "@midnight-ntwrk/trust-registry-integration";
 
-import { createLocalLedgerBoundSource } from "./local-ledger-source.js";
+import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -258,7 +258,7 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     async loadSnapshot() {
       const now = Date.now();
       if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
-        throw new Error("Local API runtime plan is not currently valid");
+        throw new LocalLedgerSourceUnavailableError(new Error("Local API runtime plan is not currently valid"));
       }
       return source.loadSnapshot();
     },

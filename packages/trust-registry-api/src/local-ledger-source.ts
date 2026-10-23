@@ -17,6 +17,13 @@ const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 
+export class LocalLedgerSourceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Finalized local Trust Registry state is unavailable", { cause });
+    this.name = "LocalLedgerSourceUnavailableError";
+  }
+}
+
 async function readBoundedSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -63,26 +70,30 @@ export function createLocalLedgerBoundSource(input: {
   return {
     mode: "local-ledger",
     async loadSnapshot() {
-      const view = await input.reader.readCurrentFinalizedLedger(address);
-      if (view === null) throw new Error("Finalized local Trust Registry ledger is unavailable");
-      if (view.networkId !== "undeployed" || view.contractAddress.toLowerCase() !== address
-        || !FINALIZED_HASH.test(view.finalizedBlockHash.toLowerCase())
-        || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())) {
-        throw new Error("Finalized local Trust Registry view does not match the pinned deployment");
+      try {
+        const view = await input.reader.readCurrentFinalizedLedger(address);
+        if (view === null) throw new Error("Finalized local Trust Registry ledger is unavailable");
+        if (view.networkId !== "undeployed" || view.contractAddress.toLowerCase() !== address
+          || !FINALIZED_HASH.test(view.finalizedBlockHash.toLowerCase())
+          || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())) {
+          throw new Error("Finalized local Trust Registry view does not match the pinned deployment");
+        }
+        const raw = await readBoundedSnapshot(input.snapshotPath);
+        if (createHash("sha256").update(raw).digest("hex") !== expectedSnapshotSha256) {
+          throw new Error("Candidate snapshot differs from the approved SHA-256 digest");
+        }
+        const snapshot = TrustRegistryOperatorSnapshotSchema.parse(JSON.parse(raw.toString("utf8")));
+        assertLocalLedgerEvidenceMatchesSnapshot({
+          snapshot,
+          ledger: view.ledger,
+          expectedNetworkId: "undeployed",
+          contractAddress: addressBytes,
+          sequenceToTimestamp: input.sequenceToTimestamp,
+        });
+        return snapshot;
+      } catch (cause) {
+        throw new LocalLedgerSourceUnavailableError(cause);
       }
-      const raw = await readBoundedSnapshot(input.snapshotPath);
-      if (createHash("sha256").update(raw).digest("hex") !== expectedSnapshotSha256) {
-        throw new Error("Candidate snapshot differs from the approved SHA-256 digest");
-      }
-      const snapshot = TrustRegistryOperatorSnapshotSchema.parse(JSON.parse(raw.toString("utf8")));
-      assertLocalLedgerEvidenceMatchesSnapshot({
-        snapshot,
-        ledger: view.ledger,
-        expectedNetworkId: "undeployed",
-        contractAddress: addressBytes,
-        sequenceToTimestamp: input.sequenceToTimestamp,
-      });
-      return snapshot;
     },
   };
 }

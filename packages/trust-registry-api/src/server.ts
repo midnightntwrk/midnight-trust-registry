@@ -171,6 +171,7 @@ import {
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError } from "./signed-mutation-state.js";
+import { LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
@@ -361,6 +362,13 @@ const asProblem = (
 ): TrustRegistryApiProblemDetails => {
   if (error instanceof HttpProblem) {
     return error.problem;
+  }
+  if (error instanceof LocalLedgerSourceUnavailableError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/local-ledger-unavailable`,
+      title: "local ledger unavailable",
+      status: 503,
+    });
   }
   if (error instanceof SyntaxError) {
     return TrustRegistryApiProblemDetailsSchema.parse({
