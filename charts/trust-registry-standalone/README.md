@@ -15,8 +15,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    policy, and exact OCI digests. The chart fixes `CFG_PRESET=dev`; observe the
    resulting local genesis on the target cluster and approve its hash during
    first-run setup before signing the API plan. The chart cannot substitute a
-   different genesis or self-approve the observed one. Build and verify the v4 install
-   bundle. Do not use the dummy digests in `tests/fixture-values.yaml`.
+   different genesis or self-approve the observed one. Build and verify the v6 install
+   bundle from the exact approved source. Do not use the dummy digests in
+   `tests/fixture-values.yaml`.
 2. During online installation, map each approved archive hash and image ID to
    its private-registry digest after pushing the exact image bytes. Have the
    release reviewer approve that mapping. Preload each resulting
@@ -39,10 +40,15 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
    ```sh
    node scripts/check-helm-image-mapping.mjs \
-     <v4-bundle> <admin-image/manifest.json> <applicant-image/manifest.json> \
+     <v6-bundle> \
      <approved-values.yaml> <mapping.json> <mapping.sig> \
      <reviewer-keyring> <REVIEWER_FINGERPRINT>
    ```
+
+   A legacy v4 bundle needs two additional arguments immediately after
+   `<v4-bundle>`: `<admin-image/manifest.json>` and
+   `<applicant-image/manifest.json>`. Do not pass separate portal manifests for
+   v5 or v6; their portal archives are pinned inside the install bundle.
 
    The receipt is a JSON object with `format: "tr-helm-image-mapping-v1"`,
    the bundle's `sourceRevision` and `inventorySha256`, the SHA-256 of the
@@ -51,7 +57,7 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    `applicant`. Each image entry has `role`, the chart's exact `reference`,
    the approved `archiveSha256`, its local `imageId`, and the archive's
    `configId`. The verifier hashes
-   the v4 bundle and both portal archives, checks those identities against
+   the v6 bundle and its bundled portal archives, checks those identities against
    the one values file supplied to this command, and verifies the reviewer's
    signature over the mapping. The registry digest is linked to the archive
    **only by that independent human approval**, not cryptographically by this
@@ -139,10 +145,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
    Place the private node receipts in a dedicated directory named exactly
    `node-<Kubernetes node name>.json`. Put the mapping preflight input paths
-   in `preflight-paths.json` with fields `bundleRoot`, `adminManifest`,
-   `applicantManifest`, `valuesPath`, `receiptPath`, `signaturePath`,
-   `keyringPath`, and `signerFingerprint`, all pointing to the same approved
-   install materials. Run:
+   in `preflight-paths.json` with fields `bundleRoot`, `valuesPath`,
+   `receiptPath`, `signaturePath`, `keyringPath`, and `signerFingerprint`, all
+   pointing to the same approved v6 install materials. For a legacy v4 bundle,
+   also provide `adminManifest` and `applicantManifest`; omit both for v5/v6.
+   Run:
 
    ```sh
    node scripts/check-helm-cri-fleet.mjs \
