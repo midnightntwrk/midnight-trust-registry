@@ -162,6 +162,17 @@ test("rejects command, env, volume, and security drift across the workload chain
   apiPod.spec.containers[0].readinessProbe = { exec: { command: ["true"] } };
   assert.throws(check, /Pod spec differs/u);
   delete apiPod.spec.containers[0].readinessProbe;
+  apiPod.spec.resourceClaims = [{ name: "unexpected", source: { resourceClaimName: "extra" } }];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.resourceClaims;
+  apiPod.spec.containers[0].resizePolicy = [{ resourceName: "cpu", restartPolicy: "RestartContainer" }];
+  assert.throws(check, /Pod spec differs/u);
+  delete apiPod.spec.containers[0].resizePolicy;
+  apiPod.metadata.annotations = {
+    "container.apparmor.security.beta.kubernetes.io/api": "unconfined",
+  };
+  assert.throws(check, /Legacy AppArmor annotation/u);
+  delete apiPod.metadata.annotations;
   apiDeployment.spec.template.spec.hostNetwork = true;
   apiSet.spec.template.spec.hostNetwork = true;
   apiPod.spec.hostNetwork = true;
@@ -187,6 +198,11 @@ test("rejects command, env, volume, and security drift across the workload chain
   assert.throws(check, /violates standalone isolation/u);
   for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
     value.securityContext.seccompProfile.type = "RuntimeDefault";
+    value.containers[0].securityContext.appArmorProfile = { type: "Unconfined" };
+  }
+  assert.throws(check, /violates standalone isolation/u);
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    delete value.containers[0].securityContext.appArmorProfile;
     value.containers[0].securityContext.readOnlyRootFilesystem = false;
   }
   assert.throws(check, /violates standalone isolation/u);
@@ -256,6 +272,9 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
   assert.throws(check, /differs from the signed Helm render/u);
   api.spec.template.spec.initContainers[0].args =
     deployments.find((item) => item.metadata.name === "tr-rc-tr-api").spec.template.spec.initContainers[0].args;
+  api.spec.template.metadata.annotations = { "security.example.test/override": "unapproved" };
+  assert.throws(check, /differs from the signed Helm render/u);
+  delete api.spec.template.metadata.annotations;
   assert.throws(() => validateHelmRenderedWorkloadParity(Buffer.from("tampered"),
     actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
 });

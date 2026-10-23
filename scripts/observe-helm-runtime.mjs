@@ -40,6 +40,7 @@ function probeWithDefaults(probe) {
 
 function securityRelevantContainer(container) {
   return {
+    ...container,
     name: container?.name,
     image: container?.image,
     imagePullPolicy: container?.imagePullPolicy,
@@ -66,7 +67,11 @@ function securityRelevantContainer(container) {
 }
 
 function securityRelevantPodSpec(spec) {
+  const workloadSpec = { ...spec };
+  delete workloadSpec.nodeName;
+  delete workloadSpec.ephemeralContainers;
   return {
+    ...workloadSpec,
     containers: (spec?.containers ?? []).map(securityRelevantContainer),
     initContainers: (spec?.initContainers ?? []).map(securityRelevantContainer),
     volumes: (spec?.volumes ?? []).map((volume) => volume.persistentVolumeClaim
@@ -115,7 +120,9 @@ export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podS
       || container.securityContext.privileged === true
       || !container.securityContext.capabilities?.drop?.includes("ALL")
       || (container.securityContext.capabilities?.add?.length ?? 0) !== 0
-      || container.securityContext.seccompProfile?.type === "Unconfined")
+      || container.securityContext.seccompProfile?.type === "Unconfined"
+      || container.securityContext.appArmorProfile?.type === "Unconfined")
+    || template.securityContext.appArmorProfile?.type === "Unconfined"
     || (["api", "admin", "applicant"].includes(component)
       && [...template.containers, ...template.initContainers].some((container) =>
         container.securityContext.readOnlyRootFilesystem !== true))) {
@@ -205,6 +212,11 @@ export function validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, 
       || liveSet.spec.template.spec.containers[0].imagePullPolicy !== "Never") {
       throw new Error(`Pod is not owned by the approved Deployment: ${entry.component}`);
     }
+    if ([deployment.spec.template, liveSet.spec.template, running].some((object) =>
+      Object.keys(object.metadata?.annotations ?? {}).some((key) =>
+        key.startsWith("container.apparmor.security.beta.kubernetes.io/")))) {
+      throw new Error(`Legacy AppArmor annotation is not approved: ${entry.component}`);
+    }
     assertWorkloadPodSpecParity(template, liveSet.spec.template.spec, running.spec, entry.component);
     const container = running.spec?.containers?.[0];
     const status = running.status?.containerStatuses?.[0];
@@ -290,6 +302,8 @@ export function validateHelmRenderedWorkloadParity(renderedBytes, mappingBytes, 
       || expected.spec?.replicas !== 1 || actual.spec?.replicas !== 1
       || expected.spec?.strategy?.type !== "Recreate"
       || actual.spec?.strategy?.type !== "Recreate"
+      || !isDeepStrictEqual(expected.spec?.template?.metadata?.annotations ?? {},
+        actual.spec?.template?.metadata?.annotations ?? {})
       || renderedSpec?.containers?.length !== 1
       || renderedSpec.containers[0].image !== image.reference
       || !isDeepStrictEqual(securityRelevantPodSpec(renderedSpec),
