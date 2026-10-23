@@ -44,6 +44,12 @@ inputs from a reviewer-signed runtime plan and the local checkpoint/indexer
 reader. This source still has only simulator and test-double coverage, not
 proof of a real local-ledger deployment, finalized readback, offline actor
 journey, or 0.1.0 release qualification.
+An embedded local-ledger server refuses demo mutations and unjournaled governed
+proposal ports. Proposal ports require a configured one-attempt journal,
+admission source, and finalized proposal observation; the operator must supply
+a durable journal and independently authenticated reader. Presence checks alone
+are not qualification. Other governed action ports remain disabled until they
+have an equivalent durable submission path.
 
 For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v1`
 JSON plan. The operator supplies the exact plan, detached signature, a private

@@ -173,6 +173,43 @@ describe("finalized Compact projection coverage", () => {
 });
 
 describe("local ledger-bound API source", () => {
+  it("rejects unjournaled governed ports before a local listener is created", () => {
+    type Options = Parameters<typeof createTrustRegistryApiServer>[0];
+    const source: Options["source"] = { mode: "local-ledger", async loadSnapshot() {
+      throw new Error("No deployed ledger is available");
+    } };
+    const issuerPort = {} as NonNullable<Options["governedIssuerProposals"]>;
+    const recognitionPort = {} as NonNullable<Options["governedRecognitionProposals"]>;
+    const journal = {} as NonNullable<Options["proposalSubmissionJournal"]>;
+    const admission = {} as NonNullable<Options["proposalAdmission"]>;
+    const finalizedReader = {} as NonNullable<Options["readFinalizedProposalLedger"]>;
+    expect(() => createTrustRegistryApiServer({ source, allowUnsafeDemoMutations: true }))
+      .toThrow(/forbids demo mutations/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedMembershipActions: {} as NonNullable<Options["governedMembershipActions"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedEpochPublication: {} as NonNullable<Options["governedEpochPublication"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedPolicyActions: {} as NonNullable<Options["governedPolicyActions"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, proposalAdmission: admission }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, readFinalizedProposalLedger: finalizedReader }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedRecognitionProposals: recognitionPort,
+      proposalSubmissionJournal: journal, readFinalizedProposalLedger: finalizedReader }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader })).not.toThrow();
+  });
+
   it("re-reads the finalized view for every HTTP query and fails closed", async () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-ledger-api-"));

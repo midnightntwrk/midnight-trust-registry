@@ -794,6 +794,24 @@ export const createTrustRegistryApiServer = (
     || options.governedVerifierProposals !== undefined
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
+  if (options.source.mode === "local-ledger") {
+    if (options.allowUnsafeDemoMutations === true) {
+      throw new Error("Local-ledger mode forbids demo mutations");
+    }
+    if (options.governedMembershipActions !== undefined
+      || options.governedEpochPublication !== undefined
+      || options.governedPolicyActions !== undefined) {
+      throw new Error("Local-ledger governed actions require a durable submission adapter");
+    }
+    if ((hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
+      && (options.proposalSubmissionJournal === undefined
+        || options.readFinalizedProposalLedger === undefined
+        || (hasMembershipProposalPort && options.proposalAdmission === undefined)
+        || (options.governedRecognitionProposals !== undefined
+          && options.recognitionAccreditation === undefined))) {
+      throw new Error("Local-ledger proposals require durable submission and finalized observation with admission");
+    }
+  }
   if (options.proposalSubmissionJournal !== undefined
     && ((hasMembershipProposalPort && options.proposalAdmission === undefined)
       || (!hasMembershipProposalPort && (options.governedRecognitionProposals === undefined
