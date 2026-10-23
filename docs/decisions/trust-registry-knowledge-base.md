@@ -2213,3 +2213,12 @@ implemented and locally tested, but not deployed against this ledger. Keep
 the local RC gates open until independent genesis and committee approvals,
 finalized contract readback, offline actor journeys, recovery, and independent
 security review are actually observed.
+
+The next local wizard slice adds `draft-genesis-pin` to avoid hand-assembling
+the node-reported proposal. It requires a previously collected canonical
+candidate plus a fresh verified direct-loopback or source-pinned relay path,
+then writes a private, non-overwriting `genesis-pin.proposed.json` with the
+actual loopback RPC port. The generated pin remains explicitly untrusted;
+the independent reviewer must still derive and approve genesis from the
+chain specification before wizard observation and detached approval signing.
+This source change is newer than the b12 install and does not requalify it.

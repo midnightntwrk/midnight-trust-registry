@@ -21,6 +21,7 @@ import {
   attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
   attemptStandaloneVerifierKeyInsertion as attemptStandaloneVerifierKeyInsertionRaw,
   collectStandaloneGenesisCandidate,
+  draftStandaloneGenesisPin,
   initializeStandaloneSetup,
   observeStandaloneLedger as observeStandaloneLedgerRaw,
   observeStandaloneStack,
@@ -725,6 +726,96 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => observed,
   }), /before recording a genesis pin/u);
+});
+
+test("drafted v6 genesis pin is private, untrusted, relay-bound, and non-overwriting", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const observed = { project, sourceRevision, installInventorySha256: record.install.inventorySha256,
+    observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+    finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+    observedAt: "2026-10-20T00:00:00.000Z" };
+  await collectStandaloneGenesisCandidate(f.directory, { observeSnapshot: async () => observed });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, ports: { node: "60944" },
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => ({ ...relay, project: "other-project" }),
+  }), /relay disagrees/u);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => ({ ...relay, ports: { node: "undefined" } }),
+  }), /valid loopback RPC port/u);
+  const candidatePath = join(f.directory, "genesis-candidate.untrusted.json");
+  const original = await readFile(candidatePath);
+  await writeFile(candidatePath, `${JSON.stringify({
+    ...JSON.parse(original), sourceRevision: "f".repeat(40),
+  }, null, 2)}\n`);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => { throw new Error("must not inspect relay after bad candidate"); },
+  }), /candidate is malformed or disagrees/u);
+  await writeFile(candidatePath, original.toString("utf8").replace(
+    '"format": "tr-local-genesis-candidate-v1",',
+    '"format": "tr-local-genesis-candidate-v1",\n  "format": "tr-local-genesis-candidate-v1",',
+  ));
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => { throw new Error("must not inspect relay after duplicate key"); },
+  }), /candidate is malformed or disagrees/u);
+  await writeFile(candidatePath, original);
+  const result = await draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async (_config, _verified, expected) => {
+      assert.equal(expected.allowUnpublishedHostPorts, true);
+      return relay;
+    },
+  });
+  assert.equal(result.accessKind, "standalone-install-relay-observation");
+  assert.equal(result.status, "untrusted-proposal-independent-review-required");
+  assert.equal(result.candidateSha256, createHash("sha256").update(original).digest("hex"));
+  assert.equal((await lstat(result.path)).mode & 0o077, 0);
+  assert.deepEqual(JSON.parse(await readFile(result.path, "utf8")), {
+    ...pin, rpcUrl: "http://127.0.0.1:60944",
+  });
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => relay,
+  }), { code: "EEXIST" });
+  assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-pin.proposed.json.")), false);
+});
+
+test("drafted direct-loopback pin rechecks topology without approving genesis", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  const topology = { project, networkId: ledgerNetworkId, internalNetworkOnly: true,
+    hostPortAccess: "effective-loopback" };
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => topology,
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  await collectStandaloneGenesisCandidate(f.directory, { observeSnapshot: async () => ({
+    project, sourceRevision, installInventorySha256: record.install.inventorySha256,
+    observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+    finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+    observedAt: "2026-10-20T00:00:00.000Z",
+  }) });
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => ({ ...topology, networkId: "different-network" }),
+  }), /Direct loopback access changed/u);
+  const result = await draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => topology,
+  });
+  assert.equal(result.accessKind, "effective-direct-loopback");
+  assert.equal(JSON.parse(await readFile(result.path, "utf8")).rpcUrl, "http://127.0.0.1:39944");
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
 });
 
 test("v6 genesis pin requires the same verified installation relay across preflight", async () => {

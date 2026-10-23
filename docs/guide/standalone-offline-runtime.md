@@ -574,6 +574,9 @@ docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-stan
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 # Optional: collect the node's untrusted genesis candidate for independent review.
 node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup-directory
+# Optional: with the reviewed installation relay attached, draft a private, untrusted pin.
+node scripts/standalone-setup-wizard.mjs draft-genesis-pin /absolute/private/setup-directory
+# Human review must precede the separate observation and approval steps.
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/independently-reviewed-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
 # A human reviewer independently checks and signs the exact unsigned draft bytes.
@@ -657,6 +660,17 @@ independently reviewed pin JSON. Leave that second prompt blank until the
 reviewer has supplied the pin. Re-running collection does not overwrite an
 existing candidate; preserve the first file and investigate any changed node
 observation in a separate evidence record.
+
+`draft-genesis-pin` is an optional, non-overwriting aid after candidate
+collection. It rechecks the current direct-loopback path or the v6 bundle's
+verified installation-only relay, then writes mode-0600
+`genesis-pin.proposed.json` from the untrusted candidate and actual loopback
+RPC port. Its output includes both candidate and pin SHA-256 hashes and leaves
+all approval, deployment, and release states pending. It does not independently
+derive genesis or make the proposal safe to trust. The reviewer must verify the
+chain-spec provenance and proposed pin before the separate `observe` command;
+the same relay identity and ports must be restored and reverified for that
+observation. A pre-existing proposal is not replaced automatically.
 
 For the pinned local node image, `CFG_PRESET=dev` selects the embedded
 `/res/cfg/dev.toml`, which references

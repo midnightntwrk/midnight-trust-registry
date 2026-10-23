@@ -444,6 +444,86 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
   });
 }
 
+/** Drafts an untrusted pin from the current installation access path; never approves it. */
+export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.install.verified?.runtimeComposeSha256 || !record.stack?.observation
+      || record.ledgerObservation || record.genesisApproval || record.deployment) {
+      throw new Error("Draft a genesis pin only from an observed, pre-approval standalone stack");
+    }
+    const candidateBytes = await regularBytes(join(root, "genesis-candidate.untrusted.json"));
+    const candidate = JSON.parse(candidateBytes);
+    if (!Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`).equals(candidateBytes)
+      || candidate?.format !== "tr-local-genesis-candidate-v1"
+      || Object.keys(candidate).sort().join("\0") !== [
+        "format", "installInventorySha256", "networkId", "nodeReportedFinalizedBlockHash",
+        "nodeReportedFinalizedHeight", "nodeReportedGenesisHash", "observedAt",
+        "observerSha256", "project", "sourceRevision", "status",
+      ].sort().join("\0")
+      || candidate.status !== "untrusted-node-observation-independent-review-required"
+      || candidate.sourceRevision !== record.sourceRevision
+      || candidate.installInventorySha256 !== record.install.inventorySha256
+      || candidate.project !== record.stack.project || candidate.networkId !== "undeployed"
+      || !HASH.test(candidate.nodeReportedGenesisHash)
+      || /^0x0{64}$/u.test(candidate.nodeReportedGenesisHash)
+      || !HASH.test(candidate.nodeReportedFinalizedBlockHash)
+      || /^0x0{64}$/u.test(candidate.nodeReportedFinalizedBlockHash)
+      || !Number.isSafeInteger(candidate.nodeReportedFinalizedHeight)
+      || candidate.nodeReportedFinalizedHeight < 1
+      || !SHA256.test(candidate.observerSha256)
+      || !Number.isFinite(Date.parse(candidate.observedAt ?? ""))
+      || new Date(Date.parse(candidate.observedAt)).toISOString() !== candidate.observedAt) {
+      throw new Error("Untrusted genesis candidate is malformed or disagrees with the observed install");
+    }
+    const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+    const observedNetworkId = record.stack.observation.topology?.networkId;
+    let rpcPort;
+    let accessKind;
+    if (record.stack.observation.topology?.hostPortAccess === "effective-loopback") {
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
+      if (current.project !== config.project || current.networkId !== observedNetworkId
+        || current.internalNetworkOnly !== true || current.hostPortAccess !== "effective-loopback") {
+        throw new Error("Direct loopback access changed since the stack observation");
+      }
+      rpcPort = config.ports.node;
+      accessKind = "effective-direct-loopback";
+    } else if (record.stack.observation.topology?.hostPortAccess
+      === "unpublished-install-access-required" && record.install.verified.installRelay) {
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.kind !== "standalone-install-relay-observation"
+        || current.project !== config.project || current.networkId !== observedNetworkId
+        || current.topology?.internalNetworkOnly !== true
+        || current.topology?.hostPortAccess !== "unpublished-install-access-required") {
+        throw new Error("Verified installation relay disagrees with the observed stack");
+      }
+      rpcPort = current.ports.node;
+      accessKind = current.kind;
+    } else {
+      throw new Error("A verified loopback or installation relay path is required to draft a genesis pin");
+    }
+    if (typeof rpcPort !== "string" || !/^[1-9][0-9]*$/u.test(rpcPort)
+      || Number(rpcPort) < 1024 || Number(rpcPort) > 65535) {
+      throw new Error("Verified installation access has no valid loopback RPC port");
+    }
+    const pin = {
+      format: "tr-local-ledger-pin-v1",
+      networkId: "undeployed",
+      sourceRevision: record.sourceRevision,
+      rpcUrl: `http://127.0.0.1:${rpcPort}`,
+      expectedGenesisHash: candidate.nodeReportedGenesisHash,
+      allowedHosts: ["127.0.0.1"],
+    };
+    const bytes = Buffer.from(`${JSON.stringify(pin, null, 2)}\n`);
+    const path = join(root, "genesis-pin.proposed.json");
+    await writePrivateSnapshot(path, bytes);
+    return { path, pinSha256: sha256(bytes), candidateSha256: sha256(candidateBytes),
+      accessKind, status: "untrusted-proposal-independent-review-required" };
+  });
+}
+
 export async function observeStandaloneLedger(directory, pinPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -1998,8 +2078,8 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -2011,6 +2091,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (command === "observe-stack") console.log(JSON.stringify(await observeStandaloneStack(directory)));
   else if (command === "collect-genesis-candidate") {
     console.log(JSON.stringify(await collectStandaloneGenesisCandidate(directory)));
+  }
+  else if (command === "draft-genesis-pin") {
+    console.log(JSON.stringify(await draftStandaloneGenesisPin(directory)));
   }
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "draft-genesis" && input) {
