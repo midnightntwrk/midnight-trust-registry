@@ -23,7 +23,7 @@ const run = (args) => {
 
 const report = JSON.parse(run([join(scripts, "demo-governed-registry.mjs")])).adversarialMatrix;
 assert.equal(report.format, "tr-adversarial-matrix-v1");
-assert.equal(report.summary.total, 196, "Review the expected governed-demo case count before changing it");
+assert.equal(report.summary.total, 198, "Review the expected governed-demo case count before changing it");
 assert.equal(report.summary.failed, 0);
 const demoIds = report.cases.map(({ id }) => id);
 assert.equal(new Set(demoIds).size, demoIds.length, "Governed demo has duplicate case IDs");

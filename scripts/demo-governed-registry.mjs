@@ -134,7 +134,7 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
-const expectedAdversarialCaseCount = 196;
+const expectedAdversarialCaseCount = 198;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -632,6 +632,22 @@ adversarialMatrix.expectVerified(() => policyClient.verifyRecognitionBundle(
   id: "recognition-history-survives-threshold-change",
   invariant: "Old recognition remains verifiable under its original policy snapshot",
   boundary: "client",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyAuditorAuthorizationBundle(
+  { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
+), {
+  id: "auditor-uncommitted-policy-version",
+  invariant: "An auditor cannot substitute an uncommitted policy version after threshold revision",
+  boundary: "client", messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyRecognitionBundle(
+  { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
+), {
+  id: "recognition-uncommitted-policy-version",
+  invariant: "A recognition cannot substitute an uncommitted policy version after threshold revision",
+  boundary: "client", messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
 });
 adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
   currentPolicyBundle, {},

@@ -82,6 +82,26 @@ test("recognition-history-survives-threshold-change", async (context) => {
     .verifyRecognitionBundle(oldRecognition, {}));
 });
 
+test("auditor-uncommitted-policy-version", async (context) => {
+  const { harness, oldAuditor } =
+    await startThresholdHistory(context, "isolated-auditor-uncommitted-policy");
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  assert.ok(client.verifyAuditorAuthorizationBundle(oldAuditor, {}));
+  assert.throws(() => client.verifyAuditorAuthorizationBundle(
+    { ...oldAuditor, policy: { ...oldAuditor.policy, version: "v9" } }, {},
+  ), /not committed to the ledger/iu);
+});
+
+test("recognition-uncommitted-policy-version", async (context) => {
+  const { harness, oldRecognition } =
+    await startThresholdHistory(context, "isolated-recognition-uncommitted-policy");
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  assert.ok(client.verifyRecognitionBundle(oldRecognition, {}));
+  assert.throws(() => client.verifyRecognitionBundle(
+    { ...oldRecognition, policy: { ...oldRecognition.policy, version: "v9" } }, {},
+  ), /not committed to the ledger/iu);
+});
+
 test("auditor-historical-api-after-threshold-change", async (context) => {
   const { harness, oldAuditor, post, auditorRequest } =
     await startThresholdHistory(context, "isolated-auditor-threshold-api");
