@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
@@ -249,7 +249,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   const installFormat = inventory?.format;
-  const supportedFormat = ["tr-standalone-install-v3", "tr-standalone-install-v4",
+  const supportedFormat = ["tr-standalone-install-v4",
     "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(installFormat);
   const requiresApiPin = installFormat !== "tr-standalone-install-v3";
   const requiresPortalPins = installFormat === "tr-standalone-install-v5"
@@ -265,6 +265,9 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     || manifest?.format !== "tr-release-candidate-manifest-v2"
     || inventory.sourceRevision !== plan.sourceRevision
     || manifest.sourceRevision !== plan.sourceRevision
+    || inventory.packageManifest !== "release-manifest.json"
+    || inventory.packageManifestSha256 !== plan.releaseManifestSha256
+    || plan.releaseManifestPath !== join(dirname(plan.installInventoryPath), inventory.packageManifest)
     || (requiresApiPin && !artifactPin(inventory.apiRuntime,
       "images/api.manifest.json", "images/api.image.tar"))
     || (requiresPortalPins && (!["admin", "applicant"].every((role) =>

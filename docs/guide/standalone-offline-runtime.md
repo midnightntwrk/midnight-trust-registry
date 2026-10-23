@@ -168,7 +168,10 @@ name or tag annotation. The loader snapshots one checked archive at a time to
 a private temporary directory, rehashes it before Docker reads it, and
 accepts the checked OCI or config ID reported by the daemon. Ensure the
 temporary filesystem can hold the largest image archive. A v3 bundle remains a ledger-stack
-bundle only; neither format starts the API or proves that it can query a live
+bundle only and cannot back a signed local-ledger API plan. The API requires a
+v4-v6 inventory with an API image pin and checks that its embedded release
+manifest digest and path identify the same signed manifest bytes as the plan.
+Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
 digest and retain the signed build evidence.
@@ -665,7 +668,10 @@ genesis hash independently, then sign the exact pin and source reference.
 `draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
 `reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
 `draft-committee` accepts those fields plus
-`maintenancePolicy` and `custodians` in the approval shapes below. Both commands
+`maintenancePolicy`, `custodians`, and the absolute `deploymentPlanPath` in the
+approval shapes below. Prepare the final staged deployment plan and provider
+module before drafting the roster; the wizard hashes the exact plan bytes and
+binds its provider-module digest into the roster. Both commands
 derive the source, install, and genesis binding from the private setup record;
 they create mode-0600 `*.unsigned.json` files in that directory without
 overwriting an earlier draft. The printed state is
@@ -785,10 +791,12 @@ after genesis approval. Its exact JSON shape is:
 
 ```json
 {
-  "format": "tr-local-committee-approval-v1",
+  "format": "tr-local-committee-approval-v2",
   "sourceRevision": "<signed source SHA from setup-record.json>",
   "installInventorySha256": "<inventory hash from setup-record.json>",
   "genesisApprovalSha256": "<signed genesis document hash from setup-record.json>",
+  "deploymentPlanSha256": "<SHA-256 of the exact reviewed deployment plan bytes>",
+  "providerModuleSha256": "<provider-module hash from the reviewed plan>",
   "networkId": "undeployed",
   "expectedGenesisHash": "0x<approved 64-character genesis hash>",
   "reviewerFingerprint": "<40-character uppercase governance signing-key fingerprint>",
@@ -817,7 +825,12 @@ the governance reviewer's authority and custody evidence. A recorded roster
 is required **before deployment reservation**: deferring it stops the wizard
 before `DEPLOY ONCE`, so a finalized contract cannot strand the setup under
 the bootstrap maintenance key. It does not submit or verify a contract
-maintenance transition. The wizard shows
+maintenance transition. The approved plan bytes cannot be changed after this
+signature: the wizard compares their digest before reserving deployment, and
+the deployer checks the provider-module bytes against the hash inside that
+plan before importing it. Review the provider module as privileged code.
+Historical v1 rosters do not authorize new deployments; they can only be
+read during forensic reconciliation of an earlier attempt. The wizard shows
 `roster-signature-verified-deployment-binding-pending` until the governance
 reviewer signs a second approval for the actual deployment. That approval has
 exactly this JSON shape:

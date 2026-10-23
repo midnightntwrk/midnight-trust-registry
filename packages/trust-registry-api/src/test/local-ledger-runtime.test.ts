@@ -4,12 +4,18 @@ import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const readerMocks = vi.hoisted(() => ({ createReader: vi.fn() }));
+vi.mock("@midnight-ntwrk/trust-registry-integration", () => ({
+  createLocalNetworkDeploymentActionReader: readerMocks.createReader,
+}));
 
 import {
   assertApprovedPlanCoversGovernanceCount,
   assertApprovedReviewerSignatureStatus,
   assertLocalApiImageSourceRevision,
+  createApprovedLocalLedgerRuntimeSource,
   loadApprovedLocalLedgerRuntimePlan,
   sequenceTimestampMap,
   validateLocalLedgerRuntimePlan,
@@ -139,6 +145,30 @@ describe("approved local-ledger API runtime", () => {
     expect(() => assertApprovedPlanCoversGovernanceCount(rotated, 3n)).toThrow();
   });
 
+  it("checks the signed governance count and expiry on actual source reads", async () => {
+    const readCurrentFinalizedLedger = vi.fn(async () => ({ ledger: { governanceActionCount: 2n } }));
+    readerMocks.createReader.mockResolvedValue({
+      readCurrentFinalizedLedger,
+    });
+    const approved = validateLocalLedgerRuntimePlan(plan("/tmp/tr-api-runtime-test"));
+    const source = await createApprovedLocalLedgerRuntimeSource(approved);
+    const stale = { cause: { message: expect.stringMatching(/do not cover the finalized governance count/u) } };
+    await expect(source.loadSnapshot()).rejects.toMatchObject(stale);
+    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(stale);
+    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(approved.notAfter).getTime() + 1);
+      const expired = { cause: { message: expect.stringMatching(/not currently valid/u) } };
+      await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
+      await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
+      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      readerMocks.createReader.mockReset();
+    }
+  });
+
   it("requires an actual detached reviewer signature and exact install bytes", async () => {
     expect(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status).toBe(0);
     const root = await mkdtemp(join(tmpdir(), "tr-api-runtime-"));
@@ -157,10 +187,16 @@ describe("approved local-ledger API runtime", () => {
       const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint!]);
       execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
         { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
-      const inventory = JSON.stringify({ format: "tr-standalone-install-v3", sourceRevision });
       const manifest = JSON.stringify({ format: "tr-release-candidate-manifest-v2", sourceRevision });
+      const manifestSha256 = sha256(manifest);
+      const manifestPin = { packageManifest: "release-manifest.json",
+        packageManifestSha256: manifestSha256 };
+      const apiRuntime = { manifest: "images/api.manifest.json", manifestSha256: "d".repeat(64),
+        archive: "images/api.image.tar", archiveSha256: "e".repeat(64) };
+      const inventory = JSON.stringify({ format: "tr-standalone-install-v4", sourceRevision,
+        ...manifestPin, apiRuntime });
       const candidate = { ...plan(root), installInventorySha256: sha256(inventory),
-        releaseManifestSha256: sha256(manifest) };
+        releaseManifestSha256: manifestSha256 };
       await writeFile(candidate.installInventoryPath, inventory);
       await writeFile(candidate.releaseManifestPath, manifest);
       const planPath = join(root, "api-plan.json");
@@ -197,24 +233,26 @@ describe("approved local-ledger API runtime", () => {
         "--local-user", `${subkeyFingerprint}!`, "--detach-sign", "--output", signaturePath,
         planPath]);
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
-      await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
-        .rejects.toThrow(/requires a signed install with an API image pin/u);
-      const v4Inventory = JSON.stringify({ format: "tr-standalone-install-v4", sourceRevision,
-        apiRuntime: { manifest: "images/api.manifest.json", manifestSha256: "d".repeat(64),
-          archive: "images/api.image.tar", archiveSha256: "e".repeat(64) } });
-      await writeFile(candidate.installInventoryPath, v4Inventory);
-      const v4Candidate = { ...candidate, installInventorySha256: sha256(v4Inventory) };
-      await writeFile(planPath, `${JSON.stringify(v4Candidate)}\n`);
-      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
-        "--output", signaturePath, planPath]);
-      expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
+      const v3Inventory = JSON.stringify({ format: "tr-standalone-install-v3", sourceRevision,
+        ...manifestPin });
+      await writeFile(candidate.installInventoryPath, v3Inventory);
+      await writeFile(planPath, `${JSON.stringify({ ...candidate,
+        installInventorySha256: sha256(v3Inventory) })}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/approved install artifacts/u);
+      await writeFile(candidate.installInventoryPath, inventory);
+      await writeFile(planPath, `${JSON.stringify(candidate)}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
       const portalPin = (role: string) => ({ manifest: `images/${role}.manifest.json`,
         manifestSha256: "b".repeat(64), archive: `images/${role}.image.tar`,
         archiveSha256: "c".repeat(64) });
-      const v6 = { format: "tr-standalone-install-v6", sourceRevision,
-        apiRuntime: JSON.parse(v4Inventory).apiRuntime,
+      const v6 = { format: "tr-standalone-install-v6", sourceRevision, ...manifestPin,
+        apiRuntime,
         portalRuntimes: { admin: portalPin("admin"), applicant: portalPin("applicant") },
         installRelay: { path: "install-relay.py", sha256: "d".repeat(64), imageRole: "node" } };
       const signInventory = async (value: object) => {
@@ -228,6 +266,24 @@ describe("approved local-ledger API runtime", () => {
       await signInventory(v6);
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
+      await signInventory({ ...v6, packageManifestSha256: "f".repeat(64) });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/disagrees with approved install artifacts/u);
+      await signInventory({ ...v6, packageManifest: "unrelated-manifest.json" });
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/disagrees with approved install artifacts/u);
+      await signInventory(v6);
+      const unrelatedManifestPath = join(root, "unrelated", "release-manifest.json");
+      await mkdir(join(root, "unrelated"));
+      await writeFile(unrelatedManifestPath, manifest);
+      await writeFile(planPath, `${JSON.stringify({ ...candidate,
+        installInventorySha256: sha256(JSON.stringify(v6)),
+        releaseManifestPath: unrelatedManifestPath })}\n`);
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+        "--output", signaturePath, planPath]);
+      await expect(loadApprovedLocalLedgerRuntimePlan(input))
+        .rejects.toThrow(/disagrees with approved install artifacts/u);
+      await signInventory(v6);
       await signInventory({ ...v6, format: "tr-standalone-install-v5", installRelay: undefined });
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
@@ -260,12 +316,12 @@ describe("approved local-ledger API runtime", () => {
         extra: portalPin("extra") } });
       await expect(loadApprovedLocalLedgerRuntimePlan(input))
         .rejects.toThrow(/approved install artifacts/u);
-      await signInventory(JSON.parse(v4Inventory));
+      await signInventory(JSON.parse(inventory));
       await writeFile(candidate.installInventoryPath, JSON.stringify({
         format: "tr-standalone-install-v4", sourceRevision,
       }));
       await expect(loadApprovedLocalLedgerRuntimePlan(input)).rejects.toThrow(/approved bytes/u);
-      await writeFile(candidate.installInventoryPath, v4Inventory);
+      await writeFile(candidate.installInventoryPath, inventory);
       await chmod(verifier, 0o500);
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
       await chmod(verifier, 0o700);

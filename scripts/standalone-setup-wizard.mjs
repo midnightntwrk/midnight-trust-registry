@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { link, open, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -704,16 +704,40 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
       throw new Error("Approve genesis before drafting a committee; do not replace an approved or reserved roster");
     }
     reviewerProposal(proposal, ["reviewerFingerprint", "reviewedReference",
-      "maintenancePolicy", "custodians", "approvedAt"]);
+      "maintenancePolicy", "custodians", "approvedAt", "deploymentPlanPath"]);
     if (Date.parse(proposal.approvedAt) < Date.parse(record.genesisApproval.approvedAt)) {
       throw new Error("Committee review time predates genesis approval");
     }
     validateReleaseCommittee(proposal.maintenancePolicy, proposal.custodians);
+    if (typeof proposal.deploymentPlanPath !== "string"
+      || !isAbsolute(proposal.deploymentPlanPath)) {
+      throw new Error("Committee review requires an absolute deployment plan path");
+    }
+    const planBytes = await regularBytes(resolve(proposal.deploymentPlanPath));
+    const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
+    if (plan.sourceRevision !== record.sourceRevision
+      || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+      || plan.network.rpcUrl !== record.ledgerObservation.rpcUrl
+      || JSON.stringify(plan.network.allowedHosts) !== JSON.stringify(record.ledgerObservation.allowedHosts)) {
+      throw new Error("Committee deployment plan disagrees with the approved install or genesis");
+    }
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since genesis approval");
+    }
+    const bundleManifest = await verifiedPackageManifestBytes(
+      record.install.bundle, inventory, record.install.verified,
+    );
+    if (sha256(await regularBytes(plan.releaseManifestPath)) !== sha256(bundleManifest)) {
+      throw new Error("Committee deployment manifest disagrees with the approved install");
+    }
     const document = {
-      format: "tr-local-committee-approval-v1",
+      format: "tr-local-committee-approval-v2",
       sourceRevision: record.sourceRevision,
       installInventorySha256: record.install.inventorySha256,
       genesisApprovalSha256: record.genesisApproval.documentSha256,
+      deploymentPlanSha256: sha256(planBytes),
+      providerModuleSha256: plan.providerModuleSha256,
       networkId: "undeployed",
       expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
       reviewerFingerprint: proposal.reviewerFingerprint,
@@ -826,12 +850,15 @@ export async function approveStandaloneCommittee(
       throw new Error("Committee approval document or signature exceeds the bounded evidence size");
     }
     const approval = parseCanonicalSignedJson(document, "Committee approval");
-    const expectedFields = ["approvedAt", "custodians", "expectedGenesisHash", "format",
-      "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
-      "reviewedReference", "reviewerFingerprint", "sourceRevision"];
+    const expectedFields = ["approvedAt", "custodians", "deploymentPlanSha256",
+      "expectedGenesisHash", "format", "genesisApprovalSha256", "installInventorySha256",
+      "maintenancePolicy", "networkId", "providerModuleSha256", "reviewedReference",
+      "reviewerFingerprint", "sourceRevision"];
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
       || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
-      || approval.format !== "tr-local-committee-approval-v1"
+      || approval.format !== "tr-local-committee-approval-v2"
+      || !SHA256.test(approval.deploymentPlanSha256)
+      || !SHA256.test(approval.providerModuleSha256)
       || approval.sourceRevision !== record.sourceRevision
       || approval.installInventorySha256 !== record.install.inventorySha256
       || approval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
@@ -853,6 +880,8 @@ export async function approveStandaloneCommittee(
       reviewedReference: approval.reviewedReference,
       maintenancePolicy: approval.maintenancePolicy,
       custodians: approval.custodians,
+      deploymentPlanSha256: approval.deploymentPlanSha256,
+      providerModuleSha256: approval.providerModuleSha256,
     };
     await writeRecord(root, record);
     return {
@@ -1024,10 +1053,12 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (!record.committeeApproval) {
       throw new Error("Approve the release maintenance committee before reserving deployment");
     }
-    readStoredCommitteeApproval(record);
+    const committee = readStoredCommitteeApproval(record);
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
-    if (plan.sourceRevision !== record.sourceRevision
+    if (sha256(planBytes) !== committee.deploymentPlanSha256
+      || plan.providerModuleSha256 !== committee.providerModuleSha256
+      || plan.sourceRevision !== record.sourceRevision
       || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
       || plan.network.rpcUrl !== record.ledgerObservation.rpcUrl
       || JSON.stringify(plan.network.allowedHosts) !== JSON.stringify(record.ledgerObservation.allowedHosts)) {
@@ -1283,11 +1314,18 @@ function readStoredCommitteeApproval(record, legacyReadOnly = false) {
   const signedApproval = legacyReadOnly
     ? JSON.parse(approvalBytes.toString("utf8"))
     : parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
+  const legacy = signedApproval?.format === "tr-local-committee-approval-v1";
+  const fields = ["approvedAt", "custodians", "expectedGenesisHash", "format",
+    "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
+    "reviewedReference", "reviewerFingerprint", "sourceRevision",
+    ...(legacy ? [] : ["deploymentPlanSha256", "providerModuleSha256"])];
   if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
-    || !exactFields(signedApproval, ["approvedAt", "custodians", "expectedGenesisHash", "format",
-      "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
-      "reviewedReference", "reviewerFingerprint", "sourceRevision"])
-    || signedApproval.format !== "tr-local-committee-approval-v1"
+    || !exactFields(signedApproval, fields)
+    || (legacy ? !legacyReadOnly : signedApproval.format !== "tr-local-committee-approval-v2")
+    || (!legacy && (!SHA256.test(signedApproval.deploymentPlanSha256)
+      || !SHA256.test(signedApproval.providerModuleSha256)
+      || signedApproval.deploymentPlanSha256 !== record.committeeApproval.deploymentPlanSha256
+      || signedApproval.providerModuleSha256 !== record.committeeApproval.providerModuleSha256))
     || signedApproval.networkId !== "undeployed"
     || signedApproval.sourceRevision !== record.sourceRevision
     || signedApproval.installInventorySha256 !== record.install.inventorySha256

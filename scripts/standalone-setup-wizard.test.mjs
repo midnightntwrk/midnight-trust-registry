@@ -270,10 +270,12 @@ async function committeeDocument(f, overrides = {}) {
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
   const document = {
-    format: "tr-local-committee-approval-v1",
+    format: "tr-local-committee-approval-v2",
     sourceRevision,
     installInventorySha256: record.install.inventorySha256,
     genesisApprovalSha256: record.genesisApproval.documentSha256,
+    deploymentPlanSha256: createHash("sha256").update(await readFile(f.planPath)).digest("hex"),
+    providerModuleSha256: plan.providerModuleSha256,
     networkId: "undeployed",
     expectedGenesisHash,
     reviewerFingerprint: governanceFingerprint,
@@ -424,7 +426,8 @@ test("unsigned committee draft requires an approved genesis and release-grade cu
   await approve(f);
   const { document } = await committeeDocument(f);
   const releaseProposal = { ...proposal,
-    maintenancePolicy: document.maintenancePolicy, custodians: document.custodians };
+    maintenancePolicy: document.maintenancePolicy, custodians: document.custodians,
+    deploymentPlanPath: f.planPath };
   await assert.rejects(draftStandaloneCommitteeApproval(f.directory, {
     ...releaseProposal, maintenancePolicy: { ...document.maintenancePolicy, threshold: 1 },
   }), /threshold/u);
@@ -438,6 +441,8 @@ test("unsigned committee draft requires an approved genesis and release-grade cu
   const draft = JSON.parse(bytes);
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(draft.genesisApprovalSha256, record.genesisApproval.documentSha256);
+  assert.equal(draft.deploymentPlanSha256, document.deploymentPlanSha256);
+  assert.equal(draft.providerModuleSha256, document.providerModuleSha256);
   assert.deepEqual(draft.maintenancePolicy, document.maintenancePolicy);
   assert.deepEqual(draft.custodians, document.custodians);
   assert.equal(result.documentSha256, createHash("sha256").update(bytes).digest("hex"));
@@ -789,12 +794,12 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
   approval.stackProject = project;
   await writeFile(f.approvalPath, JSON.stringify(approval));
   await approve(f);
-  await approveCommittee(f);
   const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
   planDocument.network.rpcUrl = relayRpc;
   planDocument.network.indexerHttpUrl = "http://127.0.0.1:60888/api/v4/graphql";
   planDocument.network.indexerWsUrl = "ws://127.0.0.1:60888/api/v4/graphql/ws";
   await writeFile(f.planPath, JSON.stringify(planDocument));
+  await approveCommittee(f);
   const wrongIndexer = { ...planDocument, network: { ...planDocument.network,
     indexerHttpUrl: "http://127.0.0.1:60889/api/v4/graphql" } };
   await writeFile(f.planPath, JSON.stringify(wrongIndexer));
@@ -802,7 +807,7 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
     verifyBundle: f.verifyBundle,
     observeInstallRelay: async () => relay,
     deploy: async () => { throw new Error("must not submit"); },
-  }), /plan endpoints diverged/u);
+  }), /Deployment plan disagrees/u);
   await writeFile(f.planPath, JSON.stringify(planDocument));
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
     verifyBundle: f.verifyBundle,
@@ -843,12 +848,12 @@ test("direct-loopback deployment rechecks topology and exact indexer endpoints",
   approval.stackProject = project;
   await writeFile(f.approvalPath, JSON.stringify(approval));
   await approve(f);
-  await approveCommittee(f);
   const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
   planDocument.network.rpcUrl = rpcUrl;
   planDocument.network.indexerHttpUrl = "http://127.0.0.1:38088/api/v4/graphql";
   planDocument.network.indexerWsUrl = "ws://127.0.0.1:38088/api/v4/graphql/ws";
   await writeFile(f.planPath, JSON.stringify(planDocument));
+  await approveCommittee(f);
   const deps = { verifyBundle: f.verifyBundle,
     deploy: async () => { throw new Error("must not submit"); } };
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
@@ -859,7 +864,7 @@ test("direct-loopback deployment rechecks topology and exact indexer endpoints",
   await writeFile(f.planPath, JSON.stringify(wrongIndexer));
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
     ...deps, observeTopology: async () => topology,
-  }), /endpoints diverged/u);
+  }), /Deployment plan disagrees/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
@@ -1090,6 +1095,34 @@ test("an observed submission is still not a finalized or release-qualified deplo
   assert.equal(status.localLedger, "operator-pinned-reviewer-signature-verified");
 });
 
+test("a signed roster binds the exact deployment plan before provider execution", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  await approve(f);
+  const legacy = await committeeDocument(f, { format: "tr-local-committee-approval-v1",
+    deploymentPlanSha256: undefined, providerModuleSha256: undefined });
+  await assert.rejects(approveStandaloneCommittee(f.directory, legacy.path, legacy.signature,
+    f.keyring, governanceFingerprint, { verifySignature: async () => {} }),
+  /Committee approval does not bind/u);
+  await approveCommittee(f);
+  const original = await readFile(f.planPath, "utf8");
+  const changed = { ...JSON.parse(original), providerModuleSha256: "d".repeat(64) };
+  await writeFile(f.planPath, JSON.stringify(changed));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => assert.fail("unapproved provider reached deployment"),
+  }), /Deployment plan disagrees/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+  await writeFile(f.planPath, original);
+  const result = await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation", readbackStatus: "pending" }),
+  });
+  assert.equal(result.readbackStatus, "pending");
+});
+
 test("deployment rejects a noncanonical retained roster before reservation", async () => {
   const f = await fixture();
   await observeStandaloneLedger(f.directory, f.pinPath,
@@ -1198,11 +1231,11 @@ async function stagedFixture(manifest) {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await approve(f);
-  await approveCommittee(f);
   await writeFile(f.planPath, JSON.stringify({
     ...plan, format: "tr-local-staged-deployment-plan-v1",
     initialVerifierKeyName: "initialKey", releaseManifestPath: f.releaseManifestPath,
   }));
+  await approveCommittee(f);
   const insertionPlanPath = join(f.directory, "insertion-plan.json");
   const insertionPlan = {
     format: "tr-local-verifier-key-insertion-plan-v1",
