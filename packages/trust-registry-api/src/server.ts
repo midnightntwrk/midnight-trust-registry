@@ -966,7 +966,12 @@ export const createTrustRegistryApiServer = (
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      const segments = routeSegments(url.pathname);
+      let segments: string[];
+      try {
+        segments = routeSegments(url.pathname);
+      } catch {
+        throw jsonProblem(problemBaseUri, "invalid-request-path", 400, "invalid request path");
+      }
       privateApplicantRoute = segments[0] === "v1" && (
         (segments.length === 4 && segments[1] === "application-evidence"
           && (segments[3] === "binding" || segments[3] === "challenges"

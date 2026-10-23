@@ -78,6 +78,10 @@ test("API image stages both clean portal asset sets under one origin", async () 
     await assert.rejects(stageApiPortalAssets(source, context), /already exists/u);
     await writeFile(join(source, "packages/trust-registry-admin-console/dist/private.txt"), "private");
     await assert.rejects(stageApiPortalAssets(source, join(root, "fresh")), /Unexpected static build output/u);
+    await rm(join(source, "packages/trust-registry-admin-console/dist/private.txt"));
+    await writeFile(join(source, "packages/trust-registry-admin-console/dist/other.js"), "export {};");
+    await rm(join(source, "packages/trust-registry-admin-console/dist/index.js"));
+    await assert.rejects(stageApiPortalAssets(source, join(root, "missing-entrypoint")), /requires index.js/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

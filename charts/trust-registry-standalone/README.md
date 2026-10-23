@@ -275,6 +275,11 @@ Upgrades and rollbacks must preserve the PVCs and replayable approval
 evidence. Never silently rotate genesis, maintenance keys, contract address,
 or image digests through `helm upgrade`. Take a consistent backup, test
 restore in an isolated namespace, and repeat finalized readback after restart.
+The API Deployment uses `Recreate` to avoid mixed approved source revisions;
+upgrades therefore incur a planned outage. Before an upgrade, verify the new
+API image supports `--serve-portals`, and update its exact image pin and signed
+plan together in a maintenance window. A Helm rollback does not automatically
+restore the previous plan or its validity window.
 
 ## Release gates still open
 

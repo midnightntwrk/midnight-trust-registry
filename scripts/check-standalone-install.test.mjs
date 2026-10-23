@@ -64,11 +64,13 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
   const archive = join(root, "images/api.image.tar");
   execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
   const archiveSha256 = sha(await readFile(archive));
-  const manifest = { format: "tr-api-runtime-image-v1", sourceRevision: revision,
+  const manifest = { format: options.portals ? "tr-api-runtime-image-v2" : "tr-api-runtime-image-v1",
+    sourceRevision: revision,
     approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
     baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
     lockfileSha256: "c".repeat(64), dockerfileSha256: "d".repeat(64),
-    payload: { fileCount: 1, sha256: "e".repeat(64) }, imageId,
+    payload: { fileCount: 1, sha256: "e".repeat(64) },
+    ...(options.portals ? { portals: options.portals } : {}), imageId,
     archiveName: "api.image.tar", archiveSha256 };
   const manifestBytes = JSON.stringify(manifest);
   await writeFile(join(root, "images/api.manifest.json"), manifestBytes);
@@ -104,7 +106,10 @@ async function staticImageArchive(root, role, options = {}) {
   const archive = join(root, `images/${role}.image.tar`);
   execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
   const archiveSha256 = sha(await readFile(archive));
-  const assets = [{ path: "index.html", size: 1, sha256: "f".repeat(64) }];
+  const assets = [
+    { path: "index.html", size: 1, sha256: "f".repeat(64) },
+    { path: "index.js", size: 1, sha256: "e".repeat(64) },
+  ];
   const manifest = { format: "tr-static-runtime-image-v1", role, sourceRevision: revision,
     approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
     baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
@@ -361,6 +366,39 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     inventory.installRelay.imageRole = "indexer";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v2 API portal asset pins must match both static portal manifests", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services: {}\n");
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    inventory.format = "tr-standalone-install-v5";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    inventory.portalRuntimes = {
+      admin: await staticImageArchive(root, "admin"),
+      applicant: await staticImageArchive(root, "applicant"),
+    };
+    const portals = {};
+    for (const role of ["admin", "applicant"]) {
+      const manifest = JSON.parse(await readFile(join(root, `images/${role}.manifest.json`), "utf8"));
+      portals[role] = { fileCount: manifest.assets.length, sha256: manifest.assetsSha256 };
+    }
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await verifyStandaloneInstallBundle(root, () => {});
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals: {
+      ...portals, applicant: { ...portals.applicant, sha256: "0".repeat(64) },
+    } });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
+      /applicant API portal assets disagree/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

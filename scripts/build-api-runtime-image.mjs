@@ -81,6 +81,9 @@ export async function stageApiPortalAssets(source, context) {
     ["applicant", "trust-registry-applicant-portal"]]) {
     const dist = join(source, "packages", packageName, "dist");
     const selected = await staticAssetManifest(dist);
+    if (!selected.some((asset) => asset.path === "index.js")) {
+      throw new Error(`${role} API portal requires index.js`);
+    }
     const destinationRoot = join(context, "app", "portals", role);
     for (const asset of selected) {
       const destination = join(destinationRoot, asset.path);
@@ -253,7 +256,7 @@ export async function buildApiRuntimeImage(input) {
     await stripPublishedDidProofArtifacts(context);
     await stripPnpmInstallMetadata(context);
     await assertLightApiPayload(context);
-    await stageApiPortalAssets(source, context);
+    const portals = await stageApiPortalAssets(source, context);
     await writeFile(join(context, "app", "source-revision"), `${revision}\n`, { flag: "wx", mode: 0o444 });
     await cp(join(source, "deploy/runtime/Dockerfile.api"), join(context, "Dockerfile.api"));
     const payload = await apiPayloadInventory(context, input.platform);
@@ -284,9 +287,9 @@ export async function buildApiRuntimeImage(input) {
     await mkdir(input.outputDirectory);
     const archivePath = join(input.outputDirectory, "api.image.tar");
     run("docker", ["save", "--output", archivePath, imageId]);
-    const metadata = { format: "tr-api-runtime-image-v1", sourceRevision: revision,
+    const metadata = { format: "tr-api-runtime-image-v2", sourceRevision: revision,
       approvedSignerFingerprint: signer, platform: input.platform, baseImage: input.baseImage,
-      lockfileSha256, dockerfileSha256, payload,
+      lockfileSha256, dockerfileSha256, payload, portals,
       imageId, archiveName: basename(archivePath), archiveSha256: await fileSha256(archivePath) };
     await writeFile(join(input.outputDirectory, "manifest.json"), `${JSON.stringify(metadata, null, 2)}\n`, { flag: "wx" });
     return metadata;

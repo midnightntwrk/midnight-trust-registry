@@ -95,6 +95,9 @@ describe("same-origin local portals", () => {
       const registry = await fetch(`${base}/v1/registry`);
       expect(registry.status).toBe(200);
       expect(registry.headers.get("content-type")).toContain("application/json");
+      const malformed = await fetch(`${base}/admin/%E0`);
+      expect(malformed.status).toBe(400);
+      expect(await malformed.text()).not.toContain("URI malformed");
     } finally {
       if (server?.listening) {
         await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));

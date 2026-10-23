@@ -35,10 +35,17 @@ The separate portal images default to a loopback API URL in the browser and
 let the operator select another local API URL. For private applicant journeys,
 use the API image's opt-in `--serve-portals` mode instead: its builder stages
 both portal builds in `/app/portals`, and the API serves `/admin/` and
-`/applicant/` from the API origin. The existing install inventory pins the
-complete OCI archive. This is packaging and route evidence, not a verified
-offline deployment; ingress/TLS, browser-origin policy, and independent
-verification of packaged portal bytes remain deployment responsibilities.
+`/applicant/` from the API origin. The install inventory pins the complete OCI
+archive. New API image manifests record the embedded admin and applicant
+asset-set hashes; the v5/v6 install verifier checks them against the separately
+pinned static portal manifests. Older v1 API manifests remain readable but
+provide no cross-image asset-set check. Manifest agreement does not
+independently verify API image layer contents. This is packaging and route
+evidence, not a verified offline deployment; ingress/TLS, browser-origin policy,
+and independent verification of packaged portal bytes remain deployment
+responsibilities. The CLI does not yet wire live private-evidence and proposal
+ports into local-ledger API mode, so the private applicant and governed flows
+are not qualified by same-origin routing alone.
 The portal images, API image, and Helm template do not satisfy #218 or #219 by
 themselves. Actual local-ledger
 readback, offline actor journeys, API and wallet continuity, cluster
