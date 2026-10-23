@@ -311,6 +311,14 @@ plan's node and indexer URLs; a post-submission mismatch is an unknown outcome
 that must be reconciled, never retried blindly. The proof-server endpoint is
 still supplied by the operator's provider configuration and needs separate
 review. Remove the relay before any offline-runtime qualification.
+For a current setup, deployment reconciliation, verifier-key insertion and
+reconciliation, committee preparation/submission/reconciliation, and recovery
+approval recheck that same verified direct mapping or relay before using the
+ledger; results are not recorded if access changes during readback. If the
+temporary relay was removed, restore the **same verified** relay and ports for
+those operations, then remove it again before testing egress-denied runtime.
+Legacy read-only maintenance reconciliation remains forensic only and cannot
+qualify a release.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat

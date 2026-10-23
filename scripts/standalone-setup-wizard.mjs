@@ -935,6 +935,21 @@ async function requireCurrentDirectTopology(root, record, plan, dependencies) {
   }
 }
 
+async function requireCurrentApprovedAccess(root, record, verified, plan, dependencies) {
+  requireVerifiedStandaloneStack(record);
+  if (verified.sourceRevision !== record.sourceRevision
+    || verified.runtimeComposeSha256 !== record.install.verified.runtimeComposeSha256
+    || verified.runtimeOfflineComposeSha256 !== record.install.verified.runtimeOfflineComposeSha256
+    || JSON.stringify(verified.images) !== JSON.stringify(record.install.verified.images)) {
+    throw new Error("Verified install runtime identities changed since stack approval");
+  }
+  if (record.ledgerObservation.installAccess.kind === "standalone-install-relay-observation") {
+    await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+  } else {
+    await requireCurrentDirectTopology(root, record, plan, dependencies);
+  }
+}
+
 export async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -962,12 +977,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       || sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed bundle changed since setup verification");
     }
-    const approvedAccess = record.ledgerObservation.installAccess;
-    if (approvedAccess?.kind === "standalone-install-relay-observation") {
-      await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
-    } else if (approvedAccess?.kind === "effective-direct-loopback") {
-      await requireCurrentDirectTopology(root, record, plan, dependencies);
-    }
+    await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
     const planManifestBytes = await regularBytes(plan.releaseManifestPath);
@@ -990,11 +1000,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     await writeRecord(root, record);
     try {
       const result = await (dependencies.deploy ?? runLocalDeployment)(plan);
-      if (approvedAccess?.kind === "standalone-install-relay-observation") {
-        await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
-      } else if (approvedAccess?.kind === "effective-direct-loopback") {
-        await requireCurrentDirectTopology(root, record, plan, dependencies);
-      }
+      await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
       record.deployment = { ...record.deployment, state: "observed", result };
       await writeRecord(root, record);
       return result;
@@ -1039,6 +1045,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     if (sha256(bundleManifest) !== sha256(planManifest)) {
       throw new Error("Deployment release manifest disagrees with the verified install bundle");
     }
+    await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
     const approval = {
       expectedReleaseManifestSha256: sha256(planManifest),
       ...(record.deployment.result?.receipt
@@ -1046,6 +1053,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     };
     const result = await (dependencies.reconcileDeployment ?? ((approvedPlan, expected) =>
       reconcileLocalDeployment(approvedPlan, {}, expected)))(plan, approval);
+    await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
     if (!["staged-bootstrap-pending", "pending", "invalid-image", "unavailable", "mismatch", "unknown-no-receipt"]
       .includes(result?.readbackStatus)
       || (result.readbackStatus === "unknown-no-receipt"
@@ -1094,7 +1102,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
   });
 }
 
-async function approvedInsertionPlan(record, planPath, dependencies) {
+async function approvedInsertionPlan(root, record, planPath, dependencies) {
   if (record.deployment?.state !== "observed"
     || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
     || !validLocalDeploymentReceipt(record.deployment.result?.receipt)
@@ -1129,13 +1137,14 @@ async function approvedInsertionPlan(record, planPath, dependencies) {
   if (sha256(bundleManifest) !== sha256(planManifest)) {
     throw new Error("Insertion release manifest disagrees with the verified install bundle");
   }
-  return { plan, planSha256: sha256(planBytes), releaseManifestSha256: sha256(planManifest) };
+  await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
+  return { plan, verified, planSha256: sha256(planBytes), releaseManifestSha256: sha256(planManifest) };
 }
 
 export async function attemptStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
-    const { plan, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(record, planPath, dependencies);
+    const { plan, verified, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(root, record, planPath, dependencies);
     const attempts = record.verifierKeyInsertions ?? {};
     if (Object.hasOwn(attempts, plan.circuitName)
       || Object.values(attempts).some((entry) => entry.state !== "verified")) {
@@ -1154,6 +1163,7 @@ export async function attemptStandaloneVerifierKeyInsertion(directory, planPath,
       };
       const result = await (dependencies.insert ?? ((approvedPlan, expected) =>
         runLocalVerifierKeyInsertion(approvedPlan, {}, "submit", expected)))(plan, approval);
+      await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
       if (!["verified", "pending", "absent", "mismatch"].includes(result?.readbackStatus)) {
         throw new Error("Insertion did not return a recognized finalized-readback status");
       }
@@ -1176,7 +1186,7 @@ export async function attemptStandaloneVerifierKeyInsertion(directory, planPath,
 export async function reconcileStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
-    const { plan, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(record, planPath, dependencies);
+    const { plan, verified, planSha256, releaseManifestSha256 } = await approvedInsertionPlan(root, record, planPath, dependencies);
     const attempt = record.verifierKeyInsertions?.[plan.circuitName];
     if (!attempt || attempt.planSha256 !== planSha256 || attempt.journalPath !== plan.journalPath) {
       throw new Error("No matching reserved verifier-key insertion exists");
@@ -1187,6 +1197,7 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
     };
     const result = await (dependencies.reconcile ?? ((approvedPlan, expected) =>
       runLocalVerifierKeyInsertion(approvedPlan, {}, "reconcile", expected)))(plan, approval);
+    await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
     if (!["verified", "failed-on-chain", "observed-without-receipt", "pending", "absent", "mismatch"]
       .includes(result?.readback?.status)) {
       throw new Error("Reconciliation did not return a recognized finalized-readback status");
@@ -1324,15 +1335,19 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       stagedVerifierKeyInstallation: true,
       expiresAt: new Date(request.expiresAt),
     };
-    return { approval, requestBytes, manifestBytes, catalog };
+    return { approval, requestBytes, manifestBytes, catalog, verified };
 }
 
-async function approvedStandaloneCommitteeTransition(record, requestPath, dependencies = {}) {
-    const { approval, requestBytes, manifestBytes, catalog } = await readApprovedCommitteeTransition(
+async function approvedStandaloneCommitteeTransition(root, record, requestPath, dependencies = {}) {
+    const { approval, requestBytes, manifestBytes, catalog, verified } = await readApprovedCommitteeTransition(
       record, requestPath, dependencies,
     );
+    await requireCurrentApprovedAccess(root, record, verified,
+      { network: approval.network }, dependencies);
     setNetworkId("undeployed");
     const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
+    await requireCurrentApprovedAccess(root, record, verified,
+      { network: approval.network }, dependencies);
     if (prepared.networkId !== "undeployed" || prepared.contractAddress !== approval.receipt.contractAddress
       || !HASH.test(prepared.finalizedBlockHash) || /^0x0{64}$/u.test(prepared.finalizedBlockHash)
       || prepared.currentAuthorityCounter !== BigInt(catalog.length - 1)
@@ -1362,14 +1377,14 @@ async function approvedStandaloneCommitteeTransition(record, requestPath, depend
       updateSha256: sha256(prepared.dataToSign),
       submission: "not-attempted",
     };
-    return { approval, signingRequest, requestBytes, prepared };
+    return { approval, signingRequest, requestBytes, prepared, verified };
 }
 
 export async function prepareStandaloneCommitteeTransition(directory, requestPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
     const { signingRequest } = await approvedStandaloneCommitteeTransition(
-      record, requestPath, dependencies,
+      root, record, requestPath, dependencies,
     );
     return signingRequest;
   });
@@ -1409,8 +1424,8 @@ export async function submitStandaloneCommitteeTransition(
       }
       throw new Error("Maintenance transition already reserved; reconcile without resubmitting");
     }
-    const { approval, signingRequest, requestBytes, prepared } = await approvedStandaloneCommitteeTransition(
-      record, requestPath, dependencies,
+    const { approval, signingRequest, requestBytes, prepared, verified } = await approvedStandaloneCommitteeTransition(
+      root, record, requestPath, dependencies,
     );
     if (priorRecoveredAttempt
       && (sha256(requestBytes) === priorRecoveredAttempt.requestSha256
@@ -1478,6 +1493,8 @@ export async function submitStandaloneCommitteeTransition(
         approvedUpdateSha256: signingRequest.updateSha256,
         approvedFinalizedBlockHash: savedSigningRequest.finalizedBlockHash,
       });
+      await requireCurrentApprovedAccess(root, record, verified,
+        { network: approval.network }, dependencies);
       if (typeof txId !== "string" || txId.length === 0 || txId.length > 512) {
         throw new Error("Maintenance submission did not return a bounded transaction ID");
       }
@@ -1520,7 +1537,7 @@ export async function reconcileStandaloneCommitteeTransition(
     }
     const legacyReadOnly = !record.committeeDeploymentApproval
       && !attempt.committeeDeploymentApprovalSha256;
-    const { approval, requestBytes } = await readApprovedCommitteeTransition(
+    const { approval, requestBytes, verified } = await readApprovedCommitteeTransition(
       record, requestPath, dependencies, legacyReadOnly,
     );
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
@@ -1537,6 +1554,10 @@ export async function reconcileStandaloneCommitteeTransition(
       || attempt.journalPath !== join(root, "committee-transition.json")) {
       throw new Error("Maintenance reconciliation disagrees with the reserved signing request");
     }
+    if (!legacyReadOnly) {
+      await requireCurrentApprovedAccess(root, record, verified,
+        { network: approval.network }, dependencies);
+    }
     setNetworkId("undeployed");
     const result = await (dependencies.reconcile ?? reconcileLocalNetworkCommitteeTransition)({
       approval,
@@ -1544,6 +1565,10 @@ export async function reconcileStandaloneCommitteeTransition(
       approvedUpdateSha256: attempt.updateSha256,
       approvedFinalizedBlockHash: attempt.finalizedBlockHash,
     });
+    if (!legacyReadOnly) {
+      await requireCurrentApprovedAccess(root, record, verified,
+        { network: approval.network }, dependencies);
+    }
     if (!["not-reserved", "unavailable", "pending", "invalid-image", "stale-checkpoint",
       "unresolved", "conflict", "observed"].includes(result?.status)) {
       throw new Error("Maintenance reconciliation returned an invalid status");
@@ -1617,7 +1642,7 @@ export async function approveStandaloneCommitteeRecovery(
     if (await journal.inspect() !== null) {
       throw new Error("Maintenance journal exists; a no-journal recovery decision is forbidden");
     }
-    const { approval, requestBytes, catalog } = await readApprovedCommitteeTransition(
+    const { approval, requestBytes, catalog, verified } = await readApprovedCommitteeTransition(
       record, requestPath, dependencies,
     );
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
@@ -1639,9 +1664,13 @@ export async function approveStandaloneCommitteeRecovery(
       || now < expiredAt + 10 * 60_000) {
       throw new Error("Original maintenance signing window must expire before recovery approval");
     }
+    await requireCurrentApprovedAccess(root, record, verified,
+      { network: approval.network }, dependencies);
     setNetworkId("undeployed");
     const freshApproval = { ...approval, expiresAt: new Date(now + 5 * 60_000) };
     const fresh = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(freshApproval);
+    await requireCurrentApprovedAccess(root, record, verified,
+      { network: approval.network }, dependencies);
     if (fresh.networkId !== "undeployed" || fresh.contractAddress !== approval.receipt.contractAddress
       || !HASH.test(fresh.finalizedBlockHash) || /^0x0{64}$/u.test(fresh.finalizedBlockHash)
       || fresh.finalizedBlockHash === attempt.finalizedBlockHash

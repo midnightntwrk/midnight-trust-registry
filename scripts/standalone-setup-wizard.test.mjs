@@ -15,22 +15,22 @@ import {
   draftStandaloneCommitteeApproval,
   approveStandaloneCommittee,
   approveStandaloneCommitteeDeployment,
-  approveStandaloneCommitteeRecovery,
+  approveStandaloneCommitteeRecovery as approveStandaloneCommitteeRecoveryRaw,
   approveStandaloneGenesis,
   attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
-  attemptStandaloneVerifierKeyInsertion,
+  attemptStandaloneVerifierKeyInsertion as attemptStandaloneVerifierKeyInsertionRaw,
   collectStandaloneGenesisCandidate,
   initializeStandaloneSetup,
   observeStandaloneLedger as observeStandaloneLedgerRaw,
   observeStandaloneStack,
   prepareStandaloneStack,
-  prepareStandaloneCommitteeTransition,
-  reconcileStandaloneCommitteeTransition,
-  reconcileStandaloneDeployment,
-  reconcileStandaloneVerifierKeyInsertion,
+  prepareStandaloneCommitteeTransition as prepareStandaloneCommitteeTransitionRaw,
+  reconcileStandaloneCommitteeTransition as reconcileStandaloneCommitteeTransitionRaw,
+  reconcileStandaloneDeployment as reconcileStandaloneDeploymentRaw,
+  reconcileStandaloneVerifierKeyInsertion as reconcileStandaloneVerifierKeyInsertionRaw,
   runStandaloneSetupInteractive,
   standaloneSetupStatus,
-  submitStandaloneCommitteeTransition,
+  submitStandaloneCommitteeTransition as submitStandaloneCommitteeTransitionRaw,
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
@@ -87,6 +87,53 @@ async function attemptStandaloneDeployment(directory, planPath, dependencies = {
   return attemptStandaloneDeploymentRaw(directory, planPath, {
     observeTopology: async () => fixtureTopology(directory), ...dependencies,
   });
+}
+
+async function reconcileStandaloneDeployment(directory, planPath, dependencies = {}) {
+  return reconcileStandaloneDeploymentRaw(directory, planPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function attemptStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
+  return attemptStandaloneVerifierKeyInsertionRaw(directory, planPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function reconcileStandaloneVerifierKeyInsertion(directory, planPath, dependencies = {}) {
+  return reconcileStandaloneVerifierKeyInsertionRaw(directory, planPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function prepareStandaloneCommitteeTransition(directory, requestPath, dependencies = {}) {
+  return prepareStandaloneCommitteeTransitionRaw(directory, requestPath, {
+    observeTopology: async () => fixtureTopology(directory), ...dependencies,
+  });
+}
+
+async function submitStandaloneCommitteeTransition(
+  directory, requestPath, signingRequestPath, signaturePath, dependencies = {},
+) {
+  return submitStandaloneCommitteeTransitionRaw(directory, requestPath, signingRequestPath,
+    signaturePath, { observeTopology: async () => fixtureTopology(directory), ...dependencies });
+}
+
+async function reconcileStandaloneCommitteeTransition(
+  directory, requestPath, signingRequestPath, dependencies = {},
+) {
+  return reconcileStandaloneCommitteeTransitionRaw(directory, requestPath, signingRequestPath,
+    { observeTopology: async () => fixtureTopology(directory), ...dependencies });
+}
+
+async function approveStandaloneCommitteeRecovery(
+  directory, requestPath, signingRequestPath, documentPath, signaturePath,
+  keyringDirectory, expectedFingerprint, dependencies = {},
+) {
+  return approveStandaloneCommitteeRecoveryRaw(directory, requestPath, signingRequestPath,
+    documentPath, signaturePath, keyringDirectory, expectedFingerprint,
+    { observeTopology: async () => fixtureTopology(directory), ...dependencies });
 }
 
 async function fixture(format = "tr-standalone-install-v3") {
@@ -1306,6 +1353,33 @@ async function preparedCommitteeFixture() {
   return { ...f, signingRequest, signingRequestPath, signaturePath, dependencies };
 }
 
+test("committee network operations reject a changed verified stack", async () => {
+  const f = await preparedCommitteeFixture();
+  const stale = async () => ({ ...await fixtureTopology(f.directory), networkId: "replacement" });
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    ...f.dependencies, observeTopology: stale,
+    prepareTransition: async () => assert.fail("stale stack must not be queried"),
+  }), /direct-loopback topology changed/u);
+  await assert.rejects(submitStandaloneCommitteeTransition(f.directory, f.requestPath,
+    f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies, observeTopology: stale,
+      loadMaterial: async () => assert.fail("stale stack must not load a provider"),
+    }), /direct-loopback topology changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "pending");
+  await submitStandaloneCommitteeTransition(f.directory, f.requestPath,
+    f.signingRequestPath, f.signaturePath, {
+      ...f.dependencies,
+      loadMaterial: async () => ({ material: { providers: {} } }),
+      submit: async () => "maintenance-tx",
+    });
+  await assert.rejects(reconcileStandaloneCommitteeTransition(f.directory, f.requestPath,
+    f.signingRequestPath, {
+      verifyBundle: f.verifyBundle, observeTopology: stale,
+      reconcile: async () => assert.fail("stale stack must not reconcile"),
+    }), /direct-loopback topology changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition, "submitted");
+});
+
 async function recoveryRequiredFixture() {
   const f = await preparedCommitteeFixture();
   await assert.rejects(submitStandaloneCommitteeTransition(
@@ -1755,6 +1829,20 @@ test("recovery rejects noncanonical reviewer time and synthetic references", asy
     "recovery-required-no-journal");
 });
 
+test("maintenance recovery cannot approve against a changed verified stack", async () => {
+  const f = await recoveryRequiredFixture();
+  await assert.rejects(approveStandaloneCommitteeRecovery(
+    f.directory, f.requestPath, f.signingRequestPath, f.decisionPath,
+    f.decisionSignaturePath, f.keyring, governanceFingerprint, {
+      ...f.dependencies,
+      observeTopology: async () => ({ ...await fixtureTopology(f.directory), networkId: "replacement" }),
+      prepareTransition: async () => assert.fail("stale stack must not be queried"),
+      verifySignature: async () => assert.fail("stale stack must not reach signature verification"),
+    }), /direct-loopback topology changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceTransition,
+    "recovery-required-no-journal");
+});
+
 test("failed governance signature leaves maintenance recovery blocked", async () => {
   const f = await recoveryRequiredFixture();
   await assert.rejects(approveStandaloneCommitteeRecovery(
@@ -2015,6 +2103,32 @@ test("read-only deployment reconciliation promotes a pending staged receipt only
   assert.equal(keyReadback.readback.status, "verified");
 });
 
+test("deployment reconciliation cannot promote a receipt after stack access changes", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "pending", receipt: stagedReceipt }),
+  });
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeTopology: async () => ({ ...await fixtureTopology(f.directory), networkId: "replacement" }),
+    reconcileDeployment: async () => assert.fail("stale stack must not be queried"),
+  }), /direct-loopback topology changed/u);
+  let checks = 0;
+  await assert.rejects(reconcileStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeTopology: async () => ({ ...await fixtureTopology(f.directory),
+      networkId: ++checks === 1 ? ledgerNetworkId : "replacement" }),
+    reconcileDeployment: async () => ({ kind: "local-deployment-reconciliation",
+      receipt: stagedReceipt, receiptAttribution: journalAttribution,
+      readbackStatus: "staged-bootstrap-pending" }),
+  }), /direct-loopback topology changed/u);
+  assert.equal(checks, 2);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.deployment.result.readbackStatus, "pending");
+});
+
 test("a deployment with no receipt remains reserved after read-only reconciliation", async () => {
   const f = await stagedFixture();
   await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
@@ -2123,6 +2237,21 @@ test("wizard reserves one staged insertion and requires read-only reconciliation
   assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys,
     [{ circuitName: "nextKey", state: "verified" }, { circuitName: "laterKey", state: "verified" }]);
   assert.equal((await standaloneSetupStatus(f.directory)).releaseQualified, false);
+});
+
+test("verifier-key insertion refuses a stale stack before journal reservation", async () => {
+  const f = await stagedFixture();
+  await attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => ({ kind: "local-deployment-submission-observation",
+      readbackStatus: "staged-bootstrap-pending", receipt: stagedReceipt }),
+  });
+  await assert.rejects(attemptStandaloneVerifierKeyInsertion(f.directory, f.insertionPlanPath, {
+    verifyBundle: f.verifyBundle,
+    observeTopology: async () => ({ ...await fixtureTopology(f.directory), networkId: "replacement" }),
+    insert: async () => assert.fail("stale stack must not be submitted"),
+  }), /direct-loopback topology changed/u);
+  assert.deepEqual((await standaloneSetupStatus(f.directory)).stagedVerifierKeys, []);
 });
 
 test("wizard preserves an ambiguous insertion and rejects changed approval bytes", async () => {
