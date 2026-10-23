@@ -253,14 +253,21 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     },
     sequenceToTimestamp: sequenceTimestampMap(plan),
   });
+  const assertPlanCurrent = () => {
+    const now = Date.now();
+    if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
+      throw new LocalLedgerSourceUnavailableError(new Error("Local API runtime plan is not currently valid"));
+    }
+  };
   return {
     ...source,
     async loadSnapshot() {
-      const now = Date.now();
-      if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
-        throw new LocalLedgerSourceUnavailableError(new Error("Local API runtime plan is not currently valid"));
-      }
+      assertPlanCurrent();
       return source.loadSnapshot();
+    },
+    async readFinalizedProposalLedger() {
+      assertPlanCurrent();
+      return source.readFinalizedProposalLedger();
     },
   };
 }

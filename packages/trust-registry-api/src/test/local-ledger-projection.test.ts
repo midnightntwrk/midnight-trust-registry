@@ -173,6 +173,44 @@ describe("finalized Compact projection coverage", () => {
 });
 
 describe("local ledger-bound API source", () => {
+  it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
+    const { snapshot, ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));
+    let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
+    try {
+      const snapshotPath = join(directory, "snapshot.json");
+      await writeSnapshotToFile(snapshotPath, snapshot);
+      const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+      let view = { networkId: "undeployed", contractAddress: address,
+        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger };
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(await readFile(snapshotPath)).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() { return view; } },
+        sequenceToTimestamp,
+      });
+      await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
+      server = createTrustRegistryApiServer({ source,
+        readFinalizedProposalLedger: source.readFinalizedProposalLedger });
+      await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+      const bound = server.address();
+      if (bound === null || typeof bound === "string") throw new Error("Expected local HTTP listener");
+      const url = `http://127.0.0.1:${bound.port}/v1/governed/issuer/absent/proposal/evidence`;
+      expect((await fetch(url)).status).toBe(404);
+      view = { ...view, ledger: { ...ledger, governancePolicyCommitment: new Uint8Array(32).fill(7) } };
+      await expect(source.readFinalizedProposalLedger()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect((await fetch(url)).status).toBe(503);
+      view = { ...view, ledger, finalizedBlockHash: `0x${"0".repeat(64)}` };
+      await expect(source.readFinalizedProposalLedger()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+    } finally {
+      if (server?.listening) {
+        await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("rejects unjournaled governed ports before a local listener is created", () => {
     type Options = Parameters<typeof createTrustRegistryApiServer>[0];
     const source: Options["source"] = { mode: "local-ledger", async loadSnapshot() {

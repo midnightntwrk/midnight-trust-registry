@@ -44,8 +44,12 @@ independently verify API image layer contents. This is packaging and route
 evidence, not a verified offline deployment; ingress/TLS, browser-origin policy,
 and independent verification of packaged portal bytes remain deployment
 responsibilities. The CLI does not yet wire live private-evidence and proposal
-ports into local-ledger API mode, so the private applicant and governed flows
-are not qualified by same-origin routing alone.
+submission ports into local-ledger API mode, so the private applicant and governed flows
+are not qualified by same-origin routing alone. Read-only proposal-evidence
+queries do use the same pinned, snapshot-bound finalized ledger reader as
+other local API queries; this does not enable proposal submission. Readback
+fails closed after governance state advances beyond the signed snapshot until
+the operator approves a refreshed snapshot and runtime plan.
 The portal images, API image, and Helm template do not satisfy #218 or #219 by
 themselves. Actual local-ledger
 readback, offline actor journeys, API and wallet continuity, cluster

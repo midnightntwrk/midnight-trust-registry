@@ -11,6 +11,7 @@ import {
 } from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
 import { createPortalStaticHandler } from "./portal-static.js";
+import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
 
 const HELP_TEXT = `Usage:
   trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
@@ -183,6 +184,7 @@ export const runTrustRegistryApiCli = async (
   const portalHandler = options.servePortals === true
     ? await createPortalStaticHandler("/app/portals")
     : undefined;
+  let readFinalizedProposalLedger: FinalizedProposalLedgerReader | undefined;
   const source = options.localLedgerPlanPath !== undefined
     ? await (async () => {
       const plan = await loadApprovedLocalLedgerRuntimePlan({
@@ -197,6 +199,7 @@ export const runTrustRegistryApiCli = async (
       }
       const localSource = await createApprovedLocalLedgerRuntimeSource(plan);
       await localSource.loadSnapshot();
+      readFinalizedProposalLedger = localSource.readFinalizedProposalLedger;
       return localSource;
     })()
     : options.snapshotPath !== undefined
@@ -205,6 +208,7 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(readFinalizedProposalLedger === undefined ? {} : { readFinalizedProposalLedger }),
     ...(portalHandler === undefined ? {} : { nonApiGetHandler: portalHandler }),
     ...(options.clusterBind === true ? { corsPolicy: "none" as const } : {}),
     ...(options.unsafeDemoMutations === undefined ? {} : { allowUnsafeDemoMutations: options.unsafeDemoMutations }),
