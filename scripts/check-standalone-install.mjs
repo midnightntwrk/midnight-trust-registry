@@ -265,6 +265,11 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   const packageManifestBytes = await readFile(await regularBundleFile(root, inventory.packageManifest));
   const packageManifestSha256 = createHash("sha256").update(packageManifestBytes).digest("hex");
+  if (inventory.format !== "tr-standalone-install-v2"
+    && (!SHA256.test(inventory.packageManifestSha256 ?? "")
+      || packageManifestSha256 !== inventory.packageManifestSha256)) {
+    throw new Error("Standalone release manifest bytes disagree with the install pin");
+  }
   const packageManifest = JSON.parse(packageManifestBytes.toString("utf8"));
   if (packageManifest.sourceRevision !== inventory.sourceRevision) {
     throw new Error("Standalone install source revision disagrees with the package manifest");

@@ -106,6 +106,14 @@ test("checks module bytes and source before any network or provider call", async
   assert.equal(called, false);
 });
 
+test("deployment rechecks approved release manifest bytes before loading provider", async () => {
+  let loaded = false;
+  await assert.rejects(runLocalDeployment(plan, {
+    loadProvider: async () => { loaded = true; },
+  }, { expectedReleaseManifestSha256: "f".repeat(64) }), /Release manifest bytes changed/u);
+  assert.equal(loaded, false);
+});
+
 test("observes the pinned node before importing the provider and passes only approved inputs", async () => {
   const steps = [];
   const result = await runLocalDeployment(plan, {

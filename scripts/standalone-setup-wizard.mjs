@@ -61,10 +61,13 @@ function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message)
 }
 
 async function verifiedPackageManifestBytes(bundle, inventory, verified) {
-  const manifestBytes = await regularBytes(join(bundle, JSON.parse(inventory).packageManifest));
-  if (!SHA256.test(verified?.packageManifestSha256 ?? "")
+  const pin = JSON.parse(inventory);
+  const manifestBytes = await regularBytes(join(bundle, pin.packageManifest));
+  if (!SHA256.test(pin.packageManifestSha256 ?? "")
+    || !SHA256.test(verified?.packageManifestSha256 ?? "")
+    || pin.packageManifestSha256 !== verified.packageManifestSha256
     || sha256(manifestBytes) !== verified.packageManifestSha256) {
-    throw new Error("Installed release manifest changed since bundle verification");
+    throw new Error("Installed release manifest changed since its inventory pin or bundle verification");
   }
   return manifestBytes;
 }
@@ -1044,7 +1047,9 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     };
     await writeRecord(root, record);
     try {
-      const result = await (dependencies.deploy ?? runLocalDeployment)(plan);
+      const result = await (dependencies.deploy ?? runLocalDeployment)(plan, {}, {
+        expectedReleaseManifestSha256: sha256(planManifestBytes),
+      });
       await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
       record.deployment = { ...record.deployment, state: "observed", result };
       await writeRecord(root, record);

@@ -106,8 +106,8 @@ export async function loadApprovedMaintenanceMaterial(plan, dependencies = {}, a
   return loadApprovedMaterial(plan, dependencies, approval, "createLocalMaintenanceMaterial");
 }
 
-export async function runLocalDeployment(plan, dependencies = {}) {
-  const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies);
+export async function runLocalDeployment(plan, dependencies = {}, approval = {}) {
+  const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies, approval);
   try {
     if (!material || typeof material !== "object" || !material.bootstrap
       || !material.providers || !material.contractMaintenanceSigningKey) {

@@ -191,7 +191,9 @@ export async function buildStandaloneInstall(options = {}) {
   const inventory = {
     format: portalRuntimes ? "tr-standalone-install-v6"
       : apiRuntime ? "tr-standalone-install-v4" : "tr-standalone-install-v3", sourceRevision,
-    packageManifest: "release-manifest.json", artifactDirectory: "packages",
+    packageManifest: "release-manifest.json",
+    packageManifestSha256: await sha256(join(destination, "release-manifest.json")),
+    artifactDirectory: "packages",
     runtimeCompose, images, proofParameters: { directory: "proof-params", files: proofFiles },
     ...(apiRuntime ? { apiRuntime } : {}),
     ...(portalRuntimes ? { portalRuntimes } : {}),

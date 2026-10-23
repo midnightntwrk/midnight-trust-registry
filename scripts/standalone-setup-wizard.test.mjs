@@ -136,8 +136,8 @@ async function approveStandaloneCommitteeRecovery(
     { observeTopology: async () => fixtureTopology(directory), ...dependencies });
 }
 
-async function fixture(format = "tr-standalone-install-v3") {
-  const prepareDefaultStack = arguments.length === 0;
+async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
+  const prepareDefaultStack = arguments.length === 0 || manifestOverride !== undefined;
   const root = await mkdtemp(join(tmpdir(), "tr-wizard-test-"));
   const bundle = join(root, "bundle");
   await mkdir(bundle);
@@ -146,8 +146,11 @@ async function fixture(format = "tr-standalone-install-v3") {
   const composeSha256 = createHash("sha256").update(compose).digest("hex");
   const offlineComposeSha256 = createHash("sha256").update(offlineCompose).digest("hex");
   const images = pinnedStandaloneImages(compose.toString("utf8"));
+  const releaseManifest = manifestOverride ?? { sourceRevision };
+  const releaseManifestBytes = JSON.stringify(releaseManifest);
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
-    format, packageManifest: "release-manifest.json", images,
+    format, packageManifest: "release-manifest.json",
+    packageManifestSha256: createHash("sha256").update(releaseManifestBytes).digest("hex"), images,
     ...(["tr-standalone-install-v3", "tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { runtimeCompose: {
       path: "compose.yml", sha256: composeSha256,
       offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
@@ -165,7 +168,7 @@ async function fixture(format = "tr-standalone-install-v3") {
     ...(format === "tr-standalone-install-v6" ? { installRelay: {
       path: "install-relay.py", sha256: "b".repeat(64), imageRole: "node",
     } } : {}) }));
-  await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
+  await writeFile(join(bundle, "release-manifest.json"), releaseManifestBytes);
   await writeFile(join(bundle, "compose.yml"), compose);
   await writeFile(join(bundle, "compose.offline.yml"), offlineCompose);
   if (format === "tr-standalone-install-v6") {
@@ -173,7 +176,7 @@ async function fixture(format = "tr-standalone-install-v3") {
   }
   await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
-  await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision }));
+  await writeFile(releaseManifestPath, releaseManifestBytes);
   const directory = join(root, "private-setup");
   const pinPath = join(root, "pin.json");
   const planPath = join(root, "plan.json");
@@ -1127,7 +1130,24 @@ test("deployment binds the release manifest bytes read by the bundle verifier", 
       return verified;
     },
     deploy: async () => assert.fail("unverified manifest reached provider"),
-  }), /release manifest changed since bundle verification/u);
+  }), /release manifest changed since its inventory pin or bundle verification/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+});
+
+test("deployment rejects a manifest replaced before fresh bundle verification", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  await approveCommittee(f);
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const changed = JSON.stringify({ sourceRevision, verifierKeySha256: { forged: "a".repeat(64) } });
+  await writeFile(join(record.install.bundle, "release-manifest.json"), changed);
+  await writeFile(f.releaseManifestPath, changed);
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => assert.fail("unapproved manifest reached provider"),
+  }), /release manifest changed since its inventory pin or bundle verification/u);
   assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
 });
 
@@ -1164,8 +1184,8 @@ test("wizard rejects a changed deployment genesis before reserving", async () =>
   assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
 });
 
-async function stagedFixture() {
-  const f = await fixture();
+async function stagedFixture(manifest) {
+  const f = manifest ? await fixture("tr-standalone-install-v3", manifest) : await fixture();
   await observeStandaloneLedger(f.directory, f.pinPath, {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
@@ -1191,14 +1211,11 @@ async function stagedFixture() {
 }
 
 async function committeeTransitionFixture() {
-  const f = await stagedFixture();
   const manifest = {
     format: "tr-release-candidate-manifest-v2", sourceRevision,
     verifierKeySha256: { initialKey: "a".repeat(64), nextKey: "b".repeat(64), laterKey: "c".repeat(64) },
   };
-  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
-  await writeFile(join(record.install.bundle, "release-manifest.json"), JSON.stringify(manifest));
-  await writeFile(f.releaseManifestPath, JSON.stringify(manifest));
+  const f = await stagedFixture(manifest);
   await attemptStandaloneDeployment(f.directory, f.planPath, {
     verifyBundle: f.verifyBundle,
     deploy: async () => ({ kind: "local-deployment-submission-observation",
@@ -1443,7 +1460,7 @@ test("deployment binding verifies the installed bundle and release manifest befo
     f.directory, input.path, input.signature, f.keyring, governanceFingerprint,
     { verifyBundle: f.verifyBundle,
       verifySignature: async () => assert.fail("invalid manifest") },
-  ), /invalid source or format/u);
+  ), /release manifest changed since its inventory pin or bundle verification/u);
 });
 
 async function preparedCommitteeFixture() {

@@ -137,7 +137,8 @@ async function fixture() {
   }
   const inventory = {
     format: "tr-standalone-install-v2", sourceRevision: revision,
-    packageManifest: "release.json", artifactDirectory: "artifacts", images,
+    packageManifest: "release.json", packageManifestSha256: sha(await readFile(join(root, "release.json"))),
+    artifactDirectory: "artifacts", images,
     proofParameters: { directory: "proof-params", files: proofFiles },
   };
   await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
@@ -181,6 +182,15 @@ test("v3 install pins complete runtime Compose bytes", async () => {
     const result = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(result.runtimeComposeSha256, sha(compose));
     assert.equal(result.runtimeOfflineComposeSha256, sha(offlineCompose));
+    const originalManifest = await readFile(join(root, "release.json"));
+    await writeFile(join(root, "release.json"), JSON.stringify({ sourceRevision: revision, packages: [], changed: true }));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /release manifest bytes disagree/u);
+    await writeFile(join(root, "release.json"), originalManifest);
+    delete inventory.packageManifestSha256;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /release manifest bytes disagree/u);
+    inventory.packageManifestSha256 = sha(originalManifest);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     inventory.images[0].reference = reference("indexer");
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /image inventory disagrees/u);
