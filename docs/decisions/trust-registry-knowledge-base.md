@@ -1719,12 +1719,12 @@ authenticated public-network finality.
 Issue #216's local runner extraction is stacked above release qualification,
 not merged into a release candidate. The governed-demo matrix now records
 per-case `passed`/`failed` status, a redacted failure reason, and aggregate
-counts; it fails the process if the checked demo count differs from 186 or if
-any recorded case fails. All 186 named cases now have independent Node test
+counts; it fails the process if the checked demo count differs from 189 or if
+any recorded case fails. All 189 named cases now have independent Node test
 fixtures across Compact/integration/client, public HTTP, and TRQP boundaries.
-The full 186-case demo remains; unrelated top-level setup assertions can still
+The full 189-case demo remains; unrelated top-level setup assertions can still
 abort it. The local strict parity checker executes both surfaces and reports
-186 matching IDs with none missing. It rejects duplicate or unknown extracted
+189 matching IDs with none missing. It rejects duplicate or unknown extracted
 IDs and runs in the light gate. Matching IDs do not alone prove equivalent
 boundary or invariant coverage.
 

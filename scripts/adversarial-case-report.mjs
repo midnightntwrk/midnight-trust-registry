@@ -68,7 +68,7 @@ export const runIsolatedAdversarialCases = (files = isolatedAdversarialTestFiles
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (process.argv.length !== 2) throw new Error("Usage: node scripts/adversarial-case-report.mjs");
   const report = runIsolatedAdversarialCases();
-  assert.equal(report.summary.total, 186, "Review the expected governed-demo case count before changing it");
+  assert.equal(report.summary.total, 189, "Review the expected governed-demo case count before changing it");
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (report.summary.failed > 0) process.exitCode = 1;
 }

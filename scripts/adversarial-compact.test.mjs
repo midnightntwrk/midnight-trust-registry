@@ -329,6 +329,22 @@ test("issuer-history-survives-threshold-change", () => {
   assert.ok(client.verifyIssuerAuthorizationBundle(historical, {}));
 });
 
+test("verifier-history-survives-threshold-change", () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("isolated-verifier-history-threshold");
+  const verifier = createVerifierScenarioFixture("isolated-verifier-history-target");
+  const second = createMaintainerScenarioFixture("isolated-verifier-history-second");
+  const third = createMaintainerScenarioFixture("isolated-verifier-history-third");
+  harness.authorizeVerifier(verifier);
+  const original = harness.evaluateCurrentVerifierDecision(verifier);
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.revokeVerifier(verifier, [second]);
+  const client = new TrustRegistrySimulatorClient(harness.simulator);
+  assert.notEqual(original.policy.version, harness.policyRecord.version);
+  assert.ok(client.verifyVerifierAuthorizationBundle(original, {}));
+});
+
 test("issuer-current-policy-after-threshold-change", () => {
   const { client, historical, current } = revisedPolicyEvidence("isolated-current-policy");
   assert.notEqual(historical.policy.version, current.policy.version);

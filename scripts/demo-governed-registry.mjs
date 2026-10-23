@@ -134,7 +134,7 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
-const expectedAdversarialCaseCount = 186;
+const expectedAdversarialCaseCount = 189;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -311,14 +311,18 @@ const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-po
 const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
 const policyThird = createMaintainerScenarioFixture("governed-demo-policy-third");
 const historicalIssuer = createIssuerScenarioFixture("governed-demo-historical-issuer");
+const historicalVerifier = createVerifierScenarioFixture("governed-demo-historical-verifier");
 const pendingPolicyIssuer = createIssuerScenarioFixture("governed-demo-pending-policy-issuer");
 const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-policy-issuer");
 const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
 policyHarness.authorizeIssuer(historicalIssuer);
+policyHarness.authorizeVerifier(historicalVerifier);
 const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+const originalVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(historicalVerifier);
 const originalPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [{ fixture: historicalIssuer, label: "historical-issuer" }],
+  verifiers: [{ fixture: historicalVerifier, label: "historical-verifier" }],
 });
 policyHarness.authorizeMaintainer(policySecond);
 policyHarness.authorizeMaintainer(policyThird);
@@ -373,13 +377,16 @@ const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentP
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+assert.notEqual(originalVerifierBundle.policy.version, currentPolicyBundle.policy.version);
 policyHarness.revokeIssuer(historicalIssuer, [policySecond]);
+policyHarness.revokeVerifier(historicalVerifier, [policySecond]);
 const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [
     { fixture: historicalIssuer, label: "historical-issuer" },
     { fixture: currentPolicyIssuer, label: "current-issuer" },
   ],
+  verifiers: [{ fixture: historicalVerifier, label: "historical-verifier" }],
 }, originalPolicySnapshot);
 // This listener serves the isolated policy harness's archived snapshot, not the later mutable demo server.
 const policyServer = createTrustRegistryApiServer({
@@ -439,6 +446,53 @@ try {
     invariant: "TRQP retains the old issuer policy and epoch after a threshold revision",
     boundary: "adapter", trusted: historicalDecision.trustedAtTime,
   });
+  const oldVerifierEvidence = originalPolicySnapshot.verifierEntries[0]?.evidence;
+  assert.ok(oldVerifierEvidence?.authorization);
+  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
+    bundle.authorization?.authorizationId === oldVerifierEvidence.authorization.authorizationId
+      && bundle.epoch.epochId === oldVerifierEvidence.epoch.epochId));
+  const historicalVerifierEntry = revisedPolicySnapshot.verifierEntries.find((entry) =>
+    entry.authorization.authorizationId === historicalVerifier.authorizationId);
+  assert.equal(historicalVerifierEntry?.authorization.status, "revoked");
+  const verifierInstant = new Date(Date.parse(oldVerifierEvidence.epoch.validFrom) + 1).toISOString();
+  assert.ok(Date.parse(verifierInstant) < Date.parse(historicalVerifierEntry.evidence.epoch.validFrom));
+  const verifierResponse = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "verifier",
+      subjectDid: historicalVerifier.subjectDid,
+      resourceId: historicalVerifier.scopeResourceId,
+      at: verifierInstant,
+    }),
+  });
+  const historicalVerifierDecision = await expectHttp(verifierResponse, 200);
+  assert.equal(historicalVerifierDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
+  assert.equal(historicalVerifierDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
+  adversarialMatrix.expectDecision(historicalVerifierDecision, {
+    id: "verifier-historical-api-after-threshold-change",
+    invariant: "A threshold revision and later revocation retain the verifier decision at its original epoch",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  const verifierTrqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      entity_id: historicalVerifier.subjectDid,
+      authority_id: revisedPolicySnapshot.registry.registryDid,
+      action: "verify",
+      resource: historicalVerifier.scopeResourceId,
+      context: { time: verifierInstant },
+    }),
+  });
+  const historicalVerifierTrqpDecision = await expectHttp(verifierTrqpResponse, 200);
+  assert.equal(historicalVerifierTrqpDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
+  assert.equal(historicalVerifierTrqpDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
+  adversarialMatrix.expectDecision(historicalVerifierTrqpDecision, {
+    id: "verifier-historical-trqp-after-threshold-change",
+    invariant: "TRQP retains the old verifier policy and epoch after a threshold revision",
+    boundary: "adapter", trusted: historicalVerifierDecision.trustedAtTime,
+  });
 } finally {
   await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
 }
@@ -447,6 +501,13 @@ adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBun
 ), {
   id: "issuer-history-survives-threshold-change",
   invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
+  originalVerifierBundle, {},
+), {
+  id: "verifier-history-survives-threshold-change",
+  invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
   boundary: "client",
 });
 adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
