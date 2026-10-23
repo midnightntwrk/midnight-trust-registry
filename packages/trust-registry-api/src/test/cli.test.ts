@@ -53,4 +53,17 @@ describe("API CLI binding", () => {
       ]).host).toBe(host);
     }
   });
+
+  it("keeps read-only fixture sources on loopback too", () => {
+    for (const source of [["--snapshot", "fixture.json"], ["--workspace", "workspace.json"]]) {
+      for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
+        expect(() => parseTrustRegistryApiCliArgs([
+          "serve", ...source, "--host", host,
+        ])).toThrow(/Fixture-backed API modes require a loopback host/u);
+      }
+      for (const host of ["127.0.0.1", "::1"]) {
+        expect(parseTrustRegistryApiCliArgs(["serve", ...source, "--host", host]).host).toBe(host);
+      }
+    }
+  });
 });

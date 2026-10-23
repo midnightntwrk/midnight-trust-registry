@@ -17,6 +17,9 @@ const HELP_TEXT = `Usage:
     [--cluster-bind]
     [--unsafe-demo-mutations]
 
+Snapshot and workspace modes are fixture-only and require a loopback host.
+Cluster binding requires signed local-ledger mode; it is not release qualification.
+
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
   trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
@@ -154,6 +157,10 @@ export const parseTrustRegistryApiCliArgs = (
     && !["127.0.0.1", "::1"].includes(options.host)
   ) {
     throw new Error("--unsafe-demo-mutations requires a loopback host");
+  }
+  if (options.localLedgerPlanPath === undefined
+    && !["127.0.0.1", "::1"].includes(options.host)) {
+    throw new Error("Fixture-backed API modes require a loopback host");
   }
 
   return options;

@@ -15,6 +15,11 @@ Current scope:
 - keep the first service slices file-backed and local-first instead of
   introducing a separate database or runtime persistence layer
 
+Snapshot and operator-workspace modes are fixture-backed and loopback-only,
+including read-only listeners. They are not a substitute for a finalized local
+ledger. The signed local-ledger mode is the only CLI mode that can request
+cluster binding; that capability alone does not qualify a release deployment.
+
 `assertLocalLedgerEvidenceMatchesSnapshot` is a building block for the
 separate local-ledger mode tracked in #219. Given a caller-authenticated
 finalized Compact ledger, contract address, and sequence-to-time mapping, it
@@ -68,7 +73,9 @@ and requires a successful finalized Compact readback and snapshot match before
 listening. Every query rechecks the snapshot digest and finalized projection;
 missing sequence timestamps or an expired plan fail closed. File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
-Until qualification is complete, local-ledger mode also binds only to loopback.
+By default local-ledger mode binds only to loopback. Guarded `--cluster-bind` can
+expose the signed mode on all interfaces with an API image source-revision check,
+but does not by itself satisfy local deployment or offline-runtime gates.
 
 The signed map is a reviewer attestation, not proof that timestamps were
 derived from authenticated ledger history. The plan's `sourceRevision` is not
