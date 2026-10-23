@@ -79,47 +79,99 @@ test("capture and verify write private, non-overwriting, ledger-only evidence", 
   const destinationDirectory = await mkdtemp(join(tmpdir(), "tr-restore-destination-"));
   const { source, destination } = snapshots();
   try {
+    const receiptBlockHash = `0x${"6".repeat(64)}`;
+    const marker = { state: "observed", contractAddress: `0x${"4".repeat(64)}`,
+      readbackStatus: "staged-bootstrap-pending", validReceipt: true };
+    const deployment = { state: "observed", result: {
+      readbackStatus: "staged-bootstrap-pending",
+      receipt: { networkId: "undeployed", contractAddress: marker.contractAddress,
+        blockHash: receiptBlockHash, txId: "local-deploy", blockHeight: 41 },
+    } };
     const record = { format: "tr-standalone-setup-v1", sourceRevision: source.sourceRevision,
       install: { inventorySha256: source.installInventorySha256 },
-      stack: { project: source.project, envFileSha256: source.stackEnvSha256 } };
+      stack: { project: source.project, envFileSha256: source.stackEnvSha256 }, deployment };
+    const destinationRecord = { ...structuredClone(record),
+      stack: { ...record.stack, project: destination.project }, deployment: undefined };
+    const deployedSource = { ...source, historicalHash: receiptBlockHash, setupDeployment: marker };
+    const deployedDestination = { ...destination, setupDeployment: {
+      state: "pending", contractAddress: null, readbackStatus: null, validReceipt: false,
+    } };
     await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
+    await writeFile(join(destinationDirectory, "setup-record.json"), JSON.stringify(destinationRecord),
+      { mode: 0o600 });
+    await writeFile(join(sourceDirectory, "setup-record.json"),
+      JSON.stringify({ ...record, deployment: undefined }));
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => ({ ...source, setupDeployment: {
+        state: "pending", contractAddress: null, readbackStatus: null, validReceipt: false,
+      } }) }), /setup-recorded deployment above genesis/u);
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record));
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => ({ ...deployedSource, historicalHash: `0x${"7".repeat(64)}` }) }),
+    /setup-recorded deployment at a finalized height/u);
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => ({ ...deployedSource, finalizedHeight: 40 }) }),
+    /setup-recorded deployment at a finalized height/u);
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => ({ ...deployedSource, finalizedHeight: "42" }) }),
+    /setup-recorded deployment at a finalized height/u);
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify({
+      ...record, deployment: { ...deployment, result: { ...deployment.result,
+        receipt: { ...deployment.result.receipt, blockHeight: "41" } } },
+    }));
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => deployedSource }), /setup-recorded deployment above genesis/u);
+    await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record));
+    await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
+      { observeSnapshot: async () => source }), /not bound to its setup record/u);
     const capture = await captureStandaloneRestoreSource(sourceDirectory, {
       observeSnapshot: async (_directory, options) => {
         assert.equal(options.allowUnpublishedHostPorts, true);
-        return source;
+        assert.equal(options.historicalHeight, 41);
+        return deployedSource;
       },
     });
     assert.equal(capture.releaseQualified, false);
     await assert.rejects(captureStandaloneRestoreSource(sourceDirectory,
-      { observeSnapshot: async () => source }), { code: "EEXIST" });
+      { observeSnapshot: async () => deployedSource }), { code: "EEXIST" });
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, sourceDirectory,
-      { observeSnapshot: async () => destination }), /different setup directory/u);
+      { observeSnapshot: async () => deployedDestination }), /different setup directory/u);
     const wrongRecord = { ...record, stack: { ...record.stack, project: "another-project" } };
     await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(wrongRecord));
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
-      { observeSnapshot: async () => destination }), /not bound to the source setup/u);
+      { observeSnapshot: async () => deployedDestination }), /not bound to its setup record/u);
     await writeFile(join(sourceDirectory, "setup-record.json"), JSON.stringify(record));
     const markedSource = { ...source, setupDeployment: { state: "unknown", contractAddress: null,
       readbackStatus: null, validReceipt: false } };
     await writeFile(capture.sourcePath, JSON.stringify(markedSource));
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
-      { observeSnapshot: async () => destination }), /not bound to the source setup/u);
-    await writeFile(capture.sourcePath, JSON.stringify(source));
+      { observeSnapshot: async () => deployedDestination }), /not bound to its setup record/u);
+    await writeFile(capture.sourcePath, JSON.stringify(deployedSource));
+    await writeFile(capture.sourcePath, JSON.stringify({ ...deployedSource,
+      historicalHash: `0x${"7".repeat(64)}` }));
+    await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
+      { observeSnapshot: async () => deployedDestination }), /setup-recorded deployment at a finalized height/u);
+    await writeFile(capture.sourcePath, JSON.stringify(deployedSource));
+    await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
+      { observeSnapshot: async () => ({ ...deployedDestination, setupDeployment: {
+        ...marker, contractAddress: `0x${"5".repeat(64)}`,
+      } }) }), /not bound to its setup record/u);
     const result = await verifyStandaloneRestore(sourceDirectory, destinationDirectory, {
       observeSnapshot: async (_directory, options) => {
         assert.equal(options.historicalHeight, 42);
-        return destination;
+        return deployedDestination;
       },
     });
     assert.equal(result.destinationFinalizedHeight, 43);
+    assert.equal(result.deploymentEvidence, "pre-deployment-or-unbound-smoke");
     const evidence = JSON.parse(await readFile(join(destinationDirectory, "restore-destination.json"), "utf8"));
     assert.equal(evidence.destination.historicalHash, sourceHash);
     assert.match(evidence.sourceSnapshotSha256, /^[0-9a-f]{64}$/u);
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
-      { observeSnapshot: async () => destination }), { code: "EEXIST" });
+      { observeSnapshot: async () => deployedDestination }), { code: "EEXIST" });
     await chmod(capture.sourcePath, 0o644);
     await assert.rejects(verifyStandaloneRestore(sourceDirectory, destinationDirectory,
-      { observeSnapshot: async () => destination }), /private regular file/u);
+      { observeSnapshot: async () => deployedDestination }), /private regular file/u);
   } finally {
     await rm(sourceDirectory, { recursive: true, force: true });
     await rm(destinationDirectory, { recursive: true, force: true });

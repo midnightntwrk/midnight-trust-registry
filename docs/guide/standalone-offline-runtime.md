@@ -1202,19 +1202,22 @@ topology. It requires the same source revision, observer and install inventory,
 genesis, and historical finalized block hash, with a different project,
 network, and three container identities. Destination finality must advance
 beyond the source checkpoint. The source snapshot and destination result are
-private, atomically published one-write files. Verification also binds the
-source snapshot to the source setup record. The result distinguishes
-pre-deployment or unbound smoke from matching valid staged-bootstrap setup
-records, but neither
-classification independently reads contract state. Preserve the files on any failure instead of recapturing
+private, atomically published one-write files. Source capture requires a
+setup-recorded staged-bootstrap deployment receipt no later than its finalized
+checkpoint, with node-reported block hash at the receipt height matching the
+recorded receipt hash. Pre-deployment smoke cannot consume that source slot. Verification
+binds both snapshots to their own private setup records. A fresh restore
+destination may have no deployment receipt in its setup record, so the result
+remains `pre-deployment-or-unbound-smoke` until separate contract and wallet
+readback is supplied. This consistency check does not independently read
+contract state. Preserve the files on any failure instead of recapturing
 or resetting volumes.
 
 This is only **distinct-project ledger continuity**. The script cannot prove
 that a backup was made, transferred to another host, or held under approved
 custody. It does not read contract state, wallet keys, API data, or transaction
 journals; these require separate post-restore evidence. Running its tests
-with injected snapshots is not local deployment or restore evidence. A
-pre-deployment run is development smoke only and does not advance the RC gate.
+with injected snapshots is not local deployment or restore evidence.
 
 ## Acceptance Test Before Claiming Support
 

@@ -49,6 +49,43 @@ async function writeEvidence(path, value) {
   }
 }
 
+function deployedCheckpoint(marker) {
+  return marker.state === "observed"
+    && marker.readbackStatus === "staged-bootstrap-pending"
+    && marker.validReceipt === true && marker.contractAddress !== null;
+}
+
+async function assertSetupBoundSnapshot(root, snapshot, requireDeployment, expectedReceiptHeight) {
+  const record = JSON.parse(await readPrivateSnapshot(join(root, "setup-record.json"), 16 * 1024 * 1024));
+  const marker = setupDeploymentMarker(snapshot);
+  if (record.format !== "tr-standalone-setup-v1"
+    || snapshot.project !== record.stack?.project
+    || snapshot.sourceRevision !== record.sourceRevision
+    || snapshot.installInventorySha256 !== record.install?.inventorySha256
+    || snapshot.stackEnvSha256 !== record.stack?.envFileSha256
+    || JSON.stringify(marker) !== JSON.stringify(deploymentMarkerFromRecord(record))) {
+    throw new Error("Restore checkpoint is not bound to its setup record");
+  }
+  if (!Number.isSafeInteger(snapshot.finalizedHeight) || snapshot.finalizedHeight < 1
+    || (deployedCheckpoint(marker)
+      && record.deployment.result.receipt.blockHeight > snapshot.finalizedHeight)
+    || (requireDeployment && (!deployedCheckpoint(marker)
+      || record.deployment.result.receipt.blockHeight !== expectedReceiptHeight
+      || snapshot.historicalHash !== record.deployment.result.receipt.blockHash))) {
+    throw new Error("Restore checkpoint requires a setup-recorded deployment at a finalized height");
+  }
+}
+
+async function sourceDeploymentHeight(root) {
+  const record = JSON.parse(await readPrivateSnapshot(join(root, "setup-record.json"), 16 * 1024 * 1024));
+  const marker = deploymentMarkerFromRecord(record);
+  const height = record.deployment?.result?.receipt?.blockHeight;
+  if (!deployedCheckpoint(marker) || !Number.isSafeInteger(height) || height < 1) {
+    throw new Error("Restore source requires a setup-recorded deployment above genesis");
+  }
+  return height;
+}
+
 export function compareStandaloneRestoreSnapshots(source, destination) {
   if (source?.format !== "tr-standalone-restart-snapshot-v1"
     || destination?.format !== source.format
@@ -109,12 +146,14 @@ export function compareStandaloneRestoreSnapshots(source, destination) {
 
 export async function captureStandaloneRestoreSource(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
+  const receiptHeight = await sourceDeploymentHeight(root);
   const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
-    { allowUnpublishedHostPorts: true });
+    { historicalHeight: receiptHeight, allowUnpublishedHostPorts: true });
   if (snapshot?.format !== "tr-standalone-restart-snapshot-v1"
     || !HASH.test(snapshot.finalizedHash ?? "")) {
     throw new Error("Restore source requires a finalized ledger checkpoint");
   }
+  await assertSetupBoundSnapshot(root, snapshot, true, receiptHeight);
   await writeEvidence(join(root, SOURCE), snapshot);
   return { sourcePath: join(root, SOURCE), project: snapshot.project,
     finalizedHeight: snapshot.finalizedHeight, finalizedHash: snapshot.finalizedHash,
@@ -127,22 +166,15 @@ export async function verifyStandaloneRestore(sourceDirectory, destinationDirect
   if (sourceRoot === destinationRoot) throw new Error("Restore destination must use a different setup directory");
   const sourceBytes = await readPrivateSnapshot(join(sourceRoot, SOURCE));
   const source = JSON.parse(sourceBytes);
-  const record = JSON.parse(await readPrivateSnapshot(join(sourceRoot, "setup-record.json"), 16 * 1024 * 1024));
-  if (record.format !== "tr-standalone-setup-v1"
-    || source.project !== record.stack?.project
-    || source.sourceRevision !== record.sourceRevision
-    || source.installInventorySha256 !== record.install?.inventorySha256
-    || source.stackEnvSha256 !== record.stack?.envFileSha256
-    || (source.setupDeployment !== undefined && JSON.stringify(setupDeploymentMarker(source))
-      !== JSON.stringify(deploymentMarkerFromRecord(record)))) {
-    throw new Error("Restore source checkpoint is not bound to the source setup");
-  }
+  await assertSetupBoundSnapshot(sourceRoot, source, true,
+    await sourceDeploymentHeight(sourceRoot));
   if (!Number.isSafeInteger(source.finalizedHeight) || source.finalizedHeight < 1) {
     throw new Error("Restore source height is invalid");
   }
   const destination = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(destinationRoot, {
     historicalHeight: source.finalizedHeight, allowUnpublishedHostPorts: true,
   });
+  await assertSetupBoundSnapshot(destinationRoot, destination, false);
   const result = compareStandaloneRestoreSnapshots(source, destination);
   await writeEvidence(join(destinationRoot, DESTINATION), {
     ...result, observedAt: new Date().toISOString(),
