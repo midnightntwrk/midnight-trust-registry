@@ -118,8 +118,15 @@ first build each with `scripts/build-static-runtime-image.mjs` from the same
 source SHA, then run:
 
 ```sh
+node scripts/build-standalone-install.mjs --preflight --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
 node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
 ```
+
+The read-only preflight checks the signed clean source, complete contract and
+proof-parameter inputs, exact-source API and portal manifests, pinned local
+image digests, and unused destination before any bundle directory is created.
+It does not build images or prove that a later copy/save cannot fail; recheck
+the completed bundle and running deployment separately.
 
 The all-or-nothing portal options write a v6 inventory with six image
 archives. Bundle verification checks each portal's OCI index, runtime role,

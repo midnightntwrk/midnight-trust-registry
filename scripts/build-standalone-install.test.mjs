@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
-  validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
+  validateStandaloneInstallInputs, validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
+import { STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
 
 const image = `midnightntwrk/test@sha256:${"a".repeat(64)}`;
 const compose = `name: \${TR_STACK_NAME:-tr-standalone-local-smoke}
@@ -25,6 +27,38 @@ test("accepts only three digest-pinned dedicated services", () => {
     /dedicated project/u);
   assert.throws(() => pinnedStandaloneImages(compose.replace("TR_STACK_NAME", "UNTRUSTED_PROJECT")),
     /dedicated project/u);
+});
+
+test("preflight checks proof and image inputs without creating an install directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-install-preflight-test-"));
+  try {
+    const revision = "a".repeat(40);
+    const options = { outputRoot: join(root, "output"), proofSource: join(root, "proof") };
+    const inspectImage = (reference) => [reference];
+    assert.throws(() => validateStandaloneInstallInputs(options, revision, inspectImage),
+      /Proof parameter is missing/u);
+    for (const name of STANDALONE_PROOF_PARAMETER_PATHS) {
+      const path = join(options.proofSource, name);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, "parameter\n");
+    }
+    const plan = validateStandaloneInstallInputs(options, revision, inspectImage);
+    assert.equal(plan.destination, join(options.outputRoot, revision));
+    assert.equal(existsSync(options.outputRoot), false);
+    assert.throws(() => validateStandaloneInstallInputs(options, revision, () => []),
+      /approved repository digest/u);
+    const apiImageDirectory = join(root, "api");
+    await mkdir(apiImageDirectory);
+    await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({
+      sourceRevision: "b".repeat(40), archiveName: "api.image.tar",
+    }));
+    await writeFile(join(apiImageDirectory, "api.image.tar"), "archive\n");
+    assert.throws(() => validateStandaloneInstallInputs({ ...options, apiImageDirectory },
+      revision, inspectImage), /source revision/u);
+    assert.equal(existsSync(options.outputRoot), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("stages both portal roles only from same-source regular image files", async () => {
