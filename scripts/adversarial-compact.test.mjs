@@ -15,6 +15,7 @@ import {
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
+  createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
@@ -343,6 +344,50 @@ test("verifier-history-survives-threshold-change", () => {
   const client = new TrustRegistrySimulatorClient(harness.simulator);
   assert.notEqual(original.policy.version, harness.policyRecord.version);
   assert.ok(client.verifyVerifierAuthorizationBundle(original, {}));
+});
+
+const recognitionAfterPolicyRevision = (label) => {
+  const harness = new LocalTrustRegistryIntegrationHarness(label);
+  const second = createMaintainerScenarioFixture(`${label}-second`);
+  const third = createMaintainerScenarioFixture(`${label}-third`);
+  const recognition = createRecognitionScenarioFixture(`${label}-recognition`);
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  const formerPolicyCommitment = Buffer.from(harness.simulator.getLedger().governancePolicyCommitment);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  return { harness, second, third, recognition, formerPolicyCommitment };
+};
+
+test("compact-recognition-proposal-old-policy-signature-replay", () => {
+  const { harness, second, third, recognition, formerPolicyCommitment } =
+    recognitionAfterPolicyRevision("isolated-recognition-proposal-policy-replay");
+  const prepared = harness.prepareRecognitionProposalAction(recognition);
+  const evidence = harness.signRecognitionProposalEvidence(prepared);
+  const count = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.executeRecognitionProposalWithSignatures(recognition,
+    [signAction(harness, second, prepared, formerPolicyCommitment),
+      signAction(harness, third, prepared, formerPolicyCommitment)], evidence, prepared),
+  /Invalid Jubjub Schnorr signature/u);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, count);
+  harness.executeRecognitionProposalWithSignatures(recognition,
+    [signAction(harness, second, prepared), signAction(harness, third, prepared)], evidence, prepared);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, count + 1n);
+});
+
+test("compact-recognition-approval-old-policy-signature-replay", () => {
+  const { harness, second, third, recognition, formerPolicyCommitment } =
+    recognitionAfterPolicyRevision("isolated-recognition-approval-policy-replay");
+  harness.proposeRecognition(recognition);
+  const prepared = harness.prepareRecognitionDecisionAction(recognition, "approve");
+  const count = harness.simulator.getLedger().governanceActionCount;
+  assert.throws(() => harness.executeRecognitionDecisionWithSignatures(recognition, "approve",
+    [signAction(harness, second, prepared, formerPolicyCommitment),
+      signAction(harness, third, prepared, formerPolicyCommitment)]),
+  /Invalid Jubjub Schnorr signature/u);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, count);
+  harness.executeRecognitionDecisionWithSignatures(recognition, "approve",
+    [signAction(harness, second, prepared), signAction(harness, third, prepared)]);
+  assert.equal(harness.simulator.getLedger().governanceActionCount, count + 1n);
 });
 
 test("issuer-current-policy-after-threshold-change", () => {
