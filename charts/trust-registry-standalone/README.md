@@ -185,8 +185,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    Pod specs across each Deployment, owned ReplicaSet, and running Pod,
    including commands, arguments, environment, mounts, volumes, probes,
    security context, and host networking. It requires disabled service-account
-   automount, no host namespaces or hostPath volumes, and dropped container
-   capabilities. It does **not** compare that Deployment template with the
+   automount, no host namespaces or hostPath volumes, RuntimeDefault seccomp,
+   and dropped container capabilities without additions. API and portal root
+   filesystems must remain read-only. It does **not** compare that Deployment template with the
    independently reviewed rendered chart; an authenticated rendered-manifest
    versus live-resource diff remains necessary. The two API queries are not
    one atomic snapshot; a separate, authenticated evidence capture is still

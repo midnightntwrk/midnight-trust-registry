@@ -39,12 +39,14 @@ function fixture() {
     const labels = { "app.kubernetes.io/instance": "tr-rc",
       "app.kubernetes.io/part-of": "trust-registry-standalone",
       "app.kubernetes.io/component": name };
-    const securityContext = { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } };
+    const securityContext = { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] },
+      ...(["api", "admin", "applicant"].includes(name) ? { readOnlyRootFilesystem: true } : {}) };
     const container = { name, image: reference(role), imagePullPolicy: "Never", securityContext };
     const init = { name: "stage-approval", image: reference(role), imagePullPolicy: "Never",
       securityContext };
     const spec = { automountServiceAccountToken: false,
       nodeSelector: { "kubernetes.io/arch": "arm64" },
+      securityContext: { seccompProfile: { type: "RuntimeDefault" } },
       containers: [container], ...(name === "api" ? { initContainers: [init] } : {}) };
     workloads.items.push({ kind: "Deployment",
       metadata: { name: `tr-rc-tr-${name}`, namespace: "trust-registry", uid: `dep-${name}`,
@@ -173,6 +175,23 @@ test("rejects command, env, volume, and security drift across the workload chain
   assert.throws(check, /violates standalone isolation/u);
   for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
     delete value.volumes;
+  }
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    value.containers[0].securityContext.capabilities.add = ["SYS_ADMIN"];
+  }
+  assert.throws(check, /violates standalone isolation/u);
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    delete value.containers[0].securityContext.capabilities.add;
+    value.securityContext.seccompProfile.type = "Unconfined";
+  }
+  assert.throws(check, /violates standalone isolation/u);
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    value.securityContext.seccompProfile.type = "RuntimeDefault";
+    value.containers[0].securityContext.readOnlyRootFilesystem = false;
+  }
+  assert.throws(check, /violates standalone isolation/u);
+  for (const value of [apiDeployment.spec.template.spec, apiSet.spec.template.spec, apiPod.spec]) {
+    value.containers[0].securityContext.readOnlyRootFilesystem = true;
   }
   apiPod.spec.serviceAccountName = "privileged";
   assert.throws(check, /Pod spec differs/u);

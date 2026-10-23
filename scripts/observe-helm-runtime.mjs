@@ -83,17 +83,23 @@ export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podS
   const template = securityRelevantPodSpec(deploymentSpec);
   if (!isDeepStrictEqual(template, securityRelevantPodSpec(replicaSetSpec))
     || !isDeepStrictEqual(template, securityRelevantPodSpec(podSpec))) {
-    throw new Error(`Pod spec differs from the approved Deployment template: ${component}`);
+    throw new Error(`Pod spec differs from the observed Deployment template: ${component}`);
   }
   if (template.automountServiceAccountToken !== false
     || template.serviceAccountName !== "default"
     || template.hostNetwork || template.hostPID || template.hostIPC
     || template.shareProcessNamespace === true
+    || template.securityContext.seccompProfile?.type !== "RuntimeDefault"
     || template.volumes.some((volume) => volume.hostPath !== undefined)
     || [...template.containers, ...template.initContainers].some((container) =>
       container.securityContext.allowPrivilegeEscalation !== false
       || container.securityContext.privileged === true
-      || !container.securityContext.capabilities?.drop?.includes("ALL"))) {
+      || !container.securityContext.capabilities?.drop?.includes("ALL")
+      || (container.securityContext.capabilities?.add?.length ?? 0) !== 0
+      || container.securityContext.seccompProfile?.type === "Unconfined")
+    || (["api", "admin", "applicant"].includes(component)
+      && [...template.containers, ...template.initContainers].some((container) =>
+        container.securityContext.readOnlyRootFilesystem !== true))) {
     throw new Error(`Pod spec violates standalone isolation requirements: ${component}`);
   }
 }
