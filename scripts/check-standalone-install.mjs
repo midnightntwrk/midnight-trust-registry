@@ -325,10 +325,6 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     }
     apiRuntime = { ...installedApiImageIdFromArchive(archivePath, apiManifest,
       inventory.sourceRevision), platform: apiManifest.platform };
-    if (apiManifest.format === "tr-api-runtime-image-v2"
-      && inventory.format === "tr-standalone-install-v4") {
-      throw new Error("API portal asset pins require a v5/v6 install bundle");
-    }
   }
   let portalRuntimes = null;
   if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {

@@ -233,6 +233,14 @@ test("v4 binds an API archive to the exact install source and runtime config", a
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.apiRuntime.imageId, inventory.apiRuntime.imageId);
     assert.equal(verified.apiRuntime.platform, "linux/arm64");
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals: {
+      admin: { fileCount: 2, sha256: "a".repeat(64) },
+      applicant: { fileCount: 2, sha256: "b".repeat(64) },
+    } });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await verifyStandaloneInstallBundle(root, () => {});
+    inventory.apiRuntime = await apiImageArchive(root);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
 
     const apiManifestPath = join(root, "images/api.manifest.json");
     const original = await readFile(apiManifestPath);
