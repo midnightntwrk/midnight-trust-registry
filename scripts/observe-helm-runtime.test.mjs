@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import yaml from "js-yaml";
 
-import { observeSignedHelmRuntime, validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
+import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
+  validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const component = (role) => role === "proofServer" ? "proof-server" : role;
@@ -176,6 +179,25 @@ test("rejects command, env, volume, and security drift across the workload chain
   apiPod.spec.serviceAccountName = "default";
   apiPod.spec.dnsPolicy = "ClusterFirst";
   assert.doesNotThrow(check);
+});
+
+test("accepts all six actual chart Pod templates with ordinary API-server defaults", () => {
+  const chart = join(import.meta.dirname, "..", "charts", "trust-registry-standalone");
+  const values = join(chart, "tests", "fixture-values.yaml");
+  const result = spawnSync("helm", ["template", "rc", chart, "--namespace", "trust-registry",
+    "--values", values], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr);
+  const deployments = yaml.loadAll(result.stdout).filter((item) => item?.kind === "Deployment");
+  assert.equal(deployments.length, 6);
+  for (const deployment of deployments) {
+    const spec = deployment.spec.template.spec;
+    const pod = { ...structuredClone(spec), serviceAccountName: "default",
+      dnsPolicy: "ClusterFirst", schedulerName: "default-scheduler",
+      restartPolicy: "Always", terminationGracePeriodSeconds: 30,
+      enableServiceLinks: true };
+    assert.doesNotThrow(() => assertWorkloadPodSpecParity(spec, structuredClone(spec), pod,
+      deployment.metadata.name));
+  }
 });
 
 test("runs read-only kubectl queries only after the signed fleet preflight", async () => {

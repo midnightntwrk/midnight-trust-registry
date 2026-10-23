@@ -79,7 +79,7 @@ function securityRelevantPodSpec(spec) {
   };
 }
 
-function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podSpec, component) {
+export function assertWorkloadPodSpecParity(deploymentSpec, replicaSetSpec, podSpec, component) {
   const template = securityRelevantPodSpec(deploymentSpec);
   if (!isDeepStrictEqual(template, securityRelevantPodSpec(replicaSetSpec))
     || !isDeepStrictEqual(template, securityRelevantPodSpec(podSpec))) {
