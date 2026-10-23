@@ -1077,6 +1077,26 @@ test("an observed submission is still not a finalized or release-qualified deplo
   assert.equal(status.localLedger, "operator-pinned-reviewer-signature-verified");
 });
 
+test("deployment rejects a noncanonical retained roster before reservation", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  await approveCommittee(f);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  const roster = JSON.parse(Buffer.from(record.committeeApproval.documentBase64, "base64"));
+  const noncanonical = `${JSON.stringify(roster, null, 4)}\r\n`;
+  record.committeeApproval.documentBase64 = Buffer.from(noncanonical).toString("base64");
+  record.committeeApproval.documentSha256 = createHash("sha256").update(noncanonical).digest("hex");
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => assert.fail("noncanonical roster reached provider"),
+  }), /canonical signed JSON without duplicate keys/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+});
+
 test("wizard rejects a manifest substitution before reserving a deployment", async () => {
   const f = await fixture();
   const { directory, pinPath, planPath, releaseManifestPath, verifyBundle } = f;
@@ -1308,6 +1328,24 @@ test("deployment binding rejects duplicate signed JSON keys", async () => {
     f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
       verifyBundle: f.verifyBundle,
       verifySignature: async () => assert.fail("duplicate keys reached signature verification"),
+    }), /canonical signed JSON without duplicate keys/u);
+});
+
+test("deployment binding rejects a noncanonical retained roster", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  delete record.committeeDeploymentApproval;
+  const input = await committeeDeploymentDocument(f);
+  const roster = JSON.parse(Buffer.from(record.committeeApproval.documentBase64, "base64"));
+  const noncanonical = `${JSON.stringify(roster, null, 4)}\r\n`;
+  record.committeeApproval.documentBase64 = Buffer.from(noncanonical).toString("base64");
+  record.committeeApproval.documentSha256 = createHash("sha256").update(noncanonical).digest("hex");
+  await writeFile(recordPath, JSON.stringify(record));
+  await assert.rejects(approveStandaloneCommitteeDeployment(
+    f.directory, input.path, input.signature, f.keyring, governanceFingerprint, {
+      verifyBundle: f.verifyBundle,
+      verifySignature: async () => assert.fail("noncanonical roster reached signature verification"),
     }), /canonical signed JSON without duplicate keys/u);
 });
 

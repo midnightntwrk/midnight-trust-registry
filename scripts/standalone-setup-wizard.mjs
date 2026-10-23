@@ -859,6 +859,7 @@ export async function approveStandaloneCommitteeDeployment(
     if (expectedFingerprint !== record.committeeApproval.reviewerFingerprint) {
       throw new Error("Committee deployment binding requires the pinned governance reviewer");
     }
+    readStoredCommitteeApproval(record);
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
     if (sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed inventory changed since committee approval");
@@ -997,6 +998,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (!record.committeeApproval) {
       throw new Error("Approve the release maintenance committee before reserving deployment");
     }
+    readStoredCommitteeApproval(record);
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
     if (plan.sourceRevision !== record.sourceRevision
@@ -1249,6 +1251,34 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
 const exactFields = (value, fields) => value !== null && typeof value === "object"
   && !Array.isArray(value)
   && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
+
+function readStoredCommitteeApproval(record, legacyReadOnly = false) {
+  const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
+  // Historical attempts may be reconciled forensically, but never prepared or submitted again.
+  const signedApproval = legacyReadOnly
+    ? JSON.parse(approvalBytes.toString("utf8"))
+    : parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
+  if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
+    || !exactFields(signedApproval, ["approvedAt", "custodians", "expectedGenesisHash", "format",
+      "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
+      "reviewedReference", "reviewerFingerprint", "sourceRevision"])
+    || signedApproval.format !== "tr-local-committee-approval-v1"
+    || signedApproval.networkId !== "undeployed"
+    || signedApproval.sourceRevision !== record.sourceRevision
+    || signedApproval.installInventorySha256 !== record.install.inventorySha256
+    || signedApproval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
+    || signedApproval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
+    || signedApproval.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
+    || signedApproval.approvedAt !== record.committeeApproval.approvedAt
+    || signedApproval.reviewedReference !== record.committeeApproval.reviewedReference
+    || JSON.stringify(signedApproval.custodians)
+      !== JSON.stringify(record.committeeApproval.custodians)
+    || JSON.stringify(signedApproval.maintenancePolicy)
+      !== JSON.stringify(record.committeeApproval.maintenancePolicy)) {
+    throw new Error("Stored committee approval disagrees with signed approval bytes");
+  }
+  return signedApproval;
+}
 const bytes32 = (value) => {
   if (!HASH.test(value) || /^0x0{64}$/u.test(value)) {
     throw new Error("Committee transition request contains an invalid public commitment");
@@ -1272,30 +1302,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       || !validLocalDeploymentReceipt(receipt)) {
       throw new Error("Approved committee and finalized staged deployment are required");
     }
-    const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
-    // Historical attempts may be reconciled forensically, but never prepared or submitted again.
-    const signedApproval = legacyReadOnly
-      ? JSON.parse(approvalBytes.toString("utf8"))
-      : parseCanonicalSignedJson(approvalBytes, "Stored committee approval");
-    if (sha256(approvalBytes) !== record.committeeApproval.documentSha256
-      || !exactFields(signedApproval, ["approvedAt", "custodians", "expectedGenesisHash", "format",
-        "genesisApprovalSha256", "installInventorySha256", "maintenancePolicy", "networkId",
-        "reviewedReference", "reviewerFingerprint", "sourceRevision"])
-      || signedApproval.format !== "tr-local-committee-approval-v1"
-      || signedApproval.networkId !== "undeployed"
-      || signedApproval.sourceRevision !== record.sourceRevision
-      || signedApproval.installInventorySha256 !== record.install.inventorySha256
-      || signedApproval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
-      || signedApproval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
-      || signedApproval.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
-      || signedApproval.approvedAt !== record.committeeApproval.approvedAt
-      || signedApproval.reviewedReference !== record.committeeApproval.reviewedReference
-      || JSON.stringify(signedApproval.custodians)
-        !== JSON.stringify(record.committeeApproval.custodians)
-      || JSON.stringify(signedApproval.maintenancePolicy)
-        !== JSON.stringify(record.committeeApproval.maintenancePolicy)) {
-      throw new Error("Stored committee approval disagrees with signed approval bytes");
-    }
+    readStoredCommitteeApproval(record, legacyReadOnly);
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
     if (sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed inventory changed since committee approval");
