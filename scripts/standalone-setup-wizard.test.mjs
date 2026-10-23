@@ -179,7 +179,10 @@ async function fixture(format = "tr-standalone-install-v3") {
   const planPath = join(root, "plan.json");
   await writeFile(pinPath, JSON.stringify(pin));
   await writeFile(planPath, JSON.stringify({ ...plan, releaseManifestPath }));
-  const verifyBundle = async () => ({ sourceRevision, packageCount: 10, imageRoles: ["node", "indexer", "proof-server"],
+  const verifyBundle = async () => ({ sourceRevision,
+    inventorySha256: createHash("sha256")
+      .update(await readFile(join(bundle, "install-inventory.json"))).digest("hex"),
+    packageCount: 10, imageRoles: ["node", "indexer", "proof-server"],
     proofParameterCount: 18,
     images: images.map(({ role, reference }) => ({ role, reference,
       acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
@@ -342,6 +345,22 @@ test("wizard records staged-byte verification but leaves RC gates open", async (
   assert.equal(status.maintenanceApproval, "pending");
   await writeFile(join(directory, ".setup.lock"), "interrupted");
   assert.equal((await standaloneSetupStatus(directory)).setupLock, "present-inspect-before-removal");
+});
+
+test("wizard binds bundle verification to the exact inventory bytes", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const wrongVerifier = async () => ({ ...await f.verifyBundle(), inventorySha256: "f".repeat(64) });
+  const newSetup = join(f.directory, "new-setup");
+  await assert.rejects(initializeStandaloneSetup(newSetup, record.install.bundle,
+    { verifyBundle: wrongVerifier }), /Verified install inventory changed during setup/u);
+  await assert.rejects(lstat(newSetup), { code: "ENOENT" });
+  await assert.rejects(prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, { verifyBundle: wrongVerifier, assertProjectUnused: async () => assert.fail("stale inventory") }),
+  /Verified install inventory changed since setup verification/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
 });
 
 test("unsigned genesis draft binds observed bytes but does not approve them", async () => {
@@ -761,6 +780,7 @@ test("v6 deployment reservation rejects a changed installation relay", async () 
   approval.stackProject = project;
   await writeFile(f.approvalPath, JSON.stringify(approval));
   await approve(f);
+  await approveCommittee(f);
   const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
   planDocument.network.rpcUrl = relayRpc;
   planDocument.network.indexerHttpUrl = "http://127.0.0.1:60888/api/v4/graphql";
@@ -814,6 +834,7 @@ test("direct-loopback deployment rechecks topology and exact indexer endpoints",
   approval.stackProject = project;
   await writeFile(f.approvalPath, JSON.stringify(approval));
   await approve(f);
+  await approveCommittee(f);
   const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
   planDocument.network.rpcUrl = rpcUrl;
   planDocument.network.indexerHttpUrl = "http://127.0.0.1:38088/api/v4/graphql";
@@ -937,6 +958,21 @@ test("interactive wizard collects an untrusted genesis candidate without pinning
   assert.equal(after.genesisApproval, undefined);
 });
 
+test("interactive wizard cannot offer deployment when the roster is deferred", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  const prompts = [];
+  await runStandaloneSetupInteractive(f.directory, {
+    question: async (prompt) => { prompts.push(prompt); return ""; },
+    close: () => {},
+  });
+  assert.deepEqual(prompts,
+    ["Reviewer-signed release committee roster JSON (blank to stop before deployment): "]);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+});
+
 test("wizard rejects a changed private stack environment before observation", async () => {
   const f = await fixture("tr-standalone-install-v3");
   const prepared = await prepareStandaloneStack(f.directory, {
@@ -1020,6 +1056,15 @@ test("an observed submission is still not a finalized or release-qualified deplo
   await observeStandaloneLedger(directory, pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, { verifyBundle }), /reviewer approval/u);
   await approve(f);
+  await assert.rejects(attemptStandaloneDeployment(directory, planPath, {
+    verifyBundle, deploy: async () => assert.fail("missing roster reached provider"),
+  }), /Approve the release maintenance committee/u);
+  assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
+  await approveCommittee(f);
+  await assert.rejects(attemptStandaloneDeployment(directory, planPath, {
+    verifyBundle: async () => ({ ...await verifyBundle(), inventorySha256: "f".repeat(64) }),
+    deploy: async () => assert.fail("mismatched inventory reached provider"),
+  }), /Installed bundle changed since setup verification/u);
   const result = { kind: "local-deployment-submission-observation", readbackStatus: "pending" };
   assert.deepEqual(await attemptStandaloneDeployment(directory, planPath, {
     verifyBundle,
@@ -1028,7 +1073,7 @@ test("an observed submission is still not a finalized or release-qualified deplo
   const status = await standaloneSetupStatus(directory);
   assert.equal(status.deployment, "observed");
   assert.equal(status.releaseQualified, false);
-  assert.equal(status.maintenanceApproval, "pending");
+  assert.equal(status.maintenanceApproval, "roster-signature-verified-deployment-binding-pending");
   assert.equal(status.localLedger, "operator-pinned-reviewer-signature-verified");
 });
 
@@ -1037,6 +1082,7 @@ test("wizard rejects a manifest substitution before reserving a deployment", asy
   const { directory, pinPath, planPath, releaseManifestPath, verifyBundle } = f;
   await observeStandaloneLedger(directory, pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
   await approve(f);
+  await approveCommittee(f);
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision, changed: true }));
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, { verifyBundle }), /release manifest disagrees/u);
   assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
@@ -1047,6 +1093,7 @@ test("wizard reserves once before provider execution and never retries an unknow
   const { directory, pinPath, planPath, verifyBundle } = f;
   await observeStandaloneLedger(directory, pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
   await approve(f);
+  await approveCommittee(f);
   let calls = 0;
   await assert.rejects(attemptStandaloneDeployment(directory, planPath, {
     verifyBundle,
@@ -1066,6 +1113,7 @@ test("wizard rejects a changed deployment genesis before reserving", async () =>
   const { directory, pinPath, planPath, verifyBundle } = f;
   await observeStandaloneLedger(directory, pinPath, { preflight: async () => ({ kind: "local-node-observation-only" }) });
   await approve(f);
+  await approveCommittee(f);
   await writeFile(planPath, JSON.stringify({ ...plan, network: {
     ...plan.network, expectedGenesisHash: `0x${"e".repeat(64)}`,
   } }));
@@ -1079,6 +1127,7 @@ async function stagedFixture() {
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await approve(f);
+  await approveCommittee(f);
   await writeFile(f.planPath, JSON.stringify({
     ...plan, format: "tr-local-staged-deployment-plan-v1",
     initialVerifierKeyName: "initialKey", releaseManifestPath: f.releaseManifestPath,
@@ -1107,7 +1156,6 @@ async function committeeTransitionFixture() {
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   await writeFile(join(record.install.bundle, "release-manifest.json"), JSON.stringify(manifest));
   await writeFile(f.releaseManifestPath, JSON.stringify(manifest));
-  await approveCommittee(f);
   await attemptStandaloneDeployment(f.directory, f.planPath, {
     verifyBundle: f.verifyBundle,
     deploy: async () => ({ kind: "local-deployment-submission-observation",

@@ -50,6 +50,16 @@ const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === "undeplo
   && typeof receipt.txId === "string" && receipt.txId.length > 0
   && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
 
+function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message) {
+  const hash = sha256(bytes);
+  if (!SHA256.test(verified?.inventorySha256 ?? "")
+    || verified.inventorySha256 !== hash
+    || (expectedSha256 !== undefined && expectedSha256 !== hash)) {
+    throw new Error(message);
+  }
+  return hash;
+}
+
 async function regularBytes(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
@@ -96,6 +106,12 @@ async function writeRecord(root, record) {
     await file.close();
   }
   await rename(temp, join(root, RECORD));
+  const directory = await open(root, "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
 }
 
 async function writePrivateSnapshot(path, bytes) {
@@ -133,6 +149,8 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(bundle);
   const inventory = await regularBytes(join(bundle, "install-inventory.json"));
   const inventoryDocument = JSON.parse(inventory);
+  requireVerifiedInventoryBytes(verified, inventory, undefined,
+    "Verified install inventory changed during setup");
   if (inventoryDocument.sourceRevision !== verified.sourceRevision) {
     throw new Error("Verified install inventory changed during setup");
   }
@@ -149,7 +167,7 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
     setupId: randomUUID(),
     sourceRevision: verified.sourceRevision,
     createdAt: new Date().toISOString(),
-    install: { bundle, inventorySha256: sha256(inventory), verified },
+    install: { bundle, inventorySha256: verified.inventorySha256, verified },
   };
   await writeRecord(root, record);
   return record;
@@ -199,6 +217,8 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       throw new Error("Installed inventory changed since setup verification");
     }
     const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    requireVerifiedInventoryBytes(verified, inventoryBytes, record.install.inventorySha256,
+      "Verified install inventory changed since setup verification");
     if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Verified install source revision changed");
     }
@@ -420,9 +440,8 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
       throw new Error("Observe the prepared local stack before recording its genesis pin");
     }
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
-    if (sha256(inventory) !== record.install.inventorySha256) {
-      throw new Error("Installed inventory changed since setup verification");
-    }
+    requireVerifiedInventoryBytes(record.install.verified, inventory, record.install.inventorySha256,
+      "Installed inventory changed since setup verification");
     const pinBytes = await regularBytes(resolve(pinPath));
     const pin = JSON.parse(pinBytes);
     if (pin.sourceRevision !== record.sourceRevision) {
@@ -848,6 +867,8 @@ export async function approveStandaloneCommitteeDeployment(
     if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Installed bundle source revision changed since committee approval");
     }
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed inventory changed since committee approval");
     const manifestPath = join(record.install.bundle, JSON.parse(inventory).packageManifest);
     const manifestBytes = await regularBytes(manifestPath);
     const stagedManifestBytes = await regularBytes(deployment.stagedPlan.releaseManifestPath);
@@ -973,6 +994,9 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (!record.setupId) {
       throw new Error("Legacy setup cannot submit a deployment without a setup-bound approval");
     }
+    if (!record.committeeApproval) {
+      throw new Error("Approve the release maintenance committee before reserving deployment");
+    }
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
     if (plan.sourceRevision !== record.sourceRevision
@@ -983,10 +1007,11 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     }
     const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
-    if (verified.sourceRevision !== record.sourceRevision
-      || sha256(inventory) !== record.install.inventorySha256) {
+    if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Installed bundle changed since setup verification");
     }
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed bundle changed since setup verification");
     await requireCurrentApprovedAccess(root, record, verified, plan, dependencies);
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
@@ -1045,10 +1070,11 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     }
     const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
     const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
-    if (verified.sourceRevision !== record.sourceRevision
-      || sha256(inventory) !== record.install.inventorySha256) {
+    if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Installed bundle changed since setup verification");
     }
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed bundle changed since setup verification");
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
     const planManifest = await regularBytes(plan.releaseManifestPath);
@@ -1137,10 +1163,11 @@ async function approvedInsertionPlan(root, record, planPath, dependencies) {
   }
   const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
   const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
-  if (verified.sourceRevision !== record.sourceRevision
-    || sha256(inventory) !== record.install.inventorySha256) {
+  if (verified.sourceRevision !== record.sourceRevision) {
     throw new Error("Installed bundle changed since setup verification");
   }
+  requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+    "Installed bundle changed since setup verification");
   const packageManifest = JSON.parse(inventory).packageManifest;
   const bundleManifest = await regularBytes(join(record.install.bundle, packageManifest));
   const planManifest = await regularBytes(plan.releaseManifestPath);
@@ -1274,6 +1301,8 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Installed inventory changed since committee approval");
     }
     const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(record.install.bundle);
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed bundle inventory changed since committee approval");
     if (verified.sourceRevision !== record.sourceRevision) {
       throw new Error("Installed bundle source revision changed since committee approval");
     }
@@ -1864,7 +1893,7 @@ export async function runStandaloneSetupInteractive(
     }
     ({ record } = await readRecord(directory));
     if (record.genesisApproval && !record.committeeApproval) {
-      const document = await io.question("Reviewer-signed release committee roster JSON (blank to defer): ");
+      const document = await io.question("Reviewer-signed release committee roster JSON (blank to stop before deployment): ");
       if (document) {
         const signature = await io.question("Detached committee signature file: ");
         const keyring = await io.question("Private local GPG keyring with governance reviewer public key: ");
@@ -1873,7 +1902,7 @@ export async function runStandaloneSetupInteractive(
       }
     }
     ({ record } = await readRecord(directory));
-    if (record.genesisApproval && !record.deployment) {
+    if (record.genesisApproval && record.committeeApproval && !record.deployment) {
       const plan = await io.question("Approved deployment plan JSON (blank to stop): ");
       if (plan && await io.question("Type DEPLOY ONCE to reserve one attempt: ") === "DEPLOY ONCE") {
         await attemptStandaloneDeployment(directory, plan);

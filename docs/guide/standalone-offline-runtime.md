@@ -780,7 +780,10 @@ a threshold of at least two, and distinct custody roles matched in key order. Th
 genesis, the setup host verifies the detached signature against an
 operator-pinned reviewer public key; the release owner must separately verify
 the governance reviewer's authority and custody evidence. A recorded roster
-does not submit or verify a contract maintenance transition. The wizard shows
+is required **before deployment reservation**: deferring it stops the wizard
+before `DEPLOY ONCE`, so a finalized contract cannot strand the setup under
+the bootstrap maintenance key. It does not submit or verify a contract
+maintenance transition. The wizard shows
 `roster-signature-verified-deployment-binding-pending` until the governance
 reviewer signs a second approval for the actual deployment. That approval has
 exactly this JSON shape:
