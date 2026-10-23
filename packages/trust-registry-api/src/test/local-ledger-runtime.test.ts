@@ -297,6 +297,8 @@ describe("approved local-ledger API runtime", () => {
         "--output", signaturePath, planPath]);
       await expect(loadApprovedLocalLedgerRuntimePlan(input))
         .rejects.toThrow(/approved install artifacts/u);
+      await expect(loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .rejects.toThrow(/Cluster API binding requires a signed install/u);
       await writeFile(candidate.installInventoryPath, inventory);
       await writeFile(planPath, `${JSON.stringify(candidate)}\n`);
       execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",

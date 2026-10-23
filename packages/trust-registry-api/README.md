@@ -81,7 +81,8 @@ hosts, the exact release-manifest verifier-key catalog, the ordered maintenance
 committee public keys, threshold and decimal counter, a contiguous
 governance-sequence-to-UTC-timestamp map covering the finalized governance
 count, and a validity window no longer than 90 days. The v1 plan no longer
-authorizes local API startup. The
+authorizes local API startup, and v3 install inventories without an API image
+pin are unsupported in all local-ledger API modes. The
 plan and signature must be regular files owned by root or the runtime user, and the
 reviewer keyring must be a private directory with its approved public key in
 `pubring.kbx`. The CLI verifies private copies of the exact plan bytes it

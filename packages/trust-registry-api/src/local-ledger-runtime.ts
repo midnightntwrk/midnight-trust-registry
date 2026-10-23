@@ -267,7 +267,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     throw new Error("Local API reviewer keyring must be a private directory");
   }
   const keyringBytes = await boundedFile(join(input.keyringDirectory, "pubring.kbx"), 8 * 1024 * 1024);
-  const gpg = ["/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/bin/gpg"].find(existsSync);
+  const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
   if (gpg === undefined) throw new Error("Local API runtime requires an installed GPG verifier");
   const temporary = await mkdtemp(join(tmpdir(), "tr-local-api-approval-"));
   try {
@@ -303,7 +303,9 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   const installFormat = inventory?.format;
   const supportedFormat = ["tr-standalone-install-v4",
     "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(installFormat);
-  const requiresApiPin = installFormat !== "tr-standalone-install-v3";
+  if (installFormat === "tr-standalone-install-v3" && input.requireApiRuntimePin === true) {
+    throw new Error("Cluster API binding requires a signed install with an API image pin");
+  }
   const requiresPortalPins = installFormat === "tr-standalone-install-v5"
     || installFormat === "tr-standalone-install-v6";
   const artifactPin = (value: unknown, manifestPath: string, archivePath: string): boolean => {
@@ -320,8 +322,8 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     || inventory.packageManifest !== "release-manifest.json"
     || inventory.packageManifestSha256 !== plan.releaseManifestSha256
     || plan.releaseManifestPath !== join(dirname(plan.installInventoryPath), inventory.packageManifest)
-    || (requiresApiPin && !artifactPin(inventory.apiRuntime,
-      "images/api.manifest.json", "images/api.image.tar"))
+    || !artifactPin(inventory.apiRuntime,
+      "images/api.manifest.json", "images/api.image.tar")
     || (requiresPortalPins && (!["admin", "applicant"].every((role) =>
       artifactPin(inventory.portalRuntimes?.[role],
         `images/${role}.manifest.json`, `images/${role}.image.tar`))
@@ -341,9 +343,6 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
       !Object.hasOwn(manifest.verifierKeySha256, name)
       || manifest.verifierKeySha256[name] !== hash)) {
     throw new Error("Local API approved verifier-key catalog differs from the release manifest");
-  }
-  if (input.requireApiRuntimePin === true && !requiresApiPin) {
-    throw new Error("Cluster API binding requires a signed install with an API image pin");
   }
   return plan;
 }

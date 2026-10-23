@@ -164,6 +164,29 @@ describe("checkpointed deployment action reader", () => {
     expect(ledgerView?.maintenanceAuthority).toEqual(observed?.maintenanceAuthority);
   });
 
+  it("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
+    const { simulator, reader, queryContractState } = fixture(true);
+    const verifierKey = readFileSync(verifierKeyPath);
+    const operation = new ContractOperation();
+    operation.verifierKey = verifierKey;
+    const state = new ContractState();
+    state.data = simulator.circuitContext.currentQueryContext.state;
+    state.setOperation(verifierCircuit, operation);
+    const maintenanceKey = signatureVerifyingKey(sampleSigningKey());
+    state.maintenanceAuthority = new ContractMaintenanceAuthority([maintenanceKey], 1, 0n);
+    queryContractState.mockResolvedValueOnce(ContractState.deserialize(state.serialize()) as never);
+    const view = await reader.readCurrentFinalizedLedger(`0x${address}`);
+    expect(queryContractState).toHaveBeenCalledTimes(1);
+    expect(view?.networkId).toBe("undeployed");
+    expect(view?.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
+    expect(view?.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
+    });
+    expect(view?.maintenanceAuthority).toEqual({
+      committee: [`0x${maintenanceKey}`], threshold: 1, counter: 0n,
+    });
+  });
+
   it("fails closed when the checkpoint is absent or malformed", async () => {
     const { reader, readCurrentFinalizedCheckpoint, queryContractState } = fixture();
     readCurrentFinalizedCheckpoint.mockResolvedValueOnce(null as never);
