@@ -41,7 +41,12 @@ It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
 approved digest or the finalized Compact projection. The CLI constructs these
 inputs from a reviewer-signed runtime plan and the local checkpoint/indexer
-reader. This source still has only simulator and test-double coverage, not
+reader. Current-map coverage does not prove that a historical evidence archive
+contains every transition. In local-ledger mode, historical authorization and
+recognition evaluation plus TRQP decision/evidence routes return 503 until a
+complete checkpoint-bound history replay is available. Fixture modes retain
+their development behavior. This source still has only simulator and
+test-double coverage, not
 proof of a real local-ledger deployment, finalized readback, offline actor
 journey, or 0.1.0 release qualification.
 An embedded local-ledger server refuses demo mutations and unjournaled governed

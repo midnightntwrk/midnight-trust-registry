@@ -824,6 +824,13 @@ export const createTrustRegistryApiServer = (
     throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
+  const requireCompleteHistoricalProjection = (): void => {
+    if (options.source.mode === "local-ledger") {
+      throw jsonProblem(problemBaseUri, "historical-projection-unavailable", 503,
+        "historical projection unavailable",
+        "Local ledger history has not been proven complete at a finalized checkpoint.");
+    }
+  };
   const trqpAdapter = new TrustRegistryTrqpAdapter(
     createTrqpSourceFromStateSource(options.source),
     {
@@ -2170,6 +2177,7 @@ export const createTrustRegistryApiServer = (
       ) {
         const body = await parseJsonBody(request,
           (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value), problemBaseUri);
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateAuthorizationEvidenceAtTimestamp(options.source, body, body.at);
         if (evaluation === null) {
           throw jsonProblem(problemBaseUri, "authorization-not-found", 404,
@@ -2195,6 +2203,7 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value),
           problemBaseUri,
         );
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateAuthorizationEntryAtTimestamp(
           options.source,
           body,
@@ -2316,6 +2325,7 @@ export const createTrustRegistryApiServer = (
       ) {
         const body = await parseJsonBody(request,
           (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value), problemBaseUri);
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateRecognitionEvidenceAtTimestamp(options.source, body, body.at);
         if (evaluation === null) {
           throw jsonProblem(problemBaseUri, "recognition-not-found", 404,
@@ -2341,6 +2351,7 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value),
           problemBaseUri,
         );
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateRecognitionEntryAtTimestamp(
           options.source,
           body,
@@ -2476,6 +2487,9 @@ export const createTrustRegistryApiServer = (
           (value) => TrqpAuthorizationRequestSchema.parse(value),
           problemBaseUri,
         );
+        if (segments[3] === "query" || segments[3] === "evidence") {
+          requireCompleteHistoricalProjection();
+        }
         const result = segments[3] === "query"
           ? await trqpAdapter.queryAuthorization(body)
           : segments[3] === "evidence"
@@ -2510,6 +2524,9 @@ export const createTrustRegistryApiServer = (
           (value) => TrqpRecognitionRequestSchema.parse(value),
           problemBaseUri,
         );
+        if (segments[3] === "query" || segments[3] === "evidence") {
+          requireCompleteHistoricalProjection();
+        }
         const result = segments[3] === "query"
           ? await trqpAdapter.queryRecognition(body)
           : segments[3] === "evidence"

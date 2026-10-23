@@ -295,6 +295,35 @@ describe("local ledger-bound API source", () => {
       });
       expect(malformedRequest.status).toBe(400);
       expect(readCount).toBe(1);
+      const issuer = snapshot.issuerEntries[0]!.authorization;
+      const recognition = snapshot.recognitionEntries[0]!.recognition;
+      const authorizationEvaluation = { role: "issuer", subjectDid: issuer.subjectDid,
+        resourceId: issuer.resourceId, at: issuer.activeFrom };
+      const recognitionEvaluation = { recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+        scopeResourceId: recognition.scope.resourceId, at: recognition.effectiveFrom };
+      const authorizationTrqp = { entity_id: issuer.subjectDid,
+        authority_id: snapshot.registry.registryDid, action: "issue", resource: issuer.resourceId };
+      const recognitionTrqp = { entity_id: recognition.recognizedAuthorityDid,
+        authority_id: snapshot.registry.registryDid, action: recognition.scope.resourceType,
+        resource: recognition.scope.resourceId };
+      for (const [path, body] of [
+        ["/v1/authorizations/evaluate", authorizationEvaluation],
+        ["/v1/authorizations/evaluate/evidence", authorizationEvaluation],
+        ["/v1/recognitions/evaluate", recognitionEvaluation],
+        ["/v1/recognitions/evaluate/evidence", recognitionEvaluation],
+        ["/v1/trqp/authorizations/query", authorizationTrqp],
+        ["/v1/trqp/authorizations/evidence", authorizationTrqp],
+        ["/v1/trqp/recognitions/query", recognitionTrqp],
+        ["/v1/trqp/recognitions/evidence", recognitionTrqp],
+      ] as const) {
+        const response = await fetch(`${url}${path}`, { method: "POST",
+          headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        expect(response.status, path).toBe(503);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.json()).toMatchObject({ status: 503,
+          type: expect.stringMatching(/historical-projection-unavailable$/u) });
+      }
+      expect(readCount).toBe(1);
       const raw = await readFile(snapshotPath, "utf8");
       await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
       const mismatched = await fetch(`${url}/health`);
@@ -340,8 +369,8 @@ describe("local ledger-bound API source", () => {
       });
       expect(trqp.status).toBe(503);
       expect(trqp.headers.get("cache-control")).toBe("no-store");
-      expect(await trqp.json()).toMatchObject({ status: 503, title: "local ledger unavailable" });
-      expect(readCount).toBe(10);
+      expect(await trqp.json()).toMatchObject({ status: 503, title: "historical projection unavailable" });
+      expect(readCount).toBe(9);
     } finally {
       const localServer = server;
       if (localServer !== undefined && localServer.listening) {
