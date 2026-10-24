@@ -10,6 +10,9 @@ Current scope:
   never fall back to the unavailable list or historical routes. The UI checks
   that the API plan and reported checkpoint stay stable during each lookup,
   but this API claim is not independent proof of finalized ledger state
+- hide governance and fixture controls if API health cannot confirm a mode;
+  refreshing the board invalidates any previously loaded workspace signing
+  context, including one whose response is still in flight
 - review issuer, verifier, auditor, and recognition records grouped by lifecycle status
 - prepare policy-bound Compact approval and activation contexts for issuer,
   verifier, auditor, and recognition cards; paste externally produced public

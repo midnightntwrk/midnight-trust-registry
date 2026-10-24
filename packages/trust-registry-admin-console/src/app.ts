@@ -219,7 +219,7 @@ export const createAdminConsoleApp = (
     new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
 
   const loadSignedContext = async () => {
-    if (state.signedBusy || state.board?.sourceMode === "local-ledger") return;
+    if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const requestId = ++signedContextRequestId;
     setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
     try {
@@ -234,7 +234,7 @@ export const createAdminConsoleApp = (
 
   const submitSignedAction = async (raw: string) => {
     if (state.signedBusy || state.signedContext === undefined
-      || state.board?.sourceMode === "local-ledger") return;
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     let candidate: unknown;
     try {
@@ -288,7 +288,9 @@ export const createAdminConsoleApp = (
   const refreshBoard = async (flash?: string) => {
     const host = currentHost();
     const requestId = ++boardRequestId;
-    setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
+    ++signedContextRequestId;
+    setState({ loading: true, signedBusy: false, signedContext: undefined,
+      error: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
       const client = getClient();
       const board = await client.loadReviewBoard();
@@ -364,7 +366,7 @@ export const createAdminConsoleApp = (
     action: TrustRegistryApiApplicationAction,
   ) => {
     if (state.loading || state.publishing || state.governedBusy
-      || state.board?.sourceMode === "local-ledger") return;
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) {
@@ -395,7 +397,7 @@ export const createAdminConsoleApp = (
 
   const publishEpoch = async (label: string) => {
     if (state.loading || state.publishing || state.governedBusy
-      || state.board?.sourceMode === "local-ledger") return;
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
@@ -423,7 +425,7 @@ export const createAdminConsoleApp = (
   };
 
   const prepareGoverned = async (action: GovernedMembershipAction) => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined || !getReviewActions(card.status).includes(action)) return;
@@ -440,7 +442,7 @@ export const createAdminConsoleApp = (
   };
 
   const submitGoverned = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) return;
@@ -482,7 +484,7 @@ export const createAdminConsoleApp = (
   };
 
   const preparePolicyAction = async (phase: "thresholds" | "evidence-verifier") => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const thresholds = { ...state.policyThresholds };
     if (phase === "thresholds" && Object.values(thresholds).some((value) =>
@@ -507,7 +509,7 @@ export const createAdminConsoleApp = (
 
   const submitPolicyAction = async () => {
     if (state.loading || state.publishing || state.governedBusy
-      || state.policyPrepared === undefined || state.policyPhase === undefined) return;
+      || state.board === undefined || state.policyPrepared === undefined || state.policyPhase === undefined) return;
     const host = currentHost();
     const prepared = state.policyPrepared;
     const phase = state.policyPhase;
@@ -552,7 +554,7 @@ export const createAdminConsoleApp = (
   };
 
   const prepareProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -589,7 +591,8 @@ export const createAdminConsoleApp = (
   };
 
   const submitProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy || state.proposalPrepared === undefined) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined
+      || state.proposalPrepared === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -645,7 +648,7 @@ export const createAdminConsoleApp = (
   };
 
   const resolveProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -1044,7 +1047,7 @@ export const createAdminConsoleApp = (
             <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
           </form>
         </section>` : ""}
-        <section class="proposal-panel governed-panel">
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -1079,8 +1082,8 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
             </form>
           `}
-        </section>
-        <section class="proposal-panel governed-panel">
+        </section>`}
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>
@@ -1108,7 +1111,7 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
             </form>
           `}
-        </section>
+        </section>`}
         <section class="workspace">
           ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
             ${state.cards.map(renderCard).join("")}

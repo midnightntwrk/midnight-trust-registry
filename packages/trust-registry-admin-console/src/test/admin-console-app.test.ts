@@ -34,6 +34,50 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("removes governance controls when API health becomes unavailable", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    let healthy = true;
+    const paths: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      paths.push(`${init?.method ?? "GET"} ${path}`);
+      if (path === "/health") return healthy
+        ? Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" })
+        : Response.json({ title: "unavailable", detail: "ledger read failed" }, { status: 503 });
+      if (path === "/v1/registry/mutation-context") return Response.json({
+        registryId: "registry:local", expectedEpochId: "epoch:local:1",
+        expectedWorkspaceCommitment: `0x${"a".repeat(64)}`,
+      });
+      if (path === "/v1/registry/summary") return Response.json({
+        issuerCounts: counts(), verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts(),
+        registryLabel: "local", registryId: "registry:local", policyId: "policy:local",
+        currentEpochId: "epoch:local:1", epochCount: 1,
+      });
+      return Response.json({ entries: [] });
+    });
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
+    });
+    await vi.waitFor(() => expect(root.querySelector("[data-proposal-prepare]")).not.toBeNull());
+    expect(root.querySelector("[data-policy-prepare-thresholds]")).not.toBeNull();
+    root.querySelector<HTMLButtonElement>("[data-signed-context]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain(`0x${"a".repeat(64)}`));
+    healthy = false;
+    root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain("ledger read failed"));
+    expect(root.querySelector("[data-proposal-prepare]")).toBeNull();
+    expect(root.querySelector("[data-policy-prepare-thresholds]")).toBeNull();
+    expect(root.querySelector("[data-signed-context]")).toBeNull();
+    expect(root.querySelector("[data-epoch-form]")).toBeNull();
+    healthy = true;
+    root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-signed-context]")).not.toBeNull());
+    expect(root.textContent).not.toContain(`0x${"a".repeat(64)}`);
+    expect(root.querySelector<HTMLButtonElement>("[data-signed-submit] button")?.disabled).toBe(true);
+    expect(paths.every((path) => path.startsWith("GET "))).toBe(true);
+  });
   it("uses exact-ID lookup without exposing fixture controls on a local ledger", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
