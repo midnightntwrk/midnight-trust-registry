@@ -118,6 +118,11 @@ import {
   type ProposalRole,
 } from "./compact-proposal-observation.js";
 import {
+  assertCurrentProposalQuorum,
+  InvalidProposalQuorumError,
+  StaleProposalQuorumContextError,
+} from "./governed-proposal-quorum-preflight.js";
+import {
   decodeVerifierEvidenceVerifierSignature,
   GovernedVerifierProposalPrepareRequestSchema,
   GovernedVerifierProposalRejectedError,
@@ -1010,6 +1015,32 @@ export const createTrustRegistryApiServer = (
     }
   };
 
+  const requireCurrentProposalQuorum = async (
+    context: Parameters<typeof assertCurrentProposalQuorum>[1],
+    signers: Parameters<typeof assertCurrentProposalQuorum>[2],
+  ): Promise<void> => {
+    if (options.source.mode !== "local-ledger" || options.proposalSubmissionJournal === undefined) return;
+    const reader = options.source.readFinalizedProposalLedger;
+    if (reader === undefined) {
+      throw jsonProblem(problemBaseUri, "governed-proposal-preflight-unavailable", 503,
+        "governed proposal preflight unavailable");
+    }
+    try {
+      await assertCurrentProposalQuorum(reader, context, signers);
+    } catch (error) {
+      if (error instanceof StaleProposalQuorumContextError) {
+        throw jsonProblem(problemBaseUri, "stale-governed-proposal", 409,
+          "stale governed proposal", "The signed proposal context no longer matches current ledger state.");
+      }
+      if (error instanceof InvalidProposalQuorumError) {
+        throw jsonProblem(problemBaseUri, "invalid-governed-signature", 403,
+          "invalid governed signature", "The maintainer signer set is not active for this action threshold.");
+      }
+      throw jsonProblem(problemBaseUri, "governed-proposal-preflight-unavailable", 503,
+        "governed proposal preflight unavailable");
+    }
+  };
+
   const resolveProposal = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -1048,7 +1079,9 @@ export const createTrustRegistryApiServer = (
       writeJson(response, 200, { state: "not-observed" });
       return;
     }
-    const record = GovernedProposalObservationSchema.parse(observed);
+    const record = GovernedProposalObservationSchema.parse({
+      eventHash: observed.eventHash, evidenceCommitment: observed.evidenceCommitment,
+    });
     if (record.evidenceCommitment !== body.evidence.commitment) {
       throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
         "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
@@ -1386,7 +1419,9 @@ export const createTrustRegistryApiServer = (
           writeJson(response, 200, { state: "not-observed" }, false);
           return;
         }
-        const record = GovernedProposalObservationSchema.parse(observed);
+        const record = GovernedProposalObservationSchema.parse({
+          eventHash: observed.eventHash, evidenceCommitment: observed.evidenceCommitment,
+        });
         if (record.evidenceCommitment !== body.evidenceCommitment) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
             "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
@@ -1453,6 +1488,7 @@ export const createTrustRegistryApiServer = (
                   "invalid governed signature");
               }
               requireValidProposalSigners(current, signers);
+              await requireCurrentProposalQuorum(current, signers);
               await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
               );
@@ -1531,6 +1567,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1604,6 +1641,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1677,6 +1715,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1750,6 +1789,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(maintainerId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(

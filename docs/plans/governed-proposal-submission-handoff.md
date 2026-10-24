@@ -201,15 +201,21 @@ Journaled membership proposal ports now require a side-effect-free submission
 preflight before reservation. The issuer, verifier, auditor, and maintainer
 simulator-backed HTTP tests use the private file journal and confirm that
 insufficient quorum and a wrong evidence-verifier signature leave no entry.
+For a deployment-bound journal, the API now also reads the supplied finalized
+ledger before any of the five governed proposal reservations. It rejects stale
+policy/sequence, insufficient action-scoped quorum, duplicate or unregistered
+maintainer IDs, and inactive or mismatched maintainer keys. Reader failure
+fails closed without reserving. The synthetic local-ledger issuer test uses a
+real private journal to check this ordering and the finalized resolve path.
 The tests attribute both rejections to preflight and assert zero execution;
 they do not cover every invalid maintainer-membership or key-state case.
 These tests use simulator state and do not qualify a deployed port. A real
-local port must check current quorum, evidence-verifier key status, and
-known-invalid maintainer state there, then still let
-Compact recheck at execution; the callback contract alone is not evidence
-that its implementation is complete. Any failure after reservation remains
-ambiguous, including a missed deterministic pre-broadcast rejection. #220
-still requires audited recovery for those retained reservations.
+local port must supply authenticated finalized state and check the
+evidence-verifier key status there, then still let Compact recheck at execution;
+the callback contract alone is not evidence that its implementation is
+complete. Any failure after reservation remains ambiguous, including a missed
+deterministic pre-broadcast rejection. #220 still requires audited recovery
+for those retained reservations.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into
 the API write port or count mocked-provider tests as release evidence until

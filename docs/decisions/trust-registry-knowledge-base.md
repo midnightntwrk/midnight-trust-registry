@@ -26,6 +26,13 @@ not 0.1.0 release criteria.
 
 ## October 24 2026 Local Issuer Reservation Checkpoint
 
+- The API now checks action-scoped maintainer quorum and current registered key
+  state against its supplied finalized ledger before reserving any of the five
+  governed proposal roles. A synthetic local-ledger HTTP test proves that an
+  insufficient quorum or unavailable reader leaves the bound file journal
+  untouched, and that finalized issuer resolve accepts the verified richer
+  evidence snapshot. The supplied reader is not yet independently qualified;
+  this is not real local-ledger deployment evidence or a #220 recovery approval.
 - The local issuer SDK handoff now carries its prepared action sequence, kind,
   and payload hash into the private one-attempt journal. A missing local
   compiled circuit fails before journal reservation. The real file-journal
