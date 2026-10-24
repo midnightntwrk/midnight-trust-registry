@@ -18,7 +18,7 @@ const topology = {
   hostPortPublished: false,
 };
 const report = {
-  format: "tr-local-api-current-read-observation-v1",
+  format: "tr-local-api-current-read-observation-v2",
   apiOrigin: "http://127.0.0.1:4400",
   planSourceRevision: sourceRevision,
   planSha256: "d".repeat(64),
@@ -26,6 +26,7 @@ const report = {
   planNotAfter: "2026-11-01T00:00:00.000Z",
   registryId: "registry:local",
   currentEpochId: "epoch:local",
+  sourceFinalizedBlockHash: `0x${"e".repeat(64)}`,
   counts: { issuer: 2, verifier: 1, auditor: 1, recognition: 1 },
   releaseQualified: false,
 };
@@ -46,13 +47,14 @@ test("probes loopback from the verified API container, then rechecks its identit
     "--local-ledger-reviewer", fingerprint,
     "--api-origin", "http://127.0.0.1:4400"]);
   assert.deepEqual(result, {
-    format: "tr-standalone-api-current-read-probe-v1",
+    format: "tr-standalone-api-current-read-probe-v2",
     sourceRevision, apiContainerId: topology.apiContainerId,
     apiStartedAt: topology.apiStartedAt, apiRestartCount: topology.apiRestartCount,
     networkId: topology.networkId,
     planSha256: report.planSha256, planNotAfter: report.planNotAfter,
     observedAt: report.observedAt,
     registryId: report.registryId, currentEpochId: report.currentEpochId,
+    sourceFinalizedBlockHash: report.sourceFinalizedBlockHash,
     counts: report.counts,
     routeReadback: "same-container-signed-plan-current-only",
     independentFinality: "not-verified", egressDenied: "not-verified",
@@ -75,6 +77,7 @@ test("does not exec when topology or reviewer input is invalid", async () => {
 test("rejects malformed and source-mismatched packaged readback", async () => {
   const observe = async () => topology;
   for (const stdout of ["not-json", JSON.stringify({ ...report, releaseQualified: true }),
+    JSON.stringify({ ...report, format: "tr-local-api-current-read-observation-v1" }),
     JSON.stringify({ ...report, planSourceRevision: "b".repeat(40) })]) {
     await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
       observe, execDocker: async () => stdout,
@@ -124,6 +127,8 @@ test("rejects invalid report time, expired observation, and incomplete topology"
     { ...report, planSha256: undefined },
     { ...report, planNotAfter: "2026-11-01" },
     { ...report, planSourceRevision: undefined },
+    { ...report, sourceFinalizedBlockHash: undefined },
+    { ...report, sourceFinalizedBlockHash: `0x${"0".repeat(64)}` },
     { ...report, counts: { ...report.counts, issuer: -1 } },
     { ...report, apiOrigin: "http://api:4400" }]) {
     await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {

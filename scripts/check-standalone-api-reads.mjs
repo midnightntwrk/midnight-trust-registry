@@ -44,7 +44,7 @@ function checkedCurrentReadReport(stdout) {
   } catch {
     throw new Error("Packaged API current-read probe did not return JSON");
   }
-  if (report?.format !== "tr-local-api-current-read-observation-v1"
+  if (report?.format !== "tr-local-api-current-read-observation-v2"
     || report.releaseQualified !== false
     || report.apiOrigin !== "http://127.0.0.1:4400"
     || !/^[0-9a-f]{40}$/u.test(report.planSourceRevision ?? "")
@@ -52,6 +52,8 @@ function checkedCurrentReadReport(stdout) {
     || !canonicalTimestamp(report.observedAt)
     || !canonicalTimestamp(report.planNotAfter)
     || Date.parse(report.observedAt) > Date.parse(report.planNotAfter)
+    || !/^0x[0-9a-f]{64}$/u.test(report.sourceFinalizedBlockHash ?? "")
+    || /^0x0{64}$/u.test(report.sourceFinalizedBlockHash)
     || typeof report.registryId !== "string" || report.registryId.length === 0
     || typeof report.currentEpochId !== "string" || report.currentEpochId.length === 0
     || !["issuer", "verifier", "auditor", "recognition"].every((role) =>
@@ -88,7 +90,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     throw new Error("API runtime container or internal network changed during current-read probe");
   }
   return {
-    format: "tr-standalone-api-current-read-probe-v1",
+    format: "tr-standalone-api-current-read-probe-v2",
     sourceRevision: before.sourceRevision,
     apiContainerId: before.apiContainerId,
     apiStartedAt: before.apiStartedAt,
@@ -98,6 +100,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     planNotAfter: current.planNotAfter,
     observedAt: current.observedAt,
     registryId: current.registryId,
+    sourceFinalizedBlockHash: current.sourceFinalizedBlockHash,
     currentEpochId: current.currentEpochId,
     counts: current.counts,
     routeReadback: "same-container-signed-plan-current-only",

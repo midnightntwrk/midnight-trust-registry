@@ -230,7 +230,9 @@ the source's finalized checkpoint hash. The running API exposes its checkpoint
 hash on `/health`; the probe rejects a different API hash or a changed source
 checkpoint during the HTTP reads. Matching hashes do not independently prove
 that every route used one checkpoint or that finality was authenticated.
-The running local-ledger server exposes only the digest of its startup-verified
+The host-side probe preserves the source checkpoint hash in its output and
+rejects older in-container reports that omit it.
+The running local-ledger server also exposes the digest of its startup-verified
 plan on `/health`; the packaged observer rejects a different digest. This
 binds the readback to the plan held by that server process even if a different
 validly signed plan is later placed in the host approval directory.
