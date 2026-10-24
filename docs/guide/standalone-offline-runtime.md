@@ -189,6 +189,28 @@ approval mounts, source revision, finalized reads, runtime egress, and actor
 journeys before the local 0.1.0 RC gate can close. Kubernetes and Helm are
 optional alternative deployment paths, not prerequisites.
 
+Once a **new exact-source bundle pins `compose.api.yml`** and the human-signed
+plan has been independently approved, the operator can run the read-only API
+topology observer with `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
+`TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` set to the same values used for
+the API Compose start:
+
+```sh
+node scripts/check-standalone-api-runtime.mjs <verified-install-bundle>
+```
+
+It rejects a different local API image or process environment, command,
+operator-supplied reviewer fingerprint, approval mount, published port, extra
+network attachment, or weakened API container security settings. For the
+three ledger services it checks image identity, health when configured, and
+network membership; their separate topology and egress observers remain
+required. The fingerprint comparison is to the operator's input, not an
+independent reading of the signed plan. Its output deliberately keeps finalized readback, egress denial,
+actor journeys, and release qualification **unverified**. It does not read or
+approve the signed plan, prove that the mounted files are unchanged, or replace
+the signed-plan preflight and live finalized-query tests. Do not run it against
+the older b15 bundle: that bundle predates the API overlay pin.
+
 After loading the v5/v6 images, run
 `node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
 same Docker host. It creates disposable, network-disabled containers without
