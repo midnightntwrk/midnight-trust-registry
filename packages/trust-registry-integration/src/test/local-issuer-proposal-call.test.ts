@@ -37,6 +37,7 @@ const registryLabel = "registry:local-issuer-call";
 const authorizationLabel = "issuer:local-issuer-call";
 const contractAddress = `0x${"a".repeat(64)}`;
 const genesisHash = `0x${"d".repeat(64)}`;
+const readSubmissionProviderIdentity = async () => ({ contractAddress, genesisHash });
 const maintainerSeed = new Uint8Array(32).fill(13);
 const verifierSeed = new Uint8Array(32).fill(19);
 const keyId = bytes32Commitment("maintainer:key-1");
@@ -141,7 +142,8 @@ describe("local issuer proposal circuit call", () => {
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: genesisHash,
       readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).resolves.toEqual({ eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}` });
     expect(journal.executeOnce).toHaveBeenCalledOnce();
     expect(journal.assertDeploymentBinding).toHaveBeenCalledWith(registryLabel, contractAddress, genesisHash);
@@ -254,7 +256,8 @@ describe("local issuer proposal circuit call", () => {
     }));
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: genesisHash, readFinalizedLedger,
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/different contract address/u);
     expect(readFinalizedLedger).toHaveBeenCalledWith(contractAddress);
     expect(journal.executeOnce).not.toHaveBeenCalled();
@@ -272,7 +275,8 @@ describe("local issuer proposal circuit call", () => {
     const readFinalizedLedger = vi.fn(async (address: string) => ({ contractAddress: address, genesisHash, ledger }));
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: genesisHash, readFinalizedLedger,
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/another deployment/u);
     expect(readFinalizedLedger).not.toHaveBeenCalled();
     expect(journal.executeOnce).not.toHaveBeenCalled();
@@ -282,8 +286,18 @@ describe("local issuer proposal circuit call", () => {
     });
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: genesisHash, readFinalizedLedger,
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/different genesis/u);
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+    await expect(submitLocalIssuerProposalCall({
+      call, expectedGenesisHash: genesisHash, readFinalizedLedger,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity: async () => ({
+        contractAddress, genesisHash: `0x${"f".repeat(64)}`,
+      }), journal,
+    })).rejects.toThrow(/providers do not match/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
@@ -294,7 +308,8 @@ describe("local issuer proposal circuit call", () => {
     const readFinalizedLedger = vi.fn(async (address: string) => ({ contractAddress: address, genesisHash, ledger }));
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: `0x${"0".repeat(64)}`, readFinalizedLedger,
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/pinned nonzero genesis/u);
     expect(journal.assertDeploymentBinding).not.toHaveBeenCalled();
     expect(readFinalizedLedger).not.toHaveBeenCalled();
@@ -307,7 +322,8 @@ describe("local issuer proposal circuit call", () => {
       call, expectedGenesisHash: genesisHash, readFinalizedLedger: async (address) => ({
         contractAddress: address, genesisHash, ledger: { ...ledger, maintainerThreshold: 2n },
       }),
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/threshold/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
@@ -332,7 +348,8 @@ describe("local issuer proposal circuit call", () => {
     await expect(submitLocalIssuerProposalCall({
       call, expectedGenesisHash: genesisHash,
       readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
     })).rejects.toThrow(/reconcile/u);
     expect(journal.executeOnce).toHaveBeenCalledOnce();
   });
@@ -344,7 +361,8 @@ describe("local issuer proposal circuit call", () => {
       call: { ...call, contractAddress: `0x${"b".repeat(64)}` },
       expectedGenesisHash: genesisHash,
       readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
-      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity: async () => ({ contractAddress: `0x${"b".repeat(64)}`, genesisHash }), journal,
     })).rejects.toThrow(/Maintainer signature/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();

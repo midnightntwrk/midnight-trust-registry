@@ -201,6 +201,10 @@ export async function submitLocalIssuerProposalCall(input: {
     contractAddress: string; genesisHash: string; ledger: Ledger;
   }>;
   providers: ContractProviders<RegistryContract>;
+  /** Must authenticate the node/indexer and submitter transports used by these exact providers. */
+  readSubmissionProviderIdentity: (providers: ContractProviders<RegistryContract>) => Promise<{
+    contractAddress: string; genesisHash: string;
+  }>;
   journal: LocalIssuerProposalJournal;
 }): Promise<{ eventHash: string }> {
   if (!/^0x[0-9a-f]{64}$/u.test(input.expectedGenesisHash)
@@ -216,6 +220,11 @@ export async function submitLocalIssuerProposalCall(input: {
   }
   if (finalized.genesisHash !== input.expectedGenesisHash) {
     throw new Error("Finalized issuer ledger read belongs to a different genesis");
+  }
+  const providerIdentity = await input.readSubmissionProviderIdentity(input.providers);
+  if (providerIdentity.contractAddress !== input.call.contractAddress
+    || providerIdentity.genesisHash !== input.expectedGenesisHash) {
+    throw new Error("Issuer submission providers do not match the pinned deployment");
   }
   const prepared = prepareLocalIssuerProposalCall(input.call, finalized.ledger);
   return input.journal.executeOnce("issuer", input.call.authorizationLabel,

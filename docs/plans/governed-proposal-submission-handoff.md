@@ -102,10 +102,13 @@ currently wire proposal ports or a journal; simulator journeys do not close
 this gate.
 The local issuer circuit-call helper now requires a journal deployment-binding
 check and an independently finalized reader result whose genesis and contract
-match the caller's pinned deployment before it reserves an attempt. The caller
-must source that genesis from the signed install plan, not from the submitting
-provider. Its tests mock the SDK and finalized reader; a production API port,
-real local transaction, and authenticated finality remain unproven.
+match the caller's pinned deployment before it reserves an attempt. It also
+requires a provider-identity callback for the exact SDK providers and rejects
+a different genesis or contract. The caller must source the pin from the
+signed install plan and implement this callback against authenticated provider
+transports; echoing the expected values is not verification. Its tests mock
+the SDK, reader, and identity callback. A production API port, real local
+transaction, and authenticated finality remain unproven.
 
 ## Local rotation and capacity
 
