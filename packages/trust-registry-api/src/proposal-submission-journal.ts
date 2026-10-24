@@ -91,6 +91,16 @@ export class ProposalSubmissionAlreadyPendingError extends Error {
   }
 }
 
+export class ProposalSubmissionBlockedByReservationError extends Error {
+  constructor(
+    readonly blockingRole: GovernedProposalSubmissionRole,
+    readonly blockingAuthorizationId: string,
+  ) {
+    super("Another proposal submission is reserved; reconcile it before submitting a different proposal");
+    this.name = "ProposalSubmissionBlockedByReservationError";
+  }
+}
+
 export class ProposalSubmissionConflictError extends Error {
   constructor() {
     super("Proposal submission conflicts with recorded evidence or event");
@@ -230,8 +240,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         if (existing.evidenceCommitment !== key.evidenceCommitment) throw new ProposalSubmissionConflictError();
         throw new ProposalSubmissionAlreadyPendingError(existing.state);
       }
-      if (storage.active.attempts.some((attempt) => attempt.state === "reserved")) {
-        throw new ProposalSubmissionAlreadyPendingError("reserved");
+      const blocker = storage.active.attempts.find((attempt) => attempt.state === "reserved");
+      if (blocker !== undefined) {
+        throw new ProposalSubmissionBlockedByReservationError(blocker.role, blocker.authorizationId);
       }
       if (storage.active.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
       const attempts = [...storage.active.attempts, { ...key, state: "reserved" as const, eventHash: null }];

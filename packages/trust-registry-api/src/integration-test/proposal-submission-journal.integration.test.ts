@@ -9,6 +9,7 @@ import {
   FileProposalSubmissionJournal,
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
@@ -74,14 +75,16 @@ describe("private governed proposal submission journal", () => {
       executions += 1;
       return { eventHash: otherEventHash };
     });
-    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(submitOther()).rejects.toMatchObject({
+      blockingRole: role, blockingAuthorizationId: authorizationId,
+    });
     await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment, async () => {
       executions += 1;
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executions).toBe(1);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "reserved" });
-    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     await expect(reopened.reconcile(role, authorizationId, async () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
@@ -118,6 +121,32 @@ describe("private governed proposal submission journal", () => {
     );
     const results = await Promise.allSettled([run(left), run(right)]);
     expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(executions).toBe(1);
+  });
+
+  it("blocks a distinct key while another writer holds the first reservation", async () => {
+    const first = new FileProposalSubmissionJournal(path);
+    const second = new FileProposalSubmissionJournal(path);
+    let signalStarted!: () => void;
+    let releaseSubmission!: () => void;
+    const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseSubmission = resolve; });
+    let executions = 0;
+    const pending = first.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+      executions += 1;
+      signalStarted();
+      await gate;
+      return { eventHash };
+    });
+    await started;
+    await expect(second.executeOnce("verifier", "auth:another", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    })).rejects.toMatchObject({
+      blockingRole: "issuer", blockingAuthorizationId: authorizationId,
+    });
+    releaseSubmission();
+    await expect(pending).resolves.toEqual({ eventHash });
     expect(executions).toBe(1);
   });
 
@@ -185,12 +214,11 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
 
-  it("reports an unresolved reservation before projected capacity", async () => {
+  it("budgets the new proposal receipt at the active byte boundary", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     const attempts = Array.from({ length: 9_500 }, (_, index) => ({
       role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
-      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
-      eventHash: index === 0 ? null : eventHash,
+      evidenceCommitment, state: "observed", eventHash,
     }));
     const serialized = JSON.stringify({ version: 1, attempts });
     expect(Buffer.byteLength(serialized)).toBeLessThan(4 * 1024 * 1024);
@@ -199,7 +227,7 @@ describe("private governed proposal submission journal", () => {
     await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
       executed = true;
       return { eventHash };
-    })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
     expect(executed).toBe(false);
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
@@ -221,6 +249,9 @@ describe("private governed proposal submission journal", () => {
     });
     expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
     expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(reopened.executeOnce("verifier", "auth:after-rotation", evidenceCommitment,
+      async () => ({ eventHash: otherEventHash })))
+      .rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     let executions = 0;
     await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
       executions += 1;
@@ -334,7 +365,7 @@ describe("private governed proposal submission journal", () => {
     expect(executions).toBe(1);
   });
 
-  it("denies concurrent submissions behind a rotated-segment reservation", async () => {
+  it("denies concurrent submissions at the rotated segment byte boundary", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
     await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
@@ -344,8 +375,7 @@ describe("private governed proposal submission journal", () => {
     };
     const active = JSON.stringify({ version: 1, attempts: Array.from({ length: 9_500 }, (_, index) => ({
       role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
-      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
-      eventHash: index === 0 ? null : eventHash,
+      evidenceCommitment, state: "observed", eventHash,
     })) });
     expect(Buffer.byteLength(active)).toBeLessThan(4 * 1024 * 1024);
     await writeFile(join(directory, manifest.active.file), active, { mode: 0o600 });
@@ -363,7 +393,7 @@ describe("private governed proposal submission journal", () => {
     ]);
     expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
     for (const result of results) {
-      if (result.status === "rejected") expect(result.reason).toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+      if (result.status === "rejected") expect(result.reason).toBeInstanceOf(ProposalSubmissionCapacityError);
     }
     expect(executions).toBe(0);
     expect(await journal.read("verifier", authorizationId)).toBeNull();

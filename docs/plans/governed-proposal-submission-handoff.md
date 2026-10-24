@@ -146,6 +146,8 @@ marks it observed. Callers must preserve the journal and must not replace it
 to bypass this gate. An operator-only recovery path for a never-observed
 reservation is still missing; [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
 blocks the local RC until it is designed, tested, and independently reviewed.
+A conflicting finalized observation also leaves the reservation blocked and
+must be handled by that recovery/security process, not by deleting the file.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into

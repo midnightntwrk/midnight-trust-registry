@@ -166,6 +166,7 @@ import {
 import {
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
@@ -908,6 +909,11 @@ export const createTrustRegistryApiServer = (
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
         "proposal submission requires reconciliation",
         "An earlier submission may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionBlockedByReservationError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-blocked", 409,
+        "proposal submissions paused for reconciliation",
+        "A different proposal has an unresolved reservation. Contact the operator; do not retry automatically.");
     }
     if (error instanceof ProposalSubmissionOutcomeUnknownError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 503,
