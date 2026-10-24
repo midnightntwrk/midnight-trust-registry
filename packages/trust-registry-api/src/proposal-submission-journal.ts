@@ -60,6 +60,10 @@ const DeploymentBindingSchema = z.strictObject({
   expectedGenesisHash: Bytes32Schema,
   contractAddress: Bytes32Schema,
 });
+type DeploymentBinding = z.infer<typeof DeploymentBindingSchema>;
+const sameDeploymentBinding = (left: DeploymentBinding, right: DeploymentBinding): boolean =>
+  left.registryId === right.registryId && left.contractAddress === right.contractAddress
+  && left.expectedGenesisHash === right.expectedGenesisHash;
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
 export type ProposalReservationContext = z.infer<typeof ReservationContextSchema>;
@@ -166,6 +170,7 @@ export interface ProposalSubmissionJournal {
 /** Private single-host file adapter. Never delete a reserved attempt on an ambiguous execution error. */
 export class FileProposalSubmissionJournal implements ProposalSubmissionJournal {
   private readonly path: string;
+  private expectedDeploymentBinding: DeploymentBinding | null = null;
 
   constructor(path: string) {
     if (path.length === 0) throw new RangeError("Proposal submission journal path is invalid");
@@ -180,9 +185,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
     await this.withWrite(async () => {
       const current = await this.readBinding();
+      if (this.expectedDeploymentBinding !== null
+        && (current === null || !sameDeploymentBinding(this.expectedDeploymentBinding, current))) {
+        throw new ProposalSubmissionConflictError();
+      }
       if (current !== null) {
-        if (current.registryId !== binding.registryId || current.contractAddress !== binding.contractAddress
-          || current.expectedGenesisHash !== binding.expectedGenesisHash) {
+        if (!sameDeploymentBinding(current, binding)) {
           throw new ProposalSubmissionConflictError();
         }
         await this.requireExisting();
@@ -216,6 +224,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         await directory.close();
       }
     });
+    this.expectedDeploymentBinding = binding;
   }
 
   async assertDeploymentBinding(
@@ -226,10 +235,13 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       networkId: "undeployed", contractAddress, expectedGenesisHash,
     });
     const current = await this.readBinding();
-    if (current === null || current.registryId !== expected.registryId
-      || current.contractAddress !== expected.contractAddress
-      || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+    if (current === null || !sameDeploymentBinding(current, expected)
+      || (this.expectedDeploymentBinding !== null
+        && !sameDeploymentBinding(this.expectedDeploymentBinding, expected))) {
+      throw new ProposalSubmissionConflictError();
+    }
     await this.requireExisting();
+    this.expectedDeploymentBinding = expected;
   }
 
   async requireExisting(): Promise<void> {
@@ -258,7 +270,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const key = this.parseKey(role, authorizationId, evidenceCommitment);
     const context = reservationContext === undefined ? undefined : ReservationContextSchema.parse(reservationContext);
     await this.withWrite(async () => {
-      if (context === undefined && await this.readBinding() !== null) {
+      const binding = await this.readBinding();
+      if (this.expectedDeploymentBinding !== null
+        && (binding === null || !sameDeploymentBinding(binding, this.expectedDeploymentBinding))) {
+        throw new ProposalSubmissionConflictError();
+      }
+      if (context === undefined && binding !== null) {
         throw new ProposalSubmissionContextRequiredError();
       }
       const storage = await this.readStorage();
@@ -457,7 +474,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
 
   private async readStorage(): Promise<JournalStorage> {
     const raw = await this.readPrivateFile(this.path, MAX_FILE_BYTES);
-    if (raw === null) return { manifest: null, active: emptyState(), archived: [] };
+    if (raw === null) {
+      if (this.expectedDeploymentBinding !== null || await this.readBinding() !== null) {
+        throw new InvalidProposalSubmissionJournalError();
+      }
+      return { manifest: null, active: emptyState(), archived: [] };
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);

@@ -1500,7 +1500,13 @@ with injected snapshots is not local deployment or restore evidence.
    `trust-registry-api init-local-proposal-journal`, the signed-plan options,
    and an absolute `--submission-journal` path. This binds it to the reviewed
    genesis, registry ID, and contract address; do not retrofit a nonempty
-   unbound journal. For a controlled transition, make a private byte-for-byte
+   unbound journal. A bound journal with a missing state file now fails closed
+   rather than recreating empty history; a running API also refuses removal
+   or substitution of its checked binding. Losing both files while the API
+   is stopped is still an unresolved recovery incident, not permission to
+   initialize a new journal or resubmit. Keep an independently controlled
+   backup and follow the reviewed #220 recovery policy. For a controlled
+   transition, make a private byte-for-byte
    backup of the journal, its `.binding` sidecar, and referenced segments, then run
    `trust-registry-api reconcile-local-proposal` with the signed-plan options,
    exact role/authorization ID, and `--submission-journal` absolute path.

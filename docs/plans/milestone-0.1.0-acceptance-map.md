@@ -47,6 +47,10 @@ read-only v2 candidate report binds the exact approved API plan digest but
 does not authenticate non-inclusion or authorize journal release. The current
 indexer SDK returns contract state at a node-reported finalized block without
 a machine-verifiable state proof; a reviewed evidence policy is still needed.
+A bound journal with a missing state file now rejects writes instead of
+starting empty, and a running instance detects loss of its checked binding.
+Loss of both files across process restart still requires independent durable
+recovery evidence and cannot be treated as a fresh installation.
 
 ## Next Local Qualification Sequence
 

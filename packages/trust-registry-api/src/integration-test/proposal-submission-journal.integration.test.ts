@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { fork } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,52 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("issuer", authorizationId)).toBeNull();
     await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
       execute, reservationContext)).resolves.toEqual({ eventHash });
+  });
+
+  it("does not recreate a deleted deployment-bound journal as an empty history", async () => {
+    const contractAddress = `0x${"aa".repeat(32)}`;
+    const genesisHash = `0x${"bb".repeat(32)}`;
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", contractAddress, genesisHash);
+    const execute = vi.fn(async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext);
+    await unlink(path);
+
+    const reopened = new FileProposalSubmissionJournal(path);
+    await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    await expect(reopened.executeOnce("verifier", "auth:other", evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    expect(execute).toHaveBeenCalledTimes(1);
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects binding deletion after a running API has checked the deployment", async () => {
+    const contractAddress = `0x${"aa".repeat(32)}`;
+    const genesisHash = `0x${"bb".repeat(32)}`;
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", contractAddress, genesisHash);
+    await journal.assertDeploymentBinding("registry:local", contractAddress, genesisHash);
+    const execute = vi.fn(async () => ({ eventHash }));
+    await writeFile(`${path}.binding`, JSON.stringify({
+      format: "tr-proposal-journal-binding-v1", registryId: "registry:local",
+      networkId: "undeployed", contractAddress: `0x${"cc".repeat(32)}`,
+      expectedGenesisHash: genesisHash,
+    }), { mode: 0o600 });
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await unlink(`${path}.binding`);
+    await expect(journal.bindDeployment("registry:local", contractAddress, genesisHash))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await unlink(path);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(execute).not.toHaveBeenCalled();
+    await expect(new FileProposalSubmissionJournal(path).assertDeploymentBinding(
+      "registry:local", contractAddress, genesisHash)).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
   });
 
   it("keeps a legacy context-free bound reservation readable and blocking", async () => {
