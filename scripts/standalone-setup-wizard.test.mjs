@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -31,6 +31,7 @@ import {
   reconcileStandaloneCommitteeTransition as reconcileStandaloneCommitteeTransitionRaw,
   reconcileStandaloneDeployment as reconcileStandaloneDeploymentRaw,
   reconcileStandaloneVerifierKeyInsertion as reconcileStandaloneVerifierKeyInsertionRaw,
+  regularBytes,
   runStandaloneSetupInteractive,
   standaloneSetupStatus,
   submitStandaloneCommitteeTransition as submitStandaloneCommitteeTransitionRaw,
@@ -40,6 +41,29 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
+
+test("setup input reader rejects linked or unsafe private files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-setup-reader-"));
+  try {
+    const source = join(directory, "source.json");
+    const symbolic = join(directory, "symbolic.json");
+    const hard = join(directory, "hard.json");
+    await writeFile(source, "{}", { mode: 0o600 });
+    assert.equal((await regularBytes(source, { privateFile: true })).toString(), "{}");
+
+    await symlink(source, symbolic);
+    await assert.rejects(regularBytes(symbolic), /ELOOP|symbolic link/u);
+
+    await link(source, hard);
+    await assert.rejects(regularBytes(source, { privateFile: true }), /required ownership/u);
+    await chmod(source, 0o644);
+    await assert.rejects(regularBytes(source, { privateFile: true }), /required ownership/u);
+    await assert.rejects(regularBytes(directory), /bounded regular file/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 const ledgerNetworkId = "ledger-id";
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);

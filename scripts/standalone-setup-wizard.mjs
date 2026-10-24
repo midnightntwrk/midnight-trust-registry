@@ -3,7 +3,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { link, open, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -73,12 +73,32 @@ async function verifiedPackageManifestBytes(bundle, inventory, verified) {
   return manifestBytes;
 }
 
-async function regularBytes(path) {
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
-    throw new Error("Setup input must be a bounded regular file");
+export async function regularBytes(path, { privateFile = false } = {}) {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > 16n * 1024n * 1024n
+      || (privateFile && (before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+        || (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))))) {
+      throw new Error("Setup input must be a bounded regular file with required ownership");
+    }
+    const bytes = Buffer.alloc(Number(before.size));
+    let count = 0;
+    while (count < bytes.length) {
+      const result = await file.read(bytes, count, bytes.length - count, count);
+      if (result.bytesRead === 0) break;
+      count += result.bytesRead;
+    }
+    const after = await file.stat({ bigint: true });
+    if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.nlink !== before.nlink
+      || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Setup input changed during read");
+    }
+    return bytes;
+  } finally {
+    await file.close();
   }
-  return readFile(path);
 }
 
 function parseCanonicalSignedJson(bytes, label) {
@@ -102,7 +122,7 @@ async function privateDirectory(path) {
 
 async function readRecord(directory) {
   const root = await privateDirectory(resolve(directory));
-  const record = JSON.parse((await regularBytes(join(root, RECORD))).toString("utf8"));
+  const record = JSON.parse((await regularBytes(join(root, RECORD), { privateFile: true })).toString("utf8"));
   if (record?.format !== FORMAT || typeof record?.sourceRevision !== "string") {
     throw new Error("Invalid standalone setup record");
   }
@@ -284,9 +304,9 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
       throw new Error("New standalone setup requires a verified v3/v4/v5 runtime Compose pin");
     }
-    const composeBytes = await readFile(composePath);
+    const composeBytes = await regularBytes(composePath);
     if (sha256(composeBytes) !== verified.runtimeComposeSha256
-      || sha256(await readFile(offlineComposePath)) !== verified.runtimeOfflineComposeSha256) {
+      || sha256(await regularBytes(offlineComposePath)) !== verified.runtimeOfflineComposeSha256) {
       throw new Error("Current runtime Compose differs from the verified install bundle");
     }
     const installedImages = JSON.parse(inventoryBytes).images;
