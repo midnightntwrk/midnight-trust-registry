@@ -21,6 +21,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./local-pinned-submission-provider": {
+      "types": "./dist/local-pinned-submission-provider.d.ts",
+      "import": "./dist/local-pinned-submission-provider.js"
+    },
     "./fixtures/vc-authority-consumer.compact": "./src/compact/vc-authority-consumer.compact"
   },
   "files": [
@@ -51,9 +55,12 @@
     "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
     "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
     "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "@midnight-ntwrk/wallet-sdk-abstractions": "2.1.0",
+    "@midnight-ntwrk/wallet-sdk-node-client": "1.1.2",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
+    "effect": "3.22.3",
     "zod": "^4.6.6"
   },
   "devDependencies": {

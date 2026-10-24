@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- add a Node-only local issuer submitter that pins node genesis on its own
+  WebSocket, binds the SDK node/indexer provider pair, and fails closed on
+  node-finality timeout; live deployment qualification remains pending
 - exercise local issuer submission with the real private journal across
   restart and ambiguous SDK responses; this remains mocked-network evidence
 - require the local issuer circuit-call helper to check the private journal's

@@ -115,6 +115,17 @@ genesis checks before reservation, and no second SDK submission after an
 ambiguous response and process restart. The SDK and provider identity are
 mocked in that suite, so these tests establish journal behavior only, not a
 real local-ledger actor journey.
+The Node-only `local-pinned-submission-provider` subpath constructs the SDK's
+node submitter and public-data provider from allowlisted local URLs. Pass both
+returned provider instances into the issuer call and its returned identity
+callback; it refuses swapped instances. The submitter checks live node genesis
+on its own WebSocket before broadcasting and waits for node finality before
+returning a Midnight transaction identifier. Connection and finality waits
+are bounded; timeout after broadcast still leaves the journal reserved for
+reconciliation. This does not authenticate a separately supplied finalized
+reader, prove that DNS/egress policy keeps the hosts private, or replace a
+real deployed-contract readback. There is no shipped API proposal write port
+using this adapter yet.
 
 ## Local rotation and capacity
 
