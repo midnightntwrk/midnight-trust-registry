@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FinalizedTransaction } from "@midnight-ntwrk/midnight-js-protocol/ledger";
-import { Duration, Effect, Stream } from "effect";
 
 import { createPinnedLocalSubmissionProvider } from "../local-pinned-submission-provider.js";
 
-const mocks = vi.hoisted(() => ({ make: vi.fn(), indexer: vi.fn() }));
-vi.mock("@midnight-ntwrk/wallet-sdk-node-client/effect", () => ({
-  PolkadotNodeClient: { make: mocks.make },
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), indexer: vi.fn(),
+}));
+vi.mock("@polkadot/api", () => ({
+  ApiPromise: { create: mocks.create },
+  WsProvider: class {
+    isConnected = true;
+    constructor(readonly endpoint: string, readonly autoConnectMs: number | false) {}
+    connect = mocks.connect;
+    disconnect = mocks.disconnect;
+  },
 }));
 vi.mock("@midnight-ntwrk/midnight-js-indexer-public-data-provider", () => ({
   indexerPublicDataProvider: mocks.indexer,
@@ -20,38 +27,44 @@ const config = {
   indexerWsUrl: "ws://node:8088/graphql/ws", allowedHosts: ["node"],
   contractAddress, expectedGenesisHash: genesisHash,
 };
+const transaction = {
+  identifiers: () => ["tx-issuer"], serialize: () => new Uint8Array([1, 2, 3]),
+} as unknown as FinalizedTransaction;
 
 describe("pinned local submission provider", () => {
   let observedGenesis: string;
   let indexedGenesis: string;
-  let sendMidnightTransaction: ReturnType<typeof vi.fn>;
+  let sendMnTransaction: ReturnType<typeof vi.fn>;
   let getBlockHash: ReturnType<typeof vi.fn>;
+  let connected: boolean;
 
   beforeEach(() => {
     observedGenesis = genesisHash;
     indexedGenesis = genesisHash.slice(2);
+    connected = true;
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       data: { block: { height: 0, hash: indexedGenesis } },
     })));
-    mocks.indexer.mockReset();
-    mocks.indexer.mockReturnValue({ queryContractState: vi.fn() });
+    mocks.indexer.mockReset().mockReturnValue({ queryContractState: vi.fn() });
+    mocks.connect.mockReset().mockResolvedValue(undefined);
+    mocks.disconnect.mockReset().mockResolvedValue(undefined);
     getBlockHash = vi.fn(async () => ({ toHex: () => observedGenesis }));
-    sendMidnightTransaction = vi.fn(() => Stream.make({ _tag: "Finalized", txHash: "0x1234" }));
-    mocks.make.mockReset();
-    mocks.make.mockImplementation(() => Effect.succeed({
-      ensureConnection: () => Effect.succeed(undefined),
-      api: { rpc: { chain: { getBlockHash } } },
-      sendMidnightTransaction,
+    sendMnTransaction = vi.fn(() => ({ send: async (callback: (result: unknown) => void) => {
+      callback({ status: { isFinalized: true } });
+      return vi.fn();
+    } }));
+    mocks.create.mockReset().mockImplementation(async () => ({
+      get isConnected() { return connected; },
+      rpc: { chain: { getBlockHash } },
+      tx: { midnight: { sendMnTransaction } },
+      disconnect: mocks.disconnect,
     }));
   });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it("rejects nonlocal endpoints and malformed deployment pins", () => {
+  it("rejects nonlocal endpoints and malformed pins", () => {
     expect(() => createPinnedLocalSubmissionProvider({
       ...config, nodeWsUrl: "wss://public.example:9944",
-    })).toThrow(/approved private host/u);
-    expect(() => createPinnedLocalSubmissionProvider({
-      ...config, indexerHttpUrl: "https://public.example/graphql",
     })).toThrow(/approved private host/u);
     expect(() => createPinnedLocalSubmissionProvider({
       ...config, expectedGenesisHash: `0x${"0".repeat(64)}`,
@@ -61,68 +74,66 @@ describe("pinned local submission provider", () => {
     })).toThrow(/contract address/u);
   });
 
-  it("authenticates the exact provider instance against the live node genesis", async () => {
+  it("authenticates the exact provider pair against node and indexer genesis", async () => {
     const pinned = createPinnedLocalSubmissionProvider(config);
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).resolves.toEqual({ contractAddress, genesisHash });
-    expect(mocks.indexer).toHaveBeenCalledWith(config.indexerHttpUrl, config.indexerWsUrl);
-    expect(fetch).toHaveBeenCalledWith(config.indexerHttpUrl, expect.objectContaining({
-      method: "POST", redirect: "error",
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      provider: expect.objectContaining({ endpoint: new URL(config.nodeWsUrl).toString(), autoConnectMs: false }),
     }));
-    expect(mocks.make).toHaveBeenCalledWith({
-      nodeURL: new URL(config.nodeWsUrl), reconnectionTimeout: Duration.seconds(15),
-    });
     expect(getBlockHash).toHaveBeenCalledWith(0);
+    expect(mocks.disconnect).toHaveBeenCalled();
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: { submitTx: vi.fn() }, publicDataProvider: pinned.publicDataProvider,
     } as never)).rejects.toThrow(/not using the pinned/u);
-    await expect(pinned.readSubmissionProviderIdentity({
-      midnightProvider: pinned.midnightProvider, publicDataProvider: { queryContractState: vi.fn() },
-    } as never)).rejects.toThrow(/not using the pinned/u);
-    expect(mocks.make).toHaveBeenCalledOnce();
   });
 
-  it("refuses an indexer on another genesis", async () => {
+  it("refuses an indexer or node on another genesis", async () => {
     const pinned = createPinnedLocalSubmissionProvider(config);
     indexedGenesis = "c".repeat(64);
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).rejects.toThrow(/indexer genesis does not match/u);
-  });
-
-  it("rechecks genesis on the node connection used for submission", async () => {
-    const pinned = createPinnedLocalSubmissionProvider(config);
-    await pinned.readSubmissionProviderIdentity({
-      midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
-    } as never);
     observedGenesis = `0x${"c".repeat(64)}`;
-    const tx = {
-      identifiers: () => ["tx-issuer"], serialize: () => new Uint8Array([1, 2, 3]),
-    } as unknown as FinalizedTransaction;
-    await expect(pinned.midnightProvider.submitTx(tx)).rejects.toThrow(/genesis does not match/u);
-    expect(sendMidnightTransaction).not.toHaveBeenCalled();
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/genesis does not match/u);
+    expect(sendMnTransaction).not.toHaveBeenCalled();
   });
 
-  it("returns a Midnight identifier only after the node reports finality", async () => {
+  it("returns the Midnight identifier only after successful finality", async () => {
     const pinned = createPinnedLocalSubmissionProvider(config);
-    const tx = {
-      identifiers: () => ["tx-issuer"], serialize: () => new Uint8Array([1, 2, 3]),
-    } as unknown as FinalizedTransaction;
-    await expect(pinned.midnightProvider.submitTx(tx)).resolves.toBe("tx-issuer");
-    expect(sendMidnightTransaction).toHaveBeenCalledOnce();
-    expect(sendMidnightTransaction.mock.calls[0]?.[0]).toEqual(new Uint8Array([1, 2, 3]));
-    sendMidnightTransaction.mockReturnValue(Stream.make({ _tag: "Submitted", txHash: "0x1234" }));
-    await expect(pinned.midnightProvider.submitTx(tx)).rejects.toThrow(/did not finalize/u);
-    expect(getBlockHash).toHaveBeenCalledTimes(2);
+    await expect(pinned.midnightProvider.submitTx(transaction)).resolves.toBe("tx-issuer");
+    expect(sendMnTransaction).toHaveBeenCalledWith("0x010203");
+    sendMnTransaction.mockImplementation(() => ({ send: async (callback: (result: unknown) => void) => {
+      callback({ status: { isFinalized: true }, dispatchError: "bad origin" });
+      return vi.fn();
+    } }));
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/dispatch error/u);
   });
 
-  it("rejects transactions without an identifier before connecting", async () => {
+  it("disconnects on a hung connection without broadcasting later", async () => {
+    mocks.connect.mockImplementation(() => new Promise(() => undefined));
+    const pinned = createPinnedLocalSubmissionProvider({ ...config, submissionDeadlineMs: 10 });
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/deadline/u);
+    expect(mocks.disconnect).toHaveBeenCalled();
+    expect(sendMnTransaction).not.toHaveBeenCalled();
+  });
+
+  it("treats a broadcast without a finality callback as ambiguous", async () => {
+    sendMnTransaction.mockImplementation(() => ({ send: async () => vi.fn() }));
+    const pinned = createPinnedLocalSubmissionProvider({ ...config, submissionDeadlineMs: 10 });
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/deadline/u);
+    expect(sendMnTransaction).toHaveBeenCalledOnce();
+    expect(mocks.disconnect).toHaveBeenCalled();
+  });
+
+  it("does not broadcast after connection loss or a missing identifier", async () => {
     const pinned = createPinnedLocalSubmissionProvider(config);
-    const tx = {
+    connected = false;
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/disconnected/u);
+    expect(sendMnTransaction).not.toHaveBeenCalled();
+    await expect(pinned.midnightProvider.submitTx({
       identifiers: () => [], serialize: () => new Uint8Array([1]),
-    } as unknown as FinalizedTransaction;
-    await expect(pinned.midnightProvider.submitTx(tx)).rejects.toThrow(/no identifier/u);
-    expect(mocks.make).not.toHaveBeenCalled();
+    } as unknown as FinalizedTransaction)).rejects.toThrow(/no identifier/u);
   });
 });

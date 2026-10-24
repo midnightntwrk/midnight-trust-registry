@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - add an experimental Node-only local issuer submitter that checks node and
-  indexer genesis and binds the SDK provider pair; SDK timeout and reconnect
-  gaps still block API write-path wiring and live qualification
+  indexer genesis, binds the SDK provider pair, and owns a non-reconnecting
+  Polkadot transport with bounded connection/submission attempts. A later
+  Midnight.js indexer wait and missing live qualification still block API
+  write-path wiring
 - exercise local issuer submission with the real private journal across
   restart and ambiguous SDK responses; this remains mocked-network evidence
 - require the local issuer circuit-call helper to check the private journal's

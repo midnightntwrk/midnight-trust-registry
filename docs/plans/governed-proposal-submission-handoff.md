@@ -116,20 +116,21 @@ ambiguous response and process restart. The SDK and provider identity are
 mocked in that suite, so these tests establish journal behavior only, not a
 real local-ledger actor journey.
 The experimental Node-only `local-pinned-submission-provider` subpath
-constructs the SDK's node submitter and public-data provider from allowlisted
-local URLs. Pass both returned instances into the issuer call and its returned
-identity callback; it refuses swapped instances. The callback reads the live
-node and indexer block-0 hashes and compares both with the signed pin. The
-submitter checks node genesis before broadcasting and waits for node finality
-before returning a Midnight transaction identifier. The contract address is
-still supplied by the signed pin and must be checked by the independent
-finalized reader. The current Effect timeout does **not** guarantee a bounded
-return if the SDK connection setup or cleanup hangs, and Midnight.js may wait
-indefinitely for its later indexer transaction read. A reconnect between the
-genesis check and broadcast also needs a transport-level safeguard. Do not
-wire this adapter into the API write port or count it as release evidence
-until those boundaries, real deployed-contract readback, DNS/egress policy,
-and ambiguous-outcome reconciliation are validated.
+constructs a non-auto-reconnecting Polkadot transport and public-data provider
+from allowlisted local URLs. Pass both returned instances into the issuer call
+and its returned identity callback; it refuses swapped instances. The callback
+reads the live node and indexer block-0 hashes and compares both with the signed
+pin. Submission checks node genesis on the same connection before broadcast,
+waits for node finality, rejects dispatch errors, and returns the Midnight
+transaction identifier. Connection/submission attempts have deadlines and
+close the owned transport on timeout; an attempted broadcast with no confirmed
+outcome remains ambiguous and the journal must prevent blind retry. The
+contract address comes from the signed pin and must be checked by the
+independent finalized reader. Midnight.js may still wait indefinitely for its
+later indexer transaction read. Do not wire this adapter into the API write port
+or count mocked-provider tests as release evidence until that wait, real
+deployed-contract readback, DNS/egress policy, and ambiguous-outcome
+reconciliation are validated on the dedicated local ledger.
 
 ## Local rotation and capacity
 
