@@ -109,6 +109,14 @@ signed install plan and implement this callback against authenticated provider
 transports; echoing the expected values is not verification. Its tests mock
 the SDK, reader, and identity callback. A production API port, real local
 transaction, and authenticated finality remain unproven.
+The helper passes the prepared action sequence, kind, and payload hash to the
+private journal with its reservation, matching the API-created attempt schema.
+It resolves the local compiled circuit before reservation, so a missing
+compiled artifact is a known pre-broadcast failure rather than an ambiguous
+attempt. Any SDK/provider error after reservation remains unknown; the
+stored context is audit metadata, not permission to abandon or retry. #220
+still requires independently authenticated invalidation evidence and an
+operator-reviewed durable recovery decision.
 The API integration suite additionally runs this helper against the real
 private file journal: it verifies a single submitted receipt, fail-closed
 genesis checks before reservation, and no second SDK submission after an

@@ -141,16 +141,25 @@ describe("issuer SDK handoff with private journal", () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
     const request = input(journal);
-    const eventHash = `0x${Buffer.from(prepareLocalIssuerProposalCall(request.call,
-      (await request.readFinalizedLedger(contractAddress)).ledger).expectedEventHash).toString("hex")}`;
+    const prepared = prepareLocalIssuerProposalCall(request.call,
+      (await request.readFinalizedLedger(contractAddress)).ledger);
+    const eventHash = `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}`;
+    const reservationContext = {
+      actionSequence: prepared.actionSequence.toString(),
+      actionKind: `0x${Buffer.from(prepared.actionKind).toString("hex")}`,
+      actionPayloadHash: `0x${Buffer.from(prepared.actionPayloadHash).toString("hex")}`,
+    };
     mocks.submitCallTx.mockResolvedValueOnce({
       private: { result: Buffer.from(eventHash.slice(2), "hex") }, public: { txId: "tx-issuer-journal" },
     });
     await expect(submitLocalIssuerProposalCall(request)).resolves.toEqual({ eventHash });
-    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({ state: "submitted", eventHash });
+    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({
+      state: "submitted", eventHash, reservationContext,
+    });
     expect(await readFile(path, "utf8")).not.toContain("tx-issuer-journal");
 
     const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.read("issuer", authorizationLabel)).toMatchObject({ reservationContext });
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
@@ -162,9 +171,16 @@ describe("issuer SDK handoff with private journal", () => {
     mocks.submitCallTx.mockRejectedValueOnce(new Error("response lost after broadcast"));
     await expect(submitLocalIssuerProposalCall(input(journal)))
       .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
-    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({ state: "reserved", eventHash: null });
+    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({
+      state: "reserved", eventHash: null,
+      reservationContext: {
+        actionSequence: "3",
+        actionKind: `0x${Buffer.from(encodeCompactActionKind("tr:issuer:propose")).toString("hex")}`,
+      },
+    });
 
     const reopened = new FileProposalSubmissionJournal(path);
+    expect((await reopened.read("issuer", authorizationLabel))?.reservationContext).toBeDefined();
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();

@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-19
+Updated: 2026-10-24
 
 ## Purpose
 
@@ -11,6 +11,20 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 24 2026 Local Issuer Reservation Checkpoint
+
+- The local issuer SDK handoff now carries its prepared action sequence, kind,
+  and payload hash into the private one-attempt journal. A missing local
+  compiled circuit fails before journal reservation. The real file-journal
+  integration test verifies that both submitted and ambiguous attempts retain
+  context across reopen without a second SDK submission.
+- The SDK, finalized reader, and provider identity are mocked in these tests.
+  Persisted context is audit evidence, not proof of non-inclusion or authority
+  to abandon a reservation. #220 remains a local RC blocker until the
+  original action's inability to execute is independently authenticated and
+  an operator-reviewed durable decision is security-reviewed. #219 still
+  needs a real deployed API and offline actor journeys; Helm is optional.
 
 ## October 19 2026 Local Journal Recovery Checkpoint
 
