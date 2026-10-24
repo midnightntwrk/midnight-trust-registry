@@ -1370,6 +1370,14 @@ with injected snapshots is not local deployment or restore evidence.
    recovery procedure. The report explicitly sets `releaseQualified: false`.
    `present-and-verified` checks the proposal record and evidence signature,
    not the journal attempt or independent finality.
+   For a controlled journal transition, make a private byte-for-byte backup
+   of the journal and its referenced segments, then run
+   `trust-registry-api reconcile-local-proposal` with the signed-plan options,
+   exact role/authorization ID, and `--submission-journal` absolute path.
+   It advances only a matching record to `observed`; missing readback leaves
+   the reservation pending, and a conflict fails closed. Even after a lost
+   response is reconciled, separately inspect the governance event and do
+   not infer transaction identity or release qualification from this command.
    The current-state HTTP spot-check can use
    `trust-registry-api observe-local-ledger-api` with
    the same signed-plan arguments and an explicit loopback `--api-origin`.

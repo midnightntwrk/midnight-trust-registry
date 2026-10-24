@@ -70,6 +70,21 @@ VP admission by itself, and must not be used to qualify an actor journey
 before approved genesis, pinned install bytes, independently authenticated
 finalized readback, and post-submission reconciliation are in place.
 
+After installing the manually re-signed post-mutation plan and making a
+private byte-for-byte journal backup, an operator can run
+`trust-registry-api reconcile-local-proposal` with the four signed-plan
+arguments, exact `--role`/`--authorization-id`, and an absolute
+`--submission-journal` path. The command verifies the proposal record and
+evidence signature through the pinned finalized source, then asks the file
+journal to compare the evidence commitment and any recorded event hash before
+advancing that entry to `observed`. Missing readback leaves `reserved` or
+`submitted` unchanged; a conflict throws without a success report. It never
+deletes an entry, authorizes retry, or qualifies the release. A lost-response
+reservation with no event hash is matched by role, authorization ID, and
+evidence commitment, not by transaction identity; retain the original backup
+and independently inspect the on-ledger governance event before closing an
+incident.
+
 ## Local rotation and capacity
 
 The writable segment is capped at 10,000 attempts and 4 MiB. Capacity

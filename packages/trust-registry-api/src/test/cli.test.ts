@@ -108,6 +108,32 @@ describe("API CLI binding", () => {
     }
   });
 
+  it("reconciles only an exact role/ID in a private absolute-path journal", () => {
+    const reconciliation = ["reconcile-local-proposal", ...localArgs.slice(1),
+      "--role", "issuer", "--authorization-id", "issuer:local:1",
+      "--submission-journal", "/run/trust-registry/proposals.json"];
+    expect(parseTrustRegistryApiCliArgs(reconciliation)).toMatchObject({
+      command: "reconcile-local-proposal", proposalRole: "issuer",
+      authorizationId: "issuer:local:1", submissionJournalPath: "/run/trust-registry/proposals.json",
+    });
+    for (const args of [
+      reconciliation.slice(0, -2),
+      [...reconciliation.slice(0, -1), "relative/proposals.json"],
+      [...reconciliation, "--host", "127.0.0.1"],
+      [...reconciliation, "--api-origin", "http://127.0.0.1:4400"],
+      [...reconciliation, "--snapshot", "fixture.json"],
+      [...reconciliation, "--unsafe-demo-mutations"],
+      ["reconcile-local-proposal", "--snapshot", "fixture.json", "--role", "issuer",
+        "--authorization-id", "issuer:local:1", "--submission-journal", "/tmp/journal.json"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+    expect(() => parseTrustRegistryApiCliArgs([
+      "observe-local-proposal", ...localArgs.slice(1), "--role", "issuer",
+      "--authorization-id", "issuer:local:1", "--submission-journal", "/tmp/journal.json",
+    ])).toThrow(/signed local-ledger evidence/u);
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([
@@ -138,6 +164,7 @@ describe("API CLI binding", () => {
     for (const extra of [
       ["--role", "issuer"], ["--authorization-id", "issuer:local:1"],
       ["--api-origin", "http://127.0.0.1:4400"],
+      ["--submission-journal", "/tmp/journal.json"],
     ]) {
       expect(() => parseTrustRegistryApiCliArgs([...localArgs, ...extra]))
         .toThrow(/Observation arguments are not accepted/u);
