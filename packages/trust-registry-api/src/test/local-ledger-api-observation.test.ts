@@ -39,6 +39,7 @@ describe("local API current-read observation (route-level only)", () => {
         sourceFinalizedBlockHash: selection.finalizedBlockHash,
         currentEpochId: snapshot.currentEpoch.epochId,
         counts: { issuer: 2, verifier: 2, auditor: 2, recognition: 2 },
+        resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
         ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
         releaseQualified: false,
       });
@@ -74,7 +75,8 @@ describe("local API current-read observation (route-level only)", () => {
       const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin }))
         .resolves.toMatchObject({ counts: { verifier: 2 },
-          ambiguousLookups: { verifier: 2 }, releaseQualified: false });
+          resolvedLookups: { verifier: 0 }, ambiguousLookups: { verifier: 2 },
+          releaseQualified: false });
       const unsafeResolution: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"

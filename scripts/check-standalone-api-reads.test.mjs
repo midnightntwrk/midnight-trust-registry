@@ -27,8 +27,9 @@ const report = {
   registryId: "registry:local",
   currentEpochId: "epoch:local",
   sourceFinalizedBlockHash: `0x${"e".repeat(64)}`,
-  counts: { issuer: 2, verifier: 1, auditor: 1, recognition: 1 },
-  ambiguousLookups: { issuer: 0, verifier: 1, auditor: 0 },
+  counts: { issuer: 2, verifier: 2, auditor: 1, recognition: 1 },
+  resolvedLookups: { issuer: 1, verifier: 0, auditor: 1, recognition: 1 },
+  ambiguousLookups: { issuer: 0, verifier: 2, auditor: 0 },
   releaseQualified: false,
 };
 const env = { TR_API_REVIEWER_FINGERPRINT: fingerprint };
@@ -57,8 +58,10 @@ test("probes loopback from the verified API container, then rechecks its identit
     registryId: report.registryId, currentEpochId: report.currentEpochId,
     sourceFinalizedBlockHash: report.sourceFinalizedBlockHash,
     counts: report.counts,
+    resolvedLookups: report.resolvedLookups,
     ambiguousLookups: report.ambiguousLookups,
     routeReadback: "same-container-signed-plan-current-only",
+    scope: "Selected by-ID readback and counted successful 200 resolves; ambiguous lookups checked for fail-closed 409 only. Counts include stale records and repeated lookup scopes; this is not independent finality or actor evidence.",
     independentFinality: "not-verified", egressDenied: "not-verified",
     actorJourneys: "not-run", releaseQualified: false,
   });
@@ -132,8 +135,10 @@ test("rejects invalid report time, expired observation, and incomplete topology"
     { ...report, sourceFinalizedBlockHash: undefined },
     { ...report, sourceFinalizedBlockHash: `0x${"0".repeat(64)}` },
     { ...report, counts: { ...report.counts, issuer: -1 } },
+    { ...report, resolvedLookups: undefined },
+    { ...report, resolvedLookups: { ...report.resolvedLookups, verifier: 3 } },
     { ...report, ambiguousLookups: undefined },
-    { ...report, ambiguousLookups: { ...report.ambiguousLookups, verifier: 2 } },
+    { ...report, ambiguousLookups: { ...report.ambiguousLookups, verifier: 3 } },
     { ...report, apiOrigin: "http://api:4400" }]) {
     await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
       observe: async () => topology, execDocker: async () => JSON.stringify(current),

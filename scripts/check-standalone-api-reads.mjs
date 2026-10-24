@@ -58,6 +58,10 @@ function checkedCurrentReadReport(stdout) {
     || typeof report.currentEpochId !== "string" || report.currentEpochId.length === 0
     || !["issuer", "verifier", "auditor", "recognition"].every((role) =>
       Number.isSafeInteger(report.counts?.[role]) && report.counts[role] >= 0)
+    || !["issuer", "verifier", "auditor", "recognition"].every((role) =>
+      Number.isSafeInteger(report.resolvedLookups?.[role])
+      && report.resolvedLookups[role] >= 0
+      && report.resolvedLookups[role] <= report.counts[role])
     || !["issuer", "verifier", "auditor"].every((role) =>
       Number.isSafeInteger(report.ambiguousLookups?.[role])
       && report.ambiguousLookups[role] >= 0
@@ -107,8 +111,10 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     sourceFinalizedBlockHash: current.sourceFinalizedBlockHash,
     currentEpochId: current.currentEpochId,
     counts: current.counts,
+    resolvedLookups: current.resolvedLookups,
     ambiguousLookups: current.ambiguousLookups,
     routeReadback: "same-container-signed-plan-current-only",
+    scope: "Selected by-ID readback and counted successful 200 resolves; ambiguous lookups checked for fail-closed 409 only. Counts include stale records and repeated lookup scopes; this is not independent finality or actor evidence.",
     independentFinality: "not-verified",
     egressDenied: "not-verified",
     actorJourneys: "not-run",

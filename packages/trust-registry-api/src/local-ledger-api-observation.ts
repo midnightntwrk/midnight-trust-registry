@@ -67,6 +67,7 @@ export async function observeLocalApiCurrentReads(input: {
   sourceFinalizedBlockHash: string;
   currentEpochId: string;
   counts: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
+  resolvedLookups: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
   ambiguousLookups: Record<"issuer" | "verifier" | "auditor", number>;
   releaseQualified: false;
   scope: string;
@@ -106,6 +107,7 @@ export async function observeLocalApiCurrentReads(input: {
   }
 
   const counts = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
+  const resolvedLookups = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
   const ambiguousLookups = { issuer: 0, verifier: 0, auditor: 0 };
   for (const role of ["issuer", "verifier", "auditor"] as const) {
     const listProblem = await request(origin, `/v1/authorizations/${role}`, 503, fetchImpl) as Record<string, unknown>;
@@ -160,6 +162,7 @@ export async function observeLocalApiCurrentReads(input: {
       if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
         throw new Error(`Local API ${role} current resolution differs from finalized selection`);
       }
+      if (currentMatches.length === 1) resolvedLookups[role] += 1;
     }
     counts[role] = entries.length;
   }
@@ -208,6 +211,7 @@ export async function observeLocalApiCurrentReads(input: {
     if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
       throw new Error("Local API recognition current resolution differs from finalized selection");
     }
+    if (currentMatches.length === 1) resolvedLookups.recognition += 1;
   }
   counts.recognition = recognitions.length;
 
@@ -230,8 +234,9 @@ export async function observeLocalApiCurrentReads(input: {
     sourceFinalizedBlockHash: selection.finalizedBlockHash,
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
+    resolvedLookups,
     ambiguousLookups,
     releaseQualified: false,
-    scope: "selected by-ID readback and nonambiguous current HTTP resolution; ambiguous lookups verify fail-closed 409 only; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "selected by-ID readback and counted successful current HTTP resolve attempts; ambiguous lookups verify fail-closed 409 only; counts include stale snapshot records and repeated lookup scopes; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }
