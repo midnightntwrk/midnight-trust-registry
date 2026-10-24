@@ -477,6 +477,17 @@ describe("local ledger-bound API source", () => {
         } },
         sequenceToTimestamp,
       });
+      const restartedSource = () => createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256,
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() {
+          readCount += 1;
+          if (readError !== undefined) throw readError;
+          return available ? view : null;
+        } },
+        sequenceToTimestamp,
+      });
       const localServer = createTrustRegistryApiServer({ source });
       server = localServer;
       await new Promise<void>((resolve) => localServer.listen(0, "127.0.0.1", resolve));
@@ -545,25 +556,27 @@ describe("local ledger-bound API source", () => {
         type: expect.stringMatching(/local-ledger-unavailable$/u),
       });
       await writeFile(snapshotPath, raw);
+      const callsAfterMismatch = readCount;
+      expect((await fetch(`${url}/health`)).status).toBe(503);
+      expect(readCount).toBe(callsAfterMismatch);
+      await expect(restartedSource().loadSnapshot()).resolves.toBeDefined();
       const actualPath = join(directory, "actual-snapshot.json");
       await rename(snapshotPath, actualPath);
       await symlink(actualPath, snapshotPath);
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       await rm(snapshotPath);
       await rename(actualPath, snapshotPath);
       view = { ...view, ledger: { ...ledger, governancePolicyCommitment: new Uint8Array(32).fill(7) } };
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
-      expect(readCount).toBe(4);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       view = { ...view, ledger, networkId: "preprod" };
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       view = { ...view, networkId: "undeployed", finalizedBlockHash: `0x${"0".repeat(64)}` };
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       view = { ...view, finalizedBlockHash: `0x${"a".repeat(64)}`,
         contractAddress: `0x${"b".repeat(64)}` };
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       available = false;
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
-      expect(readCount).toBe(8);
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
       readError = new Error("private provider path /run/secrets/local-ledger");
       const unavailable = await fetch(`${url}/v1/registry`);
       expect(unavailable.status).toBe(503);
@@ -571,7 +584,9 @@ describe("local ledger-bound API source", () => {
       expect(problem).toMatchObject({ status: 503, title: "local ledger unavailable" });
       expect(problem).not.toHaveProperty("detail");
       expect(JSON.stringify(problem)).not.toContain("/run/secrets/local-ledger");
-      expect(readCount).toBe(9);
+      const callsBeforeProviderFailure = readCount;
+      await expect(restartedSource().loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(readCount).toBe(callsBeforeProviderFailure + 1);
       const trqp = await fetch(`${url}/v1/trqp/authorizations/query`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -582,7 +597,7 @@ describe("local ledger-bound API source", () => {
       expect(trqp.headers.get("cache-control")).toBe("no-store");
       expect(await trqp.json()).toMatchObject({ status: 501,
         title: "historical decisions are outside the local 0.1.0 profile" });
-      expect(readCount).toBe(9);
+      expect(readCount).toBe(callsBeforeProviderFailure + 1);
     } finally {
       const localServer = server;
       if (localServer !== undefined && localServer.listening) {

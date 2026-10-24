@@ -198,27 +198,37 @@ describe("approved local-ledger API runtime", () => {
     const source = await createApprovedLocalLedgerRuntimeSource(approved);
     const stale = { cause: { message: expect.stringMatching(/do not cover the finalized governance count/u) } };
     await expect(source.loadSnapshot()).rejects.toMatchObject(stale);
-    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(stale);
-    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/operator restart is required/u) },
+    });
+    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(1);
     readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
       verifierKeySha256: { ...verifierKeySha256, first: "4".repeat(64) },
       maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
-    await expect(source.loadSnapshot()).rejects.toMatchObject({
+    await expect((await createApprovedLocalLedgerRuntimeSource(approved)).loadSnapshot()).rejects.toMatchObject({
       cause: { message: expect.stringMatching(/Finalized verifier-key catalog differs/u) },
     });
     readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
       verifierKeySha256,
       maintenanceAuthority: { ...maintenanceAuthority, counter: 1n } });
-    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({
-      cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
+    await expect((await createApprovedLocalLedgerRuntimeSource(approved)).readFinalizedProposalLedger())
+      .rejects.toMatchObject({
+        cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
+      });
+    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+      verifierKeySha256,
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
+    await expect(source.loadSnapshot()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/operator restart is required/u) },
     });
+    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(3);
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(approved.notAfter).getTime() + 1);
       const expired = { cause: { message: expect.stringMatching(/not currently valid/u) } };
       await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
       await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
-      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(4);
+      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
       readerMocks.createReader.mockReset();

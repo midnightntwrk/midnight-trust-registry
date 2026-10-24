@@ -102,6 +102,11 @@ verifier-key bytes, and maintenance authority in the same finalized contract
 read; a key or committee change requires a new manually reviewed signed plan.
 missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
+After any failed finalized read, including a transient provider outage, the
+process stays unavailable until an operator-controlled restart. Restoring old
+snapshot bytes or replaying an older view cannot silently make that process
+healthy again. A restart must use a newly reviewed plan if finalized state
+changed; this in-process latch is not durable rollback protection across restarts.
 Any governed mutation changes the finalized action count, so the current
 signed plan and snapshot become stale until an independently reviewed
 replacement is signed and installed. `/health` fails closed during that gap;

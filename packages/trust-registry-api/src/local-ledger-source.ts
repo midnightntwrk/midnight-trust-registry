@@ -106,23 +106,26 @@ export function createLocalLedgerBoundSource(input: {
       throw new LocalLedgerSourceUnavailableError(cause);
     }
   };
-  let timedOut = false;
+  let requiresRestart = false;
   let pendingRead: ReturnType<typeof readVerifiedState> | undefined;
   const readBoundState = () => {
-    if (timedOut) {
+    if (requiresRestart) {
       return Promise.reject(new LocalLedgerSourceUnavailableError(
-        new Error("Finalized reader timed out; operator restart is required")));
+        new Error("Local finalized read failed; operator restart is required")));
     }
     if (pendingRead) return pendingRead;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         // A provider without cancellation may still be running; never start another read after its timeout.
-        timedOut = true;
+        requiresRestart = true;
         reject(new LocalLedgerSourceUnavailableError(new Error("Finalized reader timed out")));
       }, readTimeoutMs);
     });
-    pendingRead = Promise.race([readVerifiedState(), deadline]).finally(() => {
+    pendingRead = Promise.race([readVerifiedState(), deadline]).catch((error: unknown) => {
+      requiresRestart = true;
+      throw error;
+    }).finally(() => {
       if (timer) clearTimeout(timer);
       pendingRead = undefined;
     });

@@ -1370,7 +1370,11 @@ with injected snapshots is not local deployment or restore evidence.
    authenticate the indexer checkpoint, prove complete transition history, or
    establish verifier/auditor scope preimages from the snapshot alone. Verify
    startup, `/health`, and current actor reads before reopening traffic. A
-   failed rotation leaves the API unavailable; do not
+   failed finalized read latches the API unavailable until a controlled restart,
+   even if old snapshot bytes or the provider later appear healthy. This latch
+   does not persist across restarts, so the operator must reconcile the current
+   finalized checkpoint and plan before restarting. A failed rotation leaves
+   the API unavailable; do not
    restart with a stale plan or a fixture source. Capture this sequence as live
    offline evidence, not as a simulator test. Reject stale, substituted, or
    unavailable trust data rather than silently treating it as valid.
