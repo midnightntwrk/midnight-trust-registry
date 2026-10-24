@@ -55,7 +55,8 @@ describe("public auditor inspection", () => {
     expect(inspection.summary.registryLabel).toBe("local");
     expect(inspection.activeIssuers).toHaveLength(1);
     expect(inspection.activeAuditors).toHaveLength(0);
-    expect(inspection.warnings).toEqual(["Auditor records are temporarily unavailable."]);
+    expect(inspection.unavailableLists).toEqual(["auditor"]);
+    expect(inspection.warnings).toEqual(["Current auditor list is unavailable; no trust decision can be inferred."]);
   });
 
   it("fails soft for a malformed auditor list", async () => {
@@ -68,7 +69,39 @@ describe("public auditor inspection", () => {
       expect(inspection.activeIssuers).toHaveLength(1);
       expect(inspection.activeRecognitions).toHaveLength(1);
       expect(inspection.activeAuditors).toHaveLength(0);
-      expect(inspection.warnings).toEqual(["Auditor records are temporarily unavailable."]);
+      expect(inspection.unavailableLists).toEqual(["auditor"]);
+      expect(inspection.warnings).toEqual(["Current auditor list is unavailable; no trust decision can be inferred."]);
+    }
+  });
+});
+
+describe("local list projection gate", () => {
+  const unavailable = () => Response.json({
+    type: "https://registry.example/problems/local-list-projection-unavailable",
+    status: 503,
+  }, { status: 503 });
+
+  it("retains the summary while marking every gated list unavailable", async () => {
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) =>
+      new URL(String(input)).pathname === "/v1/registry/summary"
+        ? Response.json({ registryLabel: "local" }) : unavailable()) as typeof fetch);
+    const inspection = await client.loadPublicInspection();
+    expect(inspection.summary.registryLabel).toBe("local");
+    expect(inspection.unavailableLists).toEqual(["issuer", "verifier", "auditor", "recognition"]);
+    expect(inspection.warnings).toHaveLength(4);
+    expect(inspection.activeIssuers).toEqual([]);
+    expect(inspection.activeRecognitions).toEqual([]);
+  });
+
+  it("does not downgrade unexpected issuer errors or malformed lists", async () => {
+    for (const response of [Response.json({ status: 503, type: "other" }, { status: 503 }), Response.json({ entries: null })]) {
+      const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
+        if (path === "/v1/authorizations/issuer") return response;
+        return Response.json({ entries: [] });
+      }) as typeof fetch);
+      await expect(client.loadPublicInspection()).rejects.toThrow();
     }
   });
 });

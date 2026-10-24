@@ -57,6 +57,14 @@ export class TrustRegistryApplicantPortalApiError extends Error {
   }
 }
 
+const isUnavailableLocalList = (error: unknown): boolean =>
+  error instanceof TrustRegistryApplicantPortalApiError
+    && error.problem.status === 503
+    && error.problem.type?.endsWith("/local-list-projection-unavailable") === true;
+
+const listWarning = (role: string): string =>
+  `Current ${role} list is unavailable; no trust decision can be inferred.`;
+
 export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
@@ -146,32 +154,52 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
+    const localList = async <T>(path: string): Promise<T | null> => {
+      try {
+        return await this.request<T>(path);
+      } catch (error) {
+        if (isUnavailableLocalList(error)) return null;
+        throw error;
+      }
+    };
     const [summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
       await Promise.all([
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active")
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active")
           .then((value) => ({ value, failed: false as const }))
           .catch(() => ({ failed: true as const })),
-        this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
+        localList<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
       ]);
 
     const nowMs = Date.now();
     const auditorEntries = auditorResult.failed || !isRenderableAuditorList(auditorResult.value)
       ? null : auditorResult.value.entries;
+    if (activeIssuers !== null && !Array.isArray(activeIssuers.entries)) throw new Error("Issuer list response was invalid.");
+    if (activeVerifiers !== null && !Array.isArray(activeVerifiers.entries)) throw new Error("Verifier list response was invalid.");
+    if (activeRecognitions !== null && !Array.isArray(activeRecognitions.entries)) throw new Error("Recognition list response was invalid.");
+    const unavailableLists = [
+      ...(activeIssuers === null ? ["issuer" as const] : []),
+      ...(activeVerifiers === null ? ["verifier" as const] : []),
+      ...(auditorEntries === null ? ["auditor" as const] : []),
+      ...(activeRecognitions === null ? ["recognition" as const] : []),
+    ];
     return {
       summary,
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
-      activeIssuers: activeIssuers.entries.filter((entry) =>
-        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
-      activeVerifiers: activeVerifiers.entries.filter((entry) =>
-        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
-      activeRecognitions: activeRecognitions.entries.filter((entry) =>
-        isCurrentlyActive(entry.recognition, entry.recognition?.effectiveFrom, nowMs)),
-      ...(auditorEntries === null ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
+      activeIssuers: activeIssuers?.entries.filter((entry) =>
+        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
+      activeVerifiers: activeVerifiers?.entries.filter((entry) =>
+        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
+      activeRecognitions: activeRecognitions?.entries.filter((entry) =>
+        isCurrentlyActive(entry.recognition, entry.recognition?.effectiveFrom, nowMs)) ?? [],
+      ...(unavailableLists.length === 0 ? {} : {
+        unavailableLists,
+        warnings: unavailableLists.map(listWarning),
+      }),
     };
   }
 

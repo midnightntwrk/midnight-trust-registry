@@ -33,6 +33,7 @@ export type PublicInspection = {
   activeRecognitions: readonly PublicRecognitionEntry[];
   activeVerifiers: readonly PublicVerifierEntry[];
   summary: TrustRegistryApiSummary;
+  unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];
   warnings?: readonly string[];
 };
 

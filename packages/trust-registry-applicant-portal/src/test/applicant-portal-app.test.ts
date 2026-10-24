@@ -4,6 +4,26 @@ import { describe, expect, it, vi } from "vitest";
 import { canUsePrivateEvidenceHost, createApplicantPortalApp, escapeHtml } from "../app.js";
 
 describe("trust registry applicant portal app", () => {
+  it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> =>
+      new URL(String(input)).pathname === "/v1/registry/summary"
+        ? Response.json({ registryLabel: "local", currentEpochId: "epoch:1" })
+        : Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 }));
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/applicant/"),
+      storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain("Current issuer list is unavailable"));
+    expect(root.textContent).toContain("local");
+    expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
+    expect(root.textContent).not.toContain("No active entries in this lane yet.");
+    expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
+    expect(root.querySelectorAll(".metric strong")[5]?.textContent).toBe("n/a");
+    expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
+  });
   it("uses the API origin when served from the packaged applicant path", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);

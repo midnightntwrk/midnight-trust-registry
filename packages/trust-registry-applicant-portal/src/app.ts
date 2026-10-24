@@ -1059,13 +1059,16 @@ export const createApplicantPortalApp = (
   const renderInspectionLane = (
     title: string,
     cards: readonly ReturnType<typeof toInspectionCards>[number][],
+    unavailable: boolean,
   ): string => `
     <section class="lane">
       <div class="lane-header">
         <h2>${escapeHtml(title)}</h2>
-        <span>${cards.length.toString()} active</span>
+        <span>${unavailable ? "unavailable" : `${cards.length.toString()} active`}</span>
       </div>
-      ${cards.length === 0
+      ${unavailable
+        ? `<div class="empty-state"><p>Current list unavailable. Do not infer trust from this lane.</p></div>`
+        : cards.length === 0
         ? `<div class="empty-state"><p>No active entries in this lane yet.</p></div>`
         : cards.map((card) => `
           <article class="card">
@@ -1122,10 +1125,10 @@ export const createApplicantPortalApp = (
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
               <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.activeIssuers.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.activeVerifiers.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${state.inspection?.warnings?.length ? "n/a" : (state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.activeRecognitions.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
+              <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
+              <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
+              <div class="metric"><span>Recognitions</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") ? "n/a" : state.inspection.activeRecognitions.length.toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
@@ -1385,10 +1388,10 @@ export const createApplicantPortalApp = (
             `}
           </section>
           <div class="lanes">
-            ${renderInspectionLane("Active issuers", issuerCards)}
-            ${renderInspectionLane("Active verifiers", verifierCards)}
-            ${renderInspectionLane("Active auditors", auditorCards)}
-            ${renderInspectionLane("Active recognitions", recognitionCards)}
+            ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
+            ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
+            ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
+            ${renderInspectionLane("Active recognitions", recognitionCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") === true)}
           </div>
         </section>
       </main>
