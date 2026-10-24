@@ -82,15 +82,37 @@ describe("local list projection gate", () => {
   }, { status: 503 });
 
   it("retains the summary while marking every gated list unavailable", async () => {
-    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) =>
-      new URL(String(input)).pathname === "/v1/registry/summary"
-        ? Response.json({ registryLabel: "local" }) : unavailable()) as typeof fetch);
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      return path === "/v1/registry/summary" ? Response.json({ registryLabel: "local", registryId: "registry:local" }) : unavailable();
+    }) as typeof fetch);
     const inspection = await client.loadPublicInspection();
     expect(inspection.summary.registryLabel).toBe("local");
+    expect(inspection.sourceMode).toBe("local-ledger");
     expect(inspection.unavailableLists).toEqual(["issuer", "verifier", "auditor", "recognition"]);
     expect(inspection.warnings).toHaveLength(4);
     expect(inspection.activeIssuers).toEqual([]);
     expect(inspection.activeRecognitions).toEqual([]);
+  });
+
+  it("rejects a local projection gate without confirmed local mode", async () => {
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace" });
+      return path === "/v1/registry/summary" ? Response.json({ registryLabel: "local" }) : unavailable();
+    }) as typeof fetch);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/confirmed local-ledger/u);
+  });
+
+  it("rejects a local health and summary registry mismatch", async () => {
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:other" });
+      return path === "/v1/registry/summary"
+        ? Response.json({ registryLabel: "local", registryId: "registry:local" }) : unavailable();
+    }) as typeof fetch);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/do not match/u);
   });
 
   it("does not downgrade unexpected issuer errors or malformed lists", async () => {

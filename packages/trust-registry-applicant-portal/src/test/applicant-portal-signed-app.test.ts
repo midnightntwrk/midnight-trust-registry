@@ -46,6 +46,7 @@ describe("applicant signed browser journey", () => {
     });
     await vi.waitFor(() => expect(root.textContent).toContain("Signed issuer or verifier submission"));
     expect(root.querySelector<HTMLButtonElement>("[data-signed-submit] button")?.disabled).toBe(true);
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>("[data-signed-context]")).not.toBeNull());
     root.querySelector<HTMLButtonElement>("[data-signed-context]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(context.expectedWorkspaceCommitment));
     expect(calls.find((call) => call.path === "/v1/registry/mutation-context")?.init).toEqual({ cache: "no-store" });
@@ -73,6 +74,7 @@ describe("applicant signed browser journey", () => {
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch,
     });
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>("[data-signed-context]")).not.toBeNull());
     root.querySelector<HTMLButtonElement>("[data-signed-context]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(context.expectedWorkspaceCommitment));
     const form = root.querySelector<HTMLFormElement>("[data-signed-submit]")!;

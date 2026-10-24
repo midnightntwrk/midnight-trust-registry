@@ -4,6 +4,9 @@ import type {
   TrustRegistryApiAuthorizationEvidenceEvaluationResponse,
   TrustRegistryApiEvaluateAuthorizationRequest,
   TrustRegistryApiEvaluateRecognitionRequest,
+  TrustRegistryApiHealthResponse,
+  TrustRegistryApiResolveAuthorizationRequest,
+  TrustRegistryApiResolveRecognitionRequest,
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiRecognitionEvidenceEvaluationResponse,
@@ -154,16 +157,21 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
+    let localProjectionGated = false;
     const localList = async <T>(path: string): Promise<T | null> => {
       try {
         return await this.request<T>(path);
       } catch (error) {
-        if (isUnavailableLocalList(error)) return null;
+        if (isUnavailableLocalList(error)) {
+          localProjectionGated = true;
+          return null;
+        }
         throw error;
       }
     };
-    const [summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
+    const [health, summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
       await Promise.all([
+        this.request<TrustRegistryApiHealthResponse>("/health"),
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
         localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
         localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
@@ -185,8 +193,16 @@ export class TrustRegistryApplicantPortalClient {
       ...(auditorEntries === null ? ["auditor" as const] : []),
       ...(activeRecognitions === null ? ["recognition" as const] : []),
     ];
+    if (localProjectionGated && health.sourceMode !== "local-ledger") {
+      throw new Error("Local list projection gate requires a confirmed local-ledger API mode.");
+    }
+    if (health.sourceMode === "local-ledger"
+      && (health.status !== "ok" || health.registryId !== summary.registryId)) {
+      throw new Error("Local API health and registry summary do not match.");
+    }
     return {
       summary,
+      ...(health.sourceMode === "local-ledger" ? { sourceMode: "local-ledger" as const } : {}),
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
@@ -201,6 +217,28 @@ export class TrustRegistryApplicantPortalClient {
         warnings: unavailableLists.map(listWarning),
       }),
     };
+  }
+
+  async loadCurrentAuthorization(
+    request: TrustRegistryApiResolveAuthorizationRequest,
+  ): Promise<TrustRegistryApiAuthorizationListResponse["entries"][number]> {
+    return this.request("/v1/authorizations/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
+  }
+
+  async loadCurrentRecognition(
+    request: TrustRegistryApiResolveRecognitionRequest,
+  ): Promise<TrustRegistryApiRecognitionListResponse["entries"][number]> {
+    return this.request("/v1/recognitions/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
   }
 
   async submitApplication(

@@ -7,10 +7,13 @@ describe("trust registry applicant portal app", () => {
   it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> =>
-      new URL(String(input)).pathname === "/v1/registry/summary"
-        ? Response.json({ registryLabel: "local", currentEpochId: "epoch:1" })
-        : Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 }));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      return path === "/v1/registry/summary"
+        ? Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" })
+        : Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 });
+    });
     createApplicantPortalApp(root, {
       initialUrl: new URL("https://registry.example/applicant/"),
       storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
@@ -23,6 +26,70 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
     expect(root.querySelectorAll(".metric strong")[5]?.textContent).toBe("n/a");
     expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
+    expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
+    expect(root.querySelector("[data-historical-authorization]")).toBeNull();
+    expect(root.querySelector("[data-signed-submit]")).toBeNull();
+    expect(root.querySelector("[data-submit-form]")).toBeNull();
+  });
+
+  it("queries exact current local scopes and rejects a substituted API result", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const subjectDid = "did:midnight:undeployed:issuer";
+    const resourceId = `tr:issuer-resource:v1:${"a".repeat(64)}`;
+    const recognizedAuthorityDid = "did:web:authority.example";
+    let substitute = false;
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, body: init?.body === undefined ? null : JSON.parse(String(init.body)) });
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" });
+      if (path === "/v1/authorizations/resolve") return Response.json({ label: "issuer", authorization: {
+        role: "issuer", subjectDid: substitute ? "did:midnight:undeployed:other" : subjectDid,
+        resourceId, status: "active",
+      } });
+      if (path === "/v1/recognitions/resolve") return Response.json({ label: "authority", recognition: {
+        recognizedAuthorityDid, recognizedRegistryId: "external:registry", status: "active",
+        scope: { resourceType: "credential-family", resourceId: "degree", context: { purpose: "assurance" } },
+      } });
+      return Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 });
+    });
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/applicant/"),
+      storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.querySelector("[data-current-authorization]")).not.toBeNull());
+    const submitAuthorization = () => {
+      const form = root.querySelector<HTMLFormElement>("[data-current-authorization]")!;
+      form.querySelector<HTMLInputElement>("[name='subjectDid']")!.value = subjectDid;
+      form.querySelector<HTMLInputElement>("[name='resourceId']")!.value = resourceId;
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+    submitAuthorization();
+    await vi.waitFor(() => expect(root.querySelector("[data-current-authorization-result]")).not.toBeNull());
+    expect(calls.find((call) => call.path === "/v1/authorizations/resolve")?.body)
+      .toEqual({ role: "issuer", subjectDid, resourceId });
+    expect(root.textContent).toContain("Unverified current API claim");
+
+    substitute = true;
+    submitAuthorization();
+    await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope"));
+    expect(root.querySelector("[data-current-authorization-result]")).toBeNull();
+
+    const recognition = root.querySelector<HTMLFormElement>("[data-current-recognition]")!;
+    recognition.querySelector<HTMLInputElement>("[name='recognizedAuthorityDid']")!.value = recognizedAuthorityDid;
+    recognition.querySelector<HTMLInputElement>("[name='recognizedRegistryId']")!.value = "external:registry";
+    recognition.querySelector<HTMLInputElement>("[name='scopeResourceType']")!.value = "credential-family";
+    recognition.querySelector<HTMLInputElement>("[name='scopeResourceId']")!.value = "degree";
+    recognition.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = '{"purpose":"assurance"}';
+    recognition.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(root.querySelector("[data-current-recognition-result]")).not.toBeNull());
+    expect(calls.find((call) => call.path === "/v1/recognitions/resolve")?.body).toEqual({
+      recognizedAuthorityDid, recognizedRegistryId: "external:registry",
+      scopeResourceType: "credential-family", scopeResourceId: "degree", scopeContext: { purpose: "assurance" },
+    });
   });
   it("uses the API origin when served from the packaged applicant path", async () => {
     const root = document.createElement("div");
