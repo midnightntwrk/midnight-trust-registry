@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indexer genesis, binds the SDK provider pair, and owns a non-reconnecting
   Polkadot transport with bounded connection/submission attempts. Bound the
   SDK's later indexer transaction read on the same provider instance; an
-  expired read or uncertain broadcast poisons that provider instance until
-  journal reconciliation and process restart. Live qualification still
+  expired read or uncertain broadcast quarantines its approved deployment
+  target across provider instances until journal reconciliation and process
+  restart. Live qualification still
   blocks API write-path wiring
 - exercise local issuer submission with the real private journal across
   restart and ambiguous SDK responses; this remains mocked-network evidence

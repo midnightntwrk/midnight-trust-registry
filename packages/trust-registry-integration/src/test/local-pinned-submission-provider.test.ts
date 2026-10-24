@@ -21,12 +21,13 @@ vi.mock("@midnight-ntwrk/midnight-js-indexer-public-data-provider", () => ({
 }));
 
 const contractAddress = `0x${"a".repeat(64)}`;
-const genesisHash = `0x${"b".repeat(64)}`;
-const config = {
+let genesisHash = `0x${"b".repeat(64)}`;
+let config = {
   nodeWsUrl: "ws://node:9944", indexerHttpUrl: "http://node:8088/graphql",
   indexerWsUrl: "ws://node:8088/graphql/ws", allowedHosts: ["node"],
   contractAddress, expectedGenesisHash: genesisHash,
 };
+let setupNumber = 0;
 const transaction = {
   identifiers: () => ["tx-issuer"], serialize: () => new Uint8Array([1, 2, 3]),
 } as unknown as FinalizedTransaction;
@@ -41,6 +42,8 @@ describe("pinned local submission provider", () => {
   let connected: boolean;
 
   beforeEach(() => {
+    genesisHash = `0x${(++setupNumber).toString(16).padStart(64, "b")}`;
+    config = { ...config, expectedGenesisHash: genesisHash };
     observedGenesis = genesisHash;
     indexedGenesis = genesisHash.slice(2);
     connected = true;
@@ -95,6 +98,7 @@ describe("pinned local submission provider", () => {
 
   it("bounds the SDK indexer wait while preserving other provider methods", async () => {
     const pinned = createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 10 });
+    const sibling = createPinnedLocalSubmissionProvider(config);
     await expect(pinned.publicDataProvider.queryContractState(contractAddress)).resolves.toBeNull();
     expect(queryContractState).toHaveBeenCalledWith(contractAddress);
     await expect(pinned.publicDataProvider.watchForTxData("tx-issuer"))
@@ -105,8 +109,15 @@ describe("pinned local submission provider", () => {
       .rejects.toThrow(/reconcile before retry/u);
     expect(watchForTxData).toHaveBeenCalledWith("tx-stuck");
     expect(() => pinned.publicDataProvider.queryContractState(contractAddress)).toThrow(/restart/u);
+    expect(() => sibling.publicDataProvider.queryContractState(contractAddress)).toThrow(/restart/u);
+    expect(() => createPinnedLocalSubmissionProvider({ ...config, nodeWsUrl: "ws://node:9945" }))
+      .toThrow(/restart/u);
+    expect(() => createPinnedLocalSubmissionProvider({
+      ...config, contractAddress: `0x${"d".repeat(64)}`,
+    })).not.toThrow();
     await expect(pinned.publicDataProvider.watchForTxData("tx-other")).rejects.toThrow(/restart/u);
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
+    expect(() => createPinnedLocalSubmissionProvider(config)).toThrow(/restart/u);
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).rejects.toThrow(/restart/u);
@@ -151,10 +162,13 @@ describe("pinned local submission provider", () => {
   it("treats a broadcast without a finality callback as ambiguous", async () => {
     sendMnTransaction.mockImplementation(() => ({ send: async () => vi.fn() }));
     const pinned = createPinnedLocalSubmissionProvider({ ...config, submissionDeadlineMs: 10 });
+    const sibling = createPinnedLocalSubmissionProvider(config);
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/deadline/u);
     expect(sendMnTransaction).toHaveBeenCalledOnce();
     expect(mocks.disconnect).toHaveBeenCalled();
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
+    await expect(sibling.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
+    expect(() => createPinnedLocalSubmissionProvider(config)).toThrow(/restart/u);
     expect(sendMnTransaction).toHaveBeenCalledOnce();
   });
 

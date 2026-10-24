@@ -130,12 +130,12 @@ independent finalized reader. This adapter bounds Midnight.js's later
 `watchForTxData` call on the same indexer provider instance, but the SDK does
 not expose cancellation for that underlying watch. A deadline therefore
 returns an ambiguous outcome, leaves the journal reservation in place, and
-poisons the adapter instance so new calls through it fail until
-reconciliation and a controlled process restart. A submission whose
-broadcast was attempted but not confirmed also poisons that instance.
-This guard is instance-local: callers must not construct a replacement
-adapter in the same process after an uncertain outcome, and already-open
-indexer streams are not canceled by it.
+quarantines the approved genesis/contract target within the process so both
+existing and newly constructed adapters fail until reconciliation and a
+controlled process restart. A submission whose broadcast was attempted but
+not confirmed quarantines the same target. This guard is process-local:
+another process is not stopped by it, and already-open indexer streams are
+not canceled.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into

@@ -26,6 +26,8 @@ type SubmissionExtrinsic = {
   send(callback: (result: SubmissionStatus) => void): Promise<() => void>;
 };
 
+const uncertainDeployments = new Set<string>();
+
 export type PinnedLocalSubmissionConfig = {
   nodeWsUrl: string;
   indexerHttpUrl: string;
@@ -122,13 +124,14 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
   const connectionDeadlineMs = boundedDeadline(config.connectionDeadlineMs, 30_000);
   const submissionDeadlineMs = boundedDeadline(config.submissionDeadlineMs, 150_000);
   const indexerWatchDeadlineMs = boundedDeadline(config.indexerWatchDeadlineMs, 120_000);
-  const rawPublicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
-  let requiresRestart = false;
+  const deploymentKey = `${config.expectedGenesisHash}:${config.contractAddress}`;
   const assertUsable = (): void => {
-    if (requiresRestart) {
+    if (uncertainDeployments.has(deploymentKey)) {
       throw new Error("Local submission outcome is uncertain; reconcile and restart before further use");
     }
   };
+  assertUsable();
+  const rawPublicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
   const boundedWatch: PublicDataProvider["watchForTxData"] = async (txId) => {
     assertUsable();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -145,7 +148,7 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
       assertUsable();
       return result;
     } catch (error) {
-      requiresRestart = true;
+      uncertainDeployments.add(deploymentKey);
       throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
@@ -250,7 +253,7 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
         assertUsable();
         return result;
       } catch (error) {
-        if (attemptedBroadcast) requiresRestart = true;
+        if (attemptedBroadcast) uncertainDeployments.add(deploymentKey);
         throw error;
       }
     },
