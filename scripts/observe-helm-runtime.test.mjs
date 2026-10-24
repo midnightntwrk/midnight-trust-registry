@@ -478,7 +478,15 @@ test("binds namespace Services and additive NetworkPolicies to the signed render
   const check = () => validateHelmRenderedNetworkBoundary(renderedBytes,
     actualMappingBytes, actualScopeBytes, resources);
   assert.equal(check().services.length, 6);
-  assert.equal(check().networkPolicies.length, 9);
+  assert.equal(check().networkPolicies.length, 11);
+  const narrowedRender = renderedBytes.toString("utf8").replace(
+    "podSelector: {}",
+    "podSelector:\n    matchLabels:\n      app.kubernetes.io/instance: rc",
+  );
+  const narrowedScope = Buffer.from(`${JSON.stringify({ ...JSON.parse(actualScopeBytes),
+    renderedManifestSha256: hash(Buffer.from(narrowedRender)) })}\n`);
+  assert.throws(() => validateHelmRenderedNetworkBoundary(Buffer.from(narrowedRender),
+    actualMappingBytes, narrowedScope, resources), /strict namespace-wide default-deny/u);
   const service = resources.items.find((item) => item.kind === "Service");
   service.spec.type = "LoadBalancer";
   assert.throws(check, /Live Service differs/u);
@@ -581,7 +589,7 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
         spec: { podSelector: { matchLabels: { "app.kubernetes.io/component": name } },
           policyTypes: ["Ingress"] } });
     }
-    for (const name of ["indexer", "api"]) {
+    for (const name of ["indexer", "api", "operator", "actor"]) {
       networkResources.items.push({ kind: "NetworkPolicy",
         metadata: { name: `tr-rc-tr-${name}-egress`, namespace: "trust-registry" },
         spec: { podSelector: { matchLabels: { "app.kubernetes.io/component": name } },
@@ -589,8 +597,7 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
     }
     networkResources.items.push({ kind: "NetworkPolicy",
       metadata: { name: "tr-rc-tr-default-deny", namespace: "trust-registry" },
-      spec: { podSelector: { matchLabels: { "app.kubernetes.io/instance": "tr-rc",
-        "app.kubernetes.io/part-of": "trust-registry-standalone" } },
+      spec: { podSelector: {},
       policyTypes: ["Ingress", "Egress"] } });
     const renderedBytes = Buffer.from([...workloads.items.filter((item) =>
       item.kind === "Deployment"), ...networkResources.items]
@@ -618,7 +625,7 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
       verifyPlanSignature: () => "approved", run };
     const observed = await observeSignedHelmRuntime(paths, dependencies);
     assert.equal(observed.workloads.length, 6);
-    assert.equal(observed.networkBoundary.networkPolicies.length, 9);
+    assert.equal(observed.networkBoundary.networkPolicies.length, 11);
     assert.equal(observed.apiPlanBinding.planSha256,
       hash(await readFile(apiPlanPath)));
     assert.equal(observed.apiPlanBinding.apiApprovalSecret.secretUid, "secret-1");

@@ -351,16 +351,26 @@ actual cluster.
 
 ## Isolation and operations
 
-The default NetworkPolicy denies ingress and egress for chart pods. Narrow
-rules permit API-to-node/indexer, indexer-to-node, and selected DNS access.
+The default NetworkPolicy denies ingress and egress for **every Pod in the
+dedicated namespace**, including operator and actor test Pods. Do not install
+this chart in a shared namespace: the policy will also isolate unrelated Pods.
+Narrow rules permit API-to-node/indexer, indexer-to-node, operator-to-local
+services, actor-to-local services in runtime phase, and selected DNS access.
 Actor-labelled pods cannot reach node RPC; only the API, indexer, and
 operator-labelled pods can. Operator access to the dev-preset RPC is powerful
-and must be restricted by namespace RBAC.
+and must be restricted by namespace RBAC and Pod-label admission controls.
 In-namespace bootstrap/actor pods must carry
 `trust-registry.midnight.network/role=operator` or `=actor` for service ingress.
 Namespace RBAC must prevent untrusted users from assigning those labels.
+Pod creation rights alone permit callers to choose labels unless admission
+enforces the trusted actor/operator identity; verify that control on the real
+cluster before using the role labels as a security boundary.
 The DNS selectors are configurable because CNI/CoreDNS labels differ by
-cluster. No rule grants public-IP egress. Port-forward, host networking,
+cluster. If CoreDNS forwards external queries, DNS itself remains an egress
+channel; configure and test a local-only resolver before claiming offline
+runtime. Local DID/VC/status authority traffic needs a separately reviewed
+exact policy and must not be inferred from these chart rules. No rule grants
+public-IP egress. Port-forward, host networking,
 node-local agents, and CNI behavior require real-cluster verification.
 The API ingress rule admits only same-namespace pods labelled as an actor or
 operator. A controller in another namespace cannot reach the API without a

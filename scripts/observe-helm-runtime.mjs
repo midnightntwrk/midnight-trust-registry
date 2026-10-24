@@ -551,7 +551,8 @@ export function validateHelmRenderedNetworkBoundary(renderedBytes, mappingBytes,
   const expectedPolicies = [`${scope.releaseName}-tr-default-deny`,
     ...mapping.images.map((image) =>
       `${scope.releaseName}-tr-${COMPONENTS.get(image.role)}-ingress`),
-    `${scope.releaseName}-tr-indexer-egress`, `${scope.releaseName}-tr-api-egress`];
+    `${scope.releaseName}-tr-indexer-egress`, `${scope.releaseName}-tr-api-egress`,
+    `${scope.releaseName}-tr-operator-egress`, `${scope.releaseName}-tr-actor-egress`];
   const renderedServices = documents.filter((item) => item.kind === "Service");
   const renderedPolicies = documents.filter((item) => item.kind === "NetworkPolicy");
   const liveServices = resources.items.filter((item) => item.kind === "Service");
@@ -567,11 +568,10 @@ export function validateHelmRenderedNetworkBoundary(renderedBytes, mappingBytes,
   const defaultDeny = renderedPolicies.find((item) =>
     item.metadata.name === `${scope.releaseName}-tr-default-deny`);
   if (!isDeepStrictEqual(defaultDeny.spec, {
-    podSelector: { matchLabels: { "app.kubernetes.io/instance": scope.releaseName,
-      "app.kubernetes.io/part-of": "trust-registry-standalone" } },
+    podSelector: {},
     policyTypes: ["Ingress", "Egress"],
   })) {
-    throw new Error("Signed Helm render has no strict release-wide default-deny policy");
+    throw new Error("Signed Helm render has no strict namespace-wide default-deny policy");
   }
   for (const expected of renderedServices) {
     const actual = liveServices.find((item) => item.metadata.name === expected.metadata.name);
