@@ -2355,3 +2355,12 @@ valid again, bind the signed decision to the exact journal attempt under lock,
 and prevent direct writers from substituting an unverified sequence context.
 The operator recovery-evidence policy and independent security review remain
 open; no journal release is implemented or authorized by this note.
+
+On 2026-10-24, #219 and #90 remained open. The sibling VC checkout's
+`@midnight-ntwrk/midnight-did-credentials-status-registry` manifest still
+declared `private: true`; a registry lookup for that exact package returned
+404 to this client. This does not prove the package is unavailable to every
+operator, but it does not provide a published VC-owned live status-authority
+adapter for the Trust Registry RC. Do not copy the sibling's private source
+into this repository or count existing simulator, portal, or API tests as
+deployed offline DID/VC/status actor-journey evidence.
