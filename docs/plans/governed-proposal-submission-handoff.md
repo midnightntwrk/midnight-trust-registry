@@ -158,6 +158,8 @@ non-inclusion proof, operator decision, or recovery operation is implemented.
 Legacy reservations without the context must remain blocked unless a
 separately reviewed proof applies; a null indexer read or elapsed time alone
 is never enough.
+Direct journal writers that omit context receive the same fail-closed legacy
+treatment; the five governed API submit routes all supply it.
 Once a valid receipt is durably recorded as `submitted`, the global reservation
 pause ends; the same authorization still cannot be submitted again, and only
 a matching finalized observation can mark it `observed`.

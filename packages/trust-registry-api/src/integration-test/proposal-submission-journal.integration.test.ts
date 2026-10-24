@@ -117,6 +117,14 @@ describe("private governed proposal submission journal", () => {
       state: "reserved", reservationContext,
     });
     expect(JSON.parse(await readFile(path, "utf8")).attempts[0].reservationContext).toEqual(reservationContext);
+    expect(await reopened.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({
+      state: "observed", reservationContext,
+    });
+    expect(await reopened.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await new FileProposalSubmissionJournal(path).read("issuer", authorizationId))
+      .toMatchObject({ state: "observed", reservationContext });
   });
 
   it("rejects invalid signed action context before creating a reservation", async () => {
@@ -133,6 +141,14 @@ describe("private governed proposal submission journal", () => {
       attempts: [{ role: "issuer", authorizationId, evidenceCommitment,
         state: "reserved", eventHash: null,
         reservationContext: { ...reservationContext, actionSequence: (1n << 64n).toString() } }],
+    }), { mode: 0o600 });
+    await expect(journal.read("issuer", authorizationId)).rejects
+      .toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      attempts: [{ role: "issuer", authorizationId, evidenceCommitment,
+        state: "reserved", eventHash: null,
+        reservationContext: { ...reservationContext, actionSequence: "not-a-sequence" } }],
     }), { mode: 0o600 });
     await expect(journal.read("issuer", authorizationId)).rejects
       .toBeInstanceOf(InvalidProposalSubmissionJournalError);

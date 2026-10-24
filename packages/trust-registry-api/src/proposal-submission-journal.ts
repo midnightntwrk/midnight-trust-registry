@@ -15,8 +15,9 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVES = 64;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
-const ActionSequenceSchema = z.string().regex(/^(0|[1-9][0-9]{0,19})$/u)
-  .refine((value) => BigInt(value) < (1n << 64n));
+const CanonicalActionSequencePattern = /^(0|[1-9][0-9]{0,19})$/u;
+const ActionSequenceSchema = z.string()
+  .refine((value) => CanonicalActionSequencePattern.test(value) && BigInt(value) < (1n << 64n));
 const ProposalRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"]);
 const ReservationContextSchema = z.strictObject({
   actionSequence: ActionSequenceSchema,
