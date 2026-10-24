@@ -3,13 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import { canUsePrivateEvidenceHost, createApplicantPortalApp, escapeHtml } from "../app.js";
 
+const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
+  localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+  generatedAt: "2026-10-25T00:00:00Z" };
+
 describe("trust registry applicant portal app", () => {
   it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
     const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       const path = new URL(String(input)).pathname;
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      if (path === "/health") return Response.json(localHealth);
       return path === "/v1/registry/summary"
         ? Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" })
         : Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 });
@@ -43,13 +47,15 @@ describe("trust registry applicant portal app", () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       calls.push({ path, body: init?.body === undefined ? null : JSON.parse(String(init.body)) });
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      if (path === "/health") return Response.json(localHealth);
       if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" });
       if (path === "/v1/authorizations/resolve") return Response.json({ label: "issuer", authorization: {
+        registryId: "registry:local",
         role: "issuer", subjectDid: substitute ? "did:midnight:undeployed:other" : subjectDid,
         resourceId, status: "active",
       } });
       if (path === "/v1/recognitions/resolve") return Response.json({ label: "authority", recognition: {
+        registryId: "registry:local",
         recognizedAuthorityDid, recognizedRegistryId: "external:registry", status: "active",
         scope: { resourceType: "credential-family", resourceId: "degree", context: { purpose: "assurance" } },
       } });

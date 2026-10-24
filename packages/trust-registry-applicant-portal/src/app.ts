@@ -680,7 +680,7 @@ export const createApplicantPortalApp = (
     setState({ currentAuthorizationQuery: query, currentAuthorizationBusy: true,
       currentAuthorizationResult: undefined, currentAuthorizationError: undefined });
     try {
-      const result = await client().loadCurrentAuthorization(query);
+      const result = await client().loadCurrentAuthorization(query, state.inspection!);
       if (requestId !== currentAuthorizationRequestId || apiBase !== state.apiBase) return;
       if (result?.authorization?.role !== query.role
         || result.authorization.subjectDid !== query.subjectDid
@@ -709,7 +709,7 @@ export const createApplicantPortalApp = (
     setState({ currentRecognitionQuery: query, currentRecognitionBusy: true,
       currentRecognitionResult: undefined, currentRecognitionError: undefined });
     try {
-      const result = await client().loadCurrentRecognition(query);
+      const result = await client().loadCurrentRecognition(query, state.inspection!);
       if (requestId !== currentRecognitionRequestId || apiBase !== state.apiBase) return;
       const recognition = result?.recognition;
       if (recognition?.recognizedAuthorityDid !== query.recognizedAuthorityDid

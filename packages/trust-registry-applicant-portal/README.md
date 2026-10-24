@@ -8,7 +8,10 @@ Current scope:
 - inspect current active issuer, verifier, auditor, and recognition records
 - in confirmed local-ledger mode, replace incomplete active-list displays with
   explicit unavailable states and offer exact current authorization and
-  recognition lookups. The returned record is an unverified API claim, not
+  recognition lookups. The portal checks health first and does not call list
+  routes in this mode; each exact lookup requires the same signed-plan digest,
+  registry, and stable reported checkpoint around the response. The returned
+  record is still an unverified API claim, not
   independent finalized-state evidence. Historical export, workspace-signed
   submission, and label-only demo controls are hidden in this mode; the local
   0.1.0 profile supports current decisions only.

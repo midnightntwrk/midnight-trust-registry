@@ -67,13 +67,18 @@ the finalized current-scope indexes; superseded IDs return 404. The route
 observation probe checks those fail-closed responses. Full API tests passed
 at the unpublished current-only head, but these are injected-source tests,
 not independent node/indexer inclusion proof or deployed offline API evidence.
-The unpublished admin-console slice at signed/DCO `da2949f` checks local API
+The unpublished admin-console stack through signed/DCO `238b4bd` checks local API
 health before showing a current-only exact-ID lookup, hides fixture mutation
 controls and workspace signing in local-ledger mode, and rejects a changed
-checkpoint, mismatched record, or stale in-flight lookup. Its 22 focused UI
+checkpoint, mismatched record, or stale in-flight lookup. Its 24 focused UI
 tests use mocked HTTP and do not prove a deployed ledger or offline browser
 journey. Kubernetes and Helm remain optional; no cluster evidence is required
 to qualify the non-Kubernetes 0.1.0 RC.
+The adjacent unpublished applicant-portal slice checks local health before
+inspection, never calls list routes in current-only mode, and requires an
+unchanged reported plan, registry, and finalized checkpoint around exact
+authorization and recognition reads. Its portal tests also use mocked HTTP;
+they cannot close the deployed-ledger, finality, or offline actor gates.
 
 The private proposal journal now blocks new governed proposals while any
 ambiguous reservation remains, including across restart. Mocked/API tests

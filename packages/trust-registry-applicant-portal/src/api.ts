@@ -111,6 +111,34 @@ const isUnavailableLocalList = (error: unknown): boolean =>
 const listWarning = (role: string): string =>
   `Current ${role} list is unavailable; no trust decision can be inferred.`;
 
+type LocalHealth = TrustRegistryApiHealthResponse & {
+  sourceMode: "local-ledger";
+  localPlanSha256: string;
+  finalizedBlockHash: string;
+  generatedAt: string;
+};
+
+const requireLocalHealth = (health: TrustRegistryApiHealthResponse, expected?: PublicInspection): LocalHealth => {
+  if (health.status !== "ok" || health.sourceMode !== "local-ledger"
+    || typeof health.registryId !== "string" || health.registryId.length === 0
+    || !/^[0-9a-f]{64}$/u.test(health.localPlanSha256 ?? "")
+    || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")
+    || typeof health.generatedAt !== "string"
+    || (expected !== undefined && (expected.sourceMode !== "local-ledger"
+      || expected.summary.registryId !== health.registryId
+      || expected.localPlanSha256 !== health.localPlanSha256))) {
+    throw new Error("Local API health lacks a stable approved plan or finalized checkpoint.");
+  }
+  return health as LocalHealth;
+};
+
+const sameLocalCheckpoint = (before: TrustRegistryApiHealthResponse, after: TrustRegistryApiHealthResponse): boolean =>
+  after.status === "ok" && after.sourceMode === "local-ledger"
+  && after.registryId === before.registryId
+  && after.localPlanSha256 === before.localPlanSha256
+  && after.finalizedBlockHash === before.finalizedBlockHash
+  && after.generatedAt === before.generatedAt;
+
 export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
@@ -200,6 +228,19 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
+    const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.sourceMode === "local-ledger") {
+      const localHealth = requireLocalHealth(health);
+      const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
+      const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+      if (summary.registryId !== health.registryId || !sameLocalCheckpoint(health, after)) {
+        throw new Error("Local API health and registry summary do not match one checkpoint.");
+      }
+      const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
+      return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],
+        unavailableLists, warnings: unavailableLists.map(listWarning) };
+    }
     let localProjectionGated = false;
     const localList = async <T>(path: string): Promise<T | null> => {
       try {
@@ -212,9 +253,8 @@ export class TrustRegistryApplicantPortalClient {
         throw error;
       }
     };
-    const [health, summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
+    const [summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
       await Promise.all([
-        this.request<TrustRegistryApiHealthResponse>("/health"),
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
         localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
         localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
@@ -242,16 +282,11 @@ export class TrustRegistryApplicantPortalClient {
       ...(auditorEntries === null ? ["auditor" as const] : []),
       ...(activeRecognitions === null ? ["recognition" as const] : []),
     ];
-    if (localProjectionGated && health.sourceMode !== "local-ledger") {
+    if (localProjectionGated) {
       throw new Error("Local list projection gate requires a confirmed local-ledger API mode.");
-    }
-    if (health.sourceMode === "local-ledger"
-      && (health.status !== "ok" || health.registryId !== summary.registryId)) {
-      throw new Error("Local API health and registry summary do not match.");
     }
     return {
       summary,
-      ...(health.sourceMode === "local-ledger" ? { sourceMode: "local-ledger" as const } : {}),
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
@@ -270,24 +305,40 @@ export class TrustRegistryApplicantPortalClient {
 
   async loadCurrentAuthorization(
     request: TrustRegistryApiResolveAuthorizationRequest,
+    inspection: PublicInspection,
   ): Promise<TrustRegistryApiAuthorizationListResponse["entries"][number]> {
-    return this.request("/v1/authorizations/resolve", {
+    const before = requireLocalHealth(await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" }), inspection);
+    const entry = await this.request<TrustRegistryApiAuthorizationListResponse["entries"][number]>("/v1/authorizations/resolve", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request),
       cache: "no-store",
     });
+    const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (!sameLocalCheckpoint(before, after)
+      || entry?.authorization?.registryId !== inspection.summary.registryId) {
+      throw new Error("Local authorization response changed checkpoint or registry.");
+    }
+    return entry;
   }
 
   async loadCurrentRecognition(
     request: TrustRegistryApiResolveRecognitionRequest,
+    inspection: PublicInspection,
   ): Promise<TrustRegistryApiRecognitionListResponse["entries"][number]> {
-    return this.request("/v1/recognitions/resolve", {
+    const before = requireLocalHealth(await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" }), inspection);
+    const entry = await this.request<TrustRegistryApiRecognitionListResponse["entries"][number]>("/v1/recognitions/resolve", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request),
       cache: "no-store",
     });
+    const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (!sameLocalCheckpoint(before, after)
+      || entry?.recognition?.registryId !== inspection.summary.registryId) {
+      throw new Error("Local recognition response changed checkpoint or registry.");
+    }
+    return entry;
   }
 
   async submitApplication(

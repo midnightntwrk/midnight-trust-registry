@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TrustRegistryApplicantPortalClient } from "../api.js";
 
+const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
+  localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+  generatedAt: "2026-10-25T00:00:00Z" };
+
 const auditorEntry = (effectiveUntil: string | undefined, authorizationId = "auth:auditor:inspection:v1") => ({
   label: "auditor",
   authorization: {
@@ -42,6 +46,7 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
   "http://127.0.0.1:4400",
   (async (input: RequestInfo | URL): Promise<Response> => {
     const path = new URL(String(input)).pathname;
+    if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace" });
     if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
     if (path === "/v1/authorizations/auditor") return auditorResponse;
     if (path === "/v1/authorizations/issuer") return Response.json({ entries: [
@@ -106,9 +111,11 @@ describe("local list projection gate", () => {
   }, { status: 503 });
 
   it("retains the summary while marking every gated list unavailable", async () => {
+    const paths: string[] = [];
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
       const path = new URL(String(input)).pathname;
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local" });
+      paths.push(path);
+      if (path === "/health") return Response.json(localHealth);
       return path === "/v1/registry/summary" ? Response.json({ registryLabel: "local", registryId: "registry:local" }) : unavailable();
     }) as typeof fetch);
     const inspection = await client.loadPublicInspection();
@@ -118,6 +125,7 @@ describe("local list projection gate", () => {
     expect(inspection.warnings).toHaveLength(4);
     expect(inspection.activeIssuers).toEqual([]);
     expect(inspection.activeRecognitions).toEqual([]);
+    expect(paths).toEqual(["/health", "/v1/registry/summary", "/health"]);
   });
 
   it("rejects a local projection gate without confirmed local mode", async () => {
@@ -132,11 +140,44 @@ describe("local list projection gate", () => {
   it("rejects a local health and summary registry mismatch", async () => {
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
       const path = new URL(String(input)).pathname;
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:other" });
+      if (path === "/health") return Response.json({ ...localHealth, registryId: "registry:other" });
       return path === "/v1/registry/summary"
         ? Response.json({ registryLabel: "local", registryId: "registry:local" }) : unavailable();
     }) as typeof fetch);
-    await expect(client.loadPublicInspection()).rejects.toThrow(/do not match/u);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/do not match one checkpoint/u);
+  });
+
+  it("rejects a local checkpoint change while loading inspection", async () => {
+    let healthReads = 0;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ ...localHealth,
+        finalizedBlockHash: `0x${(healthReads++ === 0 ? "b" : "c").repeat(64)}` });
+      if (path === "/v1/registry/summary") return Response.json({ registryId: "registry:local" });
+      throw new Error(`Unexpected list request: ${path}`);
+    }) as typeof fetch);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/one checkpoint/u);
+  });
+
+  it("rejects a current resolution if its checkpoint changes or registry is substituted", async () => {
+    let checkpoint = localHealth.finalizedBlockHash;
+    let returnedRegistry = "registry:local";
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ ...localHealth, finalizedBlockHash: checkpoint });
+      if (path === "/v1/registry/summary") return Response.json({ registryId: "registry:local" });
+      if (path === "/v1/authorizations/resolve") {
+        checkpoint = `0x${"c".repeat(64)}`;
+        return Response.json({ authorization: { registryId: returnedRegistry } });
+      }
+      throw new Error(`Unexpected route: ${path}`);
+    }) as typeof fetch);
+    const inspection = await client.loadPublicInspection();
+    const request = { role: "issuer" as const, subjectDid: "did:midnight:undeployed:issuer", resourceId: "scope" };
+    await expect(client.loadCurrentAuthorization(request, inspection)).rejects.toThrow(/changed checkpoint/u);
+    checkpoint = localHealth.finalizedBlockHash;
+    returnedRegistry = "registry:other";
+    await expect(client.loadCurrentAuthorization(request, inspection)).rejects.toThrow(/changed checkpoint or registry/u);
   });
 
   it("does not downgrade unexpected issuer errors or malformed lists", async () => {
