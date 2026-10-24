@@ -27,21 +27,27 @@ export class LocalLedgerSourceUnavailableError extends Error {
 }
 
 async function readBoundedSnapshot(path: string): Promise<Buffer> {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_SNAPSHOT_BYTES) {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > BigInt(MAX_SNAPSHOT_BYTES)) {
       throw new Error("Pinned local snapshot must be a bounded regular file");
     }
-    const bytes = Buffer.alloc(stat.size + 1);
+    const bytes = Buffer.alloc(Number(before.size));
     let count = 0;
     while (count < bytes.length) {
       const result = await file.read(bytes, count, bytes.length - count, count);
       if (result.bytesRead === 0) break;
       count += result.bytesRead;
     }
-    if (count !== stat.size) throw new Error("Pinned local snapshot changed during read");
-    return bytes.subarray(0, count);
+    const after = await file.stat({ bigint: true });
+    if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.nlink !== before.nlink || after.mode !== before.mode
+      || after.uid !== before.uid || after.mtimeNs !== before.mtimeNs
+      || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Pinned local snapshot changed during read");
+    }
+    return bytes;
   } finally {
     await file.close();
   }

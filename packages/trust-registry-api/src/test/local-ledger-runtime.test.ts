@@ -102,6 +102,10 @@ describe("approved local-ledger API runtime", () => {
       const linked = join(root, "linked-revision");
       await symlink(path, linked);
       await expect(assertLocalApiImageSourceRevision(sourceRevision, linked)).rejects.toThrow();
+      const fifo = join(root, "revision-fifo");
+      execFileSync("mkfifo", [fifo]);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, fifo))
+        .rejects.toThrow(/bounded regular file/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

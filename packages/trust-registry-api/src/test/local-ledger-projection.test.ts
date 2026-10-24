@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -305,6 +306,32 @@ describe("finalized Compact projection coverage", () => {
 });
 
 describe("local ledger-bound API source", () => {
+  it("rejects a FIFO snapshot without waiting for a writer", async () => {
+    const { ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-fifo-snapshot-"));
+    try {
+      const snapshotPath = join(directory, "snapshot-fifo");
+      execFileSync("mkfifo", [snapshotPath]);
+      const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: "a".repeat(64),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() {
+          return { networkId: "undeployed", contractAddress: address,
+            finalizedBlockHash: `0x${"b".repeat(64)}`, ledger,
+            verifierKeySha256: {}, maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
+        } },
+        sequenceToTimestamp,
+      });
+      await expect(source.loadSnapshot()).rejects.toMatchObject({
+        cause: { message: expect.stringMatching(/bounded regular file/u) },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("bounds a stalled finalized reader and refuses further reads until restart", async () => {
     const { contractAddress } = fixture();
     let readerCalls = 0;
