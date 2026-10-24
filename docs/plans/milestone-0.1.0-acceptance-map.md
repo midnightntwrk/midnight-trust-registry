@@ -90,8 +90,9 @@ A bound journal with a missing state file now rejects writes instead of
 starting empty, and a running instance detects loss of its checked binding.
 Loss of both files across process restart still requires independent durable
 recovery evidence and cannot be treated as a fresh installation.
-The local signed recovery-decision parser now binds the exact review candidate,
-reviewer key, decision time, and retained finality-evidence bytes. Its result
+The local read-only draft/verify commands and signed recovery-decision parser
+now bind the exact review candidate,
+reviewer key, draft time, and retained finality-evidence bytes. Its result
 explicitly marks finality unverified, release unqualified, and retry forbidden.
 It neither authenticates chain finality nor changes journal state. A future
 release path must independently authenticate finality and re-assess the exact

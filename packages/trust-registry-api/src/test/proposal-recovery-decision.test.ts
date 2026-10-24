@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
-import { loadApprovedProposalRecoveryDecision, proposalRecoveryCandidateDigest } from "../proposal-recovery-decision.js";
+import { draftProposalRecoveryDecision, loadApprovedProposalRecoveryDecision,
+  proposalRecoveryCandidateDigest } from "../proposal-recovery-decision.js";
 
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 const candidate = {
@@ -64,7 +65,7 @@ describe("signed local proposal recovery decision", () => {
         candidateSha256: proposalRecoveryCandidateDigest(candidate),
         finalityEvidenceSha256: hash(evidence),
         evidenceReference: "private-review-bundle-1",
-        decidedAt: new Date().toISOString(),
+        draftedAt: new Date().toISOString(),
         reviewerFingerprint: fingerprint!,
         registryId: candidate.registryId,
         contractAddress: candidate.contractAddress,
@@ -85,6 +86,16 @@ describe("signed local proposal recovery decision", () => {
       };
       const input = { decisionPath, signaturePath, finalityEvidencePath,
         keyringDirectory: verifier, reviewerFingerprint: fingerprint!, candidate };
+      await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
+        evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint!,
+        now: Date.parse(decision.draftedAt) })).resolves.toBe(`${canonicalizeJson(decision)}\n`);
+      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
+        reason: "sequence-still-live" }, finalityEvidencePath,
+      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+        .rejects.toThrow(/invalidated/u);
+      await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
+        evidenceReference: "demo:unsafe", reviewerFingerprint: fingerprint! }))
+        .rejects.toThrow();
       await sign(decision);
       await expect(loadApprovedProposalRecoveryDecision(input)).resolves.toEqual({
         decision, decisionSha256: hash(`${canonicalizeJson(decision)}\n`),
@@ -118,9 +129,17 @@ describe("signed local proposal recovery decision", () => {
       await sign({ ...decision, authorizationId: "other" });
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);
-      await sign({ ...decision, decidedAt: new Date(Date.now() + 3600_000).toISOString() });
+      await sign({ ...decision, draftedAt: new Date(Date.now() + 3600_000).toISOString() });
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, draftedAt: new Date(Date.now() - 25 * 3600_000).toISOString() });
+      await expect(loadApprovedProposalRecoveryDecision(input))
+        .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, draftedAt: decision.draftedAt.replace("Z", "+00:00") });
+      await expect(loadApprovedProposalRecoveryDecision(input))
+        .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, evidenceReference: "demo:unsafe" });
+      await expect(loadApprovedProposalRecoveryDecision(input)).rejects.toThrow();
       await sign(decision);
       await writeFile(decisionPath, `${JSON.stringify(decision)}\n`);
       execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",

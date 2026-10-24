@@ -1577,6 +1577,31 @@ documents a historical container and funding flow, but points to
 for maintained tooling. Development genesis wallets and mnemonic examples are
 not production secrets or public-network security guidance.
 
+### Ambiguous proposal review
+
+Keep the API mutation path stopped when a proposal reservation has an unknown
+outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
+private journal and signed local plan; a `reviewCandidate` result is an audit
+input, not proof of non-inclusion. If its action sequence appears invalidated,
+retain independently collected finality evidence in a private file. Use
+`draft-local-proposal-recovery-decision --finality-evidence ABSOLUTE_PATH
+--evidence-reference REF` with the same signed-plan, role, authorization ID,
+and journal arguments as `inspect` to produce canonical unsigned JSON. The
+reviewer must inspect the candidate and evidence, then detached-sign the exact
+saved bytes. `verify-local-proposal-recovery-decision` takes the same inputs
+plus `--recovery-decision` and `--recovery-signature` absolute paths. Its output
+explicitly reports `finalityAuthenticated: false`, `releaseQualified: false`,
+and `retryPermitted: false`. Neither command changes the journal or reopens
+proposal submissions. The draft timestamp is not the reviewer signing time.
+If the finalized checkpoint advances while the reviewer works, verification
+may reject the old candidate; do not weaken its exact-byte binding or treat
+the later read as non-inclusion proof. The recovery reviewer and plan reviewer
+are currently the same pinned key; #220 must settle separation of duties
+before any release path is enabled. Do not use a null indexer read, elapsed
+time, or a new journal path as recovery authority. Issue #220 remains the stop
+gate until a
+reviewed finality policy, durable tombstone, and operator recovery path exist.
+
 ## Evidence Ledger And Stop Rules
 
 The release owner must bind every item below to one signed source SHA and one

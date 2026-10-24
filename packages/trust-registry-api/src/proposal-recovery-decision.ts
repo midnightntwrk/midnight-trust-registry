@@ -15,8 +15,9 @@ const DecisionSchema = z.strictObject({
   decision: z.literal("abandon-invalidated-action"),
   candidateSha256: z.string().regex(SHA256),
   finalityEvidenceSha256: z.string().regex(SHA256),
-  evidenceReference: z.string().min(1).max(512).regex(/^[A-Za-z0-9][A-Za-z0-9._:/#-]*$/u),
-  decidedAt: z.string(),
+  evidenceReference: z.string().min(1).max(512).regex(/^[A-Za-z0-9][A-Za-z0-9._:/#-]*$/u)
+    .refine((value) => !value.toLowerCase().startsWith("demo:")),
+  draftedAt: z.string(),
   reviewerFingerprint: z.string().regex(/^[0-9A-F]{40}$/u),
   registryId: z.string().min(1).max(256),
   contractAddress: z.string().regex(HASH),
@@ -35,6 +36,55 @@ export type ProposalRecoveryDecision = z.infer<typeof DecisionSchema>;
 
 export function proposalRecoveryCandidateDigest(candidate: RecoveryCandidate): string {
   return createHash("sha256").update(canonicalizeJson(candidate)).digest("hex");
+}
+
+function assertReviewCandidate(candidate: RecoveryCandidate): void {
+  if (candidate.format !== "tr-local-proposal-recovery-candidate-v2"
+    || candidate.networkId !== "undeployed"
+    || candidate.reason !== "sequence-invalidated-record-absent"
+    || candidate.reservationState !== "reserved"
+    || candidate.reviewCandidate !== true || candidate.retryPermitted !== false
+    || candidate.releaseQualified !== false
+    || candidate.reservationActionSequence === null
+    || candidate.observedEventHash !== null
+    || !DECIMAL.test(candidate.reservationActionSequence)
+    || !DECIMAL.test(candidate.finalizedGovernanceActionCount)
+    || BigInt(candidate.finalizedGovernanceActionCount) <= BigInt(candidate.reservationActionSequence)) {
+    throw new Error("Recovery decision requires an invalidated, unobserved reserved action candidate");
+  }
+}
+
+/** Draft only. The operator must independently review evidence and sign these exact bytes. */
+export async function draftProposalRecoveryDecision(input: {
+  candidate: RecoveryCandidate;
+  finalityEvidencePath: string;
+  evidenceReference: string;
+  reviewerFingerprint: string;
+  now?: number;
+}): Promise<string> {
+  assertReviewCandidate(input.candidate);
+  const evidence = await readBoundedLocalApprovalFile(input.finalityEvidencePath, 1024 * 1024);
+  const decision = DecisionSchema.parse({
+    format: "tr-local-proposal-recovery-decision-v1",
+    decision: "abandon-invalidated-action",
+    candidateSha256: proposalRecoveryCandidateDigest(input.candidate),
+    finalityEvidenceSha256: createHash("sha256").update(evidence).digest("hex"),
+    evidenceReference: input.evidenceReference,
+    draftedAt: new Date(input.now ?? Date.now()).toISOString(),
+    reviewerFingerprint: input.reviewerFingerprint,
+    registryId: input.candidate.registryId,
+    contractAddress: input.candidate.contractAddress,
+    role: input.candidate.role,
+    authorizationId: input.candidate.authorizationId,
+    evidenceCommitment: input.candidate.evidenceCommitment,
+    attemptDigest: input.candidate.attemptDigest,
+    journalBindingDigest: input.candidate.journalBindingDigest,
+    reservationActionSequence: input.candidate.reservationActionSequence,
+    finalizedGovernanceActionCount: input.candidate.finalizedGovernanceActionCount,
+    finalizedBlockHash: input.candidate.finalizedBlockHash,
+    approvedPlanSha256: input.candidate.approvedPlanSha256,
+  });
+  return `${canonicalizeJson(decision)}\n`;
 }
 
 function parseCanonicalDecision(bytes: Buffer): ProposalRecoveryDecision {
@@ -59,19 +109,7 @@ export async function loadApprovedProposalRecoveryDecision(input: {
 }): Promise<{ decision: ProposalRecoveryDecision; decisionSha256: string;
   finalityAuthenticated: false; releaseQualified: false; retryPermitted: false }> {
   const candidate = input.candidate;
-  if (candidate.format !== "tr-local-proposal-recovery-candidate-v2"
-    || candidate.networkId !== "undeployed"
-    || candidate.reason !== "sequence-invalidated-record-absent"
-    || candidate.reservationState !== "reserved"
-    || candidate.reviewCandidate !== true || candidate.retryPermitted !== false
-    || candidate.releaseQualified !== false
-    || candidate.reservationActionSequence === null
-    || candidate.observedEventHash !== null
-    || !DECIMAL.test(candidate.reservationActionSequence)
-    || !DECIMAL.test(candidate.finalizedGovernanceActionCount)
-    || BigInt(candidate.finalizedGovernanceActionCount) <= BigInt(candidate.reservationActionSequence)) {
-    throw new Error("Recovery decision requires an invalidated, unobserved reserved action candidate");
-  }
+  assertReviewCandidate(candidate);
   const bytes = await readBoundedLocalApprovalFile(input.decisionPath, 32 * 1024);
   await verifyDetachedLocalReviewerSignature({
     documentBytes: bytes,
@@ -82,10 +120,10 @@ export async function loadApprovedProposalRecoveryDecision(input: {
   });
   const decision = parseCanonicalDecision(bytes);
   const now = input.now ?? Date.now();
-  const decidedAt = Date.parse(decision.decidedAt);
-  if (!Number.isFinite(decidedAt) || new Date(decidedAt).toISOString() !== decision.decidedAt
-    || decidedAt < now - 24 * 60 * 60 * 1000
-    || decidedAt > now + 300_000
+  const draftedAt = Date.parse(decision.draftedAt);
+  if (!Number.isFinite(draftedAt) || new Date(draftedAt).toISOString() !== decision.draftedAt
+    || draftedAt < now - 24 * 60 * 60 * 1000
+    || draftedAt > now + 300_000
     || decision.reviewerFingerprint !== input.reviewerFingerprint
     || decision.candidateSha256 !== proposalRecoveryCandidateDigest(candidate)
     || decision.registryId !== candidate.registryId
