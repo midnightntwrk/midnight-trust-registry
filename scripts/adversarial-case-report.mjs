@@ -67,12 +67,42 @@ export const runIsolatedAdversarialCases = (files = isolatedAdversarialTestFiles
   return report;
 };
 
+export function assertAdversarialMatrixParity(report, matrix) {
+  assert.equal(matrix?.format, "tr-adversarial-matrix-v1");
+  assert.equal(matrix.summary?.total, matrix.cases?.length);
+  assert.equal(matrix.summary.passed + matrix.summary.failed, matrix.summary.total);
+  const cases = matrix.cases.map((entry) => {
+    assert.match(entry.id, /^[a-z][a-z0-9-]+$/u);
+    assert.ok(typeof entry.invariant === "string" && entry.invariant.length > 0);
+    assert.ok(["compact", "integration", "client", "api", "adapter"].includes(entry.boundary));
+    assert.ok(typeof entry.expected === "string" && entry.expected.length > 0);
+    assert.ok(typeof entry.observed === "string" && entry.observed.length > 0);
+    assert.ok(["passed", "failed"].includes(entry.status));
+    return entry.id;
+  });
+  assert.equal(new Set(cases).size, cases.length, "Governed matrix has duplicate IDs");
+  assert.deepEqual(cases.sort(), report.cases.map(({ id }) => id).sort(),
+    "Governed matrix and isolated test IDs differ");
+}
+
+function runGovernedAdversarialMatrix() {
+  const result = spawnSync(process.execPath, [join(scripts, "demo-governed-registry.mjs")], {
+    cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 300_000,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Governed demo failed: ${result.stderr?.slice(-500) || result.status}`);
+  }
+  return JSON.parse(result.stdout).adversarialMatrix;
+}
+
 export async function archiveAdversarialCaseReport(report, sourceRevision,
-  directory = join(root, "artifacts", "adversarial-reports")) {
+  directory = join(root, "artifacts", "adversarial-reports"), matrix) {
   assert.match(sourceRevision, /^[0-9a-f]{40}$/u, "Archive needs a Git source revision");
   assert.equal(report?.format, "tr-adversarial-case-report-v1");
   assert.equal(report.summary?.total, report.cases?.length);
   assert.equal(report.summary.passed + report.summary.failed, report.summary.total);
+  assertAdversarialMatrixParity(report, matrix);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const privateDirectory = await realpath(directory);
   const stat = await lstat(privateDirectory);
@@ -83,9 +113,10 @@ export async function archiveAdversarialCaseReport(report, sourceRevision,
   const path = join(privateDirectory, `cases-${sourceRevision}.json`);
   const temporary = join(privateDirectory, `.cases-${sourceRevision}.${randomUUID()}.tmp`);
   const bytes = Buffer.from(`${JSON.stringify({
-    format: "tr-adversarial-case-archive-v1",
+    format: "tr-adversarial-case-archive-v2",
     sourceRevision,
-    report,
+    isolatedReport: report,
+    governedDemoMatrix: matrix,
   }, null, 2)}\n`);
   try {
     const file = await open(temporary, "wx", 0o600);
@@ -106,7 +137,7 @@ export async function archiveAdversarialCaseReport(report, sourceRevision,
     await unlink(temporary).catch(() => {});
   }
   return { path, sourceRevision, sha256: createHash("sha256").update(bytes).digest("hex"),
-    summary: report.summary };
+    summary: report.summary, demoCaseCount: matrix.summary.total };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -124,7 +155,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const report = runIsolatedAdversarialCases();
   assert.equal(report.summary.total, 198, "Review the expected governed-demo case count before changing it");
   const output = sourceRevision === undefined
-    ? report : await archiveAdversarialCaseReport(report, sourceRevision);
+    ? report : await archiveAdversarialCaseReport(report, sourceRevision,
+      join(root, "artifacts", "adversarial-reports"), runGovernedAdversarialMatrix());
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   if (report.summary.failed > 0) process.exitCode = 1;
 }

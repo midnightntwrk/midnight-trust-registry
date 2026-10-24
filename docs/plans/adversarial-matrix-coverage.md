@@ -36,7 +36,11 @@ On a clean committed checkout, `pnpm run adversarial:report -- --archive`
 also writes the full report once to a mode-0600 file under private ignored
 `artifacts/adversarial-reports/`, named for the current source commit. It
 prints the archive path, SHA-256, source revision, and pass/fail summary;
-it refuses to overwrite an earlier run for that commit. The archive is
+it refuses to overwrite an earlier run for that commit. The v2 archive also
+requires exact case-ID parity with the governed demo and preserves its
+invariant, boundary, expected, and observed categories beside the isolated
+outcomes. These are two distinct test sources; the demo metadata is not an
+assertion that every isolated case exercised every boundary. The archive is
 test evidence, not a deployed-ledger or release-qualification result.
 `pnpm run check:adversarial-parity -- --require-full` additionally compares
 those isolated case IDs with the governed demo's machine-readable matrix.
