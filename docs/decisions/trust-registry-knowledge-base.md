@@ -24,6 +24,26 @@ Docker embedded DNS recursion, other protocols, wallet/browser paths, and
 independent finality remain unqualified. Kubernetes/Helm are optional and
 not 0.1.0 release criteria.
 
+## October 24 2026 Exact-Source b18 Staging Checkpoint
+
+- The signed `8cd1de8` source has a separately verified v6 install bundle:
+  inventory SHA-256 `10bfed0f812bb6f828d04609b40f09c33a1aa8034ad35148a801c3348ac13fa4`,
+  ten packed packages, six OCI archives, and 18 proof-parameter files.
+  Its packed API contains the current proposal-quorum preflight and recovery
+  candidate modules. This establishes install-byte integrity, not deployment.
+- The dedicated b18 node/indexer/prover bridge matched the pinned images and
+  Compose bytes and passed a bridge-limited canary egress probe. The private
+  node-reported genesis candidate and proposed pin remain untrusted; the
+  temporary install relay was removed. The b17 and b18 containers are stopped
+  with their volumes and private evidence preserved. No contract, API, or
+  portal has been deployed to b18.
+- The b18 private review packet records the source, inventory, candidate, and
+  pin digests for human review. The reviewer must independently verify the
+  chain-spec/genesis reference and detached-sign the later wizard-generated
+  approval bytes. Neither a chat approval nor this packet closes that gate.
+  #220 recovery, live finalized readback, maintenance approval, offline actor
+  journeys, restore, and independent security review remain open.
+
 ## October 24 2026 Local Issuer Reservation Checkpoint
 
 - The API now checks action-scoped maintainer quorum and current registered key
