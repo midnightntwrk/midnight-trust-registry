@@ -176,7 +176,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    this checker does not observe the cluster release.
    After installation, use an explicitly selected, reviewed kubeconfig and
    context for a non-mutating Kubernetes workload observation. The observer
-   needs `list` on nodes, Deployments, ReplicaSets, and Pods, and `get` on
+   needs `list` on nodes, Deployments, ReplicaSets, Pods, Services, and
+   NetworkPolicies, and `get` on
    both API Secrets and the API Pod,
    plus `create` on `pods/exec` to run a fixed, read-only hash probe in the API
    container. Limit Secret `get` to the two names with RBAC `resourceNames`;
@@ -224,6 +225,12 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    an ephemeral debug container is present. It also rejects live Deployment
    Pod specs that differ from the exact signed Helm render. A v1 node scope
    remains valid for fleet receipt checks but is rejected by this live observer.
+   It lists all Services and NetworkPolicies in the dedicated namespace, not
+   just release-labelled objects, and rejects additions, removals, or spec
+   drift from the signed render. An unrelated Service or NetworkPolicy in the
+   namespace also fails closed. This can detect an additive permissive policy
+   or extra exposure Service at observation time, but not whether the CNI
+   enforced the intended traffic boundary.
    Capture the observer output and non-Secret Kubernetes responses through an
    access-controlled evidence channel. Retain Secret metadata and digests,
    not raw Secret responses: they contain private snapshot and approval data.
@@ -235,7 +242,7 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    authenticate the reviewer-approved `clusterReference` against the API,
    prove image bytes executed from the CRI store, prove a running process has
    not changed after observation, verify PVC contents,
-   inspect unrelated or unlabelled workloads, measure runtime egress, or
+   inspect unrelated or unlabelled workloads, measure CNI-enforced runtime egress, or
    exercise the local ledger or actor journeys. A later rollout, image-store
    replacement, or plan rotation requires a fresh observation. It compares security-relevant
    Pod specs across each Deployment, owned ReplicaSet, and running Pod,
@@ -255,8 +262,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    check is still required to validate API-server defaulting (including
    resource quantities, probe fields,
    and projected volume modes); synthetic tests do not establish it.
-   It does **not** compare live Services, NetworkPolicies, PVCs, or unrelated
-   workloads with the render. The Kubernetes queries and in-container probe
+   It does **not** compare live PVCs or unrelated workloads with the render,
+   and policy-object parity is not a packet-level egress test. The Kubernetes queries and in-container probe
    are not one atomic snapshot; separate authenticated evidence capture is
    still needed for release review.
    A passing synthetic test is not live qualification evidence.
