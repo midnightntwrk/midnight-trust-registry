@@ -148,6 +148,9 @@ reservation is still missing; [#220](https://github.com/midnightntwrk/midnight-t
 blocks the local RC until it is designed, tested, and independently reviewed.
 A conflicting finalized observation also leaves the reservation blocked and
 must be handled by that recovery/security process, not by deleting the file.
+Once a valid receipt is durably recorded as `submitted`, the global reservation
+pause ends; the same authorization still cannot be submitted again, and only
+a matching finalized observation can mark it `observed`.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into

@@ -141,6 +141,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const duplicateVotes = await post("submit", { ...request, signers: [request.signers[0], request.signers[0]] });
       expect(duplicateVotes.status).toBe(403);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
+        async () => { throw new Error("response lost after submission"); })).rejects.toThrow();
+      const blocked = await post("submit", request);
+      expect(blocked.status).toBe(409);
+      const blockedProblem = await blocked.json() as { type: string; detail: string };
+      expect(blockedProblem.type).toMatch(/proposal-submission-blocked$/u);
+      expect(JSON.stringify(blockedProblem)).not.toContain("private-blocking-authorization");
+      expect(JSON.stringify(blockedProblem)).not.toContain("verifier");
+      expect(executions).toBe(0);
+      await journal.reconcile("verifier", "private-blocking-authorization",
+        async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
       const uncertain = await post("submit", request);
       expect(uncertain.status).toBe(503);
       expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);

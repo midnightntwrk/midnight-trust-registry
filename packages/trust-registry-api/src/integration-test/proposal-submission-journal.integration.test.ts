@@ -85,6 +85,11 @@ describe("private governed proposal submission journal", () => {
     expect(executions).toBe(1);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "reserved" });
     await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+    await expect(reopened.reconcile(role, authorizationId,
+      async () => ({ eventHash, evidenceCommitment: otherCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     await expect(reopened.reconcile(role, authorizationId, async () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
@@ -147,7 +152,12 @@ describe("private governed proposal submission journal", () => {
     });
     releaseSubmission();
     await expect(pending).resolves.toEqual({ eventHash });
-    expect(executions).toBe(1);
+    expect(await first.read("issuer", authorizationId)).toMatchObject({ state: "submitted", eventHash });
+    await expect(second.executeOnce("verifier", "auth:after-receipt", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    })).resolves.toEqual({ eventHash: otherEventHash });
+    expect(executions).toBe(2);
   });
 
   it("does not downgrade a finalized observation when a delayed submit receipt arrives", async () => {
