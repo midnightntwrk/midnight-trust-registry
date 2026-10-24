@@ -36,19 +36,62 @@ export const isCurrentlyActive = (
     && activeFrom <= nowMs && nowMs <= effectiveUntil;
 };
 
-const isRenderableAuditorList = (value: unknown): value is TrustRegistryApiAuthorizationListResponse => {
-  if (value === null || typeof value !== "object" || !("entries" in value) || !Array.isArray(value.entries)) {
+const isRenderableAuthorizationList = (
+  value: unknown,
+  role: "issuer" | "verifier" | "auditor",
+): value is TrustRegistryApiAuthorizationListResponse => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || !("entries" in value) || !Array.isArray(value.entries)
+    || ("role" in value && value.role !== role)
+    || ("total" in value && value.total !== value.entries.length)) {
     return false;
   }
+  const ids = new Set<string>();
   return value.entries.every((entry: unknown) => {
     if (entry === null || typeof entry !== "object" || !("authorization" in entry)) return false;
     const authorization = entry.authorization;
     if (authorization === null || typeof authorization !== "object") return false;
     const fields = ["authorizationId", "role", "status", "resourceType", "resourceId", "trustLevel", "subjectDid", "activeFrom"];
+    if (!("authorizationId" in authorization) || typeof authorization.authorizationId !== "string"
+      || ids.has(authorization.authorizationId)) return false;
+    ids.add(authorization.authorizationId);
     return "label" in entry && typeof entry.label === "string"
       && fields.every((field) => field in authorization && typeof authorization[field as keyof typeof authorization] === "string")
+      && "role" in authorization && authorization.role === role
+      && "status" in authorization && authorization.status === "active"
+      && "activeFrom" in authorization && Number.isFinite(Date.parse(String(authorization.activeFrom)))
       && (!("effectiveUntil" in authorization) || authorization.effectiveUntil === undefined
-        || typeof authorization.effectiveUntil === "string");
+        || typeof authorization.effectiveUntil === "string"
+          && Number.isFinite(Date.parse(authorization.effectiveUntil)));
+  });
+};
+
+const isRenderableRecognitionList = (value: unknown): value is TrustRegistryApiRecognitionListResponse => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || !("entries" in value) || !Array.isArray(value.entries)
+    || ("total" in value && value.total !== value.entries.length)) {
+    return false;
+  }
+  const ids = new Set<string>();
+  return value.entries.every((entry: unknown) => {
+    if (entry === null || typeof entry !== "object" || !("recognition" in entry)
+      || entry.recognition === null || typeof entry.recognition !== "object") return false;
+    const recognition = entry.recognition;
+    if (!("recognitionId" in recognition) || typeof recognition.recognitionId !== "string"
+      || ids.has(recognition.recognitionId)) return false;
+    ids.add(recognition.recognitionId);
+    return "label" in entry && typeof entry.label === "string"
+      && "status" in recognition && recognition.status === "active"
+      && "recognizedAuthorityDid" in recognition && typeof recognition.recognizedAuthorityDid === "string"
+      && "trustLevel" in recognition && typeof recognition.trustLevel === "string"
+      && "scope" in recognition && recognition.scope !== null && typeof recognition.scope === "object"
+      && "resourceType" in recognition.scope && typeof recognition.scope.resourceType === "string"
+      && "resourceId" in recognition.scope && typeof recognition.scope.resourceId === "string"
+      && "effectiveFrom" in recognition && typeof recognition.effectiveFrom === "string"
+      && Number.isFinite(Date.parse(recognition.effectiveFrom))
+      && (!("effectiveUntil" in recognition) || recognition.effectiveUntil === undefined
+        || typeof recognition.effectiveUntil === "string"
+          && Number.isFinite(Date.parse(recognition.effectiveUntil)));
   });
 };
 
@@ -182,11 +225,17 @@ export class TrustRegistryApplicantPortalClient {
       ]);
 
     const nowMs = Date.now();
-    const auditorEntries = auditorResult.failed || !isRenderableAuditorList(auditorResult.value)
+    const auditorEntries = auditorResult.failed || !isRenderableAuthorizationList(auditorResult.value, "auditor")
       ? null : auditorResult.value.entries;
-    if (activeIssuers !== null && !Array.isArray(activeIssuers.entries)) throw new Error("Issuer list response was invalid.");
-    if (activeVerifiers !== null && !Array.isArray(activeVerifiers.entries)) throw new Error("Verifier list response was invalid.");
-    if (activeRecognitions !== null && !Array.isArray(activeRecognitions.entries)) throw new Error("Recognition list response was invalid.");
+    if (activeIssuers !== null && !isRenderableAuthorizationList(activeIssuers, "issuer")) {
+      throw new Error("Issuer list response was invalid.");
+    }
+    if (activeVerifiers !== null && !isRenderableAuthorizationList(activeVerifiers, "verifier")) {
+      throw new Error("Verifier list response was invalid.");
+    }
+    if (activeRecognitions !== null && !isRenderableRecognitionList(activeRecognitions)) {
+      throw new Error("Recognition list response was invalid.");
+    }
     const unavailableLists = [
       ...(activeIssuers === null ? ["issuer" as const] : []),
       ...(activeVerifiers === null ? ["verifier" as const] : []),

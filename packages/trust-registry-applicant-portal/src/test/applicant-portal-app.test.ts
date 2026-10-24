@@ -293,11 +293,7 @@ describe("trust registry applicant portal app", () => {
           recognitionCounts: counts(),
         });
       }
-      return Response.json({ entries: url.pathname === "/v1/authorizations/auditor" ? [
-        auditorGrant,
-        { ...auditorGrant, label: "wrong-role", authorization: { ...auditorGrant.authorization, role: "verifier" } },
-        { ...auditorGrant, label: "archived-auditor", authorization: { ...auditorGrant.authorization, status: "archived" } },
-      ] : [] });
+      return Response.json({ entries: url.pathname === "/v1/authorizations/auditor" ? [auditorGrant] : [] });
     });
     createApplicantPortalApp(root, {
       initialUrl: new URL("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400"),
@@ -308,8 +304,6 @@ describe("trust registry applicant portal app", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("identity-audit"));
     expect(root.textContent).toContain("Active auditors");
     expect(root.textContent).toContain("did:midnight:testnet:auditor");
-    expect(root.textContent).not.toContain("wrong-role");
-    expect(root.textContent).not.toContain("archived-auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
     expect(root.querySelector("[data-submit-form] option[value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);

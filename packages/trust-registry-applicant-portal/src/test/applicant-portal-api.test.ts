@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TrustRegistryApplicantPortalClient } from "../api.js";
 
-const auditorEntry = (effectiveUntil: string | undefined) => ({
+const auditorEntry = (effectiveUntil: string | undefined, authorizationId = "auth:auditor:inspection:v1") => ({
   label: "auditor",
   authorization: {
-    authorizationId: "auth:auditor:inspection:v1",
+    authorizationId,
     role: "auditor",
     status: "active",
     resourceType: "request-profile",
@@ -18,6 +18,26 @@ const auditorEntry = (effectiveUntil: string | undefined) => ({
   },
 });
 
+const issuerEntry = (authorizationId: string, effectiveUntil?: string) => ({
+  label: authorizationId,
+  authorization: {
+    authorizationId, role: "issuer", status: "active", resourceType: "schema",
+    resourceId: "tr:issuer-resource:v1:test", trustLevel: "approved",
+    subjectDid: "did:midnight:undeployed:issuer", activeFrom: "2020-01-01T00:00:00Z",
+    ...(effectiveUntil === undefined ? {} : { effectiveUntil }),
+  },
+});
+
+const recognitionEntry = (recognitionId: string, effectiveUntil?: string) => ({
+  label: recognitionId,
+  recognition: {
+    recognitionId, status: "active", recognizedAuthorityDid: "did:web:authority.example",
+    trustLevel: "approved", scope: { resourceType: "schema", resourceId: "degree" },
+    effectiveFrom: "2020-01-01T00:00:00Z",
+    ...(effectiveUntil === undefined ? {} : { effectiveUntil }),
+  },
+});
+
 const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplicantPortalClient(
   "http://127.0.0.1:4400",
   (async (input: RequestInfo | URL): Promise<Response> => {
@@ -25,12 +45,12 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
     if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
     if (path === "/v1/authorizations/auditor") return auditorResponse;
     if (path === "/v1/authorizations/issuer") return Response.json({ entries: [
-      { label: "issuer", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z" } },
-      { label: "expired", authorization: { role: "issuer", status: "active", activeFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2024-01-01T00:00:00Z" } },
+      issuerEntry("issuer"),
+      issuerEntry("expired", "2024-01-01T00:00:00Z"),
     ] });
     if (path === "/v1/recognitions") return Response.json({ entries: [
-      { label: "recognized-active", recognition: { status: "active", effectiveFrom: "2020-01-01T00:00:00Z" } },
-      { label: "recognized-expired", recognition: { status: "active", effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2024-01-01T00:00:00Z" } },
+      recognitionEntry("recognized-active"),
+      recognitionEntry("recognized-expired", "2024-01-01T00:00:00Z"),
     ] });
     return Response.json({ entries: [] });
   }) as typeof fetch,
@@ -39,7 +59,7 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
 describe("public auditor inspection", () => {
   it("does not display expired auditor grants as active", async () => {
     const client = inspectionClient(Response.json({ entries: [
-      auditorEntry("2024-01-01T00:00:00Z"),
+      auditorEntry("2024-01-01T00:00:00Z", "auth:auditor:expired:v1"),
       auditorEntry(undefined),
     ] }));
     const inspection = await client.loadPublicInspection();
@@ -64,6 +84,10 @@ describe("public auditor inspection", () => {
       Response.json(null),
       Response.json({ entries: null }),
       Response.json({ entries: [{ label: "broken", authorization: { role: "auditor", status: "active", activeFrom: "2020-01-01T00:00:00Z" } }] }),
+      Response.json({ entries: [{ ...auditorEntry(undefined), authorization: {
+        ...auditorEntry(undefined).authorization, role: "verifier",
+      } }] }),
+      Response.json({ entries: [auditorEntry(undefined), auditorEntry(undefined)] }),
     ]) {
       const inspection = await inspectionClient(response).loadPublicInspection();
       expect(inspection.activeIssuers).toHaveLength(1);
@@ -116,7 +140,16 @@ describe("local list projection gate", () => {
   });
 
   it("does not downgrade unexpected issuer errors or malformed lists", async () => {
-    for (const response of [Response.json({ status: 503, type: "other" }, { status: 503 }), Response.json({ entries: null })]) {
+    for (const response of [
+      Response.json({ status: 503, type: "other" }, { status: 503 }),
+      Response.json({ entries: null }),
+      Response.json({ entries: [issuerEntry("issuer"), issuerEntry("issuer")] }),
+      Response.json({ role: "verifier", entries: [issuerEntry("issuer")] }),
+      Response.json({ total: 2, entries: [issuerEntry("issuer")] }),
+      Response.json({ entries: [{ ...issuerEntry("issuer"), authorization: {
+        ...issuerEntry("issuer").authorization, activeFrom: "invalid",
+      } }] }),
+    ]) {
       const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
         const path = new URL(String(input)).pathname;
         if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
@@ -125,6 +158,20 @@ describe("local list projection gate", () => {
       }) as typeof fetch);
       await expect(client.loadPublicInspection()).rejects.toThrow();
     }
+  });
+
+  it("rejects malformed successful recognition lists instead of reporting zero", async () => {
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
+      if (path === "/v1/recognitions") return Response.json({ entries: [{
+        ...recognitionEntry("recognized"), recognition: {
+          ...recognitionEntry("recognized").recognition, effectiveFrom: "invalid",
+        },
+      }] });
+      return Response.json({ entries: [] });
+    }) as typeof fetch);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/Recognition list response was invalid/u);
   });
 });
 
