@@ -1363,7 +1363,13 @@ with injected snapshots is not local deployment or restore evidence.
    against the complete new signed set without a listener, switch to that
    immutable versioned plan/snapshot set, and restart. The preflight is a
    consistency check, not independent finality proof. The current-state
-   HTTP spot-check can use `trust-registry-api observe-local-ledger-api` with
+   proposal spot-check can use `trust-registry-api observe-local-proposal`
+   with that signed-plan evidence, `--role`, and `--authorization-id`. Its
+   `not-observed` result never authorizes resubmission; compare any observed
+   event/evidence commitments with the private journal under the approved
+   recovery procedure. The report explicitly sets `releaseQualified: false`.
+   The current-state HTTP spot-check can use
+   `trust-registry-api observe-local-ledger-api` with
    the same signed-plan arguments and an explicit loopback `--api-origin`.
    Its current-route readback report is diagnostic only (`releaseQualified:
    false`); it cannot replace actor journeys, process identity, authenticated

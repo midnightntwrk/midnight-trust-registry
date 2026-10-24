@@ -130,6 +130,14 @@ queries must pass before restoring traffic. If any check fails, leave the API
 unavailable and reconcile the finalized ledger; never roll back to a plan whose
 governance count is stale or restart in fixture mode. Preserve both signed versions
 for audit. This is an operator procedure, not an automated signer or live test.
+For a read-only proposal spot-check after that rotation, run
+`trust-registry-api observe-local-proposal` with the same four signed-plan
+arguments plus `--role issuer` (or another governed role) and the exact
+`--authorization-id`. It reads the pinned current finalized source without a
+listener and prints the event/evidence commitments if observed. `not-observed`
+is not proof of failure and never permits retry; compare the result with the
+private journal under the recovery procedure. Its report sets
+`releaseQualified: false` and does not advance the journal.
 For a read-only current-route check against a running loopback listener, run
 `trust-registry-api observe-local-ledger-api` with the same four signed-plan
 arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,

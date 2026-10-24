@@ -79,6 +79,35 @@ describe("API CLI binding", () => {
     }
   });
 
+  it("observes proposals only through a signed local plan and an exact role/ID", () => {
+    const observation = ["observe-local-proposal", ...localArgs.slice(1),
+      "--role", "issuer", "--authorization-id", "issuer:local:1"];
+    expect(parseTrustRegistryApiCliArgs(observation)).toMatchObject({
+      command: "observe-local-proposal", proposalRole: "issuer", authorizationId: "issuer:local:1",
+    });
+    for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"]) {
+      expect(parseTrustRegistryApiCliArgs([
+        ...observation.slice(0, -4), "--role", role, "--authorization-id", "id:1",
+      ]).proposalRole).toBe(role);
+    }
+    for (const args of [
+      observation.slice(0, -2),
+      observation.slice(0, -4),
+      [...observation, "--snapshot", "fixture.json"],
+      [...observation, "--workspace", "workspace.json"],
+      [...observation, "--port", "4400"],
+      [...observation, "--host", "127.0.0.1"],
+      [...observation, "--api-origin", "http://127.0.0.1:4400"],
+      [...observation, "--unsafe-demo-mutations"],
+      [...observation.slice(0, -4), "--role", "owner", "--authorization-id", "id:1"],
+      [...observation.slice(0, -1), " id:1"],
+      [...observation.slice(0, -1), "a".repeat(257)],
+      ["observe-local-proposal", "--snapshot", "fixture.json", "--role", "issuer", "--authorization-id", "id:1"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

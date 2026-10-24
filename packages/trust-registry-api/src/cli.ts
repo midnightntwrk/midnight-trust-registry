@@ -12,7 +12,13 @@ import {
 import { createTrustRegistryApiServer } from "./server.js";
 import { localApiOrigin, observeLocalApiCurrentReads } from "./local-ledger-api-observation.js";
 import { createPortalStaticHandler } from "./portal-static.js";
-import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
+import {
+  resolveCompactProposalObservation,
+  type FinalizedProposalLedgerReader,
+  type ProposalRole,
+} from "./compact-proposal-observation.js";
+
+const PROPOSAL_ROLES = ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const;
 
 const HELP_TEXT = `Usage:
   trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
@@ -24,6 +30,9 @@ const HELP_TEXT = `Usage:
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
   trust-registry-api observe-local-ledger-api --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT --api-origin http://127.0.0.1:PORT
+  trust-registry-api observe-local-proposal --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
@@ -32,6 +41,7 @@ The plan check performs signed-pin and finalized snapshot readback without a lis
 It is not independent finality proof or release qualification.
 The API observation compares current HTTP reads with the signed-plan source.
 It is not actor-journey, process-identity, independent-finality, or release evidence.
+An absent local proposal is not proof of failed submission and never permits retry.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -41,7 +51,7 @@ Examples:
 `;
 
 export type TrustRegistryApiCliOptions = {
-  command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api";
+  command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api" | "observe-local-proposal";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -51,6 +61,8 @@ export type TrustRegistryApiCliOptions = {
   localLedgerKeyringDirectory?: string;
   localLedgerReviewerFingerprint?: string;
   apiOrigin?: string;
+  proposalRole?: ProposalRole;
+  authorizationId?: string;
   clusterBind?: boolean;
   servePortals?: boolean;
   unsafeDemoMutations?: boolean;
@@ -65,7 +77,7 @@ export const parseTrustRegistryApiCliArgs = (
     throw new Error(HELP_TEXT);
   }
   if (command !== "serve" && command !== "check-local-ledger-plan"
-    && command !== "observe-local-ledger-api") {
+    && command !== "observe-local-ledger-api" && command !== "observe-local-proposal") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
@@ -137,6 +149,22 @@ export const parseTrustRegistryApiCliArgs = (
         options.apiOrigin = localApiOrigin(origin);
         break;
       }
+      case "--role": {
+        const role = args.shift();
+        if (role === undefined || !PROPOSAL_ROLES.some((candidate) => candidate === role)) {
+          throw new Error(`--role requires an issuer, verifier, auditor, maintainer, or recognition value\n\n${HELP_TEXT}`);
+        }
+        options.proposalRole = role as ProposalRole;
+        break;
+      }
+      case "--authorization-id": {
+        const id = args.shift();
+        if (id === undefined || id.length === 0 || id.length > 256 || id.trim() !== id || id.includes("\0")) {
+          throw new Error(`--authorization-id requires a canonical ID of at most 256 characters\n\n${HELP_TEXT}`);
+        }
+        options.authorizationId = id;
+        break;
+      }
       case "--unsafe-demo-mutations":
         options.unsafeDemoMutations = true;
         break;
@@ -167,15 +195,24 @@ export const parseTrustRegistryApiCliArgs = (
     : localEvidence.some((value) => value !== undefined)) {
     throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
-  if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api") {
+  if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api"
+    || command === "observe-local-proposal") {
     const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
       "--local-ledger-keyring", "--local-ledger-reviewer"]);
     if (command === "observe-local-ledger-api") allowed.add("--api-origin");
+    if (command === "observe-local-proposal") {
+      allowed.add("--role");
+      allowed.add("--authorization-id");
+    }
     if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
       throw new Error("Local readback accepts only complete signed local-ledger evidence");
     }
     if (command === "observe-local-ledger-api" && options.apiOrigin === undefined) {
       throw new Error("Local API observation requires --api-origin");
+    }
+    if (command === "observe-local-proposal"
+      && (options.proposalRole === undefined || options.authorizationId === undefined)) {
+      throw new Error("Local proposal observation requires --role and --authorization-id");
     }
     return options;
   }
@@ -238,6 +275,34 @@ export const runTrustRegistryApiCli = async (
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin! });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  if (options.command === "observe-local-proposal") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    const snapshot = await source.loadSnapshot();
+    const observation = await resolveCompactProposalObservation(
+      source.readFinalizedProposalLedger, snapshot.registry.registryId,
+      options.proposalRole!, options.authorizationId!,
+    );
+    process.stdout.write(`${JSON.stringify({
+      format: "tr-local-proposal-observation-v1",
+      networkId: "undeployed",
+      registryId: snapshot.registry.registryId,
+      contractAddress: plan.contractAddress,
+      role: options.proposalRole,
+      authorizationId: options.authorizationId,
+      status: observation === null ? "not-observed" : "observed",
+      observation,
+      retryPermitted: false,
+      releaseQualified: false,
+    }, null, 2)}\n`);
     return;
   }
   const portalHandler = options.servePortals === true

@@ -33,6 +33,16 @@ authenticated Midnight finality reader, durable admission storage, and an
 operator procedure for definitively rejected attempts. The simulator reader
 is a fixture, not a network-finality source.
 
+For a signed local runtime plan, `trust-registry-api observe-local-proposal`
+reads one role/authorization ID through the same pinned source as the API.
+It reports only an event hash and evidence commitment, or `not-observed`, and
+always sets `retryPermitted: false` and `releaseQualified: false`. It does not
+advance or clear the submission journal. Run it only after manually reviewing,
+re-signing, and installing the post-mutation snapshot/plan; a stale plan must
+fail closed rather than be used to justify a retry. The command cannot replace
+authenticated finality evidence, journal reconciliation, or a deployed actor
+journey.
+
 Tests cover response loss, process restart, concurrent writers, matching and
 conflicting finalized observations, unavailable readers, all five proposal
 role keys, and absence of raw presentation/signatures in the file. Recognition
