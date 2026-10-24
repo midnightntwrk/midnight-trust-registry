@@ -21,6 +21,7 @@ import {
   sequenceTimestampMap,
   validateLocalLedgerRuntimePlan,
 } from "../local-ledger-runtime.js";
+import { resolveAuthorizationEntry, resolveRecognitionEntry } from "../source.js";
 
 const sourceRevision = "a".repeat(40);
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
@@ -227,7 +228,14 @@ describe("approved local-ledger API runtime", () => {
       vi.setSystemTime(new Date(approved.notAfter).getTime() + 1);
       const expired = { cause: { message: expect.stringMatching(/not currently valid/u) } };
       await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
+      await expect(source.loadCurrentLedgerSelection()).rejects.toMatchObject(expired);
       await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
+      await expect(resolveAuthorizationEntry(source, {
+        role: "issuer", subjectDid: "did:midnight:expired", resourceId: "resource:expired",
+      })).rejects.toMatchObject(expired);
+      await expect(resolveRecognitionEntry(source, {
+        recognizedAuthorityDid: "did:midnight:expired", scopeResourceId: "resource:expired",
+      })).rejects.toMatchObject(expired);
       expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();

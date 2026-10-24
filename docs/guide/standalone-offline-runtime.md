@@ -1403,7 +1403,11 @@ with injected snapshots is not local deployment or restore evidence.
    establish verifier/auditor scope preimages from the snapshot alone. Verify
    startup, `/health`, and current actor reads before reopening traffic. A
    failed finalized read latches the API unavailable until a controlled restart,
-   even if old snapshot bytes or the provider later appear healthy. This latch
+   even if old snapshot bytes or the provider later appear healthy. This covers
+   current resolution as well as snapshot and proposal reads. Separately, each
+   local-ledger source read checks the signed plan's validity before and after
+   the provider call; an in-flight read finishing after plan expiry rejects.
+   The provider-failure latch
    does not persist across restarts, so the operator must reconcile the current
    finalized checkpoint and plan before restarting. A failed rotation leaves
    the API unavailable; do not

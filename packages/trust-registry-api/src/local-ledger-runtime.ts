@@ -383,11 +383,21 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     },
     async loadSnapshot() {
       assertPlanCurrent();
-      return source.loadSnapshot();
+      const snapshot = await source.loadSnapshot();
+      assertPlanCurrent();
+      return snapshot;
+    },
+    async loadCurrentLedgerSelection() {
+      assertPlanCurrent();
+      const selection = await source.loadCurrentLedgerSelection();
+      assertPlanCurrent();
+      return selection;
     },
     async readFinalizedProposalLedger() {
       assertPlanCurrent();
-      return source.readFinalizedProposalLedger();
+      const ledger = await source.readFinalizedProposalLedger();
+      assertPlanCurrent();
+      return ledger;
     },
   };
 }

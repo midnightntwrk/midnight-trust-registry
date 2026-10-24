@@ -101,7 +101,10 @@ export function createLocalLedgerBoundSource(input: {
   reader: Pick<FinalizedRegistryBootstrapReader, "readCurrentFinalizedLedger">;
   sequenceToTimestamp: SequenceToTimestamp;
   readTimeoutMs?: number;
-}): TrustRegistryApiStateSource & { readFinalizedProposalLedger: FinalizedProposalLedgerReader } {
+}): TrustRegistryApiStateSource & {
+  loadCurrentLedgerSelection(): Promise<TrustRegistryApiCurrentLedgerSelection>;
+  readFinalizedProposalLedger: FinalizedProposalLedgerReader;
+} {
   const address = input.contractAddress.toLowerCase();
   if (!CONTRACT_ADDRESS.test(address) || /^0x0{64}$/u.test(address)) {
     throw new Error("A nonzero deployed local contract address is required");
