@@ -25,6 +25,7 @@ export * from "./public-network-deployment.js";
 export * from "./deployment-attempt-journal.js";
 export * from "./local-verifier-key-install.js";
 export * from "./local-staged-deployment-reconciliation.js";
+export * from "./local-issuer-proposal-call.js";
 export { prepareLocalNetworkCommitteeTransition, preparePublicNetworkCommitteeTransition } from "./public-maintenance-transition.js";
 export type {
   CommitteeTransitionApproval,

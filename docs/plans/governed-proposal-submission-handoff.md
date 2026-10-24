@@ -40,6 +40,17 @@ proposals have a separate accreditation/admission workflow but use the same
 journal at the Compact submission boundary. The adapter is not wired into the
 packaged CLI, which has no network-finality source.
 
+The local issuer circuit now has a provider-backed call primitive in
+`packages/trust-registry-integration/src/local-issuer-proposal-call.ts`. It
+preflights the current finalized ledger context, evidence-verifier key and
+signatures, requires a one-attempt journal, and calls the actual
+`proposeIssuerAuthorization` circuit through Midnight.js. Its tests mock the
+SDK submission; they are not deployment evidence. The primitive is not
+connected to the API or a trusted local finality reader, does not establish
+VP admission by itself, and must not be used to qualify an actor journey
+before approved genesis, pinned install bytes, independently authenticated
+finalized readback, and post-submission reconciliation are in place.
+
 ## Local rotation and capacity
 
 The writable segment is capped at 10,000 attempts and 4 MiB. Capacity
