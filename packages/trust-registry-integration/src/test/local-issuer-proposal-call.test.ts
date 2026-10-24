@@ -12,6 +12,8 @@ import {
   EvidenceVerifierKeyStatus,
   signDeploymentBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
+  AuthorizationStatus,
+  MaintainerStatus,
   TrustRegistryContract,
 } from "@midnight-ntwrk/trust-registry-contract";
 
@@ -76,6 +78,12 @@ const fixture = (): { call: LocalIssuerProposalCall; ledger: TrustRegistryContra
   const ledger = {
     initialized: true, registryId, deploymentNetworkIdCommitment: networkIdCommitment,
     governancePolicyCommitment: policy, governancePolicyVersion: 1n, governanceActionCount: 3n,
+    maintainerThreshold: 1n, emergencyMaintainerThreshold: 1n, archivalMaintainerThreshold: 1n,
+    maintainerKeyIds: { member: (id: Uint8Array) => Buffer.from(id).equals(Buffer.from(keyId)) },
+    maintainerRecords: { lookup: () => ({ keyId, publicKey: signerPublicKey, status: MaintainerStatus.active }) },
+    issuerAuthorizationIds: { member: () => false },
+    issuerProposalEvidenceRecords: { member: () => false },
+    currentIssuerAuthorizationIdsByScopeKey: { member: () => false },
     evidenceVerifierKeyRecords: {
       member: (id: Uint8Array) => Buffer.from(id).equals(Buffer.from(verifierAuthorizationId)),
       lookup: () => keyRecord,
@@ -130,12 +138,12 @@ describe("local issuer proposal circuit call", () => {
       return execute();
     }) };
     await expect(submitLocalIssuerProposalCall({
-      call, readFinalizedLedger: async () => ledger,
+      call, readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).resolves.toEqual({ eventHash: `0x${Buffer.from(bytes32Commitment("event:issuer-proposed")).toString("hex")}` });
     expect(journal.executeOnce).toHaveBeenCalledOnce();
     expect(mocks.submitCallTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      contractAddress, privateStateId: "trustRegistryPrivateState", circuitId: "proposeIssuerAuthorization",
+      contractAddress: contractAddress.slice(2), privateStateId: "trustRegistryPrivateState", circuitId: "proposeIssuerAuthorization",
       args: [prepared.authorizationBundle, call.authorizationId, call.subjectDidCommitment,
         call.resourceType, call.resourceId, call.policyId, call.statusPolicyBindingCommitment,
         call.trustLevel, call.evidenceHash, call.evidenceVerifierAuthorizationId,
@@ -189,12 +197,80 @@ describe("local issuer proposal circuit call", () => {
     })).toThrow(/not current/u);
   });
 
+  it("rejects journal-ambiguous labels and predictable Compact failures before reservation", () => {
+    const { call, ledger } = fixture();
+    for (const authorizationLabel of [` ${call.authorizationLabel}`, `${call.authorizationLabel} `,
+      "a".repeat(257)]) {
+      expect(() => prepareLocalIssuerProposalCall({ ...call, authorizationLabel }, ledger))
+        .toThrow(/authorization binding/u);
+    }
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, maintainerThreshold: 2n,
+    })).toThrow(/threshold/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, maintainerKeyIds: { member: () => false } as unknown as typeof ledger.maintainerKeyIds,
+    })).toThrow(/not registered/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, maintainerRecords: {
+        lookup: () => ({ keyId, publicKey: signerPublicKey, status: MaintainerStatus.suspended }),
+      } as unknown as typeof ledger.maintainerRecords,
+    })).toThrow(/not current and active/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, issuerAuthorizationIds: { member: () => true } as unknown as typeof ledger.issuerAuthorizationIds,
+    })).toThrow(/already exists/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, issuerProposalEvidenceRecords: { member: () => true } as unknown as typeof ledger.issuerProposalEvidenceRecords,
+    })).toThrow(/already exists/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, currentIssuerAuthorizationIdsByScopeKey: {
+        member: () => true, lookup: () => bytes32Commitment("existing-issuer"),
+      } as unknown as typeof ledger.currentIssuerAuthorizationIdsByScopeKey,
+      issuerAuthorizationRecords: {
+        lookup: () => ({ status: AuthorizationStatus.active }),
+      } as unknown as typeof ledger.issuerAuthorizationRecords,
+    })).toThrow(/live authorization/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, currentIssuerAuthorizationIdsByScopeKey: {
+        member: () => true, lookup: () => bytes32Commitment("existing-issuer"),
+      } as unknown as typeof ledger.currentIssuerAuthorizationIdsByScopeKey,
+      issuerAuthorizationRecords: {
+        lookup: () => ({ status: AuthorizationStatus.revoked }),
+      } as unknown as typeof ledger.issuerAuthorizationRecords,
+    })).not.toThrow();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it("requires the finalized reader to bind its ledger to the requested contract", async () => {
+    const { call, ledger } = fixture();
+    const journal = { executeOnce: vi.fn() };
+    const readFinalizedLedger = vi.fn(async () => ({ contractAddress: `0x${"b".repeat(64)}`, ledger }));
+    await expect(submitLocalIssuerProposalCall({
+      call, readFinalizedLedger,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/different contract address/u);
+    expect(readFinalizedLedger).toHaveBeenCalledWith(contractAddress);
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve when finalized governance cannot satisfy the signer threshold", async () => {
+    const { call, ledger } = fixture();
+    const journal = { executeOnce: vi.fn() };
+    await expect(submitLocalIssuerProposalCall({
+      call, readFinalizedLedger: async (address) => ({
+        contractAddress: address, ledger: { ...ledger, maintainerThreshold: 2n },
+      }),
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/threshold/u);
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
   it("never reserves or submits after a stale or substituted finalized read", async () => {
     const { call, ledger } = fixture();
     const journal = { executeOnce: vi.fn() };
     await expect(submitLocalIssuerProposalCall({
       call: { ...call, contractAddress: `0x${"b".repeat(64)}` },
-      readFinalizedLedger: async () => ledger,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).rejects.toThrow(/Maintainer signature/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();

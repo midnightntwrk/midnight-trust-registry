@@ -43,10 +43,13 @@ packaged CLI, which has no network-finality source.
 The local issuer circuit now has a provider-backed call primitive in
 `packages/trust-registry-integration/src/local-issuer-proposal-call.ts`. It
 preflights the current finalized ledger context, evidence-verifier key and
-signatures, requires a one-attempt journal, and calls the actual
+signatures, maintainer membership/threshold, and issuer scope, requires a
+contract-address-bound finalized ledger reader and a one-attempt journal,
+and calls the actual
 `proposeIssuerAuthorization` circuit through Midnight.js. Its tests mock the
 SDK submission; they are not deployment evidence. The primitive is not
-connected to the API or a trusted local finality reader, does not establish
+connected to the API or a trusted local finality reader; a caller-supplied
+address label alone does not authenticate a ledger read. It does not establish
 VP admission by itself, and must not be used to qualify an actor journey
 before approved genesis, pinned install bytes, independently authenticated
 finalized readback, and post-submission reconciliation are in place.

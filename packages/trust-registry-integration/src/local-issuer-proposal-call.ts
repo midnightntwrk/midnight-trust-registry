@@ -10,7 +10,9 @@ import {
   encodeCompactActionKind,
   verifyDeploymentBoundMaintainerAction,
   verifyIssuerProposalEvidenceSignature,
+  AuthorizationStatus,
   EvidenceVerifierKeyStatus,
+  MaintainerStatus,
   TrustRegistryContract,
   type TrustRegistryJubjubSignature,
   type TrustRegistryPrivateState,
@@ -63,6 +65,7 @@ const bytes32 = (value: Uint8Array, label: string): Uint8Array => {
 };
 
 const same = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(right);
+const isZero = (value: Uint8Array): boolean => value.every((byte) => byte === 0);
 
 /** The reader must authenticate finality independently of the submitting SDK provider. */
 export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, ledger: Ledger): LocalIssuerProposalCallContext {
@@ -70,7 +73,8 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     || !/^0x[0-9a-f]{64}$/u.test(input.contractAddress)
     || /^0x0{64}$/u.test(input.contractAddress)
     || input.registryId.length === 0 || input.registryId.includes("\0")
-    || input.authorizationLabel.length === 0 || input.authorizationLabel.includes("\0")
+    || input.authorizationLabel.length === 0 || input.authorizationLabel.length > 256
+    || input.authorizationLabel.trim() !== input.authorizationLabel || input.authorizationLabel.includes("\0")
     || !same(input.authorizationId, bytes32Commitment(input.authorizationLabel))) {
     throw new Error("Local issuer call has an invalid deployment or authorization binding");
   }
@@ -92,6 +96,10 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     evidenceVerifierAuthorizationId: input.evidenceVerifierAuthorizationId,
     evidenceVerifierKeyIdCommitment: input.evidenceVerifierKeyIdCommitment,
   })) bytes32(value, label);
+  if ([input.authorizationId, input.subjectDidCommitment, input.resourceId, input.policyId,
+    input.trustLevel, input.evidenceHash].some(isZero)) {
+    throw new Error("Issuer proposal has an unset required field");
+  }
   if (!same(input.policyId, ledger.governancePolicyCommitment)
     || !ledger.evidenceVerifierKeyRecords.member(input.evidenceVerifierAuthorizationId)) {
     throw new Error("Issuer policy or evidence-verifier authorization is not current");
@@ -126,6 +134,39 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
   )) throw new Error("Issuer evidence signature does not bind the current proposal");
 
   const actionKind = encodeCompactActionKind("tr:issuer:propose");
+  const requiredThreshold = TrustRegistryContract.pureCircuits.actionScopedMaintainerThreshold(
+    actionKind, ledger.maintainerThreshold, ledger.emergencyMaintainerThreshold,
+    ledger.archivalMaintainerThreshold,
+  );
+  if (BigInt(input.signers.length) < requiredThreshold || input.signers.length > 5) {
+    throw new Error("Maintainer signer count does not satisfy the issuer action threshold");
+  }
+  for (const signer of input.signers) {
+    if (isZero(bytes32(signer.keyId, "Maintainer key id")) || !ledger.maintainerKeyIds.member(signer.keyId)) {
+      throw new Error("Maintainer signer key is not registered");
+    }
+    const maintainer = ledger.maintainerRecords.lookup(signer.keyId);
+    if (maintainer.status !== MaintainerStatus.active
+      || !same(maintainer.keyId, signer.keyId)
+      || maintainer.publicKey.x !== signer.publicKey.x
+      || maintainer.publicKey.y !== signer.publicKey.y) {
+      throw new Error("Maintainer signer is not current and active");
+    }
+  }
+  if (ledger.issuerAuthorizationIds.member(input.authorizationId)
+    || ledger.issuerProposalEvidenceRecords.member(input.authorizationId)) {
+    throw new Error("Issuer proposal authorization already exists");
+  }
+  const scopeKey = TrustRegistryContract.pureCircuits.issuerAuthorizationScopeKey(
+    input.subjectDidCommitment, input.resourceType, input.resourceId,
+  );
+  if (ledger.currentIssuerAuthorizationIdsByScopeKey.member(scopeKey)) {
+    const currentId = ledger.currentIssuerAuthorizationIdsByScopeKey.lookup(scopeKey);
+    const current = ledger.issuerAuthorizationRecords.lookup(currentId);
+    if (current.status !== AuthorizationStatus.revoked && current.status !== AuthorizationStatus.archived) {
+      throw new Error("Issuer authorization scope already has a live authorization");
+    }
+  }
   const actionSequence = ledger.governanceActionCount;
   if (input.signers.some((signer) => !verifyDeploymentBoundMaintainerAction(
     signer.publicKey, registryId, networkId, contractAddress, ledger.governancePolicyCommitment,
@@ -141,17 +182,20 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
 /** The journal reserves before SDK submission; SDK finalization is not independent readback. */
 export async function submitLocalIssuerProposalCall(input: {
   call: LocalIssuerProposalCall;
-  readFinalizedLedger: () => Promise<Ledger>;
+  readFinalizedLedger: (contractAddress: string) => Promise<{ contractAddress: string; ledger: Ledger }>;
   providers: ContractProviders<RegistryContract>;
   journal: LocalIssuerProposalJournal;
 }): Promise<{ eventHash: string }> {
-  const ledger = await input.readFinalizedLedger();
-  const prepared = prepareLocalIssuerProposalCall(input.call, ledger);
+  const finalized = await input.readFinalizedLedger(input.call.contractAddress);
+  if (finalized.contractAddress !== input.call.contractAddress) {
+    throw new Error("Finalized issuer ledger read belongs to a different contract address");
+  }
+  const prepared = prepareLocalIssuerProposalCall(input.call, finalized.ledger);
   return input.journal.executeOnce("issuer", input.call.authorizationLabel,
     `0x${Buffer.from(input.call.evidenceHash).toString("hex")}`, async () => {
       const result = await submitCallTx(input.providers, {
         compiledContract: compiledStagedVerifierKeyContract("proposeIssuerAuthorization"),
-        contractAddress: input.call.contractAddress,
+        contractAddress: input.call.contractAddress.slice(2),
         privateStateId: "trustRegistryPrivateState",
         circuitId: "proposeIssuerAuthorization",
         args: [
