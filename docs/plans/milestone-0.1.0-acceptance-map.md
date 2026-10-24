@@ -34,6 +34,13 @@ Any runtime-source change requires a new exact-source install and review.
 | #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The verified `a94520e` install inventory binds source-matched packages, six images, and proof parameters. Manifest-backed packed-consumer actor and VC Ledger 8 fixture smokes passed at that source, but neither is a deployed local-ledger actor journey. | Full integration, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
 | #178 milestone protection policy | The [delivery harness](milestone-0.1.0-delivery-harness.md) requires green exact-head CI and current-head LLM review; the user explicitly declined a milestone branch-protection rule | Reconcile the stale issue with that policy decision; do not treat absence of branch protection as a release blocker or relax develop/main protections. |
 
+The private proposal journal now blocks new governed proposals while any
+ambiguous reservation remains, including across restart. Mocked/API tests
+cover replay denial and a matching finalized observation, but a never-observed
+attempt can still stop all new proposals. [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
+is a local RC blocker for an audited operator recovery path. A null indexer
+read, elapsed time, or journal replacement must not bypass this gate.
+
 ## Next Local Qualification Sequence
 
 1. Keep using focused and light checks while the candidate tree changes. Full

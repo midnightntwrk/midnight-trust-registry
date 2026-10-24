@@ -185,7 +185,7 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
 
-  it("budgets eventual receipt hashes for other outstanding reservations", async () => {
+  it("reports an unresolved reservation before projected capacity", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     const attempts = Array.from({ length: 9_500 }, (_, index) => ({
       role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
@@ -199,7 +199,7 @@ describe("private governed proposal submission journal", () => {
     await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
       executed = true;
       return { eventHash };
-    })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+    })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executed).toBe(false);
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
@@ -334,7 +334,7 @@ describe("private governed proposal submission journal", () => {
     expect(executions).toBe(1);
   });
 
-  it("denies concurrent submissions at the rotated segment byte boundary", async () => {
+  it("denies concurrent submissions behind a rotated-segment reservation", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
     await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
@@ -363,7 +363,7 @@ describe("private governed proposal submission journal", () => {
     ]);
     expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
     for (const result of results) {
-      if (result.status === "rejected") expect(result.reason).toBeInstanceOf(ProposalSubmissionCapacityError);
+      if (result.status === "rejected") expect(result.reason).toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     }
     expect(executions).toBe(0);
     expect(await journal.read("verifier", authorizationId)).toBeNull();

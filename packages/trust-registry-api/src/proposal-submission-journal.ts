@@ -230,6 +230,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         if (existing.evidenceCommitment !== key.evidenceCommitment) throw new ProposalSubmissionConflictError();
         throw new ProposalSubmissionAlreadyPendingError(existing.state);
       }
+      if (storage.active.attempts.some((attempt) => attempt.state === "reserved")) {
+        throw new ProposalSubmissionAlreadyPendingError("reserved");
+      }
       if (storage.active.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
       const attempts = [...storage.active.attempts, { ...key, state: "reserved" as const, eventHash: null }];
       const projectedAttempts = storage.active.attempts.map((attempt) => attempt.state === "reserved"
@@ -240,9 +243,6 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
       }), "utf8");
       if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
-      if (storage.active.attempts.some((attempt) => attempt.state === "reserved")) {
-        throw new ProposalSubmissionAlreadyPendingError("reserved");
-      }
       await this.writeActive(storage, StateSchema.parse({
         ...storage.active, attempts,
       }));

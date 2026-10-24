@@ -39,7 +39,8 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 10 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
 | 11 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial current-decision matrix and historical-route rejection | #58, #78, #73 |
 | 12 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
-| 13 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219 |
+| 13 | [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220) | Audited recovery of never-observed ambiguous proposal reservations | #219 finalized reader and journal |
+| 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219 and #220 |
 
 Deferred from this local RC: [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
 historical API/TRQP evidence and the historical-route acceptance text still

@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   target across provider instances until journal reconciliation and process
   restart. A pending broadcast reserves that target, and the private proposal
   journal blocks new proposals after restart while any ambiguous reservation
-  remains. Live qualification still
-  blocks API write-path wiring
+  remains. Audited recovery of never-observed attempts remains open in #220;
+  live qualification still blocks API write-path wiring
 - exercise local issuer submission with the real private journal across
   restart and ambiguous SDK responses; this remains mocked-network evidence
 - require the local issuer circuit-call helper to check the private journal's
