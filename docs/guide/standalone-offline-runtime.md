@@ -123,7 +123,7 @@ node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-ou
 ```
 
 The read-only preflight checks the signed clean source, complete contract and
-proof-parameter inputs, exact-source API and portal manifests, pinned local
+proof-parameter inputs, all required workspace package entrypoints, exact-source API and portal manifests, pinned local
 image digests, and unused destination before any bundle directory is created.
 It does not build images or prove that a later copy/save cannot fail; recheck
 the completed bundle and running deployment separately.
@@ -217,7 +217,8 @@ candidate bytes.
 
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
-the packed contract, including the manifest's Compact-source and generated
+the packed contract and each package's required entrypoint files, including
+the manifest's Compact-source and generated
 contract hashes against the corresponding tarball bytes and its declared
 compiler version against packed contract metadata, and hashes each
 image archive and all 18 required proof

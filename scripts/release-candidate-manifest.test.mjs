@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertFullPackedContract,
+  assertRequiredPackedPaths,
   buildReleaseCandidateManifest,
   hashPackedTarEntry,
   verifyReleaseCandidateArtifacts,
@@ -34,6 +35,10 @@ const packContract = (root, verifier = "verifier-a\n",
     name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
   }));
   put(root, "packed-contract/package/src/trust-registry.compact", source);
+  for (const path of ["README.md", "dist/index.js", "dist/contract.js",
+    "dist/signing.js", "dist/testing.js"]) {
+    put(root, `packed-contract/package/${path}`, "fixture\n");
+  }
   put(root, `packed-contract/${prefix}/contract/index.js`, generated);
   put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
   put(root, `packed-contract/${prefix}/compiler/contract-info.json`, info);
@@ -57,6 +62,9 @@ const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-re
   put(root, "packed-domain/package/package.json", JSON.stringify({
     name, version: "0.1.0",
   }));
+  for (const path of ["README.md", "dist/index.js", "dist/browser.js"]) {
+    put(root, `packed-domain/package/${path}`, "fixture\n");
+  }
   if (includeAlias) put(root, "packed-domain/x/package.json", "shadowed-domain\n");
   const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz");
   const packed = spawnSync("tar", ["-czf", tarball, "package", ...(includeAlias ? ["x"] : [])], {
@@ -65,6 +73,15 @@ const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-re
   assert.equal(packed.status, 0, packed.stderr);
   return tarball;
 };
+
+test("required packed paths reject an API tarball without its runtime entrypoint", () => {
+  const workspace = "packages/trust-registry-api";
+  const entries = ["package/README.md", "package/package.json", "package/bin/trust-registry-api.mjs",
+    "package/dist/cli.js", "package/dist/server.js", "package/dist/browser-schemas.js"];
+  assert.throws(() => assertRequiredPackedPaths(entries, workspace),
+    /packed artifact is missing required files: dist\/index.js/u);
+  assert.doesNotThrow(() => assertRequiredPackedPaths([...entries, "package/dist/index.js"], workspace));
+});
 
 test("candidate manifest binds signed source inputs and exact package bytes", () => {
   const root = mkdtempSync(join(tmpdir(), "tr-release-manifest-"));

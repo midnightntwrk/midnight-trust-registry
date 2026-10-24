@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { STANDALONE_PROOF_PARAMETER_PATHS, pinnedStandaloneImages, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
+import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 
 export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
 
@@ -39,6 +40,21 @@ function verifiedSourceRevision() {
   }
   command("node", ["scripts/check-full-contract-artifacts.mjs"]);
   return command("git", ["rev-parse", "HEAD"]);
+}
+
+export function assertRequiredWorkspaceFiles(repoRoot, workspaces = artifactWorkspaces) {
+  for (const workspace of workspaces) {
+    const required = packageManifestCatalog.get(workspace)?.requiredPackedPaths;
+    if (!Array.isArray(required) || required.length === 0) {
+      throw new Error(`Install package has no required-path catalog: ${workspace}`);
+    }
+    for (const path of required) {
+      const file = join(repoRoot, workspace, path);
+      if (!existsSync(file) || !lstatSync(file).isFile()) {
+        throw new Error(`${workspace}: required package file is missing before install build: ${path}`);
+      }
+    }
+  }
 }
 
 export function validateApiRuntimeImageInput(inputDirectory, sourceRevision) {
@@ -136,6 +152,7 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
 
 export function preflightStandaloneInstall(options = {}) {
   const sourceRevision = verifiedSourceRevision();
+  assertRequiredWorkspaceFiles(root);
   return validateStandaloneInstallInputs(options, sourceRevision);
 }
 

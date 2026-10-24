@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
+import { assertRequiredWorkspaceFiles, pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
   validateStandaloneInstallInputs, validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
 import { STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
+import { packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 
 const image = `midnightntwrk/test@sha256:${"a".repeat(64)}`;
 const compose = `name: \${TR_STACK_NAME:-tr-standalone-local-smoke}
@@ -27,6 +28,24 @@ test("accepts only three digest-pinned dedicated services", () => {
     /dedicated project/u);
   assert.throws(() => pinnedStandaloneImages(compose.replace("TR_STACK_NAME", "UNTRUSTED_PROJECT")),
     /dedicated project/u);
+});
+
+test("install preflight rejects a missing API package entrypoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-install-entrypoints-test-"));
+  const workspace = "packages/trust-registry-api";
+  try {
+    for (const path of packageManifestCatalog.get(workspace).requiredPackedPaths) {
+      const target = join(root, workspace, path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, "fixture\n");
+    }
+    assert.doesNotThrow(() => assertRequiredWorkspaceFiles(root, [workspace]));
+    await rm(join(root, workspace, "dist/index.js"));
+    assert.throws(() => assertRequiredWorkspaceFiles(root, [workspace]),
+      /required package file is missing before install build: dist\/index.js/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("preflight checks proof and image inputs without creating an install directory", async () => {
