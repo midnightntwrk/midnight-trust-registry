@@ -38,14 +38,17 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 9 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58, #67, #77 |
 | 10 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
 | 11 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial current-decision matrix and historical-route rejection | #58, #78, #73 |
-| 12 | [#218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218) | Optional pinned Helm install path; not a 0.1.0 RC gate | Reviewed install-manifest artifacts |
-| 13 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
-| 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219; #218 is optional |
+| 12 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
+| 13 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219 |
 
 Deferred from this local RC: [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
 historical API/TRQP evidence and the historical-route acceptance text still
 present in older GitHub issues. Their tracker wording must be reconciled before
 claiming those issues closed; this plan does not silently close them.
+
+[#218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218)
+remains open outside the 0.1.0 milestone as an optional Helm deployment path.
+Its cluster qualification is not a dependency of #45.
 
 ## Use-Case Ownership
 
