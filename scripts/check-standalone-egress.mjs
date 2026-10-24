@@ -152,7 +152,8 @@ export async function verifiedOfflineEgressTopology(bundleDirectory,
     throw new Error("Offline egress probe requires a verified v3-v6 install bundle");
   }
   return { sourceRevision: verified.sourceRevision, images: verified.images,
-    allowOffline: true, composeFiles: [join(root, "compose.yml"),
+    allowOffline: true, allowUnpublishedHostPorts: true,
+    composeFiles: [join(root, "compose.yml"),
       join(root, "compose.offline.yml")] };
 }
 

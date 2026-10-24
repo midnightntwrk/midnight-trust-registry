@@ -755,6 +755,10 @@ container on the same bridge using the verified node image ID, rather than
 trusting a mutable local tag or directly probing the running node. A standalone CLI
 invocation against a source-scoped offline stack must supply the same verified
 bundle: `node scripts/check-standalone-egress.mjs <verified-bundle-directory>`.
+With that verified bundle, the probe accepts Docker Desktop's unpublished
+effective host ports only when the requested bindings still match the selected
+loopback addresses and ports. It does not treat unpublished ports as working
+host ingress; the separate installation relay remains necessary for RPC access.
 A v3 setup record created before
 image identities were recorded cannot be upgraded in place; begin a fresh
 setup directory rather than replacing its evidence. At
