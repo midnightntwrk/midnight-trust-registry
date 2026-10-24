@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { fork } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -158,6 +160,61 @@ describe("private governed proposal submission journal", () => {
       return { eventHash: otherEventHash };
     })).resolves.toEqual({ eventHash: otherEventHash });
     expect(executions).toBe(2);
+  });
+
+  it("re-reads a reserved proposal written under a different process's filesystem lock", async () => {
+    const child = fork(fileURLToPath(new URL("./fixtures/seed-reserved-proposal-lock.mjs", import.meta.url)),
+      [path, "issuer", authorizationId, evidenceCommitment],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+    let diagnostic = "";
+    child.stderr?.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Child lock timed out: ${diagnostic}`)), 10_000);
+        const finish = () => {
+          clearTimeout(timer);
+          child.off("message", onMessage);
+          child.off("error", onError);
+          child.off("exit", onExit);
+        };
+        const onMessage = (message: unknown) => {
+          if (message !== "locked") return;
+          finish();
+          resolve();
+        };
+        const onError = (error: Error) => { finish(); reject(error); };
+        const onExit = (code: number | null) => {
+          finish();
+          reject(new Error(`Child exited before locking (${String(code)}): ${diagnostic}`));
+        };
+        child.on("message", onMessage);
+        child.once("error", onError);
+        child.once("exit", onExit);
+      });
+      let executions = 0;
+      const outcome = new FileProposalSubmissionJournal(path).executeOnce("verifier", "auth:other-process",
+        evidenceCommitment, async () => {
+          executions += 1;
+          return { eventHash: otherEventHash };
+        }).then(
+        () => ({ succeeded: true as const }),
+        (error: unknown) => ({ succeeded: false as const, error }),
+      );
+      const exited = new Promise<void>((resolve, reject) => {
+        child.once("exit", (code) => code === 0 ? resolve()
+          : reject(new Error(`Child lock holder failed (${String(code)}): ${diagnostic}`)));
+        child.once("error", reject);
+      });
+      child.send("release");
+      await exited;
+      expect(await outcome).toMatchObject({
+        succeeded: false,
+        error: { blockingRole: "issuer", blockingAuthorizationId: authorizationId },
+      });
+      expect(executions).toBe(0);
+    } finally {
+      if (child.exitCode === null) child.kill();
+    }
   });
 
   it("does not downgrade a finalized observation when a delayed submit receipt arrives", async () => {
