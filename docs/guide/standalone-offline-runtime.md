@@ -187,8 +187,12 @@ signed v4, v5, or v6 install inventory with an API archive pin. Before opening t
 listener, it checks a file at `/app/source-revision` in the container
 filesystem against the approved plan. The listener bounds header, request,
 idle-socket, and keep-alive waits and has a 16-connection cap; it does not
-emit wildcard CORS headers. These limits do not cancel a stalled indexer
-provider call, which remains a runtime resilience and qualification gate. Snapshot and
+emit wildcard CORS headers. The finalized-ledger source shares one in-flight
+read and returns 503 after a 15-second deadline. Because the indexer provider
+offers no cancellation here, a timed-out read leaves the process fail-closed
+until an operator investigates and restarts it; the underlying provider call
+may still be running. This bounds the HTTP wait but does not prove transport
+cleanup or live-runtime resilience, which remain qualification gates. Snapshot and
 workspace modes and unsafe demo mutations cannot use this option. The operator
 must still keep the API on a private service, use a read-only image filesystem,
 allow only authorized in-cluster callers through network policy, and separately

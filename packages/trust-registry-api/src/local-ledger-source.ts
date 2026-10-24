@@ -17,6 +17,7 @@ const CONTRACT_ADDRESS = /^0x[0-9a-f]{64}$/u;
 const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+const DEFAULT_READ_TIMEOUT_MS = 15_000;
 
 export class LocalLedgerSourceUnavailableError extends Error {
   constructor(cause: unknown) {
@@ -58,6 +59,7 @@ export function createLocalLedgerBoundSource(input: {
   contractAddress: string;
   reader: Pick<FinalizedRegistryBootstrapReader, "readCurrentFinalizedLedger">;
   sequenceToTimestamp: SequenceToTimestamp;
+  readTimeoutMs?: number;
 }): TrustRegistryApiStateSource & { readFinalizedProposalLedger: FinalizedProposalLedgerReader } {
   const address = input.contractAddress.toLowerCase();
   if (!CONTRACT_ADDRESS.test(address) || /^0x0{64}$/u.test(address)) {
@@ -67,8 +69,12 @@ export function createLocalLedgerBoundSource(input: {
   if (!SNAPSHOT_SHA256.test(expectedSnapshotSha256)) {
     throw new Error("An approved snapshot SHA-256 digest is required");
   }
+  const readTimeoutMs = input.readTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+  if (!Number.isSafeInteger(readTimeoutMs) || readTimeoutMs < 1 || readTimeoutMs > 30_000) {
+    throw new Error("Local finalized read timeout must be between 1 and 30000 milliseconds");
+  }
   const addressBytes = Uint8Array.from(Buffer.from(address.slice(2), "hex"));
-  const readBoundState = async () => {
+  const readVerifiedState = async () => {
     try {
       const view = await input.reader.readCurrentFinalizedLedger(address);
       if (view === null) throw new Error("Finalized local Trust Registry ledger is unavailable");
@@ -93,6 +99,28 @@ export function createLocalLedgerBoundSource(input: {
     } catch (cause) {
       throw new LocalLedgerSourceUnavailableError(cause);
     }
+  };
+  let timedOut = false;
+  let pendingRead: ReturnType<typeof readVerifiedState> | undefined;
+  const readBoundState = () => {
+    if (timedOut) {
+      return Promise.reject(new LocalLedgerSourceUnavailableError(
+        new Error("Finalized reader timed out; operator restart is required")));
+    }
+    if (pendingRead) return pendingRead;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        // A provider without cancellation may still be running; never start another read after its timeout.
+        timedOut = true;
+        reject(new LocalLedgerSourceUnavailableError(new Error("Finalized reader timed out")));
+      }, readTimeoutMs);
+    });
+    pendingRead = Promise.race([readVerifiedState(), deadline]).finally(() => {
+      if (timer) clearTimeout(timer);
+      pendingRead = undefined;
+    });
+    return pendingRead;
   };
   return {
     mode: "local-ledger",

@@ -223,6 +223,44 @@ describe("finalized Compact projection coverage", () => {
 });
 
 describe("local ledger-bound API source", () => {
+  it("bounds a stalled finalized reader and refuses further reads until restart", async () => {
+    const { contractAddress } = fixture();
+    let readerCalls = 0;
+    let resolveLate: (value: null) => void = () => {};
+    const stalled = new Promise<null>((resolve) => { resolveLate = resolve; });
+    const source = createLocalLedgerBoundSource({
+      snapshotPath: "/unused/when-reader-stalls",
+      expectedSnapshotSha256: "a".repeat(64),
+      contractAddress: `0x${Buffer.from(contractAddress).toString("hex")}`,
+      reader: { readCurrentFinalizedLedger() { readerCalls += 1; return stalled; } },
+      sequenceToTimestamp,
+      readTimeoutMs: 25,
+    });
+    const reads = await Promise.allSettled([
+      source.loadSnapshot(), source.readFinalizedProposalLedger(),
+    ]);
+    expect(reads.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    expect(readerCalls).toBe(1);
+    await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+    resolveLate(null);
+    await expect(source.readFinalizedProposalLedger()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+    expect(readerCalls).toBe(1);
+
+    const server = createTrustRegistryApiServer({ source });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const bound = server.address();
+      if (bound === null || typeof bound === "string") throw new Error("Expected local HTTP listener");
+      const response = await fetch(`http://127.0.0.1:${bound.port}/v1/registry`);
+      expect(response.status).toBe(503);
+      expect((await response.json()).title).toBe("local ledger unavailable");
+    } finally {
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      }
+    }
+  });
+
   it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));
@@ -349,6 +387,7 @@ describe("local ledger-bound API source", () => {
       expect(malformedRequest.status).toBe(400);
       expect(readCount).toBe(1);
       const issuer = snapshot.issuerEntries[0]!.authorization;
+      if (issuer.activeFrom === undefined) throw new Error("Issuer fixture requires activeFrom");
       const recognition = snapshot.recognitionEntries[0]!.recognition;
       const authorizationEvaluation = { role: "issuer", subjectDid: issuer.subjectDid,
         resourceId: issuer.resourceId, at: issuer.activeFrom };
