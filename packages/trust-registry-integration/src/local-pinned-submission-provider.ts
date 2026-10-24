@@ -156,7 +156,6 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
-    assertUsable();
     return result;
   };
   const publicDataProvider: PublicDataProvider = new Proxy(rawPublicDataProvider, {

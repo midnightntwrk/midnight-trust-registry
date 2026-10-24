@@ -193,6 +193,26 @@ describe("pinned local submission provider", () => {
     expect(() => createPinnedLocalSubmissionProvider(config)).not.toThrow();
   });
 
+  it("returns an already-started confirmed indexer watch during another submission", async () => {
+    let report: ((result: unknown) => void) | undefined;
+    let releaseWatch: ((result: { txId: string; status: string }) => void) | undefined;
+    watchForTxData.mockImplementation(() => new Promise((resolve) => { releaseWatch = resolve; }));
+    sendMnTransaction.mockImplementation(() => ({ send: async (callback: (result: unknown) => void) => {
+      report = callback;
+      return vi.fn();
+    } }));
+    const watcher = createPinnedLocalSubmissionProvider(config);
+    const submitter = createPinnedLocalSubmissionProvider(config);
+    const watching = watcher.publicDataProvider.watchForTxData("tx-earlier");
+    await vi.waitFor(() => { expect(releaseWatch).toBeTypeOf("function"); });
+    const pending = submitter.midnightProvider.submitTx(transaction);
+    await vi.waitFor(() => { expect(report).toBeTypeOf("function"); });
+    releaseWatch?.({ txId: "tx-earlier", status: "SucceedEntirely" });
+    await expect(watching).resolves.toMatchObject({ txId: "tx-earlier" });
+    report?.({ status: { isFinalized: true } });
+    await expect(pending).resolves.toBe("tx-issuer");
+  });
+
   it("does not broadcast a connecting submission after another call poisons the instance", async () => {
     let releaseGenesis: (() => void) | undefined;
     const genesisGate = new Promise<void>((resolve) => { releaseGenesis = resolve; });

@@ -138,6 +138,9 @@ the target is reserved so sibling adapters cannot send or be constructed.
 The guard is process-local and scoped to the approved genesis/contract target;
 it does not replace wallet-level nonce control by the caller. Another process
 is not stopped by it, and already-open indexer streams are not canceled.
+A restart clears this in-memory guard even if no reconciliation occurred;
+the durable journal must keep ambiguous reservations blocked until finalized
+state is independently reconciled.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into
