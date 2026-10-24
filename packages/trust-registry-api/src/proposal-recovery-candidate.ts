@@ -22,14 +22,16 @@ export async function assessProposalRecoveryCandidate(input: {
   contractAddress: string;
   planExpectedGenesisHash: string;
   planSourceRevision: string;
+  approvedPlanSha256: string;
   journalBindingDigest: string;
 }): Promise<{
-  format: "tr-local-proposal-recovery-candidate-v1";
+  format: "tr-local-proposal-recovery-candidate-v2";
   networkId: "undeployed";
   registryId: string;
   contractAddress: string;
   planExpectedGenesisHash: string;
   planSourceRevision: string;
+  approvedPlanSha256: string;
   journalBindingDigest: string;
   finalizedBlockHash: string;
   role: ProposalSubmissionAttempt["role"];
@@ -55,6 +57,7 @@ export async function assessProposalRecoveryCandidate(input: {
     || !/^0x[0-9a-f]{64}$/u.test(input.planExpectedGenesisHash.toLowerCase())
     || /^0x0{64}$/u.test(input.planExpectedGenesisHash.toLowerCase())
     || !/^[0-9a-f]{40}$/u.test(input.planSourceRevision)
+    || !/^[0-9a-f]{64}$/u.test(input.approvedPlanSha256)
     || !/^0x[0-9a-f]{64}$/u.test(input.journalBindingDigest)
     || !/^0x[0-9a-f]{64}$/u.test(view.finalizedBlockHash.toLowerCase())
     || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())
@@ -82,12 +85,13 @@ export async function assessProposalRecoveryCandidate(input: {
           : view.ledger.governanceActionCount === BigInt(sequence) ? "sequence-still-live"
             : "sequence-invalidated-record-absent";
   return {
-    format: "tr-local-proposal-recovery-candidate-v1",
+    format: "tr-local-proposal-recovery-candidate-v2",
     networkId: "undeployed",
     registryId: input.registryId,
     contractAddress: input.contractAddress.toLowerCase(),
     planExpectedGenesisHash: input.planExpectedGenesisHash.toLowerCase(),
     planSourceRevision: input.planSourceRevision,
+    approvedPlanSha256: input.approvedPlanSha256,
     journalBindingDigest: input.journalBindingDigest,
     finalizedBlockHash: view.finalizedBlockHash.toLowerCase(),
     role: attempt.role,

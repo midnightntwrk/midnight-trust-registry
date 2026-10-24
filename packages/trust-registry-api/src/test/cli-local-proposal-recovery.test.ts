@@ -19,7 +19,7 @@ vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => 
 }));
 vi.mock("../local-ledger-runtime.js", () => ({
   assertLocalApiImageSourceRevision: vi.fn(),
-  loadApprovedLocalLedgerRuntimePlan: mocks.loadPlan,
+  loadApprovedLocalLedgerRuntimePlanWithDigest: mocks.loadPlan,
   createApprovedLocalLedgerRuntimeSource: mocks.createSource,
   assertApprovedDeploymentImage: mocks.assertImage,
   assertApprovedPlanCoversGovernanceCount: mocks.assertCount,
@@ -67,12 +67,12 @@ beforeEach(async () => {
     return true;
   });
   const plan = { contractAddress, expectedGenesisHash: genesisHash, sourceRevision: "f".repeat(40) };
-  mocks.loadPlan.mockResolvedValue(plan);
+  mocks.loadPlan.mockResolvedValue({ plan, planSha256: "7".repeat(64) });
   mocks.createSource.mockResolvedValue({ loadSnapshot: async () => ({ registry: { registryId } }) });
   const view = { networkId: "undeployed", contractAddress,
     finalizedBlockHash: `0x${"f".repeat(64)}`, ledger: { governanceActionCount: 3n } };
   mocks.createReader.mockResolvedValue({ readCurrentFinalizedLedger: async () => view });
-  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v1",
+  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v2",
     reason: "sequence-invalidated-record-absent", reviewCandidate: true,
     retryPermitted: false, releaseQualified: false });
 });
@@ -94,6 +94,7 @@ describe("read-only local proposal recovery inspection CLI", () => {
     expect(mocks.assess).toHaveBeenCalledWith(expect.objectContaining({
       attempt: expect.objectContaining({ state: "reserved", authorizationId }),
       registryId, contractAddress, planExpectedGenesisHash: genesisHash,
+      approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
       planSourceRevision: "f".repeat(40),
     }));

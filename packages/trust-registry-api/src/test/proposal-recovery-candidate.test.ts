@@ -29,6 +29,7 @@ const input = (harness: LocalTrustRegistryIntegrationHarness, recorded: Proposal
   contractAddress: `0x${harness.simulator.contractAddress}`,
   planExpectedGenesisHash: hash("e"),
   planSourceRevision: "f".repeat(40),
+  approvedPlanSha256: "7".repeat(64),
   journalBindingDigest: hash("8"),
   view: {
     networkId: "undeployed",
@@ -50,10 +51,12 @@ describe("read-only proposal recovery candidates", () => {
     harness.authorizeMaintainer(createMaintainerScenarioFixture("recovery-candidate-advancer"));
     const candidate = await assessProposalRecoveryCandidate(input(harness, recorded));
     expect(candidate).toMatchObject({
+      format: "tr-local-proposal-recovery-candidate-v2",
       reason: "sequence-invalidated-record-absent", reviewCandidate: true,
       reservationActionSequence: sequence.toString(),
       reservationActionKind: hash("b"), reservationActionPayloadHash: hash("c"),
       planExpectedGenesisHash: hash("e"), planSourceRevision: "f".repeat(40),
+      approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: hash("8"),
       finalizedGovernanceActionCount: harness.simulator.getLedger().governanceActionCount.toString(),
       retryPermitted: false, releaseQualified: false,
@@ -122,6 +125,8 @@ describe("read-only proposal recovery candidates", () => {
       view: { ...valid.view, networkId: "preprod" },
     })).rejects.toThrow(/pinned finalized local ledger view/u);
     await expect(assessProposalRecoveryCandidate({ ...valid, journalBindingDigest: "bad" }))
+      .rejects.toThrow(/pinned finalized local ledger view/u);
+    await expect(assessProposalRecoveryCandidate({ ...valid, approvedPlanSha256: "bad" }))
       .rejects.toThrow(/pinned finalized local ledger view/u);
     await expect(assessProposalRecoveryCandidate({ ...valid,
       planExpectedGenesisHash: hash("0"),

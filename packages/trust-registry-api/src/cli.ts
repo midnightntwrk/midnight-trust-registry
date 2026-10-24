@@ -401,7 +401,7 @@ export const runTrustRegistryApiCli = async (
     return;
   }
   if (options.command === "inspect-local-proposal-recovery") {
-    const plan = await loadApprovedLocalLedgerRuntimePlan({
+    const { plan, planSha256 } = await loadApprovedLocalLedgerRuntimePlanWithDigest({
       planPath: options.localLedgerPlanPath!,
       signaturePath: options.localLedgerSignaturePath!,
       keyringDirectory: options.localLedgerKeyringDirectory!,
@@ -424,6 +424,7 @@ export const runTrustRegistryApiCli = async (
     const result = await assessProposalRecoveryCandidate({
       attempt, view, registryId: snapshot.registry.registryId, contractAddress: plan.contractAddress,
       planExpectedGenesisHash: plan.expectedGenesisHash, planSourceRevision: plan.sourceRevision,
+      approvedPlanSha256: planSha256,
       journalBindingDigest: bindingDigest,
     });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
