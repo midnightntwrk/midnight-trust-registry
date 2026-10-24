@@ -207,6 +207,9 @@ describe("pinned local submission provider", () => {
     await vi.waitFor(() => { expect(releaseWatch).toBeTypeOf("function"); });
     const pending = submitter.midnightProvider.submitTx(transaction);
     await vi.waitFor(() => { expect(report).toBeTypeOf("function"); });
+    await expect(watcher.publicDataProvider.watchForTxData("tx-too-late"))
+      .rejects.toThrow(/still pending/u);
+    expect(watchForTxData).toHaveBeenCalledOnce();
     releaseWatch?.({ txId: "tx-earlier", status: "SucceedEntirely" });
     await expect(watching).resolves.toMatchObject({ txId: "tx-earlier" });
     report?.({ status: { isFinalized: true } });
