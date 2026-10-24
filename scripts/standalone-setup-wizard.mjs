@@ -20,6 +20,7 @@ import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protoc
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { checkHelmImageMapping } from "./check-helm-image-mapping.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
@@ -184,6 +185,48 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   };
   await writeRecord(root, record);
   return record;
+}
+
+export async function checkStandaloneHelmBootstrapHandoff(directory, paths, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (record.stack || record.ledgerObservation || record.genesisApproval
+      || record.deployment || record.committeeApproval || record.maintenanceAttempt) {
+      throw new Error("Helm bootstrap requires a fresh setup; Compose ledger evidence cannot qualify a Helm target");
+    }
+    const inventoryBytes = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    const inventory = JSON.parse(inventoryBytes);
+    if (sha256(inventoryBytes) !== record.install.inventorySha256
+      || inventory.sourceRevision !== record.sourceRevision) {
+      throw new Error("Helm bootstrap install inventory changed since wizard initialization");
+    }
+    if (inventory.format !== "tr-standalone-install-v6") {
+      throw new Error("Helm bootstrap requires a v6 install bundle");
+    }
+    const mapping = await (dependencies.checkMapping ?? checkHelmImageMapping)({
+      bundleRoot: record.install.bundle,
+      valuesPath: paths.valuesPath,
+      receiptPath: paths.receiptPath,
+      signaturePath: paths.signaturePath,
+      keyringPath: paths.keyringPath,
+      signerFingerprint: paths.signerFingerprint,
+    });
+    if (mapping.sourceRevision !== record.sourceRevision
+      || mapping.inventorySha256 !== record.install.inventorySha256
+      || !SHA256.test(mapping.mappingSha256 ?? "")
+      || mapping.deploymentPhase !== "bootstrap") {
+      throw new Error("Signed Helm bootstrap mapping does not match this setup and its approved phase");
+    }
+    return {
+      format: "tr-helm-bootstrap-handoff-v1",
+      sourceRevision: record.sourceRevision,
+      inventorySha256: record.install.inventorySha256,
+      mappingSha256: mapping.mappingSha256,
+      deploymentPhase: "bootstrap",
+      targetGenesisApproval: "pending",
+      releaseQualified: false,
+    };
+  });
 }
 
 export async function assertUnusedStandaloneProject(project, command = execFileAsync) {
@@ -2101,8 +2144,8 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|check-helm-bootstrap|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -2170,6 +2213,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(await approveStandaloneCommitteeRecovery(
       directory, input, signature, keyring, fingerprint, extra, more,
     )));
+  }
+  else if (command === "check-helm-bootstrap" && input && signature && keyring
+    && fingerprint && extra) {
+    console.log(JSON.stringify(await checkStandaloneHelmBootstrapHandoff(directory, {
+      valuesPath: input, receiptPath: signature, signaturePath: keyring,
+      keyringPath: fingerprint, signerFingerprint: extra,
+    })));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);

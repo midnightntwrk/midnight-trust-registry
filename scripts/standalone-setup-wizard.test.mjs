@@ -12,6 +12,7 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 import {
   assertUnusedStandaloneProject,
   assertDetachedReviewerSignatureStatus,
+  checkStandaloneHelmBootstrapHandoff,
   draftStandaloneGenesisApproval,
   draftStandaloneCommitteeApproval,
   approveStandaloneCommittee,
@@ -253,6 +254,51 @@ async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
   return { directory, pinPath, planPath, releaseManifestPath, approvalPath, signaturePath,
     keyring, verifyBundle };
 }
+
+test("Helm bootstrap handoff binds the signed mapping to a fresh wizard install", async (t) => {
+  const f = await fixture("tr-standalone-install-v6");
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const paths = { valuesPath: "values.yaml", receiptPath: "mapping.json",
+    signaturePath: "mapping.sig", keyringPath: "reviewer-keyring",
+    signerFingerprint: reviewerFingerprint };
+  const validMapping = {
+    sourceRevision, inventorySha256: record.install.inventorySha256,
+    mappingSha256: "a".repeat(64), deploymentPhase: "bootstrap",
+  };
+  const result = await checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+    checkMapping: async (received) => {
+      assert.deepEqual(received, { bundleRoot: record.install.bundle, ...paths });
+      return validMapping;
+    },
+  });
+  assert.equal(result.mappingSha256, validMapping.mappingSha256);
+  assert.equal(result.targetGenesisApproval, "pending");
+  assert.equal(result.releaseQualified, false);
+
+  for (const override of [
+    { sourceRevision: "b".repeat(40) },
+    { inventorySha256: "b".repeat(64) },
+    { mappingSha256: "not-a-hash" },
+    { deploymentPhase: "runtime" },
+  ]) {
+    await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+      checkMapping: async () => ({ ...validMapping, ...override }),
+    }), /Signed Helm bootstrap mapping/);
+  }
+  await writeFile(join(record.install.bundle, "install-inventory.json"), "{}");
+  await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+    checkMapping: async () => validMapping,
+  }), /install inventory changed/);
+});
+
+test("Helm bootstrap handoff rejects evidence from a Compose setup", async (t) => {
+  const f = await fixture();
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, {}, {
+    checkMapping: async () => { throw new Error("mapping should not be checked"); },
+  }), /Compose ledger evidence cannot qualify a Helm target/);
+});
 
 async function approve(f) {
   return approveStandaloneGenesis(

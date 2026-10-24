@@ -45,6 +45,23 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
      <reviewer-keyring> <REVIEWER_FINGERPRINT>
    ```
 
+   For a new Helm installation, initialize a separate private first-run setup
+   record from that exact v6 bundle and check the signed bootstrap mapping
+   against it before applying the chart:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs init <private-helm-setup-dir> <v6-bundle>
+   node scripts/standalone-setup-wizard.mjs check-helm-bootstrap \
+     <private-helm-setup-dir> <approved-bootstrap-values.yaml> \
+     <mapping.json> <mapping.sig> <reviewer-keyring> <REVIEWER_FINGERPRINT>
+   ```
+
+   This is a read-only preflight. It rejects runtime-phase values and refuses
+   to reuse a Compose setup record or its genesis observation for Helm. It
+   does not deploy, approve the target cluster's genesis, prove registry
+   provenance, or qualify the release. Helm runtime promotion still requires
+   its own independently reviewed local-ledger and committee evidence.
+
    A legacy v4 bundle needs two additional arguments immediately after
    `<v4-bundle>`: `<admin-image/manifest.json>` and
    `<applicant-image/manifest.json>`. Do not pass separate portal manifests for
