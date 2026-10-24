@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from "node:crypto";
-import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { link, lstat, open, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,13 +25,31 @@ async function privateDirectory(directory) {
 }
 
 async function readPrivateSnapshot(path, maxBytes = 1024 * 1024) {
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes
-    || (stat.mode & 0o077) !== 0
-    || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
-    throw new Error("Restore source must be an owned private regular file");
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > BigInt(maxBytes)
+      || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+      || (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))) {
+      throw new Error("Restore source must be an owned private regular file");
+    }
+    const bytes = Buffer.alloc(Number(before.size));
+    let count = 0;
+    while (count < bytes.length) {
+      const result = await file.read(bytes, count, bytes.length - count, count);
+      if (result.bytesRead === 0) break;
+      count += result.bytesRead;
+    }
+    const after = await file.stat({ bigint: true });
+    if (count !== bytes.length || after.size !== before.size || after.nlink !== 1n
+      || after.ino !== before.ino || after.dev !== before.dev
+      || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Restore source changed during read");
+    }
+    return bytes;
+  } finally {
+    await file.close();
   }
-  return readFile(path);
 }
 
 async function writeEvidence(path, value) {

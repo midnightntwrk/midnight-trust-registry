@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -175,5 +175,21 @@ test("capture and verify write private, non-overwriting, ledger-only evidence", 
   } finally {
     await rm(sourceDirectory, { recursive: true, force: true });
     await rm(destinationDirectory, { recursive: true, force: true });
+  }
+});
+
+test("restore source rejects symlink and multiply linked private setup records", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-restore-private-input-"));
+  const setupPath = join(directory, "setup-record.json");
+  const targetPath = join(directory, "record-target.json");
+  try {
+    await writeFile(targetPath, "{}", { mode: 0o600 });
+    await symlink(targetPath, setupPath);
+    await assert.rejects(captureStandaloneRestoreSource(directory), { code: "ELOOP" });
+    await rm(setupPath);
+    await link(targetPath, setupPath);
+    await assert.rejects(captureStandaloneRestoreSource(directory), /owned private regular file/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
