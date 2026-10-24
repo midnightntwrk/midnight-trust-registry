@@ -40,6 +40,27 @@ describe("private governed proposal submission journal", () => {
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
+  it("reads a reservation and deployment binding atomically without releasing it", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    const contractAddress = `0x${"aa".repeat(32)}`;
+    const genesisHash = `0x${"bb".repeat(32)}`;
+    await journal.bindDeployment("registry:local", contractAddress, genesisHash);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => { throw new Error("ambiguous submission"); }, reservationContext))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    const before = await readFile(path);
+    const bound = await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
+      "issuer", authorizationId);
+    expect(bound.attempt).toMatchObject({ state: "reserved", reservationContext });
+    expect(bound.bindingDigest).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(await readFile(path)).toEqual(before);
+    await expect(journal.readBoundAttempt("registry:local", contractAddress,
+      `0x${"cc".repeat(32)}`, "issuer", authorizationId))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
+      "issuer", "missing")).toMatchObject({ attempt: null, bindingDigest: bound.bindingDigest });
+  });
+
   it.each(roles)("persists %s receipt without treating it as finality", async (role) => {
     const journal = new FileProposalSubmissionJournal(path);
     const privatePresentation = "raw-vp-private-claims";

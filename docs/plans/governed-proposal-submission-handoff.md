@@ -158,6 +158,26 @@ non-inclusion proof, operator decision, or recovery operation is implemented.
 Legacy reservations without the context must remain blocked unless a
 separately reviewed proof applies; a null indexer read or elapsed time alone
 is never enough.
+The read-only `trust-registry-api inspect-local-proposal-recovery` command
+accepts the signed local runtime plan and a deployment-bound private journal.
+It compares one reserved attempt with one pinned finalized ledger view. It
+reports a review candidate only when the stored signed action sequence is
+strictly below the finalized governance action count and the proposal record
+is absent in that same view. The report binds the registry ID, contract address,
+signed-plan expected genesis and source-revision pins (not independently
+attested by this report), original action tuple,
+canonical digest of the read journal entry, private journal deployment-binding
+digest, and checkpoint hash. A later recovery implementation
+must recheck that entry digest under the journal lock before any decision.
+Matching or conflicting records, a live or ahead-of-finality sequence, legacy context, or a
+non-reserved attempt remain blocked. The report always says `retryPermitted: false` and
+`releaseQualified: false`. This is an operator audit input, not independently
+authenticated non-inclusion, an approval signature, a recovery decision, or
+a journal mutation. A compromised or incomplete indexer can still lie about
+absence; #220 remains open until that trust boundary, audited release record,
+replay prevention, recovery tests, and independent security review are done.
+The report includes private authorization identifiers and commitments; do not
+paste it into shared logs or public review comments.
 Direct journal writers that omit context receive the same fail-closed legacy
 treatment; the five governed API submit routes all supply it.
 An older binary with the previous strict journal schema will reject files

@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import { GovernedMembershipActionReceiptSchema, type GovernedMembershipActionReceipt } from "./governed-membership-actions.js";
@@ -63,6 +64,10 @@ const DeploymentBindingSchema = z.strictObject({
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
 export type ProposalReservationContext = z.infer<typeof ReservationContextSchema>;
 export type ProposalSubmissionAttempt = z.infer<typeof AttemptSchema>;
+export const proposalAttemptDigest = (attempt: ProposalSubmissionAttempt): string =>
+  sha256Hex(`tr-proposal-attempt-v1\0${canonicalizeJson(AttemptSchema.parse(attempt))}`);
+export const proposalJournalBindingDigest = (binding: z.infer<typeof DeploymentBindingSchema>): string =>
+  sha256Hex(`tr-proposal-journal-binding-v1\0${canonicalizeJson(DeploymentBindingSchema.parse(binding))}`);
 export type FinalizedProposalReader = (
   role: GovernedProposalSubmissionRole,
   authorizationId: string,
@@ -303,6 +308,33 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       const attempt = [...storage.active.attempts, ...storage.archived].find((entry) => entry.role === parsedRole
         && entry.authorizationId === parsedId);
       return attempt === undefined ? null : structuredClone(attempt);
+    });
+  }
+
+  /** Read one attempt and its deployment binding under the same private journal lock. */
+  async readBoundAttempt(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+    role: GovernedProposalSubmissionRole, authorizationId: string,
+  ): Promise<{ attempt: ProposalSubmissionAttempt | null; bindingDigest: string }> {
+    const expected = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    const parsedRole = ProposalRoleSchema.parse(role);
+    const parsedId = AttemptSchema.shape.authorizationId.parse(authorizationId);
+    return this.withWrite(async () => {
+      const current = await this.readBinding();
+      if (current === null || current.registryId !== expected.registryId
+        || current.contractAddress !== expected.contractAddress
+        || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+      await this.requireExisting();
+      const storage = await this.readStorage();
+      const matches = [...storage.active.attempts, ...storage.archived].filter((entry) => entry.role === parsedRole
+        && entry.authorizationId === parsedId);
+      if (matches.length > 1) throw new ProposalSubmissionConflictError();
+      const found = matches[0];
+      return { attempt: found === undefined ? null : structuredClone(found),
+        bindingDigest: proposalJournalBindingDigest(current) };
     });
   }
 

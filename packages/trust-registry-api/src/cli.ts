@@ -1,12 +1,16 @@
 import { once } from "node:events";
 import { isAbsolute } from "node:path";
 
+import { createLocalNetworkDeploymentActionReader } from "@midnight-ntwrk/trust-registry-integration";
+
 import {
   createSnapshotFileSource,
   createWorkspaceFileSource,
 } from "./source.js";
 import {
   assertLocalApiImageSourceRevision,
+  assertApprovedDeploymentImage,
+  assertApprovedPlanCoversGovernanceCount,
   createApprovedLocalLedgerRuntimeSource,
   loadApprovedLocalLedgerRuntimePlan,
 } from "./local-ledger-runtime.js";
@@ -19,6 +23,7 @@ import {
   type ProposalRole,
 } from "./compact-proposal-observation.js";
 import { FileProposalSubmissionJournal } from "./proposal-submission-journal.js";
+import { assessProposalRecoveryCandidate } from "./proposal-recovery-candidate.js";
 
 const PROPOSAL_ROLES = ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const;
 
@@ -42,6 +47,10 @@ const HELP_TEXT = `Usage:
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
     --submission-journal ABSOLUTE_PATH
+  trust-registry-api inspect-local-proposal-recovery --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
+    --submission-journal ABSOLUTE_PATH
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
@@ -53,6 +62,7 @@ It is not actor-journey, process-identity, independent-finality, or release evid
 An absent local proposal is not proof of failed submission and never permits retry.
 Initialize an empty private journal against the signed deployment before submission.
 Reconciliation requires that binding and updates only an exact-matching entry after verified readback.
+Recovery inspection is read-only. Its candidate report never permits retry or journal release.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -63,7 +73,8 @@ Examples:
 
 export type TrustRegistryApiCliOptions = {
   command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api"
-    | "observe-local-proposal" | "init-local-proposal-journal" | "reconcile-local-proposal";
+    | "observe-local-proposal" | "init-local-proposal-journal" | "reconcile-local-proposal"
+    | "inspect-local-proposal-recovery";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -91,7 +102,8 @@ export const parseTrustRegistryApiCliArgs = (
   }
   if (command !== "serve" && command !== "check-local-ledger-plan"
     && command !== "observe-local-ledger-api" && command !== "observe-local-proposal"
-    && command !== "init-local-proposal-journal" && command !== "reconcile-local-proposal") {
+    && command !== "init-local-proposal-journal" && command !== "reconcile-local-proposal"
+    && command !== "inspect-local-proposal-recovery") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
@@ -219,15 +231,17 @@ export const parseTrustRegistryApiCliArgs = (
   }
   if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api"
     || command === "observe-local-proposal" || command === "init-local-proposal-journal"
-    || command === "reconcile-local-proposal") {
+    || command === "reconcile-local-proposal" || command === "inspect-local-proposal-recovery") {
     const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
       "--local-ledger-keyring", "--local-ledger-reviewer"]);
     if (command === "observe-local-ledger-api") allowed.add("--api-origin");
-    if (command === "observe-local-proposal" || command === "reconcile-local-proposal") {
+    if (command === "observe-local-proposal" || command === "reconcile-local-proposal"
+      || command === "inspect-local-proposal-recovery") {
       allowed.add("--role");
       allowed.add("--authorization-id");
     }
-    if (command === "reconcile-local-proposal" || command === "init-local-proposal-journal") {
+    if (command === "reconcile-local-proposal" || command === "init-local-proposal-journal"
+      || command === "inspect-local-proposal-recovery") {
       allowed.add("--submission-journal");
     }
     if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
@@ -236,10 +250,11 @@ export const parseTrustRegistryApiCliArgs = (
     if (command === "observe-local-ledger-api" && options.apiOrigin === undefined) {
       throw new Error("Local API observation requires --api-origin");
     }
-    if ((command === "observe-local-proposal" || command === "reconcile-local-proposal")
+    if ((command === "observe-local-proposal" || command === "reconcile-local-proposal"
+      || command === "inspect-local-proposal-recovery")
       && (options.proposalRole === undefined || options.authorizationId === undefined
-        || (command === "reconcile-local-proposal" && options.submissionJournalPath === undefined))) {
-      throw new Error("Local proposal readback requires --role and --authorization-id; reconciliation also requires --submission-journal");
+        || (command !== "observe-local-proposal" && options.submissionJournalPath === undefined))) {
+      throw new Error("Local proposal readback requires --role and --authorization-id; journal operations also require --submission-journal");
     }
     if (command === "init-local-proposal-journal" && options.submissionJournalPath === undefined) {
       throw new Error("Local journal initialization requires --submission-journal");
@@ -380,6 +395,35 @@ export const runTrustRegistryApiCli = async (
       retryPermitted: false,
       releaseQualified: false,
     }, null, 2)}\n`);
+    return;
+  }
+  if (options.command === "inspect-local-proposal-recovery") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    const snapshot = await source.loadSnapshot();
+    const journal = new FileProposalSubmissionJournal(options.submissionJournalPath!);
+    const { attempt, bindingDigest } = await journal.readBoundAttempt(
+      snapshot.registry.registryId, plan.contractAddress, plan.expectedGenesisHash,
+      options.proposalRole!, options.authorizationId!,
+    );
+    if (attempt === null) throw new Error("No private proposal reservation exists for recovery inspection");
+    const reader = await createLocalNetworkDeploymentActionReader(plan);
+    const view = await reader.readCurrentFinalizedLedger(plan.contractAddress);
+    if (view === null) throw new Error("Pinned finalized local ledger view is unavailable");
+    assertApprovedDeploymentImage(plan, view);
+    assertApprovedPlanCoversGovernanceCount(plan, view.ledger.governanceActionCount);
+    const result = await assessProposalRecoveryCandidate({
+      attempt, view, registryId: snapshot.registry.registryId, contractAddress: plan.contractAddress,
+      planExpectedGenesisHash: plan.expectedGenesisHash, planSourceRevision: plan.sourceRevision,
+      journalBindingDigest: bindingDigest,
+    });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
   if (options.command === "init-local-proposal-journal") {

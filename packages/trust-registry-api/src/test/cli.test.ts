@@ -134,6 +134,23 @@ describe("API CLI binding", () => {
     ])).toThrow(/signed local-ledger evidence/u);
   });
 
+  it("inspects recovery only with a signed local plan and an absolute private journal", () => {
+    const inspection = ["inspect-local-proposal-recovery", ...localArgs.slice(1),
+      "--role", "issuer", "--authorization-id", "issuer:local:1",
+      "--submission-journal", "/run/trust-registry/proposals.json"];
+    expect(parseTrustRegistryApiCliArgs(inspection)).toMatchObject({
+      command: "inspect-local-proposal-recovery", proposalRole: "issuer",
+      authorizationId: "issuer:local:1", submissionJournalPath: "/run/trust-registry/proposals.json",
+    });
+    for (const args of [
+      inspection.slice(0, -2),
+      [...inspection.slice(0, -1), "relative/proposals.json"],
+      [...inspection, "--snapshot", "fixture.json"],
+      [...inspection, "--unsafe-demo-mutations"],
+      [...inspection, "--api-origin", "http://127.0.0.1:4400"],
+    ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+  });
+
   it("initializes only an absolute-path journal from complete signed evidence", () => {
     const initialization = ["init-local-proposal-journal", ...localArgs.slice(1),
       "--submission-journal", "/run/trust-registry/proposals.json"];
