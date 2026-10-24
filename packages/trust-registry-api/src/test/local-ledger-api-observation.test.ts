@@ -54,6 +54,44 @@ describe("local API current-read observation (route-level only)", () => {
     })).rejects.toThrow(/signed local-ledger source/u);
   });
 
+  it("rejects a source without a finalized active entry for every role", async () => {
+    const server = createTrustRegistryApiServer({ source });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const missingIssuer: TrustRegistryApiStateSource = { ...source,
+        loadCurrentLedgerSelection: async () => ({
+          ...selection, authorizationIds: { ...selection.authorizationIds, issuer: new Set<string>() },
+        }),
+      };
+      await expect(observeLocalApiCurrentReads({ source: missingIssuer, apiOrigin }))
+        .rejects.toThrow(/finalized current active authorization/u);
+      const onlyHistoricalIssuer: TrustRegistryApiStateSource = { ...source,
+        loadCurrentLedgerSelection: async () => ({ ...selection,
+          authorizationIds: { ...selection.authorizationIds,
+            issuer: new Set([snapshot.issuerEntries[1]!.authorization.authorizationId]) },
+        }),
+      };
+      await expect(observeLocalApiCurrentReads({ source: onlyHistoricalIssuer, apiOrigin }))
+        .rejects.toThrow(/finalized current active authorization/u);
+      const missingRecognition: TrustRegistryApiStateSource = { ...source,
+        loadCurrentLedgerSelection: async () => ({ ...selection, recognitionIds: new Set<string>() }),
+      };
+      await expect(observeLocalApiCurrentReads({ source: missingRecognition, apiOrigin }))
+        .rejects.toThrow(/finalized current active recognition/u);
+      const unknownIssuer: TrustRegistryApiStateSource = { ...source,
+        loadCurrentLedgerSelection: async () => ({ ...selection,
+          authorizationIds: { ...selection.authorizationIds, issuer: new Set(["issuer:unknown"]) },
+        }),
+      };
+      await expect(observeLocalApiCurrentReads({ source: unknownIssuer, apiOrigin }))
+        .rejects.toThrow(/references a missing snapshot entry/u);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("rejects a substituted health response and a drifting source", async () => {
     const badFetch: typeof fetch = async () => new Response(JSON.stringify({
       status: "ok", sourceMode: "snapshot", registryId: snapshot.registry.registryId,
@@ -83,9 +121,15 @@ describe("local API current-read observation (route-level only)", () => {
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;
       else if (path === "/v1/authorizations/resolve") {
-        const role = (JSON.parse(String(init?.body)) as { role: "issuer" | "verifier" | "auditor" }).role;
-        body = snapshot[`${role}Entries`][0];
-      } else if (path === "/v1/recognitions/resolve") body = snapshot.recognitionEntries[0];
+        const query = JSON.parse(String(init?.body)) as { role: "issuer" | "verifier" | "auditor";
+          subjectDid: string };
+        body = snapshot[`${query.role}Entries`][0]?.authorization.subjectDid === query.subjectDid
+          ? snapshot[`${query.role}Entries`][0] : undefined;
+      } else if (path === "/v1/recognitions/resolve") {
+        const query = JSON.parse(String(init?.body)) as { recognizedAuthorityDid: string };
+        body = snapshot.recognitionEntries[0]?.recognition.recognizedAuthorityDid
+          === query.recognizedAuthorityDid ? snapshot.recognitionEntries[0] : undefined;
+      }
       else if (path.startsWith("/v1/authorizations/")) {
         const [, , , role, id] = path.split("/");
         body = role === "issuer" || role === "verifier" || role === "auditor"
@@ -95,7 +139,7 @@ describe("local API current-read observation (route-level only)", () => {
         const id = path.split("/").at(-1);
         body = snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === decodeURIComponent(id!));
       }
-      if (body === undefined) { status = path.includes("/resolve") ? 501 : 404; body = {}; }
+      if (body === undefined) { status = path === "/v1/epochs/resolve" ? 501 : 404; body = {}; }
       return new Response(JSON.stringify(body), { status, headers: { "cache-control": "no-store" } });
     };
     await expect(observeLocalApiCurrentReads({
@@ -109,6 +153,16 @@ describe("local API current-read observation (route-level only)", () => {
     await once(server, "listening");
     try {
       const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin })).resolves
+        .toMatchObject({ releaseQualified: false });
+      expect(selection.authorizationIds.issuer.has(snapshot.issuerEntries[1]!.authorization.authorizationId))
+        .toBe(false);
+      expect(selection.recognitionIds.has(snapshot.recognitionEntries[1]!.recognition.recognitionId))
+        .toBe(false);
+      expect(snapshot.issuerEntries[0]!.authorization.subjectDid)
+        .not.toBe(snapshot.issuerEntries[1]!.authorization.subjectDid);
+      expect(snapshot.recognitionEntries[0]!.recognition.recognizedAuthorityDid)
+        .not.toBe(snapshot.recognitionEntries[1]!.recognition.recognizedAuthorityDid);
       const substituted: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (!new URL(String(url)).pathname.startsWith("/v1/authorizations/issuer/")) return response;
@@ -127,6 +181,28 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
         fetchImpl: substitutedResolution })).rejects.toThrow(/current resolution differs/u);
+      const staleAsCurrent: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
+          || (JSON.parse(String(init?.body)) as { subjectDid: string }).subjectDid
+            !== snapshot.issuerEntries[1]!.authorization.subjectDid) return response;
+        return new Response(JSON.stringify(snapshot.issuerEntries[1]), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
+        fetchImpl: staleAsCurrent })).rejects.toThrow(/status or cache policy/u);
+      const staleRecognitionAsCurrent: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/recognitions/resolve"
+          || (JSON.parse(String(init?.body)) as { recognizedAuthorityDid: string }).recognizedAuthorityDid
+            !== snapshot.recognitionEntries[1]!.recognition.recognizedAuthorityDid) return response;
+        return new Response(JSON.stringify(snapshot.recognitionEntries[1]), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
+        fetchImpl: staleRecognitionAsCurrent })).rejects.toThrow(/status or cache policy/u);
       const cacheable: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/health") return response;

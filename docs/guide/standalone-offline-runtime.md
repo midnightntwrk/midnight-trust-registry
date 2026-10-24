@@ -1389,7 +1389,13 @@ with injected snapshots is not local deployment or restore evidence.
    Its current-route readback report is diagnostic only (`releaseQualified:
    false`); it cannot replace actor journeys, process identity, authenticated
    finality, egress-denied execution, or recovery evidence. The current-state
-   projection also recomputes issuer, verifier, auditor, and recognition
+   spot-check probes resolution for every pinned snapshot lookup key, including
+   superseded issuer, verifier, auditor, and recognition records. Each key must
+   resolve to its finalized current record or to 404 if none exists. It requires
+   a finalized current active member per role; a snapshot-only active record
+   does not satisfy this check. The route tests use fixture sources and remain
+   separate from a deployed local-ledger run. The current-state projection
+   also recomputes issuer, verifier, auditor, and recognition
    scope indexes from the Compact records, checks record and active counters,
    and rejects missing or redirected indexes. It also checks current lifecycle
    sequences against the governance count and status. These checks do not

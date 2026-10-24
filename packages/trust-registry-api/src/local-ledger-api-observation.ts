@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 
 import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
+import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
 
 import type { TrustRegistryApiStateSource } from "./source.js";
 
@@ -96,9 +97,14 @@ export async function observeLocalApiCurrentReads(input: {
   const counts = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
   for (const role of ["issuer", "verifier", "auditor"] as const) {
     const entries = snapshot[`${role}Entries`];
+    const entryIds = new Set(entries.map((entry) => entry.authorization.authorizationId));
+    if ([...selection.authorizationIds[role]].some((id) => !entryIds.has(id))) {
+      throw new Error(`Local API ${role} finalized selection references a missing snapshot entry`);
+    }
     if (entries.length === 0 || entries.length > MAX_ENTRIES_PER_ROLE
-      || !entries.some((entry) => entry.authorization.status === "active")) {
-      throw new Error(`Local API ${role} readback requires a bounded set with an active authorization`);
+      || !entries.some((entry) => entry.authorization.status === "active"
+        && selection.authorizationIds[role].has(entry.authorization.authorizationId))) {
+      throw new Error(`Local API ${role} readback requires a bounded set with a finalized current active authorization`);
     }
     for (const entry of entries) {
       const id = encodeURIComponent(entry.authorization.authorizationId);
@@ -106,24 +112,37 @@ export async function observeLocalApiCurrentReads(input: {
       if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
         throw new Error(`Local API ${role} record differs from signed-plan readback`);
       }
-      if (selection.authorizationIds[role].has(entry.authorization.authorizationId)) {
-        const current = await request(origin, "/v1/authorizations/resolve", 200, fetchImpl, {
+      const currentMatches = entries.filter((candidate) =>
+        selection.authorizationIds[role].has(candidate.authorization.authorizationId)
+        && candidate.authorization.subjectDid === entry.authorization.subjectDid
+        && candidate.authorization.resourceId === entry.authorization.resourceId
+        && candidate.authorization.resourceType === entry.authorization.resourceType
+        && candidate.authorization.trustLevel === entry.authorization.trustLevel);
+      if (currentMatches.length > 1) {
+        throw new Error(`Local API ${role} finalized selection is ambiguous`);
+      }
+      const current = await request(origin, "/v1/authorizations/resolve",
+        currentMatches.length === 0 ? 404 : 200, fetchImpl, {
           role, subjectDid: entry.authorization.subjectDid,
           resourceId: entry.authorization.resourceId,
           resourceType: entry.authorization.resourceType,
           trustLevel: entry.authorization.trustLevel,
         });
-        if (!isDeepStrictEqual(current, jsonProjection(entry))) {
-          throw new Error(`Local API ${role} current resolution differs from finalized selection`);
-        }
+      if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
+        throw new Error(`Local API ${role} current resolution differs from finalized selection`);
       }
     }
     counts[role] = entries.length;
   }
   const recognitions = snapshot.recognitionEntries;
+  const recognitionIds = new Set(recognitions.map((entry) => entry.recognition.recognitionId));
+  if ([...selection.recognitionIds].some((id) => !recognitionIds.has(id))) {
+    throw new Error("Local API recognition finalized selection references a missing snapshot entry");
+  }
   if (recognitions.length === 0 || recognitions.length > MAX_ENTRIES_PER_ROLE
-    || !recognitions.some((entry) => entry.recognition.status === "active")) {
-    throw new Error("Local API recognition readback requires a bounded set with an active recognition");
+    || !recognitions.some((entry) => entry.recognition.status === "active"
+      && selection.recognitionIds.has(entry.recognition.recognitionId))) {
+    throw new Error("Local API recognition readback requires a bounded set with a finalized current active recognition");
   }
   for (const entry of recognitions) {
     const id = encodeURIComponent(entry.recognition.recognitionId);
@@ -131,8 +150,18 @@ export async function observeLocalApiCurrentReads(input: {
     if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
       throw new Error("Local API recognition differs from signed-plan readback");
     }
-    if (selection.recognitionIds.has(entry.recognition.recognitionId)) {
-      const current = await request(origin, "/v1/recognitions/resolve", 200, fetchImpl, {
+    const currentMatches = recognitions.filter((candidate) =>
+      selection.recognitionIds.has(candidate.recognition.recognitionId)
+      && candidate.recognition.recognizedAuthorityDid === entry.recognition.recognizedAuthorityDid
+      && candidate.recognition.recognizedRegistryId === entry.recognition.recognizedRegistryId
+      && candidate.recognition.scope.resourceType === entry.recognition.scope.resourceType
+      && candidate.recognition.scope.resourceId === entry.recognition.scope.resourceId
+      && canonicalizeJson(candidate.recognition.scope.context ?? null)
+        === canonicalizeJson(entry.recognition.scope.context ?? null)
+      && candidate.recognition.trustLevel === entry.recognition.trustLevel);
+    if (currentMatches.length > 1) throw new Error("Local API recognition finalized selection is ambiguous");
+    const current = await request(origin, "/v1/recognitions/resolve",
+      currentMatches.length === 0 ? 404 : 200, fetchImpl, {
         recognizedAuthorityDid: entry.recognition.recognizedAuthorityDid,
         recognizedRegistryId: entry.recognition.recognizedRegistryId,
         scopeResourceType: entry.recognition.scope.resourceType,
@@ -140,9 +169,8 @@ export async function observeLocalApiCurrentReads(input: {
         scopeContext: entry.recognition.scope.context,
         trustLevel: entry.recognition.trustLevel,
       });
-      if (!isDeepStrictEqual(current, jsonProjection(entry))) {
-        throw new Error("Local API recognition current resolution differs from finalized selection");
-      }
+    if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
+      throw new Error("Local API recognition current resolution differs from finalized selection");
     }
   }
   counts.recognition = recognitions.length;
