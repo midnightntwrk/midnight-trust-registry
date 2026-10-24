@@ -12,6 +12,18 @@ It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
 
+## October 24 2026 API Egress Probe Checkpoint
+
+The unpublished local API egress probe now uses one disposable bridge canary
+for both TCP and synthetic DNS/UDP. Same-image positive controls before and
+after the running API attempt make a failed route check meaningful without
+requiring public Internet access. Its unit tests and a localhost DNS protocol
+test pass, but no approved API is running on the b17 pre-deployment stack.
+This is probe implementation, not observed offline API or actor evidence:
+Docker embedded DNS recursion, other protocols, wallet/browser paths, and
+independent finality remain unqualified. Kubernetes/Helm are optional and
+not 0.1.0 release criteria.
+
 ## October 24 2026 Local Issuer Reservation Checkpoint
 
 - The local issuer SDK handoff now carries its prepared action sequence, kind,

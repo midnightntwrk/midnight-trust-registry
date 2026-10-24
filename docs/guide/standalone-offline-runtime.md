@@ -248,13 +248,13 @@ node scripts/check-standalone-api-egress.mjs <verified-install-bundle>
 Use the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`, `TR_API_GID`,
 and `TR_API_REVIEWER_FINGERPRINT` as for the topology observer. The probe
 requires the verified bundle and pinned running API image, confirms a
-same-image positive control can reach the canary, checks the running API's
-route table and outbound TCP failure, and rechecks API identity afterward.
-It removes only its own temporary bridge canary. This is one local TCP route
-test, not comprehensive DNS/protocol egress enforcement, a browser journey,
-or release qualification. Never run it against the unsigned b15
-pre-deployment ledger bridge or interpret mocked probe tests as runtime
-evidence.
+same-image positive control can reach the temporary TCP and DNS/UDP canary,
+checks the running API's route table and denial of both canary routes, and
+rechecks API identity afterward. It removes only its own temporary bridge
+canary. This is two local canary routes, not proof that Docker's embedded DNS
+cannot recurse to external names, comprehensive protocol egress enforcement,
+a browser journey, or release qualification. Never run it against an unsigned
+pre-deployment ledger bridge or interpret mocked probe tests as runtime evidence.
 
 After loading the v5/v6 images, run
 `node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
