@@ -13,7 +13,7 @@ import { createTrustRegistryApiServer } from "./server.js";
 import { localApiOrigin, observeLocalApiCurrentReads } from "./local-ledger-api-observation.js";
 import { createPortalStaticHandler } from "./portal-static.js";
 import {
-  resolveCompactProposalObservation,
+  resolveCompactProposalEvidenceSnapshot,
   type FinalizedProposalLedgerReader,
   type ProposalRole,
 } from "./compact-proposal-observation.js";
@@ -216,6 +216,10 @@ export const parseTrustRegistryApiCliArgs = (
     }
     return options;
   }
+  if (options.apiOrigin !== undefined || options.proposalRole !== undefined
+    || options.authorizationId !== undefined) {
+    throw new Error("Observation arguments are not accepted by the serve command");
+  }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
     throw new Error(`invalid port: ${String(options.port)}\n\n${HELP_TEXT}`);
   }
@@ -287,10 +291,14 @@ export const runTrustRegistryApiCli = async (
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
-    const observation = await resolveCompactProposalObservation(
+    const proposal = await resolveCompactProposalEvidenceSnapshot(
       source.readFinalizedProposalLedger, snapshot.registry.registryId,
       options.proposalRole!, options.authorizationId!,
     );
+    const observation = proposal === null ? null : {
+      eventHash: proposal.eventHash,
+      evidenceCommitment: proposal.evidenceCommitment,
+    };
     process.stdout.write(`${JSON.stringify({
       format: "tr-local-proposal-observation-v1",
       networkId: "undeployed",
@@ -298,7 +306,7 @@ export const runTrustRegistryApiCli = async (
       contractAddress: plan.contractAddress,
       role: options.proposalRole,
       authorizationId: options.authorizationId,
-      status: observation === null ? "not-observed" : "observed",
+      status: observation === null ? "not-observed" : "present-and-verified",
       observation,
       retryPermitted: false,
       releaseQualified: false,

@@ -134,7 +134,9 @@ For a read-only proposal spot-check after that rotation, run
 `trust-registry-api observe-local-proposal` with the same four signed-plan
 arguments plus `--role issuer` (or another governed role) and the exact
 `--authorization-id`. It reads the pinned current finalized source without a
-listener and prints the event/evidence commitments if observed. `not-observed`
+listener and prints the event/evidence commitments after checking the proposal
+signature and ledger-record consistency. `present-and-verified` does not mean
+the record matches the private submission journal. `not-observed`
 is not proof of failure and never permits retry; compare the result with the
 private journal under the recovery procedure. Its report sets
 `releaseQualified: false` and does not advance the journal.

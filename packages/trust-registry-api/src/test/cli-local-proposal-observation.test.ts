@@ -13,7 +13,7 @@ vi.mock("../local-ledger-runtime.js", () => ({
   createApprovedLocalLedgerRuntimeSource: mocks.createSource,
 }));
 vi.mock("../compact-proposal-observation.js", () => ({
-  resolveCompactProposalObservation: mocks.resolveProposal,
+  resolveCompactProposalEvidenceSnapshot: mocks.resolveProposal,
 }));
 vi.mock("../server.js", () => ({ createTrustRegistryApiServer: mocks.createServer }));
 
@@ -44,7 +44,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("signed local proposal observation CLI", () => {
-  it("emits only a matching finalized observation without starting a listener", async () => {
+  it("emits a verified present proposal without claiming a journal match or starting a listener", async () => {
     const observation = { eventHash: `0x${"b".repeat(64)}`, evidenceCommitment: `0x${"c".repeat(64)}` };
     mocks.resolveProposal.mockResolvedValueOnce(observation);
     await runTrustRegistryApiCli(args);
@@ -57,7 +57,7 @@ describe("signed local proposal observation CLI", () => {
     expect(mocks.createServer).not.toHaveBeenCalled();
     expect(JSON.parse(output.join(""))).toMatchObject({
       format: "tr-local-proposal-observation-v1", networkId: "undeployed",
-      role: "issuer", authorizationId: "issuer:local:1", status: "observed",
+      role: "issuer", authorizationId: "issuer:local:1", status: "present-and-verified",
       observation, retryPermitted: false, releaseQualified: false,
     });
   });

@@ -1368,6 +1368,8 @@ with injected snapshots is not local deployment or restore evidence.
    `not-observed` result never authorizes resubmission; compare any observed
    event/evidence commitments with the private journal under the approved
    recovery procedure. The report explicitly sets `releaseQualified: false`.
+   `present-and-verified` checks the proposal record and evidence signature,
+   not the journal attempt or independent finality.
    The current-state HTTP spot-check can use
    `trust-registry-api observe-local-ledger-api` with
    the same signed-plan arguments and an explicit loopback `--api-origin`.

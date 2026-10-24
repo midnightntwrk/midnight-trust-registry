@@ -35,7 +35,10 @@ is a fixture, not a network-finality source.
 
 For a signed local runtime plan, `trust-registry-api observe-local-proposal`
 reads one role/authorization ID through the same pinned source as the API.
-It reports only an event hash and evidence commitment, or `not-observed`, and
+It verifies the proposal evidence signature against its finalized key record,
+then reports only an event hash and evidence commitment, or `not-observed`.
+`present-and-verified` means the ledger record is present and internally
+consistent, not that it matches the operator's private journal attempt. It
 always sets `retryPermitted: false` and `releaseQualified: false`. It does not
 advance or clear the submission journal. Run it only after manually reviewing,
 re-signing, and installing the post-mutation snapshot/plan; a stale plan must

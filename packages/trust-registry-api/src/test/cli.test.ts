@@ -133,4 +133,14 @@ describe("API CLI binding", () => {
       }
     }
   });
+
+  it("rejects observation-only arguments on the serve command", () => {
+    for (const extra of [
+      ["--role", "issuer"], ["--authorization-id", "issuer:local:1"],
+      ["--api-origin", "http://127.0.0.1:4400"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs([...localArgs, ...extra]))
+        .toThrow(/Observation arguments are not accepted/u);
+    }
+  });
 });
