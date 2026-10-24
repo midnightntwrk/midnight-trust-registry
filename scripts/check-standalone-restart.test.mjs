@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,6 +20,27 @@ const beforeHash = `0x${"2".repeat(64)}`;
 const afterHash = `0x${"3".repeat(64)}`;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const services = ["node", "indexer", "proof-server"];
+
+test("restart evidence refuses symlink and hard-linked private inputs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-restart-private-"));
+  const directory = join(root, "private");
+  const source = join(root, "candidate.json");
+  const baseline = join(directory, "restart-baseline.json");
+  await mkdir(directory, { mode: 0o700 });
+  await writeFile(source, "{}", { mode: 0o600 });
+  const expected = { sourceRevision: revision, installInventorySha256: "b".repeat(64),
+    project: "tr-standalone-local-restart-test" };
+  try {
+    await symlink(source, baseline);
+    await assert.rejects(readStandaloneRestartEvidence(directory, expected), { code: "ELOOP" });
+    await unlink(baseline);
+    await link(source, baseline);
+    await assert.rejects(readStandaloneRestartEvidence(directory, expected),
+      /owned private regular file/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("deployment marker requires a valid reconciled staged-bootstrap receipt", () => {
   const receipt = { networkId: "undeployed", contractAddress: `0x${"4".repeat(64)}`,

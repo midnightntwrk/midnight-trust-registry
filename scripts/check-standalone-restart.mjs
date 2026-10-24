@@ -2,6 +2,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,12 +58,32 @@ async function privateDirectory(directory) {
 }
 
 async function privateFile(path, maxBytes = 16 * 1024 * 1024) {
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes || (stat.mode & 0o077) !== 0
-    || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
-    throw new Error("Restart evidence input must be an owned private regular file");
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > BigInt(maxBytes)
+      || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+      || (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))) {
+      throw new Error("Restart evidence input must be an owned private regular file");
+    }
+    const bytes = Buffer.alloc(Number(before.size));
+    let count = 0;
+    while (count < bytes.length) {
+      const { bytesRead } = await file.read(bytes, count, bytes.length - count, count);
+      if (bytesRead === 0) break;
+      count += bytesRead;
+    }
+    const after = await file.stat({ bigint: true });
+    if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.nlink !== before.nlink || after.mode !== before.mode
+      || after.uid !== before.uid || after.mtimeNs !== before.mtimeNs
+      || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Restart evidence input changed during read");
+    }
+    return bytes;
+  } finally {
+    await file.close();
   }
-  return readFile(path);
 }
 
 async function writeEvidence(path, value) {

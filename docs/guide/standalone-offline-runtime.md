@@ -1388,8 +1388,11 @@ node scripts/check-standalone-restart.mjs verify /absolute/private/setup-directo
 ```
 
 The observer rechecks the verified bundle, private prepared inputs, live
-container image IDs and Compose paths, and the same named volumes. Verification
-requires each service's container ID to remain stable and start time to advance, the earlier finalized block to
+container image IDs and Compose paths, and the same named volumes. It reads
+private inputs through bounded no-follow file descriptors and rejects multiply
+linked or changed files; this does not authenticate the operator's approval or
+the ledger checkpoint by itself. Verification requires each service's container
+ID to remain stable and start time to advance, the earlier finalized block to
 retain its hash at the same height, and finality to progress afterward. It
 also binds the ledger network ID and observed host-port access mode across
 both snapshots. On Docker Desktop, an unpublished requested loopback port is
