@@ -524,6 +524,17 @@ describe("local ledger-bound API source", () => {
       .toThrow(/durable submission and finalized observation with admission/u);
     expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: journal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader }))
+      .toThrow(/signed deployment binding check/u);
+    const boundSource: Options["source"] = { ...source, localDeploymentBinding: {
+      contractAddress: `0x${"a".repeat(64)}`, expectedGenesisHash: `0x${"b".repeat(64)}`,
+    } };
+    const boundJournal = { assertDeploymentBinding: async () => {},
+      executeOnce: async () => ({ eventHash: `0x${"c".repeat(64)}` }),
+      reconcile: async () => { throw new Error("unused"); },
+    } as NonNullable<Options["proposalSubmissionJournal"]>;
+    expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
       readFinalizedProposalLedger: finalizedReader })).not.toThrow();
   });
 

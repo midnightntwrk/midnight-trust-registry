@@ -153,6 +153,9 @@ when the verified ledger record matches the journal's evidence commitment
 and any recorded event hash. A different deployment binding fails closed
 before readback. Output distinguishes `observed` from `not-observed`; absence
 leaves the attempt pending and never permits a retry.
+An embedding host enabling local-ledger proposal routes must expose the
+reviewer-approved deployment identity on its source and use a journal adapter
+that checks this binding before every proposal submission or reconciliation.
 Even an `observed` entry does not prove transaction identity after a lost
 response, independently authenticate finality, or qualify the release.
 For a read-only current-route check against a running loopback listener, run

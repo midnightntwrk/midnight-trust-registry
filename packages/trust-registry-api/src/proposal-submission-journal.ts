@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { link, mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -114,6 +114,9 @@ export class ProposalSubmissionOutcomeUnknownError extends Error {
 
 /** Reservation survives a lost Compact response; only an independently finalized reader can confirm observation. */
 export interface ProposalSubmissionJournal {
+  assertDeploymentBinding?(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+  ): Promise<void>;
   executeOnce(
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
@@ -160,12 +163,18 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         await this.writeState(emptyState());
       }
       const bindingPath = `${this.path}.binding`;
-      const handle = await open(bindingPath, "wx", 0o600);
+      const temporaryPath = `${bindingPath}.${randomUUID()}.tmp`;
       try {
-        await handle.writeFile(JSON.stringify(binding));
-        await handle.sync();
+        const handle = await open(temporaryPath, "wx", 0o600);
+        try {
+          await handle.writeFile(JSON.stringify(binding));
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        await link(temporaryPath, bindingPath);
       } finally {
-        await handle.close();
+        await rm(temporaryPath, { force: true });
       }
       const directory = await open(dirname(bindingPath), "r");
       try {

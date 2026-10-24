@@ -377,6 +377,10 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
   };
   return {
     ...source,
+    localDeploymentBinding: {
+      contractAddress: plan.contractAddress,
+      expectedGenesisHash: plan.expectedGenesisHash,
+    },
     async loadSnapshot() {
       assertPlanCurrent();
       return source.loadSnapshot();

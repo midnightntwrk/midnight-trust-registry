@@ -55,6 +55,11 @@ export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory" | "
 
 export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;
+  /** Present only for reviewer-approved local-ledger sources. */
+  readonly localDeploymentBinding?: {
+    readonly contractAddress: string;
+    readonly expectedGenesisHash: string;
+  };
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
   loadCurrentLedgerSelection?(): Promise<TrustRegistryApiCurrentLedgerSelection>;
 };

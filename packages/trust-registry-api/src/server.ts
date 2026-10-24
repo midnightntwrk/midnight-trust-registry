@@ -827,6 +827,11 @@ export const createTrustRegistryApiServer = (
           && options.recognitionAccreditation === undefined))) {
       throw new Error("Local-ledger proposals require durable submission and finalized observation with admission");
     }
+    if (options.proposalSubmissionJournal !== undefined
+      && (options.source.localDeploymentBinding === undefined
+        || options.proposalSubmissionJournal.assertDeploymentBinding === undefined)) {
+      throw new Error("Local-ledger proposal journals require a signed deployment binding check");
+    }
   }
   if (options.proposalSubmissionJournal !== undefined
     && ((hasMembershipProposalPort && options.proposalAdmission === undefined)
@@ -924,12 +929,25 @@ export const createTrustRegistryApiServer = (
   ): Promise<GovernedMembershipActionReceipt> => {
     if (options.proposalSubmissionJournal === undefined) return execute();
     try {
+      await assertJournalMatchesLocalDeployment();
       return await options.proposalSubmissionJournal.executeOnce(
         role, authorizationId, evidenceCommitment, execute,
       );
     } catch (error) {
       return mapSubmissionJournalError(error);
     }
+  };
+
+  const assertJournalMatchesLocalDeployment = async (): Promise<void> => {
+    if (options.source.mode !== "local-ledger" || options.proposalSubmissionJournal === undefined) return;
+    const binding = options.source.localDeploymentBinding;
+    const assertBinding = options.proposalSubmissionJournal.assertDeploymentBinding;
+    if (binding === undefined || assertBinding === undefined) {
+      throw new ProposalSubmissionConflictError();
+    }
+    const snapshot = await options.source.loadSnapshot();
+    await assertBinding.call(options.proposalSubmissionJournal,
+      snapshot.registry.registryId, binding.contractAddress, binding.expectedGenesisHash);
   };
 
   const requireValidProposalSigners = (
@@ -974,6 +992,7 @@ export const createTrustRegistryApiServer = (
     }
     if (options.proposalSubmissionJournal !== undefined) {
       try {
+        await assertJournalMatchesLocalDeployment();
         await options.proposalSubmissionJournal.reconcile(role, authorizationId, async () => record);
       } catch (error) {
         return mapSubmissionJournalError(error);
@@ -1299,6 +1318,7 @@ export const createTrustRegistryApiServer = (
         }
         if (options.proposalSubmissionJournal !== undefined) {
           try {
+            await assertJournalMatchesLocalDeployment();
             await options.proposalSubmissionJournal.reconcile("recognition", recognitionId, async () => record);
           } catch (error) {
             return mapSubmissionJournalError(error);
