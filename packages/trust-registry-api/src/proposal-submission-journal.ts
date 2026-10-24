@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, mkdir, open, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -527,7 +527,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     try {
       const before = await handle.stat({ bigint: true });
       if (!before.isFile() || (before.mode & 0o077n) !== 0n
-        || before.nlink !== 1n || before.size > BigInt(maxBytes)
+        || (before.nlink !== 1n && !(path === `${this.path}.binding` && before.nlink === 2n
+          && await this.hasCrashLinkedBindingTemp(path, before.dev, before.ino)))
+        || before.size > BigInt(maxBytes)
         || (typeof process.getuid === "function"
           && before.uid !== BigInt(process.getuid()) && before.uid !== 0n)) {
         throw new InvalidProposalSubmissionJournalError();
@@ -550,6 +552,22 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     } finally {
       await handle.close();
     }
+  }
+
+  private async hasCrashLinkedBindingTemp(path: string, dev: bigint, ino: bigint): Promise<boolean> {
+    const prefix = `${basename(path)}.`;
+    for (const name of await readdir(dirname(path))) {
+      if (!name.startsWith(prefix) || !name.endsWith(".tmp")
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
+          .test(name.slice(prefix.length, -4))) continue;
+      try {
+        const companion = await lstat(join(dirname(path), name), { bigint: true });
+        if (companion.isFile() && companion.dev === dev && companion.ino === ino) return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    return false;
   }
 
   private async readSegment(segment: z.infer<typeof SegmentSchema>): Promise<JournalState> {

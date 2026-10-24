@@ -2307,7 +2307,11 @@ or this candidate report alone. A separately approved non-inclusion evidence
 policy, signed operator decision, durable no-replay record, adversarial tests,
 and independent security review remain required.
 
-The local journal reader now rejects hard links, non-private ownership or
-permissions, and files whose inode or metadata changes during a bounded read.
-This protects the stored reservation input; it does not authenticate finalized
-non-inclusion or authorize retry, deletion, or release of an ambiguous attempt.
+The local journal reader rejects unexpected hard links, non-private ownership
+or permissions, and files whose inode or metadata changes during a bounded
+read. A two-link deployment binding remains readable only when its companion
+has the exact private temporary filename and inode left between atomic link
+publication and temporary-name cleanup; other binding links still fail closed.
+This protects the stored reservation input and avoids a permanent outage after
+that crash window. It does not authenticate finalized non-inclusion or
+authorize retry, deletion, or release of an ambiguous attempt.

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fork } from "node:child_process";
 import { link, mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -60,6 +60,27 @@ describe("private governed proposal submission journal", () => {
       .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
     expect(await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
       "issuer", "missing")).toMatchObject({ attempt: null, bindingDigest: bound.bindingDigest });
+  });
+
+  it("accepts only the binding hard link left by a crash after atomic publication", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    const contractAddress = `0x${"aa".repeat(32)}`;
+    const genesisHash = `0x${"bb".repeat(32)}`;
+    await journal.bindDeployment("registry:local", contractAddress, genesisHash);
+    const bindingPath = `${path}.binding`;
+    const crashTemp = `${bindingPath}.${randomUUID()}.tmp`;
+    await link(bindingPath, crashTemp);
+    const reopened = new FileProposalSubmissionJournal(path);
+    await expect(reopened.assertDeploymentBinding("registry:local", contractAddress, genesisHash))
+      .resolves.toBeUndefined();
+    await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext)).resolves.toEqual({ eventHash });
+    await unlink(crashTemp);
+    const unrelated = join(directory, "unrelated-binding-link");
+    await link(bindingPath, unrelated);
+    await expect(new FileProposalSubmissionJournal(path).assertDeploymentBinding(
+      "registry:local", contractAddress, genesisHash))
+      .rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
   });
 
   it("rejects new context-free reservations in a deployment-bound journal", async () => {
