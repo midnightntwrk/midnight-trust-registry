@@ -133,9 +133,11 @@ returns an ambiguous outcome, leaves the journal reservation in place, and
 quarantines the approved genesis/contract target within the process so both
 existing and newly constructed adapters fail until reconciliation and a
 controlled process restart. A submission whose broadcast was attempted but
-not confirmed quarantines the same target. This guard is process-local:
-another process is not stopped by it, and already-open indexer streams are
-not canceled.
+not confirmed quarantines the same target. While a broadcast is pending,
+the target is reserved so sibling adapters cannot send or be constructed.
+The guard is process-local and scoped to the approved genesis/contract target;
+it does not replace wallet-level nonce control by the caller. Another process
+is not stopped by it, and already-open indexer streams are not canceled.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into

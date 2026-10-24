@@ -27,6 +27,7 @@ type SubmissionExtrinsic = {
 };
 
 const uncertainDeployments = new Set<string>();
+const inFlightDeployments = new Set<string>();
 
 export type PinnedLocalSubmissionConfig = {
   nodeWsUrl: string;
@@ -129,14 +130,18 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     if (uncertainDeployments.has(deploymentKey)) {
       throw new Error("Local submission outcome is uncertain; reconcile and restart before further use");
     }
+    if (inFlightDeployments.has(deploymentKey)) {
+      throw new Error("Local submission for this deployment is still pending");
+    }
   };
   assertUsable();
   const rawPublicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
   const boundedWatch: PublicDataProvider["watchForTxData"] = async (txId) => {
     assertUsable();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let result: Awaited<ReturnType<PublicDataProvider["watchForTxData"]>>;
     try {
-      const result = await Promise.race([
+      result = await Promise.race([
         Promise.resolve().then(() => rawPublicDataProvider.watchForTxData(txId)),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
@@ -145,14 +150,14 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
           );
         }),
       ]);
-      assertUsable();
-      return result;
     } catch (error) {
       uncertainDeployments.add(deploymentKey);
       throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
+    assertUsable();
+    return result;
   };
   const publicDataProvider: PublicDataProvider = new Proxy(rawPublicDataProvider, {
     get(target, property) {
@@ -234,6 +239,7 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
       if (!txId) throw new Error("Finalized Midnight transaction has no identifier");
       const serialized = `0x${Buffer.from(tx.serialize()).toString("hex")}`;
       let attemptedBroadcast = false;
+      let reservedTarget = false;
       try {
         const result = await withPinnedNode(async (api, signal) => {
           signal.throwIfAborted();
@@ -245,15 +251,19 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
             throw new Error("Local node does not expose Midnight transaction submission");
           }
           assertUsable();
+          inFlightDeployments.add(deploymentKey);
+          reservedTarget = true;
           const extrinsic = midnight.sendMnTransaction(serialized) as SubmissionExtrinsic;
           attemptedBroadcast = true;
           await awaitNodeFinality(extrinsic, signal);
           return txId;
         }, submissionDeadlineMs);
+        if (reservedTarget) inFlightDeployments.delete(deploymentKey);
         assertUsable();
         return result;
       } catch (error) {
         if (attemptedBroadcast) uncertainDeployments.add(deploymentKey);
+        if (reservedTarget) inFlightDeployments.delete(deploymentKey);
         throw error;
       }
     },

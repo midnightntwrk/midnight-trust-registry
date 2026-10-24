@@ -77,6 +77,9 @@ describe("pinned local submission provider", () => {
       ...config, expectedGenesisHash: `0x${"0".repeat(64)}`,
     })).toThrow(/nonzero genesis/u);
     expect(() => createPinnedLocalSubmissionProvider({
+      ...config, expectedGenesisHash: `0x${genesisHash.slice(2).toUpperCase()}`,
+    })).toThrow(/nonzero genesis/u);
+    expect(() => createPinnedLocalSubmissionProvider({
       ...config, contractAddress: `0x${"0".repeat(64)}`,
     })).toThrow(/contract address/u);
   });
@@ -170,6 +173,24 @@ describe("pinned local submission provider", () => {
     await expect(sibling.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
     expect(() => createPinnedLocalSubmissionProvider(config)).toThrow(/restart/u);
     expect(sendMnTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("reserves the deployment across adapters until a broadcast finalizes", async () => {
+    let report: ((result: unknown) => void) | undefined;
+    sendMnTransaction.mockImplementation(() => ({ send: async (callback: (result: unknown) => void) => {
+      report = callback;
+      return vi.fn();
+    } }));
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    const sibling = createPinnedLocalSubmissionProvider(config);
+    const pending = pinned.midnightProvider.submitTx(transaction);
+    await vi.waitFor(() => { expect(report).toBeTypeOf("function"); });
+    await expect(sibling.midnightProvider.submitTx(transaction)).rejects.toThrow(/still pending/u);
+    expect(() => createPinnedLocalSubmissionProvider(config)).toThrow(/still pending/u);
+    expect(sendMnTransaction).toHaveBeenCalledOnce();
+    report?.({ status: { isFinalized: true } });
+    await expect(pending).resolves.toBe("tx-issuer");
+    expect(() => createPinnedLocalSubmissionProvider(config)).not.toThrow();
   });
 
   it("does not broadcast a connecting submission after another call poisons the instance", async () => {
