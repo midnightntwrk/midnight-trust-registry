@@ -446,6 +446,52 @@ describe("local ledger-bound API source", () => {
     }
   });
 
+  it("retries a null finalized read but latches a provider error", async () => {
+    const { snapshot, ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-retry-"));
+    try {
+      const snapshotPath = join(directory, "snapshot.json");
+      await writeSnapshotToFile(snapshotPath, snapshot);
+      const raw = await readFile(snapshotPath);
+      const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+      const view = { networkId: "undeployed", contractAddress: address,
+        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger,
+        verifierKeySha256: {}, maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
+      let calls = 0;
+      let failure: "null" | "throw" | null = "null";
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(raw).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() {
+          calls += 1;
+          if (failure === "null") return null;
+          if (failure === "throw") throw new Error("private provider endpoint");
+          return view;
+        } },
+        sequenceToTimestamp,
+      });
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      failure = null;
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      await expect(source.loadSnapshot()).resolves.toBeDefined();
+      expect(calls).toBe(2);
+
+      failure = "throw";
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      failure = null;
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(3);
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(3);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));

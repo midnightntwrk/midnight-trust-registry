@@ -2315,3 +2315,21 @@ publication and temporary-name cleanup; other binding links still fail closed.
 This protects the stored reservation input and avoids a permanent outage after
 that crash window. It does not authenticate finalized non-inclusion or
 authorize retry, deletion, or release of an ambiguous attempt.
+
+The b17 observation above is historical. The later retained b19 install is
+source-matched to signed `f48fbb9`; its inventory SHA-256 is
+`d72798c39a414bd3caf2ab2c11cb3f2926909823f2f9054344f48e2bcbef8c14`.
+Its stopped bridge, unsigned genesis packet, and pre-deployment canary egress
+check are development evidence only. The subsequent binding crash-recovery
+fix and RC evidence correction supersede b19 as an exact-source candidate.
+Preserve its private evidence and volumes until an independently approved
+replacement packet and explicit cleanup decision exist.
+
+For #219 availability, a settled `null` from the finalized reader now denies
+the current request and permits one new read after a one-second cooldown.
+The new read must independently pass every pinned snapshot and ledger check;
+no cached or fixture state is served. Reader exceptions, invalid state,
+snapshot mismatches, and a timed-out read still latch until process restart.
+A `null` is neither proof of proposal non-inclusion nor permission to clear
+the #220 reservation gate. This is a local unit-tested behavior, not evidence
+of live indexer recovery or deployed offline runtime.
