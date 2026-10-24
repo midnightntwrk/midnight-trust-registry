@@ -541,7 +541,7 @@ describe("local ledger-bound API source", () => {
     expect(() => createTrustRegistryApiServer({ source: boundSource,
       governedIssuerProposals: {} as NonNullable<Options["governedIssuerProposals"]>,
       proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
-      readFinalizedProposalLedger: finalizedReader })).toThrow(/side-effect-free submission preflight/u);
+      readFinalizedProposalLedger: finalizedReader })).toThrow(/membership proposals require side-effect-free/u);
     expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
       readFinalizedProposalLedger: finalizedReader })).not.toThrow();

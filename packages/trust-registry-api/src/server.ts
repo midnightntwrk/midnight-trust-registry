@@ -844,13 +844,13 @@ export const createTrustRegistryApiServer = (
   }
   if (options.proposalSubmissionJournal !== undefined
     && options.governedRecognitionProposals !== undefined
-    && options.governedRecognitionProposals.preflightSubmission === undefined) {
+    && typeof options.governedRecognitionProposals.preflightSubmission !== "function") {
     throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
   if (options.proposalSubmissionJournal !== undefined
     && [options.governedIssuerProposals, options.governedVerifierProposals,
       options.governedAuditorProposals, options.governedMaintainerProposals]
-      .some((port) => port !== undefined && port.preflightSubmission === undefined)) {
+      .some((port) => port !== undefined && typeof port.preflightSubmission !== "function")) {
     throw new Error("Journaled membership proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;

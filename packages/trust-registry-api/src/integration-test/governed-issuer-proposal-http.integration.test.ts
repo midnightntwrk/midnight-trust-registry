@@ -91,6 +91,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     let finalizedLedger = harness.simulator.getLedger();
     let eventHash: string | undefined;
     let executions = 0;
+    let preflights = 0;
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "journal" }) },
       proposalAdmission: {
@@ -107,6 +108,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       governedIssuerProposals: {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
         preflightSubmission: async (_authorizationId, _evidence, signers) => {
+          preflights += 1;
           if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
             throw new GovernedIssuerProposalRejectedError("invalid-signers");
           }
@@ -148,6 +150,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       const insufficient = await post("submit", { ...request, signers: [request.signers[0]] });
       expect(insufficient.status).toBe(403);
+      expect(preflights).toBe(1);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       expect(executions).toBe(0);
       await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
