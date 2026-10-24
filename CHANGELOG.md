@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- exercise local issuer submission with the real private journal across
+  restart and ambiguous SDK responses; this remains mocked-network evidence
 - require the local issuer circuit-call helper to check the private journal's
   deployment binding, finalized reader's genesis, and submitting providers'
   asserted identity before reservation; SDK-mocked tests remain

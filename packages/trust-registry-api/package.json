@@ -65,5 +65,9 @@
     "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
     "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1"
   }
 }

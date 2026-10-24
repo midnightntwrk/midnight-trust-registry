@@ -241,6 +241,13 @@ importers:
       zod:
         specifier: ^4.6.6
         version: 4.6.6
+    devDependencies:
+      '@midnight-ntwrk/midnight-js-contracts':
+        specifier: 4.1.1
+        version: 4.1.1
+      '@midnight-ntwrk/midnight-js-network-id':
+        specifier: 4.1.1
+        version: 4.1.1
 
   packages/trust-registry-applicant-portal:
     dependencies:

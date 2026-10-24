@@ -109,6 +109,12 @@ signed install plan and implement this callback against authenticated provider
 transports; echoing the expected values is not verification. Its tests mock
 the SDK, reader, and identity callback. A production API port, real local
 transaction, and authenticated finality remain unproven.
+The API integration suite additionally runs this helper against the real
+private file journal: it verifies a single submitted receipt, fail-closed
+genesis checks before reservation, and no second SDK submission after an
+ambiguous response and process restart. The SDK and provider identity are
+mocked in that suite, so these tests establish journal behavior only, not a
+real local-ledger actor journey.
 
 ## Local rotation and capacity
 
