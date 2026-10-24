@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -86,7 +86,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       governedResource,
     };
     const directory = await mkdtemp(join(tmpdir(), "tr-issuer-journal-http-"));
-    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    const journalPath = join(directory, "journal.json");
+    const journal = new FileProposalSubmissionJournal(journalPath);
     let finalizedLedger = harness.simulator.getLedger();
     let eventHash: string | undefined;
     let executions = 0;
@@ -179,7 +180,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-route-"));
     const contractAddress = `0x${harness.simulator.contractAddress}`;
     const genesisHash = `0x${"a".repeat(64)}`;
-    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    const journalPath = join(directory, "journal.json");
+    const journal = new FileProposalSubmissionJournal(journalPath);
     await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
     const reader = vi.fn(async () => harness.simulator.getLedger());
     const resolve = vi.fn(async () => { throw new Error("untrusted port resolver"); });
@@ -206,24 +208,44 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       },
     });
     try {
-      for (const [sourceGenesisHash, expectedStatus] of [[genesisHash, 200], [`0x${"c".repeat(64)}`, 409]] as const) {
+      for (const [sourceGenesisHash, expectedStatus] of [
+        [genesisHash, 200], [`0x${"c".repeat(64)}`, 409], [genesisHash, 503],
+      ] as const) {
         const server = serverFor(sourceGenesisHash);
         try {
           await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
           const address = server.address();
           if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+          if (expectedStatus === 503) reader.mockRejectedValueOnce(new Error("secret-provider-credential"));
           const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal/resolve`, {
             method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidence }),
           });
           expect(response.status).toBe(expectedStatus);
           if (expectedStatus === 200) expect(await response.json()).toEqual({ state: "not-observed" });
+          if (expectedStatus === 503) expect(await response.text()).not.toContain("secret-provider-credential");
         } finally {
           server.closeAllConnections();
           await new Promise<void>((ready, reject) => server.close((error) => error ? reject(error) : ready()));
         }
       }
-      expect(reader).toHaveBeenCalledTimes(1);
+      expect(reader).toHaveBeenCalledTimes(2);
       expect(resolve).not.toHaveBeenCalled();
+      await chmod(`${journalPath}.binding`, 0o644);
+      const server = serverFor(genesisHash);
+      try {
+        await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+        const address = server.address();
+        if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+        const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal/resolve`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidence }),
+        });
+        expect(response.status).toBe(503);
+        expect((await response.json()).type).toMatch(/proposal-submission-journal-unavailable$/u);
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((ready, reject) => server.close((error) => error ? reject(error) : ready()));
+      }
+      expect(reader).toHaveBeenCalledTimes(2);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

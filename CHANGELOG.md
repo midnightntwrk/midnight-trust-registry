@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bind an empty local proposal journal to the signed genesis, registry, and
   contract before submissions; enforce that binding for embedded local-ledger
   proposal routes, read local resolutions through the bound source rather than
-  a port callback, reject cross-deployment reconciliation, and
+  a port callback, return sanitized 503s for unavailable local evidence or
+  invalid private journal files, reject cross-deployment reconciliation, and
   distinguish absent readback from observed attempts without permitting retry
 - prepare a private first-run standalone Compose environment from a verified
   install bundle and record explicit ledger-bridge topology/egress observations

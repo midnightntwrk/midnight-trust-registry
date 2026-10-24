@@ -164,6 +164,7 @@ import {
   type ProposalAdmissionPort,
 } from "./proposal-admission.js";
 import {
+  InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
@@ -899,6 +900,10 @@ export const createTrustRegistryApiServer = (
   };
 
   const mapSubmissionJournalError = (error: unknown): never => {
+    if (error instanceof InvalidProposalSubmissionJournalError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-journal-unavailable", 503,
+        "proposal submission journal unavailable");
+    }
     if (error instanceof ProposalSubmissionAlreadyPendingError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
         "proposal submission requires reconciliation",
@@ -945,9 +950,16 @@ export const createTrustRegistryApiServer = (
     if (binding === undefined || assertBinding === undefined) {
       throw new ProposalSubmissionConflictError();
     }
-    const snapshot = await options.source.loadSnapshot();
-    await assertBinding.call(options.proposalSubmissionJournal,
-      snapshot.registry.registryId, binding.contractAddress, binding.expectedGenesisHash);
+    try {
+      const snapshot = await options.source.loadSnapshot();
+      await assertBinding.call(options.proposalSubmissionJournal,
+        snapshot.registry.registryId, binding.contractAddress, binding.expectedGenesisHash);
+    } catch (error) {
+      if (error instanceof ProposalSubmissionConflictError || error instanceof LocalLedgerSourceUnavailableError) {
+        throw error;
+      }
+      throw new InvalidProposalSubmissionJournalError();
+    }
   };
 
   const readLocalFinalizedProposal = async (role: ProposalRole, authorizationId: string) => {
@@ -997,6 +1009,10 @@ export const createTrustRegistryApiServer = (
         ? await readLocalFinalizedProposal(role, authorizationId)
         : await resolver!(authorizationId);
     } catch (error) {
+      if (options.source.mode === "local-ledger") {
+        throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+          "governed proposal resolution unavailable");
+      }
       return mapError(error, problemBaseUri);
     }
     if (observed === null) {
