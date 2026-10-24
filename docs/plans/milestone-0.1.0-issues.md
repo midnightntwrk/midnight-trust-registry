@@ -10,6 +10,10 @@ The first release candidate is self-hosted local/offline runtime only. The
 required in addition to the simulator-based functional issue plan below.
 Live Preprod qualification is deferred to a later public-network release;
 mocked-provider and simulator tests are not local deployment evidence.
+Kubernetes and Helm are optional deployment paths, not 0.1.0 release
+criteria. A non-Kubernetes self-hosted installation can qualify the RC if
+it satisfies the same real local-ledger, offline actor, recovery, and
+security gates. Keep #218 tracked independently without gating #45.
 The local 0.1.0 RC returns current decisions only. Historical API/TRQP
 decision and evidence routes remain explicitly out of scope and must fail
 closed; issue #39 remains tracked for a later profile, not as a local RC gate.
@@ -34,9 +38,9 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 9 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58, #67, #77 |
 | 10 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
 | 11 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial current-decision matrix and historical-route rejection | #58, #78, #73 |
-| 12 | [#218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218) | Pinned standalone Helm install path, without claiming live qualification | Reviewed install-manifest artifacts |
+| 12 | [#218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218) | Optional pinned Helm install path; not a 0.1.0 RC gate | Reviewed install-manifest artifacts |
 | 13 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
-| 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #218/#219 |
+| 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219; #218 is optional |
 
 Deferred from this local RC: [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
 historical API/TRQP evidence and the historical-route acceptance text still
