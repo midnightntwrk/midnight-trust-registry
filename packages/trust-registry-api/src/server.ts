@@ -847,6 +847,12 @@ export const createTrustRegistryApiServer = (
     && options.governedRecognitionProposals.preflightSubmission === undefined) {
     throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
+  if (options.proposalSubmissionJournal !== undefined
+    && [options.governedIssuerProposals, options.governedVerifierProposals,
+      options.governedAuditorProposals, options.governedMaintainerProposals]
+      .some((port) => port !== undefined && port.preflightSubmission === undefined)) {
+    throw new Error("Journaled membership proposals require side-effect-free submission preflight");
+  }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const requireCompleteHistoricalProjection = (): void => {
     if (options.source.mode === "local-ledger") {
@@ -1511,6 +1517,8 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("issuer", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
@@ -1582,6 +1590,8 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("verifier", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
@@ -1653,6 +1663,8 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("auditor", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
@@ -1724,6 +1736,8 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(maintainerId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("maintainer", maintainerId, body.evidence.commitment, prepared,
               () => port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature)),

@@ -88,6 +88,11 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           throw new GovernedMaintainerProposalRejectedError("invalid-evidence");
         }
       },
+      async preflightSubmission(_maintainerId, _evidence, signers) {
+        if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+          throw new GovernedMaintainerProposalRejectedError("invalid-signers");
+        }
+      },
       async execute(maintainerId, submitted, signers, verifierSignature) {
         if (maintainerId !== candidate.maintainerId) {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");

@@ -64,6 +64,13 @@ export type GovernedVerifierProposalContext = {
 export type GovernedVerifierProposalPort = {
   /** Recheck the verified application evidence against active policy and the Compact signer context. */
   prepare(authorizationId: string, evidence: ApplicationEvidenceSubmission): Promise<GovernedVerifierProposalContext>;
+  /** Reject known-invalid submissions without broadcasting; required when a durable journal is configured. */
+  preflightSubmission?(
+    authorizationId: string, evidence: ApplicationEvidenceSubmission,
+    signers: readonly GovernedMembershipSigner[],
+    evidenceVerifierSignature: TrustRegistryJubjubSignature,
+    context: GovernedVerifierProposalContext,
+  ): Promise<void>;
   /** Compact must verify the registered evidence key and maintainer quorum at execution. */
   execute(
     authorizationId: string,

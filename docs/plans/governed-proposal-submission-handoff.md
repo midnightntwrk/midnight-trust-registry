@@ -166,11 +166,14 @@ journal for an operator-reviewed migration; deleting it is not recovery.
 Once a valid receipt is durably recorded as `submitted`, the global reservation
 pause ends; the same authorization still cannot be submitted again, and only
 a matching finalized observation can mark it `observed`.
-Pre-broadcast failures still retain the journal reservation conservatively.
-In particular, a signer set that passes signature-shape preflight but fails a
-port's quorum check inside `execute` is treated as an ambiguous submission by
-the file journal. #220 must cover side-effect-free quorum preflight before
-reservation or an equally safe operator proof for this known failure mode.
+Journaled membership proposal ports now require a side-effect-free submission
+preflight before reservation. The simulator-backed HTTP test rejects an
+insufficient maintainer quorum with no journal entry. A real local port must
+check current quorum and known-invalid maintainer state there, then still let
+Compact recheck at execution; the callback contract alone is not evidence
+that its implementation is complete. Any failure after reservation remains
+ambiguous, including a missed deterministic pre-broadcast rejection. #220
+still requires audited recovery for those retained reservations.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into
 the API write port or count mocked-provider tests as release evidence until

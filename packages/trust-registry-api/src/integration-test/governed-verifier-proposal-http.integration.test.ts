@@ -96,6 +96,11 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           throw new GovernedVerifierProposalRejectedError("invalid-evidence");
         }
       },
+      async preflightSubmission(_authorizationId, _evidence, signers) {
+        if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+          throw new GovernedVerifierProposalRejectedError("invalid-signers");
+        }
+      },
       async execute(authorizationId, submitted, signers, verifierSignature) {
         if (authorizationId !== verifier.authorizationId) {
           throw new GovernedVerifierProposalRejectedError("unknown-authorization");

@@ -495,7 +495,11 @@ describe("local ledger-bound API source", () => {
     const source: Options["source"] = { mode: "local-ledger", async loadSnapshot() {
       throw new Error("No deployed ledger is available");
     } };
-    const issuerPort = {} as NonNullable<Options["governedIssuerProposals"]>;
+    const issuerPort: NonNullable<Options["governedIssuerProposals"]> = {
+      prepare: async () => { throw new Error("unused"); },
+      preflightSubmission: async () => {},
+      execute: async () => { throw new Error("unused"); },
+    };
     const recognitionPort = {} as NonNullable<Options["governedRecognitionProposals"]>;
     const journal = {} as NonNullable<Options["proposalSubmissionJournal"]>;
     const admission = {} as NonNullable<Options["proposalAdmission"]>;
@@ -534,6 +538,10 @@ describe("local ledger-bound API source", () => {
       executeOnce: async () => ({ eventHash: `0x${"c".repeat(64)}` }),
       reconcile: async () => { throw new Error("unused"); },
     } as NonNullable<Options["proposalSubmissionJournal"]>;
+    expect(() => createTrustRegistryApiServer({ source: boundSource,
+      governedIssuerProposals: {} as NonNullable<Options["governedIssuerProposals"]>,
+      proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader })).toThrow(/side-effect-free submission preflight/u);
     expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
       readFinalizedProposalLedger: finalizedReader })).not.toThrow();

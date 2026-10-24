@@ -106,6 +106,11 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       proposalSubmissionJournal: journal,
       governedIssuerProposals: {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
+        preflightSubmission: async (_authorizationId, _evidence, signers) => {
+          if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+            throw new GovernedIssuerProposalRejectedError("invalid-signers");
+          }
+        },
         execute: async (_, submitted, signers, verifierSignature) => {
           executions += 1;
           eventHash = `0x${Buffer.from(harness.executeIssuerProposalWithSignatures(
@@ -141,6 +146,10 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const duplicateVotes = await post("submit", { ...request, signers: [request.signers[0], request.signers[0]] });
       expect(duplicateVotes.status).toBe(403);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      const insufficient = await post("submit", { ...request, signers: [request.signers[0]] });
+      expect(insufficient.status).toBe(403);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      expect(executions).toBe(0);
       await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
         async () => { throw new Error("response lost after submission"); })).rejects.toThrow();
       const blocked = await post("submit", request);
@@ -221,6 +230,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       proposalSubmissionJournal: journal,
       governedIssuerProposals: {
         prepare: async () => { throw new Error("unused"); },
+        preflightSubmission: async () => {},
         execute: async () => { throw new Error("unused"); },
         resolve,
       },

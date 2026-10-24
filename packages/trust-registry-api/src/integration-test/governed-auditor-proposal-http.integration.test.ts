@@ -89,6 +89,11 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           throw new GovernedAuditorProposalRejectedError("invalid-evidence");
         }
       },
+      async preflightSubmission(_authorizationId, _evidence, signers) {
+        if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+          throw new GovernedAuditorProposalRejectedError("invalid-signers");
+        }
+      },
       async execute(authorizationId, submitted, signers, verifierSignature) {
         if (authorizationId !== auditor.authorizationId) {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
