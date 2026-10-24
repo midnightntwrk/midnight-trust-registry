@@ -126,11 +126,15 @@ transaction identifier. Connection/submission attempts have deadlines and
 close the owned transport on timeout; an attempted broadcast with no confirmed
 outcome remains ambiguous and the journal must prevent blind retry. The
 contract address comes from the signed pin and must be checked by the
-independent finalized reader. Midnight.js may still wait indefinitely for its
-later indexer transaction read. Do not wire this adapter into the API write port
-or count mocked-provider tests as release evidence until that wait, real
-deployed-contract readback, DNS/egress policy, and ambiguous-outcome
-reconciliation are validated on the dedicated local ledger.
+independent finalized reader. This adapter bounds Midnight.js's later
+`watchForTxData` call on the same indexer provider instance, but the SDK does
+not expose cancellation for that underlying watch. A deadline therefore
+returns an ambiguous outcome, leaves the journal reservation in place, and
+requires reconciliation and a controlled process restart before further
+submissions. Do not wire this adapter into the API write port or count
+mocked-provider tests as release evidence until real deployed-contract
+readback, DNS/egress policy, and ambiguous-outcome reconciliation are
+validated on the dedicated local ledger.
 
 ## Local rotation and capacity
 

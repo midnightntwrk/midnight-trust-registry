@@ -36,6 +36,7 @@ describe("pinned local submission provider", () => {
   let indexedGenesis: string;
   let sendMnTransaction: ReturnType<typeof vi.fn>;
   let getBlockHash: ReturnType<typeof vi.fn>;
+  let watchForTxData: ReturnType<typeof vi.fn>;
   let connected: boolean;
 
   beforeEach(() => {
@@ -45,7 +46,8 @@ describe("pinned local submission provider", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       data: { block: { height: 0, hash: indexedGenesis } },
     })));
-    mocks.indexer.mockReset().mockReturnValue({ queryContractState: vi.fn() });
+    watchForTxData = vi.fn(async () => ({ txId: "tx-issuer", status: "SucceedEntirely" }));
+    mocks.indexer.mockReset().mockReturnValue({ queryContractState: vi.fn(), watchForTxData });
     mocks.connect.mockReset().mockResolvedValue(undefined);
     mocks.disconnect.mockReset().mockResolvedValue(undefined);
     getBlockHash = vi.fn(async () => ({ toHex: () => observedGenesis }));
@@ -87,6 +89,19 @@ describe("pinned local submission provider", () => {
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: { submitTx: vi.fn() }, publicDataProvider: pinned.publicDataProvider,
     } as never)).rejects.toThrow(/not using the pinned/u);
+  });
+
+  it("bounds the SDK indexer wait while preserving other provider methods", async () => {
+    const pinned = createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 10 });
+    await expect(pinned.publicDataProvider.watchForTxData("tx-issuer"))
+      .resolves.toMatchObject({ txId: "tx-issuer" });
+    expect(watchForTxData).toHaveBeenCalledWith("tx-issuer");
+    watchForTxData.mockImplementation(() => new Promise(() => undefined));
+    await expect(pinned.publicDataProvider.watchForTxData("tx-stuck"))
+      .rejects.toThrow(/reconcile before retry/u);
+    expect(watchForTxData).toHaveBeenCalledWith("tx-stuck");
+    expect(() => createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 120_001 }))
+      .toThrow(/deadline is invalid/u);
   });
 
   it("refuses an indexer or node on another genesis", async () => {

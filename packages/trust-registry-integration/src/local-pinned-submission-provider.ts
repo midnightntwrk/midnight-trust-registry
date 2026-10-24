@@ -10,6 +10,7 @@ import { localNetworkEndpoint } from "./local-network-endpoints.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
 type RegistryProviders = ContractProviders<RegistryContract>;
+type PublicDataProvider = RegistryProviders["publicDataProvider"];
 
 type SubmissionStatus = {
   status: {
@@ -36,6 +37,8 @@ export type PinnedLocalSubmissionConfig = {
   /** Test-only shorter deadlines; production cannot exceed the built-in limits. */
   connectionDeadlineMs?: number;
   submissionDeadlineMs?: number;
+  /** Bounds the SDK's otherwise indefinite indexer transaction read. */
+  indexerWatchDeadlineMs?: number;
 };
 
 const boundedDeadline = (value: number | undefined, maximum: number): number => {
@@ -118,7 +121,31 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
   }
   const connectionDeadlineMs = boundedDeadline(config.connectionDeadlineMs, 30_000);
   const submissionDeadlineMs = boundedDeadline(config.submissionDeadlineMs, 150_000);
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  const indexerWatchDeadlineMs = boundedDeadline(config.indexerWatchDeadlineMs, 120_000);
+  const rawPublicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  const boundedWatch: PublicDataProvider["watchForTxData"] = async (txId) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => rawPublicDataProvider.watchForTxData(txId)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => { reject(new Error("Local indexer transaction read deadline elapsed; reconcile before retry")); },
+            indexerWatchDeadlineMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+  const publicDataProvider: PublicDataProvider = new Proxy(rawPublicDataProvider, {
+    get(target, property) {
+      if (property === "watchForTxData") return boundedWatch;
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 
   const readIndexerGenesis = async (): Promise<void> => {
     const response = await fetch(indexerHttpUrl, {
