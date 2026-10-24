@@ -20,6 +20,9 @@ history.
 The applicant portal, admin console, local API, and TRQP projection participate
 in the signed actor journeys. Recognition of an external authority remains a
 separate, scoped governance decision, not implicit membership.
+Kubernetes and Helm are optional installation paths, not acceptance criteria
+for this candidate; a non-Kubernetes standalone deployment can qualify with
+the same live-ledger, offline-runtime, recovery, and security evidence.
 
 The contract uses JubJub Schnorr signatures for governed actions and commits
 registry identity, policy, network, scope, signer, and epoch evidence to
