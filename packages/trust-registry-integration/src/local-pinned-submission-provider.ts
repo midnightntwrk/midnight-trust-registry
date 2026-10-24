@@ -123,10 +123,17 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
   const submissionDeadlineMs = boundedDeadline(config.submissionDeadlineMs, 150_000);
   const indexerWatchDeadlineMs = boundedDeadline(config.indexerWatchDeadlineMs, 120_000);
   const rawPublicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  let requiresRestart = false;
+  const assertUsable = (): void => {
+    if (requiresRestart) {
+      throw new Error("Local submission outcome is uncertain; reconcile and restart before further use");
+    }
+  };
   const boundedWatch: PublicDataProvider["watchForTxData"] = async (txId) => {
+    assertUsable();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([
+      const result = await Promise.race([
         Promise.resolve().then(() => rawPublicDataProvider.watchForTxData(txId)),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
@@ -135,6 +142,11 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
           );
         }),
       ]);
+      assertUsable();
+      return result;
+    } catch (error) {
+      requiresRestart = true;
+      throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -143,7 +155,11 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     get(target, property) {
       if (property === "watchForTxData") return boundedWatch;
       const value: unknown = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        assertUsable();
+        return value.apply(target, args);
+      };
     },
   });
 
@@ -210,34 +226,47 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
 
   const midnightProvider: MidnightProvider = {
     async submitTx(tx) {
+      assertUsable();
       const txId = tx.identifiers()[0];
       if (!txId) throw new Error("Finalized Midnight transaction has no identifier");
       const serialized = `0x${Buffer.from(tx.serialize()).toString("hex")}`;
-      return withPinnedNode(async (api, signal) => {
-        signal.throwIfAborted();
-        if (!api.isConnected) throw new Error("Local submission node disconnected before broadcast");
-        const midnight: unknown = Reflect.get(api.tx, "midnight");
-        if (midnight === null || typeof midnight !== "object"
-          || !("sendMnTransaction" in midnight)
-          || typeof midnight.sendMnTransaction !== "function") {
-          throw new Error("Local node does not expose Midnight transaction submission");
-        }
-        const extrinsic = midnight.sendMnTransaction(serialized) as SubmissionExtrinsic;
-        await awaitNodeFinality(extrinsic, signal);
-        return txId;
-      }, submissionDeadlineMs);
+      let attemptedBroadcast = false;
+      try {
+        const result = await withPinnedNode(async (api, signal) => {
+          signal.throwIfAborted();
+          if (!api.isConnected) throw new Error("Local submission node disconnected before broadcast");
+          const midnight: unknown = Reflect.get(api.tx, "midnight");
+          if (midnight === null || typeof midnight !== "object"
+            || !("sendMnTransaction" in midnight)
+            || typeof midnight.sendMnTransaction !== "function") {
+            throw new Error("Local node does not expose Midnight transaction submission");
+          }
+          assertUsable();
+          const extrinsic = midnight.sendMnTransaction(serialized) as SubmissionExtrinsic;
+          attemptedBroadcast = true;
+          await awaitNodeFinality(extrinsic, signal);
+          return txId;
+        }, submissionDeadlineMs);
+        assertUsable();
+        return result;
+      } catch (error) {
+        if (attemptedBroadcast) requiresRestart = true;
+        throw error;
+      }
     },
   };
 
   return {
     midnightProvider, publicDataProvider,
     async readSubmissionProviderIdentity(providers) {
+      assertUsable();
       if (providers.midnightProvider !== midnightProvider
         || providers.publicDataProvider !== publicDataProvider) {
         throw new Error("Issuer call is not using the pinned local node and indexer providers");
       }
       await withPinnedNode(async () => undefined, connectionDeadlineMs);
       await readIndexerGenesis();
+      assertUsable();
       return { contractAddress: config.contractAddress, genesisHash: config.expectedGenesisHash };
     },
   };

@@ -37,6 +37,7 @@ describe("pinned local submission provider", () => {
   let sendMnTransaction: ReturnType<typeof vi.fn>;
   let getBlockHash: ReturnType<typeof vi.fn>;
   let watchForTxData: ReturnType<typeof vi.fn>;
+  let queryContractState: ReturnType<typeof vi.fn>;
   let connected: boolean;
 
   beforeEach(() => {
@@ -47,7 +48,8 @@ describe("pinned local submission provider", () => {
       data: { block: { height: 0, hash: indexedGenesis } },
     })));
     watchForTxData = vi.fn(async () => ({ txId: "tx-issuer", status: "SucceedEntirely" }));
-    mocks.indexer.mockReset().mockReturnValue({ queryContractState: vi.fn(), watchForTxData });
+    queryContractState = vi.fn(async () => null);
+    mocks.indexer.mockReset().mockReturnValue({ queryContractState, watchForTxData });
     mocks.connect.mockReset().mockResolvedValue(undefined);
     mocks.disconnect.mockReset().mockResolvedValue(undefined);
     getBlockHash = vi.fn(async () => ({ toHex: () => observedGenesis }));
@@ -93,6 +95,8 @@ describe("pinned local submission provider", () => {
 
   it("bounds the SDK indexer wait while preserving other provider methods", async () => {
     const pinned = createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 10 });
+    await expect(pinned.publicDataProvider.queryContractState(contractAddress)).resolves.toBeNull();
+    expect(queryContractState).toHaveBeenCalledWith(contractAddress);
     await expect(pinned.publicDataProvider.watchForTxData("tx-issuer"))
       .resolves.toMatchObject({ txId: "tx-issuer" });
     expect(watchForTxData).toHaveBeenCalledWith("tx-issuer");
@@ -100,6 +104,14 @@ describe("pinned local submission provider", () => {
     await expect(pinned.publicDataProvider.watchForTxData("tx-stuck"))
       .rejects.toThrow(/reconcile before retry/u);
     expect(watchForTxData).toHaveBeenCalledWith("tx-stuck");
+    expect(() => pinned.publicDataProvider.queryContractState(contractAddress)).toThrow(/restart/u);
+    await expect(pinned.publicDataProvider.watchForTxData("tx-other")).rejects.toThrow(/restart/u);
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
+    await expect(pinned.readSubmissionProviderIdentity({
+      midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
+    } as never)).rejects.toThrow(/restart/u);
+    expect(watchForTxData).toHaveBeenCalledTimes(2);
+    expect(sendMnTransaction).not.toHaveBeenCalled();
     expect(() => createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 120_001 }))
       .toThrow(/deadline is invalid/u);
   });
@@ -113,6 +125,8 @@ describe("pinned local submission provider", () => {
     observedGenesis = `0x${"c".repeat(64)}`;
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/genesis does not match/u);
     expect(sendMnTransaction).not.toHaveBeenCalled();
+    observedGenesis = genesisHash;
+    await expect(pinned.midnightProvider.submitTx(transaction)).resolves.toBe("tx-issuer");
   });
 
   it("returns the Midnight identifier only after successful finality", async () => {
@@ -140,6 +154,28 @@ describe("pinned local submission provider", () => {
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/deadline/u);
     expect(sendMnTransaction).toHaveBeenCalledOnce();
     expect(mocks.disconnect).toHaveBeenCalled();
+    await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/restart/u);
+    expect(sendMnTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("does not broadcast a connecting submission after another call poisons the instance", async () => {
+    let releaseGenesis: (() => void) | undefined;
+    const genesisGate = new Promise<void>((resolve) => { releaseGenesis = resolve; });
+    getBlockHash.mockImplementation(async () => {
+      await genesisGate;
+      return { toHex: () => genesisHash };
+    });
+    watchForTxData.mockImplementation(() => new Promise(() => undefined));
+    const pinned = createPinnedLocalSubmissionProvider({
+      ...config, indexerWatchDeadlineMs: 10, submissionDeadlineMs: 1_000,
+    });
+    const pendingSubmission = pinned.midnightProvider.submitTx(transaction);
+    await vi.waitFor(() => { expect(getBlockHash).toHaveBeenCalledOnce(); });
+    await expect(pinned.publicDataProvider.watchForTxData("tx-stuck"))
+      .rejects.toThrow(/reconcile before retry/u);
+    releaseGenesis?.();
+    await expect(pendingSubmission).rejects.toThrow(/restart/u);
+    expect(sendMnTransaction).not.toHaveBeenCalled();
   });
 
   it("does not broadcast after connection loss or a missing identifier", async () => {
