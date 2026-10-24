@@ -39,13 +39,41 @@ exact-source install and review.
 | #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The verified-staged b19 `f48fbb9` install inventory binds source-matched packages, six images, and proof parameters; it is not installed runtime evidence or current-head validation. Full integration and all 66 verifier-key hashes passed at `f48fbb9`, before the later crash-recovery fix. Manifest-backed packed-consumer actor and VC Ledger 8 fixture smokes passed at earlier source `a94520e`, but neither is a deployed local-ledger actor journey or final-candidate validation. | Full integration, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
 | #178 milestone protection policy | The [delivery harness](milestone-0.1.0-delivery-harness.md) requires green exact-head CI and current-head LLM review; the user explicitly declined a milestone branch-protection rule | Reconcile the stale issue with that policy decision; do not treat absence of branch protection as a release blocker or relax develop/main protections. |
 
+The latest retained exact-source install is now **b20 at signed/DCO
+`5e01191e7d4289911c0e2fb53c639d258dc86832`**, superseding the b19
+evidence in the table above. Its verified v6 inventory SHA-256 is
+`8c863ed505a1470509bdb79ce047ee795c9e2331901708ddf16baee0819e43ac`;
+the release-manifest SHA-256 is
+`386a21ddd985339146b0fb35bab8065f3c66cb329bf588a7577ade6b5f3297ef`.
+Full `./run.sh integration` passed at that source and all 66 source-managed
+and 66 dist verifier files matched the manifest. A clean packed consumer
+passed the Ledger 8 VC fixture and issuer, verifier, auditor, maintainer, and
+recognition journeys; package-content checks passed for all ten packages.
+The isolated b20 node/indexer/proof bridge and its HTTPS/DNS egress probe
+covered those services only. Its unsigned private genesis review packet is
+`artifacts/standalone-setup/wizard-b20/genesis-review-packet.md`; node-reported
+candidate and proposed pin remain untrusted. No b20 contract deployment or
+offline actor journey has occurred. The current local source is newer than
+this bundle, so b20 cannot serve as final-head release evidence.
+
+Local #219 API slices now return `503 local-list-projection-unavailable` for
+authorization and recognition lists, and select current by-ID records from
+the finalized current-scope indexes; superseded IDs return 404. The route
+observation probe checks those fail-closed responses. Full API tests passed
+at the unpublished current-only head, but these are injected-source tests,
+not independent node/indexer inclusion proof or deployed offline API evidence.
+
 The private proposal journal now blocks new governed proposals while any
 ambiguous reservation remains, including across restart. Mocked/API tests
 cover replay denial and a matching finalized observation, but a never-observed
 attempt can still stop all new proposals. [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
 is a local RC blocker for an audited operator recovery path. A null indexer
 read, elapsed time, or journal replacement must not bypass this gate. The
-Compact simulator regression shows that advancing the governance sequence
+real-file-journal issuer HTTP regression also verifies that a deterministically
+insufficient action quorum is rejected before reservation, with no Compact
+execution; the focused four-test integration file passed at the unpublished
+current head. This covers that pre-broadcast case only, not ambiguous recovery.
+The Compact simulator regression shows that advancing the governance sequence
 invalidates the old proposal signature without creating its record, but a
 fresh signature for that ID still succeeds. This is not finalized local-ledger
 evidence and does not replace the required durable tombstone. The
