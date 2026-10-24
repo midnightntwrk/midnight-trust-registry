@@ -10,6 +10,7 @@ import {
   loadApprovedLocalLedgerRuntimePlan,
 } from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
+import { localApiOrigin, observeLocalApiCurrentReads } from "./local-ledger-api-observation.js";
 import { createPortalStaticHandler } from "./portal-static.js";
 import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
 
@@ -21,12 +22,16 @@ const HELP_TEXT = `Usage:
     [--unsafe-demo-mutations]
   trust-registry-api check-local-ledger-plan --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+  trust-registry-api observe-local-ledger-api --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT --api-origin http://127.0.0.1:PORT
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
 --serve-portals serves packaged admin/applicant assets from the API origin.
 The plan check performs signed-pin and finalized snapshot readback without a listener.
 It is not independent finality proof or release qualification.
+The API observation compares current HTTP reads with the signed-plan source.
+It is not actor-journey, process-identity, independent-finality, or release evidence.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -36,7 +41,7 @@ Examples:
 `;
 
 export type TrustRegistryApiCliOptions = {
-  command: "serve" | "check-local-ledger-plan";
+  command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -45,6 +50,7 @@ export type TrustRegistryApiCliOptions = {
   localLedgerSignaturePath?: string;
   localLedgerKeyringDirectory?: string;
   localLedgerReviewerFingerprint?: string;
+  apiOrigin?: string;
   clusterBind?: boolean;
   servePortals?: boolean;
   unsafeDemoMutations?: boolean;
@@ -58,7 +64,8 @@ export const parseTrustRegistryApiCliArgs = (
   if (command === "--help" || command === "-h" || command === "help") {
     throw new Error(HELP_TEXT);
   }
-  if (command !== "serve" && command !== "check-local-ledger-plan") {
+  if (command !== "serve" && command !== "check-local-ledger-plan"
+    && command !== "observe-local-ledger-api") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
@@ -122,6 +129,14 @@ export const parseTrustRegistryApiCliArgs = (
         if (arg === "--local-ledger-reviewer") options.localLedgerReviewerFingerprint = value;
         break;
       }
+      case "--api-origin": {
+        const origin = args.shift();
+        if (origin === undefined || origin.length === 0) {
+          throw new Error(`--api-origin requires a value\n\n${HELP_TEXT}`);
+        }
+        options.apiOrigin = localApiOrigin(origin);
+        break;
+      }
       case "--unsafe-demo-mutations":
         options.unsafeDemoMutations = true;
         break;
@@ -152,11 +167,15 @@ export const parseTrustRegistryApiCliArgs = (
     : localEvidence.some((value) => value !== undefined)) {
     throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
-  if (command === "check-local-ledger-plan") {
+  if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api") {
     const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
       "--local-ledger-keyring", "--local-ledger-reviewer"]);
+    if (command === "observe-local-ledger-api") allowed.add("--api-origin");
     if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
-      throw new Error("Plan preflight accepts only complete signed local-ledger evidence");
+      throw new Error("Local readback accepts only complete signed local-ledger evidence");
+    }
+    if (command === "observe-local-ledger-api" && options.apiOrigin === undefined) {
+      throw new Error("Local API observation requires --api-origin");
     }
     return options;
   }
@@ -206,6 +225,19 @@ export const runTrustRegistryApiCli = async (
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     await source.loadSnapshot();
     process.stdout.write(`Signed local plan and finalized snapshot match (${plan.sourceRevision}); not release qualification.\n`);
+    return;
+  }
+  if (options.command === "observe-local-ledger-api") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin! });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
   const portalHandler = options.servePortals === true

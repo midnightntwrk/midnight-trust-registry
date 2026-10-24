@@ -130,6 +130,14 @@ queries must pass before restoring traffic. If any check fails, leave the API
 unavailable and reconcile the finalized ledger; never roll back to a plan whose
 governance count is stale or restart in fixture mode. Preserve both signed versions
 for audit. This is an operator procedure, not an automated signer or live test.
+For a read-only current-route check against a running loopback listener, run
+`trust-registry-api observe-local-ledger-api` with the same four signed-plan
+arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,
+current epoch, all bounded issuer/verifier/auditor/recognition records,
+not-found behavior, and historical-route rejection with the signed source.
+Its JSON report has `releaseQualified: false`: it does not attest the API
+process or image, independently authenticate finality, perform actor mutations,
+or prove browser, DID/VC/status, egress-denied, or recovery behavior.
 All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
 and browsers are not instructed to reuse stale authorization decisions.
 With `--serve-portals`, the API serves packaged admin and applicant assets at

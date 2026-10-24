@@ -60,6 +60,25 @@ describe("API CLI binding", () => {
     }
   });
 
+  it("observes only a signed local plan through an explicit loopback API origin", () => {
+    const observation = ["observe-local-ledger-api", ...localArgs.slice(1),
+      "--api-origin", "http://127.0.0.1:4400"];
+    expect(parseTrustRegistryApiCliArgs(observation).apiOrigin).toBe("http://127.0.0.1:4400");
+    for (const args of [
+      observation.slice(0, -2),
+      [...observation, "--host", "127.0.0.1"],
+      [...observation, "--port", "4400"],
+      [...observation, "--serve-portals"],
+      [...observation, "--unsafe-demo-mutations"],
+      ["observe-local-ledger-api", "--snapshot", "fixture.json", "--api-origin", "http://127.0.0.1:4400"],
+      [...observation.slice(0, -1), "http://localhost:4400"],
+      [...observation.slice(0, -1), "https://127.0.0.1:4400"],
+      [...observation.slice(0, -1), "http://127.0.0.1:4400/path"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

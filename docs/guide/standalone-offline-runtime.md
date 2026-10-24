@@ -1363,6 +1363,11 @@ with injected snapshots is not local deployment or restore evidence.
    against the complete new signed set without a listener, switch to that
    immutable versioned plan/snapshot set, and restart. The preflight is a
    consistency check, not independent finality proof. The current-state
+   HTTP spot-check can use `trust-registry-api observe-local-ledger-api` with
+   the same signed-plan arguments and an explicit loopback `--api-origin`.
+   Its current-route readback report is diagnostic only (`releaseQualified:
+   false`); it cannot replace actor journeys, process identity, authenticated
+   finality, egress-denied execution, or recovery evidence. The current-state
    projection also recomputes issuer, verifier, auditor, and recognition
    scope indexes from the Compact records, checks record and active counters,
    and rejects missing or redirected indexes. It also checks current lifecycle
