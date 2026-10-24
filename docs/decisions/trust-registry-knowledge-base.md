@@ -2260,18 +2260,20 @@ the independent reviewer must still derive and approve genesis from the
 chain specification before wizard observation and detached approval signing.
 This source change is newer than the b12 install and does not requalify it.
 
-As of 2026-10-24, b16 is the latest retained v6 development installation:
-its inventory SHA-256 `d82283e169d5b0f8cc0b158b250f71030debd837d946fb96d2ebd6d11ac24e10`
-is bound to signed source `73f662acd8d8b89fe3b5cf7c0185d409a11c3b85`.
-The isolated node/indexer/proof bridge matched pinned images and private
-Compose inputs. A positive-control HTTPS canary succeeded while the internal
-bridge denied HTTPS and DNS with no broad outbound route. A pre-deployment
-restart retained the height-141 finalized hash and advanced to height 164.
-These are self-attested ledger-bridge observations, not clean-host install,
-deployed contract, actor, or restore qualification. The b16 genesis candidate
-and pin remain unsigned; the installation relay was removed. The b15 services
-were stopped without deleting their volumes or private evidence. Later local
-source changes require another exact-head bundle and review.
+As of 2026-10-24, b17 is the latest retained verified-staged v6 development
+installation. Its inventory SHA-256
+`51bdd796170f93953ff7a08d21c999227dddeec97b4d275f0cb32d06f3457e31`
+is bound to signed source `3424799e3142520f9041f7ebbcd75a6327b67b77`.
+The dedicated node/indexer/proof bridge is running. A pre-deployment restart
+retained the finalized height-69 hash and advanced to height 77. The b17
+genesis candidate and proposed pin remain unsigned; deployment, committee
+transition, offline actor journeys, and restore remain pending. The earlier
+b16 installation provided a positive-control HTTPS canary and internal-bridge
+HTTPS/DNS denial observation, but that observation does not qualify b17 or a
+deployed runtime. These are self-attested development observations, not
+clean-host install, deployed contract, actor, or restore qualification. The
+b15/b16 private volumes and evidence remain preserved. Later local source
+changes require another exact-head bundle and review.
 
 For #220, the read-only v2 recovery report now binds the exact approved API
 plan digest and journal attempt digest, but never releases a reservation. The
