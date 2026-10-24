@@ -323,7 +323,8 @@ export const runTrustRegistryApiCli = async (
       requireApiRuntimePin: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
-    const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin! });
+    const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin!,
+      expectedPlanSha256: planSha256 });
     process.stdout.write(`${JSON.stringify({ ...result, planSourceRevision: plan.sourceRevision,
       planSha256, planNotAfter: plan.notAfter }, null, 2)}\n`);
     return;
@@ -453,15 +454,18 @@ export const runTrustRegistryApiCli = async (
     ? await createPortalStaticHandler("/app/portals")
     : undefined;
   let readFinalizedProposalLedger: FinalizedProposalLedgerReader | undefined;
+  let localPlanSha256: string | undefined;
   const source = options.localLedgerPlanPath !== undefined
     ? await (async () => {
-      const plan = await loadApprovedLocalLedgerRuntimePlan({
+      const approved = await loadApprovedLocalLedgerRuntimePlanWithDigest({
         planPath: options.localLedgerPlanPath!,
         signaturePath: options.localLedgerSignaturePath!,
         keyringDirectory: options.localLedgerKeyringDirectory!,
         reviewerFingerprint: options.localLedgerReviewerFingerprint!,
         requireApiRuntimePin: options.clusterBind === true,
       });
+      const { plan } = approved;
+      localPlanSha256 = approved.planSha256;
       if (options.clusterBind === true) {
         await assertLocalApiImageSourceRevision(plan.sourceRevision);
       }
@@ -476,6 +480,7 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(localPlanSha256 === undefined ? {} : { localPlanSha256 }),
     ...(readFinalizedProposalLedger === undefined ? {} : { readFinalizedProposalLedger }),
     ...(portalHandler === undefined ? {} : { nonApiGetHandler: portalHandler }),
     ...(options.clusterBind === true ? { corsPolicy: "none" as const } : {}),

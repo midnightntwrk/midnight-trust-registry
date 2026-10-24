@@ -230,6 +230,8 @@ class HttpProblem extends Error {
 
 export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
+  /** Digest of the signed local plan bytes verified when this server started. */
+  localPlanSha256?: string;
   corsPolicy?: "public" | "none";
   clock?: () => string;
   problemBaseUri?: string;
@@ -798,6 +800,11 @@ const performMutation = async (
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
 ): Server => {
+  if (options.localPlanSha256 !== undefined
+    && (options.source.mode !== "local-ledger"
+      || !/^[0-9a-f]{64}$/u.test(options.localPlanSha256))) {
+    throw new Error("Startup plan digest requires the local-ledger source and canonical SHA-256");
+  }
   if (options.applicationVp !== undefined
     && (options.governedIssuerProposals !== undefined || options.governedVerifierProposals !== undefined
       || options.governedAuditorProposals !== undefined || options.governedMaintainerProposals !== undefined)
@@ -1089,6 +1096,7 @@ export const createTrustRegistryApiServer = (
             sourceMode: options.source.mode,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
+            ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
           }),
         );
         return;

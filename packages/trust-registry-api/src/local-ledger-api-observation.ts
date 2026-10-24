@@ -57,6 +57,7 @@ async function request(origin: string, path: string, expectedStatus: number,
 export async function observeLocalApiCurrentReads(input: {
   source: TrustRegistryApiStateSource;
   apiOrigin: string;
+  expectedPlanSha256?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
   format: "tr-local-api-current-read-observation-v1";
@@ -78,7 +79,10 @@ export async function observeLocalApiCurrentReads(input: {
   const health = await request(origin, "/health", 200, fetchImpl) as Record<string, unknown>;
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || health.registryId !== snapshot.registry.registryId
-    || health.generatedAt !== snapshot.generatedAt) {
+    || health.generatedAt !== snapshot.generatedAt
+    || (input.expectedPlanSha256 !== undefined
+      && (!/^[0-9a-f]{64}$/u.test(input.expectedPlanSha256)
+        || health.localPlanSha256 !== input.expectedPlanSha256))) {
     throw new Error("Local API health does not identify the signed-plan registry source");
   }
   const summary = await request(origin, "/v1/registry/summary", 200, fetchImpl);
@@ -181,6 +185,10 @@ export async function observeLocalApiCurrentReads(input: {
   await request(origin, `/v1/epochs/resolve?at=${encodeURIComponent(snapshot.generatedAt)}`, 501, fetchImpl);
   if (!isDeepStrictEqual(await input.source.loadCurrentLedgerSelection(), selection)) {
     throw new Error("Finalized local selection changed during API readback observation");
+  }
+  const finalHealth = await request(origin, "/health", 200, fetchImpl);
+  if (!isDeepStrictEqual(finalHealth, health)) {
+    throw new Error("Local API health changed during current-read observation");
   }
   return {
     format: "tr-local-api-current-read-observation-v1",

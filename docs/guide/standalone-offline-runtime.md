@@ -205,8 +205,9 @@ network attachment, or weakened API container security settings. For the
 three ledger services it checks image identity, health when configured, and
 network membership; their separate topology and egress observers remain
 required. The fingerprint comparison is to the operator's input, not an
-independent reading of the signed plan. Its output deliberately keeps finalized readback, egress denial,
-actor journeys, and release qualification **unverified**. It does not read or
+independent reading of the signed plan. Its output deliberately keeps
+finalized readback, egress denial, actor journeys, and release qualification
+**unverified**. It does not read or
 approve the signed plan, prove that the mounted files are unchanged, or replace
 the signed-plan preflight and live finalized-query tests. Do not run it against
 the older b15 bundle: that bundle predates the API overlay pin.
@@ -225,11 +226,15 @@ exec` to run the **packaged** `observe-local-ledger-api` CLI against
 revision to match the verified bundle revision while separately checking the
 running image ID. The report records the SHA-256 of the exact plan bytes the
 packaged CLI verified, its expiry, and the current-read observation time.
+The running local-ledger server exposes only the digest of its startup-verified
+plan on `/health`; the packaged observer rejects a different digest. This
+binds the readback to the plan held by that server process even if a different
+validly signed plan is later placed in the host approval directory.
 It rejects a replaced or restarted container, changed network, expired
 observation, or source mismatch. This is route-level current-read evidence
-only. The API and the
-probe share the same signed-plan reader and node/indexer trust boundary;
-neither supplies independently authenticated finality, governed writes,
+only. The API and probe share the same signed-plan loader and node/indexer
+trust boundary; matching plan digests do not make those inputs independent.
+Neither supplies independently authenticated finality, governed writes,
 offline actor journeys, or release approval. No host port is opened.
 
 After loading the v5/v6 images, run

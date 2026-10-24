@@ -44,6 +44,28 @@ describe("local API current-read observation (route-level only)", () => {
     }
   });
 
+  it("binds current-read observation to the plan digest held by the running server", async () => {
+    const digest = "a".repeat(64);
+    expect(() => createTrustRegistryApiServer({ source: { ...source, mode: "snapshot" },
+      localPlanSha256: digest })).toThrow(/Startup plan digest/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      localPlanSha256: "bad" })).toThrow(/Startup plan digest/u);
+    const server = createTrustRegistryApiServer({ source, localPlanSha256: digest });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const health = await fetch(`${apiOrigin}/health`);
+      expect((await health.json()).localPlanSha256).toBe(digest);
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: digest })).resolves.toMatchObject({ releaseQualified: false });
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: "b".repeat(64) })).rejects.toThrow(/signed-plan registry source/u);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("rejects non-loopback origins and fixture sources", async () => {
     for (const origin of ["http://localhost:4400", "http://0.0.0.0:4400",
       "https://127.0.0.1:4400", "http://127.0.0.1:4400/path"]) {
@@ -219,6 +241,17 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: staleHealth }))
         .rejects.toThrow(/health does not identify/u);
+      let healthReads = 0;
+      const changedHealth: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/health" || ++healthReads === 1) return response;
+        return new Response(JSON.stringify({ ...await response.json(),
+          generatedAt: "2020-01-01T00:00:00.000Z" }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
+        fetchImpl: changedHealth })).rejects.toThrow(/health changed during/u);
       const staleSummary: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/v1/registry/summary") return response;
