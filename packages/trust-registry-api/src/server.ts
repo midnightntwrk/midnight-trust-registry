@@ -20,6 +20,8 @@ import {
   evaluateRecognitionEntryAtTimestamp,
   evaluateRecognitionEvidenceAtTimestamp,
   createTrqpSourceFromStateSource,
+  CurrentLedgerSelectionAmbiguousError,
+  CurrentLedgerSelectionUnavailableError,
   getAuthorizationEntryById,
   getRecognitionEntryById,
   isMutableStateSource,
@@ -368,6 +370,20 @@ const asProblem = (
       type: `${problemBaseUri}/local-ledger-unavailable`,
       title: "local ledger unavailable",
       status: 503,
+    });
+  }
+  if (error instanceof CurrentLedgerSelectionUnavailableError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/local-ledger-unavailable`,
+      title: "local ledger unavailable",
+      status: 503,
+    });
+  }
+  if (error instanceof CurrentLedgerSelectionAmbiguousError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/ambiguous-current-scope`,
+      title: "ambiguous current scope",
+      status: 409,
     });
   }
   if (error instanceof SyntaxError) {

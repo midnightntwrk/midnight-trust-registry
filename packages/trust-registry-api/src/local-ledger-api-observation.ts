@@ -1,6 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 
+import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
+
 import type { TrustRegistryApiStateSource } from "./source.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -70,8 +72,13 @@ export async function observeLocalApiCurrentReads(input: {
   const snapshot = await input.source.loadSnapshot();
   const health = await request(origin, "/health", 200, fetchImpl) as Record<string, unknown>;
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
-    || health.registryId !== snapshot.registry.registryId) {
+    || health.registryId !== snapshot.registry.registryId
+    || health.generatedAt !== snapshot.generatedAt) {
     throw new Error("Local API health does not identify the signed-plan registry source");
+  }
+  const summary = await request(origin, "/v1/registry/summary", 200, fetchImpl);
+  if (!isDeepStrictEqual(summary, jsonProjection(buildSnapshotSummary(snapshot)))) {
+    throw new Error("Local API registry summary differs from the signed-plan source");
   }
   const registry = await request(origin, "/v1/registry", 200, fetchImpl) as Record<string, unknown>;
   if (!isDeepStrictEqual(registry, jsonProjection(snapshot.registry))) {

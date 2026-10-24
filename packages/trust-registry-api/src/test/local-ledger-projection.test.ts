@@ -28,6 +28,13 @@ import {
 } from "../local-ledger-projection.js";
 import { createLocalLedgerBoundSource } from "../local-ledger-source.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import {
+  CurrentLedgerSelectionAmbiguousError,
+  CurrentLedgerSelectionUnavailableError,
+  resolveAuthorizationEntry,
+  resolveRecognitionEntry,
+  type TrustRegistryApiStateSource,
+} from "../source.js";
 
 const sequenceToTimestamp = (sequence: bigint): string =>
   new Date(Date.parse("2026-05-20T00:00:00Z") + Number(sequence) * 60_000).toISOString();
@@ -105,6 +112,75 @@ const fixture = () => {
 };
 
 describe("finalized Compact projection coverage", () => {
+  it("resolves local current records by finalized selection, not lifecycle timestamps", async () => {
+    const { snapshot } = fixture();
+    const currentIssuer = snapshot.issuerEntries[1]!;
+    const olderIssuer = { ...snapshot.issuerEntries[0]!, authorization: {
+      ...snapshot.issuerEntries[0]!.authorization,
+      subjectDid: currentIssuer.authorization.subjectDid,
+      resourceId: currentIssuer.authorization.resourceId,
+      resourceType: currentIssuer.authorization.resourceType,
+      effectiveUntil: "2099-01-01T00:00:00.000Z",
+    } };
+    const currentRecognition = snapshot.recognitionEntries[0]!;
+    const olderRecognition = { ...currentRecognition, recognition: {
+      ...currentRecognition.recognition,
+      recognitionId: "older-recognition",
+      effectiveUntil: "2099-01-01T00:00:00.000Z",
+    } };
+    const candidate = { ...snapshot,
+      issuerEntries: [olderIssuer, currentIssuer],
+      recognitionEntries: [olderRecognition, currentRecognition],
+    };
+    const selection = {
+      snapshot: candidate,
+      authorizationIds: { issuer: new Set([currentIssuer.authorization.authorizationId]),
+        verifier: new Set<string>(), auditor: new Set<string>() },
+      recognitionIds: new Set([currentRecognition.recognition.recognitionId]),
+    };
+    const source: TrustRegistryApiStateSource = { mode: "local-ledger",
+      async loadSnapshot() { return candidate; },
+      async loadCurrentLedgerSelection() { return selection; },
+    };
+    const issuerRequest = { role: "issuer" as const,
+      subjectDid: currentIssuer.authorization.subjectDid,
+      resourceId: currentIssuer.authorization.resourceId,
+    };
+    const recognitionRequest = {
+      recognizedAuthorityDid: currentRecognition.recognition.recognizedAuthorityDid,
+      scopeResourceId: currentRecognition.recognition.scope.resourceId,
+    };
+    expect(await resolveAuthorizationEntry(source, issuerRequest)).toEqual(currentIssuer);
+    expect(await resolveRecognitionEntry(source, recognitionRequest)).toEqual(currentRecognition);
+    await expect(resolveAuthorizationEntry({ mode: "local-ledger", async loadSnapshot() {
+      return candidate;
+    } }, issuerRequest)).rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
+    const ambiguous: TrustRegistryApiStateSource = { ...source,
+      async loadCurrentLedgerSelection() { return { ...selection, authorizationIds: {
+        ...selection.authorizationIds,
+        issuer: new Set([olderIssuer.authorization.authorizationId,
+          currentIssuer.authorization.authorizationId]),
+      } }; },
+    };
+    await expect(resolveAuthorizationEntry(ambiguous, issuerRequest))
+      .rejects.toBeInstanceOf(CurrentLedgerSelectionAmbiguousError);
+    const server = createTrustRegistryApiServer({ source: ambiguous });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Expected local HTTP listener");
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(issuerRequest),
+      });
+      expect(response.status).toBe(409);
+      expect((await response.json()).type).toMatch(/ambiguous-current-scope$/u);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) =>
+        error ? reject(error) : resolve()));
+    }
+  });
+
   it("requires a contiguous and ordered policy revision history", () => {
     const first = new Uint8Array(32).fill(1);
     const second = new Uint8Array(32).fill(2);
@@ -389,6 +465,11 @@ describe("local ledger-bound API source", () => {
         sequenceToTimestamp,
       });
       await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
+      const current = await source.loadCurrentLedgerSelection!();
+      expect(current.authorizationIds.issuer).toEqual(new Set(snapshot.issuerEntries.map(
+        (entry) => entry.authorization.authorizationId)));
+      expect(current.recognitionIds).toEqual(new Set(snapshot.recognitionEntries.map(
+        (entry) => entry.recognition.recognitionId)));
       server = createTrustRegistryApiServer({ source,
         readFinalizedProposalLedger: source.readFinalizedProposalLedger });
       await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));

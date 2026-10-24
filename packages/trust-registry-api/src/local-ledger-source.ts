@@ -4,20 +4,55 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 
 import { TrustRegistryOperatorSnapshotSchema } from "@midnight-ntwrk/trust-registry-cli";
-import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
+import { bytes32Commitment, type SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
+import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedRegistryBootstrapReader,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { assertLocalLedgerEvidenceMatchesSnapshot } from "./local-ledger-projection.js";
 import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
-import type { TrustRegistryApiStateSource } from "./source.js";
+import type { TrustRegistryApiCurrentLedgerSelection, TrustRegistryApiStateSource } from "./source.js";
 
 const CONTRACT_ADDRESS = /^0x[0-9a-f]{64}$/u;
 const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_READ_TIMEOUT_MS = 15_000;
+const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
+
+function selectedIds<T>(entries: readonly T[], idOf: (entry: T) => string,
+  index: Iterable<[Uint8Array, Uint8Array]>): ReadonlySet<string> {
+  const byCommitment = new Map(entries.map((entry) => {
+    const id = idOf(entry);
+    return [hex(bytes32Commitment(id)), id];
+  }));
+  const selected = new Set<string>();
+  for (const [, idBytes] of index) {
+    const id = byCommitment.get(hex(idBytes));
+    if (id === undefined) throw new Error("Finalized current ID is absent from the verified snapshot");
+    selected.add(id);
+  }
+  return selected;
+}
+
+function currentSelection(snapshot: TrustRegistryApiCurrentLedgerSelection["snapshot"],
+  ledger: Ledger,
+): TrustRegistryApiCurrentLedgerSelection {
+  return {
+    snapshot,
+    authorizationIds: {
+      issuer: selectedIds(snapshot.issuerEntries, (entry) => entry.authorization.authorizationId,
+        ledger.currentIssuerAuthorizationIdsByScopeKey),
+      verifier: selectedIds(snapshot.verifierEntries, (entry) => entry.authorization.authorizationId,
+        ledger.currentVerifierAuthorizationIdsByScopeKey),
+      auditor: selectedIds(snapshot.auditorEntries, (entry) => entry.authorization.authorizationId,
+        ledger.currentAuditorAuthorizationIdsByScopeKey),
+    },
+    recognitionIds: selectedIds(snapshot.recognitionEntries, (entry) => entry.recognition.recognitionId,
+      ledger.currentRecognitionIdsByScopeKey),
+  };
+}
 
 export class LocalLedgerSourceUnavailableError extends Error {
   constructor(cause: unknown) {
@@ -135,6 +170,10 @@ export function createLocalLedgerBoundSource(input: {
     mode: "local-ledger",
     async loadSnapshot() {
       return (await readBoundState()).snapshot;
+    },
+    async loadCurrentLedgerSelection() {
+      const { snapshot, ledger } = await readBoundState();
+      return currentSelection(snapshot, ledger);
     },
     async readFinalizedProposalLedger() {
       return (await readBoundState()).ledger;

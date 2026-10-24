@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 
-import { createDemoSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import { buildSnapshotSummary, createDemoSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import { describe, expect, it } from "vitest";
 
 import { localApiOrigin, observeLocalApiCurrentReads } from "../local-ledger-api-observation.js";
@@ -65,7 +65,8 @@ describe("local API current-read observation (route-level only)", () => {
       let body: unknown;
       let status = 200;
       if (path === "/health") body = { status: "ok", sourceMode: "local-ledger",
-        registryId: snapshot.registry.registryId };
+        registryId: snapshot.registry.registryId, generatedAt: snapshot.generatedAt };
+      else if (path === "/v1/registry/summary") body = buildSnapshotSummary(snapshot);
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;
       else if (path.startsWith("/v1/authorizations/")) {
@@ -107,6 +108,24 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: cacheable }))
         .rejects.toThrow(/cache policy/u);
+      const staleHealth: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/health") return response;
+        return new Response(JSON.stringify({ ...await response.json(), generatedAt: "2020-01-01T00:00:00.000Z" }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: staleHealth }))
+        .rejects.toThrow(/health does not identify/u);
+      const staleSummary: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/registry/summary") return response;
+        return new Response(JSON.stringify({ ...await response.json(), generatedAt: "2020-01-01T00:00:00.000Z" }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: staleSummary }))
+        .rejects.toThrow(/registry summary differs/u);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
