@@ -375,6 +375,16 @@ export const getAuthorizationEntryById = async (
   role: TrustRegistryApiAuthorizationRole,
   authorizationId: string,
 ): Promise<TrustRegistryAuthorizationSnapshotEntry | null> => {
+  if (source.mode === "local-ledger") {
+    if (source.loadCurrentLedgerSelection === undefined) {
+      throw new CurrentLedgerSelectionUnavailableError();
+    }
+    const { snapshot, authorizationIds } = await source.loadCurrentLedgerSelection();
+    if (!authorizationIds[role].has(authorizationId)) return null;
+    return authorizationEntriesForRole(snapshot, role).find(
+      (entry) => entry.authorization.authorizationId === authorizationId,
+    ) ?? null;
+  }
   const snapshot = await source.loadSnapshot();
   return (
     authorizationEntriesForRole(snapshot, role).find(
@@ -472,6 +482,16 @@ export const getRecognitionEntryById = async (
   source: TrustRegistryApiStateSource,
   recognitionId: string,
 ): Promise<TrustRegistryRecognitionSnapshotEntry | null> => {
+  if (source.mode === "local-ledger") {
+    if (source.loadCurrentLedgerSelection === undefined) {
+      throw new CurrentLedgerSelectionUnavailableError();
+    }
+    const { snapshot, recognitionIds } = await source.loadCurrentLedgerSelection();
+    if (!recognitionIds.has(recognitionId)) return null;
+    return snapshot.recognitionEntries.find(
+      (entry) => entry.recognition.recognitionId === recognitionId,
+    ) ?? null;
+  }
   const snapshot = await source.loadSnapshot();
   return (
     snapshot.recognitionEntries.find(

@@ -31,6 +31,8 @@ import { createTrustRegistryApiServer } from "../server.js";
 import {
   CurrentLedgerSelectionAmbiguousError,
   CurrentLedgerSelectionUnavailableError,
+  getAuthorizationEntryById,
+  getRecognitionEntryById,
   resolveAuthorizationEntry,
   resolveRecognitionEntry,
   type TrustRegistryApiStateSource,
@@ -174,9 +176,23 @@ describe("finalized Compact projection coverage", () => {
     };
     expect(await resolveAuthorizationEntry(source, issuerRequest)).toEqual(currentIssuer);
     expect(await resolveRecognitionEntry(source, recognitionRequest)).toEqual(currentRecognition);
+    expect(await getAuthorizationEntryById(source, "issuer", olderIssuer.authorization.authorizationId)).toBeNull();
+    expect(await getAuthorizationEntryById(source, "issuer", currentIssuer.authorization.authorizationId))
+      .toEqual(currentIssuer);
+    expect(await getRecognitionEntryById(source, olderRecognition.recognition.recognitionId)).toBeNull();
+    expect(await getRecognitionEntryById(source, currentRecognition.recognition.recognitionId))
+      .toEqual(currentRecognition);
     await expect(resolveAuthorizationEntry({ mode: "local-ledger", async loadSnapshot() {
       return candidate;
     } }, issuerRequest)).rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
+    await expect(getAuthorizationEntryById({ mode: "local-ledger", async loadSnapshot() {
+      return candidate;
+    } }, "issuer", currentIssuer.authorization.authorizationId))
+      .rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
+    await expect(getRecognitionEntryById({ mode: "local-ledger", async loadSnapshot() {
+      return candidate;
+    } }, currentRecognition.recognition.recognitionId))
+      .rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
     const ambiguous: TrustRegistryApiStateSource = { ...source,
       async loadCurrentLedgerSelection() { return { ...selection, authorizationIds: {
         ...selection.authorizationIds,

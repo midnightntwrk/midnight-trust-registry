@@ -168,8 +168,12 @@ response, independently authenticate finality, or qualify the release.
 For a read-only current-route check against a running loopback listener, run
 `trust-registry-api observe-local-ledger-api` with the same four signed-plan
 arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,
-current epoch, all bounded issuer/verifier/auditor/recognition records,
-not-found behavior, and historical-route rejection with the signed source.
+current epoch, bounded current issuer/verifier/auditor/recognition by-ID records,
+stale-ID and not-found behavior, and historical-route rejection with the signed source.
+Local-ledger list routes return `503 local-list-projection-unavailable` until a
+complete, authenticated finalized checkpoint-bound projection exists. Superseded
+by-ID records return 404 in this current-only profile; fixture mode retains its
+existing all-record behavior.
 Its JSON report has `releaseQualified: false`: it does not attest the API
 process or image, independently authenticate finality, perform actor mutations,
 or prove browser, DID/VC/status, egress-denied, or recovery behavior.

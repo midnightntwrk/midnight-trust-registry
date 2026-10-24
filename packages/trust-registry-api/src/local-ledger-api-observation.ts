@@ -100,6 +100,10 @@ export async function observeLocalApiCurrentReads(input: {
 
   const counts = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
   for (const role of ["issuer", "verifier", "auditor"] as const) {
+    const listProblem = await request(origin, `/v1/authorizations/${role}`, 503, fetchImpl) as Record<string, unknown>;
+    if (typeof listProblem.type !== "string" || !listProblem.type.endsWith("/local-list-projection-unavailable")) {
+      throw new Error(`Local API ${role} list did not fail closed`);
+    }
     const entries = snapshot[`${role}Entries`];
     const entryIds = new Set(entries.map((entry) => entry.authorization.authorizationId));
     if ([...selection.authorizationIds[role]].some((id) => !entryIds.has(id))) {
@@ -112,8 +116,10 @@ export async function observeLocalApiCurrentReads(input: {
     }
     for (const entry of entries) {
       const id = encodeURIComponent(entry.authorization.authorizationId);
-      const observed = await request(origin, `/v1/authorizations/${role}/${id}`, 200, fetchImpl);
-      if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
+      const selected = selection.authorizationIds[role].has(entry.authorization.authorizationId);
+      const observed = await request(origin, `/v1/authorizations/${role}/${id}`,
+        selected ? 200 : 404, fetchImpl);
+      if (selected && !isDeepStrictEqual(observed, jsonProjection(entry))) {
         throw new Error(`Local API ${role} record differs from signed-plan readback`);
       }
       const currentMatches = entries.filter((candidate) =>
@@ -139,6 +145,11 @@ export async function observeLocalApiCurrentReads(input: {
     counts[role] = entries.length;
   }
   const recognitions = snapshot.recognitionEntries;
+  const recognitionListProblem = await request(origin, "/v1/recognitions", 503, fetchImpl) as Record<string, unknown>;
+  if (typeof recognitionListProblem.type !== "string"
+    || !recognitionListProblem.type.endsWith("/local-list-projection-unavailable")) {
+    throw new Error("Local API recognition list did not fail closed");
+  }
   const recognitionIds = new Set(recognitions.map((entry) => entry.recognition.recognitionId));
   if ([...selection.recognitionIds].some((id) => !recognitionIds.has(id))) {
     throw new Error("Local API recognition finalized selection references a missing snapshot entry");
@@ -150,8 +161,10 @@ export async function observeLocalApiCurrentReads(input: {
   }
   for (const entry of recognitions) {
     const id = encodeURIComponent(entry.recognition.recognitionId);
-    const observed = await request(origin, `/v1/recognitions/${id}`, 200, fetchImpl);
-    if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
+    const selected = selection.recognitionIds.has(entry.recognition.recognitionId);
+    const observed = await request(origin, `/v1/recognitions/${id}`,
+      selected ? 200 : 404, fetchImpl);
+    if (selected && !isDeepStrictEqual(observed, jsonProjection(entry))) {
       throw new Error("Local API recognition differs from signed-plan readback");
     }
     const currentMatches = recognitions.filter((candidate) =>
@@ -198,6 +211,6 @@ export async function observeLocalApiCurrentReads(input: {
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
     releaseQualified: false,
-    scope: "current HTTP resolution and all-record by-ID readback only; counts include all records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "current HTTP resolution and selected by-ID readback only; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }

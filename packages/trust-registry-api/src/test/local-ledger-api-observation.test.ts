@@ -142,6 +142,11 @@ describe("local API current-read observation (route-level only)", () => {
       else if (path === "/v1/registry/summary") body = buildSnapshotSummary(snapshot);
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;
+      else if (path === "/v1/recognitions"
+        || ["issuer", "verifier", "auditor"].some((role) => path === `/v1/authorizations/${role}`)) {
+        status = 503;
+        body = { type: "https://example.invalid/problems/local-list-projection-unavailable" };
+      }
       else if (path === "/v1/authorizations/resolve") {
         const query = JSON.parse(String(init?.body)) as { role: "issuer" | "verifier" | "auditor";
           subjectDid: string };
@@ -155,11 +160,13 @@ describe("local API current-read observation (route-level only)", () => {
       else if (path.startsWith("/v1/authorizations/")) {
         const [, , , role, id] = path.split("/");
         body = role === "issuer" || role === "verifier" || role === "auditor"
-          ? snapshot[`${role}Entries`].find((entry) => entry.authorization.authorizationId === decodeURIComponent(id!))
+          ? snapshot[`${role}Entries`].find((entry) => entry.authorization.authorizationId === decodeURIComponent(id!)
+            && selection.authorizationIds[role].has(entry.authorization.authorizationId))
           : undefined;
       } else if (path.startsWith("/v1/recognitions/")) {
         const id = path.split("/").at(-1);
-        body = snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === decodeURIComponent(id!));
+        body = snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === decodeURIComponent(id!)
+          && selection.recognitionIds.has(entry.recognition.recognitionId));
       }
       if (body === undefined) { status = path === "/v1/epochs/resolve" ? 501 : 404; body = {}; }
       return new Response(JSON.stringify(body), { status, headers: { "cache-control": "no-store" } });
