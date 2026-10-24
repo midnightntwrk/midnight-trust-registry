@@ -10,6 +10,12 @@ import {
   type SequenceToTimestamp,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
+  computeAuditorAuthorizationScopeKey,
+  computeIssuerAuthorizationScopeKey,
+  computeRecognitionScopeKey,
+  computeVerifierAuthorizationScopeKey,
+} from "@midnight-ntwrk/trust-registry-contract";
+import {
   AuthorizationStatus,
   IssuerResourceType,
   type Ledger,
@@ -65,6 +71,39 @@ function assertExactMap<T>(
     assertRecord(entry, record, key);
   }
   if (seen.size !== indexed.size) throw new Error(`${label} finalized ledger iteration was incomplete`);
+}
+
+function assertCurrentScopeIndex<T extends { proposedAtSequence: bigint }>(
+  label: string,
+  records: Iterable<[Uint8Array, T]>,
+  index: { size(): bigint; [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]> },
+  scopeKeyOf: (record: T) => Uint8Array,
+): void {
+  const latest = new Map<string, { id: string; sequence: bigint }>();
+  for (const [id, record] of records) {
+    const key = hex(scopeKeyOf(record));
+    const previous = latest.get(key);
+    if (previous?.sequence === record.proposedAtSequence) {
+      throw new Error(`${label} finalized scope has ambiguous proposal sequence`);
+    }
+    if (previous === undefined || record.proposedAtSequence > previous.sequence) {
+      latest.set(key, { id: hex(id), sequence: record.proposedAtSequence });
+    }
+  }
+  if (index.size() !== BigInt(latest.size)) {
+    throw new Error(`${label} finalized current-scope index is incomplete`);
+  }
+  const seen = new Set<string>();
+  for (const [keyBytes, idBytes] of index) {
+    const key = hex(keyBytes);
+    if (seen.has(key) || latest.get(key)?.id !== hex(idBytes)) {
+      throw new Error(`${label} finalized current-scope index differs from records`);
+    }
+    seen.add(key);
+  }
+  if (seen.size !== latest.size) {
+    throw new Error(`${label} finalized current-scope index iteration was incomplete`);
+  }
 }
 
 function assertAuthorizationFields(
@@ -236,6 +275,27 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
         throw new Error("Recognition candidate record differs from finalized Compact state");
       }
     });
+  assertCurrentScopeIndex("issuer", ledger.issuerAuthorizationRecords,
+    ledger.currentIssuerAuthorizationIdsByScopeKey,
+    (record) => computeIssuerAuthorizationScopeKey(
+      record.subjectDidCommitment, record.resourceType, record.resourceId));
+  assertCurrentScopeIndex("verifier", ledger.verifierAuthorizationRecords,
+    ledger.currentVerifierAuthorizationIdsByScopeKey,
+    (record) => computeVerifierAuthorizationScopeKey(
+      record.subjectDidCommitment, record.requestResourceId,
+      record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
+      record.disclosureLevelCommitment));
+  assertCurrentScopeIndex("auditor", ledger.auditorAuthorizationRecords,
+    ledger.currentAuditorAuthorizationIdsByScopeKey,
+    (record) => computeAuditorAuthorizationScopeKey(
+      record.subjectDidCommitment, record.requestResourceId,
+      record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
+      record.disclosureLevelCommitment));
+  assertCurrentScopeIndex("recognition", ledger.recognitionRecords,
+    ledger.currentRecognitionIdsByScopeKey,
+    (record) => computeRecognitionScopeKey(
+      record.recognizedAuthorityDidCommitment, record.recognizedRegistryId,
+      record.scopeResourceType, record.scopeResourceId));
 }
 
 /** The ledger must already be authenticated at the selected finalized checkpoint. */

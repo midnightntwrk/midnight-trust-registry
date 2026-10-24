@@ -172,6 +172,32 @@ describe("finalized Compact projection coverage", () => {
     })).toThrow(/registry or policy differs/u);
   });
 
+  it("rejects missing and redirected current-scope index entries", () => {
+    const { snapshot, ledger } = fixture();
+    const emptyIndex = revisionMap<Uint8Array, Uint8Array>([], (key) => Buffer.from(key).toString("hex"));
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger,
+      currentIssuerAuthorizationIdsByScopeKey: emptyIndex,
+    } as typeof ledger)).toThrow(/issuer finalized current-scope index is incomplete/u);
+    const verifierIndex = [...ledger.currentVerifierAuthorizationIdsByScopeKey];
+    const redirectedIndex = revisionMap<Uint8Array, Uint8Array>(
+      verifierIndex.map(([key]) => [key, new Uint8Array(32)]),
+      (key) => Buffer.from(key).toString("hex"),
+    );
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger,
+      currentVerifierAuthorizationIdsByScopeKey: redirectedIndex,
+    } as typeof ledger)).toThrow(/verifier finalized current-scope index differs/u);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger,
+      currentAuditorAuthorizationIdsByScopeKey: emptyIndex,
+    } as typeof ledger)).toThrow(/auditor finalized current-scope index is incomplete/u);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger,
+      currentRecognitionIdsByScopeKey: emptyIndex,
+    } as typeof ledger)).toThrow(/recognition finalized current-scope index is incomplete/u);
+  });
+
   it("anchors every included bundle to the Compact epoch and publication signer", () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const input = { snapshot, ledger, contractAddress,
