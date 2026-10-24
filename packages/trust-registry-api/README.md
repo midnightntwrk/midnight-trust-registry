@@ -152,6 +152,11 @@ until those independent gates and the first-run approval workflow are complete.
 
 Current route set:
 
+In local-ledger mode, only `GET /v1/epochs/current` is available for epoch
+queries. `GET /v1/epochs/resolve` and `GET /v1/epochs/:epochId` return 501
+because the current-map projection does not prove a complete historical epoch
+archive. Fixture-backed modes retain those historical routes.
+
 - `GET /health`
 - `GET /v1/registry`
 - `GET /v1/registry/summary`

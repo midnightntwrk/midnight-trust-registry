@@ -359,6 +359,16 @@ describe("local ledger-bound API source", () => {
       const recognitionTrqp = { entity_id: recognition.recognizedAuthorityDid,
         authority_id: snapshot.registry.registryDid, action: recognition.scope.resourceType,
         resource: recognition.scope.resourceId };
+      for (const path of [
+        `/v1/epochs/resolve?at=${encodeURIComponent(issuer.activeFrom)}`,
+        `/v1/epochs/${snapshot.currentEpoch.epochId}`,
+      ]) {
+        const response = await fetch(`${url}${path}`);
+        expect(response.status, path).toBe(501);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.json()).toMatchObject({ status: 501,
+          type: expect.stringMatching(/historical-decisions-out-of-scope$/u) });
+      }
       for (const [path, body] of [
         ["/v1/authorizations/evaluate", authorizationEvaluation],
         ["/v1/authorizations/evaluate/evidence", authorizationEvaluation],

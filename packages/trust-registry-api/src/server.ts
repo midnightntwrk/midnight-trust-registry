@@ -2015,6 +2015,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "epochs"
         && segments[2] === "resolve"
       ) {
+        requireCompleteHistoricalProjection();
         const evaluatedAt = parseTimestampQueryParameter(
           url.searchParams.get("at"),
           "at",
@@ -2035,6 +2036,7 @@ export const createTrustRegistryApiServer = (
       }
 
       if (method === "GET" && segments.length === 3 && segments[0] === "v1" && segments[1] === "epochs") {
+        requireCompleteHistoricalProjection();
         const epoch = await loadEpochById(options.source, segments[2]!);
         if (epoch === null) {
           throw jsonProblem(
