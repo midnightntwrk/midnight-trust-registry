@@ -232,6 +232,12 @@ checkpoint during the HTTP reads. Matching hashes do not independently prove
 that every route used one checkpoint or that finality was authenticated.
 The host-side probe preserves the source checkpoint hash in its output and
 rejects older in-container reports that omit it.
+The reader reports the latest finalized block, so normal block production can
+change the hash during this multi-route probe and cause a safe failure. Repeat
+the entire probe against a stable finalized view; never combine partial reads
+from different attempts or treat a transient failure as qualification. Prove
+the probe is usable under the deployed local chain's normal block cadence
+before relying on it for the RC.
 The running local-ledger server also exposes the digest of its startup-verified
 plan on `/health`; the packaged observer rejects a different digest. This
 binds the readback to the plan held by that server process even if a different
