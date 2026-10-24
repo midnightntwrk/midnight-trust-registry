@@ -1,5 +1,8 @@
+import { Buffer } from "node:buffer";
+
 import { describe, expect, it } from "vitest";
 
+import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import {
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
@@ -11,15 +14,18 @@ import { assessProposalRecoveryCandidate } from "../proposal-recovery-candidate.
 import type { ProposalSubmissionAttempt } from "../proposal-submission-journal.js";
 
 const hash = (byte: string) => `0x${byte.repeat(64)}`;
+const actionKind = (role: ProposalSubmissionAttempt["role"]) =>
+  `0x${Buffer.from(encodeCompactActionKind(`tr:${role}:propose`)).toString("hex")}`;
 
-const attempt = (authorizationId: string, sequence?: bigint): ProposalSubmissionAttempt => ({
-  role: "issuer",
+const attempt = (authorizationId: string, sequence?: bigint,
+  role: ProposalSubmissionAttempt["role"] = "issuer"): ProposalSubmissionAttempt => ({
+  role,
   authorizationId,
   evidenceCommitment: hash("a"),
   state: "reserved",
   eventHash: null,
   ...(sequence === undefined ? {} : { reservationContext: {
-    actionSequence: sequence.toString(), actionKind: hash("b"), actionPayloadHash: hash("c"),
+    actionSequence: sequence.toString(), actionKind: actionKind(role), actionPayloadHash: hash("c"),
   } }),
 });
 
@@ -54,7 +60,7 @@ describe("read-only proposal recovery candidates", () => {
       format: "tr-local-proposal-recovery-candidate-v2",
       reason: "sequence-invalidated-record-absent", reviewCandidate: true,
       reservationActionSequence: sequence.toString(),
-      reservationActionKind: hash("b"), reservationActionPayloadHash: hash("c"),
+      reservationActionKind: actionKind("issuer"), reservationActionPayloadHash: hash("c"),
       planExpectedGenesisHash: hash("e"), planSourceRevision: "f".repeat(40),
       approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: hash("8"),
@@ -154,6 +160,19 @@ describe("read-only proposal recovery candidates", () => {
       await expect(assessProposalRecoveryCandidate(input(harness, {
         ...valid, reservationContext,
       }))).rejects.toThrow(/invalid/u);
+    }
+  });
+
+  it("accepts only the Compact proposal action kind for the reserved role", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-action-kind");
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+    for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {
+      const recorded = attempt(`${role}:candidate`, sequence, role);
+      expect((await assessProposalRecoveryCandidate(input(harness, recorded))).reason).toBe("sequence-still-live");
+      await expect(assessProposalRecoveryCandidate(input(harness, {
+        ...recorded,
+        reservationContext: { ...recorded.reservationContext!, actionKind: actionKind("issuer" === role ? "verifier" : "issuer") },
+      }))).rejects.toThrow(/action kind does not match its proposal role/u);
     }
   });
 });

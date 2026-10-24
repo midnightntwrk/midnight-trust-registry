@@ -174,7 +174,10 @@ accepts the signed local runtime plan and a deployment-bound private journal.
 It compares one reserved attempt with one pinned finalized ledger view. It
 reports a review candidate only when the stored signed action sequence is
 strictly below the finalized governance action count and the proposal record
-is absent in that same view. The v2 report binds the registry ID, contract address,
+is absent in that same view. A recorded action kind that is not the Compact
+proposal kind for the attempt's role now fails report generation; a
+well-formed but cross-role context cannot become a review candidate. The v2
+report binds the registry ID, contract address,
 signed-plan expected genesis and source-revision pins (not independently
 attested by this report), the exact approved plan SHA-256, original action tuple,
 canonical digest of the read journal entry, private journal deployment-binding

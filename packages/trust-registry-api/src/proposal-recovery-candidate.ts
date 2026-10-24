@@ -1,9 +1,15 @@
+import { Buffer } from "node:buffer";
+
+import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import type { FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
 import { resolveCompactProposalObservation } from "./compact-proposal-observation.js";
 import { proposalAttemptDigest, type ProposalSubmissionAttempt } from "./proposal-submission-journal.js";
 
 type RecoveryView = Pick<FinalizedRegistryLedgerView,
   "networkId" | "finalizedBlockHash" | "contractAddress" | "ledger">;
+
+const proposalActionKind = (role: ProposalSubmissionAttempt["role"]): string =>
+  `0x${Buffer.from(encodeCompactActionKind(`tr:${role}:propose`)).toString("hex")}`;
 
 export type ProposalRecoveryCandidateReason =
   | "matching-record"
@@ -64,9 +70,6 @@ export async function assessProposalRecoveryCandidate(input: {
     || typeof view.ledger.governanceActionCount !== "bigint") {
     throw new Error("Recovery candidate requires the pinned finalized local ledger view");
   }
-  const observed = await resolveCompactProposalObservation(
-    async () => view.ledger, input.registryId, attempt.role, attempt.authorizationId,
-  );
   const context = attempt.reservationContext;
   const sequence = context?.actionSequence;
   if (sequence !== undefined
@@ -75,6 +78,12 @@ export async function assessProposalRecoveryCandidate(input: {
       || !/^0x[0-9a-f]{64}$/u.test(context?.actionPayloadHash ?? ""))) {
     throw new Error("Recovery reservation action sequence is invalid");
   }
+  if (context !== undefined && context.actionKind !== proposalActionKind(attempt.role)) {
+    throw new Error("Recovery reservation action kind does not match its proposal role");
+  }
+  const observed = await resolveCompactProposalObservation(
+    async () => view.ledger, input.registryId, attempt.role, attempt.authorizationId,
+  );
   const reason: ProposalRecoveryCandidateReason = observed !== null
     ? observed.evidenceCommitment !== attempt.evidenceCommitment
       || (attempt.eventHash !== null && observed.eventHash !== attempt.eventHash)
