@@ -27,6 +27,7 @@ import {
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
 } from "../proposal-submission-journal.js";
 
@@ -174,7 +175,8 @@ describe("issuer SDK handoff with private journal", () => {
     await journal.bindDeployment(registryLabel, contractAddress, `0x${"e".repeat(64)}`);
     const request = input(journal);
     const readFinalizedLedger = vi.fn(request.readFinalizedLedger);
-    await expect(submitLocalIssuerProposalCall({ ...request, readFinalizedLedger })).rejects.toThrow();
+    await expect(submitLocalIssuerProposalCall({ ...request, readFinalizedLedger }))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
     expect(readFinalizedLedger).not.toHaveBeenCalled();
     expect(await journal.read("issuer", authorizationLabel)).toBeNull();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
@@ -188,6 +190,45 @@ describe("issuer SDK handoff with private journal", () => {
       ...request,
       readSubmissionProviderIdentity: async () => ({ contractAddress, genesisHash: `0x${"e".repeat(64)}` }),
     })).rejects.toThrow(/providers do not match/u);
+    expect(await journal.read("issuer", authorizationLabel)).toBeNull();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["contract", { contractAddress: `0x${"b".repeat(64)}`, genesisHash }],
+    ["genesis", { contractAddress, genesisHash: `0x${"e".repeat(64)}` }],
+  ])("does not reserve when the finalized reader reports another %s", async (_name, identity) => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const request = input(journal);
+    await expect(submitLocalIssuerProposalCall({
+      ...request,
+      readFinalizedLedger: async () => ({ ...identity, ledger: fixture().ledger }),
+    })).rejects.toThrow(/Finalized issuer ledger read belongs to a different/u);
+    expect(await journal.read("issuer", authorizationLabel)).toBeNull();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve when the submitting providers report another contract", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const request = input(journal);
+    await expect(submitLocalIssuerProposalCall({
+      ...request,
+      readSubmissionProviderIdentity: async () => ({ contractAddress: `0x${"b".repeat(64)}`, genesisHash }),
+    })).rejects.toThrow(/providers do not match/u);
+    expect(await journal.read("issuer", authorizationLabel)).toBeNull();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["registry", "registry:other", contractAddress],
+    ["contract", registryLabel, `0x${"b".repeat(64)}`],
+  ])("does not reserve when the journal is bound to another %s", async (_name, registry, address) => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registry, address, genesisHash);
+    await expect(submitLocalIssuerProposalCall(input(journal)))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
     expect(await journal.read("issuer", authorizationLabel)).toBeNull();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
