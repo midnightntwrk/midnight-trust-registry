@@ -33,11 +33,35 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
   const indexerHttpUrl = localNetworkEndpoint(config.indexerHttpUrl, config.allowedHosts, ["http:", "https:"]);
   const indexerWsUrl = localNetworkEndpoint(config.indexerWsUrl, config.allowedHosts, ["ws:", "wss:"]);
   if (!/^0x[0-9a-f]{64}$/u.test(config.contractAddress)
+    || /^0x0{64}$/u.test(config.contractAddress)
     || !/^0x[0-9a-f]{64}$/u.test(config.expectedGenesisHash)
     || /^0x0{64}$/u.test(config.expectedGenesisHash)) {
     throw new Error("Pinned local submission requires a contract address and nonzero genesis hash");
   }
   const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+
+  const readIndexerGenesis = async (): Promise<void> => {
+    const response = await fetch(indexerHttpUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "query LocalGenesis { block(offset: {height: 0}) { height hash } }" }),
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("Local indexer genesis query failed");
+    const body: unknown = await response.json();
+    if (body === null || typeof body !== "object" || Array.isArray(body)
+      || "errors" in body || !("data" in body)
+      || body.data === null || typeof body.data !== "object" || Array.isArray(body.data)
+      || !("block" in body.data)
+      || body.data.block === null || typeof body.data.block !== "object" || Array.isArray(body.data.block)
+      || !("height" in body.data.block) || body.data.block.height !== 0
+      || !("hash" in body.data.block) || typeof body.data.block.hash !== "string"
+      || !/^[0-9a-fA-F]{64}$/u.test(body.data.block.hash)
+      || `0x${body.data.block.hash.toLowerCase()}` !== config.expectedGenesisHash) {
+      throw new Error("Local indexer genesis does not match the approved deployment");
+    }
+  };
 
   const withPinnedNode = async <T>(
     use: (client: PolkadotNodeClient) => Effect.Effect<T, unknown>,
@@ -90,6 +114,7 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
         throw new Error("Issuer call is not using the pinned local node and indexer providers");
       }
       await withPinnedNode(() => Effect.succeed(undefined), Duration.seconds(30));
+      await readIndexerGenesis();
       return { contractAddress: config.contractAddress, genesisHash: config.expectedGenesisHash };
     },
   };

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FinalizedTransaction } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { Duration, Effect, Stream } from "effect";
@@ -23,11 +23,16 @@ const config = {
 
 describe("pinned local submission provider", () => {
   let observedGenesis: string;
+  let indexedGenesis: string;
   let sendMidnightTransaction: ReturnType<typeof vi.fn>;
   let getBlockHash: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     observedGenesis = genesisHash;
+    indexedGenesis = genesisHash.slice(2);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      data: { block: { height: 0, hash: indexedGenesis } },
+    })));
     mocks.indexer.mockReset();
     mocks.indexer.mockReturnValue({ queryContractState: vi.fn() });
     getBlockHash = vi.fn(async () => ({ toHex: () => observedGenesis }));
@@ -39,6 +44,7 @@ describe("pinned local submission provider", () => {
       sendMidnightTransaction,
     }));
   });
+  afterEach(() => { vi.unstubAllGlobals(); });
 
   it("rejects nonlocal endpoints and malformed deployment pins", () => {
     expect(() => createPinnedLocalSubmissionProvider({
@@ -50,6 +56,9 @@ describe("pinned local submission provider", () => {
     expect(() => createPinnedLocalSubmissionProvider({
       ...config, expectedGenesisHash: `0x${"0".repeat(64)}`,
     })).toThrow(/nonzero genesis/u);
+    expect(() => createPinnedLocalSubmissionProvider({
+      ...config, contractAddress: `0x${"0".repeat(64)}`,
+    })).toThrow(/contract address/u);
   });
 
   it("authenticates the exact provider instance against the live node genesis", async () => {
@@ -58,6 +67,9 @@ describe("pinned local submission provider", () => {
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).resolves.toEqual({ contractAddress, genesisHash });
     expect(mocks.indexer).toHaveBeenCalledWith(config.indexerHttpUrl, config.indexerWsUrl);
+    expect(fetch).toHaveBeenCalledWith(config.indexerHttpUrl, expect.objectContaining({
+      method: "POST", redirect: "error",
+    }));
     expect(mocks.make).toHaveBeenCalledWith({
       nodeURL: new URL(config.nodeWsUrl), reconnectionTimeout: Duration.seconds(15),
     });
@@ -69,6 +81,14 @@ describe("pinned local submission provider", () => {
       midnightProvider: pinned.midnightProvider, publicDataProvider: { queryContractState: vi.fn() },
     } as never)).rejects.toThrow(/not using the pinned/u);
     expect(mocks.make).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an indexer on another genesis", async () => {
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    indexedGenesis = "c".repeat(64);
+    await expect(pinned.readSubmissionProviderIdentity({
+      midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
+    } as never)).rejects.toThrow(/indexer genesis does not match/u);
   });
 
   it("rechecks genesis on the node connection used for submission", async () => {
