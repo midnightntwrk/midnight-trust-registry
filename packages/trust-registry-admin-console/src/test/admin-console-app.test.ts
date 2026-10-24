@@ -34,6 +34,58 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("uses exact-ID lookup without exposing fixture controls on a local ledger", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const paths: string[] = [];
+    let releaseLookup: (() => void) | undefined;
+    const pendingLookup = new Promise<void>((resolve) => { releaseLookup = resolve; });
+    const health = { status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
+      localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+      generatedAt: "2026-10-25T00:00:00Z" };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      if (path === "/health") return Response.json(health);
+      if (path === "/v1/registry/summary") return Response.json({
+        issuerCounts: counts(), verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts(),
+        registryLabel: "local", registryId: "registry:local", policyId: "policy:local",
+        currentEpochId: "epoch:local:1", epochCount: 1,
+      });
+      if (path === "/v1/authorizations/auditor/auth%3Aauditor%3Acompliance") {
+        await pendingLookup;
+        return Response.json(auditor);
+      }
+      return Response.json({ status: 503, detail: "list unavailable" }, { status: 503 });
+    });
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => false,
+    });
+    await vi.waitFor(() => expect(root.querySelector("[data-current-lookup]")).not.toBeNull());
+    expect(root.querySelector("[data-action]")).toBeNull();
+    expect(root.querySelector("[data-epoch-form]")).toBeNull();
+    expect(root.querySelector("[data-signed-context]")).toBeNull();
+    const target = root.querySelector<HTMLSelectElement>("[data-current-target]")!;
+    target.value = "auditor";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    const id = root.querySelector<HTMLInputElement>("[data-current-id]")!;
+    id.value = "auth:auditor:compliance";
+    id.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("[data-current-lookup]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(paths).toContain("/v1/authorizations/auditor/auth%3Aauditor%3Acompliance"));
+    const changed = root.querySelector<HTMLInputElement>("[data-current-id]")!;
+    changed.value = "auth:auditor:other";
+    changed.dispatchEvent(new Event("input", { bubbles: true }));
+    releaseLookup?.();
+    await vi.waitFor(() => expect(root.textContent).toContain("Lookup changed"));
+    expect(root.textContent).not.toContain(auditor.authorization.resourceId);
+    expect(paths.filter((path) => path.startsWith("/v1/authorizations/"))).toEqual([
+      "/v1/authorizations/auditor/auth%3Aauditor%3Acompliance",
+    ]);
+  });
   it("uses the API origin when served from the packaged admin path", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -60,6 +112,7 @@ describe("admin console browser handlers", () => {
     const postedBodies: (string | undefined)[] = [];
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
       if (init?.method === "POST") {
         postedPaths.push(path);
         postedBodies.push(init.body?.toString());
@@ -146,6 +199,7 @@ describe("admin console browser handlers", () => {
     let status: "proposed" | "authorized" | "active" | "suspended" | "revoked" | "archived" = "proposed";
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
       if (path.startsWith("/v1/governed/")) {
         if (init?.method === "POST") {
           posted.push({ path, body: init.body?.toString() });
@@ -257,6 +311,7 @@ describe("admin console browser handlers", () => {
     };
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
       if (path.startsWith("/v1/governed/")) {
         if (init?.method === "POST") {
           posted.push(path);
@@ -349,6 +404,7 @@ describe("admin console browser handlers", () => {
     let serverFailure = false;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
       if (path.endsWith("/proposal/prepare")) {
         posted.push({ path, body: JSON.parse(String(init?.body)) });
         return available

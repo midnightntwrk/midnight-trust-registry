@@ -37,6 +37,7 @@ describe("admin signed browser journey", () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
       calls.push({ path, init });
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: context.registryId });
       if (path === "/v1/registry/mutation-context") return Response.json(context);
       if (path === "/v1/mutations") return Response.json({ recordKind: "authorization", operation: envelope.operation });
       if (path === "/v1/registry/summary") return Response.json(summary);
@@ -70,6 +71,7 @@ describe("admin signed browser journey", () => {
     document.body.replaceChildren(root);
     const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: context.registryId });
       if (path === "/v1/registry/mutation-context") return Response.json(context);
       if (path === "/v1/registry/summary") return Response.json(summary);
       return Response.json({ entries: [] });
@@ -79,6 +81,7 @@ describe("admin signed browser journey", () => {
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
     });
+    await vi.waitFor(() => expect(root.querySelector("[data-signed-context]")).not.toBeNull());
     root.querySelector<HTMLButtonElement>("[data-signed-context]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(context.expectedWorkspaceCommitment));
     const form = root.querySelector<HTMLFormElement>("[data-signed-submit]")!;

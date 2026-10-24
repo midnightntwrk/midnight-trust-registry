@@ -30,6 +30,8 @@ export type ReviewCard = {
 };
 
 export type ReviewBoard = {
+  sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
+  localPlanSha256?: string;
   auditors: readonly AuthorizationEntry[];
   recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;
