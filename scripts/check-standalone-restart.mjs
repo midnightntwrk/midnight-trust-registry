@@ -3,8 +3,8 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { link, lstat, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -57,12 +57,27 @@ async function privateDirectory(directory) {
   return root;
 }
 
+async function publishedEvidenceLinkIsInterruptedWrite(path, stat) {
+  const name = basename(path);
+  if (![BASELINE, VERIFICATION].includes(name) || stat.nlink !== 2n) return false;
+  const companion = new RegExp(`^${name.replaceAll(".", "\\.")}\\.[1-9][0-9]*\\.`
+    + "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.tmp$", "u");
+  for (const entry of await readdir(dirname(path))) {
+    if (!companion.test(entry)) continue;
+    const candidate = await lstat(join(dirname(path), entry));
+    if (candidate.isFile() && BigInt(candidate.dev) === stat.dev
+      && BigInt(candidate.ino) === stat.ino) return true;
+  }
+  return false;
+}
+
 async function privateFile(path, maxBytes = 16 * 1024 * 1024) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
     if (!before.isFile() || before.size === 0n || before.size > BigInt(maxBytes)
-      || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+      || (before.nlink !== 1n && !(await publishedEvidenceLinkIsInterruptedWrite(path, before)))
+      || (before.mode & 0o077n) !== 0n
       || (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))) {
       throw new Error("Restart evidence input must be an owned private regular file");
     }

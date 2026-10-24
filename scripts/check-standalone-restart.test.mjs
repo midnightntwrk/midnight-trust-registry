@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -138,6 +138,27 @@ test("requires every service restart, intact volumes, and finalized history", ()
   recordedAfter.setupDeployment.state = "unknown";
   assert.throws(() => compareStandaloneRestartSnapshots(recordedBefore, recordedAfter),
     /setup deployment record changed/u);
+});
+
+test("restart baseline remains readable after an interrupted atomic publication", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-restart-interrupted-"));
+  const directory = join(root, "private");
+  await mkdir(directory, { mode: 0o700 });
+  const baseline = join(directory, "restart-baseline.json");
+  const temporary = `${baseline}.123.${randomUUID()}.tmp`;
+  const expected = { sourceRevision: revision, installInventorySha256: "b".repeat(64),
+    project: "tr-standalone-local-restart-test" };
+  try {
+    await writeFile(temporary, JSON.stringify(snapshot()), { mode: 0o600 });
+    await link(temporary, baseline);
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected),
+      { status: "baseline-captured-verification-pending" });
+    await unlink(temporary);
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected),
+      { status: "baseline-captured-verification-pending" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("captures private immutable baseline and verifies a restarted local ledger bridge", async () => {
