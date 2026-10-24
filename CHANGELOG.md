@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SDK's later indexer transaction read on the same provider instance; an
   expired read or uncertain broadcast quarantines its approved deployment
   target across provider instances until journal reconciliation and process
-  restart. A pending broadcast reserves that target. Live qualification still
+  restart. A pending broadcast reserves that target, and the private proposal
+  journal blocks new proposals after restart while any ambiguous reservation
+  remains. Live qualification still
   blocks API write-path wiring
 - exercise local issuer submission with the real private journal across
   restart and ambiguous SDK responses; this remains mocked-network evidence

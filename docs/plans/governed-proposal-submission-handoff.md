@@ -139,9 +139,11 @@ The guard is process-local and scoped to the approved genesis/contract target;
 it does not replace wallet-level nonce control by the caller. Another process
 is not stopped by it, and already-open indexer streams are not canceled.
 A restart clears this in-memory guard even if no reconciliation occurred.
-Callers must keep ambiguous journal reservations blocked until finalized
-state is independently reconciled; this adapter does not enforce durable
-reconciliation across a restart.
+The private proposal journal blocks all new proposals while any reserved
+attempt remains, including after restart. A lagging or unavailable finalized
+reader does not clear that reservation; only a matching finalized observation
+marks it observed. Callers must preserve the journal and must not replace it
+to bypass this gate.
 Pre-broadcast failures still retain the journal reservation conservatively.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into

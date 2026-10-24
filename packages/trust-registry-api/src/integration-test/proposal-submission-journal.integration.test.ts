@@ -69,18 +69,27 @@ describe("private governed proposal submission journal", () => {
     })).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
     const reopened = new FileProposalSubmissionJournal(path);
     expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    const otherRole = role === "issuer" ? "verifier" : "issuer";
+    const submitOther = () => reopened.executeOnce(otherRole, "auth:journal:other", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment, async () => {
       executions += 1;
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executions).toBe(1);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "reserved" });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     await expect(reopened.reconcile(role, authorizationId, async () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
     expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved" });
     expect(await reopened.reconcile(role, authorizationId,
       async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
+    await expect(submitOther()).resolves.toEqual({ eventHash: otherEventHash });
+    expect(executions).toBe(2);
   });
 
   it("rejects conflicting finalized records and different evidence on the same authorization", async () => {
