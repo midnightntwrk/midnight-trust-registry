@@ -39,9 +39,11 @@ function selectedIds<T>(entries: readonly T[], idOf: (entry: T) => string,
 
 function currentSelection(snapshot: TrustRegistryApiCurrentLedgerSelection["snapshot"],
   ledger: Ledger,
+  finalizedBlockHash: string,
 ): TrustRegistryApiCurrentLedgerSelection {
   return {
     snapshot,
+    finalizedBlockHash,
     authorizationIds: {
       issuer: selectedIds(snapshot.issuerEntries, (entry) => entry.authorization.authorizationId,
         ledger.currentIssuerAuthorizationIdsByScopeKey),
@@ -151,7 +153,8 @@ export function createLocalLedgerBoundSource(input: {
         contractAddress: addressBytes,
         sequenceToTimestamp: input.sequenceToTimestamp,
       });
-      return { snapshot, ledger: view.ledger, selection: currentSelection(snapshot, view.ledger) };
+      return { snapshot, ledger: view.ledger,
+        selection: currentSelection(snapshot, view.ledger, view.finalizedBlockHash.toLowerCase()) };
     } catch (cause) {
       throw new LocalLedgerSourceUnavailableError(cause);
     }

@@ -158,6 +158,7 @@ describe("finalized Compact projection coverage", () => {
     };
     const selection = {
       snapshot: candidate,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
       authorizationIds: { issuer: new Set([currentIssuer.authorization.authorizationId]),
         verifier: new Set<string>(), auditor: new Set<string>() },
       recognitionIds: new Set([currentRecognition.recognition.recognitionId]),
@@ -745,6 +746,9 @@ describe("local ledger-bound API source", () => {
       expect((await fetch(`${url}/health`)).status).toBe(503);
       expect(readCount).toBe(callsAfterMismatch);
       await expect(restartedSource().loadSnapshot()).resolves.toBeDefined();
+      await expect(restartedSource().loadCurrentLedgerSelection()).resolves.toMatchObject({
+        finalizedBlockHash: view.finalizedBlockHash,
+      });
       const duplicateKeySnapshot = raw.replace(/^\{\n/u, '{\n  "registry": null,\n');
       expect(duplicateKeySnapshot).not.toBe(raw);
       await writeFile(snapshotPath, duplicateKeySnapshot);

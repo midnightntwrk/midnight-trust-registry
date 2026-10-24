@@ -11,6 +11,7 @@ import type { TrustRegistryApiStateSource } from "../source.js";
 const snapshot = createDemoSnapshot({ label: "observation-route-unit" });
 const selection = {
   snapshot,
+  finalizedBlockHash: `0x${"a".repeat(64)}`,
   authorizationIds: {
     issuer: new Set([snapshot.issuerEntries[0]!.authorization.authorizationId]),
     verifier: new Set([snapshot.verifierEntries[0]!.authorization.authorizationId]),
@@ -33,8 +34,9 @@ describe("local API current-read observation (route-level only)", () => {
       const port = (server.address() as AddressInfo).port;
       const result = await observeLocalApiCurrentReads({ source, apiOrigin: `http://127.0.0.1:${port}` });
       expect(result).toMatchObject({
-        format: "tr-local-api-current-read-observation-v1",
+        format: "tr-local-api-current-read-observation-v2",
         registryId: snapshot.registry.registryId,
+        sourceFinalizedBlockHash: selection.finalizedBlockHash,
         currentEpochId: snapshot.currentEpoch.epochId,
         counts: { issuer: 2, verifier: 2, auditor: 2, recognition: 2 },
         releaseQualified: false,
@@ -173,6 +175,20 @@ describe("local API current-read observation (route-level only)", () => {
     };
     await expect(observeLocalApiCurrentReads({
       source: drifting, apiOrigin: "http://127.0.0.1:4400", fetchImpl: responding,
+    })).rejects.toThrow(/changed during API readback/u);
+
+    let checkpointReads = 0;
+    const checkpointDrift: TrustRegistryApiStateSource = {
+      ...source,
+      async loadCurrentLedgerSelection() {
+        checkpointReads += 1;
+        return checkpointReads === 1 ? selection : {
+          ...selection, finalizedBlockHash: `0x${"b".repeat(64)}`,
+        };
+      },
+    };
+    await expect(observeLocalApiCurrentReads({
+      source: checkpointDrift, apiOrigin: "http://127.0.0.1:4400", fetchImpl: responding,
     })).rejects.toThrow(/changed during API readback/u);
   });
 

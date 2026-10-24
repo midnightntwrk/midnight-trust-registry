@@ -225,7 +225,10 @@ exec` to run the **packaged** `observe-local-ledger-api` CLI against
 `127.0.0.1:4400` inside that container. It requires the signed plan's source
 revision to match the verified bundle revision while separately checking the
 running image ID. The report records the SHA-256 of the exact plan bytes the
-packaged CLI verified, its expiry, and the current-read observation time.
+packaged CLI verified, its expiry, the current-read observation time, and
+the source's finalized checkpoint hash. A changed source checkpoint during
+the HTTP probe fails the readback; the hash does not independently prove
+the server process used that checkpoint or that finality was authenticated.
 The running local-ledger server exposes only the digest of its startup-verified
 plan on `/health`; the packaged observer rejects a different digest. This
 binds the readback to the plan held by that server process even if a different

@@ -60,10 +60,11 @@ export async function observeLocalApiCurrentReads(input: {
   expectedPlanSha256?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
-  format: "tr-local-api-current-read-observation-v1";
+  format: "tr-local-api-current-read-observation-v2";
   observedAt: string;
   apiOrigin: string;
   registryId: string;
+  sourceFinalizedBlockHash: string;
   currentEpochId: string;
   counts: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
   releaseQualified: false;
@@ -76,6 +77,10 @@ export async function observeLocalApiCurrentReads(input: {
   const fetchImpl = input.fetchImpl ?? fetch;
   const selection = await input.source.loadCurrentLedgerSelection();
   const { snapshot } = selection;
+  if (!/^0x[0-9a-f]{64}$/u.test(selection.finalizedBlockHash)
+    || /^0x0{64}$/u.test(selection.finalizedBlockHash)) {
+    throw new Error("Local API source lacks a finalized checkpoint hash");
+  }
   const health = await request(origin, "/health", 200, fetchImpl) as Record<string, unknown>;
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || health.registryId !== snapshot.registry.registryId
@@ -204,13 +209,14 @@ export async function observeLocalApiCurrentReads(input: {
     throw new Error("Local API health changed during current-read observation");
   }
   return {
-    format: "tr-local-api-current-read-observation-v1",
+    format: "tr-local-api-current-read-observation-v2",
     observedAt: new Date().toISOString(),
     apiOrigin: origin,
     registryId: snapshot.registry.registryId,
+    sourceFinalizedBlockHash: selection.finalizedBlockHash,
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
     releaseQualified: false,
-    scope: "current HTTP resolution and selected by-ID readback only; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "current HTTP resolution and selected by-ID readback only; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }

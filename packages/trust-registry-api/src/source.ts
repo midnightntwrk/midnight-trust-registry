@@ -68,6 +68,7 @@ export type TrustRegistryApiStateSource = {
 
 export type TrustRegistryApiCurrentLedgerSelection = {
   snapshot: TrustRegistryOperatorSnapshot;
+  finalizedBlockHash: string;
   authorizationIds: Record<TrustRegistryApiAuthorizationRole, ReadonlySet<string>>;
   recognitionIds: ReadonlySet<string>;
 };
