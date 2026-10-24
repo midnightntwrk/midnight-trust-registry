@@ -123,6 +123,90 @@ function assertRecordCounters(
   }
 }
 
+type LifecycleRecord = {
+  status: AuthorizationStatus;
+  proposedAtSequence: bigint;
+  authorizedAtSequence: bigint;
+  suspendedAtSequence: bigint;
+  revokedAtSequence: bigint;
+  archivedAtSequence: bigint;
+  lastStatusSequence: bigint;
+};
+
+function assertLifecycleSequences<T extends LifecycleRecord>(
+  label: string,
+  records: Iterable<[Uint8Array, T]>,
+  governanceActionCount: bigint,
+  activeAt: (record: T) => bigint,
+): void {
+  for (const [, record] of records) {
+    const proposed = record.proposedAtSequence;
+    const authorized = record.authorizedAtSequence;
+    const active = activeAt(record);
+    const suspended = record.suspendedAtSequence;
+    const revoked = record.revokedAtSequence;
+    const archived = record.archivedAtSequence;
+    let previous = 0n;
+    for (const sequence of [proposed, authorized, active, suspended, revoked, archived]) {
+      if (sequence === 0n) continue;
+      if (sequence <= previous || sequence > governanceActionCount) {
+        throw new Error(`${label} finalized lifecycle sequences are inconsistent`);
+      }
+      previous = sequence;
+    }
+    if (proposed === 0n || (authorized === 0n && (active !== 0n || revoked !== 0n))
+      || (active === 0n && suspended !== 0n)) {
+      throw new Error(`${label} finalized lifecycle sequences are incomplete`);
+    }
+    let expectedLast: bigint;
+    switch (record.status) {
+      case AuthorizationStatus.proposed:
+        expectedLast = proposed;
+        if (authorized !== 0n || active !== 0n || suspended !== 0n
+          || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.authorized:
+        expectedLast = authorized;
+        if (authorized === 0n || active !== 0n || suspended !== 0n
+          || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.active:
+        expectedLast = active;
+        if (active === 0n || suspended !== 0n || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.suspended:
+        expectedLast = suspended;
+        if (suspended === 0n || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.revoked:
+        expectedLast = revoked;
+        if (revoked === 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.archived:
+        expectedLast = archived;
+        if (archived === 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      default:
+        throw new Error(`${label} finalized lifecycle status is unsupported`);
+    }
+    if (record.lastStatusSequence !== expectedLast) {
+      throw new Error(`${label} finalized last status sequence differs from status`);
+    }
+  }
+}
+
 function assertAuthorizationFields(
   role: "issuer" | "verifier" | "auditor",
   entry: AuthorizationEntry,
@@ -324,6 +408,14 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
     ledger.auditorAuthorizationCount, ledger.activeAuditorAuthorizationCount);
   assertRecordCounters("recognition", ledger.recognitionRecords,
     ledger.recognitionCount, ledger.activeRecognitionCount);
+  assertLifecycleSequences("issuer", ledger.issuerAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("verifier", ledger.verifierAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("auditor", ledger.auditorAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("recognition", ledger.recognitionRecords,
+    ledger.governanceActionCount, (record) => record.effectiveFromSequence);
 }
 
 /** The ledger must already be authenticated at the selected finalized checkpoint. */

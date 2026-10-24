@@ -225,6 +225,35 @@ describe("finalized Compact projection coverage", () => {
     })).toThrow(/Epoch finalized counter differs/u);
   });
 
+  it("rejects inconsistent current lifecycle sequences", () => {
+    const { snapshot, ledger } = fixture();
+    const keyOf = (key: Uint8Array) => Buffer.from(key).toString("hex");
+    const issuerRecords = revisionMap(
+      [...ledger.issuerAuthorizationRecords].map(([key, record], index) => [key,
+        index === 0 ? { ...record, lastStatusSequence: 0n } : record] as [Uint8Array, typeof record]), keyOf);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger, issuerAuthorizationRecords: issuerRecords,
+    } as typeof ledger)).toThrow(/issuer finalized last status sequence differs/u);
+    const verifierRecords = revisionMap(
+      [...ledger.verifierAuthorizationRecords].map(([key, record]) => [key,
+        { ...record, activeFromSequence: ledger.governanceActionCount + 1n }] as [Uint8Array, typeof record]), keyOf);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger, verifierAuthorizationRecords: verifierRecords,
+    } as typeof ledger)).toThrow(/verifier finalized lifecycle sequences are inconsistent/u);
+    const auditorRecords = revisionMap(
+      [...ledger.auditorAuthorizationRecords].map(([key, record]) => [key,
+        { ...record, activeFromSequence: 0n }] as [Uint8Array, typeof record]), keyOf);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger, auditorAuthorizationRecords: auditorRecords,
+    } as typeof ledger)).toThrow(/auditor finalized lifecycle status disagrees/u);
+    const recognitionRecords = revisionMap(
+      [...ledger.recognitionRecords].map(([key, record]) => [key,
+        { ...record, authorizedAtSequence: record.effectiveFromSequence + 1n }] as [Uint8Array, typeof record]), keyOf);
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger, recognitionRecords,
+    } as typeof ledger)).toThrow(/recognition finalized lifecycle sequences are inconsistent/u);
+  });
+
   it("anchors every included bundle to the Compact epoch and publication signer", () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const input = { snapshot, ledger, contractAddress,
