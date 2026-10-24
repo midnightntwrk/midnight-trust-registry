@@ -175,6 +175,20 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
   }
 });
 
+test("v2 inventory cannot smuggle an unverified API overlay", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const overlay = Buffer.from("services:\n  api: {}\n");
+    await writeFile(join(root, "compose.api.yml"), overlay);
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose file and inventory pin disagree/u);
+    inventory.runtimeCompose = { apiPath: "compose.api.yml", apiSha256: sha(overlay) };
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is unsupported/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("v3 install pins complete runtime Compose bytes", async () => {
   const { root, inventory } = await fixture();
   try {
@@ -372,6 +386,45 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.installRelay.sha256, sha(relay));
     assert.equal(verified.installRelay.image.reference, reference("node"));
+    assert.equal(verified.runtimeApiComposeSha256, null);
+    const apiCompose = Buffer.from("services:\n  api:\n    profiles: [runtime]\n");
+    await writeFile(join(root, "compose.api.yml"), apiCompose);
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose file and inventory pin disagree/u);
+    inventory.runtimeCompose.apiPath = "compose.api.yml";
+    inventory.runtimeCompose.apiSha256 = sha(apiCompose);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    assert.equal((await verifyStandaloneInstallBundle(root, () => {})).runtimeApiComposeSha256,
+      sha(apiCompose));
+    await writeFile(join(root, "compose.api.yml"), "services: {}\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose bytes disagree/u);
+    await rm(join(root, "compose.api.yml"));
+    await symlink(join(root, "release.json"), join(root, "compose.api.yml"));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /not regular/u);
+    await rm(join(root, "compose.api.yml"));
+    await writeFile(join(root, "compose.api.yml"), apiCompose);
+    inventory.runtimeCompose.apiSha256 = "F".repeat(64);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
+    inventory.runtimeCompose.apiSha256 = sha(apiCompose);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const apiRuntime = inventory.apiRuntime;
+    delete inventory.apiRuntime;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
+    inventory.apiRuntime = apiRuntime;
+    inventory.format = "tr-standalone-install-v3";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is unsupported/u);
+    inventory.format = "tr-standalone-install-v6";
+    inventory.runtimeCompose.apiPath = "../compose.api.yml";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
+    inventory.runtimeCompose.apiPath = "compose.api.yml";
+    delete inventory.runtimeCompose.apiSha256;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
+    inventory.runtimeCompose.apiSha256 = sha(apiCompose);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await writeFile(join(root, "install-relay.py"), "changed\n");
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay bytes disagree/u);
     await writeFile(join(root, "install-relay.py"), relay);

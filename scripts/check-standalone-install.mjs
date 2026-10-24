@@ -242,8 +242,22 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     || !Array.isArray(inventory.proofParameters?.files)) {
     throw new Error("Standalone install inventory format or required roles are invalid");
   }
+  const hasApiOverlayPin = inventory.runtimeCompose?.apiPath !== undefined
+    || inventory.runtimeCompose?.apiSha256 !== undefined;
+  if (hasApiOverlayPin && !["tr-standalone-install-v4", "tr-standalone-install-v5",
+    "tr-standalone-install-v6"].includes(inventory.format)) {
+    throw new Error("Standalone API Compose pin is unsupported by this inventory format");
+  }
+  const hasApiOverlayFile = await lstat(join(root, "compose.api.yml")).then(() => true, (error) => {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  });
+  if (hasApiOverlayPin !== hasApiOverlayFile) {
+    throw new Error("Standalone API Compose file and inventory pin disagree");
+  }
   let runtimeComposeSha256 = null;
   let runtimeOfflineComposeSha256 = null;
+  let runtimeApiComposeSha256 = null;
   if (["tr-standalone-install-v3", "tr-standalone-install-v4",
     "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
     if (inventory.runtimeCompose?.path !== "compose.yml"
@@ -257,6 +271,18 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (await sha256(composeFile) !== inventory.runtimeCompose.sha256
       || await sha256(offlineComposeFile) !== inventory.runtimeCompose.offlineSha256) {
       throw new Error("Standalone runtime Compose bytes disagree with the install pin");
+    }
+    if (hasApiOverlayPin) {
+      if (inventory.runtimeCompose.apiPath !== "compose.api.yml"
+        || !SHA256.test(inventory.runtimeCompose.apiSha256)
+        || inventory.apiRuntime === undefined) {
+        throw new Error("Standalone API Compose pin is missing or malformed");
+      }
+      const apiComposeFile = await regularBundleFile(root, inventory.runtimeCompose.apiPath);
+      if (await sha256(apiComposeFile) !== inventory.runtimeCompose.apiSha256) {
+        throw new Error("Standalone API Compose bytes disagree with the install pin");
+      }
+      runtimeApiComposeSha256 = inventory.runtimeCompose.apiSha256;
     }
     const pinnedImages = pinnedStandaloneImages(await readFile(composeFile, "utf8"));
     if (pinnedImages.some(({ role, reference }) => !inventory.images.some((image) =>
@@ -405,6 +431,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     proofParameterCount: parameterFiles.length,
     runtimeComposeSha256,
     runtimeOfflineComposeSha256,
+    runtimeApiComposeSha256,
     images: verifiedImages,
     apiRuntime,
     portalRuntimes,

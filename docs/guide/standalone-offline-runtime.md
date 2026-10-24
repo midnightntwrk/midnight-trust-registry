@@ -136,8 +136,58 @@ source-scoped admin and applicant tags without a registry pull. A v5/v6 Helm
 mapping reads these portal identities from the verified bundle rather than
 separate portal manifests. This is install-byte evidence only: neither the
 loader nor the wizard starts the portals or establishes an offline actor
-journey. The approved installer plan must still bind the six running image
-identities and qualify the deployed API and portals with egress denied.
+journey. The approved installer plan must still bind every image selected for
+runtime and qualify the deployed API and any separate portal workloads with
+egress denied.
+
+A new v4-v6 API-bearing bundle also pins `compose.api.yml` as
+`runtimeCompose.apiPath` and `runtimeCompose.apiSha256`. The read-only verifier
+checks the exact overlay bytes; existing v6 bundles without that optional pin
+remain verifiable but cannot use a bundle-pinned API overlay. This overlay is
+omitted entirely from first-run Compose commands; its `runtime` profile is a
+second guard, not a substitute for omitting the file. Compose interpolates
+required API inputs even when that profile is inactive. The first-run wizard
+therefore still starts and observes only node, indexer, and proof server.
+Do not put `compose.api.yml` in a default `COMPOSE_FILE` during installation.
+**Do not pass this overlay or enable the API profile before approved genesis,
+deployment, maintenance transition, and a
+detached-reviewer-signed v2 local API plan.** The approval directory must
+contain the signed plan, signature, reviewed public keyring, pinned snapshot,
+install inventory, and release manifest at the paths named by the signed plan.
+It is bind-mounted read-only; the selected UID/GID must own or be allowed to
+read those private inputs. The operator supplies the exact locally loaded API
+tag and the reviewer fingerprint. The overlay uses the
+internal ledger network, no registry pull, a read-only filesystem, dropped
+capabilities, and the packaged API's source-revision check. It serves the
+packaged admin and applicant static assets from the API origin; it does not
+start the separate portal images.
+
+The API port is exposed **inside the internal ledger network only**. Docker
+Desktop did not make a host-published port on an internal-only network
+reachable in a disposable probe, so this overlay makes no host/browser
+ingress claim. An actor runner attached to that network can reach `api:4400`.
+A separately reviewed ingress path is needed for host browsers; adding an
+ordinary external Docker network would create an egress path and is not
+equivalent to the offline requirement. The overlay itself is not an offline
+actor-journey or ingress qualification.
+
+The CLI `serve` mode used here wires finalized current reads, not durable
+governed submission ports, application intake, or a proposal journal. This is
+therefore a **read-only local API profile**; write-dependent actor journeys
+remain blocked until a separately reviewed mutation adapter and durable
+recovery state are installed. The approval directory is read-only by design.
+The operator-selected UID/GID must also be able to read the image's packaged
+API and portal files. A disposable check of the source-matched API image as
+UID 501/GID 20 read `/app/source-revision`, both portal entrypoints, and the
+API CLI; repeat that check for each final image and runtime UID/GID.
+
+The existing three-service topology and restart observers are **ledger-bridge
+checks**, not full-runtime observers. Do not interpret their passing
+before the API profile starts as deployed API, offline actor, or recovery
+evidence. A post-deployment observer must verify the API container identity,
+approval mounts, source revision, finalized reads, runtime egress, and actor
+journeys before the local 0.1.0 RC gate can close. Kubernetes and Helm are
+optional alternative deployment paths, not prerequisites.
 
 After loading the v5/v6 images, run
 `node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
@@ -181,7 +231,8 @@ local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
 digest and retain the signed build evidence.
 
-For an isolated cluster, the API may listen on `0.0.0.0` only with
+For an isolated container network, including the optional Compose runtime
+profile or a dedicated cluster, the API may listen on `0.0.0.0` only with
 `--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
 signed v4, v5, or v6 install inventory with an API archive pin. Before opening that
 listener, it checks a file at `/app/source-revision` in the container
@@ -207,8 +258,9 @@ the current source. That comparison catches a stale source copy but does not
 prove that the compiler outputs or proving keys came from those bytes;
 independently review the build provenance before release approval.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
-three digest-pinned Compose images, copies and hashes both runtime Compose
-files, writes the release and install manifests,
+three digest-pinned Compose images, copies and hashes the two ledger Compose
+files and an optional API runtime overlay when an API image is included,
+writes the release and install manifests,
 and runs the read-only bundle verifier. Retain the resulting directory and
 hashes as candidate bytes for operator approval. If the command fails, the
 partial directory is retained for inspection; use a new signed source commit

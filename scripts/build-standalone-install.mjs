@@ -174,9 +174,18 @@ export async function buildStandaloneInstall(options = {}) {
   const offlineComposeTarget = join(destination, "compose.offline.yml");
   copyFileSync(join(root, "deploy/standalone/compose.offline.yml"), offlineComposeTarget,
     fsConstants.COPYFILE_EXCL);
+  let apiComposeTarget;
+  if (options.apiImageDirectory !== undefined) {
+    apiComposeTarget = join(destination, "compose.api.yml");
+    copyFileSync(join(root, "deploy/standalone/compose.api.yml"), apiComposeTarget,
+      fsConstants.COPYFILE_EXCL);
+  }
   const runtimeCompose = {
     path: "compose.yml", sha256: await sha256(composeTarget),
     offlinePath: "compose.offline.yml", offlineSha256: await sha256(offlineComposeTarget),
+    ...(apiComposeTarget === undefined ? {} : {
+      apiPath: "compose.api.yml", apiSha256: await sha256(apiComposeTarget),
+    }),
   };
 
   const proofDirectory = join(destination, "proof-params");
