@@ -136,7 +136,7 @@ export function createLocalLedgerBoundSource(input: {
         contractAddress: addressBytes,
         sequenceToTimestamp: input.sequenceToTimestamp,
       });
-      return { snapshot, ledger: view.ledger };
+      return { snapshot, ledger: view.ledger, selection: currentSelection(snapshot, view.ledger) };
     } catch (cause) {
       throw new LocalLedgerSourceUnavailableError(cause);
     }
@@ -172,8 +172,7 @@ export function createLocalLedgerBoundSource(input: {
       return (await readBoundState()).snapshot;
     },
     async loadCurrentLedgerSelection() {
-      const { snapshot, ledger } = await readBoundState();
-      return currentSelection(snapshot, ledger);
+      return (await readBoundState()).selection;
     },
     async readFinalizedProposalLedger() {
       return (await readBoundState()).ledger;

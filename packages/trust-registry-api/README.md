@@ -173,8 +173,10 @@ Current authorization and recognition resolution in local-ledger mode selects
 only IDs from the verified finalized current-scope indexes, not the most recent
 snapshot timestamp. A broad query matching multiple current scopes returns 409;
 an unavailable current-index read returns 503. The local HTTP observation also
-checks the signed snapshot generation time and registry summary, but remains
-readback only, not deployment or actor-journey qualification.
+checks the signed snapshot generation time, registry summary, and current
+resolution against the finalized selection. Its counts include all by-ID
+records, not only current IDs; it remains readback only, not deployment or
+actor-journey qualification.
 
 - `GET /health`
 - `GET /v1/registry`

@@ -9,9 +9,19 @@ import { createTrustRegistryApiServer } from "../server.js";
 import type { TrustRegistryApiStateSource } from "../source.js";
 
 const snapshot = createDemoSnapshot({ label: "observation-route-unit" });
+const selection = {
+  snapshot,
+  authorizationIds: {
+    issuer: new Set([snapshot.issuerEntries[0]!.authorization.authorizationId]),
+    verifier: new Set([snapshot.verifierEntries[0]!.authorization.authorizationId]),
+    auditor: new Set([snapshot.auditorEntries[0]!.authorization.authorizationId]),
+  },
+  recognitionIds: new Set([snapshot.recognitionEntries[0]!.recognition.recognitionId]),
+};
 const source: TrustRegistryApiStateSource = {
   mode: "local-ledger",
   async loadSnapshot() { return snapshot; },
+  async loadCurrentLedgerSelection() { return selection; },
 };
 
 describe("local API current-read observation (route-level only)", () => {
@@ -55,12 +65,15 @@ describe("local API current-read observation (route-level only)", () => {
     let reads = 0;
     const drifting: TrustRegistryApiStateSource = {
       mode: "local-ledger",
-      async loadSnapshot() {
+      async loadSnapshot() { return snapshot; },
+      async loadCurrentLedgerSelection() {
         reads += 1;
-        return reads === 1 ? snapshot : { ...snapshot, generatedAt: "2030-01-01T00:00:00Z" };
+        return reads === 1 ? selection : {
+          ...selection, snapshot: { ...snapshot, generatedAt: "2030-01-01T00:00:00Z" },
+        };
       },
     };
-    const responding: typeof fetch = async (url) => {
+    const responding: typeof fetch = async (url, init) => {
       const path = new URL(String(url)).pathname;
       let body: unknown;
       let status = 200;
@@ -69,6 +82,10 @@ describe("local API current-read observation (route-level only)", () => {
       else if (path === "/v1/registry/summary") body = buildSnapshotSummary(snapshot);
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;
+      else if (path === "/v1/authorizations/resolve") {
+        const role = (JSON.parse(String(init?.body)) as { role: "issuer" | "verifier" | "auditor" }).role;
+        body = snapshot[`${role}Entries`][0];
+      } else if (path === "/v1/recognitions/resolve") body = snapshot.recognitionEntries[0];
       else if (path.startsWith("/v1/authorizations/")) {
         const [, , , role, id] = path.split("/");
         body = role === "issuer" || role === "verifier" || role === "auditor"
@@ -101,6 +118,15 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: substituted }))
         .rejects.toThrow(/issuer record differs/u);
+      const substitutedResolution: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve") return response;
+        return new Response(JSON.stringify({ label: "substituted" }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
+        fetchImpl: substitutedResolution })).rejects.toThrow(/current resolution differs/u);
       const cacheable: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/health") return response;

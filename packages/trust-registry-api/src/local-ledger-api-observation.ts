@@ -20,9 +20,12 @@ export function localApiOrigin(value: string): string {
 }
 
 async function request(origin: string, path: string, expectedStatus: number,
-  fetchImpl: typeof fetch): Promise<unknown> {
+  fetchImpl: typeof fetch, body?: unknown): Promise<unknown> {
   const response = await fetchImpl(`${origin}${path}`, {
-    method: "GET", redirect: "error", signal: AbortSignal.timeout(10_000),
+    method: body === undefined ? "GET" : "POST",
+    ...(body === undefined ? {} : { headers: { "content-type": "application/json" },
+      body: JSON.stringify(body) }),
+    redirect: "error", signal: AbortSignal.timeout(10_000),
   });
   if (response.status !== expectedStatus || response.headers.get("cache-control") !== "no-store") {
     throw new Error("Local API response status or cache policy differs from the expected current-only surface");
@@ -64,12 +67,13 @@ export async function observeLocalApiCurrentReads(input: {
   releaseQualified: false;
   scope: string;
 }> {
-  if (input.source.mode !== "local-ledger") {
+  if (input.source.mode !== "local-ledger" || input.source.loadCurrentLedgerSelection === undefined) {
     throw new Error("Current-read observation requires the signed local-ledger source");
   }
   const origin = localApiOrigin(input.apiOrigin);
   const fetchImpl = input.fetchImpl ?? fetch;
-  const snapshot = await input.source.loadSnapshot();
+  const selection = await input.source.loadCurrentLedgerSelection();
+  const { snapshot } = selection;
   const health = await request(origin, "/health", 200, fetchImpl) as Record<string, unknown>;
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || health.registryId !== snapshot.registry.registryId
@@ -102,6 +106,17 @@ export async function observeLocalApiCurrentReads(input: {
       if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
         throw new Error(`Local API ${role} record differs from signed-plan readback`);
       }
+      if (selection.authorizationIds[role].has(entry.authorization.authorizationId)) {
+        const current = await request(origin, "/v1/authorizations/resolve", 200, fetchImpl, {
+          role, subjectDid: entry.authorization.subjectDid,
+          resourceId: entry.authorization.resourceId,
+          resourceType: entry.authorization.resourceType,
+          trustLevel: entry.authorization.trustLevel,
+        });
+        if (!isDeepStrictEqual(current, jsonProjection(entry))) {
+          throw new Error(`Local API ${role} current resolution differs from finalized selection`);
+        }
+      }
     }
     counts[role] = entries.length;
   }
@@ -116,6 +131,19 @@ export async function observeLocalApiCurrentReads(input: {
     if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
       throw new Error("Local API recognition differs from signed-plan readback");
     }
+    if (selection.recognitionIds.has(entry.recognition.recognitionId)) {
+      const current = await request(origin, "/v1/recognitions/resolve", 200, fetchImpl, {
+        recognizedAuthorityDid: entry.recognition.recognizedAuthorityDid,
+        recognizedRegistryId: entry.recognition.recognizedRegistryId,
+        scopeResourceType: entry.recognition.scope.resourceType,
+        scopeResourceId: entry.recognition.scope.resourceId,
+        scopeContext: entry.recognition.scope.context,
+        trustLevel: entry.recognition.trustLevel,
+      });
+      if (!isDeepStrictEqual(current, jsonProjection(entry))) {
+        throw new Error("Local API recognition current resolution differs from finalized selection");
+      }
+    }
   }
   counts.recognition = recognitions.length;
 
@@ -123,8 +151,8 @@ export async function observeLocalApiCurrentReads(input: {
   await request(origin, `/v1/authorizations/issuer/${absent}`, 404, fetchImpl);
   await request(origin, `/v1/recognitions/${absent}`, 404, fetchImpl);
   await request(origin, `/v1/epochs/resolve?at=${encodeURIComponent(snapshot.generatedAt)}`, 501, fetchImpl);
-  if (!isDeepStrictEqual(await input.source.loadSnapshot(), snapshot)) {
-    throw new Error("Finalized local source changed during API readback observation");
+  if (!isDeepStrictEqual(await input.source.loadCurrentLedgerSelection(), selection)) {
+    throw new Error("Finalized local selection changed during API readback observation");
   }
   return {
     format: "tr-local-api-current-read-observation-v1",
@@ -134,6 +162,6 @@ export async function observeLocalApiCurrentReads(input: {
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
     releaseQualified: false,
-    scope: "current HTTP readback only; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "current HTTP resolution and all-record by-ID readback only; counts include all records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }
