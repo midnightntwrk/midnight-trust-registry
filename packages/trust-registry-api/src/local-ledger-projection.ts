@@ -106,6 +106,23 @@ function assertCurrentScopeIndex<T extends { proposedAtSequence: bigint }>(
   }
 }
 
+function assertRecordCounters(
+  label: string,
+  records: { size(): bigint; [Symbol.iterator](): Iterator<[Uint8Array, { status: AuthorizationStatus }]> },
+  total: bigint,
+  active: bigint,
+): void {
+  let observed = 0n;
+  let activeObserved = 0n;
+  for (const [, record] of records) {
+    observed += 1n;
+    if (record.status === AuthorizationStatus.active) activeObserved += 1n;
+  }
+  if (records.size() !== observed || total !== observed || active !== activeObserved) {
+    throw new Error(`${label} finalized counters differ from the complete record map`);
+  }
+}
+
 function assertAuthorizationFields(
   role: "issuer" | "verifier" | "auditor",
   entry: AuthorizationEntry,
@@ -238,6 +255,9 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
     || !snapshot.epochs.some((epoch) => canonicalizeJson(epoch) === canonicalizeJson(snapshot.currentEpoch))) {
     throw new Error("Candidate current epoch is not the finalized latest epoch");
   }
+  if (ledger.epochCommitmentCount !== ledger.epochCommitmentRecords.size()) {
+    throw new Error("Epoch finalized counter differs from the complete record map");
+  }
 
   assertExactMap("issuer", snapshot.issuerEntries,
     (entry) => entry.authorization.authorizationId, ledger.issuerAuthorizationRecords,
@@ -296,6 +316,14 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
     (record) => computeRecognitionScopeKey(
       record.recognizedAuthorityDidCommitment, record.recognizedRegistryId,
       record.scopeResourceType, record.scopeResourceId));
+  assertRecordCounters("issuer", ledger.issuerAuthorizationRecords,
+    ledger.issuerAuthorizationCount, ledger.activeIssuerAuthorizationCount);
+  assertRecordCounters("verifier", ledger.verifierAuthorizationRecords,
+    ledger.verifierAuthorizationCount, ledger.activeVerifierAuthorizationCount);
+  assertRecordCounters("auditor", ledger.auditorAuthorizationRecords,
+    ledger.auditorAuthorizationCount, ledger.activeAuditorAuthorizationCount);
+  assertRecordCounters("recognition", ledger.recognitionRecords,
+    ledger.recognitionCount, ledger.activeRecognitionCount);
 }
 
 /** The ledger must already be authenticated at the selected finalized checkpoint. */

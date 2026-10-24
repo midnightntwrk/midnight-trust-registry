@@ -198,6 +198,33 @@ describe("finalized Compact projection coverage", () => {
     } as typeof ledger)).toThrow(/recognition finalized current-scope index is incomplete/u);
   });
 
+  it("rejects stale total and active counters for every current record map", () => {
+    const { snapshot, ledger } = fixture();
+    for (const [label, field] of [
+      ["issuer", "issuerAuthorizationCount"],
+      ["verifier", "verifierAuthorizationCount"],
+      ["auditor", "auditorAuthorizationCount"],
+      ["recognition", "recognitionCount"],
+    ] as const) {
+      expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+        ...ledger, [field]: ledger[field] + 1n,
+      })).toThrow(new RegExp(`${label} finalized counters differ`, "u"));
+    }
+    for (const [label, field] of [
+      ["issuer", "activeIssuerAuthorizationCount"],
+      ["verifier", "activeVerifierAuthorizationCount"],
+      ["auditor", "activeAuditorAuthorizationCount"],
+      ["recognition", "activeRecognitionCount"],
+    ] as const) {
+      expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+        ...ledger, [field]: ledger[field] + 1n,
+      })).toThrow(new RegExp(`${label} finalized counters differ`, "u"));
+    }
+    expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
+      ...ledger, epochCommitmentCount: ledger.epochCommitmentCount + 1n,
+    })).toThrow(/Epoch finalized counter differs/u);
+  });
+
   it("anchors every included bundle to the Compact epoch and publication signer", () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const input = { snapshot, ledger, contractAddress,

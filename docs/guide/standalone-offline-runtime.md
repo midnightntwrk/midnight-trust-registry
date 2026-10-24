@@ -1364,9 +1364,10 @@ with injected snapshots is not local deployment or restore evidence.
    immutable versioned plan/snapshot set, and restart. The preflight is a
    consistency check, not independent finality proof. The current-state
    projection also recomputes issuer, verifier, auditor, and recognition
-   scope indexes from the Compact records and rejects missing or redirected
-   indexes. This does not authenticate the indexer checkpoint or establish
-   verifier/auditor scope preimages from the snapshot alone. Verify startup,
+   scope indexes from the Compact records, checks record and active counters,
+   and rejects missing or redirected indexes. This does not authenticate the
+   indexer checkpoint or establish verifier/auditor scope preimages from the
+   snapshot alone. Verify startup,
    `/health`, and current actor reads before
    reopening traffic. A failed rotation leaves the API unavailable; do not
    restart with a stale plan or a fixture source. Capture this sequence as live
