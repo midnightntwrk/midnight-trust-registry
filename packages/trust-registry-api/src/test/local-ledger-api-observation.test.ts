@@ -58,9 +58,22 @@ describe("local API current-read observation (route-level only)", () => {
     try {
       const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       const health = await fetch(`${apiOrigin}/health`);
-      expect((await health.json()).localPlanSha256).toBe(digest);
+      expect(await health.json()).toMatchObject({
+        localPlanSha256: digest, finalizedBlockHash: selection.finalizedBlockHash,
+      });
       await expect(observeLocalApiCurrentReads({ source, apiOrigin,
         expectedPlanSha256: digest })).resolves.toMatchObject({ releaseQualified: false });
+      const substitutedCheckpoint: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/health") return response;
+        return new Response(JSON.stringify({ ...await response.json(),
+          finalizedBlockHash: `0x${"b".repeat(64)}` }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: digest, fetchImpl: substitutedCheckpoint }))
+        .rejects.toThrow(/health does not identify/u);
       await expect(observeLocalApiCurrentReads({ source, apiOrigin,
         expectedPlanSha256: "b".repeat(64) })).rejects.toThrow(/signed-plan registry source/u);
     } finally {
@@ -140,7 +153,8 @@ describe("local API current-read observation (route-level only)", () => {
       let body: unknown;
       let status = 200;
       if (path === "/health") body = { status: "ok", sourceMode: "local-ledger",
-        registryId: snapshot.registry.registryId, generatedAt: snapshot.generatedAt };
+        registryId: snapshot.registry.registryId, generatedAt: snapshot.generatedAt,
+        finalizedBlockHash: selection.finalizedBlockHash };
       else if (path === "/v1/registry/summary") body = buildSnapshotSummary(snapshot);
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;

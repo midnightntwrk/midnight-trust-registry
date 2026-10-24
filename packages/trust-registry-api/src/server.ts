@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
+import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
@@ -1133,7 +1134,13 @@ export const createTrustRegistryApiServer = (
       }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "health") {
-        const summary = await loadRegistrySummary(options.source);
+        const selection = options.source.mode === "local-ledger"
+          ? await options.source.loadCurrentLedgerSelection?.() : undefined;
+        if (options.source.mode === "local-ledger" && selection === undefined) {
+          throw new CurrentLedgerSelectionUnavailableError();
+        }
+        const summary = selection === undefined
+          ? await loadRegistrySummary(options.source) : buildSnapshotSummary(selection.snapshot);
         writeJson(
           response,
           200,
@@ -1143,6 +1150,7 @@ export const createTrustRegistryApiServer = (
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
             ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
+            ...(selection === undefined ? {} : { finalizedBlockHash: selection.finalizedBlockHash }),
           }),
         );
         return;

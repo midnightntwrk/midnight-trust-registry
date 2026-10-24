@@ -226,9 +226,10 @@ exec` to run the **packaged** `observe-local-ledger-api` CLI against
 revision to match the verified bundle revision while separately checking the
 running image ID. The report records the SHA-256 of the exact plan bytes the
 packaged CLI verified, its expiry, the current-read observation time, and
-the source's finalized checkpoint hash. A changed source checkpoint during
-the HTTP probe fails the readback; the hash does not independently prove
-the server process used that checkpoint or that finality was authenticated.
+the source's finalized checkpoint hash. The running API exposes its checkpoint
+hash on `/health`; the probe rejects a different API hash or a changed source
+checkpoint during the HTTP reads. Matching hashes do not independently prove
+that every route used one checkpoint or that finality was authenticated.
 The running local-ledger server exposes only the digest of its startup-verified
 plan on `/health`; the packaged observer rejects a different digest. This
 binds the readback to the plan held by that server process even if a different

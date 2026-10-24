@@ -85,6 +85,7 @@ export async function observeLocalApiCurrentReads(input: {
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || health.registryId !== snapshot.registry.registryId
     || health.generatedAt !== snapshot.generatedAt
+    || health.finalizedBlockHash !== selection.finalizedBlockHash
     || (input.expectedPlanSha256 !== undefined
       && (!/^[0-9a-f]{64}$/u.test(input.expectedPlanSha256)
         || health.localPlanSha256 !== input.expectedPlanSha256))) {
