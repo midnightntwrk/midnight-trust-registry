@@ -180,21 +180,14 @@ test("detached mapping signature covers the exact bytes and approved signer", as
     t.skip("gpg and gpgv are required");
     return;
   }
-  const root = await mkdtemp(join(tmpdir(), "tr-helm-signature-test-"));
+  // macOS per-user temp paths can exceed the gpg-agent Unix socket limit.
+  const root = await mkdtemp("/tmp/tr-helm-gpg-");
   try {
     const home = join(root, "signer");
     await mkdir(home, { mode: 0o700 });
-    try {
-      execFileSync("gpg", ["--homedir", home, "--batch", "--pinentry-mode", "loopback",
-        "--passphrase", "", "--quick-generate-key", "Helm Reviewer <reviewer@example.test>",
-        "ed25519", "sign", "0"], { stdio: "pipe", timeout: 30_000 });
-    } catch (error) {
-      if (/No agent running|can't connect to the gpg-agent/u.test(String(error.stderr))) {
-        t.skip("temporary-home gpg-agent is unavailable on this host");
-        return;
-      }
-      throw error;
-    }
+    execFileSync("gpg", ["--homedir", home, "--batch", "--pinentry-mode", "loopback",
+      "--passphrase", "", "--quick-generate-key", "Helm Reviewer <reviewer@example.test>",
+      "ed25519", "sign", "0"], { stdio: "pipe", timeout: 30_000 });
     const listing = execFileSync("gpg", ["--homedir", home, "--batch", "--with-colons",
       "--list-secret-keys"], { encoding: "utf8" });
     const fingerprint = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
