@@ -2333,3 +2333,15 @@ snapshot mismatches, and a timed-out read still latch until process restart.
 A `null` is neither proof of proposal non-inclusion nor permission to clear
 the #220 reservation gate. This is a local unit-tested behavior, not evidence
 of live indexer recovery or deployed offline runtime.
+
+The applicant portal now distinguishes current local-ledger lookups from
+fixture-only historical evidence views. In confirmed local-ledger mode it
+offers exact current authorization and recognition queries, labels their
+responses as unverified API claims, and does not expose historical controls.
+Unavailable complete-list projections render as unavailable rather than zero
+trusted members. Malformed active-list responses fail closed instead of
+populating public inspection cards. Portal unit tests, typecheck, lint, and
+dependency audit passed locally on the signed current-portal branch; these
+checks do not establish deployed local-ledger readback or offline actor
+journeys for #219. Kubernetes/Helm remain optional deployment paths, not
+0.1.0 qualification requirements.
