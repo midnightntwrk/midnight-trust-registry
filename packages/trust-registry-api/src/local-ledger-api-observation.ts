@@ -134,16 +134,22 @@ export async function observeLocalApiCurrentReads(input: {
         && candidate.authorization.resourceId === entry.authorization.resourceId
         && candidate.authorization.resourceType === entry.authorization.resourceType
         && candidate.authorization.trustLevel === entry.authorization.trustLevel);
-      if (currentMatches.length > 1) {
-        throw new Error(`Local API ${role} finalized selection is ambiguous`);
-      }
+      let expectedStatus = 404;
+      if (currentMatches.length === 1) expectedStatus = 200;
+      if (currentMatches.length > 1) expectedStatus = 409;
       const current = await request(origin, "/v1/authorizations/resolve",
-        currentMatches.length === 0 ? 404 : 200, fetchImpl, {
+        expectedStatus, fetchImpl, {
           role, subjectDid: entry.authorization.subjectDid,
           resourceId: entry.authorization.resourceId,
           resourceType: entry.authorization.resourceType,
           trustLevel: entry.authorization.trustLevel,
         });
+      const problemType = typeof current === "object" && current !== null
+        ? (current as Record<string, unknown>).type : undefined;
+      if (currentMatches.length > 1 && (typeof problemType !== "string"
+        || !problemType.endsWith("/ambiguous-current-scope"))) {
+        throw new Error(`Local API ${role} ambiguous resolution did not fail closed`);
+      }
       if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
         throw new Error(`Local API ${role} current resolution differs from finalized selection`);
       }

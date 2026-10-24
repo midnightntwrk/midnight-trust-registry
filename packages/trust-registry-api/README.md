@@ -170,6 +170,9 @@ For a read-only current-route check against a running loopback listener, run
 arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,
 current epoch, bounded current issuer/verifier/auditor/recognition by-ID records,
 stale-ID and not-found behavior, and historical-route rejection with the signed source.
+If distinct current grants share the public resolver's lookup fields, the
+resolver must return `409 ambiguous-current-scope`; the probe verifies that
+fail-closed response and still checks each selected grant by ID.
 Local-ledger list routes return `503 local-list-projection-unavailable` until a
 complete, authenticated finalized checkpoint-bound projection exists. Superseded
 by-ID records return 404 in this current-only profile; fixture mode retains its
