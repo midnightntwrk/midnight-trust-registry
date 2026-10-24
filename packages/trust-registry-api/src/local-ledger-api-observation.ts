@@ -60,13 +60,14 @@ export async function observeLocalApiCurrentReads(input: {
   expectedPlanSha256?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
-  format: "tr-local-api-current-read-observation-v2";
+  format: "tr-local-api-current-read-observation-v3";
   observedAt: string;
   apiOrigin: string;
   registryId: string;
   sourceFinalizedBlockHash: string;
   currentEpochId: string;
   counts: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
+  ambiguousLookups: Record<"issuer" | "verifier" | "auditor", number>;
   releaseQualified: false;
   scope: string;
 }> {
@@ -105,6 +106,7 @@ export async function observeLocalApiCurrentReads(input: {
   }
 
   const counts = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
+  const ambiguousLookups = { issuer: 0, verifier: 0, auditor: 0 };
   for (const role of ["issuer", "verifier", "auditor"] as const) {
     const listProblem = await request(origin, `/v1/authorizations/${role}`, 503, fetchImpl) as Record<string, unknown>;
     if (typeof listProblem.type !== "string" || !listProblem.type.endsWith("/local-list-projection-unavailable")) {
@@ -144,11 +146,16 @@ export async function observeLocalApiCurrentReads(input: {
           resourceType: entry.authorization.resourceType,
           trustLevel: entry.authorization.trustLevel,
         });
-      const problemType = typeof current === "object" && current !== null
-        ? (current as Record<string, unknown>).type : undefined;
-      if (currentMatches.length > 1 && (typeof problemType !== "string"
-        || !problemType.endsWith("/ambiguous-current-scope"))) {
-        throw new Error(`Local API ${role} ambiguous resolution did not fail closed`);
+      if (currentMatches.length > 1) {
+        const problem = typeof current === "object" && current !== null
+          ? current as Record<string, unknown> : null;
+        if (problem === null || Object.keys(problem).sort().join("\0") !== "status\0title\0type"
+          || typeof problem.type !== "string"
+          || !problem.type.endsWith("/ambiguous-current-scope")
+          || problem.title !== "ambiguous current scope" || problem.status !== 409) {
+          throw new Error(`Local API ${role} ambiguous resolution did not fail closed`);
+        }
+        ambiguousLookups[role] += 1;
       }
       if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
         throw new Error(`Local API ${role} current resolution differs from finalized selection`);
@@ -216,14 +223,15 @@ export async function observeLocalApiCurrentReads(input: {
     throw new Error("Local API health changed during current-read observation");
   }
   return {
-    format: "tr-local-api-current-read-observation-v2",
+    format: "tr-local-api-current-read-observation-v3",
     observedAt: new Date().toISOString(),
     apiOrigin: origin,
     registryId: snapshot.registry.registryId,
     sourceFinalizedBlockHash: selection.finalizedBlockHash,
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
+    ambiguousLookups,
     releaseQualified: false,
-    scope: "current HTTP resolution and selected by-ID readback only; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "selected by-ID readback and nonambiguous current HTTP resolution; ambiguous lookups verify fail-closed 409 only; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; counts include all snapshot records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }

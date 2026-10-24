@@ -44,7 +44,7 @@ function checkedCurrentReadReport(stdout) {
   } catch {
     throw new Error("Packaged API current-read probe did not return JSON");
   }
-  if (report?.format !== "tr-local-api-current-read-observation-v2"
+  if (report?.format !== "tr-local-api-current-read-observation-v3"
     || report.releaseQualified !== false
     || report.apiOrigin !== "http://127.0.0.1:4400"
     || !/^[0-9a-f]{40}$/u.test(report.planSourceRevision ?? "")
@@ -57,7 +57,11 @@ function checkedCurrentReadReport(stdout) {
     || typeof report.registryId !== "string" || report.registryId.length === 0
     || typeof report.currentEpochId !== "string" || report.currentEpochId.length === 0
     || !["issuer", "verifier", "auditor", "recognition"].every((role) =>
-      Number.isSafeInteger(report.counts?.[role]) && report.counts[role] >= 0)) {
+      Number.isSafeInteger(report.counts?.[role]) && report.counts[role] >= 0)
+    || !["issuer", "verifier", "auditor"].every((role) =>
+      Number.isSafeInteger(report.ambiguousLookups?.[role])
+      && report.ambiguousLookups[role] >= 0
+      && report.ambiguousLookups[role] <= report.counts[role])) {
     throw new Error("Packaged API current-read probe returned an invalid report");
   }
   return report;
@@ -90,7 +94,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     throw new Error("API runtime container or internal network changed during current-read probe");
   }
   return {
-    format: "tr-standalone-api-current-read-probe-v2",
+    format: "tr-standalone-api-current-read-probe-v3",
     sourceRevision: before.sourceRevision,
     apiContainerId: before.apiContainerId,
     apiStartedAt: before.apiStartedAt,
@@ -103,6 +107,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     sourceFinalizedBlockHash: current.sourceFinalizedBlockHash,
     currentEpochId: current.currentEpochId,
     counts: current.counts,
+    ambiguousLookups: current.ambiguousLookups,
     routeReadback: "same-container-signed-plan-current-only",
     independentFinality: "not-verified",
     egressDenied: "not-verified",

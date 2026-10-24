@@ -34,11 +34,12 @@ describe("local API current-read observation (route-level only)", () => {
       const port = (server.address() as AddressInfo).port;
       const result = await observeLocalApiCurrentReads({ source, apiOrigin: `http://127.0.0.1:${port}` });
       expect(result).toMatchObject({
-        format: "tr-local-api-current-read-observation-v2",
+        format: "tr-local-api-current-read-observation-v3",
         registryId: snapshot.registry.registryId,
         sourceFinalizedBlockHash: selection.finalizedBlockHash,
         currentEpochId: snapshot.currentEpoch.epochId,
         counts: { issuer: 2, verifier: 2, auditor: 2, recognition: 2 },
+        ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
         releaseQualified: false,
       });
     } finally {
@@ -72,7 +73,8 @@ describe("local API current-read observation (route-level only)", () => {
     try {
       const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin }))
-        .resolves.toMatchObject({ counts: { verifier: 2 }, releaseQualified: false });
+        .resolves.toMatchObject({ counts: { verifier: 2 },
+          ambiguousLookups: { verifier: 2 }, releaseQualified: false });
       const unsafeResolution: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
@@ -93,6 +95,16 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin,
         fetchImpl: wrongProblem })).rejects.toThrow(/did not fail closed/u);
+      const grantInProblem: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
+          || (JSON.parse(String(init?.body)) as { role: string }).role !== "verifier") return response;
+        return new Response(JSON.stringify({ ...await response.json(), authorization: first.authorization }), {
+          status: 409, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin,
+        fetchImpl: grantInProblem })).rejects.toThrow(/did not fail closed/u);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
