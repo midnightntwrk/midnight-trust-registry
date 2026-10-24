@@ -13,6 +13,7 @@ import {
   assertApprovedPlanCoversGovernanceCount,
   createApprovedLocalLedgerRuntimeSource,
   loadApprovedLocalLedgerRuntimePlan,
+  loadApprovedLocalLedgerRuntimePlanWithDigest,
 } from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
 import { localApiOrigin, observeLocalApiCurrentReads } from "./local-ledger-api-observation.js";
@@ -314,7 +315,7 @@ export const runTrustRegistryApiCli = async (
     return;
   }
   if (options.command === "observe-local-ledger-api") {
-    const plan = await loadApprovedLocalLedgerRuntimePlan({
+    const { plan, planSha256 } = await loadApprovedLocalLedgerRuntimePlanWithDigest({
       planPath: options.localLedgerPlanPath!,
       signaturePath: options.localLedgerSignaturePath!,
       keyringDirectory: options.localLedgerKeyringDirectory!,
@@ -323,7 +324,8 @@ export const runTrustRegistryApiCli = async (
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin! });
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...result, planSourceRevision: plan.sourceRevision,
+      planSha256, planNotAfter: plan.notAfter }, null, 2)}\n`);
     return;
   }
   if (options.command === "observe-local-proposal") {

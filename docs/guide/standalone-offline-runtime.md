@@ -211,6 +211,27 @@ approve the signed plan, prove that the mounted files are unchanged, or replace
 the signed-plan preflight and live finalized-query tests. Do not run it against
 the older b15 bundle: that bundle predates the API overlay pin.
 
+After that topology check succeeds on a genuinely deployed, approved API,
+the operator may run a same-container current-read probe with the same
+environment and verified bundle:
+
+```sh
+node scripts/check-standalone-api-reads.mjs <verified-install-bundle>
+```
+
+The host-side probe checks the API container before and after using `docker
+exec` to run the **packaged** `observe-local-ledger-api` CLI against
+`127.0.0.1:4400` inside that container. It requires the signed plan's source
+revision to match the verified bundle revision while separately checking the
+running image ID. The report records the SHA-256 of the exact plan bytes the
+packaged CLI verified, its expiry, and the current-read observation time.
+It rejects a replaced or restarted container, changed network, expired
+observation, or source mismatch. This is route-level current-read evidence
+only. The API and the
+probe share the same signed-plan reader and node/indexer trust boundary;
+neither supplies independently authenticated finality, governed writes,
+offline actor journeys, or release approval. No host port is opened.
+
 After loading the v5/v6 images, run
 `node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
 same Docker host. It creates disposable, network-disabled containers without

@@ -253,13 +253,17 @@ export async function assertLocalApiImageSourceRevision(
   }
 }
 
-export async function loadApprovedLocalLedgerRuntimePlan(input: {
+type ApprovedLocalLedgerRuntimePlanInput = {
   planPath: string;
   signaturePath: string;
   keyringDirectory: string;
   reviewerFingerprint: string;
   requireApiRuntimePin?: boolean;
-}): Promise<LocalLedgerRuntimePlan> {
+};
+
+export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
+  input: ApprovedLocalLedgerRuntimePlanInput,
+): Promise<{ plan: LocalLedgerRuntimePlan; planSha256: string }> {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
     throw new Error("Local API reviewer primary signing-key fingerprint must be canonical");
   }
@@ -348,7 +352,13 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
       || manifest.verifierKeySha256[name] !== hash)) {
     throw new Error("Local API approved verifier-key catalog differs from the release manifest");
   }
-  return plan;
+  return { plan, planSha256: digest(planBytes) };
+}
+
+export async function loadApprovedLocalLedgerRuntimePlan(
+  input: ApprovedLocalLedgerRuntimePlanInput,
+): Promise<LocalLedgerRuntimePlan> {
+  return (await loadApprovedLocalLedgerRuntimePlanWithDigest(input)).plan;
 }
 
 export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRuntimePlan) {

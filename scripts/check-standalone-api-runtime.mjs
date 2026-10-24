@@ -96,6 +96,11 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
   }
   const api = byRole.get("api");
   const labels = api.Config.Labels;
+  if (typeof api.State?.StartedAt !== "string"
+    || !Number.isFinite(Date.parse(api.State.StartedAt))
+    || !Number.isSafeInteger(api.RestartCount) || api.RestartCount < 0) {
+    throw new Error("API runtime start and restart evidence is unavailable");
+  }
   if (JSON.stringify(normalizedEnvironment(api.Config.Env))
     !== JSON.stringify(normalizedEnvironment(expected.apiImageEnv))) {
     throw new Error("API runtime process environment differs from the verified image");
@@ -151,6 +156,9 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     kind: "standalone-api-runtime-topology-observation",
     project: config.project,
     networkId: network.Id,
+    apiContainerId: api.Id,
+    apiStartedAt: api.State.StartedAt,
+    apiRestartCount: api.RestartCount,
     sourceRevision: expected.sourceRevision,
     imageIdsMatched: true,
     approvalMountReadOnly: true,

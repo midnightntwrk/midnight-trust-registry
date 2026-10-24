@@ -18,6 +18,7 @@ import {
   assertLocalApiImageSourceRevision,
   createApprovedLocalLedgerRuntimeSource,
   loadApprovedLocalLedgerRuntimePlan,
+  loadApprovedLocalLedgerRuntimePlanWithDigest,
   sequenceTimestampMap,
   validateLocalLedgerRuntimePlan,
 } from "../local-ledger-runtime.js";
@@ -282,6 +283,10 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      expect(await loadApprovedLocalLedgerRuntimePlanWithDigest(input)).toEqual({
+        plan: candidate,
+        planSha256: sha256(await readFile(planPath)),
+      });
       await writeFile(planPath, `${JSON.stringify(candidate).replace('"networkId":"undeployed"',
         '"networkId":"preprod","networkId":"undeployed"')}\n`);
       execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",

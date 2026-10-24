@@ -26,6 +26,7 @@ const healthcheck = ["CMD", "node", "-e",
   "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"];
 const container = (role) => ({
   Id: `${role}-id`, Image: imageId(role),
+  RestartCount: 0,
   Config: {
     Image: `tr-standalone/${role}:sha-${sourceRevision}`,
     Labels: {
@@ -37,7 +38,8 @@ const container = (role) => ({
       Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"], Cmd: command,
       Healthcheck: { Test: healthcheck } } : {}),
   },
-  State: { Running: true, Paused: false, Health: { Status: "healthy" } },
+  State: { Running: true, Paused: false, StartedAt: "2026-10-24T11:00:00Z",
+    Health: { Status: "healthy" } },
   HostConfig: role === "api" ? {
     ReadonlyRootfs: true, Privileged: false, CapDrop: ["ALL"], CapAdd: null,
     SecurityOpt: ["no-new-privileges:true"], PidsLimit: 128, Init: true,
@@ -63,7 +65,9 @@ function drift(mutator) {
 test("reports a topology observation without a release or finality claim", () => {
   assert.deepEqual(checkStandaloneApiRuntime(network, containers, expected), {
     kind: "standalone-api-runtime-topology-observation", project,
-    networkId: "ledger-id", sourceRevision, imageIdsMatched: true,
+    networkId: "ledger-id", apiContainerId: "api-id",
+    apiStartedAt: "2026-10-24T11:00:00Z", apiRestartCount: 0,
+    sourceRevision, imageIdsMatched: true,
     approvalMountReadOnly: true, internalNetworkOnly: true,
     hostPortPublished: false, finalizedReadback: "not-verified",
     egressDenied: "not-verified", actorJourneys: "not-run",
@@ -125,6 +129,11 @@ test("rejects external or extra network attachments and incomplete services", ()
   assert.throws(drift((_network, items) => { items[0].State.Running = false; }), /unhealthy/u);
   assert.throws(drift((_network, items) => { delete items[0].Config.Healthcheck; }), /health check/u);
   assert.throws(drift((_network, items) => { delete items[0].State.Health; }), /health check/u);
+  assert.throws(drift((_network, items) => { delete items[0].State.StartedAt; }), /start and restart/u);
+  assert.throws(drift((_network, items) => { items[0].State.StartedAt = "not-a-time"; }),
+    /start and restart/u);
+  assert.throws(drift((_network, items) => { delete items[0].RestartCount; }), /start and restart/u);
+  assert.throws(drift((_network, items) => { items[0].RestartCount = -1; }), /start and restart/u);
   assert.throws(drift((_network, items) => { items[0].Config.Healthcheck.Test = ["CMD", "true"]; }),
     /health check/u);
   assert.throws(drift((_network, items) => {
