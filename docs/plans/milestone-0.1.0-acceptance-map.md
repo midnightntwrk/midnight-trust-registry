@@ -13,14 +13,17 @@ must be reconciled against code and exact-head validation before closure.
 The files below identify where to check behavior; their existence alone does
 not prove every acceptance criterion. In particular, a simulator test is not
 a finalized-network read, and a package smoke is not a live status proof.
-The latest retained verified-staged b19 install is pinned to signed source
-`f48fbb9b004e1fcfa2de61c27756324584f080a3`. Its bridge observation
-and unsigned genesis packet are pre-deployment development evidence, not a
-release qualification. The later signed `8d78a48` crash-recovery fix supersedes
-b19 as an RC candidate; do not sign its approval packet for the latest source.
-The b17, b18, and b19 containers are stopped; their volumes and private
-evidence remain preserved. Any runtime-source change requires a new
-exact-source install and review.
+The latest retained verified-staged install is b22, pinned to signed source
+`9c7d4f5fcddb80464787ba30af2d4d8e6db897c6`. Its inventory and release
+manifest SHA-256 values are `66e288fc7ecfd04c2ac11b4f644f3f77a308fb5850a08ecd7ca7b20b1b9d0ed0`
+and `ea7b0c01d7e430dfd436bbe522daed074c0f3ffa6f3f0ba5048b48b9afdaa08e`.
+The b22 node/indexer/proof bridge is observed, but its candidate genesis and
+proposed pin remain untrusted. No human-signed approval, contract deployment,
+finalized contract readback, or offline actor journey exists at b22. The
+private review packet is `artifacts/standalone-setup/wizard-b22/genesis-review-packet.md`.
+Do not sign an older setup packet for this source. Any later runtime-source
+change requires a new exact-source install and review. Retain earlier volumes,
+private evidence, and generated proof artifacts until safe phase-exit cleanup.
 
 | Issues | Current executable evidence | Still required before closure |
 | --- | --- | --- |
@@ -39,7 +42,7 @@ exact-source install and review.
 | #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The verified-staged b19 `f48fbb9` install inventory binds source-matched packages, six images, and proof parameters; it is not installed runtime evidence or current-head validation. Full integration and all 66 verifier-key hashes passed at `f48fbb9`, before the later crash-recovery fix. Manifest-backed packed-consumer actor and VC Ledger 8 fixture smokes passed at earlier source `a94520e`, but neither is a deployed local-ledger actor journey or final-candidate validation. | Full integration, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
 | #178 milestone protection policy | The [delivery harness](milestone-0.1.0-delivery-harness.md) requires green exact-head CI and current-head LLM review; the user explicitly declined a milestone branch-protection rule | Reconcile the stale issue with that policy decision; do not treat absence of branch protection as a release blocker or relax develop/main protections. |
 
-The latest retained exact-source install is now **b20 at signed/DCO
+An earlier retained exact-source install was **b20 at signed/DCO
 `5e01191e7d4289911c0e2fb53c639d258dc86832`**, superseding the b19
 evidence in the table above. Its verified v6 inventory SHA-256 is
 `8c863ed505a1470509bdb79ce047ee795c9e2331901708ddf16baee0819e43ac`;
@@ -54,7 +57,9 @@ covered those services only. Its unsigned private genesis review packet is
 `artifacts/standalone-setup/wizard-b20/genesis-review-packet.md`; node-reported
 candidate and proposed pin remain untrusted. No b20 contract deployment or
 offline actor journey has occurred. The current local source is newer than
-this bundle, so b20 cannot serve as final-head release evidence.
+this bundle, so b20 cannot serve as final-head release evidence. The b22
+checkpoint above supersedes b20 for latest runtime-source staging, not for deployment
+qualification.
 
 Local #219 API slices now return `503 local-list-projection-unavailable` for
 authorization and recognition lists, and select current by-ID records from
