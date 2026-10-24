@@ -52,6 +52,9 @@ export type LocalIssuerProposalCallContext = {
 };
 
 export type LocalIssuerProposalJournal = {
+  assertDeploymentBinding(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+  ): Promise<void>;
   executeOnce(
     role: "issuer", authorizationId: string, evidenceCommitment: string,
     execute: () => Promise<{ eventHash: string }>,
@@ -193,13 +196,26 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
 /** The journal reserves before SDK submission; SDK finalization is not independent readback. */
 export async function submitLocalIssuerProposalCall(input: {
   call: LocalIssuerProposalCall;
-  readFinalizedLedger: (contractAddress: string) => Promise<{ contractAddress: string; ledger: Ledger }>;
+  expectedGenesisHash: string;
+  readFinalizedLedger: (contractAddress: string) => Promise<{
+    contractAddress: string; genesisHash: string; ledger: Ledger;
+  }>;
   providers: ContractProviders<RegistryContract>;
   journal: LocalIssuerProposalJournal;
 }): Promise<{ eventHash: string }> {
+  if (!/^0x[0-9a-f]{64}$/u.test(input.expectedGenesisHash)
+    || /^0x0{64}$/u.test(input.expectedGenesisHash)) {
+    throw new Error("Local issuer call requires a pinned nonzero genesis hash");
+  }
+  await input.journal.assertDeploymentBinding(
+    input.call.registryId, input.call.contractAddress, input.expectedGenesisHash,
+  );
   const finalized = await input.readFinalizedLedger(input.call.contractAddress);
   if (finalized.contractAddress !== input.call.contractAddress) {
     throw new Error("Finalized issuer ledger read belongs to a different contract address");
+  }
+  if (finalized.genesisHash !== input.expectedGenesisHash) {
+    throw new Error("Finalized issuer ledger read belongs to a different genesis");
   }
   const prepared = prepareLocalIssuerProposalCall(input.call, finalized.ledger);
   return input.journal.executeOnce("issuer", input.call.authorizationLabel,

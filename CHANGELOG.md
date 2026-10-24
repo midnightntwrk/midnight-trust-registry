@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- require the local issuer circuit-call helper to check the private journal's
+  deployment binding and the finalized reader's genesis before reservation;
+  SDK-mocked tests remain non-qualification evidence
 - bind an empty local proposal journal to the signed genesis, registry, and
   contract before submissions; enforce that binding for embedded local-ledger
   proposal routes, read local resolutions through the bound source rather than

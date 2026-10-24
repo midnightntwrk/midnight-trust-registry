@@ -36,6 +36,7 @@ vi.mock("../public-network-deployment.js", async (importOriginal) => ({
 const registryLabel = "registry:local-issuer-call";
 const authorizationLabel = "issuer:local-issuer-call";
 const contractAddress = `0x${"a".repeat(64)}`;
+const genesisHash = `0x${"d".repeat(64)}`;
 const maintainerSeed = new Uint8Array(32).fill(13);
 const verifierSeed = new Uint8Array(32).fill(19);
 const keyId = bytes32Commitment("maintainer:key-1");
@@ -128,7 +129,7 @@ describe("local issuer proposal circuit call", () => {
       private: { result: prepared.expectedEventHash },
       public: { txId: "tx-local-issuer" },
     });
-    const journal = { executeOnce: vi.fn(async (
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn(async (
       role: "issuer", id: string, commitment: string, execute: () => Promise<{ eventHash: string }>,
     ) => {
       expect([role, id, commitment]).toEqual([
@@ -138,10 +139,12 @@ describe("local issuer proposal circuit call", () => {
       return execute();
     }) };
     await expect(submitLocalIssuerProposalCall({
-      call, readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).resolves.toEqual({ eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}` });
     expect(journal.executeOnce).toHaveBeenCalledOnce();
+    expect(journal.assertDeploymentBinding).toHaveBeenCalledWith(registryLabel, contractAddress, genesisHash);
     expect(mocks.submitCallTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       contractAddress: contractAddress.slice(2), privateStateId: "trustRegistryPrivateState", circuitId: "proposeIssuerAuthorization",
       args: [prepared.authorizationBundle, call.authorizationId, call.subjectDidCommitment,
@@ -245,22 +248,64 @@ describe("local issuer proposal circuit call", () => {
 
   it("requires the finalized reader to bind its ledger to the requested contract", async () => {
     const { call, ledger } = fixture();
-    const journal = { executeOnce: vi.fn() };
-    const readFinalizedLedger = vi.fn(async () => ({ contractAddress: `0x${"b".repeat(64)}`, ledger }));
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn() };
+    const readFinalizedLedger = vi.fn(async () => ({
+      contractAddress: `0x${"b".repeat(64)}`, genesisHash, ledger,
+    }));
     await expect(submitLocalIssuerProposalCall({
-      call, readFinalizedLedger,
+      call, expectedGenesisHash: genesisHash, readFinalizedLedger,
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).rejects.toThrow(/different contract address/u);
     expect(readFinalizedLedger).toHaveBeenCalledWith(contractAddress);
     expect(journal.executeOnce).not.toHaveBeenCalled();
   });
 
+  it("rejects an unbound journal or wrong genesis before reserving or submitting", async () => {
+    const { call, ledger } = fixture();
+    let rejectBinding = true;
+    const journal = {
+      assertDeploymentBinding: vi.fn(async () => {
+        if (rejectBinding) throw new Error("journal bound to another deployment");
+      }),
+      executeOnce: vi.fn(),
+    };
+    const readFinalizedLedger = vi.fn(async (address: string) => ({ contractAddress: address, genesisHash, ledger }));
+    await expect(submitLocalIssuerProposalCall({
+      call, expectedGenesisHash: genesisHash, readFinalizedLedger,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/another deployment/u);
+    expect(readFinalizedLedger).not.toHaveBeenCalled();
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+    rejectBinding = false;
+    readFinalizedLedger.mockResolvedValueOnce({
+      contractAddress, genesisHash: `0x${"e".repeat(64)}`, ledger,
+    });
+    await expect(submitLocalIssuerProposalCall({
+      call, expectedGenesisHash: genesisHash, readFinalizedLedger,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/different genesis/u);
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it("requires a nonzero pinned genesis hash before journal or provider access", async () => {
+    const { call, ledger } = fixture();
+    const journal = { assertDeploymentBinding: vi.fn(), executeOnce: vi.fn() };
+    const readFinalizedLedger = vi.fn(async (address: string) => ({ contractAddress: address, genesisHash, ledger }));
+    await expect(submitLocalIssuerProposalCall({
+      call, expectedGenesisHash: `0x${"0".repeat(64)}`, readFinalizedLedger,
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/pinned nonzero genesis/u);
+    expect(journal.assertDeploymentBinding).not.toHaveBeenCalled();
+    expect(readFinalizedLedger).not.toHaveBeenCalled();
+  });
+
   it("does not reserve when finalized governance cannot satisfy the signer threshold", async () => {
     const { call, ledger } = fixture();
-    const journal = { executeOnce: vi.fn() };
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn() };
     await expect(submitLocalIssuerProposalCall({
-      call, readFinalizedLedger: async (address) => ({
-        contractAddress: address, ledger: { ...ledger, maintainerThreshold: 2n },
+      call, expectedGenesisHash: genesisHash, readFinalizedLedger: async (address) => ({
+        contractAddress: address, genesisHash, ledger: { ...ledger, maintainerThreshold: 2n },
       }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).rejects.toThrow(/threshold/u);
@@ -274,7 +319,7 @@ describe("local issuer proposal circuit call", () => {
       private: { result: bytes32Commitment("different-governance-event") },
       public: { txId: "tx-local-issuer" },
     });
-    const journal = { executeOnce: vi.fn(async (
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn(async (
       _role: "issuer", _id: string, _commitment: string,
       execute: () => Promise<{ eventHash: string }>,
     ) => {
@@ -285,7 +330,8 @@ describe("local issuer proposal circuit call", () => {
       }
     }) };
     await expect(submitLocalIssuerProposalCall({
-      call, readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).rejects.toThrow(/reconcile/u);
     expect(journal.executeOnce).toHaveBeenCalledOnce();
@@ -293,10 +339,11 @@ describe("local issuer proposal circuit call", () => {
 
   it("never reserves or submits after a stale or substituted finalized read", async () => {
     const { call, ledger } = fixture();
-    const journal = { executeOnce: vi.fn() };
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn() };
     await expect(submitLocalIssuerProposalCall({
       call: { ...call, contractAddress: `0x${"b".repeat(64)}` },
-      readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
+      expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
     })).rejects.toThrow(/Maintainer signature/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
