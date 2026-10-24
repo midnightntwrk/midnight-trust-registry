@@ -2306,3 +2306,8 @@ indexer. Do not implement a journal unlock using a null read, elapsed time,
 or this candidate report alone. A separately approved non-inclusion evidence
 policy, signed operator decision, durable no-replay record, adversarial tests,
 and independent security review remain required.
+
+The local journal reader now rejects hard links, non-private ownership or
+permissions, and files whose inode or metadata changes during a bounded read.
+This protects the stored reservation input; it does not authenticate finalized
+non-inclusion or authorize retry, deletion, or release of an ambiguous attempt.

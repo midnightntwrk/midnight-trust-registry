@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { fork } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,21 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("issuer", authorizationId)).toBeNull();
     await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
       execute, reservationContext)).resolves.toEqual({ eventHash });
+  });
+
+  it("rejects a hard-linked journal before invoking a new proposal", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }));
+    const linked = join(directory, "linked-journal.json");
+    await link(path, linked);
+    const execute = vi.fn(async () => ({ eventHash: otherEventHash }));
+    await expect(journal.executeOnce("verifier", "auth:other", otherCommitment, execute))
+      .rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    expect(execute).not.toHaveBeenCalled();
+    await unlink(linked);
+    await expect(journal.executeOnce("verifier", "auth:other", otherCommitment, execute))
+      .resolves.toEqual({ eventHash: otherEventHash });
   });
 
   it("does not recreate a deleted deployment-bound journal as an empty history", async () => {

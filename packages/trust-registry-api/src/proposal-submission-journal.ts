@@ -518,20 +518,35 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   private async readPrivateFile(path: string, maxBytes: number): Promise<string | null> {
     let handle;
     try {
-      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new InvalidProposalSubmissionJournalError();
       throw error;
     }
     try {
-      const info = await handle.stat();
-      if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > maxBytes) {
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile() || (before.mode & 0o077n) !== 0n
+        || before.nlink !== 1n || before.size > BigInt(maxBytes)
+        || (typeof process.getuid === "function"
+          && before.uid !== BigInt(process.getuid()) && before.uid !== 0n)) {
         throw new InvalidProposalSubmissionJournalError();
       }
-      const raw = await handle.readFile({ encoding: "utf8" });
-      if (Buffer.byteLength(raw, "utf8") > maxBytes) throw new InvalidProposalSubmissionJournalError();
-      return raw;
+      const bytes = Buffer.alloc(Number(before.size));
+      let count = 0;
+      while (count < bytes.length) {
+        const result = await handle.read(bytes, count, bytes.length - count, count);
+        if (result.bytesRead === 0) break;
+        count += result.bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+        || after.ino !== before.ino || after.nlink !== before.nlink || after.mode !== before.mode
+        || after.uid !== before.uid || after.mtimeNs !== before.mtimeNs
+        || after.ctimeNs !== before.ctimeNs) {
+        throw new InvalidProposalSubmissionJournalError();
+      }
+      return bytes.toString("utf8");
     } finally {
       await handle.close();
     }
