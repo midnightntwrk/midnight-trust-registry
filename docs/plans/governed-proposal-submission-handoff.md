@@ -91,6 +91,16 @@ evidence commitment, not by transaction identity; retain the original backup
 and independently inspect the on-ledger governance event before closing an
 incident.
 
+Local-ledger HTTP resolve routes use the deployment-bound source reader, not
+a proposal port's resolver, and check the journal binding before even reporting
+`not-observed`. This has synthetic HTTP coverage, not real deployment evidence.
+Before enabling local HTTP proposal submissions for the RC, provide a concrete
+adapter whose prepared context and actual Compact target are pinned to the
+signed contract. Verify submission, finalized readback, lost-response recovery,
+and restart against the real local stack. The shipped `serve` command does not
+currently wire proposal ports or a journal; simulator journeys do not close
+this gate.
+
 ## Local rotation and capacity
 
 The writable segment is capped at 10,000 attempts and 4 MiB. Capacity

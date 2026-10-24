@@ -60,6 +60,8 @@ export type TrustRegistryApiStateSource = {
     readonly contractAddress: string;
     readonly expectedGenesisHash: string;
   };
+  /** Local-ledger mode must read proposal evidence through this deployment-bound reader. */
+  readonly readFinalizedProposalLedger?: import("./compact-proposal-observation.js").FinalizedProposalLedgerReader;
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
   loadCurrentLedgerSelection?(): Promise<TrustRegistryApiCurrentLedgerSelection>;
 };

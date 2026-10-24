@@ -821,7 +821,7 @@ export const createTrustRegistryApiServer = (
     }
     if ((hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
       && (options.proposalSubmissionJournal === undefined
-        || options.readFinalizedProposalLedger === undefined
+        || options.source.readFinalizedProposalLedger === undefined
         || (hasMembershipProposalPort && options.proposalAdmission === undefined)
         || (options.governedRecognitionProposals !== undefined
           && options.recognitionAccreditation === undefined))) {
@@ -950,6 +950,15 @@ export const createTrustRegistryApiServer = (
       snapshot.registry.registryId, binding.contractAddress, binding.expectedGenesisHash);
   };
 
+  const readLocalFinalizedProposal = async (role: ProposalRole, authorizationId: string) => {
+    const reader = options.source.readFinalizedProposalLedger;
+    if (options.source.mode !== "local-ledger" || reader === undefined) {
+      throw new Error("Deployment-bound finalized proposal reader is unavailable");
+    }
+    const snapshot = await options.source.loadSnapshot();
+    return resolveCompactProposalEvidenceSnapshot(reader, snapshot.registry.registryId, role, authorizationId);
+  };
+
   const requireValidProposalSigners = (
     context: Parameters<typeof hasValidProposalSignerBundle>[0],
     signers: Parameters<typeof hasValidProposalSignerBundle>[1],
@@ -971,13 +980,22 @@ export const createTrustRegistryApiServer = (
     const body = await parseJsonBody(request,
       (value) => GovernedProposalResolveRequestSchema.parse(value), problemBaseUri);
     await requireProposalAdmission(role, authorizationId, body.evidence);
-    if (resolver === undefined) {
+    if (resolver === undefined && options.source.mode !== "local-ledger") {
       throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
         "governed proposal resolution unavailable");
     }
+    if (options.source.mode === "local-ledger" && options.proposalSubmissionJournal !== undefined) {
+      try {
+        await assertJournalMatchesLocalDeployment();
+      } catch (error) {
+        return mapSubmissionJournalError(error);
+      }
+    }
     let observed;
     try {
-      observed = await resolver(authorizationId);
+      observed = options.source.mode === "local-ledger"
+        ? await readLocalFinalizedProposal(role, authorizationId)
+        : await resolver!(authorizationId);
     } catch (error) {
       return mapError(error, problemBaseUri);
     }
@@ -992,7 +1010,6 @@ export const createTrustRegistryApiServer = (
     }
     if (options.proposalSubmissionJournal !== undefined) {
       try {
-        await assertJournalMatchesLocalDeployment();
         await options.proposalSubmissionJournal.reconcile(role, authorizationId, async () => record);
       } catch (error) {
         return mapSubmissionJournalError(error);
@@ -1062,7 +1079,9 @@ export const createTrustRegistryApiServer = (
           }
           await authorizeRecognitionRequest(segments[3]!, request);
         }
-        if (options.readFinalizedProposalLedger === undefined) {
+        const proposalReader = options.source.mode === "local-ledger"
+          ? options.source.readFinalizedProposalLedger : options.readFinalizedProposalLedger;
+        if (proposalReader === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
@@ -1070,7 +1089,7 @@ export const createTrustRegistryApiServer = (
         try {
           const registry = await loadRegistryRecord(options.source);
           snapshot = await resolveCompactProposalEvidenceSnapshot(
-            options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+            proposalReader, registry.registryId, role as ProposalRole, segments[3]!,
           );
         } catch {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
@@ -1274,7 +1293,8 @@ export const createTrustRegistryApiServer = (
         response.setHeader("cache-control", "no-store");
         const recognitionId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         const port = options.governedRecognitionProposals;
-        if (port?.resolve === undefined || options.recognitionAccreditation === undefined) {
+        if (port === undefined || (port.resolve === undefined && options.source.mode !== "local-ledger")
+          || options.recognitionAccreditation === undefined) {
           throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
             "governed proposal resolution unavailable");
         }
@@ -1300,9 +1320,18 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "unadmitted-proposal", 403,
             "unadmitted proposal", "The proposal has no matching accepted accreditation receipt.");
         }
+        if (options.source.mode === "local-ledger" && options.proposalSubmissionJournal !== undefined) {
+          try {
+            await assertJournalMatchesLocalDeployment();
+          } catch (error) {
+            return mapSubmissionJournalError(error);
+          }
+        }
         let observed;
         try {
-          observed = await port.resolve(recognitionId);
+          observed = options.source.mode === "local-ledger"
+            ? await readLocalFinalizedProposal("recognition", recognitionId)
+            : await port.resolve!(recognitionId);
         } catch {
           throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
             "governed proposal resolution unavailable");
@@ -1318,7 +1347,6 @@ export const createTrustRegistryApiServer = (
         }
         if (options.proposalSubmissionJournal !== undefined) {
           try {
-            await assertJournalMatchesLocalDeployment();
             await options.proposalSubmissionJournal.reconcile("recognition", recognitionId, async () => record);
           } catch (error) {
             return mapSubmissionJournalError(error);

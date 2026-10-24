@@ -522,11 +522,12 @@ describe("local ledger-bound API source", () => {
     expect(() => createTrustRegistryApiServer({ source, governedRecognitionProposals: recognitionPort,
       proposalSubmissionJournal: journal, readFinalizedProposalLedger: finalizedReader }))
       .toThrow(/durable submission and finalized observation with admission/u);
-    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+    const sourceWithReader: Options["source"] = { ...source, readFinalizedProposalLedger: finalizedReader };
+    expect(() => createTrustRegistryApiServer({ source: sourceWithReader, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: journal, proposalAdmission: admission,
       readFinalizedProposalLedger: finalizedReader }))
       .toThrow(/signed deployment binding check/u);
-    const boundSource: Options["source"] = { ...source, localDeploymentBinding: {
+    const boundSource: Options["source"] = { ...sourceWithReader, localDeploymentBinding: {
       contractAddress: `0x${"a".repeat(64)}`, expectedGenesisHash: `0x${"b".repeat(64)}`,
     } };
     const boundJournal = { assertDeploymentBinding: async () => {},

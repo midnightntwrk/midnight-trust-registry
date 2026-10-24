@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -156,6 +156,75 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the bound reader, not the port resolver, for synthetic local-ledger readback", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("issuer-local-reader-route");
+    const issuer = createIssuerScenarioFixture("issuer-local-reader-candidate");
+    const scope = createIssuerAuthorizationScopeFixture(issuer);
+    const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
+    const evidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId, subjectDid: issuer.subjectDid,
+      role: "issuer", scope, governedResource,
+    });
+    const binding = {
+      registryId: evidence.envelope.registryId, applicationId: evidence.envelope.applicationId,
+      subjectDid: evidence.envelope.subjectDid, evidenceVerifierDid: evidence.envelope.evidenceVerifierDid,
+      role: "issuer" as const, policyId: evidence.envelope.policyId,
+      policyVersion: evidence.envelope.policyVersion, scope,
+      scopeCommitment: evidence.envelope.scopeCommitment, governedResource,
+    };
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-route-"));
+    const contractAddress = `0x${harness.simulator.contractAddress}`;
+    const genesisHash = `0x${"a".repeat(64)}`;
+    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
+    const reader = vi.fn(async () => harness.simulator.getLedger());
+    const resolve = vi.fn(async () => { throw new Error("untrusted port resolver"); });
+    const serverFor = (sourceGenesisHash: string) => createTrustRegistryApiServer({
+      source: {
+        mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: sourceGenesisHash },
+        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "synthetic-local-readback" }),
+        readFinalizedProposalLedger: reader,
+      },
+      proposalAdmission: {
+        resolvePendingApplication: async () => ({
+          authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
+        }),
+        resolveAcceptedEvidence: async () => ({
+          evidence, receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
+            acceptedAt: "2026-05-20T00:01:00.000Z" },
+        }),
+      },
+      proposalSubmissionJournal: journal,
+      governedIssuerProposals: {
+        prepare: async () => { throw new Error("unused"); },
+        execute: async () => { throw new Error("unused"); },
+        resolve,
+      },
+    });
+    try {
+      for (const [sourceGenesisHash, expectedStatus] of [[genesisHash, 200], [`0x${"c".repeat(64)}`, 409]] as const) {
+        const server = serverFor(sourceGenesisHash);
+        try {
+          await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+          const address = server.address();
+          if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+          const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal/resolve`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidence }),
+          });
+          expect(response.status).toBe(expectedStatus);
+          if (expectedStatus === 200) expect(await response.json()).toEqual({ state: "not-observed" });
+        } finally {
+          server.closeAllConnections();
+          await new Promise<void>((ready, reject) => server.close((error) => error ? reject(error) : ready()));
+        }
+      }
+      expect(reader).toHaveBeenCalledTimes(1);
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
