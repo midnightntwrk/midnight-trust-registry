@@ -26,7 +26,11 @@ import {
 } from "../local-verifier-key-install.js";
 
 const mocks = vi.hoisted(() => ({
-  readImage: vi.fn(), readPinnedKey: vi.fn(), submitInsert: vi.fn(),
+  readImage: vi.fn(), readPinnedKey: vi.fn(), submitInsert: vi.fn(), compiledContract: vi.fn(),
+}));
+vi.mock("../public-network-deployment.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../public-network-deployment.js")>(),
+  compiledStagedVerifierKeyContract: mocks.compiledContract,
 }));
 vi.mock("../local-network-deployment-action-reader.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../local-network-deployment-action-reader.js")>(),
@@ -134,6 +138,7 @@ const journal = async () => {
 beforeEach(() => {
   setNetworkId("undeployed");
   vi.clearAllMocks();
+  mocks.compiledContract.mockReturnValue({ circuit: "key" });
 });
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -294,6 +299,23 @@ describe("local verifier-key insertion", () => {
     });
     expect(outcome.readback).toBe("pending");
     expect((await pending.inspect())?.submitted?.txId).toBe("insert-tx");
+  });
+
+  it("does not reserve or install a signing key when compiled contract preparation fails", async () => {
+    const file = await journal();
+    const provider = providers() as unknown as {
+      privateStateProvider: { setSigningKey: ReturnType<typeof vi.fn> };
+    };
+    mocks.readImage.mockResolvedValue(image());
+    mocks.readPinnedKey.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    mocks.compiledContract.mockImplementationOnce(() => { throw new Error("compiled circuit unavailable"); });
+
+    await expect(submitLocalVerifierKeyInsertion({
+      ...input(), journal: file, providers: provider as never,
+    })).rejects.toThrow(/compiled circuit unavailable/u);
+    expect(await file.inspect()).toBeNull();
+    expect(provider.privateStateProvider.setSigningKey).not.toHaveBeenCalled();
+    expect(mocks.submitInsert).not.toHaveBeenCalled();
   });
 
   it("rejects missing or mismatched signing keys before journal reservation", async () => {

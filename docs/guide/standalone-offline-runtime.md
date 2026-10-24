@@ -635,7 +635,10 @@ a time with `node scripts/local-ledger-insert-verifier-key.mjs
 <approved-insertion-plan.json>`. Each key uses the fixed private journal path
 `verifier-<circuitName>.json` beside the deployment journal; never reuse or
 rename a prior insertion journal. The circuit must be the next absent name in
-sorted release-catalog order. The exact
+sorted release-catalog order. The helper prepares the compiled circuit and
+verifier-key object before its durable reservation; SDK or provider errors
+after reservation still have an unknown outcome and must not be retried
+blindly. The exact
 insertion plan contains:
 
 ```json
