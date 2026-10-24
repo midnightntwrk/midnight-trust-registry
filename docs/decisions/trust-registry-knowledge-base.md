@@ -2345,3 +2345,13 @@ dependency audit passed locally on the signed current-portal branch; these
 checks do not establish deployed local-ledger readback or offline actor
 journeys for #219. Kubernetes/Helm remain optional deployment paths, not
 0.1.0 qualification requirements.
+
+For #220, the current real-journal issuer HTTP test rejects an insufficient
+quorum before reservation, but uses a simulator-backed finalized reader.
+The reserved-attempt candidate report remains read-only: its indexer state
+has no authenticated absence proof. A future release of a reservation must
+also survive node restore without letting the original signed sequence become
+valid again, bind the signed decision to the exact journal attempt under lock,
+and prevent direct writers from substituting an unverified sequence context.
+The operator recovery-evidence policy and independent security review remain
+open; no journal release is implemented or authorized by this note.
