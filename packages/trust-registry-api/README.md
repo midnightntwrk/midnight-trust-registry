@@ -140,12 +140,19 @@ the record matches the private submission journal. `not-observed`
 is not proof of failure and never permits retry; compare the result with the
 private journal under the recovery procedure. Its report sets
 `releaseQualified: false` and does not advance the journal.
-After a post-mutation signed plan has passed its preflight, back up the private
-proposal journal and use `trust-registry-api reconcile-local-proposal` with
+Before the first submission, run `trust-registry-api init-local-proposal-journal`
+with the four signed-plan arguments and an absolute `--submission-journal`
+path. It binds an empty private journal to the reviewed genesis, registry ID,
+and contract address. A nonempty unbound journal cannot be retroactively bound.
+Back up the journal, its `.binding` sidecar, and any referenced segments as
+one private unit. After a post-mutation signed plan has passed its preflight,
+use `trust-registry-api reconcile-local-proposal` with
 the same signed-plan arguments, exact `--role` and `--authorization-id`, and
 an absolute `--submission-journal` path. It marks an entry `observed` only
 when the verified ledger record matches the journal's evidence commitment
-and any recorded event hash. Absence leaves it pending; conflict fails closed.
+and any recorded event hash. A different deployment binding fails closed
+before readback. Output distinguishes `observed` from `not-observed`; absence
+leaves the attempt pending and never permits a retry.
 Even an `observed` entry does not prove transaction identity after a lost
 response, independently authenticate finality, or qualify the release.
 For a read-only current-route check against a running loopback listener, run

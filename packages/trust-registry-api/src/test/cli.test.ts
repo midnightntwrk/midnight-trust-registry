@@ -134,6 +134,21 @@ describe("API CLI binding", () => {
     ])).toThrow(/signed local-ledger evidence/u);
   });
 
+  it("initializes only an absolute-path journal from complete signed evidence", () => {
+    const initialization = ["init-local-proposal-journal", ...localArgs.slice(1),
+      "--submission-journal", "/run/trust-registry/proposals.json"];
+    expect(parseTrustRegistryApiCliArgs(initialization)).toMatchObject({
+      command: "init-local-proposal-journal",
+      submissionJournalPath: "/run/trust-registry/proposals.json",
+    });
+    for (const args of [
+      initialization.slice(0, -2),
+      [...initialization.slice(0, -1), "relative/proposals.json"],
+      [...initialization, "--role", "issuer"],
+      [...initialization, "--host", "127.0.0.1"],
+    ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- bind an empty local proposal journal to the signed genesis, registry, and
+  contract before submissions; reject cross-deployment reconciliation and
+  distinguish absent readback from observed attempts without permitting retry
 - prepare a private first-run standalone Compose environment from a verified
   install bundle and record explicit ledger-bridge topology/egress observations
   without advancing deployment or release approvals

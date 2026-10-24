@@ -43,6 +43,13 @@ const ManifestSchema = z.strictObject({
   archives: z.array(SegmentSchema).max(MAX_ARCHIVES),
   active: SegmentSchema,
 });
+const DeploymentBindingSchema = z.strictObject({
+  format: z.literal("tr-proposal-journal-binding-v1"),
+  registryId: z.string().trim().min(1).max(256),
+  networkId: z.literal("undeployed"),
+  expectedGenesisHash: Bytes32Schema,
+  contractAddress: Bytes32Schema,
+});
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
 export type ProposalSubmissionAttempt = z.infer<typeof AttemptSchema>;
@@ -127,6 +134,76 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   constructor(path: string) {
     if (path.length === 0) throw new RangeError("Proposal submission journal path is invalid");
     this.path = resolve(path);
+  }
+
+  /** A legacy journal with attempts cannot be retrospectively assigned to a deployment. */
+  async bindDeployment(registryId: string, contractAddress: string, expectedGenesisHash: string): Promise<void> {
+    const binding = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    await this.withWrite(async () => {
+      const current = await this.readBinding();
+      if (current !== null) {
+        if (current.registryId !== binding.registryId || current.contractAddress !== binding.contractAddress
+          || current.expectedGenesisHash !== binding.expectedGenesisHash) {
+          throw new ProposalSubmissionConflictError();
+        }
+        await this.requireExisting();
+        return;
+      }
+      const storage = await this.readStorage();
+      if (storage.active.attempts.length !== 0 || storage.archived.length !== 0) {
+        throw new ProposalSubmissionConflictError();
+      }
+      if (await this.readPrivateFile(this.path, MAX_FILE_BYTES) === null) {
+        await this.writeState(emptyState());
+      }
+      const bindingPath = `${this.path}.binding`;
+      const handle = await open(bindingPath, "wx", 0o600);
+      try {
+        await handle.writeFile(JSON.stringify(binding));
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const directory = await open(dirname(bindingPath), "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    });
+  }
+
+  async assertDeploymentBinding(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+  ): Promise<void> {
+    const expected = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    const current = await this.readBinding();
+    if (current === null || current.registryId !== expected.registryId
+      || current.contractAddress !== expected.contractAddress
+      || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+    await this.requireExisting();
+  }
+
+  async requireExisting(): Promise<void> {
+    if (await this.readPrivateFile(this.path, MAX_FILE_BYTES) === null) {
+      throw new InvalidProposalSubmissionJournalError();
+    }
+  }
+
+  private async readBinding(): Promise<z.infer<typeof DeploymentBindingSchema> | null> {
+    const raw = await this.readPrivateFile(`${this.path}.binding`, 1024);
+    if (raw === null) return null;
+    try {
+      return DeploymentBindingSchema.parse(JSON.parse(raw));
+    } catch {
+      throw new InvalidProposalSubmissionJournalError();
+    }
   }
 
   async executeOnce(
@@ -270,6 +347,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         || (attempt.eventHash !== null && attempt.eventHash !== observation.eventHash)) {
         throw new ProposalSubmissionConflictError();
       }
+      if (attempt.state === "observed") return structuredClone(attempt);
       attempt.state = "observed";
       attempt.eventHash = observation.eventHash;
       await this.writeActive(storage, storage.active);

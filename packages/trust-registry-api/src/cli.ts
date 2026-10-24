@@ -35,6 +35,9 @@ const HELP_TEXT = `Usage:
   trust-registry-api observe-local-proposal --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
+  trust-registry-api init-local-proposal-journal --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --submission-journal ABSOLUTE_PATH
   trust-registry-api reconcile-local-proposal --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
@@ -48,7 +51,8 @@ It is not independent finality proof or release qualification.
 The API observation compares current HTTP reads with the signed-plan source.
 It is not actor-journey, process-identity, independent-finality, or release evidence.
 An absent local proposal is not proof of failed submission and never permits retry.
-Reconciliation updates only an exact-matching private journal entry after verified readback.
+Initialize an empty private journal against the signed deployment before submission.
+Reconciliation requires that binding and updates only an exact-matching entry after verified readback.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -59,7 +63,7 @@ Examples:
 
 export type TrustRegistryApiCliOptions = {
   command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api"
-    | "observe-local-proposal" | "reconcile-local-proposal";
+    | "observe-local-proposal" | "init-local-proposal-journal" | "reconcile-local-proposal";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -87,7 +91,7 @@ export const parseTrustRegistryApiCliArgs = (
   }
   if (command !== "serve" && command !== "check-local-ledger-plan"
     && command !== "observe-local-ledger-api" && command !== "observe-local-proposal"
-    && command !== "reconcile-local-proposal") {
+    && command !== "init-local-proposal-journal" && command !== "reconcile-local-proposal") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
@@ -214,7 +218,8 @@ export const parseTrustRegistryApiCliArgs = (
     throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
   if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api"
-    || command === "observe-local-proposal" || command === "reconcile-local-proposal") {
+    || command === "observe-local-proposal" || command === "init-local-proposal-journal"
+    || command === "reconcile-local-proposal") {
     const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
       "--local-ledger-keyring", "--local-ledger-reviewer"]);
     if (command === "observe-local-ledger-api") allowed.add("--api-origin");
@@ -222,7 +227,9 @@ export const parseTrustRegistryApiCliArgs = (
       allowed.add("--role");
       allowed.add("--authorization-id");
     }
-    if (command === "reconcile-local-proposal") allowed.add("--submission-journal");
+    if (command === "reconcile-local-proposal" || command === "init-local-proposal-journal") {
+      allowed.add("--submission-journal");
+    }
     if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
       throw new Error("Local readback accepts only complete signed local-ledger evidence");
     }
@@ -233,6 +240,9 @@ export const parseTrustRegistryApiCliArgs = (
       && (options.proposalRole === undefined || options.authorizationId === undefined
         || (command === "reconcile-local-proposal" && options.submissionJournalPath === undefined))) {
       throw new Error("Local proposal readback requires --role and --authorization-id; reconciliation also requires --submission-journal");
+    }
+    if (command === "init-local-proposal-journal" && options.submissionJournalPath === undefined) {
+      throw new Error("Local journal initialization requires --submission-journal");
     }
     return options;
   }
@@ -344,6 +354,9 @@ export const runTrustRegistryApiCli = async (
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
     const journal = new FileProposalSubmissionJournal(options.submissionJournalPath!);
+    await journal.assertDeploymentBinding(
+      snapshot.registry.registryId, plan.contractAddress, plan.expectedGenesisHash,
+    );
     const attempt = await journal.reconcile(options.proposalRole!, options.authorizationId!, async (role, id) => {
       const proposal = await resolveCompactProposalEvidenceSnapshot(
         source.readFinalizedProposalLedger, snapshot.registry.registryId, role, id,
@@ -360,10 +373,32 @@ export const runTrustRegistryApiCli = async (
       contractAddress: plan.contractAddress,
       role: attempt.role,
       authorizationId: attempt.authorizationId,
+      status: attempt.state === "observed" ? "observed" : "not-observed",
       state: attempt.state,
       eventHash: attempt.eventHash,
       evidenceCommitment: attempt.evidenceCommitment,
       retryPermitted: false,
+      releaseQualified: false,
+    }, null, 2)}\n`);
+    return;
+  }
+  if (options.command === "init-local-proposal-journal") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    const snapshot = await source.loadSnapshot();
+    const journal = new FileProposalSubmissionJournal(options.submissionJournalPath!);
+    await journal.bindDeployment(snapshot.registry.registryId, plan.contractAddress, plan.expectedGenesisHash);
+    process.stdout.write(`${JSON.stringify({
+      format: "tr-local-proposal-journal-binding-v1",
+      registryId: snapshot.registry.registryId,
+      contractAddress: plan.contractAddress,
+      status: "bound",
       releaseQualified: false,
     }, null, 2)}\n`);
     return;

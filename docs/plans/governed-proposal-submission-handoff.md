@@ -70,14 +70,20 @@ VP admission by itself, and must not be used to qualify an actor journey
 before approved genesis, pinned install bytes, independently authenticated
 finalized readback, and post-submission reconciliation are in place.
 
-After installing the manually re-signed post-mutation plan and making a
-private byte-for-byte journal backup, an operator can run
+Before any submission, initialize an empty private journal with
+`trust-registry-api init-local-proposal-journal`, the four signed-plan
+arguments, and an absolute `--submission-journal` path. The binding pins the
+reviewed genesis, registry ID, and contract address; legacy nonempty unbound
+journals cannot be assigned a deployment retrospectively. Keep its `.binding`
+sidecar in every private byte-for-byte journal backup. After installing the
+manually re-signed post-mutation plan and making that backup, an operator can run
 `trust-registry-api reconcile-local-proposal` with the four signed-plan
 arguments, exact `--role`/`--authorization-id`, and an absolute
 `--submission-journal` path. The command verifies the proposal record and
 evidence signature through the pinned finalized source, then asks the file
 journal to compare the evidence commitment and any recorded event hash before
-advancing that entry to `observed`. Missing readback leaves `reserved` or
+advancing that entry to `observed`. A binding mismatch fails before readback.
+The report distinguishes `observed` from `not-observed`; missing readback leaves `reserved` or
 `submitted` unchanged; a conflict throws without a success report. It never
 deletes an entry, authorizes retry, or qualifies the release. A lost-response
 reservation with no event hash is matched by role, authorization ID, and
