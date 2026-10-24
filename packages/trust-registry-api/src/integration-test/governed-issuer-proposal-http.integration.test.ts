@@ -10,6 +10,7 @@ import {
   encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
+  verifyIssuerProposalEvidenceSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -107,10 +108,18 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       proposalSubmissionJournal: journal,
       governedIssuerProposals: {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
-        preflightSubmission: async (_authorizationId, _evidence, signers) => {
+        preflightSubmission: async (_authorizationId, _evidence, signers, signature, context) => {
           preflights += 1;
-          if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+          const ledger = harness.simulator.getLedger();
+          if (BigInt(signers.length) < ledger.maintainerThreshold) {
             throw new GovernedIssuerProposalRejectedError("invalid-signers");
+          }
+          if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
+            || !verifyIssuerProposalEvidenceSignature(
+              ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
+              context.registryId, context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+            )) {
+            throw new GovernedIssuerProposalRejectedError("invalid-evidence");
           }
         },
         execute: async (_, submitted, signers, verifierSignature) => {
@@ -153,6 +162,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(preflights).toBe(1);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       expect(executions).toBe(0);
+      const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
+        second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        bytes(prepared.actionPayloadHash),
+      );
+      const wrongVerifier = await post("submit", { ...request,
+        evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(wrongVerifierSignature)).toString("hex")}` });
+      expect(wrongVerifier.status).toBe(403);
+      expect((await wrongVerifier.json()).detail).toBe("invalid-evidence");
+      expect(preflights).toBe(2);
+      expect(executions).toBe(0);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
         async () => { throw new Error("response lost after submission"); })).rejects.toThrow();
       const blocked = await post("submit", request);

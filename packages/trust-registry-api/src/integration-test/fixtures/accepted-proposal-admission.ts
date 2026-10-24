@@ -5,7 +5,6 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import type { ProposalAdmissionPort } from "../../proposal-admission.js";
-import type { ProposalReservationContext, ProposalSubmissionJournal } from "../../proposal-submission-journal.js";
 
 export const acceptedProposalAdmission = (
   authorizationId: string,
@@ -33,27 +32,5 @@ export const acceptedProposalAdmission = (
       ? { evidence, receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
         acceptedAt: "2026-05-20T00:01:00.000Z" } }
       : null,
-  };
-};
-
-export const captureProposalJournalContexts = (): {
-  journal: ProposalSubmissionJournal;
-  contexts: Array<ProposalReservationContext | undefined>;
-} => {
-  const contexts: Array<ProposalReservationContext | undefined> = [];
-  return {
-    contexts,
-    journal: {
-      executeOnce: async (_role, _authorizationId, _evidenceCommitment, execute, context) => {
-        contexts.push(context);
-        return execute();
-      },
-      reconcile: async (role, authorizationId, readFinalized) => {
-        const observation = await readFinalized(role, authorizationId);
-        if (observation === null) throw new Error("Expected finalized proposal observation");
-        return { role, authorizationId, evidenceCommitment: observation.evidenceCommitment,
-          state: "observed", eventHash: observation.eventHash };
-      },
-    },
   };
 };

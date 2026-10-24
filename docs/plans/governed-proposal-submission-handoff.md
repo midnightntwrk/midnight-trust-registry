@@ -167,9 +167,14 @@ Once a valid receipt is durably recorded as `submitted`, the global reservation
 pause ends; the same authorization still cannot be submitted again, and only
 a matching finalized observation can mark it `observed`.
 Journaled membership proposal ports now require a side-effect-free submission
-preflight before reservation. The simulator-backed HTTP test rejects an
-insufficient maintainer quorum with no journal entry. A real local port must
-check current quorum and known-invalid maintainer state there, then still let
+preflight before reservation. The issuer, verifier, auditor, and maintainer
+simulator-backed HTTP tests use the private file journal and confirm that
+insufficient quorum and a wrong evidence-verifier signature leave no entry.
+The tests attribute both rejections to preflight and assert zero execution;
+they do not cover every invalid maintainer-membership or key-state case.
+These tests use simulator state and do not qualify a deployed port. A real
+local port must check current quorum, evidence-verifier key status, and
+known-invalid maintainer state there, then still let
 Compact recheck at execution; the callback contract alone is not evidence
 that its implementation is complete. Any failure after reservation remains
 ambiguous, including a missed deterministic pre-broadcast rejection. #220

@@ -1,4 +1,7 @@
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +10,7 @@ import {
   encodeJubjubSignature,
   signAuditorProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
+  verifyAuditorProposalEvidenceSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -23,8 +27,9 @@ import {
   type PreparedGovernedAuditorProposal,
 } from "../governed-auditor-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
-import { acceptedProposalAdmission, captureProposalJournalContexts } from "./fixtures/accepted-proposal-admission.js";
+import { acceptedProposalAdmission } from "./fixtures/accepted-proposal-admission.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -78,6 +83,8 @@ describe("Compact-backed auditor proposals over HTTP", () => {
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
     }
+    let preflights = 0;
+    let executions = 0;
     const port: GovernedAuditorProposalPort = {
       async prepare(authorizationId, submitted) {
         if (authorizationId !== auditor.authorizationId) {
@@ -89,12 +96,22 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           throw new GovernedAuditorProposalRejectedError("invalid-evidence");
         }
       },
-      async preflightSubmission(_authorizationId, _evidence, signers) {
-        if (BigInt(signers.length) < harness.simulator.getLedger().maintainerThreshold) {
+      async preflightSubmission(_authorizationId, _evidence, signers, signature, context) {
+        preflights += 1;
+        const ledger = harness.simulator.getLedger();
+        if (BigInt(signers.length) < ledger.maintainerThreshold) {
           throw new GovernedAuditorProposalRejectedError("invalid-signers");
+        }
+        if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
+          || !verifyAuditorProposalEvidenceSignature(
+            ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
+            context.registryId, context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+          )) {
+          throw new GovernedAuditorProposalRejectedError("invalid-evidence");
         }
       },
       async execute(authorizationId, submitted, signers, verifierSignature) {
+        executions += 1;
         if (authorizationId !== auditor.authorizationId) {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
         }
@@ -115,7 +132,8 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           harness.registryId, "auditor", authorizationId);
       },
     };
-    const { journal, contexts } = captureProposalJournalContexts();
+    const directory = await mkdtemp(join(tmpdir(), "tr-auditor-preflight-"));
+    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
     const server = createTrustRegistryApiServer({ source, governedAuditorProposals: port,
       proposalSubmissionJournal: journal,
       proposalAdmission: acceptedProposalAdmission(auditor.authorizationId, scope, evidence) });
@@ -141,10 +159,18 @@ describe("Compact-backed auditor proposals over HTTP", () => {
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
       const insufficient = await submit(prepared, encoded, [signers[0]!]);
       expect(insufficient.status, await insufficient.text()).toBe(403);
+      expect(preflights).toBe(1);
+      expect(executions).toBe(0);
+      expect(await journal.read("auditor", auditor.authorizationId)).toBeNull();
       const wrong = signAuditorProposalEvidenceFromSeed(second.seed,
         bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
-      expect((await submit(prepared,
-        `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`)).status).toBe(403);
+      const wrongResponse = await submit(prepared,
+        `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`);
+      expect(wrongResponse.status).toBe(403);
+      expect((await wrongResponse.json()).detail).toBe("invalid-evidence");
+      expect(preflights).toBe(2);
+      expect(executions).toBe(0);
+      expect(await journal.read("auditor", auditor.authorizationId)).toBeNull();
       expect((await submit(prepared, "0x00")).status).toBe(400);
       expect((await submit({ ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
         encoded)).status).toBe(409);
@@ -152,7 +178,9 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       expect(accepted.status).toBe(202);
       const receipt = await accepted.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(contexts.at(-1)).toEqual({ actionSequence: prepared.actionSequence,
+      const recorded = await journal.read("auditor", auditor.authorizationId);
+      expect(recorded?.state).toBe("submitted");
+      expect(recorded?.reservationContext).toEqual({ actionSequence: prepared.actionSequence,
         actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
       expect(harness.simulator.getLedger().auditorAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
@@ -164,6 +192,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       })).status).toBe(403);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(directory, { recursive: true, force: true });
     }
   });
 });
