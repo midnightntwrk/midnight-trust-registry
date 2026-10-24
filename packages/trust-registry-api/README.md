@@ -37,6 +37,9 @@ authenticates each finalized checkpoint against an independently approved
 genesis, an independently approved SHA-256 digest of the exact snapshot file
 (covering snapshot-only metadata), and a trusted mapping from Compact governance
 sequences to timestamps.
+The pinned snapshot must use the CLI writer's two-space-indented JSON with a
+final newline. A digest matching noncanonical bytes, including duplicate JSON
+keys, is not sufficient for admission.
 It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
 approved digest or the finalized Compact projection. The CLI constructs these

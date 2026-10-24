@@ -131,7 +131,12 @@ export function createLocalLedgerBoundSource(input: {
       if (createHash("sha256").update(raw).digest("hex") !== expectedSnapshotSha256) {
         throw new Error("Candidate snapshot differs from the approved SHA-256 digest");
       }
-      const snapshot = TrustRegistryOperatorSnapshotSchema.parse(JSON.parse(raw.toString("utf8")));
+      const snapshotJson = raw.toString("utf8");
+      const parsed: unknown = JSON.parse(snapshotJson);
+      if (snapshotJson !== `${JSON.stringify(parsed, null, 2)}\n`) {
+        throw new Error("Pinned local snapshot must use the CLI canonical JSON format");
+      }
+      const snapshot = TrustRegistryOperatorSnapshotSchema.parse(parsed);
       assertLocalLedgerEvidenceMatchesSnapshot({
         snapshot,
         ledger: view.ledger,

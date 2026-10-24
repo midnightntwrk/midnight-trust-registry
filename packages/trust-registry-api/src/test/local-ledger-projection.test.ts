@@ -661,6 +661,20 @@ describe("local ledger-bound API source", () => {
       expect((await fetch(`${url}/health`)).status).toBe(503);
       expect(readCount).toBe(callsAfterMismatch);
       await expect(restartedSource().loadSnapshot()).resolves.toBeDefined();
+      const duplicateKeySnapshot = raw.replace(/^\{\n/u, '{\n  "registry": null,\n');
+      expect(duplicateKeySnapshot).not.toBe(raw);
+      await writeFile(snapshotPath, duplicateKeySnapshot);
+      const duplicateKeySource = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(duplicateKeySnapshot).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() { return view; } },
+        sequenceToTimestamp,
+      });
+      await expect(duplicateKeySource.loadSnapshot()).rejects.toMatchObject({
+        cause: { message: "Pinned local snapshot must use the CLI canonical JSON format" },
+      });
+      await writeFile(snapshotPath, raw);
       const actualPath = join(directory, "actual-snapshot.json");
       await rename(snapshotPath, actualPath);
       await symlink(actualPath, snapshotPath);
