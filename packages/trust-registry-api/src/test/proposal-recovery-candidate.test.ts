@@ -147,6 +147,17 @@ describe("read-only proposal recovery candidates", () => {
     expect(report.reviewCandidate).toBe(false);
   });
 
+  it("rejects an out-of-range finalized governance count", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-count-bounds");
+    const valid = input(harness, attempt("issuer:bounds", 0n));
+    for (const governanceActionCount of [-1n, 1n << 64n]) {
+      await expect(assessProposalRecoveryCandidate({
+        ...valid,
+        view: { ...valid.view, ledger: { ...valid.view.ledger, governanceActionCount } },
+      })).rejects.toThrow(/pinned finalized local ledger view/u);
+    }
+  });
+
   it("rejects malformed reservation context instead of reporting a candidate", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-malformed");
     const valid = attempt("issuer:malformed", 0n);

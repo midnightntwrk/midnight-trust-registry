@@ -67,7 +67,9 @@ export async function assessProposalRecoveryCandidate(input: {
     || !/^0x[0-9a-f]{64}$/u.test(input.journalBindingDigest)
     || !/^0x[0-9a-f]{64}$/u.test(view.finalizedBlockHash.toLowerCase())
     || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())
-    || typeof view.ledger.governanceActionCount !== "bigint") {
+    || typeof view.ledger.governanceActionCount !== "bigint"
+    || view.ledger.governanceActionCount < 0n
+    || view.ledger.governanceActionCount >= (1n << 64n)) {
     throw new Error("Recovery candidate requires the pinned finalized local ledger view");
   }
   const context = attempt.reservationContext;
