@@ -76,7 +76,7 @@ const fixture = (): { call: LocalIssuerProposalCall; ledger: TrustRegistryContra
     keyRecord.verifierDidCommitment, keyRecord.policyCommitment,
   );
   const ledger = {
-    initialized: true, registryId, deploymentNetworkIdCommitment: networkIdCommitment,
+    initialized: true, contractVersion: 1n, registryId, deploymentNetworkIdCommitment: networkIdCommitment,
     governancePolicyCommitment: policy, governancePolicyVersion: 1n, governanceActionCount: 3n,
     maintainerThreshold: 1n, emergencyMaintainerThreshold: 1n, archivalMaintainerThreshold: 1n,
     maintainerKeyIds: { member: (id: Uint8Array) => Buffer.from(id).equals(Buffer.from(keyId)) },
@@ -125,7 +125,7 @@ describe("local issuer proposal circuit call", () => {
     expect(prepared.actionSequence).toBe(3n);
     expect(prepared.authorizationBundle.signerCount).toBe(1n);
     mocks.submitCallTx.mockResolvedValueOnce({
-      private: { result: bytes32Commitment("event:issuer-proposed") },
+      private: { result: prepared.expectedEventHash },
       public: { txId: "tx-local-issuer" },
     });
     const journal = { executeOnce: vi.fn(async (
@@ -140,7 +140,7 @@ describe("local issuer proposal circuit call", () => {
     await expect(submitLocalIssuerProposalCall({
       call, readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
-    })).resolves.toEqual({ eventHash: `0x${Buffer.from(bytes32Commitment("event:issuer-proposed")).toString("hex")}` });
+    })).resolves.toEqual({ eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}` });
     expect(journal.executeOnce).toHaveBeenCalledOnce();
     expect(mocks.submitCallTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       contractAddress: contractAddress.slice(2), privateStateId: "trustRegistryPrivateState", circuitId: "proposeIssuerAuthorization",
@@ -164,7 +164,10 @@ describe("local issuer proposal circuit call", () => {
     }, ledger)).toThrow(/authorization binding/u);
     expect(() => prepareLocalIssuerProposalCall(call, {
       ...ledger, registryId: bytes32Commitment("another-registry"),
-    })).toThrow(/different registry/u);
+    })).toThrow(/registry/u);
+    expect(() => prepareLocalIssuerProposalCall(call, {
+      ...ledger, contractVersion: 2n,
+    })).toThrow(/unsupported version/u);
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
 
@@ -263,6 +266,29 @@ describe("local issuer proposal circuit call", () => {
     })).rejects.toThrow(/threshold/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it("treats a provider-returned event hash mismatch as an uncertain journaled outcome", async () => {
+    const { call, ledger } = fixture();
+    mocks.submitCallTx.mockResolvedValueOnce({
+      private: { result: bytes32Commitment("different-governance-event") },
+      public: { txId: "tx-local-issuer" },
+    });
+    const journal = { executeOnce: vi.fn(async (
+      _role: "issuer", _id: string, _commitment: string,
+      execute: () => Promise<{ eventHash: string }>,
+    ) => {
+      try {
+        return await execute();
+      } catch {
+        throw new Error("Proposal may have reached Compact; reconcile before any further action");
+      }
+    }) };
+    await expect(submitLocalIssuerProposalCall({
+      call, readFinalizedLedger: async (address) => ({ contractAddress: address, ledger }),
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"], journal,
+    })).rejects.toThrow(/reconcile/u);
+    expect(journal.executeOnce).toHaveBeenCalledOnce();
   });
 
   it("never reserves or submits after a stale or substituted finalized read", async () => {

@@ -42,11 +42,14 @@ packaged CLI, which has no network-finality source.
 
 The local issuer circuit now has a provider-backed call primitive in
 `packages/trust-registry-integration/src/local-issuer-proposal-call.ts`. It
-preflights the current finalized ledger context, evidence-verifier key and
+preflights the current finalized ledger version/context, evidence-verifier key and
 signatures, maintainer membership/threshold, and issuer scope, requires a
 contract-address-bound finalized ledger reader and a one-attempt journal,
-and calls the actual
-`proposeIssuerAuthorization` circuit through Midnight.js. Its tests mock the
+and calls the actual `proposeIssuerAuthorization` circuit through Midnight.js.
+The returned event hash must match the precomputed governed event; a mismatch
+remains an uncertain journaled outcome requiring independent reconciliation.
+In the local 0.1.0 profile, the Compact issuer `policyId` is the governed policy
+commitment, not a hash of the human-readable policy identifier. Tests mock the
 SDK submission; they are not deployment evidence. The primitive is not
 connected to the API or a trusted local finality reader; a caller-supplied
 address label alone does not authenticate a ledger read. It does not establish

@@ -47,6 +47,7 @@ export type LocalIssuerProposalCall = {
 export type LocalIssuerProposalCallContext = {
   actionPayloadHash: Uint8Array;
   actionSequence: bigint;
+  expectedEventHash: Uint8Array;
   authorizationBundle: TrustRegistryContract.MaintainerAuthorizationBundle;
 };
 
@@ -81,9 +82,9 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
   const registryId = bytes32Commitment(input.registryId);
   const networkId = bytes32Commitment(input.networkId);
   const contractAddress = Buffer.from(input.contractAddress.slice(2), "hex");
-  if (!ledger.initialized || !same(ledger.registryId, registryId)
+  if (!ledger.initialized || ledger.contractVersion !== 1n || !same(ledger.registryId, registryId)
     || !same(ledger.deploymentNetworkIdCommitment, networkId)) {
-    throw new Error("Finalized issuer call context belongs to a different registry or network");
+    throw new Error("Finalized issuer call context has an unsupported version, registry, or network");
   }
   for (const [label, value] of Object.entries({
     authorizationId: input.authorizationId,
@@ -172,10 +173,20 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     signer.publicKey, registryId, networkId, contractAddress, ledger.governancePolicyCommitment,
     actionKind, actionPayloadHash, actionSequence, signer.signature,
   ))) throw new Error("Maintainer signature does not bind the current issuer proposal");
+  const authorizationBundle = buildCanonicalMaintainerAuthorizationBundle(input.signers);
+  const signerSetHash = TrustRegistryContract.pureCircuits.maintainerSignerSetHash(
+    authorizationBundle.signerCount, authorizationBundle.signer1.keyId,
+    authorizationBundle.signer2.keyId, authorizationBundle.signer3.keyId,
+    authorizationBundle.signer4.keyId, authorizationBundle.signer5.keyId,
+  );
   return {
     actionPayloadHash,
     actionSequence,
-    authorizationBundle: buildCanonicalMaintainerAuthorizationBundle(input.signers),
+    expectedEventHash: TrustRegistryContract.pureCircuits.governanceEventHash(
+      registryId, networkId, contractAddress, ledger.governancePolicyCommitment,
+      signerSetHash, actionKind, actionPayloadHash, actionSequence,
+    ),
+    authorizationBundle,
   };
 }
 
@@ -215,6 +226,9 @@ export async function submitLocalIssuerProposalCall(input: {
       });
       const eventHash = bytes32(result.private.result, "Finalized issuer proposal event hash");
       if (!result.public.txId) throw new Error("Finalized issuer proposal lacks a transaction ID");
+      if (!same(eventHash, prepared.expectedEventHash)) {
+        throw new Error("Submitted issuer proposal event hash differs from the prepared action");
+      }
       return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
     });
 }
