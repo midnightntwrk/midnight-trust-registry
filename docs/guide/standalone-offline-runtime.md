@@ -1588,7 +1588,12 @@ retain independently collected finality evidence in a private file. Use
 --evidence-reference REF` with the same signed-plan, role, authorization ID,
 and journal arguments as `inspect` to produce canonical unsigned JSON. The
 reviewer must inspect the candidate and evidence, then detached-sign the exact
-saved bytes. `verify-local-proposal-recovery-decision` takes the same inputs
+saved bytes. The signed decision names the reserved action sequence, kind,
+and payload hash so the reviewer can compare the intended action with the
+private journal; the candidate digest also binds the full report. This is the
+`tr-local-proposal-recovery-decision-v2` draft format; earlier unsigned drafts
+must be regenerated and reviewed rather than reinterpreted as v2.
+`verify-local-proposal-recovery-decision` takes the same inputs
 plus `--recovery-decision` and `--recovery-signature` absolute paths. Its output
 explicitly reports `finalityAuthenticated: false`, `releaseQualified: false`,
 and `retryPermitted: false`. Neither command changes the journal or reopens

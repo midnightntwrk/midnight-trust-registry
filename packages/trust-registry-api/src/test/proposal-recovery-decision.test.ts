@@ -60,7 +60,7 @@ describe("signed local proposal recovery decision", () => {
       const evidence = '{"independentReview":"test-only"}\n';
       await writeFile(finalityEvidencePath, evidence);
       const decision = {
-        format: "tr-local-proposal-recovery-decision-v1",
+        format: "tr-local-proposal-recovery-decision-v2",
         decision: "abandon-invalidated-action",
         candidateSha256: proposalRecoveryCandidateDigest(candidate),
         finalityEvidenceSha256: hash(evidence),
@@ -75,6 +75,8 @@ describe("signed local proposal recovery decision", () => {
         attemptDigest: candidate.attemptDigest,
         journalBindingDigest: candidate.journalBindingDigest,
         reservationActionSequence: candidate.reservationActionSequence,
+        reservationActionKind: candidate.reservationActionKind,
+        reservationActionPayloadHash: candidate.reservationActionPayloadHash,
         finalizedGovernanceActionCount: candidate.finalizedGovernanceActionCount,
         finalizedBlockHash: candidate.finalizedBlockHash,
         approvedPlanSha256: candidate.approvedPlanSha256,
@@ -91,6 +93,14 @@ describe("signed local proposal recovery decision", () => {
         now: Date.parse(decision.draftedAt) })).resolves.toBe(`${canonicalizeJson(decision)}\n`);
       await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
         reason: "sequence-still-live" }, finalityEvidencePath,
+      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+        .rejects.toThrow(/invalidated/u);
+      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
+        reservationActionKind: "invalid" }, finalityEvidencePath,
+      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+        .rejects.toThrow(/invalidated/u);
+      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
+        reservationActionPayloadHash: "invalid" }, finalityEvidencePath,
       evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
         .rejects.toThrow(/invalidated/u);
       await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
@@ -129,6 +139,11 @@ describe("signed local proposal recovery decision", () => {
       await sign({ ...decision, authorizationId: "other" });
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, reservationActionPayloadHash: `0x${"b".repeat(64)}` });
+      await expect(loadApprovedProposalRecoveryDecision(input))
+        .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, format: "tr-local-proposal-recovery-decision-v1" });
+      await expect(loadApprovedProposalRecoveryDecision(input)).rejects.toThrow();
       await sign({ ...decision, draftedAt: new Date(Date.now() + 3600_000).toISOString() });
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);

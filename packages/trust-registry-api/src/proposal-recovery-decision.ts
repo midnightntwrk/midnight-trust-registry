@@ -11,7 +11,7 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]{0,19})$/u;
 const DecisionSchema = z.strictObject({
-  format: z.literal("tr-local-proposal-recovery-decision-v1"),
+  format: z.literal("tr-local-proposal-recovery-decision-v2"),
   decision: z.literal("abandon-invalidated-action"),
   candidateSha256: z.string().regex(SHA256),
   finalityEvidenceSha256: z.string().regex(SHA256),
@@ -27,6 +27,8 @@ const DecisionSchema = z.strictObject({
   attemptDigest: z.string().regex(HASH),
   journalBindingDigest: z.string().regex(HASH),
   reservationActionSequence: z.string().regex(DECIMAL),
+  reservationActionKind: z.string().regex(HASH),
+  reservationActionPayloadHash: z.string().regex(HASH),
   finalizedGovernanceActionCount: z.string().regex(DECIMAL),
   finalizedBlockHash: z.string().regex(HASH),
   approvedPlanSha256: z.string().regex(SHA256),
@@ -46,8 +48,12 @@ function assertReviewCandidate(candidate: RecoveryCandidate): void {
     || candidate.reviewCandidate !== true || candidate.retryPermitted !== false
     || candidate.releaseQualified !== false
     || candidate.reservationActionSequence === null
+    || candidate.reservationActionKind === null
+    || candidate.reservationActionPayloadHash === null
     || candidate.observedEventHash !== null
     || !DECIMAL.test(candidate.reservationActionSequence)
+    || !HASH.test(candidate.reservationActionKind)
+    || !HASH.test(candidate.reservationActionPayloadHash)
     || !DECIMAL.test(candidate.finalizedGovernanceActionCount)
     || BigInt(candidate.finalizedGovernanceActionCount) <= BigInt(candidate.reservationActionSequence)) {
     throw new Error("Recovery decision requires an invalidated, unobserved reserved action candidate");
@@ -65,7 +71,7 @@ export async function draftProposalRecoveryDecision(input: {
   assertReviewCandidate(input.candidate);
   const evidence = await readBoundedLocalApprovalFile(input.finalityEvidencePath, 1024 * 1024);
   const decision = DecisionSchema.parse({
-    format: "tr-local-proposal-recovery-decision-v1",
+    format: "tr-local-proposal-recovery-decision-v2",
     decision: "abandon-invalidated-action",
     candidateSha256: proposalRecoveryCandidateDigest(input.candidate),
     finalityEvidenceSha256: createHash("sha256").update(evidence).digest("hex"),
@@ -80,6 +86,8 @@ export async function draftProposalRecoveryDecision(input: {
     attemptDigest: input.candidate.attemptDigest,
     journalBindingDigest: input.candidate.journalBindingDigest,
     reservationActionSequence: input.candidate.reservationActionSequence,
+    reservationActionKind: input.candidate.reservationActionKind,
+    reservationActionPayloadHash: input.candidate.reservationActionPayloadHash,
     finalizedGovernanceActionCount: input.candidate.finalizedGovernanceActionCount,
     finalizedBlockHash: input.candidate.finalizedBlockHash,
     approvedPlanSha256: input.candidate.approvedPlanSha256,
@@ -134,6 +142,8 @@ export async function loadApprovedProposalRecoveryDecision(input: {
     || decision.attemptDigest !== candidate.attemptDigest
     || decision.journalBindingDigest !== candidate.journalBindingDigest
     || decision.reservationActionSequence !== candidate.reservationActionSequence
+    || decision.reservationActionKind !== candidate.reservationActionKind
+    || decision.reservationActionPayloadHash !== candidate.reservationActionPayloadHash
     || decision.finalizedGovernanceActionCount !== candidate.finalizedGovernanceActionCount
     || decision.finalizedBlockHash !== candidate.finalizedBlockHash
     || decision.approvedPlanSha256 !== candidate.approvedPlanSha256) {
