@@ -43,6 +43,10 @@ cover replay denial and a matching finalized observation, but a never-observed
 attempt can still stop all new proposals. [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
 is a local RC blocker for an audited operator recovery path. A null indexer
 read, elapsed time, or journal replacement must not bypass this gate. The
+Compact simulator regression shows that advancing the governance sequence
+invalidates the old proposal signature without creating its record, but a
+fresh signature for that ID still succeeds. This is not finalized local-ledger
+evidence and does not replace the required durable tombstone. The
 read-only v2 candidate report binds the exact approved API plan digest but
 does not authenticate non-inclusion or authorize journal release. The current
 indexer SDK returns contract state at a node-reported finalized block without

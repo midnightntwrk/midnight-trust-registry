@@ -190,6 +190,14 @@ authenticated non-inclusion, an approval signature, a recovery decision, or
 a journal mutation. A compromised or incomplete indexer can still lie about
 absence; #220 remains open until that trust boundary, audited release record,
 replay prevention, recovery tests, and independent security review are done.
+The Compact simulator regression exercises the sequence-invalidated premise:
+after a different authorized action advances `governanceActionCount`, the
+original signed issuer proposal fails, leaves its proposal record absent, and
+does not advance the count. A freshly signed proposal for that same ID succeeds.
+Sequence advancement therefore invalidates the old signature, not every
+future authorization of that ID. An audited journal tombstone and independent
+finalized-state authentication remain required before releasing a reservation.
+This simulator test is not local-ledger finality evidence.
 The report includes private authorization identifiers and commitments; do not
 paste it into shared logs or public review comments.
 Direct journal writers that omit context receive the same fail-closed legacy
