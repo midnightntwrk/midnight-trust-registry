@@ -160,10 +160,17 @@ separately reviewed proof applies; a null indexer read or elapsed time alone
 is never enough.
 Direct journal writers that omit context receive the same fail-closed legacy
 treatment; the five governed API submit routes all supply it.
+An older binary with the previous strict journal schema will reject files
+containing this new field. Rollback must keep writes stopped and preserve the
+journal for an operator-reviewed migration; deleting it is not recovery.
 Once a valid receipt is durably recorded as `submitted`, the global reservation
 pause ends; the same authorization still cannot be submitted again, and only
 a matching finalized observation can mark it `observed`.
 Pre-broadcast failures still retain the journal reservation conservatively.
+In particular, a signer set that passes signature-shape preflight but fails a
+port's quorum check inside `execute` is treated as an ambiguous submission by
+the file journal. #220 must cover side-effect-free quorum preflight before
+reservation or an equally safe operator proof for this known failure mode.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into
 the API write port or count mocked-provider tests as release evidence until

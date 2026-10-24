@@ -49,14 +49,14 @@ describe("private governed proposal submission journal", () => {
         expect(privatePresentation).toContain("private");
         expect(privateSignature).toContain("signature");
         return { eventHash };
-      })).toEqual({ eventHash });
+      }, reservationContext)).toEqual({ eventHash });
     expect(await journal.read(role, authorizationId)).toMatchObject({
-      role, authorizationId, evidenceCommitment, state: "submitted", eventHash,
+      role, authorizationId, evidenceCommitment, state: "submitted", eventHash, reservationContext,
     });
     const reopened = new FileProposalSubmissionJournal(path);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "submitted" });
     expect(await reopened.reconcile(role, authorizationId,
-      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed" });
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", reservationContext });
     await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment,
       async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect((await stat(path)).mode & 0o077).toBe(0);
@@ -64,8 +64,12 @@ describe("private governed proposal submission journal", () => {
     expect(serialized).not.toContain("raw-vp-private-claims");
     expect(serialized).not.toContain("maintainer-signature");
     expect(JSON.parse(serialized).attempts).toEqual([{
-      role, authorizationId, evidenceCommitment, state: "observed", eventHash,
+      role, authorizationId, evidenceCommitment, state: "observed", eventHash, reservationContext,
     }]);
+    expect(await reopened.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await new FileProposalSubmissionJournal(path).read(role, authorizationId))
+      .toMatchObject({ state: "observed", reservationContext });
   });
 
   it.each(roles)("holds an ambiguous %s response across restart and lagging finalized reads", async (role) => {

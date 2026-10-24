@@ -24,6 +24,7 @@ import {
 } from "../governed-verifier-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
+import { acceptedProposalAdmission, captureProposalJournalContexts } from "./fixtures/accepted-proposal-admission.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -77,11 +78,12 @@ describe("Compact-backed verifier proposals over HTTP", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const scope = createVerifierAuthorizationScopeFixture(verifier);
     const evidence = harness.createApplicationEvidence({
       applicationId: verifier.authorizationId,
       subjectDid: verifier.subjectDid,
       role: "verifier",
-      scope: createVerifierAuthorizationScopeFixture(verifier),
+      scope,
     });
     const port: GovernedVerifierProposalPort = {
       async prepare(authorizationId, submitted) {
@@ -115,10 +117,13 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           harness.registryId, "verifier", authorizationId);
       },
     };
+    const { journal, contexts } = captureProposalJournalContexts();
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness,
         { label: "verifier-proposal-http", verifiers: [{ label: "candidate", fixture: verifier }] }) },
       governedVerifierProposals: port,
+      proposalSubmissionJournal: journal,
+      proposalAdmission: acceptedProposalAdmission(verifier.authorizationId, scope, evidence),
     });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -146,7 +151,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       expect((await post("prepare", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
       })).status).toBe(403);
-      expect((await submit(prepared, encoded, [first])).status).toBe(403);
+      const insufficient = await submit(prepared, encoded, [first]);
+      expect(insufficient.status, await insufficient.text()).toBe(403);
       const wrongSignature = signVerifierProposalEvidenceFromSeed(second.seed,
         bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
       expect((await submit(prepared,
@@ -158,6 +164,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       expect(accepted.status).toBe(202);
       const receipt = await accepted.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(contexts.at(-1)).toEqual({ actionSequence: prepared.actionSequence,
+        actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
       expect(harness.simulator.getLedger().verifierAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
@@ -165,7 +173,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       });
       expect((await post("resolve", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
-      })).status).toBe(409);
+      })).status).toBe(403);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

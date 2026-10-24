@@ -23,6 +23,7 @@ import {
 } from "../governed-maintainer-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
+import { acceptedProposalAdmission, captureProposalJournalContexts } from "./fixtures/accepted-proposal-admission.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -56,11 +57,12 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const scope = createMaintainerAuthorizationScopeFixture(harness.registryId);
     const evidence = harness.createApplicationEvidence({
       applicationId: candidate.maintainerId,
       subjectDid: candidate.subjectDid,
       role: "maintainer",
-      scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
+      scope,
     });
     const source = { mode: "memory" as const, loadSnapshot: async () => publishSimulatorSnapshot(harness,
       { label: "maintainer-proposal-http" }) };
@@ -107,7 +109,10 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           harness.registryId, "maintainer", maintainerId);
       },
     };
-    const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port });
+    const { journal, contexts } = captureProposalJournalContexts();
+    const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port,
+      proposalSubmissionJournal: journal,
+      proposalAdmission: acceptedProposalAdmission(candidate.maintainerId, scope, evidence) });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
@@ -128,7 +133,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
       const submit = (context: PreparedGovernedMaintainerProposal, proof: string, votes = signers) =>
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
-      expect((await submit(prepared, encoded, [signers[0]!])).status).toBe(403);
+      const insufficient = await submit(prepared, encoded, [signers[0]!]);
+      expect(insufficient.status, await insufficient.text()).toBe(403);
       const wrong = signMaintainerProposalEvidenceFromSeed(second.seed,
         bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
       expect((await submit(prepared,
@@ -140,6 +146,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       expect(accepted.status).toBe(202);
       const receipt = await accepted.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(contexts.at(-1)).toEqual({ actionSequence: prepared.actionSequence,
+        actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
       expect(harness.simulator.getLedger().maintainerMembershipCount).toBe(4n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
@@ -147,7 +155,7 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       });
       expect((await post("resolve", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
-      })).status).toBe(409);
+      })).status).toBe(403);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
