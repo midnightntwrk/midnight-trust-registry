@@ -123,6 +123,13 @@ export class ProposalSubmissionConflictError extends Error {
   }
 }
 
+export class ProposalSubmissionContextRequiredError extends Error {
+  constructor() {
+    super("Deployment-bound proposal reservations require the prepared action context");
+    this.name = "ProposalSubmissionContextRequiredError";
+  }
+}
+
 export class ProposalSubmissionCapacityError extends Error {
   constructor() {
     super("Proposal submission journal capacity is exhausted; operator rotation is required");
@@ -251,6 +258,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const key = this.parseKey(role, authorizationId, evidenceCommitment);
     const context = reservationContext === undefined ? undefined : ReservationContextSchema.parse(reservationContext);
     await this.withWrite(async () => {
+      if (context === undefined && await this.readBinding() !== null) {
+        throw new ProposalSubmissionContextRequiredError();
+      }
       const storage = await this.readStorage();
       const existing = [...storage.active.attempts, ...storage.archived].find((attempt) => attempt.role === key.role
         && attempt.authorizationId === key.authorizationId);

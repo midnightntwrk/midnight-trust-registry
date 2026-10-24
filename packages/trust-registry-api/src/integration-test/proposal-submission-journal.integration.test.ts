@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   FileProposalSubmissionJournal,
@@ -14,6 +14,7 @@ import {
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
+  ProposalSubmissionContextRequiredError,
   ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
 } from "../proposal-submission-journal.js";
@@ -59,6 +60,31 @@ describe("private governed proposal submission journal", () => {
       .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
     expect(await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
       "issuer", "missing")).toMatchObject({ attempt: null, bindingDigest: bound.bindingDigest });
+  });
+
+  it("rejects new context-free reservations in a deployment-bound journal", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", `0x${"aa".repeat(32)}`, `0x${"bb".repeat(32)}`);
+    const execute = vi.fn(async () => ({ eventHash }));
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment, execute))
+      .rejects.toBeInstanceOf(ProposalSubmissionContextRequiredError);
+    expect(execute).not.toHaveBeenCalled();
+    expect(await journal.read("issuer", authorizationId)).toBeNull();
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).resolves.toEqual({ eventHash });
+  });
+
+  it("keeps a legacy context-free bound reservation readable and blocking", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", `0x${"aa".repeat(32)}`, `0x${"bb".repeat(32)}`);
+    await writeFile(path, JSON.stringify({ version: 1, attempts: [{
+      role: "issuer", authorizationId, evidenceCommitment, state: "reserved", eventHash: null,
+    }] }), { mode: 0o600 });
+    expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "reserved" });
+    const execute = vi.fn(async () => ({ eventHash }));
+    await expect(journal.executeOnce("verifier", "auth:another", evidenceCommitment,
+      execute, reservationContext)).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it.each(roles)("persists %s receipt without treating it as finality", async (role) => {

@@ -75,7 +75,10 @@ Before any submission, initialize an empty private journal with
 arguments, and an absolute `--submission-journal` path. The binding pins the
 reviewed genesis, registry ID, and contract address; legacy nonempty unbound
 journals cannot be assigned a deployment retrospectively. Keep its `.binding`
-sidecar in every private byte-for-byte journal backup. After installing the
+sidecar in every private byte-for-byte journal backup. New reservations in a
+deployment-bound journal require the prepared action sequence, kind, and
+payload hash; existing context-free entries remain readable but cannot gain
+recovery context retroactively. After installing the
 manually re-signed post-mutation plan and making that backup, an operator can run
 `trust-registry-api reconcile-local-proposal` with the four signed-plan
 arguments, exact `--role`/`--authorization-id`, and an absolute

@@ -28,6 +28,10 @@ const authorizationId = "issuer:local:1";
 const evidenceCommitment = `0x${"c".repeat(64)}`;
 const eventHash = `0x${"b".repeat(64)}`;
 const genesisHash = `0x${"d".repeat(64)}`;
+const reservationContext = {
+  actionSequence: "1", actionKind: `0x${"1".repeat(64)}`,
+  actionPayloadHash: `0x${"2".repeat(64)}`,
+};
 let directory: string;
 let path: string;
 let output: string[];
@@ -64,7 +68,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("marks a submitted attempt observed only after exact verified ledger evidence", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     mocks.resolveProposal.mockResolvedValueOnce({ eventHash, evidenceCommitment });
 
     await runTrustRegistryApiCli(args());
@@ -85,7 +90,7 @@ describe("signed local proposal reconciliation CLI", () => {
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
     await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
       throw new Error("response lost");
-    })).rejects.toThrow(/may have reached Compact/u);
+    }, reservationContext)).rejects.toThrow(/may have reached Compact/u);
     mocks.resolveProposal.mockResolvedValueOnce(null);
 
     await runTrustRegistryApiCli(args());
@@ -98,7 +103,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("leaves a conflicting submission unchanged and emits no success report", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     mocks.resolveProposal.mockResolvedValueOnce({
       eventHash: `0x${"d".repeat(64)}`, evidenceCommitment,
     });
@@ -111,7 +117,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("fails closed on mismatched evidence or unavailable finalized readback", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     mocks.resolveProposal.mockResolvedValueOnce({ eventHash, evidenceCommitment: `0x${"f".repeat(64)}` });
     await expect(runTrustRegistryApiCli(args())).rejects.toThrow(/conflict/iu);
     mocks.resolveProposal.mockRejectedValueOnce(new Error("finalized reader unavailable"));
@@ -123,7 +130,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("does not read or mutate the journal when the signed plan is stale", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     mocks.createSource.mockResolvedValueOnce({
       loadSnapshot: vi.fn().mockRejectedValue(new Error("stale signed plan")),
       readFinalizedProposalLedger: vi.fn(),
@@ -147,7 +155,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("rejects a journal from another registry before finalized readback", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:other", `0x${"a".repeat(64)}`, genesisHash);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     await expect(runTrustRegistryApiCli(args())).rejects.toThrow(/conflict/iu);
     expect(mocks.resolveProposal).not.toHaveBeenCalled();
     expect(output).toEqual([]);
@@ -156,7 +165,8 @@ describe("signed local proposal reconciliation CLI", () => {
   it("rejects a journal from another genesis even with the same registry and address", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, `0x${"e".repeat(64)}`);
-    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
     await expect(runTrustRegistryApiCli(args())).rejects.toThrow(/conflict/iu);
     expect(mocks.resolveProposal).not.toHaveBeenCalled();
   });

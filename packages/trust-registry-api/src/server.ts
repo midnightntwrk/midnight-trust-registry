@@ -169,6 +169,7 @@ import {
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
+  ProposalSubmissionContextRequiredError,
   ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
@@ -937,6 +938,11 @@ export const createTrustRegistryApiServer = (
     if (error instanceof ProposalSubmissionConflictError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-conflict", 409,
         "proposal submission conflicts with recorded evidence or event");
+    }
+    if (error instanceof ProposalSubmissionContextRequiredError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-context-unavailable", 503,
+        "proposal submission action context unavailable",
+        "No proposal was reserved or submitted; contact the operator.");
     }
     if (error instanceof ProposalSubmissionCapacityError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-capacity", 503,

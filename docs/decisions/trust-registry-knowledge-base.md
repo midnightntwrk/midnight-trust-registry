@@ -25,6 +25,10 @@ shorter-lived and more action-oriented than the normative specification.
   original action's inability to execute is independently authenticated and
   an operator-reviewed durable decision is security-reviewed. #219 still
   needs a real deployed API and offline actor journeys; Helm is optional.
+- New reservations in a deployment-bound proposal journal must carry the
+  prepared action sequence, kind, and payload hash. Missing context fails
+  before any journal write or SDK call. Older context-free entries remain
+  readable and blocking, not eligible for an inferred recovery decision.
 
 ## October 19 2026 Local Journal Recovery Checkpoint
 
